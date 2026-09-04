@@ -237,6 +237,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   docs sweeps), or a small sibling manifest — but **not** a looser rule on the product one, whose
   three conditions are each load-bearing and witnessed.
 
+  **CLOSED 2026-09-04.** Tried the scan-derived approach first (mirroring T-808's own "generated,
+  not typed" design) and measured it does not work: dropping just the product-root requirement from
+  the 3-marker rule (keep `.walk`, drop `.productPath`) classifies **~24 unrelated tests** across the
+  target as "non-product-tree sweeps" — `AgentContextBudgetTests`, `CadenceBuildInvocationHygieneTests`,
+  `CadenceScanInstrumentTests`, `CadenceSharedStoreWriteGateTests`, `CadenceStoreRestoreTests`, and
+  several more, plus (ironically) the fixture test written to exercise the new rule itself. The
+  transitive-reach resolution picks up an incidental walk marker from a shared file-scope helper
+  regardless of what the test under classification is actually about — exactly the noise T-808's
+  three-marker AND exists to keep out, reproduced here one marker short of it.
+  Landed instead: a **hand-pinned** second manifest, `CadenceTests/CadenceNonProductTreeSweepManifest.txt`
+  (the exact two names above), guarded by four new tests in `CadenceTestTargetHygieneTests` —
+  existence (`everyNonProductTreeSweepOnTheManifestStillExists`, via `cadenceTestDeclarations()`),
+  disjointness against the trusted, unmodified T-808 manifest
+  (`noNonProductTreeSweepIsAlsoOnTheProductTreeManifest`), a per-entry non-vacuity check that each
+  named test's **own** function body — via `CadenceSourceScan.functionBody(named:)`, not transitive
+  reach — still contains a walk needle (`eachNonProductTreeSweepsOwnBodyStillWalksSomething`), and
+  the named-pair non-vacuity check every small manifest in this codebase carries
+  (`theNonProductTreeSweepManifestNamesTheSweepsItIsSupposedTo`). `CadenceRealTreeSweepScan.swift`
+  and `scripts/real-tree-sweep-manifest.sh` are untouched — T-808's boundary and its three witnessed
+  conditions are exactly as they were, per this ticket's own instruction not to loosen them.
+  Measured 2026-09-04: `CadenceTestTargetHygieneTests` green (37.9s, `scripts/xcb.sh v3batchV`,
+  0 compile errors, 0 warnings on a run that recompiled the file), including
+  `everyRealTreeSweepOnTheManifestStillExists`/`theRealTreeSweepManifestIsExactlyWhatTheScanFinds`
+  (proving the T-808 manifest itself is untouched and still exact) alongside all four new tests.
+
 - [T-795] **The icon-only-button suite is red on HEAD independent of T-674, for a reason worth
   fixing before the next agent reads its output as a regression.** Measured 2026-09-04 against an
   unmodified HEAD (`8bec9eb`) in an isolated `git archive` tree, twice: `CadenceIconOnlyButtonAccessibilityTests`
@@ -388,6 +413,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the numbers are about. Cheapest next step is a two-test fixture in `CadenceTests` that pins both
   spellings and their `bitPattern`s, which turns this from a story into a measurement.
 
+  **CLOSED 2026-09-04 — diagnosed already, in `docs/CODEX_REQUESTS.md` R1 (2026-09-03); this closes
+  it out by writing the mechanism where someone actually hits it.** `#expect(lhs == rhs)` expands to
+  `Testing.__checkBinaryOperation<T, U>`, whose `T`/`U` are inferred independently with no `T == U`
+  constraint. A typed `CGFloat` on the left plus an unannotated `0.5 * 1.6` on the right settles
+  `U == AnyHashable`: the product boxes as `Double`, the left side boxes as `CGFloat`, and
+  `AnyHashable(CGFloat(0.8)) != AnyHashable(Double(0.8))` despite both carrying the identical
+  `3fe999999999999a` bit pattern — measured directly against the installed Testing interface and a
+  `-dump-macro-expansions` probe, per R1. Binding either operand to a typed `let` forces
+  `U == CGFloat` and passes; R1 also measured **0 live occurrences** of the dangerous exact shape
+  (float-literal `*` float-literal inside a live `#expect`) — the sole other hit was this ticket's own
+  doc comment — so no sweep or guard is added, matching R1's own "narrow and close" disposition.
+  Landed: the mechanism and the workaround (never write a bare `literal * literal` inside `#expect`;
+  bind one side to a typed constant first) are now in the doc comment at
+  `CadenceTests/CadenceSharedBoardChromeTests.swift`'s
+  `theTwoRetiredLiteralsAndWhatAdoptingTheRatioCostThem`, replacing the line that said the mechanism
+  was not understood. Comment-only; measured 2026-09-04: `CadenceSharedBoardChromeTests` green
+  (51.6s, `scripts/xcb.sh v3batchV`, 0 compile errors, 0 warnings on a run that recompiled the file).
 
 - [T-718] **The unqualified half of [[T-565]] is measured and guarded by nothing.**
   A backticked span shaped like a call — `` `foo(_:)` ``, `` `bar()` `` — with no type in front of it
@@ -1875,6 +1917,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   this batch's time budget risked the load-bearing tool rather than the finding. `TEST_RESULT`
   itself (the aggregate zero-test count) is already fixed the same way as `xcb.sh`'s.
 
+  **CLOSED 2026-09-04 — both blind spots fixed, reproduced-then-fixed in `selftest` rather than
+  assumed.** `scripts/test-suite-index.sh --test-labels` (new mode) prints `funcName<TAB>label` for
+  every `@Test` in the target — 52 labeled, of 4383, measured. `scripts/mutate.sh` loads it once per
+  run (`load_test_labels(tree)`, the tree's own copy, same reasoning as its use of the tree's own
+  `xcb.sh`) and `classify_run` now resolves a quoted `✘ Test "<label>"` failure back to its function
+  name (`FAILED_SWIFT_TESTING_NAMED` + a reverse map, reported BY FUNCTION NAME) and accepts a
+  passing `Test "<label>"` line as evidence the planned test ran, for both `missing` and `failed`.
+  The `SUITE-ABSENT` half is fixed the same way with a second map, `load_suite_labels` (from
+  `--labels`, which already falls back to the type name when unlabeled) and a `Suite "<label>"`
+  fallback alongside the bareword check. `selftest` reproduces each hazard first — a labeled
+  test's/suite's own green run reads as TEST-ABSENT/SUITE-ABSENT when `labels`/`suite_labels` are
+  omitted, character for character what this ticket described — then shows the identical log passes
+  once the map is supplied: 5 new checks, 54/54 passing, no `xcodebuild` needed since `classify_run`
+  is pure and is exercised only against real log shapes.
+
+- [T-964] **`scripts/mutate.sh`'s new display-label resolution (T-786) silently drops a collision if
+  two `@Test("...")` cases ever share the exact same display string.** `classify_run`'s
+  `label_to_func = {label: func for func, label in labels.items() if label}` is a dict
+  comprehension, so two functions with an identical display label leave only the *last* one
+  resolvable from a quoted `✘ Test "<label>"` failure line — the other's failure would still be
+  named (by the shared display string, via the "unmapped" fallback path), just not resolved back to
+  its own function name. **MEASURED 2026-09-04:** no such collision exists today — every one of the
+  52 currently display-named tests has a distinct label (`./scripts/test-suite-index.sh
+  --test-labels | awk -F'\t' '$2!=""{print $2}' | sort | uniq -d` prints nothing). Same shape,
+  independently, for `load_suite_labels`'s reverse use if two `@Suite("...")` types ever shared a
+  label — not currently possible to check the same way since suite labels are 1:1 with type names
+  already. Low priority, future-proofing only: fix by keying on `(suite, label)` or refusing to
+  build the reverse map when a collision is detected, whichever `mutate.sh`'s own owner prefers.
 
 - [T-783] **CLOSED 2026-09-04 (`85b63c3d`).** Re-measured before touching anything: of the seven
   sites named 2026-09-04, `GoalListLinkHelpers.swift` had already been fixed independently by
@@ -1908,6 +1978,27 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is the call. It is not a mechanical swap: the needle there spans `processPendingChanges()` **and**
   the gate, which is a claim about adjacency, so narrowing it needs the ordering claim restated
   rather than the span shrunk.
+
+  **CLOSED 2026-09-04.** (1) Verified rather than narrowed, per this ticket's own rule that an
+  exemption with no population is deleted, not narrowed: the two ternaries still exist verbatim in
+  `MarkdownNoteSupport.resolved(_:with:)`, still pinned exactly (not by a file-level blanket) by
+  `theOverrideMergeExemptionIsStillExactlyTheTwoLinesItWasMeasuredAs`'s two `matchCount == 1`
+  assertions. The override-merge semantics decision this ticket asked for is already made and
+  written down in that same test's doc comment: untrimmed is correct, because both `override.title`
+  and `template.title` are stored strings and trimming would silently rewrite what a user saved,
+  which is a different question from the mechanical placeholder-trim the other 25 sites needed. No
+  code change — a live, correctly-decided exemption is not something to narrow.
+  (2) Narrowed. `arefusedContextDeleteRestoresTheWholeTreeIncludingItsTasks` now extracts
+  `deleteTasks`'s own body via `CadenceSourceScan.declarationBody("static func deleteTasks(", in: core)`
+  and scopes the `gatedCommit` adjacency regex to that body alone — restated as "adjacent inside
+  `deleteTasks`" rather than "adjacent somewhere in this 800-line file", which a coincidental second
+  `processPendingChanges()`/`commitsImmediately` pair elsewhere would have satisfied just as well
+  under the old (whole-file) form. `commitsImmediately: Bool = true` and `deleteTasks`'s own existence
+  stay checked against the whole file on purpose: a parameter default lives in the *signature*,
+  before `declarationBody`'s span even starts, so narrowing that half too would have been the
+  mechanical-swap mistake this ticket warned against.
+  Measured 2026-09-04: `CadenceDeleteConfirmationCommitTests` green (0.236s, `scripts/xcb.sh
+  v3batchV`, 0 compile errors, 0 warnings on a run that recompiled the file).
 
 - [T-790] **The search field itself is the next near-copy, four rows deep.** Found closing
   [[T-672]], which unified the clear button and left the row around it duplicated.
