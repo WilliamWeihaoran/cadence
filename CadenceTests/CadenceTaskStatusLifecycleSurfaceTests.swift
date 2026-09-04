@@ -22,6 +22,10 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
     /// A commit that always refuses, the way every other save-commit suite here spells it.
     private struct CommitRefused: Error {}
 
+    /// A reconcile that counts instead of running, so "nothing is reconciled on the failure path"
+    /// can be watched rather than read off the order two strings appear in ([[T-881]]).
+    private final class Counter { var runs = 0 }
+
     // MARK: - T-628: the settle has a commit boundary
 
     /// **The macOS completion funnel had no commit at all.**
@@ -173,20 +177,46 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
     /// closures with no view state at all — so there is no "where the user is already looking" for
     /// it to report into. macOS reached the same answer in T-628 and put the notice on the manager
     /// for `macOSRootView` to show; this is that shape on the other platform.
+    /// **[[T-881]] made this behavioural.** It used to assert that
+    /// `CadenceTaskSettleFailureCenter.shared.record()` appeared *earlier in this file's source*
+    /// than `reconcile(context, reconciler)`, with the word `return` between them. That is a claim
+    /// about text: an equivalent rewrite (a `guard`, a `defer`, the catch extracted to a helper)
+    /// goes red for nothing, and a broken one that keeps the two lines in that order — a `return`
+    /// moved inside an `if`, say — stays green. Both directions were live. The wrapper now forwards
+    /// `commit:` to the mutation it already had a seam on, so the refusal can be provoked and the
+    /// reconcile watched instead of read.
     @Test func theAppSideWrapperNamesARefusedSettleRatherThanSwallowingIt() throws {
-        let wrapper = try strippingComments(sourceFile("Cadence/Shared/CadenceTaskStatusEditing.swift"))
-        let body = try cadenceFunctionBody("static func toggleCompletion(", in: wrapper)
-        #expect(body.contains("try CadenceTaskMutationSupport.toggleCompletion("))
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
 
-        // The refusal is recorded, and the reconcile is *skipped* — reconciling a transition that
-        // was put back would retire a reminder for work that is still open.
-        let record = try #require(body.range(of: "CadenceTaskSettleFailureCenter.shared.record()"))
-        let reconcile = try #require(body.range(of: "reconcile(context, reconciler)"))
-        #expect(record.lowerBound < reconcile.lowerBound)
-        #expect(
-            body[record.upperBound..<reconcile.lowerBound].contains("return"),
-            "a refused settle falls through to the reconcile"
-        )
+        let centre = CadenceTaskSettleFailureCenter.shared
+        centre.clear()
+        let counter = Counter()
+        let watcher = CadenceWindDownReconciler(isLive: false) { _ in counter.runs += 1 }
+
+        CadenceTaskStatusEditing.toggleCompletion(task, in: context, reconciler: watcher) { _ in
+            throw CommitRefused()
+        }
+
+        #expect(centre.settleFailed, "the refusal was swallowed rather than named")
+        // The whole of the paragraph the old string ordering was standing in for: reconciling a
+        // transition that was put back would retire a reminder for work that is still open.
+        #expect(counter.runs == 0, "a refused settle still reconciled")
+        #expect(task.status == .todo, "and the circle is honestly open again")
+
+        // The accepted path, so the two assertions above cannot be satisfied by a wrapper that
+        // does nothing at all.
+        centre.clear()
+        CadenceTaskStatusEditing.toggleCompletion(task, in: context, reconciler: watcher)
+        #expect(!centre.settleFailed)
+        #expect(counter.runs == 1, "an accepted settle must reconcile exactly once")
+        #expect(task.status == .done)
+        centre.clear()
 
         // And the one surface that reads it is the shell both iOS layouts pass through.
         let shell = try strippingComments(sourceFile("Cadence/iOS/iOSRootView.swift"))
@@ -333,18 +363,81 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
     /// The wrapper names this refusal the way it names the toggle's, and for the same reason: the
     /// surface that reaches it is `iOSTaskDetailSheet`'s status well, and a notice owned by one
     /// surface is missing from the rest. One centre, one alert, read at the shell.
+    ///
+    /// Behavioural since [[T-881]], for the reason the toggle's twin records.
     @Test func theAppSideWrapperNamesARefusedStatusChangeRatherThanSwallowingIt() throws {
-        let wrapper = try strippingComments(sourceFile("Cadence/Shared/CadenceTaskStatusEditing.swift"))
-        let body = try cadenceFunctionBody("static func setStatus(", in: wrapper)
-        #expect(body.contains("try CadenceTaskMutationSupport.setStatus("))
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
 
-        let record = try #require(body.range(of: "CadenceTaskSettleFailureCenter.shared.record()"))
-        let reconcile = try #require(body.range(of: "reconcile(context, reconciler)"))
-        #expect(record.lowerBound < reconcile.lowerBound)
-        #expect(
-            body[record.upperBound..<reconcile.lowerBound].contains("return"),
-            "a refused status change falls through to the reconcile"
+        let centre = CadenceTaskSettleFailureCenter.shared
+        centre.clear()
+        let counter = Counter()
+        let watcher = CadenceWindDownReconciler(isLive: false) { _ in counter.runs += 1 }
+
+        CadenceTaskStatusEditing.setStatus(.cancelled, for: task, in: context, reconciler: watcher) { _ in
+            throw CommitRefused()
+        }
+
+        #expect(centre.settleFailed, "the refusal was swallowed rather than named")
+        #expect(counter.runs == 0, "a refused status change still reconciled")
+        #expect(task.status == .todo, "and the status went back")
+
+        centre.clear()
+        CadenceTaskStatusEditing.setStatus(.cancelled, for: task, in: context, reconciler: watcher)
+        #expect(!centre.settleFailed)
+        #expect(counter.runs == 1, "an accepted status change must reconcile exactly once")
+        #expect(task.status == .cancelled)
+        centre.clear()
+    }
+
+    /// The third entry point, and the one with an answer of its own: `completeFocusSession` returns
+    /// `false` on a refusal so `iOSFocusView` can keep the elapsed clock, which is the only place
+    /// those minutes exist.
+    ///
+    /// New with [[T-881]]. Nothing behavioural reached this path before — its "nothing is
+    /// reconciled on the failure path" paragraph was documented and asserted by nothing at all,
+    /// not even the string ordering its two siblings had.
+    @Test func aRefusedFocusCompletionAnswersFalseAndReconcilesNothing() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Focus me")
+        context.insert(task)
+        try context.save()
+
+        let centre = CadenceTaskSettleFailureCenter.shared
+        centre.clear()
+        let counter = Counter()
+        let watcher = CadenceWindDownReconciler(isLive: false) { _ in counter.runs += 1 }
+
+        let refused = CadenceTaskStatusEditing.completeFocusSession(
+            task,
+            elapsedSeconds: 1_500,
+            in: context,
+            reconciler: watcher
+        ) { _ in throw CommitRefused() }
+
+        #expect(refused == false, "the clock was told the minutes landed")
+        #expect(centre.settleFailed)
+        #expect(counter.runs == 0, "a refused focus completion still reconciled")
+        #expect(task.status == .todo)
+
+        centre.clear()
+        let accepted = CadenceTaskStatusEditing.completeFocusSession(
+            task,
+            elapsedSeconds: 1_500,
+            in: context,
+            reconciler: watcher
         )
+        #expect(accepted)
+        #expect(!centre.settleFailed)
+        #expect(counter.runs == 1)
+        #expect(task.status == .done)
+        centre.clear()
     }
 
     // MARK: - T-344: the circle toggles settled, not done

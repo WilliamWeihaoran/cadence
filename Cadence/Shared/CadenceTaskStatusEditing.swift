@@ -65,13 +65,23 @@ enum CadenceTaskStatusEditing {
     /// the timestamp and the successor back, so there is no transition for the notification
     /// reconcile to act on — and reconciling anyway would retire a reminder for work that is still
     /// open.
+    ///
+    /// - Parameter commit: Forwarded, unchanged, to the mutation under it — [[T-881]]. Every frame
+    ///   below this one already takes the seam; these three wrappers were the only place the chain
+    ///   broke, so this is a pass-through being restored rather than a hook being added. The default
+    ///   is the same `{ try $0.save() }` the callee already had, so no call site moves and no
+    ///   behaviour changes. It exists because the paragraph above is a claim about the **failure**
+    ///   path, a `save()` that throws cannot be provoked out of an in-memory container, and the
+    ///   claim was previously asserted by the order two strings appear in this file's source —
+    ///   which a correct refactor can break and an incorrect one can satisfy.
     static func toggleCompletion(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
     ) {
         do {
-            try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+            try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context, commit: commit)
         } catch {
             CadenceTaskSettleFailureCenter.shared.record()
             return
@@ -88,14 +98,22 @@ enum CadenceTaskStatusEditing {
     /// write the status. Nothing is reconciled on the failure path — `commitSettle` and
     /// `commitEdit` have already put the transition back, so there is none to reconcile, and
     /// reconciling anyway would retire a reminder for work that is still open.
+    /// - Parameter commit: Forwarded to the mutation under it, for the reason `toggleCompletion`
+    ///   states at length ([[T-881]]).
     static func setStatus(
         _ status: TaskStatus,
         for task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
     ) {
         do {
-            try CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: context)
+            try CadenceTaskMutationSupport.setStatus(
+                status,
+                for: task,
+                modelContext: context,
+                commit: commit
+            )
         } catch {
             CadenceTaskSettleFailureCenter.shared.record()
             return
@@ -120,15 +138,24 @@ enum CadenceTaskStatusEditing {
     ///
     /// Nothing is reconciled on the failure path, for the reason `toggleCompletion` records:
     /// `commitSettle` has already put the transition back, so there is none to reconcile.
+    ///
+    /// - Parameter commit: Forwarded to the mutation under it, for the reason `toggleCompletion`
+    ///   states at length ([[T-881]]).
     @discardableResult
     static func completeFocusSession(
         _ task: AppTask,
         elapsedSeconds: Int,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         do {
-            try CadenceFocusSupport.complete(task, elapsedSeconds: elapsedSeconds, modelContext: context)
+            try CadenceFocusSupport.complete(
+                task,
+                elapsedSeconds: elapsedSeconds,
+                modelContext: context,
+                commit: commit
+            )
         } catch {
             CadenceTaskSettleFailureCenter.shared.record()
             return false

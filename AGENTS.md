@@ -104,10 +104,18 @@ breaks the rule if any of three halves is true:
    change travels up through every frame *handed* a `ModelContext` and stops at the first that was not.
 2. **Report** — something **anywhere in the swallowed commit's own block** says it worked: `dismiss…()`,
    `is/show<X> = false`, `editing/selected/pending<X> = nil`, `presentedX = …`, `onSave(…)`, an
-   `@AppStorage` write, **the answer itself** (`return true` from a `-> Bool`, a non-`nil` return from
-   a `-> X?`), or **a rearrangement the user can see** (T-614): a row that stays where you dropped it
-   outclaims a dismissed sheet, and a refused reorder reverts at next launch with nothing to retry — no
-   text scan sees it, so pin per site; all seven do, via `CadenceOrderCommit` (T-868/T-869/T-870).
+   `@AppStorage` write, a write through a **collection `@Binding`** — the surface stays open and
+   *fills in*, which is `TagPickerPopoverViews.restore`'s claim (T-664) — **the answer itself**
+   (`return true` from a `-> Bool`, a non-`nil` return from a `-> X?`), or **a rearrangement the user
+   can see** (T-614): a row that stays where you dropped it outclaims a dismissed sheet, and a refused
+   reorder reverts at next launch with nothing to retry. All seven reorder sites pin it via
+   `CadenceOrderCommit` (T-868/T-869/T-870).
+   **Two of these clauses are only partly mechanised, and the scan says so rather than implying
+   otherwise.** The sweep's half 2b sees a *hand-rolled* `\.order` renumber in a loop and nothing
+   else — a blob-stored ordering, a renumber delegated to `CadenceOrderCommit`, and a bare
+   `move(fromOffsets:toOffset:)` are invisible to it (T-996). "Fills in" is spelled only as a write
+   through a collection `@Binding`; blanking a field is not covered (T-997). Both clauses are still
+   yours to apply by reading; keep pinning per site.
    A "swallowed commit" is `try?` on a `save()` **or** a `Cadence*Persistence` helper — the commit
    surface, not the method name — **one frame down included**.
 3. **Commit reach** — the function inserts **or deletes** and reaches no commit at all. A declaration

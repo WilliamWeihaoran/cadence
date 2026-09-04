@@ -27,9 +27,13 @@ import Testing
 ///
 /// - **Prose with no symbol in it.** T-563's whole ticket was a wrong premise carried in English
 ///   for days ("flakes about 1 run in 5"); no name in it was false, so nothing here would fire.
-/// - **Unqualified names.** ``foo(_:)`` on its own is invisible: 24 distinct call-shaped spans name
-///   a base declared nowhere in the tree, but half of them are AppKit/UIKit symbols a comment is
-///   entitled to mention. Measured and filed as its own ticket rather than guessed at.
+/// - ~~**Unqualified names.**~~ ``foo(_:)`` on its own **is** covered now, by a second sweep with a
+///   weaker question — [[T-718]], and the weakness is the point. "Declared anywhere in the tree" had
+///   no stable reading (139 offenders, or 54, depending on whether a closure-typed property counts)
+///   and still owed an SDK allowlist on top. *"Called anywhere in the tree"* has one reading and
+///   needs no allowlist, because the framework names a comment is entitled to mention are almost
+///   all names this app also calls. See `calledNames(inCode:)`. What stays uncovered is [[T-647]]'s
+///   own spelling: a name absent from the file the sentence is *about* but present elsewhere.
 /// - **SDK-rooted claims.** ``ModelContext.save()`` cannot be checked, because the repository
 ///   cannot enumerate a framework's members. The root must be a type this tree declares.
 /// - **Behaviour, as opposed to existence.** T-555's fixture comment described a harvest as
@@ -361,7 +365,90 @@ enum CadenceCommentSymbolClaim {
         }
     }
 
+    // MARK: - The unqualified half (T-718)
+
+    /// A backticked span in canonical Swift **selector** spelling with no type in front of it: a
+    /// lowercase base name, then a parenthesised list of argument labels and nothing else.
+    ///
+    /// **Why the spelling is the grammar and not a regex convenience.** [[T-718]] measured this
+    /// population with a loose `name(anything)` reading and had to carry three separate exclusions
+    /// for things that are not calls at all: `` `nonisolated(unsafe)` `` is a declaration modifier,
+    /// `` `list_tasks(limit: 1)` `` is an MCP tool invocation with a *value* in it, and
+    /// `` `sidebarListItem(contextID: UUID)` `` names a parameter's *type*. All three fall out
+    /// automatically once the span has to be a selector: every argument is `label:` or `_:` and
+    /// nothing follows the colon. That is a rule from the language, not a list that rots.
+    static func unqualifiedClaims(inComments comments: String) -> [(span: String, base: String)] {
+        CadenceSourceScan.captures("`([^`\\n]+)`", in: comments).compactMap { capture in
+            let span = capture.text
+            guard !span.contains("*") else { return nil }
+            guard let base = CadenceSourceScan.captures(
+                selectorSpelling,
+                in: span
+            ).first else { return nil }
+            return (span: span, base: base.text)
+        }
+    }
+
+    static let selectorSpelling =
+        "^([a-z_][A-Za-z0-9_]*)\\((?:(?:[A-Za-z_][A-Za-z0-9_]*|_):)*\\)$"
+
+    /// Every base name this repository **calls**, read off the code half of every source.
+    ///
+    /// **This is the definition [[T-718]] was missing, and the whole reason the half is landable.**
+    /// The ticket's attempts asked *"is this name declared anywhere"*, and that question has no
+    /// stable answer here: keying on `func` alone gave 139 offending base names, widening to
+    /// closure-typed `var`/`let` properties invoked as calls gave 54, and neither number had yet
+    /// paid for an SDK allowlist — `rollback` alone is a real `ModelContext` method called at 24
+    /// sites and would have needed its own exclusion on top of the AppKit/UIKit one. A five-fold
+    /// swing between two reasonable readings of one word is not a population to assert a floor over,
+    /// and o4 was right to decline it on 2026-09-04.
+    ///
+    /// *"Does this repository call this name"* has exactly one reading, and it dissolves the
+    /// allowlist rather than maintaining it: `rollback`, `map`, `min`, `max`,
+    /// `trimmingCharacters`, `setFill`, `withAlphaComponent`, `runModal`, `scrollTo` and the rest of
+    /// the stdlib and AppKit names in that measurement resolve **because the app calls them**, with
+    /// no list anywhere. Measured over the same five roots: 976 selector-shaped spans, 348 distinct
+    /// bases, **22 unresolved**, against 48 and 77 for the two "declared" readings.
+    ///
+    /// **It is a sound proxy, and strictly weaker than the rule it stands in for.** Anything absent
+    /// from every call site in the tree is also declared nowhere in it, so this half never refuses a
+    /// name the stricter reading would have allowed. What it gives up is [[T-647]]'s own spelling —
+    /// `insertSubtask` named in a comment about a file that has neither, and declared elsewhere in
+    /// the tree — which resolves here and always will. That half needs "the scope the sentence
+    /// implies" and is not this.
+    static func calledNames(inCode code: String) -> Set<String> {
+        Set(CadenceSourceScan.captures("\\b([A-Za-z_][A-Za-z0-9_]*)\\s*\\(", in: code).map(\.text))
+    }
+
+    /// The unqualified spans in one file that name a call this repository never makes.
+    ///
+    /// The file's own calls are merged in for the reason `offendingSpans` merges its own
+    /// declarations: a five-line fixture has to be answerable by the same detector the tree is.
+    static func unresolvedUnqualifiedSpans(in source: String, against called: Set<String>) -> [String] {
+        let regions = partition(source)
+        let world = called.union(calledNames(inCode: regions.code))
+        return unqualifiedClaims(inComments: regions.comments)
+            .filter { !world.contains($0.base) }
+            .map(\.span)
+    }
+
     // MARK: - Witnesses
+
+    /// A call-shaped span naming something this tree never calls.
+    static let unqualifiedPositiveWitness = """
+    /// The column sizes itself in `commentClaimGutterInset(for:)`.
+    enum CadenceCommentClaimGutterFixture {
+        static let inset = 4.0
+    }
+    """
+
+    /// The nearest possible miss: the same sentence, over a tree that does make the call.
+    static let unqualifiedNegativeWitness = """
+    /// The column sizes itself in `commentClaimGutterInset(for:)`.
+    enum CadenceCommentClaimGutterFixture {
+        static let inset = commentClaimGutterInset(for: .regular)
+    }
+    """
 
     /// A claim about a member the type does not have. `render` is nowhere in the tree.
     static let positiveWitness = """
@@ -587,6 +674,61 @@ enum CadenceCommentSymbolClaim {
 
     static var ledger: [String] { (deliberateTombstones + staleClaims).sorted() }
 
+    /// The unqualified half's ledger — [[T-718]].
+    ///
+    /// **Every entry is deliberate, and that is the measurement, not the hope.** All 27 were read
+    /// by hand when the half landed and every one falls into three groups, none of which misleads
+    /// a reader:
+    ///
+    /// - **Tombstones and counterfactuals**, 21 of them, the same class the qualified ledger is
+    ///   mostly made of. Their sentences read *"There is no noteLinks(in:)"*, *"moveAnchor(by:) …
+    ///   are gone with the ‹ ➤ › cluster"*, *"a shared splits(width:sides:) would trade five
+    ///   readable domain expressions for one generic"*, *"a property rather than
+    ///   isEmptyState(for:)"*. A sentence whose whole subject is a symbol's **absence** names an
+    ///   absent symbol on purpose. (Quoted without backticks here on purpose: this file is swept
+    ///   too, and prose about a ledger must not add rows to it.)
+    /// - **SDK members this app mentions but never calls**, 4 — reloadInputViews,
+    ///   validateMenuItem, unregisterForRemoteNotifications, ranges(of:options:). This is the
+    ///   residue of the framework allowlist [[T-718]] feared, and it is four lines rather than a
+    ///   list of AppKit, because `calledNames(inCode:)` resolves every framework name the app
+    ///   actually calls without being told about it. A ledger line names its file and its reason,
+    ///   which an allowlist of bare SDK names cannot.
+    /// - **Illustrative spans in these detectors' own prose**, 2: ``foo(_:)`` in the header above,
+    ///   and the one in the sentence about what `#function` hands back.
+    ///
+    /// **Zero stale claims.** No comment in the tree points a present-tense reader at an unqualified
+    /// call that was supposed to exist, which is a finding in itself: the defect [[T-647]] found was
+    /// the *scoped* spelling, not this one.
+    static let unqualifiedLedger = [
+        "Cadence/Models/GoalContributionSummary.swift `isHabit(_:dueOn:calendar:)`",
+        "Cadence/Services/MarkdownInlinePreviewSupport.swift `plainText(in:)`",
+        "Cadence/Services/MarkdownProgrammaticEditSupport.swift `reloadInputViews()`",
+        "Cadence/Services/MarkdownQuoteSupport.swift `continuation(after:)`",
+        "Cadence/Services/MarkdownReferenceDisplaySupport.swift `replacingWikiLinksWithDisplayText(in:)`",
+        "Cadence/Services/NoteReferenceSupport.swift `noteLinks(in:)`",
+        "Cadence/Shared/CadenceRegularPaneLayout.swift `regularInspectorWidth(for:)`",
+        "Cadence/Shared/CadenceRegularPaneLayout.swift `splits(width:sides:)`",
+        "Cadence/Shared/CadenceSettingsSectionCopy.swift `sectionTitle(_:of:)`",
+        "Cadence/Shared/Components/CadenceBoardColumnHeader.swift `kanbanColumnHeaderPadding()`",
+        "Cadence/iOS/iOSCalendarView.swift `moveAnchor(by:)`",
+        "Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift `readSelection(from:)`",
+        "Cadence/macOS/Editor/MarkdownTableInteractionSupport.swift `validateMenuItem(_:)`",
+        "Cadence/macOS/Views/TasksPanel.swift `taskSections(derived:)`",
+        "Cadence/macOS/Views/TasksPanelDerivedState.swift `isEmptyState(for:)`",
+        "Cadence/macOS/Views/TasksPanelDropCoordinator.swift `taskDropHandler(scopeTasks:dropKey:)`",
+        "CadenceTests/CadenceColorPaletteTests.swift `ranges(of:options:)`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `foo(_:)`",
+        "CadenceTests/CadenceLaunchWiringTests.swift `unregisterForRemoteNotifications()`",
+        "CadenceTests/CadenceSettingsSectionCopyTests.swift `sectionTitle(_:of:)`",
+        "CadenceTests/CadenceSharedBoardChromeTests.swift `kanbanColumnHeaderPadding()`",
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `ranges(of:options:)`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `taskDropHandler(scopeTasks:dropKey:)`",
+        "CadenceTests/MarkdownImagePasteTests.swift `readSelection(from:)`",
+        "CadenceTests/TemporaryDefaultsSupport.swift `freshDefaults(_:)`",
+        "CadenceTests/TemporaryDefaultsSupport.swift `someTestName()`",
+        "CadenceTests/iOSCalendarMetricsTests.swift `hourLabel(_:)`"
+    ]
+
     /// The two halves are one ledger and must not overlap or repeat.
     @Test func theLedgerIsWellFormed() {
         let tombstones = Self.deliberateTombstones
@@ -640,5 +782,114 @@ enum CadenceCommentSymbolClaim {
         let stale = Self.ledger.filter { !found.contains($0) }
         #expect(stale.isEmpty, "the ledger names a claim that is no longer there: \(stale)")
         #expect(found == Self.ledger)
+    }
+
+    /// The unqualified half ([[T-718]]): a call-shaped span with no type in front of it names
+    /// something this repository calls, or it is ledgered.
+    ///
+    /// **What a green run here does and does not say.** It says no comment points at a bare call
+    /// this tree never makes. It does **not** say the comment points at the right one: a name the
+    /// repo calls *somewhere* resolves here even when the sentence is about a file that has no such
+    /// thing, which is [[T-647]]'s own spelling and stays uncovered. That limit is the price of
+    /// having one stable reading of the question — see `calledNames(inCode:)` for why the stricter
+    /// reading was declined twice before this.
+    @Test func everyUnqualifiedCallShapedClaimInACommentIsCalledSomewhereOrIsLedgered() throws {
+        let sources = try Self.allSources()
+        var text: [String: String] = [:]
+        for source in sources { text[source.path] = source.text }
+
+        let called = sources.reduce(into: Set<String>()) { names, source in
+            names.formUnion(
+                CadenceCommentSymbolClaim.calledNames(
+                    inCode: CadenceCommentSymbolClaim.partition(source.text).code
+                )
+            )
+        }
+        // Non-vacuity for the index: an empty or tiny one makes every span below "unresolved" and
+        // a merely large one could still be the wrong half of the partition. `save` is a call this
+        // app makes 100+ times; `Cadence` is a type name, never a call, so a `called` set built
+        // from raw text rather than code would hold it.
+        #expect(called.count >= 2000, "the call index read \(called.count) names")
+        #expect(called.contains("save"))
+
+        let instrument = try CadenceScanInstrument(
+            "comment names a call this repository never makes",
+            fires: CadenceCommentSymbolClaim.unqualifiedPositiveWitness,
+            andNotOn: CadenceCommentSymbolClaim.unqualifiedNegativeWitness
+        ) { source in
+            !CadenceCommentSymbolClaim.unresolvedUnqualifiedSpans(in: source, against: called).isEmpty
+        }
+
+        let offendingPaths = try instrument.sweep(
+            sources.map(\.path),
+            atLeast: 800,
+            including: "Cadence/Shared/Theme.swift",
+            read: { path in try Self.source(path, in: text) }
+        )
+
+        var found: [String] = []
+        for path in offendingPaths {
+            let spans = Set(CadenceCommentSymbolClaim.unresolvedUnqualifiedSpans(
+                in: try Self.source(path, in: text),
+                against: called
+            ))
+            found.append(contentsOf: spans.map { "\(path) `\($0)`" })
+        }
+        found.sort()
+
+        let unlisted = found.filter { !Self.unqualifiedLedger.contains($0) }
+        #expect(unlisted.isEmpty, "a comment names a call this repository never makes: \(unlisted)")
+        let stale = Self.unqualifiedLedger.filter { !found.contains($0) }
+        #expect(stale.isEmpty, "the unqualified ledger names a span that is no longer there: \(stale)")
+        #expect(found == Self.unqualifiedLedger)
+    }
+
+    /// The unqualified ledger is sorted, unique, and does not overlap the qualified one.
+    @Test func theUnqualifiedLedgerIsWellFormed() {
+        let ledger = Self.unqualifiedLedger
+        #expect(Set(ledger).count == ledger.count)
+        #expect(ledger == ledger.sorted())
+        #expect(ledger.count == 27)
+        #expect(Set(ledger).isDisjoint(with: Set(Self.ledger)))
+    }
+
+    /// The selector spelling is the exclusion, and these are the three spans it subtracts.
+    ///
+    /// [[T-718]]'s loose reading carried them as separate problems; none of them is a call, and all
+    /// three fall out of requiring canonical label syntax. Pinned so a widening of the pattern —
+    /// "allow a value after the colon", "allow a bare argument" — cannot happen silently.
+    @Test func onlyCanonicalSelectorSpellingCounts() {
+        for span in ["nonisolated(unsafe)", "list_tasks(limit: 1)", "sidebarListItem(contextID: UUID)"] {
+            #expect(
+                CadenceCommentSymbolClaim.unqualifiedClaims(inComments: "/// `\(span)`").isEmpty,
+                "\(span) is not a selector and must not be read as a call"
+            )
+        }
+        for span in ["kanbanColumnHeaderPadding()", "readSelection(from:)", "splits(width:sides:)"] {
+            #expect(
+                CadenceCommentSymbolClaim.unqualifiedClaims(inComments: "/// `\(span)`").count == 1,
+                "\(span) is a selector and must be read as a call"
+            )
+        }
+        // Qualified spans stay the other half's business: this one must not double-report them.
+        #expect(CadenceCommentSymbolClaim.unqualifiedClaims(inComments: "/// `Theme.accent(for:)`").isEmpty)
+    }
+
+    /// The call index is built from the **code** half, and a name that only ever appears in prose
+    /// or in a string literal does not resolve.
+    ///
+    /// Without this the half would be silenced by its own subject matter: a comment naming
+    /// something, in a file whose other comments name it too, would vouch for itself.
+    @Test func theCallIndexReadsCodeAndNotProseOrLiterals() {
+        let source = """
+        /// The row calls `commentClaimGutterInset(for:)`, and this line is prose.
+        enum CadenceCommentClaimGutterFixture {
+            static let name = "commentClaimGutterInset(for:)"
+        }
+        """
+        #expect(
+            CadenceCommentSymbolClaim.unresolvedUnqualifiedSpans(in: source, against: [])
+                == ["commentClaimGutterInset(for:)"]
+        )
     }
 }

@@ -144,6 +144,60 @@ struct CadenceSaveCommitDisciplineTests {
         )
     }
 
+    /// Half 2b: no hand-rolled `order` renumber sits over a swallowed commit, or none (T-614,
+    /// [[T-871]]).
+    ///
+    /// **Read `rearrangementOffenders`' doc before believing this covers the clause.** T-614's
+    /// "or a rearrangement the user can see" is a picture, not a word, and half 2's vocabulary is
+    /// words. What this half enforces is the *spelling* [[T-868]] and [[T-869]] were written in —
+    /// a `for` loop over `\.order` — and it is blind by construction to a blob-stored ordering
+    /// ([[T-870]]), to a renumber delegated to `CadenceOrderCommit`, and to a bare
+    /// `move(fromOffsets:toOffset:)`. A green run here is evidence about one spelling, not about
+    /// the clause. The clause itself is enforced by whoever remembers it; [[T-996]] is the standing
+    /// note that says so.
+    @Test func noRenumberTheUserCanSeeSitsOverASwallowedOrMissingCommit() throws {
+        let existence = try existenceIndexOverTheApp()
+        #expect(existence.namesRead >= 30, "the existence index read \(existence.namesRead) callee names")
+
+        let offenders = try saveCommitSweep(
+            instrument: CadenceSaveCommitRule.rearrangementInstrument(changing: existence),
+            allowed: CadenceSaveCommitRule.rearrangementExemptions
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders) renumber `order` across a run of rows and either swallow the commit or \
+            never make one. The rearrangement on screen is the success report, and a refused one \
+            reverts at next launch with nothing for the user to retry. Commit through \
+            CadenceOrderCommit.commit and show CadenceOrderCommit.failureNotice on `false`.
+            """
+        )
+    }
+
+    /// The non-vacuity this half needs beyond its own witness pair: the six declarations that do
+    /// renumber in a loop are still there and are still read as renumbers.
+    ///
+    /// Without this, a `renumbersInALoop` that stopped matching — a regex typo, a `blockEnd` that
+    /// returned the wrong brace — leaves the half above permanently green over a repository that
+    /// still reorders things. Named sites rather than a count, because two of the six are
+    /// allocations and could legitimately leave.
+    @Test func theRearrangementHalfStillReadsTheAppsHandWrittenRenumbers() throws {
+        let existence = try existenceIndexOverTheApp()
+        for (path, name) in [
+            ("Cadence/macOS/Views/SettingsView.swift", "moveContext"),
+            ("Cadence/iOS/iOSSettingsView.swift", "moveContext"),
+        ] {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            // Reading the renumber: the declaration is there and this half parses it as one.
+            #expect(
+                CadenceSaveCommitRule.renumbersInALoopForTesting(named: name, in: source) == true,
+                "\(path):\(name) is no longer read as a renumber, so the half above proves nothing"
+            )
+            // And it is not an offender, which is the claim T-614 fixed it to make.
+            #expect(!CadenceSaveCommitRule.rearrangementOffenders(in: source, changing: existence).contains(name))
+        }
+    }
+
     /// Half 3: no declaration inserts and reaches no commit at all (T-503).
     ///
     /// The hole in the other two: both key on the *presence* of a `try? …save()`, so a function
@@ -1039,6 +1093,60 @@ struct CadenceSaveCommitDisciplineTests {
         #expect(CadenceSaveCommitRule.reportOffenders(in: compares).isEmpty)
     }
 
+    /// [[T-664]]: a surface that stays open and **fills itself in** reports success, and until now
+    /// the vocabulary had no spelling for it.
+    ///
+    /// The fixture is `TagPickerPopoverViews.restore` as it stood before [[T-652]] — the site the
+    /// measurement in T-664 was taken from, and the one every dismissal spelling walked past
+    /// because nothing here closes and nothing here goes `nil`.
+    @Test func halfTwoReadsAWriteThroughACollectionBindingAsAReport() throws {
+        let fillsIn = """
+        struct TagPickerPopover: View {
+            @Binding var selectedTags: [Tag]
+
+            private func restore(_ tag: Tag) {
+                tag.isArchived = false
+                try? modelContext.save()
+                if !selectedTags.contains(where: { $0.id == tag.id }) {
+                    selectedTags.append(tag)
+                }
+                query = ""
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: fillsIn) == ["restore"])
+
+        // The nearest miss, and the reason the needle is not `.append(` on its own: the same
+        // append, into the view's own `@State` scratch list rather than out through the binding.
+        // Nobody outside the frame is told anything.
+        let appendsToItsOwnState = """
+        struct TagPickerPopover: View {
+            @State private var recentTags: [Tag] = []
+
+            private func restore(_ tag: Tag) {
+                tag.isArchived = false
+                try? modelContext.save()
+                recentTags.append(tag)
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: appendsToItsOwnState).isEmpty)
+
+        // And reading the binding is not writing it: `contains` above must not be what fired.
+        let onlyReadsTheBinding = """
+        struct TagPickerPopover: View {
+            @Binding var selectedTags: [Tag]
+
+            private func refresh(_ tag: Tag) {
+                tag.isArchived = false
+                try? modelContext.save()
+                if selectedTags.contains(where: { $0.id == tag.id }) { highlight(tag) }
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: onlyReadsTheBinding).isEmpty)
+    }
+
     // MARK: - Exemptions rot
 
     /// Each exemption claims a specific file still breaks the rule in a specific named function for
@@ -1067,6 +1175,11 @@ struct CadenceSaveCommitDisciplineTests {
                 "report one frame down",
                 CadenceSaveCommitRule.indirectReportExemptions,
                 { CadenceSaveCommitRule.indirectReportOffenders(in: $0, swallowing: swallowing) }
+            ),
+            (
+                "rearrangement",
+                CadenceSaveCommitRule.rearrangementExemptions,
+                { CadenceSaveCommitRule.rearrangementOffenders(in: $0, changing: existence) }
             ),
         ] as [(String, [String: [String]], (String) -> [String])] {
             for (path, expected) in exemptions {
@@ -1528,6 +1641,128 @@ enum CadenceSaveCommitRule {
             .uniqued()
     }
 
+    // MARK: - Half 2b: a rearrangement the user can see (T-614, T-871)
+
+    /// A hand-rolled `order` renumber that reaches a swallowed commit, or none — [[T-871]], and
+    /// **the only part of [[T-614]]'s clause that a text scan can be sound about.**
+    ///
+    /// **The clause, and why it has no spelling.** `AGENTS.md`'s half 2 lists the ways a screen says
+    /// it worked, and every one of them is a *word*: `dismiss…()`, `is/show<X> = false`,
+    /// `on(Save|Done|Complete|Commit)(`, `return true`. T-614 added "**or a rearrangement the user
+    /// can see**" — a row that stays where you dropped it outclaims a dismissed sheet, and a refused
+    /// reorder reverts at next launch with nothing to retry. That one is not a word. It is a
+    /// *picture*, and `successReport` cannot grow an alternation for it.
+    ///
+    /// **What this fires on instead, and it is deliberately narrower than the clause.** The shape
+    /// [[T-868]] and [[T-869]] were actually written in: a `for` loop assigning `\.order` on rows the
+    /// frame did not just create, in a declaration that owns its unit of work and either swallows
+    /// its commit or reaches none. That is a proxy for the clause, not the clause. It is *sound* —
+    /// every site it names really does renumber and really does fail to commit — and it is
+    /// **incomplete in three measured ways**, all of which are stated here so that nobody reads a
+    /// green run as the clause being covered:
+    ///
+    /// 1. **An ordering that is not an `order` field is invisible.** [[T-870]] was the kanban
+    ///    *column* order, a re-serialised `[TaskSectionConfig]` blob on the list.
+    ///    `CadenceOrderCommit`'s own doc names this blind spot in the same words.
+    /// 2. **A renumber delegated to a helper is invisible**, and that is now the *right* way to
+    ///    write one: five of the seven sites T-868/T-869 fixed pass `writeOrder: { $0.order = $1 }`
+    ///    to `CadenceOrderCommit.commit`, where the loop lives. So this half sees the wrong spelling
+    ///    and not the right one — which is the useful polarity, but it means the count it reports is
+    ///    not the count of reorder surfaces.
+    /// 3. **`move(fromOffsets:toOffset:)` on a bound array is invisible.** SwiftUI's own reorder
+    ///    gesture rearranges the array and never writes a field.
+    ///
+    /// **Why it is not `!disclaimsOwnership` by accident.** `TagSupport.seedDefaultTags(in:…)`
+    /// writes `tag.order = index` in an `.enumerated()` loop and ends `try? context.save()`, and it
+    /// is the single measured site this exclusion subtracts. It is handed its `ModelContext`, so its
+    /// caller owns the unit of work — the same rule half 3 uses, for the same reason — and it is
+    /// allocating initial positions rather than rearranging a sequence a user just dragged.
+    ///
+    /// Measured over `Cadence/` at `f75c2ba`: **six** declarations renumber `\.order` inside a loop,
+    /// and after T-868/T-869/T-870 every one of them commits. The exemption list is empty and is
+    /// meant to stay that way.
+    static func rearrangementOffenders(in source: String, changing index: ExistenceIndex) -> [String] {
+        let parsed = parsedDeclarations(in: source)
+        let committing = committingNames(in: parsed, index: index)
+        return parsed
+            .filter { declaration in
+                renumbersInALoop(declaration.body)
+                    && !declaration.disclaimsOwnership
+                    && (declaration.swallowsDirectly
+                        || !commitsItself(declaration, committing: committing, index: index))
+            }
+            .map(\.name)
+            .uniqued()
+    }
+
+    /// Whether the body assigns `\.order` **inside a loop**.
+    ///
+    /// In a loop rather than anywhere, because a single `row.order = next` is an *allocation* — where
+    /// a new row goes — and cannot be a rearrangement of rows that were already placed.
+    /// `CadenceOrderAllocation` is the family member that owns that case and it cannot fail.
+    private static func renumbersInALoop(_ body: [Character]) -> Bool {
+        let text = String(body)
+        guard let regex = try? NSRegularExpression(pattern: "\\bfor\\b[^\\n{]*\\{") else { return false }
+        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).contains { match in
+            guard let range = Range(match.range, in: text) else { return false }
+            let opens = text.distance(from: text.startIndex, to: range.upperBound)
+            let loop = String(body[opens..<blockEnd(in: body, from: opens)])
+            return CadenceSourceScan.matchCount(orderWrite, in: loop) > 0
+        }
+    }
+
+    /// `something.order = …`, and not `==`. Anchored on the member so a local named `order` — a
+    /// `for (index, order) in …` binding, of which this repo has several — is not read as a field.
+    private static let orderWrite = "\\w\\.order\\s*=(?!=)"
+
+    /// The reader `theRearrangementHalfStillReadsTheAppsHandWrittenRenumbers` uses to prove the
+    /// loop matcher still matches, without exposing it to anything else.
+    static func renumbersInALoopForTesting(named name: String, in source: String) -> Bool? {
+        guard let declaration = parsedDeclarations(in: source).first(where: { $0.name == name }) else {
+            return nil
+        }
+        return renumbersInALoop(declaration.body)
+    }
+
+    /// Empty, and the assertion is that it stays empty: every rearrangement in the app commits and
+    /// names its refusal. An entry here would be a screen that rearranges over a store that has not
+    /// agreed, which is the one failure in this rule with no halfway reading — the next fetch does
+    /// not correct it, it silently undoes it.
+    static let rearrangementExemptions: [String: [String]] = [:]
+
+    static func rearrangementInstrument(changing index: ExistenceIndex) throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "a renumber the user can see over a commit that was swallowed or never made",
+            fires: """
+            private func reorderTask(from source: IndexSet, to destination: Int) {
+                var ordered = tasks
+                ordered.move(fromOffsets: source, toOffset: destination)
+                for (index, task) in ordered.enumerated() {
+                    task.order = index
+                }
+                try? modelContext.save()
+            }
+            """,
+            // The nearest negative, and it is `ListDetailComponents.reorderTask` as [[T-869]] left
+            // it: the same loop, committed through the shared surface, with the answer handed back
+            // for the caller to turn into `CadenceOrderCommit.failureNotice`. A detector that only
+            // asked "does this function write `\\.order` in a loop" would fire on this.
+            andNotOn: """
+            private func reorderTask(from source: IndexSet, to destination: Int) -> Bool {
+                var ordered = tasks
+                ordered.move(fromOffsets: source, toOffset: destination)
+                return CadenceOrderCommit.commit(
+                    ordered,
+                    readOrder: { $0.order },
+                    writeOrder: { $0.order = $1 },
+                    in: modelContext
+                )
+            }
+            """,
+            by: { !rearrangementOffenders(in: $0, changing: index).isEmpty }
+        )
+    }
+
     // MARK: - Existence, one frame down (T-627 gap 1)
 
     /// The callees that leave an existence change **pending on their caller**: a declaration that
@@ -1730,11 +1965,13 @@ enum CadenceSaveCommitRule {
     static func reportOffenders(in source: String) -> [String] {
         var names: [String] = []
         let persisted = persistedReport(in: source)
+        let filledIn = filledInReport(in: source)
         for declaration in declarations(in: source) {
             let body = Array(declaration.body)
             let vocabulary = successReport(
                 returning: declaration.signature,
                 persisted: persisted,
+                filledIn: filledIn,
                 buildingItsOwnAnswer: true
             )
             let cancelled = cancelledWorkItemNames(in: declaration.body)
@@ -1829,6 +2066,7 @@ enum CadenceSaveCommitRule {
         let direct = Set(reportOffenders(in: source))
         var names: [String] = []
         let persisted = persistedReport(in: source)
+        let filledIn = filledInReport(in: source)
         for declaration in parsed where !direct.contains(declaration.name) {
             // **`buildingItsOwnAnswer: false`**, and it is measured rather than cautious. The
             // Optional spelling is a claim by the frame that *builds* the answer; one frame down,
@@ -1842,6 +2080,7 @@ enum CadenceSaveCommitRule {
             let vocabulary = successReport(
                 returning: declaration.signature,
                 persisted: persisted,
+                filledIn: filledIn,
                 buildingItsOwnAnswer: false
             )
             let cancelled = cancelledWorkItemNames(in: declaration.text)
@@ -2173,10 +2412,12 @@ enum CadenceSaveCommitRule {
     private static func successReport(
         returning signature: String,
         persisted: String?,
+        filledIn: String?,
         buildingItsOwnAnswer: Bool
     ) -> String {
         var spellings = [successReport]
         if let persisted { spellings.append(persisted) }
+        if let filledIn { spellings.append(filledIn) }
         if CadenceSourceScan.matchCount("->\\s*Bool\\b", in: signature) > 0 {
             spellings.append("\\breturn true\\b")
         }
@@ -2224,6 +2465,45 @@ enum CadenceSaveCommitRule {
             .map(\.text)
         guard !names.isEmpty else { return nil }
         return viewState + "(" + Set(names).sorted().joined(separator: "|") + ")\\s*=(?!=)"
+    }
+
+    /// Writing a **collection `@Binding`** — [[T-664]], and the vocabulary's first spelling for a
+    /// surface that reports by *filling in* rather than by closing.
+    ///
+    /// Every other member of `successReport` is a **dismissal**: the sheet closes, the flag goes
+    /// `false`, the completion handler runs. [[T-497]] caught `TagPickerPopoverViews.saveEdits` and
+    /// `.archive` on exactly that spelling — both end `editingTag = nil` — and could not see
+    /// `.restore`, which stays open and reports by putting the chip in the field:
+    /// `selectedTags.append(tag)`, then `query = ""`. The popover made the strongest claim it makes
+    /// — *the tag is back and it is on this task* — over a store that had refused the un-archive.
+    ///
+    /// **Why a collection `@Binding` and not `.append(` generally.** `.append(` alone is one of the
+    /// commonest lines in the app and says nothing about who is being told. A write **through a
+    /// binding** is by definition a report *outward*: the value lands in state this view does not
+    /// own, in a parent that is redrawn from it and has no idea a commit was refused. That is the
+    /// same argument `viewState`'s anchor makes in the other direction — `context.isArchived =
+    /// false` is a model field and is left alone, `isPresented = false` is the screen moving on.
+    ///
+    /// **Measured, and the scope is the measurement.** `@Binding var <name>: [...]` is **11**
+    /// declarations across 8 files under `Cadence/`, of which three hold a swallowed commit at all;
+    /// `@Binding var` unrestricted is far larger and mostly scalar draft fields a sheet edits as its
+    /// ordinary job, which is a different thing from handing a parent a finished row. Widening past
+    /// collections needs its own false-positive count before it is worth having.
+    ///
+    /// **What it still cannot see.** The other half of `restore`'s report — `query = ""`, the search
+    /// field blanking — has no spelling here and is not one this scan should try to grow: `= ""` on
+    /// view state is ordinary field clearing. This covers the append; it does not cover "the surface
+    /// filled itself in" in general, which stays a rule a reader enforces. See [[T-996]].
+    ///
+    /// `nil` when the file declares none, so the needle is never an empty alternation.
+    private static func filledInReport(in source: String) -> String? {
+        let names = CadenceSourceScan
+            .captures("@Binding\\s+var\\s+(\\w+)\\s*:\\s*\\[", in: source)
+            .map(\.text)
+        guard !names.isEmpty else { return nil }
+        return viewState
+            + "(" + Set(names).sorted().joined(separator: "|") + ")"
+            + "(?:\\.(?:append|insert|remove\\w*|move\\w*)\\b|\\s*=(?!=))"
     }
 
     private static func nextSave(in body: [Character], from start: Int) -> (start: Int, end: Int)? {
