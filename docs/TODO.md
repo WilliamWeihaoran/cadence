@@ -1680,31 +1680,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   item stayed on the hardware list for weeks because of an untested claim about the tooling rather than
   about the app. Re-triage before anyone carries it to a device.
 
-- [T-743] **Merging two duplicate lists strands the surviving list's focus ledger.**
-  `DataIntegrityRepairService.mergeArea` / `mergeProject` reconcile `loggedMinutes` with
-  `max(target, source)` and re-point the duplicate's tasks, notes, documents, links and goal links —
-  but `Area.focusSessions` / `Project.focusSessions` are new with [[T-621]] and are not in that list.
-  So the duplicate's `FocusSessionLog` rows keep pointing at a row that is about to be deleted, and
-  the survivor's counter can no longer be explained by its own rows.
-  **The consequence is bounded by the only-ever-raise rule**: `reconcile` cannot lower the survivor,
-  so nothing is destroyed — the ledger is merely blind to the merged half, and future sessions
-  rebuild from the surviving counter. Still worth re-pointing, and it is a two-line addition beside
-  the re-points already there. Same shape as [[T-621]]'s own note that a new to-many on an existing
-  model has to be walked by everything that walks the old ones.
-
-- [T-744] **Nothing collects a `FocusSessionLog` whose subject was deleted.**
-  [[T-621]] gave the three focus counters `.nullify` delete rules on purpose: deleting a task has
-  never decremented its list's `loggedMinutes`, and a cascade would have started doing exactly that
-  the next time `reconcile(in:)` ran. The cost is that deleting a task or a list leaves its rows
-  behind with every subject reference `nil`.
-  They are inert — `reconcile` skips a row with no subject, and `CadencePrivacyDataResetService`
-  deletes them with everything else — so this is storage and CloudKit records, not wrong numbers.
-  It is also **exactly the orphan sweep [[T-328]] argues `DataIntegrityRepairService` must not
-  grow**: "this row has no subject" is indistinguishable from "its subject has not synced yet", and
-  the emptier the store the more it would delete. So the honest options are a sweep gated on
-  something that knows sync finished, or a user-initiated pass — not four more lines in the startup
-  repair. Filed so the boundary is written down rather than rediscovered.
-
 - [T-745] **`CadenceDefaults` covers `@AppStorage` and the calendar memory, and nothing else.**
   [[T-735]] routed every `@AppStorage` through `defaultAppStorage` on the scene and pointed
   `CadenceCalendarDateMemory` at the same store, which is what the incident ran through. It does not
@@ -2021,6 +1996,32 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   already a second synced caller — so the sweep is worth having before one is added, not after.
 
 ## Done
+- [T-743] **CLOSED 2026-09-04 (`11c1ec65`).** `mergeArea` / `mergeProject` re-pointed
+  the duplicate's tasks, notes, documents, links and goal links away from a list about to be
+  deleted, but never `Area.focusSessions` / `Project.focusSessions` (new with [[T-621]]). A
+  duplicate's `FocusSessionLog` rows lost their subject to the `.nullify` delete rule the moment
+  the duplicate was removed, rather than surviving re-pointed at the survivor -- bounded by the
+  only-ever-raise rule (`reconcile` could not lower the survivor's counter), but the ledger could
+  no longer explain it. Fixed by fetching `FocusSessionLog` into `RepairStore` and re-pointing rows
+  onto the merge target before the delete, the same shape as the existing re-points; a new
+  `movedFocusSessions` counter is wired through the hand-written `Codable` init [[T-445]] added.
+  Failing-first (the new tests do not compile against the pre-fix report shape) and mutation-killed
+  (`scripts/mutate.sh`, both re-point loops) against an isolated `git archive HEAD` tree, verified
+  across a second `ModelContext`.
+
+- [T-744] **CLOSED 2026-09-04, decided against a collector -- verified true, not fixed.** Re-verified
+  both halves against source: `.nullify` on all three focus relationships is confirmed deliberate
+  (`AppTask.swift`, `Area.swift`, `Project.swift` all cite [[T-621]]'s reasoning), and a
+  `FocusSessionLog` with every subject reference `nil` really does survive `repairIfNeeded`
+  untouched -- pinned by extending the [[T-328]] orphan-boundary test with exactly that row, checked
+  from a second `ModelContext`. **Not building a collector**, because doing so would be the orphan
+  sweep [[T-328]] already rules out for this service, for the identical reason: "this row's subject
+  is `nil`" is indistinguishable from "its subject has not synced in yet" on a store
+  `PersistenceController.performStartupMaintenance` runs against the instant the container opens,
+  with no gate on CloudKit sync state -- the emptier the store, the more such a sweep would delete.
+  A sweep gated on a real signal that sync has finished, or a user-initiated pass, remains open; the
+  four extra lines T-744 originally asked for are not that gate. The ticket's own text already
+  named this boundary; this closure is the verification, not a new argument.
 
 - [T-661] **The portable export carries a device-local calendar identifier.** Found while landing
   [[T-624]]'s evidence gate; not fixed, and it is a decision rather than a bug.
