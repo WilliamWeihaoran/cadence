@@ -64,10 +64,7 @@ struct TaskTitleInlineTagPicker: View {
     }
 
     private var searchRow: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.dim)
+        CadenceSearchFieldRow(query: $query, focus: $isSearchFocused) {
             TextField("Find or create tag", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -95,10 +92,7 @@ struct TaskTitleInlineTagPicker: View {
                     onRestoreLiteral()
                     return .handled
                 }
-            CadenceSearchFieldClearButton(text: $query, glyphSize: 11, focus: $isSearchFocused)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     private func createRow(isHighlighted: Bool) -> some View {

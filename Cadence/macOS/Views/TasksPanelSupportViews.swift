@@ -368,10 +368,7 @@ struct TaskSectionPickerBadge: View {
         .modifier(TaskPickerTriggerStyle(breadcrumbSegment: breadcrumbSegment))
         .popover(isPresented: $showPicker) {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
+                CadenceSearchFieldRow(query: $searchQuery, focus: $isSearchFocused) {
                     TextField("Search…", text: $searchQuery)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
@@ -391,10 +388,7 @@ struct TaskSectionPickerBadge: View {
                             highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: 1, count: filteredSections.count)
                             return .handled
                         }
-                    CadenceSearchFieldClearButton(text: $searchQuery, glyphSize: 11, focus: $isSearchFocused)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
 
                 Divider().background(Theme.borderSubtle)
 

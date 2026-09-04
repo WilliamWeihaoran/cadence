@@ -242,10 +242,7 @@ struct ContainerPickerPopoverContent: View {
     }
 
     private var searchBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.dim)
+        CadenceSearchFieldRow(query: $searchQuery, focus: $isSearchFocused) {
             TextField("Search…", text: $searchQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -262,10 +259,7 @@ struct ContainerPickerPopoverContent: View {
                     highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: 1, count: flatFiltered.count)
                     return .handled
                 }
-            CadenceSearchFieldClearButton(text: $searchQuery, glyphSize: 11, focus: $isSearchFocused)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 }
 
