@@ -308,7 +308,7 @@ struct iOSTaskRowRepeatChip: View {
 
     var body: some View {
         iOSTaskAttributeChip(
-            title: task.recurrenceRule.shortLabel,
+            title: task.recurrenceRule.label,
             field: CadenceTaskControlAccessibility.recurrence,
             systemImage: task.recurrenceRule.systemImage,
             isSet: true,
@@ -693,7 +693,7 @@ struct iOSTaskRowContextMenu: View {
                 }
             }
         } label: {
-            Label(task.recurrenceRule == .none ? "Repeat" : "Repeat: \(task.recurrenceRule.shortLabel)", systemImage: "repeat")
+            Label(task.recurrenceRule == .none ? "Repeat" : "Repeat: \(task.recurrenceRule.label)", systemImage: "repeat")
         }
     }
 

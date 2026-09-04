@@ -341,7 +341,7 @@ enum MarkdownTaskEmbedDrawing {
 
         if let recurrence = TaskRecurrenceRule(rawValue: task.recurrenceRaw), recurrence != .none {
             chips.append(Chip(
-                label: recurrence.shortLabel,
+                label: recurrence.label,
                 color: MarkdownStylist.greenColor,
                 field: .recurrence,
                 importance: ChipImportance.recurrence

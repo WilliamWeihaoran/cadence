@@ -302,19 +302,18 @@ nonisolated enum TaskRecurrenceRule: String, Codable, CaseIterable, Hashable {
     case monthly = "monthly"
     case yearly  = "yearly"
 
+    /// **T-720: this used to have a `shortLabel` twin, spelled identically on four of its five
+    /// arms.** Every caller that read `shortLabel` (`iOSTaskRowRepeatChip`, the collapsed
+    /// `Repeat:` menu label, the embedded task-card chip, `FocusSidebar`'s repeat chip) only ever
+    /// does so behind a guard that already excludes `.none` — `task.recurrenceRule != .none` or
+    /// `task.isRecurring` — so the one arm where the two spellings actually differed ("None" vs
+    /// "Never") was never reachable through any of them. There was no caller for the distinction
+    /// to serve, so there is one property instead of a base and a "short" override that was not
+    /// shorter. A picker or menu listing every case — including the "turn recurrence off" choice —
+    /// still reads `.none` as "Never".
     var label: String {
         switch self {
         case .none: return "Never"
-        case .daily: return "Daily"
-        case .weekly: return "Weekly"
-        case .monthly: return "Monthly"
-        case .yearly: return "Yearly"
-        }
-    }
-
-    var shortLabel: String {
-        switch self {
-        case .none: return "None"
         case .daily: return "Daily"
         case .weekly: return "Weekly"
         case .monthly: return "Monthly"
