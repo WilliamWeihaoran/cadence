@@ -156,6 +156,52 @@ struct CadenceTaskDateEditingSurfaceTests {
         #expect(task.scheduledStartMin == -1)
     }
 
+    /// A commit that always refuses, the way every other save-commit suite here spells it.
+    private struct CommitRefused: Error {}
+
+    /// **T-761.** `setScheduledTime`/`clearScheduledTime` answer `false` on a refused commit and
+    /// leave the field written — the in-place contract `CadenceInPlaceEditFlush` gives every other
+    /// caller of it, `setPlanningDates` included. Behavioural, not just source shape: a `commit:`
+    /// override is the only way to provoke the throw out of an in-memory container, and this is
+    /// what `iOSTaskDetailSheetSections`' time picker reads to decide whether it may close.
+    @Test func aRefusedTimeWriteAnswersFalseAndLeavesTheMinuteWhereItWasSet() throws {
+        let modelContext = try context()
+        let task = try seededTask(in: modelContext)
+
+        #expect(
+            !CadenceTaskDateEditing.setScheduledTime(
+                14 * 60,
+                for: task,
+                in: modelContext,
+                reconciler: .inert,
+                commit: { _ in throw CommitRefused() }
+            )
+        )
+        #expect(task.scheduledStartMin == 14 * 60, "the refused write took the minute the user picked")
+
+        #expect(
+            CadenceTaskDateEditing.setScheduledTime(14 * 60, for: task, in: modelContext, reconciler: .inert)
+        )
+        let stored = try ModelContext(modelContext.container).fetch(FetchDescriptor<AppTask>())
+        #expect(stored.map(\.scheduledStartMin) == [14 * 60])
+    }
+
+    /// Same answer, for the picker's "No time" row.
+    @Test func aRefusedTimeClearAnswersFalseAndLeavesTheMinuteCleared() throws {
+        let modelContext = try context()
+        let task = try seededTask(in: modelContext)
+
+        #expect(
+            !CadenceTaskDateEditing.clearScheduledTime(
+                task,
+                in: modelContext,
+                reconciler: .inert,
+                commit: { _ in throw CommitRefused() }
+            )
+        )
+        #expect(task.scheduledStartMin == -1, "clearing still zeroed the field even though the commit was refused")
+    }
+
     // MARK: - Shape: the surfaces route through it
 
     /// Every routed date/time surface, with what it must no longer contain.
