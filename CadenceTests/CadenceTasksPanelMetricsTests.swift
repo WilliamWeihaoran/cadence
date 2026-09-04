@@ -223,4 +223,131 @@ struct CadenceTasksPanelMetricsTests {
             "the list detail's inset stopped clearing its own furniture; re-decide the panel's"
         )
     }
+
+    // MARK: - T-680: three dead `allTasks` parameters
+
+    /// `TasksPanelCompletedSectionView.allTasks` was a stored property no line of `body` read.
+    /// Swift does not warn on an unread stored property, so it survived every green run; only a
+    /// source scan can see it. Scoped to the one call site rather than the whole file, because
+    /// `TasksPanel` legitimately threads its own `allTasks` into `TasksPanelDerivedState` and
+    /// `TasksPanelDropCoordinator` two call sites away, and a whole-file needle would not
+    /// distinguish "removed from the section view" from "never had one to begin with".
+    @Test func thePanelsCompletedSectionNoLongerCarriesTheDeadAllTasksParameter() throws {
+        let panel = try Self.panelSource()
+        let completedSection = try #require(
+            CadenceSourceScan.functionBody(named: "completedSection", in: panel),
+            "TasksPanel.completedSection moved or was renamed"
+        )
+        #expect(completedSection.contains("TasksPanelCompletedSectionView("))
+        #expect(
+            !completedSection.contains("allTasks:"),
+            "TasksPanel still threads allTasks into TasksPanelCompletedSectionView"
+        )
+
+        let sections = try Self.sectionSource()
+        let completedView = try #require(
+            CadenceSourceScan.declarationBody("struct TasksPanelCompletedSectionView: View", in: sections)
+        )
+        #expect(
+            !completedView.contains("let allTasks:"),
+            "TasksPanelCompletedSectionView still declares the dead allTasks stored property"
+        )
+    }
+
+    /// The same defect, two more sites in the list detail page: `ListTasksGroupSectionView` and
+    /// `ListTasksCompletedSectionView` both carried an `allTasks` no body read. Removing the
+    /// parameter also retired `ListTasksView`'s `@Query private var allTasks` in
+    /// `ListDetailComponents.swift` — it existed only to feed these two call sites, so once they
+    /// stopped reading it, it was a live SwiftData query firing every body pass for nothing.
+    @Test func theListDetailPageNoLongerCarriesTheDeadAllTasksParameterOrItsQuery() throws {
+        let support = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")
+        )
+        for declaration in [
+            "struct ListTasksGroupSectionView: View",
+            "struct ListTasksCompletedSectionView: View",
+        ] {
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: support))
+            #expect(!body.contains("let allTasks:"), "\(declaration) still declares the dead allTasks parameter")
+        }
+
+        let components = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailComponents.swift")
+        )
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: components))
+        #expect(body.contains("ListTasksGroupSectionView("))
+        #expect(body.contains("ListTasksCompletedSectionView("))
+        #expect(
+            !body.contains("allTasks:"),
+            "ListDetailComponents still threads allTasks into the list section views"
+        )
+        #expect(
+            !components.contains("@Query(sort: \\AppTask.createdAt, order: .reverse) private var allTasks"),
+            "ListTasksView's allTasks query has no reader left and should have gone with the parameter"
+        )
+    }
+
+    // MARK: - T-681: `List` row modifiers inside a `LazyVStack`
+
+    /// `TasksPanelIntentSectionView`'s header used to chain `.listRowBackground(Color.clear)` and
+    /// `.listRowSeparator(.hidden)` — both `List` row modifiers — but `TasksPanel` draws every
+    /// section inside `ScrollView { LazyVStack(pinnedViews: .sectionHeaders) }`, where a `List` row
+    /// modifier is a no-op. Pinned against the container claim itself, not assumed: a future
+    /// `TasksPanel` that switches back to a real `List` would make the removal wrong, and this
+    /// would catch it.
+    ///
+    /// **Not a sweep.** `TaskListDisplayRow` carries the identical pair and keeps them: its other
+    /// caller, `ListTasksCompletedSectionView`, sits inside `ListDetailComponents`'s real `List`,
+    /// where the same two modifiers are load-bearing. Both halves are asserted so a future change
+    /// cannot fix one file by breaking the other.
+    @Test func onlyTheSectionHeaderInsideTheLazyVStackLostItsListRowModifiers() throws {
+        let panel = try Self.panelSource()
+        #expect(
+            panel.contains("ScrollView {") && panel.contains("LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders)"),
+            "TasksPanel no longer draws its sections in a LazyVStack; re-decide whether the header may regain the modifiers"
+        )
+
+        let sections = try Self.sectionSource()
+        let intentView = try #require(
+            CadenceSourceScan.declarationBody("struct TasksPanelIntentSectionView: View", in: sections)
+        )
+        #expect(
+            !intentView.contains(".listRowBackground("),
+            "TasksPanelIntentSectionView's header still carries a no-op List row modifier"
+        )
+        #expect(
+            !intentView.contains(".listRowSeparator("),
+            "TasksPanelIntentSectionView's header still carries a no-op List row modifier"
+        )
+        #expect(intentView.contains(".dropDestination(for: String.self)"), "the header's real drop target went with the no-ops")
+
+        let listDetail = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")
+        )
+        let displayRow = try #require(
+            CadenceSourceScan.declarationBody("struct TaskListDisplayRow: View", in: listDetail)
+        )
+        #expect(
+            displayRow.contains(".listRowBackground(Color.clear)"),
+            "TaskListDisplayRow lost the modifier its List caller (ListTasksCompletedSectionView) needs"
+        )
+        #expect(
+            displayRow.contains(".listRowSeparator(.hidden)"),
+            "TaskListDisplayRow lost the modifier its List caller (ListTasksCompletedSectionView) needs"
+        )
+        let completedSectionView = try #require(
+            CadenceSourceScan.declarationBody("struct ListTasksCompletedSectionView: View", in: listDetail)
+        )
+        #expect(
+            completedSectionView.contains("TaskListDisplayRow("),
+            "self-check: TaskListDisplayRow's other caller moved out of this file"
+        )
+        let components = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailComponents.swift")
+        )
+        #expect(
+            components.contains("List {"),
+            "self-check: ListDetailComponents.swift's real List is what makes the row's modifiers load-bearing"
+        )
+    }
 }

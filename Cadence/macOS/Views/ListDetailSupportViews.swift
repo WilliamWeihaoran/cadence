@@ -19,7 +19,6 @@ struct ListTasksGroupSectionView: View {
     let isCollapsed: Bool
     let overdueCount: Int?
     let regularCount: Int
-    let allTasks: [AppTask]
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     /// Answers whether the new order is in the store (T-869). `Void` until then, over a renumber
@@ -65,7 +64,6 @@ struct ListTasksGroupSectionView: View {
 
 struct ListTasksCompletedSectionView: View {
     let tasks: [AppTask]
-    let allTasks: [AppTask]
     let isCollapsed: Bool
     let onToggle: () -> Void
 

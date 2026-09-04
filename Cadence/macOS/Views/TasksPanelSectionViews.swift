@@ -134,8 +134,12 @@ struct TasksPanelIntentSectionView: View {
                 .padding(.horizontal, TasksPanelMetrics.horizontalInset)
                 .padding(.top, TasksPanelMetrics.sectionHeaderTopInset)
                 .padding(.bottom, TasksPanelMetrics.sectionHeaderBottomInset)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+                // **T-681.** `.listRowBackground`/`.listRowSeparator` are `List` row modifiers;
+                // `TasksPanel` draws this section inside `ScrollView { LazyVStack(pinnedViews:
+                // .sectionHeaders) }`, not a `List`, so both were no-ops here — checked before
+                // removing, because `TaskListDisplayRow` carries the same two modifiers and *is*
+                // load-bearing for its other caller, `ListTasksCompletedSectionView` on the All
+                // Tasks page, which sits inside a real `List`.
                 .dropDestination(for: String.self) { items, _ in
                     guard let onDropOnSectionPayload, let payload = items.first else { return false }
                     return onDropOnSectionPayload(payload)
@@ -201,7 +205,6 @@ struct TasksPanelCompletedSectionView: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
-    let allTasks: [AppTask]
     let isCollapsed: Bool
     let onToggle: () -> Void
     let taskDragPayload: (AppTask) -> String

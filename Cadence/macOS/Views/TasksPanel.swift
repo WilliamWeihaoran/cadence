@@ -321,7 +321,6 @@ struct TasksPanel: View {
                 contexts: contexts,
                 areas: areas,
                 projects: projects,
-                allTasks: allTasks,
                 isCollapsed: isCompletedCollapsed,
                 onToggle: { isCompletedCollapsed.toggle() },
                 taskDragPayload: taskDragPayload

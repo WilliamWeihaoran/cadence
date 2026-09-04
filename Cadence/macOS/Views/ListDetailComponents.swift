@@ -12,7 +12,6 @@ struct ListTasksView: View {
 
     @Environment(TaskCreationManager.self) private var taskCreationManager
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \AppTask.createdAt, order: .reverse) private var allTasks: [AppTask]
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
     @State private var frozenTaskOrder: [AppTask]? = nil
@@ -96,7 +95,6 @@ struct ListTasksView: View {
                     isCollapsed: collapsedGroupIDs.contains(group.id),
                     overdueCount: overdueCount(in: group.tasks),
                     regularCount: regularCount(in: group.tasks),
-                    allTasks: allTasks,
                     dragOverTaskID: $dragOverTaskID,
                     onToggle: { toggleGroup(group.id) },
                     onReorderTask: reorderTask
@@ -106,7 +104,6 @@ struct ListTasksView: View {
             if options.showsCompletedToggle, !doneTasks.isEmpty {
                 ListTasksCompletedSectionView(
                     tasks: doneTasks,
-                    allTasks: allTasks,
                     isCollapsed: isCompletedCollapsed,
                     onToggle: { isCompletedCollapsed.toggle() }
                 )
