@@ -59,7 +59,7 @@ struct TimelineBundleBlock: View {
                         // refused now, and the overlay is the only thing on screen that can say
                         // so — the selection it clears is what closes the block's popover.
                         deleteConfirmationManager.presentRefusable(
-                            title: "Delete Bundle?",
+                            title: TaskBundle.deleteConfirmationTitle,
                             message: "This will delete \"\(bundle.displayTitle)\" and keep its tasks on the same day.",
                             failureNotice: CadenceTaskMutationSupport.bundleDeleteFailureNotice
                         ) {

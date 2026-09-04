@@ -157,10 +157,10 @@ enum CadenceFocusBundlePresentation {
     }
 
     /// The same facts unjoined, for a surface that renders them as chips instead of a line. The
-    /// leading `"Bundle"` label is dropped for those: a chip strip under a bundle's own title does
-    /// not need to be told twice what it is describing.
+    /// leading `TaskBundle.shortLabel` is dropped for those: a chip strip under a bundle's own
+    /// title does not need to be told twice what it is describing.
     static func summaryParts(for bundle: TaskBundle, todayKey: String = DateFormatters.todayKey()) -> [String] {
-        var parts = ["Bundle", memberCountLabel(for: bundle)]
+        var parts = [TaskBundle.shortLabel, memberCountLabel(for: bundle)]
         if !bundle.dateKey.isEmpty {
             parts.append(bundle.dateKey == todayKey ? "Today" : DateFormatters.relativeDate(from: bundle.dateKey))
         }

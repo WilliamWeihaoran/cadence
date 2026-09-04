@@ -341,7 +341,7 @@ struct iOSFocusView: View {
     }
 
     /// The block's own facts, from the same helper the picker row's line comes from — minus the
-    /// leading "Bundle" label, because the title above these chips already is one.
+    /// leading `TaskBundle.shortLabel`, because the title above these chips already is one.
     private func selectedBundleHeader(_ bundle: TaskBundle) -> some View {
         sessionHeader(title: bundle.displayTitle) {
             ForEach(
@@ -497,7 +497,7 @@ struct iOSFocusView: View {
     private func bundleMembers(_ bundle: TaskBundle) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                SectionEyebrowLabel(text: "Bundle tasks", tint: Theme.amber)
+                SectionEyebrowLabel(text: TaskBundle.tasksSectionLabel, tint: Theme.amber)
                 Text(CadenceFocusBundlePresentation.selectionSummary(for: bundle, selectedTaskIDs: selectedBundleTaskIDs))
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.subdued)

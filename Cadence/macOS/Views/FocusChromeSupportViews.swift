@@ -117,7 +117,7 @@ struct FocusBundleHeader: View {
 
     var body: some View {
         FocusSurfaceHeader(
-            eyebrow: "Bundle Focus",
+            eyebrow: TaskBundle.focusEyebrowTitle,
             title: bundle.displayTitle,
             onClose: onClose
         ) {

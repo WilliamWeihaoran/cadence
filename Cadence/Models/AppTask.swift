@@ -525,6 +525,35 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     /// rather than merely drawing it. One constant, so the noun cannot drift back apart.
     static let defaultDisplayTitle = "Block"
 
+    /// The rest of the user-facing "Block" vocabulary, kept beside `defaultDisplayTitle` for the
+    /// same reason: T-567 centralised only the untitled-title fallback, and the surrounding Focus
+    /// and creation/edit/delete copy drifted back to "Bundle" at eleven call sites across nine
+    /// files (T-843) because there was nowhere shared to draw it from instead. `TaskBundle` is the
+    /// *type* name — SwiftData schema, drag-payload prefix, data-export key — and stays that way;
+    /// none of these are read by a user. Only copy a person actually sees belongs here.
+
+    /// The short standalone noun: a Focus status chip, a mode-picker button, an unlabelled facts
+    /// row's leading chip.
+    static let shortLabel = "Block"
+
+    /// The tasks-list section heading inside a block's Focus surface, on both platforms.
+    static let tasksSectionLabel = "Block tasks"
+
+    /// The Focus chrome eyebrow shown while a block has focus.
+    static let focusEyebrowTitle = "Block Focus"
+
+    /// The log-session popover's heading when time is being logged against a block's tasks.
+    static let logSessionTitle = "Log Block Session"
+
+    /// The title field placeholder for creating or renaming a block.
+    static let titleFieldPlaceholder = "Block title"
+
+    /// The refusable delete confirmation's heading.
+    static let deleteConfirmationTitle = "Delete Block?"
+
+    /// The delete confirmation button's own label, once confirming.
+    static let deleteConfirmationButtonTitle = "Delete Block"
+
     /// What to store for a user-entered block title: trimmed, and never blank.
     ///
     /// The stored/display split `CadenceEventTitleSupport` already draws. `displayTitle` below is

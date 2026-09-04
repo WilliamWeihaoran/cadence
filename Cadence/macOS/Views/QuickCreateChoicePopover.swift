@@ -245,7 +245,7 @@ struct QuickCreateChoicePopover: View {
     private var titlePlaceholder: String {
         switch mode {
         case .timeBlock: return usesTaskPanelForTaskCreation ? "Task title, then continue" : "Task title"
-        case .bundle: return "Bundle title"
+        case .bundle: return TaskBundle.titleFieldPlaceholder
         case .calendarEvent: return "Event title"
         }
     }
@@ -352,7 +352,7 @@ struct QuickCreateChoicePopover: View {
                     modeButton("Event", for: .calendarEvent, tint: Theme.purple)
                 }
                 if onCreateBundle != nil {
-                    modeButton("Bundle", for: .bundle, tint: Theme.amber)
+                    modeButton(TaskBundle.shortLabel, for: .bundle, tint: Theme.amber)
                 }
             }
         }

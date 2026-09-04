@@ -160,7 +160,7 @@ struct BundleLogSessionPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Log Bundle Session")
+                Text(TaskBundle.logSessionTitle)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 Text("\(selectedTasks.count) selected tasks")

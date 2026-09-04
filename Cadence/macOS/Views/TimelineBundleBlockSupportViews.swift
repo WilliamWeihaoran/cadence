@@ -68,7 +68,7 @@ struct TaskBundleDetailPopover: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                TextField("Bundle title", text: Binding(
+                TextField(TaskBundle.titleFieldPlaceholder, text: Binding(
                     get: { bundle.title },
                     set: { bundle.title = $0 }
                 ))
@@ -200,7 +200,7 @@ struct TaskBundleDetailPopover: View {
         VStack(spacing: 9) {
             if isConfirmingDelete {
                 confirmationButtons(
-                    confirmTitle: "Delete Bundle",
+                    confirmTitle: TaskBundle.deleteConfirmationButtonTitle,
                     confirmImage: "trash.fill",
                     role: .destructive,
                     tint: Theme.red,

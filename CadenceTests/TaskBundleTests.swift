@@ -489,6 +489,75 @@ struct TaskBundleTests {
         #expect(created.title == TaskBundle.defaultDisplayTitle)
     }
 
+    /// **T-843.** The rest of the "Block" vocabulary, pinned by value beside the noun each one
+    /// stands in for on screen. `shortLabel` covers three call sites at once (a Focus status chip,
+    /// a mode-picker button, and the unlabelled facts row), which is exactly why it needed to be a
+    /// constant: three re-typings is three chances for one to drift.
+    @Test func theRestOfTheBlockVocabularyIsOneWordEach() throws {
+        #expect(TaskBundle.shortLabel == "Block")
+        #expect(TaskBundle.tasksSectionLabel == "Block tasks")
+        #expect(TaskBundle.focusEyebrowTitle == "Block Focus")
+        #expect(TaskBundle.logSessionTitle == "Log Block Session")
+        #expect(TaskBundle.titleFieldPlaceholder == "Block title")
+        #expect(TaskBundle.deleteConfirmationTitle == "Delete Block?")
+        #expect(TaskBundle.deleteConfirmationButtonTitle == "Delete Block")
+
+        // None of the seven collides with another — a copy/paste that reused the wrong constant
+        // would still read as "Block" somewhere, but the wrong sentence.
+        let values = [
+            TaskBundle.shortLabel,
+            TaskBundle.tasksSectionLabel,
+            TaskBundle.focusEyebrowTitle,
+            TaskBundle.logSessionTitle,
+            TaskBundle.titleFieldPlaceholder,
+            TaskBundle.deleteConfirmationTitle,
+            TaskBundle.deleteConfirmationButtonTitle,
+        ]
+        #expect(Set(values).count == values.count)
+    }
+
+    /// The eleven live sites T-843 found, each pinned to read the shared constant rather than a
+    /// re-typed literal. `noNewSurfaceTypesTheRetiredBundleNounEither` below is the complementary
+    /// claim — that no *other* site still types "Bundle" — so together they cover both directions:
+    /// the known sites moved, and nothing new took their place.
+    @Test func everyKnownBundleSiteReadsTheSharedVocabulary() throws {
+        let sites: [(path: String, needle: String)] = [
+            ("Cadence/Shared/CadenceFocusBundleSupport.swift", "TaskBundle.shortLabel"),
+            ("Cadence/iOS/iOSFocusView.swift", "TaskBundle.tasksSectionLabel"),
+            ("Cadence/macOS/Views/FocusChromeSupportViews.swift", "TaskBundle.focusEyebrowTitle"),
+            ("Cadence/macOS/Views/FocusBundleTaskSupportViews.swift", "TaskBundle.tasksSectionLabel"),
+            ("Cadence/macOS/Views/FocusLogSessionPopovers.swift", "TaskBundle.logSessionTitle"),
+            ("Cadence/macOS/Views/FocusSidebarSupportViews.swift", "TaskBundle.shortLabel"),
+            ("Cadence/macOS/Views/TimelineBundleBlock.swift", "TaskBundle.deleteConfirmationTitle"),
+        ]
+        for site in sites {
+            let source = try CadenceCommitSurfaceScan.scanned(site.path)
+            #expect(
+                CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: site.needle), in: source) >= 1,
+                "\(site.path) no longer reads \(site.needle)"
+            )
+        }
+
+        // `QuickCreateChoicePopover` and `TimelineBundleBlockSupportViews` each carry two of the
+        // eleven sites, so both needles are pinned per file rather than folded into the loop above.
+        let quickCreate = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/QuickCreateChoicePopover.swift")
+        #expect(CadenceSourceScan.matchCount(#"TaskBundle\.titleFieldPlaceholder"#, in: quickCreate) >= 1)
+        #expect(CadenceSourceScan.matchCount(#"TaskBundle\.shortLabel"#, in: quickCreate) >= 1)
+
+        let timelineBundleBlockSupport = try CadenceCommitSurfaceScan.scanned(
+            "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"TaskBundle\.titleFieldPlaceholder"#, in: timelineBundleBlockSupport) >= 1
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"TaskBundle\.deleteConfirmationButtonTitle"#,
+                in: timelineBundleBlockSupport
+            ) >= 1
+        )
+    }
+
     /// The other seven sites, which no behavioural test can reach: they are literals inside `View`
     /// bodies and one AppKit-side service. The iOS create sheet is not in this list because it
     /// never typed the noun — its half of T-567 is `canCreate`, two tests below.
@@ -550,6 +619,85 @@ struct TaskBundleTests {
             CadenceSourceScan.matchCount(#"case \.bundle:\s*return true"#, in: source) == 1,
             "showsTimedControls no longer holds the negative this scan is discriminated against"
         )
+    }
+
+    /// **T-843.** T-567 gave the untitled-block fallback one home and left the rest of the "Block"
+    /// vocabulary to be re-typed by hand — which is exactly how "Bundle" came back at eleven sites
+    /// across nine files: `CadenceFocusBundleSupport`, `iOSFocusView`, `FocusChromeSupportViews`,
+    /// `FocusBundleTaskSupportViews`, `FocusLogSessionPopovers`, `FocusSidebarSupportViews`,
+    /// `QuickCreateChoicePopover` (twice), `TimelineBundleBlock`, and
+    /// `TimelineBundleBlockSupportViews` (twice). All eleven now read one of the constants added
+    /// beside `defaultDisplayTitle` above.
+    ///
+    /// This is the forward guard for a twelfth: every `.swift` file under the three product roots,
+    /// comment-stripped so a doc comment cannot trip it, checked for a string literal containing
+    /// "Bundle". A literal at any site not named in `allowedLiteralsByPath` below is the noun
+    /// drifting back, and this goes red.
+    ///
+    /// The survivors are all technical, not product vocabulary, which is the line T-843 draws:
+    /// SwiftData's schema-entity key (`"TaskBundle"`), a debug-only `assertionFailure` no user
+    /// reads, the drag-payload's internal `"taskBundle:"` prefix, two Info.plist keys read through
+    /// `Bundle.main`, one string-interpolation false positive (`existingBundle` inside `"In
+    /// \(existingBundle.displayTitle)"`, which never renders the word "Bundle" at all), and
+    /// Settings' technical **"Bundle ID"** on both platforms — the ticket's explicit exemption.
+    @Test func noNewSurfaceTypesTheRetiredBundleNounEither() throws {
+        let allowedLiteralsByPath: [String: Set<String>] = [
+            "Cadence/Services/CadenceDataExportService.swift": [
+                "\"TaskBundle\""
+            ],
+            "Cadence/iOS/iOSBundleInspectorHost.swift": [
+                "\"No iOSBundleInspectorHost above this view — the block panel cannot open\""
+            ],
+            "Cadence/Shared/TaskDragPayload.swift": [
+                "\"taskBundle:\""
+            ],
+            "Cadence/Shared/AppStoreReviewReadiness.swift": [
+                "\"CFBundleShortVersionString\"",
+                "\"CFBundleVersion\""
+            ],
+            "Cadence/iOS/iOSSettingsOverviewSections.swift": [
+                "\"Bundle ID\""
+            ],
+            "Cadence/macOS/Views/SettingsAboutSection.swift": [
+                "\"Bundle ID\""
+            ],
+            "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": [
+                "\"In \\(existingBundle.displayTitle)\""
+            ],
+        ]
+
+        // Not `CadenceCommitSurfaceScan.scanned`: its `raw.count > 400` guard is right for a
+        // single named file the caller knows is substantial, and wrong here — a bulk sweep over
+        // every product file legitimately includes small ones, and that floor would report each
+        // as a scan failure rather than as "no Bundle literal found", which is a false red.
+        let readStripped = CadenceSourceScan.strippedSourceReader()
+        var filesScanned = 0
+        var offenders: [String: [String]] = [:]
+        for root in ["Cadence", "CadenceWidgets", "CadenceMCPServer"] {
+            for path in try CadenceSourceScan.swiftFiles(under: root) {
+                filesScanned += 1
+                let stripped = try readStripped(path)
+                let literals = Set(
+                    CadenceSourceScan.captures(#"("[^"\n]*Bundle[^"\n]*")"#, in: stripped)
+                        .map(\.text)
+                )
+                let allowed = allowedLiteralsByPath[path] ?? []
+                let unexpected = literals.subtracting(allowed)
+                if !unexpected.isEmpty {
+                    offenders[path] = unexpected.sorted()
+                }
+            }
+        }
+
+        #expect(filesScanned >= 300, "swept only \(filesScanned) files — the walk found nothing")
+        #expect(offenders.isEmpty, "unexpected \"Bundle\" literal(s): \(offenders)")
+
+        // Non-vacuity: an exempted literal really is still present, so the sweep is reading real
+        // files rather than silently matching zero and passing by construction.
+        let exportSource = try CadenceCommitSurfaceScan.scanned(
+            "Cadence/Services/CadenceDataExportService.swift"
+        )
+        #expect(exportSource.contains(#""TaskBundle""#))
     }
 }
 #endif

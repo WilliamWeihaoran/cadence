@@ -152,7 +152,7 @@ struct FocusBundleSidebar: View {
     var body: some View {
         FocusSidebarShell(nextTasks: nextTasks, onSelectTask: onSelectTask) {
             HStack(spacing: 8) {
-                FocusStatusChip(title: "Bundle", color: Theme.amber, icon: "tray.full")
+                FocusStatusChip(title: TaskBundle.shortLabel, color: Theme.amber, icon: "tray.full")
                 FocusStatusChip(title: "\(bundle.sortedTasks.count) tasks", color: Theme.blue, icon: "checklist")
             }
         }

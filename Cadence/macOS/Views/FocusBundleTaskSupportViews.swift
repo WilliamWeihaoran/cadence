@@ -17,7 +17,7 @@ struct FocusBundleTasksPanel: View {
                         .clipShape(Circle())
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Bundle tasks")
+                        Text(TaskBundle.tasksSectionLabel)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.text)
                         Text("Selected tasks receive logged time from this session.")
@@ -94,7 +94,7 @@ struct FocusBundleTaskRow: View {
             // bundle member rows where that same glyph *is* completion state, so the one row in
             // the app where the leading circle means something else was the one you could not
             // tell apart. A square reads as a checkbox, and the amber is this panel's own accent,
-            // the tint on the "Bundle tasks" header above it.
+            // the tint on the `TaskBundle.tasksSectionLabel` header above it.
             Button(action: onToggle) {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
