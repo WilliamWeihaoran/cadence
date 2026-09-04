@@ -1581,13 +1581,20 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a comment**, and note the cost the file records: ~6-10 billed runner-minutes per iOS run.
 
 - [T-709] **`CadenceBuildInvocationHygieneTests` sweeps `.md` and `.sh`, and CI is `.yml`.**
-  From [[T-535]]. `scannedPaths()` appends a file only when it `hasSuffix(".md")` or `hasSuffix(".sh")`,
-  so `.github/workflows/*.yml` is outside the walk entirely — and those files contain `xcodebuild`
-  invocations. **There is no live offender**: every invocation in `ci.yml` goes through
-  `scripts/xcb.sh`, which supplies a private `-derivedDataPath` itself. The gap is that nothing would
-  notice a future workflow step calling `xcodebuild` directly. The `xcodebuild` in a YAML `run:` block
-  is shell, so `shellText(at:)` would need a third branch (a script is shell throughout, markdown only
-  inside fences, YAML only inside `run:` blocks) — the extraction is the work, not the walk.
+  **Closed 2026-09-04 in `0185752f`.** From [[T-535]]. `scannedPaths()` appended a file only when it
+  `hasSuffix(".md")` or `hasSuffix(".sh")`, so `.github/workflows/*.yml` sat outside the walk entirely
+  — and those files contain `xcodebuild` invocations. **There was no live offender**: every invocation
+  in `ci.yml` goes through `scripts/xcb.sh`, which supplies a private `-derivedDataPath` itself. The
+  gap was that nothing would have noticed a future workflow step calling `xcodebuild` directly.
+  `scannedPaths()` now also walks `.yml`/`.yaml`, and `shellText(at:)` grew the third branch the
+  ticket named: a new `yamlRunBlocks(_:)` extracts a workflow's `run:` steps -- both the inline form
+  and the block-scalar (`run: |`) form this repository's own `ci.yml` is written in -- rather than
+  reading the whole YAML document, so sibling keys such as `if:` or `uses:` are never misread as
+  shell. Pinned with `theWalkAndTheParserReachGitHubWorkflowRunSteps`, a fixture mirroring `ci.yml`'s
+  own shape (comment line inside a block scalar, an `if: >-` sibling key, an inline `run:`), plus a
+  non-vacuity check that `.github/workflows/ci.yml` itself extracts to shell text containing
+  `xcb.sh` and none of `runs-on:`. Two mutations killed 2/2 against `scripts/mutate.sh`: reverting the
+  `.yml`/`.yaml` suffix, and short-circuiting `yamlRunBlocks` to return the raw document unfiltered.
 
 - [T-722] **Drag-to-create has never been observed, and the simulator can now do the gesture.**
   Was item 4 of `docs/device-checks.md`; it left that list in [[T-561]] because `control`'s
