@@ -175,7 +175,7 @@ struct CreateGoalSheet: View {
                                 !CadenceSidebarLists.isOffered($0.context?.id, among: offered)
                             }
                             if !looseAreas.isEmpty || !looseProjects.isEmpty {
-                                Section("No Context") {
+                                Section(CadenceSidebarLists.ungroupedTitle) {
                                     ForEach(looseAreas) { area in
                                         Label(area.name, systemImage: area.icon).tag("area:\(area.id.uuidString)")
                                     }

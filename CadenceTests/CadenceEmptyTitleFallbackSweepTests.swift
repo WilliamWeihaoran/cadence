@@ -23,6 +23,11 @@ import Testing
 /// wording and this sweep holds it: what changed is the trim and nothing else. Re-wording any of
 /// them is a copy decision, not a de-duplication, and belongs in its own ticket.
 ///
+/// **"Goal" left this list under T-688.** It was `iOSTaskRowGoalChip`'s literal, and it disagreed
+/// with the picker beside it — the copy freeze this paragraph describes was T-609's own scope, not
+/// a permanent rule, and T-688 is the ticket that lifted it for that one pair. See
+/// `theTaskRowsGoalChipAndItsPickerAgreeOnTheBlankGoalFallback` below.
+///
 /// **What these instruments deliberately do not see, measured rather than assumed.** Both needles
 /// require the fallback to be a **string literal**, because that is the shape T-569 measured and
 /// T-609 was scoped to. Allowing a *constant* there — `task.title.isEmpty ?
@@ -101,6 +106,48 @@ struct CadenceEmptyTitleFallbackSweepTests {
     @MainActor @Test func theEventNoteModelStillResolvesABlankTitleToItsLabel() {
         #expect(EventNote(calendarEventID: "e", eventTitle: "   ").title == "Event Note")
         #expect(EventNote(calendarEventID: "e", eventTitle: "  Standup  ").title == "Standup")
+    }
+
+    // MARK: - T-688: the goal chip and its own picker agree
+
+    /// **T-688.** `iOSTaskRowGoalChip` and `iOSTaskRowGoalPickerContent` both name the same field
+    /// on the same task — its `goal` — and disagreed on what a blank one is called: the chip's
+    /// literal "Goal" (kept verbatim by T-609's "change no copy" rule) against the picker's
+    /// `CadenceTitleNormalization.defaultMilestoneTitle` ("Untitled Milestone"). The picker's own
+    /// `@Query` reads every `Goal` in the store, top-level directions included, so "Milestone" was
+    /// wrong for most of the rows it names — `CadenceTitleNormalization.defaultGoalTitle`
+    /// ("Untitled Goal") is the fallback that actually describes the model both views draw, and
+    /// T-609's copy freeze is lifted for these two so they can converge on it.
+    @Test func theTaskRowsGoalChipAndItsPickerAgreeOnTheBlankGoalFallback() throws {
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift")
+        )
+        #expect(code.contains("struct iOSTaskRowGoalChip: View"), "non-vacuity: file unread")
+        #expect(code.contains("struct iOSTaskRowGoalPickerContent: View"), "non-vacuity: the picker moved")
+
+        // The pre-T-688 spellings.
+        #expect(code.contains("fallback: \"Goal\"") == false, "the chip still spells its own literal")
+        #expect(
+            CadenceSourceScan.matchCount("fallback: CadenceTitleNormalization\\.defaultMilestoneTitle", in: code) == 0,
+            "the picker still disagrees with the chip beside it"
+        )
+
+        // The converged spelling, once per site, through the call each already used.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "TaskTitleSupport\\.displayTitle\\(goal\\.title, fallback: CadenceTitleNormalization\\.defaultGoalTitle\\)",
+                in: code
+            ) == 1,
+            "the chip does not read the converged fallback"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                "CadenceTitleNormalization\\.display\\(goal\\.title, fallback: CadenceTitleNormalization\\.defaultGoalTitle\\)",
+                in: code
+            ) == 1,
+            "the picker row does not read the converged fallback"
+        )
+        #expect(CadenceTitleNormalization.defaultGoalTitle == "Untitled Goal")
     }
 
     // MARK: - The sweep

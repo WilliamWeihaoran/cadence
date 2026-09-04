@@ -339,6 +339,12 @@ nonisolated enum DataIntegrityRepairService {
     /// `Untitled` either way (`Note.displayTitle`'s own fallback for that kind is the same word),
     /// a notepad note reads `Notepad`, and retyping the title restores it.
     ///
+    /// **T-741 widened that same cost to the note's own heading.** See
+    /// `clearRetiredHeadingIfPresent` below: clearing `title` alone on a `.list` or `.permanent`
+    /// row left its literal `"# Untitled"` first line in place, which is the field
+    /// `MarkdownNoteTitleSync` reads on the note's next content commit — so the word came straight
+    /// back, and the launch after that cleared it again, forever.
+    ///
     /// **The literal is frozen here on purpose and is not `CadenceTitleNormalization
     /// .defaultCompactTitle`.** That constant is the app's *display* placeholder and is free to be
     /// renamed; this is a historical value — the exact bytes a retired default wrote — and a
@@ -354,13 +360,42 @@ nonisolated enum DataIntegrityRepairService {
             guard note.title == retiredStoredNoteTitleDefault else { continue }
             note.title = ""
             report.defaultNoteTitlesCleared += 1
+            clearRetiredHeadingIfPresent(on: note)
         }
+    }
+
+    /// The matching half of the repair above ([[T-741]]). Clearing `title` alone repairs nothing
+    /// for a `.list` or `.permanent` row: the retired initializer interpolated the same default
+    /// into the note's own first line too (`"# \(title)\n\n"`), and `MarkdownNoteTitleSync` reads
+    /// that heading back on the note's very next content commit — finding it unequal to the
+    /// now-empty `title` and writing the word straight back into the field this pass just cleared.
+    /// The next launch clears it again: an oscillation, not a one-time cost, and leaving `content`
+    /// alone did not avoid touching the body, it guaranteed a second edit would.
+    ///
+    /// Blanks the heading to `"# "` — an H1 with nothing after it, the same shape a note born
+    /// today seeds for an empty title (`CadenceListNoteFiling.seededContent`,
+    /// `NoteMigrationService.createPermanentNote`) — which `MarkdownNoteTitleSync` reads as "leave
+    /// the stored title alone" rather than a name to sync.
+    ///
+    /// Scoped to the exact literal on the exact first line, and only for the two kinds that ever
+    /// read it (`MarkdownNoteTitleSync.syncsTitleFromH1`): `.meeting` has its own title field and
+    /// `.daily`/`.weekly` are named by their date keys, so neither looks at the body, and a
+    /// coincidental `# Untitled` further down is a section heading a user wrote, not this bug.
+    private static func clearRetiredHeadingIfPresent(on note: Note) {
+        guard MarkdownNoteTitleSync.syncsTitleFromH1(note.kind) else { return }
+        guard String(note.content.prefix(while: { $0 != "\n" })) == retiredStoredNoteHeading else { return }
+        note.content = "# " + String(note.content.dropFirst(retiredStoredNoteHeading.count))
     }
 
     /// The exact string `Note.title` defaulted to before T-733. Matched untrimmed and
     /// case-sensitively: `" Untitled "` and `"untitled"` are things a person typed, and this pass
     /// is only entitled to the value the old initializer wrote.
     private static let retiredStoredNoteTitleDefault = "Untitled"
+
+    /// The same literal, as the retired initializer interpolated it into a note's first line —
+    /// `"# \(title)\n\n"` with `title` at its own retired default. See
+    /// `clearRetiredHeadingIfPresent`.
+    private static let retiredStoredNoteHeading = "# \(retiredStoredNoteTitleDefault)"
 
     /// T-428: a `Habit.reminderMinuteOfDay` already on disk outside `0...1439` is invisible **and**
     /// inert, and until this pass nothing moved it. `HabitNotificationPlanner.reminder(for:now:)`

@@ -100,7 +100,7 @@ struct GoalLinkCandidateGroup: Identifiable {
 
     var title: String {
         let name = context?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? "No Context" : name
+        return name.isEmpty ? CadenceSidebarLists.ungroupedTitle : name
     }
 }
 

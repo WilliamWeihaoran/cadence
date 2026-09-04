@@ -414,7 +414,7 @@ struct iOSTaskRowGoalChip: View {
 
     var body: some View {
         iOSTaskAttributeChip(
-            title: TaskTitleSupport.displayTitle(goal.title, fallback: "Goal"),
+            title: TaskTitleSupport.displayTitle(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle),
             field: CadenceTaskControlAccessibility.milestone,
             systemImage: goal.icon,
             isSet: true,
@@ -453,7 +453,7 @@ private struct iOSTaskRowGoalPickerContent: View {
                 + availableGoals.map { goal in
                     iOSChoiceRow(
                         value: Optional(goal.id),
-                        title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultMilestoneTitle),
+                        title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle),
                         systemImage: goal.icon,
                         color: Color(hex: goal.colorHex)
                     )

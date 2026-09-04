@@ -344,8 +344,16 @@ struct CadenceNoteTitleSyncSurfaceTests {
 /// **The accepted cost, asserted rather than left to be discovered.** The migration also clears a
 /// title someone deliberately typed as `Untitled`. The store cannot tell the two apart — they are
 /// byte-for-byte the same value and the field carries no provenance — and the user was told this
-/// and accepted it. `theMigrationAlsoClearsATitleAUserTypedOnPurpose` pins it so that nobody
-/// narrows it later believing it was an oversight.
+/// and accepted it. `theMigrationAlsoClearsATitleAndItsMatchingHeadingAUserTypedOnPurpose` pins it
+/// so that nobody narrows it later believing it was an oversight.
+///
+/// **T-741 widened that same accepted cost to the matching heading.** Clearing only `title` left
+/// a `.list` or `.permanent` row's literal `"# Untitled"` heading in place, and
+/// `MarkdownNoteTitleSync` reads that heading back on the note's very next content commit — so a
+/// row this pass "fixed" wrote the word straight back into `title` at the next edit, and the
+/// launch after that cleared it again: an oscillation, not a one-time cost. Fixing the heading
+/// alongside the title is the same trade the paragraph above already made, one field over.
+/// `aLegacyNotesRepairedTitleSurvivesItsNextContentCommit` is the reproduction, end to end.
 @Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceStoredNoteTitleDefaultTests {
@@ -547,10 +555,10 @@ struct CadenceStoredNoteTitleDefaultTests {
     ///
     /// What such a user loses is small and visible: a list note still reads `Untitled`, because
     /// that is `displayTitle`'s own fallback for the kind, and retyping the title restores it.
-    @Test func theMigrationAlsoClearsATitleAUserTypedOnPurpose() throws {
+    @Test func theMigrationAlsoClearsATitleAndItsMatchingHeadingAUserTypedOnPurpose() throws {
         let context = try makeContext()
-        // Indistinguishable from a default-titled row by construction: same value, and the content
-        // is the tell that a person was here.
+        // Indistinguishable from a default-titled row by construction: same six-and-two bytes as
+        // the retired default, in both `title` and the heading it was interpolated into.
         let deliberate = Note(kind: .list, title: "Untitled", content: "# Untitled\n\nan essay about names")
         context.insert(deliberate)
         try context.save()
@@ -560,7 +568,47 @@ struct CadenceStoredNoteTitleDefaultTests {
         #expect(report.defaultNoteTitlesCleared == 1)
         #expect(deliberate.title.isEmpty, "the accepted cost stopped being paid — was this narrowed?")
         #expect(deliberate.displayTitle == "Untitled", "and the row still reads the same word")
-        #expect(deliberate.content == "# Untitled\n\nan essay about names", "the body is not the pass's business")
+        // **T-741 widened the accepted cost to the heading too.** Leaving it alone did not avoid
+        // touching the body — it guaranteed the note's next content commit would read this exact
+        // line and write "Untitled" straight back into the field just cleared above.
+        #expect(
+            deliberate.content == "# \n\nan essay about names",
+            "the matching heading survived, so the next content commit will put the title back"
+        )
+    }
+
+    /// **T-741, end to end.** A pre-T-733 row carries the retired default in two places — the
+    /// stored `title` and the literal `"# Untitled"` heading the old seed interpolated it into.
+    /// Clearing only the first repaired nothing: `MarkdownNoteTitleSync` reads the second back on
+    /// the note's very next content commit and writes the word straight into the field the pass
+    /// just cleared, so the next launch clears it again, forever. This is the reproduction the
+    /// ticket asked for — pre-T-733 data, built as a fixture rather than assumed — through the
+    /// same three files (`Note`, `DataIntegrityRepairService`, `MarkdownNoteTitleSync`) the sibling
+    /// test above names for the *new*-note path this one's fix cannot reach.
+    @Test func aLegacyNotesRepairedTitleSurvivesItsNextContentCommit() throws {
+        let context = try makeContext()
+        let legacy = Note(kind: .list, title: "Untitled", content: "# Untitled\n\n- milk")
+        context.insert(legacy)
+        try context.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+        #expect(report.defaultNoteTitlesCleared == 1)
+        #expect(legacy.title.isEmpty)
+        // The repair blanked the matching heading too — the fixture for the edit below has to
+        // build on *this* content, not the pre-repair one, or it just retypes "Untitled" itself.
+        #expect(legacy.content == "# \n\n- milk")
+
+        // The edit the ticket describes: the user touches the body, not the heading.
+        CadenceCoreNoteSupport.update(legacy, content: legacy.content + "\n- eggs", in: context)
+
+        #expect(legacy.title.isEmpty, "the next content commit put the retired default back")
+        #expect(legacy.displayTitle == "Untitled", "and the row still reads the same word either way")
+
+        // And the fixed point holds under a second launch, with no further edits: the pre-T-741
+        // failure was that this alternated forever.
+        let second = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test-second")
+        #expect(second.defaultNoteTitlesCleared == 0, "nothing left to clear — the row is not oscillating")
+        #expect(legacy.title.isEmpty)
     }
 
     /// A store with nothing wrong is left alone, which is the property every pass in this service

@@ -360,7 +360,7 @@ struct CadenceGoalListLinkSurfaceTests {
             query: ""
         )
 
-        #expect(groups.map(\.title) == ["Work", "Home", "No Context"])
+        #expect(groups.map(\.title) == ["Work", "Home", CadenceSidebarLists.ungroupedTitle])
         #expect(groups[0].targets.map(\.displayName) == ["Docs", "Launch"])
         #expect(groups[1].targets.map(\.displayName) == ["House"])
         #expect(groups[2].targets.map(\.displayName) == ["Loose Ends"])

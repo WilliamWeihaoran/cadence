@@ -196,14 +196,10 @@ struct CadenceContextlessListSurfaceTests {
         }
     }
 
-    /// The catch-all's own name, once. Three surfaces render a heading over the leftovers and a
-    /// fourth (`flatContainers`) renders none at all; the two that read `CadenceSidebarLists` must
-    /// read it rather than respell it.
-    ///
-    /// `GoalLinkCandidateGroup.title` is deliberately excluded and deliberately named: it says
-    /// "No Context", which is a third spelling of one idea and a **user-visible** one, so
-    /// converging it is a copy change rather than a refactor. Recorded here so the divergence is a
-    /// decision on the record instead of a thing nobody noticed.
+    /// The catch-all's own name, once. All four surfaces — including `GoalLinkCandidateGroup.title`,
+    /// which used to say "No Context" — read `CadenceSidebarLists.ungroupedTitle` rather than
+    /// respelling it (T-771). `flatContainers` renders no heading at all, so it is not asserted
+    /// here.
     @Test func theCatchAllHeadingIsReadFromOnePlaceByEverythingThatDrawsOne() throws {
         let fixture = try makeFixture()
 
@@ -225,7 +221,7 @@ struct CadenceContextlessListSurfaceTests {
         #expect(sidebarSections.last?.contextID == nil)
         #expect(sidebarSections.last?.title == CadenceSidebarLists.ungroupedTitle)
 
-        // The known divergence, asserted as the value it actually is.
+        // The former divergence: this used to be its own literal "No Context" (T-771).
         let goalGroups = GoalLinkPresentation.candidateGroups(
             contexts: fixture.offered,
             areas: fixture.areas,
@@ -233,7 +229,7 @@ struct CadenceContextlessListSurfaceTests {
             query: ""
         )
         #expect(goalGroups.last?.context == nil)
-        #expect(goalGroups.last?.title == "No Context")
+        #expect(goalGroups.last?.title == CadenceSidebarLists.ungroupedTitle)
         #expect(CadenceSidebarLists.ungroupedTitle == "Other")
     }
 
@@ -306,9 +302,9 @@ struct CadenceContextlessListSurfaceTests {
         // fold — a bucket keyed on `context == nil`, right for a list with no context and wrong
         // for one whose context exists and was not offered. Latent rather than live even then,
         // because every caller passes an unfiltered context query; fixed anyway, because the next
-        // caller is what latent means. Its heading is still the word "No Context" rather than
-        // `ungroupedTitle`'s "Other" — a user-visible copy decision, deliberately not taken here,
-        // and asserted as the value it is by `theCatchAllHeadingIsReadFromOnePlace…`.
+        // caller is what latent means. Its heading now reads `ungroupedTitle` ("Other") rather
+        // than its own "No Context" literal (T-771), pinned by
+        // `theGoalSheetsCatchAllHeadingReadsTheSharedUngroupedTitle`.
         "Cadence/macOS/Sheets/CreateGoalSheet.swift": 2,
         // Correct: the optional-to-optional comparison. `nil == nil` is the unfiled bucket, so the
         // new list is numbered against the siblings it will actually sit beside (T-559).
@@ -397,22 +393,62 @@ struct CadenceContextlessListSurfaceTests {
         #expect(CadenceSourceScan.matchCount("\\$0\\.context == nil", in: code) == 0)
     }
 
-    /// **The heading is deliberately unchanged.** Three spellings are live in the app: "Other"
-    /// (`CadenceSidebarLists.ungroupedTitle`, both sidebars and the container picker) and
-    /// "No Context" (here and `GoalLinkCandidateGroup.title`) are the same bucket under two words,
-    /// and "No context" — the macOS context picker's own none-row — is a different idea, an unset
-    /// *field*. Converging the first two is a user-visible copy change, so T-683 landed the
-    /// mechanical half and left the wording alone. Pinned as the values they actually are, so the
-    /// divergence stays a decision on the record rather than a thing nobody noticed.
-    @Test func theGoalSheetsCatchAllHeadingIsStillItsOwnWord() throws {
-        // `strippingComments`, not `codeOnly`: the value being pinned is *inside* a string
-        // literal, and `codeOnly` blanks literal contents.
+    /// **The heading is converged (T-771).** Two spellings of the same bucket used to be live in
+    /// the app: "Other" (`CadenceSidebarLists.ungroupedTitle`, both sidebars and the container
+    /// picker) and "No Context" (here and `GoalLinkCandidateGroup.title`). They are the same row
+    /// under the same rule, so both now read the shared constant rather than restating it.
+    /// "No context" — the macOS context picker's own none-row — is a different idea, an unset
+    /// *field*, and is deliberately untouched.
+    @Test func theGoalSheetsCatchAllHeadingReadsTheSharedUngroupedTitle() throws {
+        // `strippingComments`, not `codeOnly`: the pre-T-771 literal this guards against would
+        // have lived *inside* a string, and `codeOnly` blanks literal contents.
         let raw = try cadenceTestSource("Cadence/macOS/Sheets/CreateGoalSheet.swift")
         let code = CadenceSourceScan.strippingComments(raw)
         #expect(code != raw, "the comment stripper read the wrong file")
-        #expect(CadenceSourceScan.matchCount("Section\\(\"No Context\"\\)", in: code) == 1)
-        #expect(code.contains("CadenceSidebarLists.ungroupedTitle") == false)
+        // The pre-T-771 spelling.
+        #expect(CadenceSourceScan.matchCount("Section\\(\"No Context\"\\)", in: code) == 0)
+        #expect(CadenceSourceScan.matchCount("Section\\(CadenceSidebarLists\\.ungroupedTitle\\)", in: code) == 1)
         #expect(CadenceSidebarLists.ungroupedTitle == "Other")
+    }
+
+    /// **The sweep that stops the second spelling coming back (T-771).** `ungroupedTitle`'s own
+    /// value is "Other" — nine characters, under `CadenceSharedConstantReuseSweepTests`'
+    /// twelve-character floor — so the general shared-constant sweep cannot guard this rename on
+    /// its own; this is the narrow one written for it.
+    ///
+    /// The needle is the exact case, "No Context", not "no context" or "No context": the last of
+    /// those is a live and different concept (the macOS context picker's own none-row, an unset
+    /// *field* rather than a catch-all bucket) and must keep typing its own literal undisturbed.
+    private func noContextRespellingInstrument() throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "catch-all respelled as \"No Context\" (T-771)",
+            fires: """
+            Section("No Context") {
+                Text(target.name)
+            }
+            """,
+            // The still-live, different concept: the context picker's own none-row, lower-case.
+            andNotOn: """
+            let noneTitle = "No context"
+            """,
+            by: { CadenceSourceScan.matchCount("\"No Context\"", in: CadenceSourceScan.strippingComments($0)) > 0 }
+        )
+    }
+
+    @Test func theCatchAllNeverRespellsItselfAsNoContextAgain() throws {
+        let offenders = try noContextRespellingInstrument().sweep(
+            try cadenceAppSwiftFiles(),
+            atLeast: 400,
+            including: "Cadence/macOS/Sheets/CreateGoalSheet.swift",
+            read: cadenceTestSource
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders) respells the catch-all as "No Context" instead of reading \
+            CadenceSidebarLists.ungroupedTitle ("Other") — T-771 converged this to one spelling
+            """
+        )
     }
 
     // MARK: - 4. T-559: the Mac can make and correct one
