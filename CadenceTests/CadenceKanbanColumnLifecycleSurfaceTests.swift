@@ -281,6 +281,53 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         #expect(code.components(separatedBy: "TaskContainerLifecycleService.cancelRemainingActiveTasks(").count - 1 == 2)
     }
 
+    // MARK: - T-737: Archive and Mark Completed cannot settle by a name mid-rename
+
+    /// **T-737, verified against HEAD rather than fixed.** The ticket is dated to before T-736/T-738:
+    /// back then `applySectionEdits` rewrote the container's blob on every keystroke of a rename, so
+    /// a column's config could say a new name while its cards still carried the old one. Since
+    /// `TaskContainerLifecycleService.tasks(in:area:project:)` filters cards by
+    /// `resolvedSectionName == section.name`, Archive or Mark Completed pressed mid-rename would
+    /// settle by a name no card had — silently nothing.
+    ///
+    /// T-736/T-738 removed exactly the write this depended on: a rename is draft state
+    /// (`editorName`) until `commitSectionEdits()` runs, and that same function moves the cards one
+    /// line below applying the edit — see `theColumnRenameCommitsAtTheEndOfTheEditRatherThanPerKeystroke`
+    /// and `theRenameFieldWritesNothingUntilACommitPointSoTheColumnKeepsItsCards` above. So `section`
+    /// — what Archive and Completion both act on — cannot be ahead of the cards mid-rename: there is
+    /// no keystroke that touches it any more.
+    ///
+    /// This is the structural half of that argument, pinned the same way the rest of this file pins
+    /// a private `View`'s internals: neither route reads the rename's draft at all, so neither can
+    /// be handed a name the cards do not carry yet.
+    @Test func archiveAndCompletionNeverReadTheRenameDraft() throws {
+        let code = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+
+        let archiveBody = try #require(
+            CadenceSourceScan.functionBody(named: "toggleSectionArchive", in: code),
+            "toggleSectionArchive is not where Archive's lifecycle settle lives any more"
+        )
+        #expect(!archiveBody.contains("editorName"), "Archive now reads the uncommitted rename draft")
+        #expect(
+            archiveBody.contains("TaskContainerLifecycleService.cancelRemainingActiveTasks(in: section,"),
+            "Archive no longer settles by the column's stored config"
+        )
+
+        let saveSectionBody = try #require(
+            CadenceSourceScan.functionBody(named: "saveSection", in: code),
+            "saveSection is not where Completion's lifecycle settle lives any more"
+        )
+        #expect(!saveSectionBody.contains("editorName"), "Completion now reads the uncommitted rename draft")
+
+        // `saveSection` only ever receives `currentSection()` — a fresh read off the model, not a
+        // merge with the popover's draft — so pin that `currentSection` itself cannot see it either.
+        let currentSectionBody = try #require(
+            CadenceSourceScan.functionBody(named: "currentSection", in: code),
+            "currentSection is not where Completion's config read lives any more"
+        )
+        #expect(!currentSectionBody.contains("editorName"), "currentSection now reads the uncommitted rename draft")
+    }
+
     // MARK: - T-645: the editor's other three writes, and where the rename commits
 
     /// **The three writes that reached no commit at all, and the one that closed the popover over
