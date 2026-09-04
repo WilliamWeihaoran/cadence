@@ -142,8 +142,8 @@ struct CadenceInPlaceEditFlushCommitTests {
     /// the list it started in** — including its `order`, which `CadenceTaskFieldSnapshot` did not
     /// carry when this undo was written out by hand. `assignContainer` sends a genuine move to the
     /// end of its new list, so a restore that reset the relationships and left the order would move
-    /// the task inside the list it never left. [[T-701]] put `order` in the snapshot; folding this
-    /// undo back onto the shared unit is [[T-765]].
+    /// the task inside the list it never left. [[T-701]] put `order` in the snapshot, and [[T-765]]
+    /// folded this undo onto it directly.
     @Test func arefusedListMoveLeavesTheTaskInTheListItStartedIn() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)

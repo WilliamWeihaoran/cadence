@@ -21,8 +21,11 @@ import SwiftData
 /// Its snapshot (`CadenceTaskFieldSnapshot`) used to carry neither `title` nor a subtask's
 /// `isDone`, so restoring a refused rename through it would have put the priority back and left the
 /// title — a worse state than either outcome the user could have expected. `title` is snapshotted
-/// as of [[T-701]]; `isDone` lives on `Subtask`, which that snapshot is not about at all, so
-/// `toggleSubtask` still owns its own undo. Moving `rename` onto the shared unit is [[T-765]].
+/// as of [[T-701]], so `rename`'s undo is `CadenceTaskFieldSnapshot` directly rather than a
+/// hand-written near-copy of it ([[T-765]]) — restoring the raw `priorityRaw` this way is also
+/// stricter than the hand-rolled version was: it round-trips an unrecognised value exactly instead
+/// of coercing it through `task.priority` and writing `.none` back. `isDone` lives on `Subtask`,
+/// which that snapshot is not about at all, so `toggleSubtask` still owns its own undo.
 enum CadenceNoteTaskEmbedEditing {
 
     /// Ticks or unticks one subtask of an embedded card.
@@ -50,7 +53,8 @@ enum CadenceNoteTaskEmbedEditing {
     /// Renames an embedded card's task, applying the `!`-style priority shortcut the inline title
     /// field accepts. Both fields are restored together when the commit is refused: the shortcut
     /// moves the priority as a side effect of the title, so undoing one without the other would
-    /// leave the card holding half of an edit nobody made.
+    /// leave the card holding half of an edit nobody made. The restore is `CadenceTaskFieldSnapshot`
+    /// rather than the two locals this used to save by hand ([[T-765]]).
     ///
     /// - Parameter commit: See `toggleSubtask(_:in:commit:)`.
     static func rename(
@@ -59,8 +63,7 @@ enum CadenceNoteTaskEmbedEditing {
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
-        let restoredTitle = task.title
-        let restoredPriority = task.priority
+        let snapshot = CadenceTaskFieldSnapshot(task)
 
         var priority = task.priority
         task.title = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
@@ -68,8 +71,7 @@ enum CadenceNoteTaskEmbedEditing {
 
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-                task.title = restoredTitle
-                task.priority = restoredPriority
+                snapshot.restore(to: task)
             }
         } catch {
             return false

@@ -333,7 +333,8 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// Both directions are in one test on purpose. They are the two writes the two hand-written
     /// near-copies existed for — `CadenceNoteTaskEmbedEditing.rename` for the title and
     /// `CadenceTaskMutationSupport.moveToContainer` for the order — and a fix that covered one
-    /// would leave the other exactly as latent as it was.
+    /// would leave the other exactly as latent as it was. [[T-765]] folded both onto this snapshot
+    /// directly, so neither hand-rolls its restore any more.
     @Test func arefusedFieldEditRestoresTheTitleAndTheOrderTheEditMoved() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)

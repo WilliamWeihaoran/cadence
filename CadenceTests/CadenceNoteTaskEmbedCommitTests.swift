@@ -142,6 +142,33 @@ struct CadenceNoteTaskEmbedCommitTests {
         #expect(stored.map(\.priority) == [.low])
     }
 
+    /// **Behavioural, T-765.** `task.priority` coerces an unrecognised `priorityRaw` to `.none` on
+    /// read, which is exactly why `CadenceTaskFieldSnapshot` snapshots the raw string rather than
+    /// the computed enum (see its doc comment). A hand-rolled undo that reads and writes back
+    /// through `task.priority` does not get that protection: it round-trips an unrecognised raw
+    /// value through `.none` and writes `"none"` back, silently discarding whatever the store
+    /// actually held. This is the divergence T-765 asked to be enumerated rather than assumed away.
+    @Test func arefusedEmbeddedRenameRestoresAnUnrecognisedPriorityRawExactly() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let (task, _) = try taskWithSubtask(in: modelContext)
+        task.priorityRaw = "urgent-legacy"
+        try modelContext.save()
+
+        #expect(
+            !CadenceNoteTaskEmbedEditing.rename(
+                task,
+                to: "Shipped the beta !!!",
+                in: modelContext,
+                commit: { _ in throw CommitRefused() }
+            )
+        )
+        #expect(
+            task.priorityRaw == "urgent-legacy",
+            "the refused rename replaced an unrecognised priorityRaw with \"none\""
+        )
+    }
+
     /// **Behavioural.** Neither undo reaches past the edit it is undoing. This is the app's single
     /// `ModelContext`: a refused tick on a card inside a note must not take the note the user is
     /// typing with it, which is exactly what a `rollback()` undo would do.

@@ -479,10 +479,13 @@ enum CadenceTaskMutationSupport {
     /// section and order — so a caller that closes a picker or repaints a card on `false` is
     /// reporting a move that did not happen (T-497).
     ///
-    /// The undo is written out here rather than taken from `CadenceTaskFieldSnapshot`, which does
-    /// not carry `order`: `assignContainer` sends a genuine move to the end of its new list, and a
-    /// restore that put the relationships back but left the task at that tail would move it inside
-    /// the list it never left.
+    /// The undo used to be written out here rather than taken from `CadenceTaskFieldSnapshot`,
+    /// because that snapshot did not carry `order`: `assignContainer` sends a genuine move to the
+    /// end of its new list, and a restore that put the relationships back but left the task at
+    /// that tail would move it inside the list it never left. [[T-701]] put `order` in the
+    /// snapshot, so the five fields `assignContainer` writes — `area`, `project`, `context`,
+    /// `sectionName`, `order` — are all ones it restores, and this folds onto it directly
+    /// ([[T-765]]).
     ///
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
     ///   because a `save()` that throws cannot be provoked out of an in-memory container, and an
@@ -497,11 +500,7 @@ enum CadenceTaskMutationSupport {
         modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
-        let restoredArea = task.area
-        let restoredProject = task.project
-        let restoredContext = task.context
-        let restoredSectionName = task.sectionName
-        let restoredOrder = task.order
+        let snapshot = CadenceTaskFieldSnapshot(task)
 
         assignContainer(
             task,
@@ -513,11 +512,7 @@ enum CadenceTaskMutationSupport {
 
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-                task.area = restoredArea
-                task.project = restoredProject
-                task.context = restoredContext
-                task.sectionName = restoredSectionName
-                task.order = restoredOrder
+                snapshot.restore(to: task)
             }
         } catch {
             return false
