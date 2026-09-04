@@ -43,6 +43,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-999] **Four SDK names in the unqualified ledger are the residual framework allowlist, and it
+  will grow.** `reloadInputViews()`, `validateMenuItem(_:)`, `unregisterForRemoteNotifications()`
+  and `ranges(of:options:)` are AppKit/UIKit/Foundation members this repository *mentions* but never
+  *calls*, so `calledNames(inCode:)` cannot resolve them. This is the allowlist [[T-718]] feared,
+  reduced from "a list of AppKit" to four lines — because every framework name the app actually
+  calls resolves for free. Each new mention costs one ledger line naming its file and reason, which
+  beats a bare allowlist. **Watch the count:** past roughly a dozen the trade has changed.
+- [T-998] **The unqualified comment-claim half cannot see [[T-647]]'s own spelling.** [[T-718]]
+  landed on the question *is this name called anywhere in the tree*, which has one reading and needs
+  no SDK allowlist. What it gives up is exactly T-647's defect: `insertSubtask`/`deleteSubtask` named
+  in a comment about a file that has neither **and declared elsewhere in the tree**. Those resolve
+  here and always will. Catching them needs *the scope the sentence implies*, which is a third rule,
+  not a widening of this one. Filed so nobody reads a green sweep as proof that a comment's pointer
+  was checked against the file it is about.
+- [T-997] **"The surface filled itself in" is guarded for one spelling and no more.** [[T-664]] added
+  a write through a **collection `@Binding`** to `successReport` — 11 declarations in 8 files, of
+  which 3 hold a swallowed commit, zero false positives. The other half of
+  `TagPickerPopoverViews.restore`'s own report — `query = ""`, the search field blanking — has no
+  spelling and **should not get the obvious one**: `= ""` on view state is ordinary field clearing
+  and would cost far more than it finds. A **scalar** `@Binding` write is also uncovered; measure its
+  false-positive count before widening, the way T-664 measured this one.
+- [T-996] **"A rearrangement the user can see" is guarded for one spelling and no more.** [[T-871]]
+  landed half 2b: a hand-rolled `\.order` renumber inside a `for` loop, in a declaration that owns
+  its unit of work and swallows its commit or reaches none. That is **a proxy for the clause, not
+  the clause** — sound, and incomplete in three measured ways: a **blob-stored ordering** is
+  invisible ([[T-870]]); a renumber **delegated to `CadenceOrderCommit`** is invisible, and that is
+  now the *correct* way to write one, so the half sees the wrong spelling and not the right one; and
+  a bare **`move(fromOffsets:toOffset:)`** never writes a field at all. Measured: six declarations
+  renumber `\.order` in a loop and all six commit. **This is the stated exemption, not a defect.**
+
 - [T-992] **The `=` content file is never asked where it was built, and that is the commonest way
   staleness propagates.** [[T-982]] deliberately checks only the bare form, on instruction: the `=`
   reconstruction is the prescribed repair and refusing it would close the only way out. But
@@ -220,7 +250,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a list's Tasks tab. Both semantics were preserved exactly as found while [[T-869]] made them
   commit. **This is a judgement call about what a drag under a date sort should mean**, and needs
   deciding rather than harmonising by whichever is easier.
-- [T-881] **`CadenceTaskStatusEditing`'s catch-and-record path is pinned only by source-text ordering.**
+- [T-881] **CLOSED 2026-09-05 (`65806e3`).** Decided **in favour** of the signature change, because it is not a new seam: `CadenceTaskMutationSupport.toggleCompletion`, `.setStatus` and `CadenceFocusSupport.complete` all already take `commit:` with the same default, and these three wrappers were the only frame in the chain that dropped it. Default argument, so no call site moved. **The old assertion was live in both directions** -- a mutation that reconciles a put-back transition still satisfies the text-ordering predicate it used; the new behavioural test kills it. `completeFocusSession`'s failure path had no assertion at all. **Filed as:** **`CadenceTaskStatusEditing`'s catch-and-record path is pinned only by source-text ordering.**
   All three entry points document "nothing is reconciled on the failure path", asserted by
   `body.range(of:)` string ordering in `CadenceTaskStatusLifecycleSurfaceTests`. Driving it
   behaviourally needs the wrapper to forward a `commit:` closure to the shared helper, the way
@@ -455,7 +485,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   was not understood. Comment-only; measured 2026-09-04: `CadenceSharedBoardChromeTests` green
   (51.6s, `scripts/xcb.sh v3batchV`, 0 compile errors, 0 warnings on a run that recompiled the file).
 
-- [T-718] **The unqualified half of [[T-565]] is measured and guarded by nothing.**
+- [T-718] **CLOSED 2026-09-05 (`65806e3`).** **[[o4]]'s decline was not overturned; the question was replaced.** The unstable word was *declared* -- 139 offenders keying on `func`, 54 including closure-typed properties, plus an SDK allowlist still owed. The landed definition is *called anywhere in the tree*: one reading, and it **dissolves** the allowlist rather than maintaining it, because `rollback`, `map`, `trimmingCharacters`, `setFill` and the rest resolve because the app calls them. Measured: 22 unresolved against 48 and 77 for the two *declared* readings. All 27 ledger entries read by hand -- 21 tombstones, 4 SDK mentions ([[T-999]]), 2 illustrative spans -- **zero stale claims**, which is itself the finding. **Filed as:** **The unqualified half of [[T-565]] is measured and guarded by nothing.**
   A backticked span shaped like a call — `` `foo(_:)` ``, `` `bar()` `` — with no type in front of it
   is invisible to the qualified rule, and that is the spelling [[T-647]]'s defect actually used:
   `insertSubtask` and `deleteSubtask`, named in a comment about a file that has neither, both
@@ -1466,7 +1496,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   behavioural refusal tests, both read from a second `ModelContext`. Green across 4 targets; the
   write-ordering guarantee mutation-tested (write-before-commit reintroduced and killed).
 
-- [T-664] **The `try? save()` rule's report vocabulary has no spelling for "the surface filled
+- [T-664] **CLOSED 2026-09-05 (`65806e3`).** `successReport` gained a spelling for a surface that stays open and fills itself in: a write through a collection `@Binding`. The ticket's own experiment is now a killed mutation -- replanting `TagPickerPopoverViews.restore` exactly as it stood before [[T-652]] is **named** by the sweep, where T-664 had measured that the same replant left the suite green. Incomplete by design; see [[T-997]]. **Filed as:** **The `try? save()` rule's report vocabulary has no spelling for "the surface filled
   itself in".** Found — and then *measured* — while fixing [[T-652]].
   `CadenceSaveCommitRule.successReport` is a closed list of **dismissals**: `dismiss…()`,
   `is/show<X> = false`, `editing/selected/pending<X> = nil`, `presented<X> =`,
@@ -1938,7 +1968,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   T-846's stated scope ("the two-title model"), so left as a title-only fix; the icon should get
   the same treatment in a follow-up.
 
-- [T-871] **"A rearrangement the user can see" is a rule clause no detector can enforce.**
+- [T-871] **CLOSED 2026-09-05 (`65806e3`).** Half 2b landed as a **sound but incomplete** guard with an empty exemption list, and its three blind spots are written in the doc comment, the test's own doc, **and** `AGENTS.md` -- precisely so a green run is not read as the clause being covered. See [[T-996]]. **Filed as:** **"A rearrangement the user can see" is a rule clause no detector can enforce.**
   [[T-614]] added it to `AGENTS.md`'s half 2 and left `CadenceSaveCommitDisciplineTests` alone on
   purpose: half 2 matches a vocabulary of *spellings*, and a row staying where it was dropped has
   none. Checked before changing anything — the narrowing reclassifies no existing exemption and the
