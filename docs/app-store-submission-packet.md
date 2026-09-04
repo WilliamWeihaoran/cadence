@@ -14,9 +14,12 @@ This is the repo-tracked source for App Store Connect submission fields and revi
 - Minimum OS: macOS 26.1
 - Version: `1.0`
 - Build: current project build number
-- Copyright: `© 2026 Haoran Wei` — confirm the exact legal name and year in App Store Connect; the
-  repo has no authoritative legal-entity record, this is inferred from the bundle ID
-  (`com.haoranwei.Cadence`) and the repo's git author.
+- Copyright: `© 2026 Haoran Wei` — **confirmed by the user 2026-09-05 as their legal name.** They
+  also hold a Chinese name; it is deliberately **not** included, because this field names the legal
+  entity that owns the app and a name absent from the Apple Developer Program account is a
+  discrepancy a reviewer can query for no benefit. **One check remains:** if App Store Connect →
+  Business → Legal Entity Name reads the Chinese name, use that instead — the field must match the
+  account, not the person's preference.
 - Keywords (Apple limit: 100 characters, comma-separated): `tasks,to-do,planner,calendar,notes,habits,goals,productivity,iCloud sync,widgets,reminders,markdown` (99 characters).
 - Description (Apple limit: 4000 characters): see "App Description" below (currently ~1,900 characters). Paste it as-is or edit for tone; do not add claims not covered by "Metadata must avoid claims that are not true for the build" further down.
 - Encryption: uses only exempt or standard platform encryption; `ITSAppUsesNonExemptEncryption` is false.
