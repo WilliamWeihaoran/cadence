@@ -6,6 +6,7 @@
 #   ./scripts/test-suite-index.sh --scope theRowStill    # -only-testing: args for the matches
 #   ./scripts/test-suite-index.sh --label SomeSuite      # the string swift-testing prints for it
 #   ./scripts/test-suite-index.sh --labels               # TypeName<TAB>label, every suite
+#   ./scripts/test-suite-index.sh --test-labels          # funcName<TAB>label ("" if unnamed), every @Test
 #
 # This exists for two of the five ways a test has looked like a guard while guaranteeing nothing
 # (docs/TODO.md T-161):
@@ -44,6 +45,16 @@
 # passing or failing, because the log never spells the function name at all once a display name is
 # given. `--label`/`--labels` answer "what string will the log actually use for this suite", and
 # `list` marks a display-named case with the quoted text to grep for instead.
+#
+# T-786. `--label`/`--labels` only ever answered that question at the *suite* level
+# (`@Suite("...")`), never per `@Test`, so `scripts/mutate.sh`'s classifier had no way to tell "this
+# display-named test did not fail" from "this display-named test did not run" -- it could only grep
+# for the bareword `Test funcName()` spelling, which a display-named case never prints. `--test-labels`
+# is the missing per-test half: `funcName<TAB>label` (empty second column when the case carries no
+# `@Test("...")` name), one line per test, so a caller can map a function name from a plan or a
+# manifest to the exact quoted string the log will use. `mutate.sh` reads it from its own tree, the
+# same way it reads its own `scripts/xcb.sh`, so a `--tree` run sees the labels of its own
+# (possibly uncommitted) tests rather than the repository's.
 
 set -uo pipefail
 ROOT="${0:A:h:h}"
@@ -51,6 +62,7 @@ MODE=list
 if [[ "${1:-}" == "--scope" ]]; then MODE=scope; shift
 elif [[ "${1:-}" == "--label" ]]; then MODE=label; shift
 elif [[ "${1:-}" == "--labels" ]]; then MODE=labels; shift
+elif [[ "${1:-}" == "--test-labels" ]]; then MODE=test_labels; shift
 fi
 NEEDLE="${1:-}"
 
@@ -176,14 +188,20 @@ for dirpath, _, filenames in os.walk(os.path.join(root, 'CadenceTests')):
             rows.append((suite or '<file scope>', m.group(1), filename, test_label))
             suite_label.setdefault(suite or '<file scope>', None)
 
-if mode in ('label', 'labels'):
+if mode in ('label', 'labels', 'test_labels'):
     if mode == 'label':
         print(suite_label.get(needle, needle) or needle)
-    else:
+    elif mode == 'labels':
         for suite in sorted(suite_label):
             if suite == '<file scope>':
                 continue
             print(f'{suite}\t{suite_label[suite] or suite}')
+    else:
+        # name<TAB>label, every @Test, unsorted-suite-agnostic: test names are unique across the
+        # target (CadenceTestTargetHygieneTests enforces it), so a bare function name is enough for
+        # a caller to key off of without also carrying its suite.
+        for _suite, name, _filename, test_label in sorted((r[0], r[1], r[2], r[3]) for r in rows):
+            print(f'{name}\t{test_label or ""}')
     sys.exit(0)
 
 rows = [r for r in rows if not needle or needle in r[1]]

@@ -1,0 +1,12 @@
+# Every @Test in CadenceTests that walks some real tree but not the product tree (T-809).
+# Deliberately NOT part of CadenceRealTreeSweepManifest.txt: neither entry satisfies T-808's rule
+# (no product-root path literal in its reach), and widening that rule to absorb them was measured
+# to also absorb ~24 unrelated tests across the target -- see
+# CadenceTestTargetHygieneTests.everyNonProductTreeSweepOnTheManifestStillExists.
+#
+# HAND-MAINTAINED, unlike the other manifest: two entries, each with its own non-vacuity check
+# (CadenceTestTargetHygieneTests, "The non-product-tree sweep manifest" section), rather than a
+# scan-derived population. Deleting a line here, or the @Test it names, fails
+# CadenceTestTargetHygieneTests.
+CadenceInPlaceEditFlushCommitTests/themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse
+TodayAndInboxNamingTests/noAgentFacingDocSpellsARetiredIPadName

@@ -139,12 +139,20 @@ ARGV = sys.argv[2:]
 # The quoted alternative matches a `@Test("...")` case's display-name form (T-667): swift-testing
 # prints `Test "name"` instead of `Test funcName()` for one of those, so without it this count read
 # a suite that ran and passed every case as zero -- measured against real logs for
-# `ListDetailPageTests` (9/9) and `MarkdownTableMobileEditingTests` (27/27). `FAILED_SWIFT_TESTING`
-# below is not widened to match: it still cannot name a failing display-named test, which is
-# tracked as residue rather than fixed here (it needs the function-name -> display-name mapping
-# `scripts/test-suite-index.sh --labels` now carries, not just a wider regex).
+# `ListDetailPageTests` (9/9) and `MarkdownTableMobileEditingTests` (27/27).
+#
+# T-786. `FAILED_SWIFT_TESTING` alone still cannot name a failing display-named test -- it only
+# matches the bareword `funcName()` spelling, and a display-named case's log line never contains
+# it, pass or fail. `FAILED_SWIFT_TESTING_NAMED` is the other half: it catches the quoted-display
+# failure line, and `classify_run` below resolves the quoted text back to the function name via
+# the label map from `scripts/test-suite-index.sh --test-labels` (52 tests, at last count, of the
+# 4383 in the target) -- the mapping this script's own comment used to say did not exist yet.
+# Without that map (`labels={}`, the default), a display-named test's PASS reads as TEST-ABSENT,
+# not SURVIVED: nothing here silently regresses to the old wrong answer, it degrades to refusing to
+# guess, which `selftest` pins directly.
 TEST_RESULT = re.compile(r'(?:✔|✘) Test (?:[A-Za-z0-9_]+\(\)|"[^"]*")|Test [Cc]ase .*(?:passed|failed)')
 FAILED_SWIFT_TESTING = re.compile(r"✘ Test ([A-Za-z0-9_]+)\(\)")
+FAILED_SWIFT_TESTING_NAMED = re.compile(r'✘ Test "([^"]*)"')
 FAILED_XCTEST = re.compile(r"Test [Cc]ase '-\[[^ ]+ ([A-Za-z0-9_]+)\]' failed")
 COMPILE_ERROR = re.compile(r"\.swift:[0-9]+:[0-9]+: error:")
 # Strict, for the same reason the error count is (AGENTS.md): a loose `warning:` count picks up
@@ -437,12 +445,27 @@ class RunVerdict:
         return self.verdict in (KILLED, SURVIVED)
 
 
-def classify_run(exit_code, log, suite=None, tests=()):
+def classify_run(exit_code, log, suite=None, tests=(), labels=None, suite_labels=None):
     """Turn one run into a verdict, from the log text and the exit code together.
 
     Pure, and separately exercised by `selftest` against real log shapes, because this is where
     failure mode 4 lives: the two ways a build fails without printing an `error:` line.
+
+    `labels` (T-786) maps a `@Test` function name to the display string swift-testing logs for it
+    instead, e.g. `{"theFullLabelIsUnchanged": "the full label is unchanged"}`, empty/absent for an
+    unnamed case. It comes from `scripts/test-suite-index.sh --test-labels`, read once per run from
+    the tree under test. Without it (the default), a display-named test's own result line is
+    invisible to this function -- exactly as invisible as before this map existed -- so a caller
+    that skips wiring it up gets TEST-ABSENT/no-credit, never a silently wrong SURVIVED or KILLED.
+
+    `suite_labels` (T-786, the other half of the same ticket) is the same idea one level up: a
+    `@Suite("...")` display name means the log's suite-boundary lines spell `Suite "<label>"`, never
+    the bareword type name, so `SUITE-ABSENT`'s check had the identical blind spot. Maps type name
+    to display label (or the type name itself, unlabeled), from `scripts/test-suite-index.sh
+    --labels`.
     """
+    labels = labels or {}
+    label_to_func = {label: func for func, label in labels.items() if label}
     lowered = log.lower()
     tests_ran = len(TEST_RESULT.findall(log))
     warnings = len(COMPILE_WARNING.findall(log))
@@ -468,13 +491,36 @@ def classify_run(exit_code, log, suite=None, tests=()):
         # The suite name is on xcodebuild's own `Command line invocation` line whether or not
         # anything ran, so that line is dropped before looking for evidence.
         body = "\n".join(l for l in log.split("\n") if "-only-testing:" not in l)
-        if suite not in body:
+        # T-786's other half: a `@Suite("...")` display name means swift-testing's own suite
+        # boundary lines never spell the bareword type name at all (`Suite "<label>"` instead of
+        # `Suite <TypeName>`), so `suite not in body` used to read a real, fully-scoped, fully-green
+        # run of a display-named suite as SUITE-ABSENT. `suite_labels` (from
+        # `scripts/test-suite-index.sh --labels`) maps the type name to that label, falling back to
+        # the type name itself when the suite carries no display name -- so this degrades to the
+        # original bareword check whenever there is nothing new to know.
+        suite_label = (suite_labels or {}).get(suite, suite)
+        found = suite in body or (suite_label != suite and ('Suite "%s"' % suite_label) in body)
+        if not found:
             return RunVerdict("INVALID", "SUITE-ABSENT",
                               "%d tests ran but none of them was in %s -- the run was scoped "
                               "somewhere else" % (tests_ran, suite),
                               tests_ran, (), warnings)
-    failed = FAILED_SWIFT_TESTING.findall(log) + FAILED_XCTEST.findall(log)
-    missing = [t for t in tests if ("Test %s()" % t) not in log and ("%s]" % t) not in log]
+    # A quoted failure line names a display string, not a function name -- resolve it back through
+    # the map so `failed` (and every message built from it) always reports BY FUNCTION NAME, the
+    # spelling a plan's `tests:` line and this repository's other tooling use. A quoted name with no
+    # entry in the map is reported as-is: still a name, just not resolved to one this run was told
+    # to expect.
+    failed = (FAILED_SWIFT_TESTING.findall(log)
+              + [label_to_func.get(name, name) for name in FAILED_SWIFT_TESTING_NAMED.findall(log)]
+              + FAILED_XCTEST.findall(log))
+
+    def _ran(t):
+        if ("Test %s()" % t) in log or ("%s]" % t) in log:
+            return True
+        label = labels.get(t)
+        return bool(label) and ('Test "%s"' % label) in log
+
+    missing = [t for t in tests if not _ran(t)]
     if missing:
         return RunVerdict("INVALID", "TEST-ABSENT",
                           "the plan names %s, and no result line for %s appears in the log"
@@ -577,6 +623,55 @@ def run_suite(tree, ident, mutation, scheme, destination, log_dir, tag):
             log = handle.read()
         shutil.copyfile(log_path, os.path.join(log_dir, "%s.log" % tag))
     return finished.returncode, log + "\n" + stdout, time.time() - started
+
+
+def load_test_labels(tree):
+    """funcName -> display label (T-786), read from the tree's OWN `scripts/test-suite-index.sh`.
+
+    Its own, for the same reason `run_suite` uses the tree's own `xcb.sh` rather than the
+    repository's: a `--tree` run may carry the caller's own uncommitted tests, and those are what a
+    plan's `tests:` line names. Reading the repository's copy would answer for a different set of
+    `@Test`s than the ones this run is about to mutate.
+
+    Best-effort: a missing or failing script degrades to an empty map -- every test then falls back
+    to the bareword `Test funcName()` check exactly as it did before this existed. That is a loss of
+    credit for display-named cases, never a false SURVIVED/KILLED, so a broken map cannot manufacture
+    evidence.
+    """
+    script = os.path.join(tree, "scripts", "test-suite-index.sh")
+    if not os.path.exists(script):
+        return {}
+    finished = subprocess.run([script, "--test-labels"], cwd=tree, capture_output=True, text=True)
+    if finished.returncode != 0:
+        return {}
+    labels = {}
+    for line in finished.stdout.split("\n"):
+        if "\t" not in line:
+            continue
+        name, _, label = line.partition("\t")
+        labels[name] = label or None
+    return labels
+
+
+def load_suite_labels(tree):
+    """TypeName -> display label (T-786), read from the tree's OWN `scripts/test-suite-index.sh`.
+
+    Same reasoning as `load_test_labels`, one level up: `--labels` falls back to the type name
+    itself when a suite carries none, so this is safe to consult unconditionally.
+    """
+    script = os.path.join(tree, "scripts", "test-suite-index.sh")
+    if not os.path.exists(script):
+        return {}
+    finished = subprocess.run([script, "--labels"], cwd=tree, capture_output=True, text=True)
+    if finished.returncode != 0:
+        return {}
+    labels = {}
+    for line in finished.stdout.split("\n"):
+        if "\t" not in line:
+            continue
+        name, _, label = line.partition("\t")
+        labels[name] = label
+    return labels
 
 
 # --- the driver ---------------------------------------------------------------
@@ -700,6 +795,16 @@ def main():
     say("  tree:        %s%s" % (tree, "" if options["tree"] or options["in_place"] else "  (git archive HEAD)"))
     say("  scheme:      %s   destination: %s" % (options["scheme"], options["destination"]))
     say("  builds:      %s" % ("yes" if options["build"] else "NO (--no-build: apply/restore only)"))
+
+    # T-786: funcName -> display label, from the tree's own test-suite-index.sh, read once up
+    # front so every classify_run call below (baseline and every mutation) can tell a display-named
+    # test's own result line from silence.
+    labels = load_test_labels(tree)
+    named = sum(1 for v in labels.values() if v)
+    say("  test labels: %d test(s) indexed, %d logging under a display name" % (len(labels), named))
+    suite_labels = load_suite_labels(tree)
+    named_suites = sum(1 for k, v in suite_labels.items() if v != k)
+    say("  suite labels: %d suite(s) indexed, %d logging under a display name" % (len(suite_labels), named_suites))
     say("")
 
     # Baselines and backups, taken before anything is edited. The baseline is the file as this run
@@ -741,7 +846,7 @@ def main():
             probe = mutations[0]
             code, log, seconds = run_suite(tree, ident, probe, options["scheme"],
                                            options["destination"], log_dir, "baseline")
-            base = classify_run(code, log, probe.suite, probe.tests)
+            base = classify_run(code, log, probe.suite, probe.tests, labels, suite_labels)
             say("   exit=%d  test result lines=%d  swift warnings=%d  %.0fs"
                 % (code, base.tests_ran, base.warnings, seconds))
             if base.verdict != SURVIVED:
@@ -781,7 +886,7 @@ def main():
             else:
                 code, log, seconds = run_suite(tree, ident, mutation, options["scheme"],
                                                options["destination"], log_dir, mutation.ident)
-                verdict = classify_run(code, log, mutation.suite, mutation.tests)
+                verdict = classify_run(code, log, mutation.suite, mutation.tests, labels, suite_labels)
                 say("   run: exit=%d  test result lines=%d  swift warnings=%d  %.0fs"
                     % (code, verdict.tests_ran, verdict.warnings, seconds))
             ok = restore_mutation(tree, runner.backups, runner.baselines, mutation)
@@ -998,6 +1103,67 @@ def selftest():
                         "** TEST SUCCEEDED **\n")
         survivor = classify_run(0, survivor_log, "HabitFrequencyLabelTests", ["theFullLabelIsUnchanged"])
         check("a genuine survivor is still SURVIVED", survivor.verdict == SURVIVED, survivor.reason)
+
+        say("")
+        say(" T-786 -- a display-named @Test's own result line is not silence")
+        DISPLAY_LABEL = "the full label is unchanged"
+        DISPLAY_LABELS = {"theFullLabelIsUnchanged": DISPLAY_LABEL}
+        named_pass_log = ('◇ Test "%s" started.\n'
+                          '✔ Test "%s" passed after 0.001 seconds.\n'
+                          "Test Suite 'HabitFrequencyLabelTests' passed\n"
+                          "** TEST SUCCEEDED **\n") % (DISPLAY_LABEL, DISPLAY_LABEL)
+        blind = classify_run(0, named_pass_log, "HabitFrequencyLabelTests", ["theFullLabelIsUnchanged"])
+        check("without the label map, a display-named pass still reads as TEST-ABSENT -- the exact "
+              "hazard T-786 named, reproduced rather than assumed",
+              blind.verdict == "INVALID" and blind.reason == "TEST-ABSENT", blind.reason)
+        seen = classify_run(0, named_pass_log, "HabitFrequencyLabelTests",
+                            ["theFullLabelIsUnchanged"], DISPLAY_LABELS)
+        check("with the label map, the same log is a real SURVIVED",
+              seen.verdict == SURVIVED, seen.reason)
+
+        named_fail_log = ('◇ Test "%s" started.\n'
+                          '✘ Test "%s" recorded an issue at Foo.swift:12:5\n'
+                          "Test Suite 'HabitFrequencyLabelTests' failed\n"
+                          "** TEST FAILED **\n") % (DISPLAY_LABEL, DISPLAY_LABEL)
+        named_killed = classify_run(65, named_fail_log, "HabitFrequencyLabelTests",
+                                    ["theFullLabelIsUnchanged"], DISPLAY_LABELS)
+        check("a display-named test's own failure is KILLED, not TEST-ABSENT",
+              named_killed.verdict == KILLED, named_killed.reason)
+        check("and it is reported by FUNCTION name, not the quoted display string",
+              named_killed.failed == ["theFullLabelIsUnchanged"], named_killed.failed)
+        # A quoted failure with no entry in the map at all (a test the plan never named) is still
+        # reported -- by the only name available, the display string -- never dropped silently.
+        unmapped_fail = classify_run(65, named_fail_log, "HabitFrequencyLabelTests", [])
+        check("an unmapped display-named failure is still named, by its display string",
+              unmapped_fail.verdict == KILLED and unmapped_fail.failed == [DISPLAY_LABEL],
+              unmapped_fail.failed)
+
+        say("")
+        say(" T-786's other half -- a @Suite(\"...\") display name is the same blind spot one level up")
+        SUITE_LABEL = "the labeled suite"
+        SUITE_LABELS = {"LabeledSuiteTests": SUITE_LABEL}
+        # swift-testing's own suite-boundary lines spell the quoted label, never the bareword type
+        # name -- so nothing here contains the literal string "LabeledSuiteTests" at all.
+        named_suite_log = ('◇ Suite "%s" started.\n'
+                           '◇ Test "%s" started.\n'
+                           '✔ Test "%s" passed after 0.001 seconds.\n'
+                           '✔ Suite "%s" passed after 0.001 seconds.\n'
+                           "** TEST SUCCEEDED **\n") % (SUITE_LABEL, DISPLAY_LABEL, DISPLAY_LABEL, SUITE_LABEL)
+        blind_suite = classify_run(0, named_suite_log, "LabeledSuiteTests", ["theFullLabelIsUnchanged"],
+                                   DISPLAY_LABELS)
+        check("without the suite-label map, a labeled suite's own green run still reads as "
+              "SUITE-ABSENT -- the exact hazard T-786 named for suites, reproduced rather than "
+              "assumed", blind_suite.verdict == "INVALID" and blind_suite.reason == "SUITE-ABSENT",
+              blind_suite.reason)
+        seen_suite = classify_run(0, named_suite_log, "LabeledSuiteTests", ["theFullLabelIsUnchanged"],
+                                  DISPLAY_LABELS, SUITE_LABELS)
+        check("with the suite-label map, the same log is a real SURVIVED",
+              seen_suite.verdict == SURVIVED, seen_suite.reason)
+        check("and an unlabeled suite's bareword check is untouched by a suite-label map that "
+              "simply echoes its own key",
+              classify_run(0, survivor_log, "HabitFrequencyLabelTests", ["theFullLabelIsUnchanged"],
+                          {}, {"HabitFrequencyLabelTests": "HabitFrequencyLabelTests"}).verdict
+              == SURVIVED)
 
         say("")
         say(" a run scoped to somebody else's suite is not evidence about yours")

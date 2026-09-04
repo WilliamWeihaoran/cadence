@@ -1427,11 +1427,19 @@ struct CadenceUppercaseLabelTrackingTests {
     /// **The two retired values are bound to `let`s rather than written inline, and that is not
     /// style.** Measured 2026-09-03: `#expect(adopted == 0.5 * 1.6)` **fails** in this target while
     /// `#expect(adopted == retiredWeekday * 1.6)` passes for the same numbers, and a standalone
-    /// `swiftc -Onone` binary computing both spellings prints one bit pattern for all of them. So
-    /// the difference is something about how `#expect` evaluates a literal-times-literal operand,
-    /// not about the tracking — which is the whole reason to keep it out of an assertion whose
-    /// subject is typography. Reported as observed; the mechanism is not explained here because it
-    /// is not understood, and a guess in a doc comment is worse than the measurement.
+    /// `swiftc -Onone` binary computing both spellings prints one bit pattern for all of them (T-739).
+    ///
+    /// **The mechanism, diagnosed 2026-09-03 (`docs/CODEX_REQUESTS.md` R1):** `#expect(lhs == rhs)`
+    /// expands to `Testing.__checkBinaryOperation<T, U>`, whose `T` and `U` are inferred
+    /// independently — there is no `T == U` constraint. With a typed `CGFloat` on the left and an
+    /// unannotated `0.5 * 1.6` on the right, overload resolution settles `U == AnyHashable`: the
+    /// product boxes as a `Double`, the left side boxes as a `CGFloat` for the comparison, and
+    /// `AnyHashable(CGFloat(0.8)) != AnyHashable(Double(0.8))` even though both carry the identical
+    /// `3fe999999999999a` bit pattern. Binding either operand to a typed `let` (as `retiredWeekday`
+    /// is here) forces `U == CGFloat` instead, and the comparison passes. **The workaround: never
+    /// write a bare `literal * literal` inside `#expect`; bind one side to a typed constant first.**
+    /// A repo-wide sweep on 2026-09-03 found this exact failing shape nowhere else live — the only
+    /// other textual hit was this comment — so it is reported here rather than guarded mechanically.
     @Test func theTwoRetiredLiteralsAndWhatAdoptingTheRatioCostThem() {
         let size = SectionEyebrowLabel.Size.standard.fontSize
         let adopted = SectionEyebrowLabel.kerningRatio * size

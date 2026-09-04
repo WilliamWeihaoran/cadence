@@ -153,26 +153,36 @@ struct CadenceDeleteConfirmationCommitTests {
         )
         #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Inside the area"])
 
-        // Where the gate is. Scoped by its neighbour rather than by
-        // `CadenceSourceScan.functionBody(named:)`, which used to be unable to read this particular
-        // function: `deleteTasks` declares `willDelete: (Set<UUID>) -> Void = { _ in }`, and the
-        // helper took the first `{` after the signature — so it returned the *default closure*.
-        // **T-644 fixed the reader**; this scan is still whole-file because the needle below spans
-        // `processPendingChanges()` and the gate together, which is a claim about their adjacency
-        // rather than about one body. Narrowing it to `deleteTasks` is [[T-668]]'s follow-up, not a
-        // limitation of the reader any more.
+        // Where the gate is. `deleteTasks` declares `willDelete: (Set<UUID>) -> Void = { _ in }`,
+        // and `CadenceSourceScan.functionBody(named:)` used to take the first `{` after the
+        // signature — the *default closure* — rather than the real body; **T-644 fixed that
+        // reader**, and **T-668** made the same fix available for an arbitrary prefix via
+        // `declarationBody(_:in:)`. That is a body-shaped read, though, and the two facts below are
+        // not both body-shaped: `commitsImmediately: Bool = true` is a parameter default, which
+        // lives in the *signature*, before the body's opening brace — so it stays checked against
+        // the whole (comment-stripped) file, same as `deleteTasks`'s own existence. Only the
+        // adjacency claim that follows — that the gate sits right after
+        // `processPendingChanges()` — is truly a claim about one function's *body*, and that is the
+        // half [[T-785]] narrows: not `core` swapped for a smaller string with the same regex, but
+        // the claim restated as "adjacent inside `deleteTasks`" rather than "adjacent somewhere in
+        // this 800-line file" — which a coincidental second `processPendingChanges()` /
+        // `commitsImmediately` pair elsewhere in the file would have satisfied just as well.
         let core = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
         )
         #expect(core.contains("static func deleteTasks("), "the shared task-deletion core moved")
         #expect(core.contains("commitsImmediately: Bool = true"), "the sweep lost its commit gate")
+        let body = try #require(
+            CadenceSourceScan.declarationBody("static func deleteTasks(", in: core),
+            "deleteTasks's body no longer balances -- functionBody/declarationBody would also fail on it"
+        )
         // T-365 changed what the gate encloses — `try? modelContext.save()` became a commit
         // through the shared spine — without changing the thing this test is about, which is that
         // the gate is still there and the cascade still closes it.
         let gatedCommit = #"processPendingChanges\(\)\s*if commitsImmediately \{\s*do \{\s*try CadencePendingChangePersistence\.commitDelete\("#
         #expect(
-            CadenceSourceScan.matchCount(gatedCommit, in: core) == 1,
-            "the mid-cascade commit is no longer gated; re-derive what a refused list delete leaves"
+            CadenceSourceScan.matchCount(gatedCommit, in: body) == 1,
+            "deleteTasks's mid-cascade commit is no longer gated (or the gate moved out of its body); re-derive what a refused list delete leaves"
         )
         #expect(
             CadenceSourceScan.matchCount(

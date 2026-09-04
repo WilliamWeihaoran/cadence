@@ -1002,6 +1002,113 @@ struct CadenceTestTargetHygieneTests {
             #expect(listed.contains(expected), "the manifest no longer names \(expected)")
         }
     }
+
+    // MARK: - The non-product-tree sweep manifest (T-809)
+
+    /// **A second, small, HAND-pinned manifest — deliberately not a third copy of
+    /// `CadenceRealTreeSweepScan`'s transitive-reach classifier.**
+    ///
+    /// [[T-809]]: two tests walk a real tree — `themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse`
+    /// walks `CadenceTests` itself, `noAgentFacingDocSpellsARetiredIPadName` walks the agent-facing
+    /// docs — but neither satisfies [[T-808]]'s rule, because neither reach contains a product-root
+    /// path literal. Widening that rule to catch them would also catch the families it excludes on
+    /// purpose (see `CadenceRealTreeSweepScan`'s header): dropping the product-root requirement
+    /// alone was tried and measured to also catch ~24 unrelated tests across the target — anything
+    /// whose *transitive* reach happens to touch a file-scope helper that walks something,
+    /// regardless of what the test is actually about. That is the T-808 rule's whole reason for
+    /// requiring all three markers together, and loosening it for a two-entry exception reintroduces
+    /// exactly the noise it exists to keep out.
+    ///
+    /// So this manifest is pinned by name, like `misfiledGutterRampAllowed` or
+    /// `CadenceEmptyTitleFallbackSweepTests.constantFallbackExemptions` — a handful of exact
+    /// entries with their own non-vacuity checks, not a population a scan discovers.
+    @Test func everyNonProductTreeSweepOnTheManifestStillExists() throws {
+        let listed = try CadenceRealTreeSweepScan.manifest(
+            in: cadenceTestSource("CadenceTests/CadenceNonProductTreeSweepManifest.txt")
+        )
+        let live = Set(
+            try cadenceTestDeclarations()
+                .map { CadenceRealTreeSweepScan.Entry(suite: $0.suite, name: $0.name) }
+        )
+
+        #expect(!listed.isEmpty, "the non-product-tree manifest is empty, so it pins nothing")
+        #expect(
+            Set(listed).count == listed.count,
+            "the non-product-tree manifest lists a name twice, so one deletion would still leave it looking pinned"
+        )
+
+        let gone = listed.filter { !live.contains($0) }.sorted()
+        #expect(
+            gone.isEmpty,
+            """
+            these non-product-tree sweeps are on the manifest but no longer declared: \
+            \(gone.map(\.description).joined(separator: ", ")). Either the @Test was deleted, or it \
+            was renamed or moved — update CadenceNonProductTreeSweepManifest.txt by hand.
+            """
+        )
+    }
+
+    /// The two manifests are disjoint by construction — that is the entire point of having two —
+    /// checked against the trusted, already-verified [[T-808]] classifier rather than reimplemented.
+    /// A name that migrated onto the product-tree manifest (it gained a product-root literal) no
+    /// longer belongs on this one; it belongs nowhere twice.
+    @Test func noNonProductTreeSweepIsAlsoOnTheProductTreeManifest() throws {
+        let nonProduct = try CadenceRealTreeSweepScan.manifest(
+            in: cadenceTestSource("CadenceTests/CadenceNonProductTreeSweepManifest.txt")
+        )
+        let product = Set(try CadenceRealTreeSweepScan.manifest())
+
+        let overlap = nonProduct.filter { product.contains($0) }.sorted()
+        #expect(
+            overlap.isEmpty,
+            "these are pinned on both manifests: \(overlap.map(\.description)) — they satisfy T-808's rule now, so drop them from the non-product-tree manifest instead"
+        )
+    }
+
+    /// Non-vacuity for each pinned entry, individually: its own function body — not its transitive
+    /// reach, which is exactly the machinery this manifest deliberately does not reuse — still
+    /// contains one of the walk needles [[T-808]]'s scan looks for. A test that stopped walking
+    /// anything at all would still pass `everyNonProductTreeSweepOnTheManifestStillExists` (it still
+    /// exists) and this is what would catch that it no longer belongs here.
+    @Test func eachNonProductTreeSweepsOwnBodyStillWalksSomething() throws {
+        let walkNeedles = [
+            "swiftFiles(", "enumerator(atPath:", "enumerator(at:",
+            "contentsOfDirectory(at", "subpathsOfDirectory", ".sweep(",
+        ]
+        let witnesses: [(file: String, function: String)] = [
+            (
+                "CadenceTests/CadenceInPlaceEditFlushCommitTests.swift",
+                "themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse"
+            ),
+            ("CadenceTests/CadenceMisfiledSurfaceTests.swift", "noAgentFacingDocSpellsARetiredIPadName"),
+        ]
+        for witness in witnesses {
+            let source = CadenceSourceScan.codeOnly(try cadenceTestSource(witness.file))
+            let body = try #require(
+                CadenceSourceScan.functionBody(named: witness.function, in: source),
+                "\(witness.function) no longer balances in \(witness.file)"
+            )
+            #expect(
+                walkNeedles.contains { body.contains($0) },
+                "\(witness.function)'s own body no longer walks anything -- it may no longer belong on the non-product-tree manifest at all"
+            )
+        }
+    }
+
+    /// Non-vacuity, named rather than counted — only two, so both are named.
+    @Test func theNonProductTreeSweepManifestNamesTheSweepsItIsSupposedTo() throws {
+        let listed = Set(
+            try CadenceRealTreeSweepScan.manifest(
+                in: cadenceTestSource("CadenceTests/CadenceNonProductTreeSweepManifest.txt")
+            ).map(\.description)
+        )
+        for expected in [
+            "CadenceInPlaceEditFlushCommitTests/themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse",
+            "TodayAndInboxNamingTests/noAgentFacingDocSpellsARetiredIPadName",
+        ] {
+            #expect(listed.contains(expected), "the non-product-tree manifest no longer names \(expected)")
+        }
+    }
 }
 
 // MARK: - Reading the test target
