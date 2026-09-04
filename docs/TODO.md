@@ -43,6 +43,29 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-914] **A kanban column rename the editor refuses says nothing.**
+  `ListSectionKanbanColumn.applySectionEdits` declines two names outright — empty or whitespace,
+  and one another column in the list already has — by returning without writing and *without*
+  setting `saveFailureNotice`. `commitSectionEdits()` then flushes a context with nothing pending
+  in it, succeeds, and **clears** the notice, so the popover reports the refused rename as landed.
+  The field keeps the typed text, which is right (it is under a caret, per [[T-645]]), but nothing
+  says why the name did not take: the user presses Return over a duplicate and the column simply
+  keeps its old title. Found by t1 while moving the rename to draft state ([[T-736]]) and left
+  alone there on purpose — the fix is a *third* editor state ("that name is already taken"), not a
+  refused commit, and the popover's `failureNotice` slot says "the store refused", which is a
+  different sentence to the user.
+- [T-915] **The two section-blob write guards are blind to what the container's setter normalises.**
+  `applySectionConfigEdits` guards on `merged != sectionConfigs` since [[T-738]], and
+  `mutateSectionConfigs` has guarded the same way for longer — but both compare the *pre*-setter
+  array against the stored one, and `Area.normalizedSectionConfigs` /
+  `Project.normalizedSectionConfigs` force `isCompleted` and `isArchived` false on Default on every
+  write. A merge that differs from the store only in a field the normaliser discards therefore
+  passes both guards, rewrites `sectionConfigsRaw` to a byte-identical string, dirties the object
+  and pushes a CloudKit record — every time it is attempted. Unreachable today: all four routes to a
+  column's lifecycle are gated on `TaskSectionConfig.supportsLifecycle` ([[T-268]]), which is the
+  only field the normaliser touches. Filed because the guards read as "an identical write costs
+  nothing" and that is true only while that gate holds.
+
 - [T-885] **A kanban column can be created, drawn, and gone at next launch.**
   `ListSectionsKanbanView.addSection` calls `container.addSectionConfig(...)` at
   `KanbanListSectionSupportViews.swift:157` and **no `save()` exists anywhere in that file**. Same

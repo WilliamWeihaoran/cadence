@@ -42,10 +42,12 @@ struct ListSectionKanbanColumn: View {
     /// the live `section`, so a rename that arrived from another device while the popover was open
     /// does not read as "the user changed the name back".
     @State private var editorBase: TaskSectionConfig?
-    /// The name the column's **cards** are filed under, which is not the name its *config* carries
-    /// while the rename field is being typed into (T-713). `applySectionEdits` writes the config on
-    /// every keystroke and moves nothing; `moveCardsToStoredColumnName()` settles the cards at the
-    /// commit point and advances this.
+    /// The name the column's **cards** are filed under, which is not always the name its *config*
+    /// carries (T-713). `applySectionEdits` writes the config and moves nothing;
+    /// `moveCardsToStoredColumnName()` settles the cards and advances this. Both run at the commit
+    /// point now, one after the other — but a session with two commit points in it (Return, type
+    /// more, pick a colour) still reaches the second one with the cards under the name the *first*
+    /// commit stored rather than the one the popover opened with, which is what this holds.
     ///
     /// **This is not `editorBase` and must never become it.** `editorBase` is frozen at the moment
     /// the popover opened so the merge writes only the fields the user actually changed — advancing
@@ -209,6 +211,7 @@ struct ListSectionKanbanColumn: View {
     private func header(completionProgress: Double) -> some View {
         KanbanColumnHeader(
             section: section,
+            displayName: headerDisplayName,
             activeTaskCount: activeTasks.count,
             columnColor: columnColor,
             hideColumnDueDateIfEmpty: hideColumnDueDateIfEmpty,
@@ -417,14 +420,12 @@ struct ListSectionKanbanColumn: View {
             editorDueDate: $editorDueDate,
             editorHasDueDate: $editorHasDueDate,
             failureNotice: saveFailureNotice,
-            // **Apply on every keystroke; commit at the end of the edit (T-645).** The rename
-            // writes the container's blob per character so the board's header tracks the field,
-            // and a commit per character would ask the store for a transaction per character and
-            // give the user a refusal notice mid-word. So `applySectionEdits` is the write and
-            // `commitSectionEdits` is the point — the name field submitting or losing focus, a
-            // colour chosen, a date picked. See `commitSectionEdits()` for why the rename's
-            // refusal keeps the text rather than restoring it.
-            onNameChanged: applySectionEdits,
+            // **Nothing per keystroke; one commit at the end of the edit (T-645, T-736).** The
+            // rename used to apply the draft to the container's blob per character — that is the
+            // callback that is gone. `commitSectionEdits` is the point: the name field submitting
+            // or losing focus, a colour chosen, a date picked, or the popover being dismissed. See
+            // `commitSectionEdits()` for why the rename's refusal keeps the text rather than
+            // restoring it.
             onNameCommitted: { _ = commitSectionEdits() },
             onColorSelected: { _ = commitSectionEdits() },
             onDueDateChanged: { _ = commitSectionEdits() },
@@ -441,6 +442,49 @@ struct ListSectionKanbanColumn: View {
                 }
             }
         )
+        .onDisappear(perform: commitEditsOnDismiss)
+    }
+
+    /// **The one way out of the popover that commits nothing on its own (T-714).**
+    ///
+    /// Every control in the editor commits, and so does the name field on Return and on losing
+    /// focus. What is left is: type a name, then dismiss — click outside, or Escape. Since T-736
+    /// the field writes only the editor's own draft, so that path used to end the edit by throwing
+    /// the rename away; before T-736 it kept the text but left it uncommitted with no surface to
+    /// refuse on. Either way the user's last gesture on the popover decided nothing.
+    ///
+    /// **The refusal lands on the column, not in the popover.** `showEditor` is already `false` by
+    /// the time this runs, so `columnFailureNotice` hands `saveFailureNotice` to the column header
+    /// — the surface T-646 built for exactly the case of a refusal arriving after the popover has
+    /// gone. The text the user typed is not restored, for the same reason `commitSectionEdits`
+    /// restores nothing: it is a rename, and an undo would delete it in order to report itself.
+    ///
+    /// It asks `hasUncommittedRename` first rather than committing unconditionally, and the guard
+    /// is not only about the cost of an empty transaction: a commit that succeeds clears
+    /// `saveFailureNotice`, so an unconditional one would wipe a refusal the popover was still
+    /// showing at the moment the header was meant to take it over.
+    private func commitEditsOnDismiss() {
+        guard let base = editorBase, !base.isDefault else { return }
+        guard KanbanSectionStateSupport.hasUncommittedRename(
+            area: area,
+            project: project,
+            columnUUID: base.uuid,
+            typedName: editorName
+        ) else { return }
+        _ = commitSectionEdits()
+    }
+
+    /// What the column header draws while the rename field is being typed into (T-736).
+    ///
+    /// The live preview is the half of the per-keystroke write that was worth keeping, and it
+    /// costs a `String` rather than a blob rewrite: the board still groups cards by the column's
+    /// **stored** name, so the column keeps its cards for the whole of the edit. An empty field
+    /// falls back to the stored name — the same case `applySectionEdits` declines, and a column
+    /// with no title at all is not a preview of anything.
+    private var headerDisplayName: String {
+        guard showEditor, !section.isDefault else { return section.name }
+        let trimmed = editorName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? section.name : trimmed
     }
 
     private func updateSection(_ mutate: (inout TaskSectionConfig) -> Void) {
@@ -453,8 +497,12 @@ struct ListSectionKanbanColumn: View {
     /// device in the meantime. `editorBase` is the column as the popover opened, and the merge
     /// applies only the fields that differ from it (`docs/TODO.md` T-358).
     ///
-    /// **This applies and does not commit, and that is the split T-645 is about.** It runs on every
-    /// keystroke of the rename field. `commitSectionEdits()` is the commit point.
+    /// **This applies and does not commit, and that is the split T-645 is about.**
+    /// `commitSectionEdits()` is the commit point, and since T-736 it is also the only caller:
+    /// this ran on every keystroke of the rename field, which rewrote the container's whole
+    /// section blob per character (T-738) and — because the cards move at the commit point and not
+    /// here — left the board grouping the column's cards under a name its config no longer carried,
+    /// so the column drew empty for the whole of the edit (T-736).
     ///
     /// **And it moves no cards, which is the split T-713 is about.** It used to end by calling
     /// `moveTasks(from: base.name, to: trimmed)`, against a `base` that is deliberately frozen — so

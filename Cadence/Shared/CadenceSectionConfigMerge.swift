@@ -269,16 +269,27 @@ extension CadenceSectionConfigContainer {
     /// **The stale-snapshot write.** For a sheet or popover that read the columns when it opened,
     /// edited a draft of them, and is now saving. `current` is read here, not by the caller, so it
     /// is as fresh as it can be.
+    ///
+    /// **It writes only when the merge produced something different (T-738).** This assigned
+    /// unconditionally while its sibling `mutateSectionConfigs` guarded, and the asymmetry was not
+    /// a decision: a merge that resolved to what is already stored still re-serialised
+    /// `sectionConfigsRaw`, still dirtied the object, and still pushed a CloudKit record. Every
+    /// caller here is an editor closing or committing, and an editor that changed nothing is the
+    /// ordinary case — a popover opened and shut, a colour pressed that was already selected, a
+    /// commit point reached twice in one session.
     @discardableResult
     func applySectionConfigEdits(
         base: [TaskSectionConfig],
         edited: [TaskSectionConfig]
     ) -> [TaskSectionConfig] {
-        sectionConfigs = CadenceSectionConfigMerge.merged(
+        let current = sectionConfigs
+        let merged = CadenceSectionConfigMerge.merged(
             base: base,
             edited: edited,
-            current: sectionConfigs
+            current: current
         )
+        guard merged != current else { return current }
+        sectionConfigs = merged
         return sectionConfigs
     }
 

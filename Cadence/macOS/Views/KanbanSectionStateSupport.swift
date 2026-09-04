@@ -53,16 +53,18 @@ enum KanbanSectionStateSupport {
     /// **The rename's card move, taken once and only towards a name the store actually holds
     /// (`docs/TODO.md` T-713).**
     ///
-    /// The macOS column editor writes the container's blob on every keystroke, so between the
-    /// first character and the end of the edit the column's *config* and its *cards* disagree on
-    /// purpose. This is the move that settles them, and every part of its shape is a guard against
-    /// the way the per-keystroke version got it wrong:
+    /// The rename's config write and its card move are one commit, at the end of the edit. They
+    /// are still two calls, and this is the second — the config is applied first, so between the
+    /// two lines of `commitSectionEdits()` the column's *config* and its *cards* disagree on
+    /// purpose. Every part of this function's shape is a guard against the way the per-keystroke
+    /// version — the one T-736 removed — got it wrong:
     ///
     /// - **`filedName` is where the cards actually are**, not the name the editor opened with. The
     ///   defect was moving `from` a frozen snapshot: typing `Doing` → `Doingxy` moved the cards to
     ///   `Doingx` and then looked for cards still called `Doing`, found none, and left them under a
-    ///   name no column had. The same thing happens to a *second* commit in one editing session —
-    ///   Return, type more, pick a colour — if the source is not advanced with the cards.
+    ///   name no column had. Intermediate names no longer reach the store at all, but the same
+    ///   thing still happens to a *second* commit in one editing session — Return, type more, pick
+    ///   a colour — if the source is not advanced with the cards.
     /// - **The destination is read back out of the container**, matched by `uuid`, so it is a name
     ///   the store was actually asked to hold. An intermediate keystroke never reaches a card.
     /// - **It must equal the name the caller typed.** A rename the editor refused — empty, or
@@ -92,6 +94,39 @@ enum KanbanSectionStateSupport {
         else { return nil }
         moveTasks(universeTasks: universeTasks, area: area, project: project, from: filedName, to: stored.name)
         return stored.name
+    }
+
+    /// **Whether the rename field is holding a name the store has not been given (T-714).**
+    ///
+    /// The editor's rename is draft state until a commit point (T-736/T-738): the field writes
+    /// `editorName` and nothing else, so the column keeps drawing its own cards while the user
+    /// types. That leaves one way out of the popover with no commit on it — type a name, then
+    /// dismiss without touching another control — and this is the question the dismissal asks
+    /// before committing.
+    ///
+    /// It is asked rather than assumed for two reasons. A commit costs a transaction and, on a
+    /// popover the user only opened to look at, there is nothing to commit. And an unconditional
+    /// commit on the way out would *clear* `saveFailureNotice` on its way to succeeding — so a
+    /// refusal the popover was still showing would vanish at the moment the column header was
+    /// meant to take it over (T-646).
+    ///
+    /// The comparison is against the **stored** name, not against the name the popover opened
+    /// with: a rename already committed by Return or by a colour press is in the store, and asking
+    /// the opening snapshot would commit it a second time. `nil`-safe in the two ways the caller
+    /// cannot check for itself — the column may have been deleted, or renamed away, while the
+    /// popover was open.
+    static func hasUncommittedRename(
+        area: Area?,
+        project: Project?,
+        columnUUID: UUID,
+        typedName: String
+    ) -> Bool {
+        let trimmed = typedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let container = CadenceSectionConfigMerge.container(area: area, project: project),
+              let stored = container.sectionConfigs.first(where: { $0.uuid == columnUUID })
+        else { return false }
+        return stored.name.caseInsensitiveCompare(trimmed) != .orderedSame
     }
 
     static func removeSection(sectionID: UUID, area: Area?, project: Project?) {

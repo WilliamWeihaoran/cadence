@@ -265,6 +265,16 @@ struct KanbanFreezeObserver: View {
 
 struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     let section: TaskSectionConfig
+    /// The title the header draws. It is `section.name` except while the editor popover is open,
+    /// when it is what the rename field currently holds (T-736).
+    ///
+    /// **This is the whole of the live rename preview, and it writes nothing.** The preview used
+    /// to be a side effect of the editor applying every keystroke to the container's blob, which
+    /// bought the header its live title and cost the column its cards: the board groups by the
+    /// *stored* name, so from the first character until the commit point the column matched no
+    /// card and drew empty. The name being typed is the editor's draft; the store hears about it
+    /// once.
+    let displayName: String
     let activeTaskCount: Int
     let columnColor: Color
     let hideColumnDueDateIfEmpty: Bool
@@ -302,7 +312,7 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     var body: some View {
         CadenceBoardColumnHeader(
             dotColor: dotColor,
-            title: section.name,
+            title: displayName,
             count: activeTaskCount,
             trailing: { headerControls },
             detail: { headerDetail }
@@ -449,10 +459,17 @@ struct KanbanSectionEditorPopover: View {
     /// It sits at the foot of the popover rather than beside one control because three different
     /// buttons can set it, and the popover staying open is half the message.
     let failureNotice: String?
-    let onNameChanged: () -> Void
-    /// The rename's **commit point** (T-645). `onNameChanged` runs per keystroke and only writes;
-    /// this runs when the name field is done being edited — Return, or focus moving to another
-    /// control in the popover — and is where the write is asked for.
+    /// The rename's **commit point** (T-645), and since T-736 the *only* point at which typing in
+    /// the name field reaches the model.
+    ///
+    /// There is deliberately no per-keystroke callback beside it. There was one — it applied the
+    /// draft to the container's blob on every character, which rewrote `sectionConfigsRaw` and
+    /// dirtied the list once per keystroke (T-738) and left the column drawing empty for the whole
+    /// of the edit (T-736), because the cards are re-pointed here and not there. The field's only
+    /// per-character effect is now `editorName` itself, which is what the header previews.
+    ///
+    /// This runs when the name field is done being edited — Return, or focus moving to another
+    /// control in the popover — and `onDismiss` covers the one way out that touches neither.
     let onNameCommitted: () -> Void
     let onColorSelected: () -> Void
     let onDueDateChanged: () -> Void
@@ -482,12 +499,12 @@ struct KanbanSectionEditorPopover: View {
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .focused($isNameFieldFocused)
-                    .onChange(of: editorName) { _, _ in onNameChanged() }
                     .onSubmit { onNameCommitted() }
                     // Two spellings of "the rename is finished", because they are different
                     // gestures: Return above, and moving to the colour swatches or the date picker
-                    // here. Both land while the popover is still up, which is the whole reason the
-                    // commit point is here rather than on dismissal.
+                    // here. Both land while the popover is still up, so both can carry a refusal
+                    // notice in it. Dismissing the popover is the third and is not one of these:
+                    // it is `onDismiss`, and its refusal is drawn on the column instead (T-714).
                     .onChange(of: isNameFieldFocused) { wasFocused, isFocused in
                         guard wasFocused, !isFocused else { return }
                         onNameCommitted()

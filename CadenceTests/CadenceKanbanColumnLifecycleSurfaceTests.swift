@@ -365,21 +365,21 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
     /// **The rename's commit *point*, which is the part that could not simply be "add a commit"
     /// (T-645).**
     ///
-    /// `onNameChanged` fires on every character of the rename field. A commit there would ask the
-    /// store for a transaction per keystroke and hand the user a refusal notice mid-word, so the
-    /// write and the commit are separate calls: `applySectionEdits` per character,
-    /// `commitSectionEdits` when the edit ends — Return, focus leaving the field, or any of the
-    /// discrete controls, all of which land while the popover is still on screen to carry a notice.
+    /// A commit on every character would ask the store for a transaction per keystroke and hand the
+    /// user a refusal notice mid-word, so the commit is at the end of the edit — Return, focus
+    /// leaving the field, or any of the discrete controls, all of which land while the popover is
+    /// still on screen to carry a notice.
     ///
-    /// Asserted at both ends, because either alone is satisfiable by the defect: the view must fire
-    /// two different callbacks from two different events, and the column must wire the per-keystroke
-    /// one to a function that does **not** commit.
+    /// **T-645 split the write from the commit; T-736 removed the per-keystroke write as well.**
+    /// The write is asserted below to have exactly one caller, and the rename field to raise no
+    /// per-character callback at all — see
+    /// `theRenameFieldWritesNothingUntilACommitPointSoTheColumnKeepsItsCards` for why.
     @Test func theColumnRenameCommitsAtTheEndOfTheEditRatherThanPerKeystroke() throws {
         let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
         let popover = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
         #expect(popover.contains("struct KanbanSectionEditorPopover"), "non-vacuity: wrong file read")
 
-        // The per-keystroke write commits nothing at all — that is the whole of what it is for.
+        // The write commits nothing at all — that is the whole of what it is for.
         let apply = try #require(CadenceSourceScan.functionBody(named: "applySectionEdits", in: column))
         #expect(apply.contains("container.applySectionConfigEdits("), "the apply no longer writes the blob")
         #expect(matches(#"\.save\(\)|CadencePendingChangePersistence\.commit|CadenceInPlaceEditFlush"#, in: apply) == 0,
@@ -393,17 +393,15 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         #expect(matches(#"modelContext\.rollback\(\)|undo"#, in: commit) == 0,
                 "the rename restores something, which deletes what the user is still typing")
 
-        // The wiring: per-keystroke apply, commit at the end, and the three discrete controls
-        // committing on the spot.
-        #expect(column.contains("onNameChanged: applySectionEdits"))
+        // The wiring: commit at the end of the edit, and the three discrete controls committing on
+        // the spot.
         #expect(column.contains("onNameCommitted: { _ = commitSectionEdits() }"))
         #expect(column.contains("onColorSelected: { _ = commitSectionEdits() }"))
         #expect(column.contains("onDueDateChanged: { _ = commitSectionEdits() }"))
 
-        // And the popover raises the two callbacks from two different events. A view that fired
-        // `onNameCommitted` from `onChange(of: editorName)` would satisfy every assertion above
-        // while committing per character after all.
-        #expect(matches(#"\.onChange\(of: editorName\) \{ _, _ in onNameChanged\(\) \}"#, in: popover) == 1)
+        // And the popover raises the commit from the two events that end an edit while it is still
+        // on screen. A view that fired `onNameCommitted` from `onChange(of: editorName)` would
+        // satisfy every assertion above while committing per character after all.
         #expect(matches(#"\.onSubmit \{ onNameCommitted\(\) \}"#, in: popover) == 1)
         #expect(matches(#"\.onChange\(of: isNameFieldFocused\)"#, in: popover) == 1)
         #expect(matches(#"onNameCommitted\(\)"#, in: popover) == 2, "the rename's commit point moved or grew a third trigger")
@@ -796,6 +794,274 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         #expect(elsewhere.sectionName == TaskSectionDefaults.defaultName)
     }
 
+    // MARK: - T-736 / T-738 / T-714: the rename is draft state until a commit point
+
+    /// **The mechanism, and it is not the defect.** The board groups a column's cards by the
+    /// column's **stored** name — `resolvedSectionName.caseInsensitiveCompare(section.name)` — so
+    /// for as long as the config carries a name its cards do not, the column matches nothing and
+    /// draws empty.
+    ///
+    /// That is correct and stays correct: it is what makes a rename land everywhere at once when
+    /// the config and the cards are written together. **This test passes before and after T-736
+    /// and is meant to** — what it pins is the cost of letting the two disagree, which is what a
+    /// per-keystroke config write did from the first character until the commit point moved the
+    /// cards (T-713).
+    @Test func theBoardDrawsAColumnEmptyForAsLongAsItsStoredNameIsAheadOfItsCards() throws {
+        let context = ModelContext(try container())
+        let area = Area(name: "Board")
+        context.insert(area)
+        area.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing")
+        ]
+        let card = AppTask(title: "in the column")
+        card.sectionName = "Doing"
+        card.area = area
+        context.insert(card)
+        area.tasks = [card]
+        try context.save()
+
+        let base = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+        #expect(boardCards(in: base, from: [card]).count == 1, "non-vacuity: the fixture starts non-empty")
+
+        // The config is renamed and the cards are not — one keystroke of the old editor.
+        applyColumnEditsTheWayThePopoverDoes(base: base, typedName: "Doingx", area: area)
+        let midEdit = try #require(area.sectionConfigs.first { $0.uuid == base.uuid })
+        #expect(midEdit.name == "Doingx")
+        #expect(card.sectionName == "Doing")
+        #expect(
+            boardCards(in: midEdit, from: [card]).isEmpty,
+            "the board does not group by the column's stored name, so T-736 is not what it says it is"
+        )
+
+        // And the cards come back the moment the move that belongs with the write has run.
+        KanbanSectionStateSupport.moveCardsToStoredName(
+            universeTasks: [card], area: area, project: nil,
+            columnUUID: base.uuid, typedName: "Doingx", filedName: "Doing"
+        )
+        #expect(boardCards(in: midEdit, from: [card]).count == 1)
+    }
+
+    /// **The fix: the rename field writes nothing at all until a commit point (T-736 / T-738).**
+    ///
+    /// Both tickets are one root. The editor applied every keystroke to the container's blob, and
+    /// the cards move at the commit point and not there (T-713, deliberately) — so a ten-character
+    /// rename rewrote `sectionConfigsRaw` ten times *and* left the column matching no card for the
+    /// whole of the edit. Only the editor's own draft state needs to change per character, and now
+    /// only it does.
+    ///
+    /// **Source, because the wiring is a SwiftUI callback on a private `View`.** The behavioural
+    /// halves are `theBoardDrawsAColumnEmptyForAsLongAsItsStoredNameIsAheadOfItsCards` above for
+    /// what the board reads, and `aRenameAppliedPerKeystrokeCostsOneContainerWritePerCharacter`
+    /// below for what a per-keystroke apply costs. Asserted at both ends: the popover must raise no
+    /// per-character callback, and the column must not hand it one.
+    @Test func theRenameFieldWritesNothingUntilACommitPointSoTheColumnKeepsItsCards() throws {
+        let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        let popover = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
+        let board = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanListSectionSupportViews.swift"))
+        #expect(column.contains("struct ListSectionKanbanColumn: View"), "non-vacuity: wrong file read")
+        #expect(popover.contains("struct KanbanSectionEditorPopover"), "non-vacuity: wrong file read")
+
+        // The board's grouping, which `boardCards(in:from:)` above transcribes.
+        #expect(
+            board.contains("!$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame"),
+            "the board groups by something else now, so the transcription above is stale"
+        )
+
+        // The name field raises no per-character callback, and the popover has no parameter for
+        // one. Either alone is satisfiable by the defect: a live `onNameChanged` with no
+        // `.onChange` is dead but re-wireable, and an `.onChange` calling something else is the
+        // defect under a new name.
+        #expect(matches(#"onNameChanged"#, in: popover) == 0, "the editor popover takes a per-keystroke callback again")
+        #expect(matches(#"onNameChanged"#, in: column) == 0, "the column hands the editor a per-keystroke callback again")
+        #expect(matches(#"\.onChange\(of: editorName\)"#, in: popover) == 0,
+                "the rename field raises a per-character effect beyond its own binding")
+
+        // The write it used to raise now has exactly one caller, and it is the commit point. Two
+        // occurrences: the declaration, and that one call.
+        #expect(matches(#"private func applySectionEdits\(\)"#, in: column) == 1)
+        #expect(matches(#"applySectionEdits\(\)"#, in: column) == 2,
+                "applySectionEdits is called from somewhere other than the commit point")
+        let commit = try #require(CadenceSourceScan.functionBody(named: "commitSectionEdits", in: column))
+        #expect(commit.contains("applySectionEdits()"))
+
+        // The half of the per-keystroke write that was worth keeping: the header's live title. It
+        // is a `String` the header is handed, not a blob rewrite — so the column's *cards* are
+        // still grouped by the stored name and stay put while the title tracks the field.
+        #expect(popover.contains("let displayName: String"))
+        #expect(matches(#"title: displayName"#, in: popover) == 1)
+        #expect(matches(#"title: section\.name"#, in: popover) == 0, "the header no longer previews the draft at all")
+        #expect(column.contains("displayName: headerDisplayName"))
+        let preview = try #require(bodyOfComputedString("headerDisplayName", in: column))
+        #expect(preview.contains("guard showEditor, !section.isDefault else { return section.name }"))
+        #expect(preview.contains("trimmed.isEmpty ? section.name : trimmed"))
+        #expect(
+            matches(#"applySectionConfigEdits|container|modelContext|save"#, in: preview) == 0,
+            "the header preview reaches the model"
+        )
+    }
+
+    /// **What a per-keystroke apply costs, counted (T-738).**
+    ///
+    /// One write of `sectionConfigs` per character, each one re-serialising the container's whole
+    /// section blob, dirtying the object and pushing a CloudKit record — and the guard added below
+    /// cannot help, because each keystroke genuinely *is* a change. The only fix is not to call it.
+    ///
+    /// Counted against a spy rather than an `Area` because the cost is the **setter**, and two
+    /// assignments of the same array to `sectionConfigsRaw` leave byte-identical strings behind:
+    /// there is nothing after the fact to count.
+    @Test func aRenameAppliedPerKeystrokeCostsOneContainerWritePerCharacter() {
+        let typing = ["S", "Sh", "Shi", "Ship", "Shipp", "Shippi", "Shippin", "Shipping"]
+
+        let perKeystroke = SectionConfigWriteCounter(seed: [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing")
+        ])
+        let base = perKeystroke.sectionConfigs
+        for typed in typing {
+            perKeystroke.applySectionConfigEdits(base: base, edited: renaming(base, at: 1, to: typed))
+        }
+        #expect(perKeystroke.writes == typing.count, "the fixture no longer writes once per character")
+        #expect(perKeystroke.sectionConfigs[1].name == "Shipping")
+
+        // The same rename, applied once where the edit ends.
+        let atTheCommitPoint = SectionConfigWriteCounter(seed: [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing")
+        ])
+        let commitBase = atTheCommitPoint.sectionConfigs
+        atTheCommitPoint.applySectionConfigEdits(
+            base: commitBase,
+            edited: renaming(commitBase, at: 1, to: "Shipping")
+        )
+        #expect(atTheCommitPoint.writes == 1)
+        #expect(atTheCommitPoint.sectionConfigs[1].name == "Shipping")
+    }
+
+    /// **An edit that merges to what is already stored writes nothing (T-738).**
+    ///
+    /// `applySectionConfigEdits` assigned unconditionally while its sibling `mutateSectionConfigs`
+    /// guarded on `merged != current`, and the asymmetry was not a decision: an identical array
+    /// still re-serialises the blob, still dirties the object and still pushes a CloudKit record —
+    /// the reason `mutateSectionConfigs` spells its own guard out.
+    ///
+    /// It matters most on the paths this ticket adds: a popover opened and dismissed, a colour
+    /// pressed that was already selected, a commit point reached twice in one session. All three
+    /// reach the merge with nothing to say.
+    @Test func aSectionEditThatMergesToWhatIsAlreadyStoredWritesNothing() {
+        let spy = SectionConfigWriteCounter(seed: [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing", colorHex: TaskSectionDefaults.defaultColorHex)
+        ])
+        let base = spy.sectionConfigs
+
+        // The popover opened and shut: the same array back.
+        spy.applySectionConfigEdits(base: base, edited: base)
+        #expect(spy.writes == 0, "an edit that changed nothing still rewrote the container's blob")
+        #expect(spy.sectionConfigs == base, "the guard dropped the array as well as the write")
+
+        // A colour pressed that was already selected.
+        spy.applySectionConfigEdits(base: base, edited: recolouring(base, at: 1, to: TaskSectionDefaults.defaultColorHex))
+        #expect(spy.writes == 0)
+
+        // Non-vacuity: a real edit still writes, exactly once, and the return value is the new
+        // array rather than the old one.
+        let renamed = spy.applySectionConfigEdits(base: base, edited: renaming(base, at: 1, to: "Shipping"))
+        #expect(spy.writes == 1)
+        #expect(renamed[1].name == "Shipping")
+        #expect(spy.sectionConfigs[1].name == "Shipping")
+
+        // And the same edit a second time is now free.
+        spy.applySectionConfigEdits(base: spy.sectionConfigs, edited: renaming(spy.sectionConfigs, at: 1, to: "Shipping"))
+        #expect(spy.writes == 1)
+    }
+
+    /// **The way out of the popover that commits nothing on its own (T-714).**
+    ///
+    /// Every control in the editor commits, and the name field commits on Return and on losing
+    /// focus. What was left is: type a name, then dismiss — click outside, or Escape. With the
+    /// rename now draft state until a commit point, that path would simply throw the rename away,
+    /// so the dismissal commits; before T-736 it kept the text as an uncommitted model write with
+    /// no surface on which to refuse.
+    ///
+    /// This is the question the dismissal asks first, and the reason it asks: an unconditional
+    /// commit on the way out succeeds, and a successful commit clears `saveFailureNotice` — so it
+    /// would wipe a refusal the popover was still showing at the moment the column header was
+    /// meant to take it over (T-646).
+    @Test func theDismissalCommitsOnlyANameTheStoreHasNotBeenGiven() throws {
+        let context = ModelContext(try container())
+        let area = Area(name: "Board")
+        context.insert(area)
+        area.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing")
+        ]
+        try context.save()
+        let base = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+
+        func asked(_ typed: String) -> Bool {
+            KanbanSectionStateSupport.hasUncommittedRename(
+                area: area, project: nil, columnUUID: base.uuid, typedName: typed
+            )
+        }
+
+        // Typed and never committed: this is the whole of T-714.
+        #expect(asked("Shipping"))
+
+        // Nothing typed, and a field left exactly as the popover opened it.
+        #expect(!asked("Doing"))
+        // Case is not a rename anywhere else in this app, and it is not one here.
+        #expect(!asked("doing"))
+        // Trimmed the way `applySectionEdits` trims, so a stray space is not a commit.
+        #expect(!asked("  Doing  "))
+        // An empty or blank field is a decline, not a rename to nothing.
+        #expect(!asked(""))
+        #expect(!asked("   "))
+
+        // Committed by Return or by a colour press: the store has it, so the dismissal is silent.
+        applyColumnEditsTheWayThePopoverDoes(base: base, typedName: "Shipping", area: area)
+        #expect(area.sectionConfigs.first { $0.uuid == base.uuid }?.name == "Shipping")
+        #expect(!asked("Shipping"), "the dismissal would commit an already-stored rename a second time")
+        // And it is the *stored* name that is consulted, not the one the popover opened with —
+        // asking `editorBase` here would answer `true` and commit again.
+        #expect(asked("Doing"), "the question is asked against the popover's opening snapshot")
+
+        // A column deleted while the popover was open, and a board belonging to neither container.
+        KanbanSectionStateSupport.removeSection(sectionID: base.uuid, area: area, project: nil)
+        #expect(!asked("Shipping"))
+        #expect(
+            !KanbanSectionStateSupport.hasUncommittedRename(
+                area: nil, project: nil, columnUUID: base.uuid, typedName: "Shipping"
+            )
+        )
+    }
+
+    /// The dismissal's wiring, which is a SwiftUI lifecycle callback on a private `View`.
+    ///
+    /// Three things, and the third is the user decision: the refusal is drawn on the **column**,
+    /// not in the popover, because `showEditor` is already `false` by the time this runs. That is
+    /// the surface T-646 built for a refusal arriving after the popover has gone, and the
+    /// dismissal must not try to reopen or hold the popover in order to report itself.
+    @Test func dismissingTheColumnEditorCommitsAPendingRenameAndReportsOnTheColumn() throws {
+        let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        #expect(column.contains("struct ListSectionKanbanColumn: View"), "non-vacuity: wrong file read")
+
+        let editor = try #require(bodyOfComputed("columnEditor", in: column))
+        #expect(editor.contains(".onDisappear(perform: commitEditsOnDismiss)"),
+                "dismissing the column editor no longer reaches a commit")
+
+        let dismiss = try #require(CadenceSourceScan.functionBody(named: "commitEditsOnDismiss", in: column))
+        #expect(dismiss.contains("KanbanSectionStateSupport.hasUncommittedRename("))
+        #expect(dismiss.contains("_ = commitSectionEdits()"))
+        // The Default column cannot be renamed, so it has nothing to commit on the way out.
+        #expect(dismiss.contains("guard let base = editorBase, !base.isDefault else { return }"))
+        // The report is the column's. Touching `showEditor` here would either reopen the popover
+        // over a refusal or hide the notice `columnFailureNotice` is about to hand the header.
+        #expect(matches(#"showEditor"#, in: dismiss) == 0, "the dismissal reaches for the popover it is closing")
+        #expect(matches(#"saveFailureNotice"#, in: dismiss) == 0,
+                "the dismissal writes the notice itself instead of letting the commit set it")
+    }
+
     // MARK: - T-646: a refused column completion reaches the user
 
     /// **The countdown outlives the popover, so the notice cannot live only in the popover
@@ -907,6 +1173,75 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
 
 /// A commit the store refuses, for the undo paths a real in-memory container cannot provoke.
 private struct ColumnCommitRefused: Error {}
+
+/// A `CadenceSectionConfigContainer` that counts assignments of `sectionConfigs` (T-738).
+///
+/// `Area` and `Project` serialise the array into `sectionConfigsRaw`, so two writes of the same
+/// value leave byte-identical strings behind and there is nothing after the fact to count. The cost
+/// this ticket is about is the **setter** — the re-serialisation, the dirtied object and the
+/// CloudKit record it pushes — so the setter is what is counted. It deliberately does not
+/// normalise the way the two real containers do; the merge is what is under test here, not the
+/// Default-column invariant.
+private final class SectionConfigWriteCounter: CadenceSectionConfigContainer {
+    private var storage: [TaskSectionConfig]
+    private(set) var writes = 0
+
+    init(seed: [TaskSectionConfig]) {
+        storage = seed
+    }
+
+    var sectionConfigs: [TaskSectionConfig] {
+        get { storage }
+        set {
+            writes += 1
+            storage = newValue
+        }
+    }
+}
+
+private func renaming(_ configs: [TaskSectionConfig], at index: Int, to name: String) -> [TaskSectionConfig] {
+    var edited = configs
+    edited[index].name = name
+    return edited
+}
+
+private func recolouring(_ configs: [TaskSectionConfig], at index: Int, to hex: String) -> [TaskSectionConfig] {
+    var edited = configs
+    edited[index].colorHex = hex
+    return edited
+}
+
+/// The board's grouping for one column, transcribed from
+/// `ListSectionsKanbanView.sortedTasksForSection` — a private member of a SwiftUI `View`. The sort
+/// is left out because the question is which cards the column draws, not in what order;
+/// `theRenameFieldWritesNothingUntilACommitPointSoTheColumnKeepsItsCards` asserts the filter
+/// against the source so the two cannot drift.
+private func boardCards(in section: TaskSectionConfig, from tasks: [AppTask]) -> [AppTask] {
+    tasks.filter {
+        !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
+    }
+}
+
+/// `bodyOfComputed` for a computed property that is not `some View`.
+private func bodyOfComputedString(_ name: String, in source: String) -> String? {
+    guard let signature = source.range(of: "var \(name): String") else { return nil }
+    var depth = 0
+    var start: String.Index?
+    var index = signature.upperBound
+    while index < source.endIndex {
+        let character = source[index]
+        if character == "{" {
+            if depth == 0 { start = source.index(after: index) }
+            depth += 1
+        } else if character == "}" {
+            depth -= 1
+            if depth == 0, let start { return String(source[start..<index]) }
+            if depth < 0 { return nil }
+        }
+        index = source.index(after: index)
+    }
+    return nil
+}
 
 /// The body of a computed property, for the two slices above that are `var x: some View` rather
 /// than `func x()`. `CadenceSourceScan.functionBody(named:)` anchors on `func <name>(` and finds
