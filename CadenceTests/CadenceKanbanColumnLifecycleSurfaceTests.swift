@@ -824,9 +824,22 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
 
         // One flag, read through `showEditor`. A literal `nil` or a second stored notice would both
         // pass a `contains("columnFailureNotice")`, so the expression itself is pinned.
+        //
+        // **The `reorderFailureNotice` line ahead of it is T-869's and is deliberately outside the
+        // `showEditor` read.** A refused *card drop* is not the editor's refusal: the popover is not
+        // open when a card is dragged, and folding it into `saveFailureNotice` would let a refused
+        // drag hold the editor shut through `toggleCompletionFromEditor`'s
+        // `guard saveFailureNotice == nil`. Two sources, one slot.
         #expect(
-            matches(#"private var columnFailureNotice: String\? \{\s*showEditor \? nil : saveFailureNotice\s*\}"#, in: column) == 1,
+            matches(
+                #"private var columnFailureNotice: String\? \{\s*if let reorderFailureNotice \{ return reorderFailureNotice \}\s*return showEditor \? nil : saveFailureNotice\s*\}"#,
+                in: column
+            ) == 1,
             "the column's notice is no longer the popover's notice read through showEditor"
+        )
+        #expect(
+            matches(#"reorderFailureNotice = reordered \? nil : CadenceOrderCommit\.failureNotice"#, in: column) == 1,
+            "the card drop's refusal is set somewhere other than moveTask"
         )
         #expect(matches(#"failureNotice: columnFailureNotice"#, in: column) == 1)
         #expect(

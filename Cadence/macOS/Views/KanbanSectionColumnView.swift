@@ -18,7 +18,9 @@ struct ListSectionKanbanColumn: View {
     let isBeingDragged: Bool
     let isAnotherSectionBeingDragged: Bool
     let isHighlighted: Bool
-    let onReorderBefore: (String) -> Void
+    /// Answers whether the new **column** order is in the store (T-870). `Void` until then, over a
+    /// blob rewrite that reached no commit — so this column reported every column drag as landed.
+    let onReorderBefore: (String) -> Bool
 
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
@@ -58,6 +60,10 @@ struct ListSectionKanbanColumn: View {
     /// Set when a column write was refused by the store, and drawn inside the editor popover. The
     /// popover staying open *is* the report of failure here — see `toggleSectionArchive()`.
     @State private var saveFailureNotice: String?
+    /// Set when the store refused a **card** drop (T-869). Separate from `saveFailureNotice`, which
+    /// belongs to the editor popover and gates `toggleCompletionFromEditor` — a refused drag must
+    /// not hold that popover shut. Both reach the header through `columnFailureNotice`.
+    @State private var reorderFailureNotice: String?
     /// Both halves come from one call, so they cannot disagree about what "over" means. See
     /// `KanbanBoardSupport.columnHalves` for why this is not `isDone` (T-381 / T-399).
     private var columnHalves: (active: [AppTask], completed: [AppTask]) {
@@ -154,15 +160,15 @@ struct ListSectionKanbanColumn: View {
             guard let payload = items.first else { return false }
             if payload.hasPrefix(kanbanSectionDragPrefix) {
                 let movingName = String(payload.dropFirst(kanbanSectionDragPrefix.count))
-                onReorderBefore(movingName)
-                return true
+                // The board answers, not this column (T-870): the column order is a blob on the
+                // list, and a refused commit puts it back before this returns.
+                return onReorderBefore(movingName)
             }
             // Same payload parsing as the card-level drop and as the list board's column, so a
             // drop on empty column space accepts exactly what a drop on a card accepts.
             guard let uuid = KanbanBoardSupport.taskID(from: payload),
                   let task = universeTasks.first(where: { $0.id == uuid }) else { return false }
-            moveTask(task, before: nil)
-            return true
+            return moveTask(task, before: nil)
         } isTargeted: { isTargeted = $0 }
         .onHover { hovering in
             isHovered = hovering
@@ -303,8 +309,7 @@ struct ListSectionKanbanColumn: View {
               let droppedID = KanbanBoardSupport.taskID(from: payload),
               droppedID != target.id,
               let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
-        moveTask(droppedTask, before: target)
-        return true
+        return moveTask(droppedTask, before: target)
     }
 
     /// The list this board belongs to — the "where does this go" half that the column's composer
@@ -319,26 +324,40 @@ struct ListSectionKanbanColumn: View {
         return .inbox
     }
 
-    private func moveTask(_ task: AppTask, before target: AppTask?) {
-        if let area {
-            task.area = area
-            task.project = nil
-            task.context = area.context
-        } else if let project {
-            task.project = project
-            task.area = nil
-            task.context = project.resolvedContext
-        } else {
-            task.area = nil
-            task.project = nil
-        }
-        task.sectionName = section.name
-
-        KanbanBoardSupport.reorder(
+    /// File the card into this column and put it where it was dropped, as one commit.
+    ///
+    /// **`return true` used to sit over no commit at all (T-869).** The four field writes below and
+    /// the renumber both landed in the context with nothing flushing them, so the board drew the
+    /// drop and the store still held the old column and the old order.
+    ///
+    /// The refiling is the `assigning:` closure rather than four statements ahead of the call, so a
+    /// refused drop is not left half-applied — the card filed under this column's `sectionName` at
+    /// the position it had in its old one. `KanbanBoardSupport.reorder` snapshots every field
+    /// either half writes, including `sectionName` and all three relationships.
+    private func moveTask(_ task: AppTask, before target: AppTask?) -> Bool {
+        let reordered = KanbanBoardSupport.reorder(
             tasks.sorted { $0.order < $1.order },
             moving: task,
-            before: target
+            before: target,
+            in: modelContext,
+            assigning: {
+                if let area {
+                    task.area = area
+                    task.project = nil
+                    task.context = area.context
+                } else if let project {
+                    task.project = project
+                    task.area = nil
+                    task.context = project.resolvedContext
+                } else {
+                    task.area = nil
+                    task.project = nil
+                }
+                task.sectionName = section.name
+            }
         )
+        reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        return reordered
     }
 
     private func openSectionEditor() {
@@ -639,7 +658,8 @@ struct ListSectionKanbanColumn: View {
     /// belongs to the attempt that produced it, and every successful column write clears it on the
     /// way out. Until then it stays up, which is correct — the column really did not save.
     private var columnFailureNotice: String? {
-        showEditor ? nil : saveFailureNotice
+        if let reorderFailureNotice { return reorderFailureNotice }
+        return showEditor ? nil : saveFailureNotice
     }
 
     private func currentSection() -> TaskSectionConfig? {

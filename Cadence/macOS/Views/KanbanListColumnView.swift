@@ -1,4 +1,5 @@
 #if os(macOS)
+import SwiftData
 import SwiftUI
 
 /// One of Cadence's **two** kanban column implementations: this one renders the *list* columns
@@ -17,11 +18,15 @@ struct TaskListKanbanColumn: View {
     let onAssignTask: (AppTask) -> Void
 
     @Environment(HoveredKanbanColumnManager.self) private var hoveredKanbanColumnManager
+    @Environment(\.modelContext) private var modelContext
     @State private var isTargeted = false
     @State private var dragOverTaskID: UUID?
     @State private var isHovered = false
     @State private var isComposing = false
     @State private var frozenTasks: [AppTask]? = nil
+    /// Set when the store refused a card drop (T-869). The cards are already back in their old
+    /// column and their old order by then, so the board and this sentence agree.
+    @State private var reorderFailureNotice: String? = nil
 
     private var unfrozenSortedTasks: [AppTask] {
         tasks.taskSorted(by: sortField, direction: sortDirection)
@@ -67,8 +72,7 @@ struct TaskListKanbanColumn: View {
             guard let payload = items.first,
                   let droppedID = KanbanBoardSupport.taskID(from: payload),
                   let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
-            moveTask(droppedTask, before: nil)
-            return true
+            return moveTask(droppedTask, before: nil)
         } isTargeted: { isTargeted = $0 }
         .onHover { hovering in
             isHovered = hovering
@@ -83,7 +87,17 @@ struct TaskListKanbanColumn: View {
     }
 
     private var header: some View {
-        CadenceBoardColumnHeader(dotColor: color, title: title, count: sortedTasks.count)
+        CadenceBoardColumnHeader(
+            dotColor: color,
+            title: title,
+            count: sortedTasks.count,
+            trailing: { EmptyView() },
+            detail: {
+                if let reorderFailureNotice {
+                    CadenceInlineFailureNotice(text: reorderFailureNotice)
+                }
+            }
+        )
     }
 
     /// List columns intentionally do *not* name a section — only section columns do — so the
@@ -121,15 +135,30 @@ struct TaskListKanbanColumn: View {
               let droppedID = KanbanBoardSupport.taskID(from: payload),
               droppedID != target.id,
               let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
-        moveTask(droppedTask, before: target)
-        return true
+        return moveTask(droppedTask, before: target)
     }
 
-    private func moveTask(_ task: AppTask, before target: AppTask?) {
-        onAssignTask(task)
+    /// Refile the card into this column and put it where it was dropped, as one commit.
+    ///
+    /// **`return true` used to sit over no commit at all (T-869).** The refiling and the renumber
+    /// both landed in the context and nothing flushed them, so the board drew the drop, answered
+    /// that it had happened, and the store still held the old column and the old order.
+    ///
+    /// `onAssignTask` goes *inside* the commit rather than before it, so a refused drop is not left
+    /// half-applied — the card in its new column at its old position. See
+    /// `KanbanBoardSupport.reorder`, which snapshots every field either half writes.
+    private func moveTask(_ task: AppTask, before target: AppTask?) -> Bool {
         // Deliberately the *unfrozen* ordering: the hover freeze is a display-only concern and
         // must never be what gets written back into `order`.
-        KanbanBoardSupport.reorder(unfrozenSortedTasks, moving: task, before: target)
+        let reordered = KanbanBoardSupport.reorder(
+            unfrozenSortedTasks,
+            moving: task,
+            before: target,
+            in: modelContext,
+            assigning: { onAssignTask(task) }
+        )
+        reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        return reordered
     }
 }
 #endif

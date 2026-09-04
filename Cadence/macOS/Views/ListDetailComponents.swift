@@ -11,12 +11,16 @@ struct ListTasksView: View {
     let groupingMode: TaskGroupingMode
 
     @Environment(TaskCreationManager.self) private var taskCreationManager
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.createdAt, order: .reverse) private var allTasks: [AppTask]
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
     @State private var frozenTaskOrder: [AppTask]? = nil
     @State private var frozenGroupedTasks: [FrozenTaskGroupSnapshot]? = nil
     @State private var dragOverTaskID: UUID? = nil
+    /// Set when the store refused a row drop (T-869). The rows are already back where they were by
+    /// then, so this tab and this sentence agree.
+    @State private var reorderFailureNotice: String? = nil
 
     private var activeTasks: [AppTask] {
         let sorted = CadenceTaskQuerySupport.openTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
@@ -64,6 +68,14 @@ struct ListTasksView: View {
 
     var body: some View {
         List {
+            if let reorderFailureNotice {
+                CadenceInlineFailureNotice(text: reorderFailureNotice)
+                    .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+                    .padding(.top, 12)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(.init())
+            }
             if activeTasks.isEmpty && doneTasks.isEmpty {
                 // The subtitle is the shared one because this page and `iOSListDetailView` are one
                 // page at two widths, and because the copy that was here — "Create a task to get
@@ -158,15 +170,38 @@ struct ListTasksView: View {
         return .inbox
     }
 
-    private func reorderTask(droppedID: UUID, targetID: UUID) {
+    /// Drag a row into a new place on a list's own Tasks tab.
+    ///
+    /// **It reached no commit at all until T-869** — this whole file contained no `save()` — and the
+    /// row nevertheless stayed where it was dropped until the next launch put it back. That is the
+    /// failure T-614's rule is about, and it was invisible to `CadenceSaveCommitDisciplineTests`
+    /// because there was no swallowed commit in the frame for half 2 to hang the rule on and no
+    /// insert or delete for half 3 to see.
+    ///
+    /// **It renumbers the *displayed* order, not the stored one**, which is why it does not call
+    /// `TasksPanelSupport.reorderTask`: `activeTasks` is sorted by the tab's active sort and its
+    /// hover freeze, and writing that arrangement back is what makes a drag under a non-`order`
+    /// sort mean anything here. The two surfaces disagree about which sequence a drag rewrites;
+    /// they now agree about committing it, which is the part this ticket is about.
+    ///
+    /// - Returns: Whether the new order is in the store, so the row springs back on a refusal
+    ///   rather than sitting in a place nothing holds.
+    private func reorderTask(droppedID: UUID, targetID: UUID) -> Bool {
         var sorted = activeTasks
         guard let fromIndex = sorted.firstIndex(where: { $0.id == droppedID }),
-              let toIndex = sorted.firstIndex(where: { $0.id == targetID }) else { return }
+              let toIndex = sorted.firstIndex(where: { $0.id == targetID }) else { return false }
         let element = sorted.remove(at: fromIndex)
         sorted.insert(element, at: toIndex > fromIndex ? toIndex - 1 : toIndex)
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            for (i, t) in sorted.enumerated() { t.order = i }
+        let reordered = withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
+            CadenceOrderCommit.commit(
+                sorted,
+                readOrder: { $0.order },
+                writeOrder: { $0.order = $1 },
+                in: modelContext
+            )
         }
+        reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        return reordered
     }
 
     private func toggleGroup(_ id: String) {

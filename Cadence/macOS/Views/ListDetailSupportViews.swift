@@ -22,7 +22,9 @@ struct ListTasksGroupSectionView: View {
     let allTasks: [AppTask]
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
-    let onReorderTask: (UUID, UUID) -> Void
+    /// Answers whether the new order is in the store (T-869). `Void` until then, over a renumber
+    /// that reached no commit — so the row below reported every drop as landed.
+    let onReorderTask: (UUID, UUID) -> Bool
 
     var body: some View {
         Group {
@@ -52,8 +54,7 @@ struct ListTasksGroupSectionView: View {
                         onDropOnTaskPayload: { payload, targetTask in
                             guard let droppedID = TaskDragPayload.listTaskID(from: payload),
                                   droppedID != targetTask.id else { return false }
-                            onReorderTask(droppedID, targetTask.id)
-                            return true
+                            return onReorderTask(droppedID, targetTask.id)
                         }
                     )
                 }

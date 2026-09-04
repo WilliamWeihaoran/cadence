@@ -336,13 +336,17 @@ struct SectionConfigRoundTripTests {
     /// per-column position field to merge, so a save that *did* reorder imposes its order. A save
     /// that did not touch order must not impose one anyway — its array is simply in the sequence
     /// the sheet opened with, which is not a decision the user made.
-    @Test func aSaveThatDidNotTouchColumnOrderKeepsTheOrderTheOtherDeviceSet() {
+    @Test func aSaveThatDidNotTouchColumnOrderKeepsTheOrderTheOtherDeviceSet() throws {
+        // The context is here because `reorderSectionConfigs` commits since T-870, not because
+        // this test is about persistence: it is about which of two devices' arrays wins.
+        let modelContext = ModelContext(try CadenceTestStore.container())
         let area = Area(name: "Ops")
+        modelContext.insert(area)
         area.sectionConfigs = seededConfigs()
         let snapshot = area.sectionConfigs
 
         // The Mac drags "Shipped" ahead of "Research".
-        area.reorderSectionConfigs { configs in
+        area.reorderSectionConfigs(in: modelContext) { configs in
             var moved = configs
             let shipped = moved.remove(at: 2)
             moved.insert(shipped, at: 1)
@@ -362,14 +366,16 @@ struct SectionConfigRoundTripTests {
     /// And the half that is. Two devices reordering the same board cannot both win; the last
     /// genuine reorder takes the whole order and the earlier one is lost. That is the decision,
     /// stated as a test rather than left implicit.
-    @Test func aSaveThatDidReorderColumnsWinsTheWholeOrder() {
+    @Test func aSaveThatDidReorderColumnsWinsTheWholeOrder() throws {
+        let modelContext = ModelContext(try CadenceTestStore.container())
         let area = Area(name: "Ops")
+        modelContext.insert(area)
         area.sectionConfigs = seededConfigs() + [TaskSectionConfig(name: "Backlog")]
         let snapshot = area.sectionConfigs
         #expect(snapshot.map(\.name) == [TaskSectionDefaults.defaultName, "Research", "Shipped", "Backlog"])
 
         // The Mac pulls "Backlog" to the front.
-        area.reorderSectionConfigs { configs in
+        area.reorderSectionConfigs(in: modelContext) { configs in
             var moved = configs
             let backlog = moved.remove(at: 3)
             moved.insert(backlog, at: 1)

@@ -1,4 +1,5 @@
 #if os(macOS)
+import SwiftData
 import SwiftUI
 
 let kanbanSectionDragPrefix = "kanban-section::"
@@ -175,13 +176,41 @@ enum KanbanBoardSupport {
         return scope == .inbox ? Array(columns.prefix(1)) : columns
     }
 
-    /// Reassigns `order` across a column after a card was dropped into it.
+    /// Reassigns `order` across a column after a card was dropped into it, **and commits it**.
     ///
     /// `columnTasks` is the column's current ordering *as the caller presents it* (section
     /// columns sort by `order`, list columns by the board's active sort), `task` is the card
     /// that was dropped, and `target` is the card it was dropped in front of — `nil` means
     /// "append to the end", which is what a drop on empty column space produces.
-    static func reorder(_ columnTasks: [AppTask], moving task: AppTask, before target: AppTask?) {
+    ///
+    /// **It reached no commit at all until T-869**, and both column views answered `true` over it.
+    /// A rearrangement the user can see is a success report (T-614), so a card that sits where it
+    /// was dropped and springs back at next launch is precisely the failure that rule is about.
+    /// This one was invisible to `CadenceSaveCommitDisciplineTests` twice over: half 2 needs a
+    /// *swallowed* commit in the frame to hang the rule on and there was none, and half 3 fires on
+    /// insert/delete rather than on field writes.
+    ///
+    /// **`assigning` is inside the commit, not before it, and that is the point.** A card dropped
+    /// into another column is moved *and* refiled — the list columns rewrite `area`/`project`/
+    /// `context`, the section columns rewrite those and `sectionName`. Committing the renumber
+    /// while the refiling sat outside it would leave a refused drop half-applied: the card in its
+    /// new column at its old position. `CadenceTaskFieldEditCommit` snapshots every one of those
+    /// fields on every card it is given, so the undo puts the whole drop back.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container.
+    /// - Returns: Whether the drop is in the store. `false` means every card is back where it was
+    ///   and the column must show `CadenceOrderCommit.failureNotice` rather than accept the drop.
+    @MainActor
+    @discardableResult
+    static func reorder(
+        _ columnTasks: [AppTask],
+        moving task: AppTask,
+        before target: AppTask?,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        assigning assign: () -> Void = {}
+    ) -> Bool {
         var ordered = columnTasks
         ordered.removeAll { $0.id == task.id }
         if let target, let targetIndex = ordered.firstIndex(where: { $0.id == target.id }) {
@@ -189,9 +218,17 @@ enum KanbanBoardSupport {
         } else {
             ordered.append(task)
         }
-        withAnimation(kanbanCardReorderAnimation) {
-            for (index, item) in ordered.enumerated() {
-                item.order = index
+        return withAnimation(kanbanCardReorderAnimation) {
+            CadenceTaskFieldEditCommit.commit(
+                task,
+                alsoRestoring: ordered,
+                in: modelContext,
+                commit: commit
+            ) {
+                assign()
+                for (index, item) in ordered.enumerated() {
+                    item.order = index
+                }
             }
         }
     }

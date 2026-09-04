@@ -1,4 +1,5 @@
 #if os(macOS)
+import SwiftData
 import SwiftUI
 
 struct ListSectionsKanbanView: View {
@@ -14,6 +15,11 @@ struct ListSectionsKanbanView: View {
     @State private var localShowArchived = false
     @State private var draggingSectionName: String?
     @State private var activeHighlightSectionName: String?
+    /// Set when the store refused a column drag (T-870). The columns are already back in their old
+    /// order by then, so the board and this sentence agree.
+    @State private var reorderFailureNotice: String?
+
+    @Environment(\.modelContext) private var modelContext
 
     private var baseSectionConfigs: [TaskSectionConfig] {
         area?.sectionConfigs ?? project?.sectionConfigs ?? [TaskSectionConfig(name: TaskSectionDefaults.defaultName)]
@@ -36,49 +42,58 @@ struct ListSectionsKanbanView: View {
         ZStack {
             Theme.bg
 
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 12) {
-                        ForEach(sectionConfigs, id: \.id) { section in
-                            let sectionTasks = sortedTasksForSection(section)
-                            ListSectionKanbanColumn(
-                                section: section,
-                                tasks: sectionTasks,
-                                universeTasks: universeTasks ?? tasks,
-                                area: area,
-                                project: project,
-                                isBeingDragged: draggingSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
-                                isAnotherSectionBeingDragged: draggingSectionName != nil && draggingSectionName?.caseInsensitiveCompare(section.name) != .orderedSame,
-                                isHighlighted: activeHighlightSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
-                                onReorderBefore: { movingName in
-                                    reorderSection(named: movingName, before: section.name)
-                                    DispatchQueue.main.async {
-                                        draggingSectionName = nil
+            VStack(alignment: .leading, spacing: 0) {
+                if let reorderFailureNotice {
+                    CadenceInlineFailureNotice(text: reorderFailureNotice)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                }
+
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(sectionConfigs, id: \.id) { section in
+                                let sectionTasks = sortedTasksForSection(section)
+                                ListSectionKanbanColumn(
+                                    section: section,
+                                    tasks: sectionTasks,
+                                    universeTasks: universeTasks ?? tasks,
+                                    area: area,
+                                    project: project,
+                                    isBeingDragged: draggingSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
+                                    isAnotherSectionBeingDragged: draggingSectionName != nil && draggingSectionName?.caseInsensitiveCompare(section.name) != .orderedSame,
+                                    isHighlighted: activeHighlightSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
+                                    onReorderBefore: { movingName in
+                                        let reordered = reorderSection(named: movingName, before: section.name)
+                                        DispatchQueue.main.async {
+                                            draggingSectionName = nil
+                                        }
+                                        return reordered
                                     }
+                                )
+                                .id(section.id)
+                                .onDrag {
+                                    draggingSectionName = section.name
+                                    return NSItemProvider(object: NSString(string: "\(kanbanSectionDragPrefix)\(section.name)"))
+                                } preview: {
+                                    columnDragPreview(for: section)
                                 }
-                            )
-                            .id(section.id)
-                            .onDrag {
-                                draggingSectionName = section.name
-                                return NSItemProvider(object: NSString(string: "\(kanbanSectionDragPrefix)\(section.name)"))
-                            } preview: {
-                                columnDragPreview(for: section)
+                            }
+
+                            if allowsSectionEditing && !showArchivedBinding.wrappedValue {
+                                addSectionRail
                             }
                         }
-
-                        if allowsSectionEditing && !showArchivedBinding.wrappedValue {
-                            addSectionRail
-                        }
+                        .padding(20)
+                        .background(Theme.bg)
                     }
-                    .padding(20)
                     .background(Theme.bg)
-                }
-                .background(Theme.bg)
-                .onAppear {
-                    applyHighlightIfNeeded(with: proxy)
-                }
-                .onChange(of: highlightedSectionName) { _, _ in
-                    applyHighlightIfNeeded(with: proxy)
+                    .onAppear {
+                        applyHighlightIfNeeded(with: proxy)
+                    }
+                    .onChange(of: highlightedSectionName) { _, _ in
+                        applyHighlightIfNeeded(with: proxy)
+                    }
                 }
             }
         }
@@ -150,10 +165,15 @@ struct ListSectionsKanbanView: View {
     /// same board cannot both win: this is last-writer-wins, deliberately (`docs/TODO.md` T-358).
     /// What the merge does buy is that a *non*-reordering save from the other device — a rename, a
     /// colour, a wind-down — no longer clobbers an order this one just set.
-    private func reorderSection(named movingName: String, before targetName: String) {
-        guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return }
-        withAnimation(kanbanColumnReorderAnimation) {
-            container.reorderSectionConfigs {
+    /// **It reached no commit at all until T-870.** The blob was rewritten, the board redrew the
+    /// column where it was dropped, and the store still held the old order — a rearrangement the
+    /// user can see reporting a success that had not happened (T-614). No `\.order` sweep would
+    /// ever have found it: a column's position *is* its index in this array, and there is no order
+    /// field on a `TaskSectionConfig` to sweep for.
+    private func reorderSection(named movingName: String, before targetName: String) -> Bool {
+        guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return false }
+        let reordered = withAnimation(kanbanColumnReorderAnimation) {
+            container.reorderSectionConfigs(in: modelContext) {
                 KanbanBoardSupport.reorderedSectionConfigs(
                     $0,
                     movingName: movingName,
@@ -161,6 +181,8 @@ struct ListSectionsKanbanView: View {
                 )
             }
         }
+        reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        return reordered
     }
 
     @ViewBuilder

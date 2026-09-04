@@ -20,6 +20,11 @@ struct TasksPanel: View {
     /// Set when the roll was refused, and read by the banner, which is still on screen because the
     /// dismissal above was not written. Cleared by the next roll that lands.
     @State private var rolloverFailureNotice: String?
+    /// Set when the store refused a row drop (T-868). The rows have already been put back by then,
+    /// so the panel and this sentence agree — which is the whole reason a reorder reports at all:
+    /// without it a refused drop is a row that springs back for no stated reason and comes back
+    /// wrong at next launch.
+    @State private var reorderFailureNotice: String?
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
     @State private var localSortMode: CadenceTaskSortMode = .macOSTodayDefault
@@ -135,12 +140,14 @@ struct TasksPanel: View {
                 )
             },
             reorderTask: { droppedID, targetID, scopeTasks in
-                TasksPanelSupport.reorderTask(
+                let reordered = TasksPanelSupport.reorderTask(
                     droppedID: droppedID,
                     targetID: targetID,
                     scopeTasks: scopeTasks,
                     modelContext: modelContext
                 )
+                reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+                return reordered
             }
         )
     }
@@ -205,6 +212,11 @@ struct TasksPanel: View {
     private func todayOverviewSections(derived: TasksPanelDerivedState) -> some View {
         let showsRollover = shouldShowRolloverNotice(derived)
 
+        if let reorderFailureNotice {
+            CadenceInlineFailureNotice(text: reorderFailureNotice)
+                .padding(.horizontal, TasksPanelMetrics.horizontalInset)
+                .padding(.bottom, 8)
+        }
         if showsRollover {
             CadenceTodayRolloverBanner(
                 tasks: derived.overdoTasks,

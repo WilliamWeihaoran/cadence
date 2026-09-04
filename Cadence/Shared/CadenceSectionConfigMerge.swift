@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// The one point at which a list's kanban columns are written.
 ///
@@ -330,7 +331,44 @@ extension CadenceSectionConfigContainer {
     }
 
     /// Reordering is last-writer-wins; see the note on `CadenceSectionConfigMerge`.
-    func reorderSectionConfigs(_ transform: ([TaskSectionConfig]) -> [TaskSectionConfig]) {
+    ///
+    /// **It commits, and it is the one reorder in the app no `\.order` sweep can find (T-870).**
+    /// A kanban column's position is its index in this re-serialised blob — there is no per-column
+    /// order field — so the audit that produced `CadenceOrderCommit` for the four row reorders had
+    /// to be told about this one by hand. It had the same defect and worse: the board redrew the
+    /// dragged column in its new place, `mutateSectionConfigs` wrote `sectionConfigsRaw`, and
+    /// nothing saved. A rearrangement the user can see is a success report (T-614), so a column
+    /// that stays where it was dropped and comes back at next launch is the exact failure that rule
+    /// exists to catch.
+    ///
+    /// The undo is the previous blob, put back — not `modelContext.rollback()`, which would take
+    /// unrelated pending work on the app's single context with it. Same reason as everywhere else;
+    /// see `CadencePendingChangePersistence.commitEdit`.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container.
+    /// - Returns: Whether the new column order is in the store. `true` for a transform that
+    ///   declined — no such column, or the merge produced what was already there — because there is
+    ///   then nothing pending and the board is drawing what the store holds. `false` means the
+    ///   columns are back as they were found and the caller must show
+    ///   `CadenceOrderCommit.failureNotice`.
+    @discardableResult
+    func reorderSectionConfigs(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        _ transform: ([TaskSectionConfig]) -> [TaskSectionConfig]
+    ) -> Bool {
+        let previous = sectionConfigs
         mutateSectionConfigs(transform)
+        guard sectionConfigs != previous else { return true }
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                sectionConfigs = previous
+            }
+        } catch {
+            return false
+        }
+        return true
     }
 }

@@ -69,6 +69,16 @@ enum SidebarListEntry: Identifiable {
         dragItem == item
     }
 
+    /// The paired reader for `setOrder(_:)`, and the reason `CadenceOrderCommit.commit` takes
+    /// closures rather than a `KeyPath`: this is an `enum` over two models, so its order lives
+    /// behind a `switch` and not in a stored property either case shares.
+    var order: Int {
+        switch self {
+        case .area(let area): return area.order
+        case .project(let project): return project.order
+        }
+    }
+
     func setOrder(_ value: Int) {
         switch self {
         case .area(let area): area.order = value
@@ -106,6 +116,9 @@ struct ContextSection: View {
     @State private var areaForEdit: Area? = nil
     @State private var projectForEdit: Project? = nil
     @State private var dragOverListItem: SidebarListDragItem? = nil
+    /// Set when the store refused a list drag (T-868). The rows are already back in their old
+    /// order by then, so the column and this sentence agree.
+    @State private var reorderFailureNotice: String? = nil
 
     private var hasLists: Bool { !entries.isEmpty }
 
@@ -138,6 +151,11 @@ struct ContextSection: View {
             }
             .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
             .padding(.top, SidebarMetrics.contextHeaderTopPadding)
+
+            if let reorderFailureNotice {
+                CadenceInlineFailureNotice(text: reorderFailureNotice)
+                    .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
+            }
 
             if hasLists {
                 VStack(alignment: .leading, spacing: SidebarMetrics.listRowSpacing) {
@@ -193,6 +211,18 @@ struct ContextSection: View {
         }
     }
 
+    /// Drag a list to a new place in the sidebar.
+    ///
+    /// **It ended in `try? modelContext.save()` until T-868.** A rearrangement the user can see is a
+    /// success report (T-614): the row sits where it was dropped, and a refused save meant it came
+    /// back in its old place at next launch with nothing on screen having said so. It commits
+    /// through the shared unit now and names the refusal under the section header.
+    ///
+    /// The insert index is deliberately **not** `CadenceOrderReassignment.moved`'s: this column
+    /// treats the row you drop on as the destination itself, rather than as "the row I go before",
+    /// which is what stops a drag onto the next row down from feeling like a no-op. That is a
+    /// different gesture from the contexts pane's, so it keeps its own arithmetic; what it shares
+    /// is the commit.
     private func reorderList(dropped: SidebarListDragItem, target: SidebarListDragItem) {
         var sorted = entries
         guard let fromIndex = sorted.firstIndex(where: { $0.matches(dropped) }),
@@ -201,10 +231,15 @@ struct ContextSection: View {
         // Treat the row we drop on as the destination row itself. This avoids the
         // "no-op" feeling when dragging onto the next item down in the list.
         sorted.insert(element, at: min(toIndex, sorted.count))
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            for (i, entry) in sorted.enumerated() { entry.setOrder(i) }
+        let reordered = withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
+            CadenceOrderCommit.commit(
+                sorted,
+                readOrder: { $0.order },
+                writeOrder: { $0.setOrder($1) },
+                in: modelContext
+            )
         }
-        try? modelContext.save()
+        reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
     }
 
     private func areaRow(_ area: Area, target: SidebarListDragItem) -> some View {

@@ -6,7 +6,9 @@ struct TasksPanelDropCoordinator {
     let taskIDFromPayload: (String) -> UUID?
     /// Answers whether the key resolved to anything. See `handleSectionDrop`.
     let assignTask: (AppTask, String) -> Bool
-    let reorderTask: (UUID, UUID, [AppTask]) -> Void
+    /// Answers whether the new order is in the store — see `handleTaskDrop`. It was `Void` until
+    /// T-868, over a `try? modelContext.save()` that could not have told anyone anyway.
+    let reorderTask: (UUID, UUID, [AppTask]) -> Bool
 
     /// Curried because the `Optional` is the point: a group with no `dropKey` gets `nil`, and
     /// `TasksPanelIntentSectionView` / `TasksListSectionView` take `((String) -> Bool)?` so the
@@ -66,8 +68,14 @@ struct TasksPanelDropCoordinator {
             // silent accept T-591 was about.
             _ = assignTask(droppedTask, dropKey)
         }
-        reorderTask(droppedID, targetTask.id, scopeTasks)
-        return true
+        // **The answer is the reorder's own (T-868).** A row drop that renumbered and then had
+        // its commit refused must not be reported as a drop that happened: the rows have already
+        // been put back by the time this returns, so answering `true` would spring the row to a
+        // position neither the screen nor the store holds. Same sentence as `handleSectionDrop`'s
+        // `false`, one failure mode further along — and the panel draws
+        // `CadenceOrderCommit.failureNotice` beside it, because a drop that silently declines is
+        // indistinguishable from a drop the user aimed badly.
+        return reorderTask(droppedID, targetTask.id, scopeTasks)
     }
 
     private func droppedTask(from payload: String) -> (UUID, AppTask)? {

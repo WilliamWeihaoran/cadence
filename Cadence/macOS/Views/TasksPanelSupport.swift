@@ -233,23 +233,38 @@ enum TasksPanelSupport {
         }
     }
 
+    /// Today's and All Tasks'/Inbox's row drop — both panels reach this one function.
+    ///
+    /// **It ended in `try? modelContext.save()` until T-868.** T-583 had recorded that spelling as
+    /// deliberate here for the reason it is deliberate on an archive toggle: `order` is a field on
+    /// rows the store already holds, and nothing after the save calls a `dismiss`. T-614 settled
+    /// that a *visible rearrangement* is itself the report — a row that stays where you dropped it
+    /// claims more than a sheet that closed, and a refused drop reverts at next launch with nothing
+    /// to retry — so this left that list along with `SettingsView.moveContext`.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container.
+    /// - Returns: Whether the new order is in the store. `false` means every row is back where it
+    ///   was, and the panel must show `CadenceOrderCommit.failureNotice`.
+    @discardableResult
     static func reorderTask(
         droppedID: UUID,
         targetID: UUID,
         scopeTasks: [AppTask],
-        modelContext: ModelContext
-    ) {
-        var sorted = scopeTasks.sorted { $0.order < $1.order }
-        guard let fromIndex = sorted.firstIndex(where: { $0.id == droppedID }),
-              let toIndex = sorted.firstIndex(where: { $0.id == targetID }) else { return }
-        let moved = sorted.remove(at: fromIndex)
-        sorted.insert(moved, at: toIndex > fromIndex ? toIndex - 1 : toIndex)
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            for (idx, task) in sorted.enumerated() {
-                task.order = idx
-            }
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let sorted = scopeTasks.sorted { $0.order < $1.order }
+        guard let ordered = CadenceOrderReassignment.moved(sorted, droppedID, before: targetID) else { return true }
+        return withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
+            CadenceOrderCommit.commit(
+                ordered,
+                readOrder: { $0.order },
+                writeOrder: { $0.order = $1 },
+                in: modelContext,
+                commit: commit
+            )
         }
-        try? modelContext.save()
     }
 
     /// Moves `task` to everything `dropKey` names, and reports whether any of it landed.

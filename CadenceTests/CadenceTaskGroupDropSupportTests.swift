@@ -518,7 +518,7 @@ struct CadenceTaskGroupDropSupportTests {
                     modelContext: context
                 )
             },
-            reorderTask: { _, _, _ in }
+            reorderTask: { _, _, _ in true }
         )
         let payload = TasksPanelSupport.taskDragPayload(for: task)
 
@@ -569,7 +569,7 @@ struct CadenceTaskGroupDropSupportTests {
                         modelContext: context
                     )
                 },
-                reorderTask: { _, _, _ in }
+                reorderTask: { _, _, _ in true }
             )
         }
         let payload = TasksPanelSupport.taskDragPayload(for: task)
@@ -630,7 +630,13 @@ struct CadenceTaskGroupDropSupportTests {
                 assigned.append(key)
                 return true
             },
-            reorderTask: { moved, before, _ in reordered.append((moved, before)) }
+            // Answers `true`: since T-868 a row drop reports the *commit*, so a stub that
+            // answered `false` would make `handleTaskDrop` refuse every drop below and the two
+            // reorder counts would be measuring the stub rather than the coordinator.
+            reorderTask: { moved, before, _ in
+                reordered.append((moved, before))
+                return true
+            }
         )
         let payload = TasksPanelSupport.taskDragPayload(for: dropped)
 

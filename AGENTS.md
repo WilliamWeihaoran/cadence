@@ -107,14 +107,14 @@ breaks the rule if any of three halves is true:
    `@AppStorage` write, **the answer itself** (`return true` from a `-> Bool`, a non-`nil` return from
    a `-> X?`), or **a rearrangement the user can see** (T-614): a row that stays where you dropped it
    outclaims a dismissed sheet, and a refused reorder reverts at next launch with nothing to retry — no
-   text scan sees that one, so pin it per site. A "swallowed commit" is `try?` on a `save()` **or** a
-   `Cadence*Persistence` helper — the commit surface, not the method name — **one frame down included**.
+   text scan sees it, so pin per site; all seven do, via `CadenceOrderCommit` (T-868/T-869/T-870).
+   A "swallowed commit" is `try?` on a `save()` **or** a `Cadence*Persistence` helper — the commit
+   surface, not the method name — **one frame down included**.
 3. **Commit reach** — the function inserts **or deletes** and reaches no commit at all. A declaration
    **handed** a `ModelContext` is exempt by rule; one that reached for an ambient context must commit.
 
-All three are fixed the same way: commit through `CadencePendingChangePersistence`
-(`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and let the
-caller name the failure where the user is already looking.
+All three are fixed the same way: commit through `CadencePendingChangePersistence` (`commitInsert` /
+`commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and name the failure on screen.
 
 Why it matters: one `ModelContext` app-wide, so a swallowed failure leaves the change *pending*, for
 the next unrelated `save()` to take or `rollback()` to discard. Enforced by `CadenceSaveCommitDisciplineTests`.

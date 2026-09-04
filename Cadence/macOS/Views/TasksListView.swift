@@ -60,6 +60,10 @@ struct TasksListView: View {
     @State private var isCompletedCollapsed = true
     @State private var dragOverTaskID: UUID?
     @State private var frozenTaskOrder: [AppTask]? = nil
+    /// Set when the store refused a row drop (T-868). The rows are already back where they were by
+    /// then, so the page and this sentence agree — and a row that springs back with nothing said is
+    /// indistinguishable from a drop the user simply aimed badly.
+    @State private var reorderFailureNotice: String?
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -240,6 +244,11 @@ struct TasksListView: View {
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
+                if let reorderFailureNotice {
+                    CadenceInlineFailureNotice(text: reorderFailureNotice)
+                        .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+                        .padding(.top, 12)
+                }
                 ForEach(sections(from: visibleTasks)) { section in
                     TasksListSectionView(
                         section: section,
@@ -400,13 +409,17 @@ struct TasksListView: View {
         TasksPanelSupport.taskID(from: payload)
     }
 
-    private func reorderTask(droppedID: UUID, targetID: UUID, scopeTasks: [AppTask]) {
-        TasksPanelSupport.reorderTask(
+    /// Answers whether the new order is in the store — see `dropCoordinator`. Was `Void`, over a
+    /// swallowed save; T-868 is why it is neither any more.
+    private func reorderTask(droppedID: UUID, targetID: UUID, scopeTasks: [AppTask]) -> Bool {
+        let reordered = TasksPanelSupport.reorderTask(
             droppedID: droppedID,
             targetID: targetID,
             scopeTasks: scopeTasks,
             modelContext: modelContext
         )
+        reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        return reordered
     }
 
     /// Answers whether anything resolved — see `dropCoordinator`. Was `Void`, which threw away the
