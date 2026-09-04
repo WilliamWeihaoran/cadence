@@ -115,18 +115,21 @@ nonisolated enum CadenceMilestoneWidgetSupport {
         )
     }
 
+    /// Shares `CadenceWidgetReloadPolicy` (T-851) with the other three widget support types, which
+    /// clamps the fallback below to no later than the next midnight. This one used to compute the
+    /// fallback unclamped, so an empty pool at 23:50 reloaded around 00:50 the next day rather than
+    /// 00:01 — a stale home screen for the better part of an hour, in the shipped binary.
     nonisolated static func recommendedReloadDate(
         for snapshot: CadenceMilestoneWidgetSnapshot,
         referenceDate: Date = Date()
     ) -> Date {
-        switch snapshot.state {
-        case .unavailable:
-            return referenceDate.addingTimeInterval(5 * 60)
-        case .empty:
-            return referenceDate.addingTimeInterval(60 * 60)
-        case .ready:
-            return referenceDate.addingTimeInterval(30 * 60)
-        }
+        CadenceWidgetReloadPolicy.recommendedReloadDate(
+            referenceDate: referenceDate,
+            isUnavailable: snapshot.state == .unavailable,
+            isEmpty: snapshot.state == .empty,
+            readyInterval: 30 * 60,
+            emptyInterval: 60 * 60
+        )
     }
 
     static func prioritizedGoals(

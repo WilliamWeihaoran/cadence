@@ -113,25 +113,19 @@ nonisolated enum CadenceHabitWidgetSupport {
         )
     }
 
+    /// Shares `CadenceWidgetReloadPolicy` (T-851) with the other three widget support types, rather
+    /// than computing the same fallback-plus-midnight-clamp shape by hand.
     nonisolated static func recommendedReloadDate(
         for snapshot: CadenceHabitWidgetSnapshot,
         referenceDate: Date = Date()
     ) -> Date {
-        let fallbackInterval: TimeInterval
-        switch snapshot.state {
-        case .unavailable:
-            fallbackInterval = 5 * 60
-        case .empty:
-            fallbackInterval = 45 * 60
-        case .ready:
-            fallbackInterval = 20 * 60
-        }
-
-        let calendar = Calendar.current
-        let nextStartOfDay = calendar.startOfDay(
-            for: calendar.date(byAdding: .day, value: 1, to: referenceDate) ?? referenceDate
-        ).addingTimeInterval(60)
-        return min(referenceDate.addingTimeInterval(fallbackInterval), nextStartOfDay)
+        CadenceWidgetReloadPolicy.recommendedReloadDate(
+            referenceDate: referenceDate,
+            isUnavailable: snapshot.state == .unavailable,
+            isEmpty: snapshot.state == .empty,
+            readyInterval: 20 * 60,
+            emptyInterval: 45 * 60
+        )
     }
 
     nonisolated static func dueHabits(

@@ -407,6 +407,36 @@ struct WidgetSupportTests {
         #expect(snapshot.habits.first?.isDoneToday == true)
     }
 
+    /// **T-851.** Calendar, Habit and Today all clamp their fallback interval to no later than the
+    /// next midnight — `min(referenceDate.addingTimeInterval(fallbackInterval), nextStartOfDay)` —
+    /// so a widget that goes stale right before a day rolls over still definitely reloads once it
+    /// does. Milestone Momentum's own `recommendedReloadDate` never adopted that clamp; it just
+    /// returned `referenceDate.addingTimeInterval(fallbackInterval)`, unbounded. At 23:50 with an
+    /// empty pool (a 60-minute fallback) that is 00:50 the next day rather than 00:01 — the one
+    /// widget of the four that can carry yesterday's snapshot for the better part of an hour after
+    /// midnight.
+    @Test func milestoneWidgetReloadDateClampsToNextDayLikeItsSiblings() throws {
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 5
+        components.day = 11
+        components.hour = 23
+        components.minute = 50
+        let calendar = Calendar(identifier: .gregorian)
+        let referenceDate = try #require(calendar.date(from: components))
+
+        let snapshot = CadenceMilestoneWidgetSupport.snapshot(from: [], now: referenceDate, limit: 5)
+        #expect(snapshot.state == .empty, "the fixture needs an empty pool to exercise the 60-minute fallback")
+
+        let reloadDate = CadenceMilestoneWidgetSupport.recommendedReloadDate(for: snapshot, referenceDate: referenceDate)
+
+        let nextStartOfDay = calendar.startOfDay(
+            for: try #require(calendar.date(byAdding: .day, value: 1, to: referenceDate))
+        ).addingTimeInterval(60)
+
+        #expect(reloadDate == nextStartOfDay, "the reload date ran past midnight instead of clamping to it")
+    }
+
     @Test func milestoneWidgetPrioritizesOverdueGoalsFirst() {
         let overdueGoal = Goal(title: "Overdue launch")
         let overdueTask = AppTask(title: "Fix blocking task")

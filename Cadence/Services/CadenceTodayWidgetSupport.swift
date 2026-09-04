@@ -136,22 +136,13 @@ nonisolated enum CadenceTodayWidgetSupport {
         for snapshot: CadenceTodayWidgetSnapshot,
         referenceDate: Date = Date()
     ) -> Date {
-        let calendar = Calendar.current
-        let nextStartOfDay = calendar.startOfDay(
-            for: calendar.date(byAdding: .day, value: 1, to: referenceDate) ?? referenceDate
-        ).addingTimeInterval(60)
-
-        let fallbackInterval: TimeInterval
-        switch snapshot.state {
-        case .unavailable:
-            fallbackInterval = 5 * 60
-        case .empty:
-            fallbackInterval = 30 * 60
-        case .ready:
-            fallbackInterval = 15 * 60
-        }
-
-        return min(referenceDate.addingTimeInterval(fallbackInterval), nextStartOfDay)
+        CadenceWidgetReloadPolicy.recommendedReloadDate(
+            referenceDate: referenceDate,
+            isUnavailable: snapshot.state == .unavailable,
+            isEmpty: snapshot.state == .empty,
+            readyInterval: 15 * 60,
+            emptyInterval: 30 * 60
+        )
     }
 
     /// The widget's Today list — **the app's Today scope, in the app's Today rank order**, with a
@@ -228,6 +219,40 @@ nonisolated enum CadenceTodayWidgetSupport {
 
     private nonisolated static func currentTodayKey() -> String {
         CadenceWidgetDateSupport.dateKey(from: Date())
+    }
+}
+
+/// The reload-timing rule every widget's `recommendedReloadDate` shares (T-851).
+///
+/// Three of the four `Cadence*WidgetSupport` types already computed the same shape by hand: a
+/// fallback interval keyed by state, clamped to no later than the next midnight so a widget that
+/// goes stale right before a day turns over still definitely reloads once it does. Milestone
+/// Momentum's own copy never adopted the clamp — it returned `referenceDate.addingTimeInterval(_:)`
+/// unbounded, so an empty pool at 23:50 reloaded around 00:50 the next day instead of 00:01. Widgets
+/// ship inside the submitted binary, so that is not a hypothetical: it is a stale home screen a real
+/// user can see for the better part of an hour after midnight, on the one widget that duplicated the
+/// rule instead of sharing it.
+///
+/// Takes the two intervals a caller actually varies — `readyInterval` and `emptyInterval` — rather
+/// than a whole state enum, because each support type declares its own `SnapshotState` and none of
+/// the four needs another to agree with. `unavailableInterval` defaults to the one value every
+/// existing caller already used.
+nonisolated enum CadenceWidgetReloadPolicy {
+    nonisolated static func recommendedReloadDate(
+        referenceDate: Date = Date(),
+        isUnavailable: Bool,
+        isEmpty: Bool,
+        readyInterval: TimeInterval,
+        emptyInterval: TimeInterval,
+        unavailableInterval: TimeInterval = 5 * 60
+    ) -> Date {
+        let calendar = Calendar.current
+        let nextStartOfDay = calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: 1, to: referenceDate) ?? referenceDate
+        ).addingTimeInterval(60)
+
+        let fallbackInterval: TimeInterval = isUnavailable ? unavailableInterval : (isEmpty ? emptyInterval : readyInterval)
+        return min(referenceDate.addingTimeInterval(fallbackInterval), nextStartOfDay)
     }
 }
 
