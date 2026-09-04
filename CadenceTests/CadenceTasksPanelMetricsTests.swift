@@ -190,8 +190,12 @@ struct CadenceTasksPanelMetricsTests {
 
         let panel = try Self.panelSource()
         #expect(panel.contains("struct TasksPanel"))
+        // Five since [[T-869]] gave the panel a reorder-failure notice, which draws in the same
+        // gutter as everything else here. This count is a weak pin -- it moves whenever a legitimate
+        // new site reads the constant, which is the behaviour we want. The assertion below is the
+        // one that actually enforces the rule: nothing may retype the number.
         #expect(
-            CadenceSourceScan.matchCount("TasksPanelMetrics\\.horizontalInset", in: panel) == 4
+            CadenceSourceScan.matchCount("TasksPanelMetrics\\.horizontalInset", in: panel) == 5
         )
         #expect(!panel.contains(".padding(.horizontal, 16)"))
 
