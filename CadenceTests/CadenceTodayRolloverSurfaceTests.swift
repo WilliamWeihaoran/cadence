@@ -197,7 +197,7 @@ struct CadenceTodayRolloverSurfaceTests {
         let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-08-19", startMin: 600, durationMinutes: 30)
         context.insert(task)
         context.insert(bundle)
-        CadenceTaskMutationSupport.addTask(task, to: bundle, modelContext: context)
+        try CadenceTaskMutationSupport.addTask(task, to: bundle, modelContext: context)
 
         CadenceTaskMutationSupport.rollOverTaskToToday(task, todayKey: "2026-08-20", modelContext: context)
 
@@ -215,7 +215,7 @@ struct CadenceTodayRolloverSurfaceTests {
         let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-08-19", startMin: 600, durationMinutes: 30)
         [first, second].forEach(context.insert)
         context.insert(bundle)
-        [first, second].forEach { CadenceTaskMutationSupport.addTask($0, to: bundle, modelContext: context) }
+        try [first, second].forEach { try CadenceTaskMutationSupport.addTask($0, to: bundle, modelContext: context) }
 
         CadenceTaskMutationSupport.rollOverTaskToToday(first, todayKey: "2026-08-20", modelContext: context)
 
@@ -437,7 +437,7 @@ struct CadenceTodayRolloverSurfaceTests {
         let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-08-19", startMin: 600, durationMinutes: 30)
         [carried, finished].forEach(context.insert)
         context.insert(bundle)
-        [carried, finished].forEach { CadenceTaskMutationSupport.addTask($0, to: bundle, modelContext: context) }
+        try [carried, finished].forEach { try CadenceTaskMutationSupport.addTask($0, to: bundle, modelContext: context) }
         try context.save()
 
         #expect(throws: (any Error).self) {
@@ -465,7 +465,7 @@ struct CadenceTodayRolloverSurfaceTests {
         let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-08-19", startMin: 600, durationMinutes: 30)
         [carried, finished].forEach(context.insert)
         context.insert(bundle)
-        [carried, finished].forEach { CadenceTaskMutationSupport.addTask($0, to: bundle, modelContext: context) }
+        try [carried, finished].forEach { try CadenceTaskMutationSupport.addTask($0, to: bundle, modelContext: context) }
         try context.save()
 
         let dismissed = try CadenceTodayRolloverSupport.rollOver(

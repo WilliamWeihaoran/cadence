@@ -170,6 +170,14 @@ final class TaskCompletionAnimationManager {
     /// into in that case, and inventing one would be worse than not advancing the series.
     func clearSettleFailure() { settleFailed = false }
 
+    /// Names a refusal this manager did not cause itself but that shares its one alert (T-654).
+    ///
+    /// `FocusView`'s timer controls bank a focus session's minutes through the same committing
+    /// shape a settle uses — a snapshot restored on refusal, nothing left pending — and macOS has
+    /// exactly one place that names a refused task mutation to the user. A second alert owned by
+    /// the focus screen would be a second answer to "did that write land"; this reuses the first.
+    func recordSettleFailure() { settleFailed = true }
+
     /// Runs a committing settle and records a refusal instead of dropping it.
     ///
     /// `commitSettle` has already put the task and its successor back by the time this catches, so

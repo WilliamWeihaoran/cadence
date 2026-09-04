@@ -117,12 +117,21 @@ struct iOSFocusView: View {
         // case rather than a rare one. A tab switch is not a disappear here: the compact shell
         // keeps every visited tab in the hierarchy at zero opacity, so this fires on a genuine pop
         // or a sidebar change, which are the two ways the session's state is actually destroyed.
+        //
+        // **Catches now (T-654).** `endSession` commits and can refuse; there is nothing left to do
+        // on this exit than name the refusal, because the view is already leaving. `timerState` is
+        // left exactly where it was — `endSession` never reset it before the throw — so the session
+        // is still there, un-cleared, if the screen is visited again.
         .onDisappear {
-            timerState = CadenceFocusSupport.endSession(
-                leaving: selectedSubject,
-                state: timerState,
-                modelContext: modelContext
-            )
+            do {
+                timerState = try CadenceFocusSupport.endSession(
+                    leaving: selectedSubject,
+                    state: timerState,
+                    modelContext: modelContext
+                )
+            } catch {
+                CadenceTaskSettleFailureCenter.shared.record()
+            }
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
@@ -559,14 +568,27 @@ struct iOSFocusView: View {
     /// dropped them — see `CadenceFocusSupport.commitElapsed(leaving:switchingTo:state:...)`. It
     /// passes the whole *subject*, not an id, because leaving a block has to know which members
     /// were ticked to know where its minutes go.
-    private func select(_ item: CadenceFocusPickItem) {
-        timerState = CadenceFocusSupport.commitElapsed(
-            leaving: selectedSubject,
-            switchingTo: item.target,
-            state: timerState,
-            modelContext: modelContext
-        )
+    ///
+    /// **Answers whether the switch happened (T-654).** `commitElapsed` commits and can refuse; a
+    /// refusal here must not adopt `item`, because the picker would then show the new subject at a
+    /// zero clock while the old one's session — still running, un-banked — sat behind it with
+    /// nothing pointing back at it. `accept(_:)` reads the answer to decide whether its own start
+    /// request still applies.
+    @discardableResult
+    private func select(_ item: CadenceFocusPickItem) -> Bool {
+        do {
+            timerState = try CadenceFocusSupport.commitElapsed(
+                leaving: selectedSubject,
+                switchingTo: item.target,
+                state: timerState,
+                modelContext: modelContext
+            )
+        } catch {
+            CadenceTaskSettleFailureCenter.shared.record()
+            return false
+        }
         adopt(item)
+        return true
     }
 
     /// Adopt a session handed over from another surface, and start it running.
@@ -580,12 +602,16 @@ struct iOSFocusView: View {
     ///
     /// The outgoing target is read before `select(_:)` moves it, because "did the subject change"
     /// is the question that decides whether the clock restarts at zero.
+    ///
+    /// **Does not start over a refused switch (T-654).** `select(_:)` already recorded the refusal;
+    /// starting the handed-over target's clock on top of it would leave the screen showing a session
+    /// running against a target the selection never actually moved to.
     private func accept(_ handoff: CadenceFocusHandoff) {
         defer { focusHandoffCenter.consume(handoff) }
         guard let item = pickItem(for: handoff.target) else { return }
 
         let outgoingTarget = selectedItem?.target
-        select(item)
+        guard select(item) else { return }
         timerState = CadenceFocusSupport.timerState(
             startRequestFor: handoff.target,
             selectedTarget: outgoingTarget,
@@ -601,13 +627,22 @@ struct iOSFocusView: View {
     /// Both read `selectedItem`, not `selectedTarget`: with nothing explicitly picked the session
     /// runs against the head of the list, and passing the `nil` target would treat leaving that
     /// subject as leaving nothing.
+    ///
+    /// **Does not toggle or adopt over a refused commit (T-654)**, for the same reason `select(_:)`
+    /// does not adopt: the row tapped would otherwise start running while the subject it is
+    /// replacing was never actually left.
     private func toggleSession(for item: CadenceFocusPickItem) {
-        timerState = CadenceFocusSupport.commitElapsed(
-            leaving: selectedSubject,
-            switchingTo: item.target,
-            state: timerState,
-            modelContext: modelContext
-        )
+        do {
+            timerState = try CadenceFocusSupport.commitElapsed(
+                leaving: selectedSubject,
+                switchingTo: item.target,
+                state: timerState,
+                modelContext: modelContext
+            )
+        } catch {
+            CadenceTaskSettleFailureCenter.shared.record()
+            return
+        }
         timerState = CadenceFocusSupport.timerState(
             afterPlayTapOn: item.target,
             selectedTarget: selectedItem?.target,
@@ -671,13 +706,22 @@ struct iOSFocusView: View {
 
     /// Hand the block's minutes to the ticked members, weighted by estimate, through the one helper
     /// macOS's bundle timer also commits through.
+    ///
+    /// **Only resets the clock once the store has the minutes (T-654).** This used to bank via a
+    /// swallowed `try? modelContext.save()` and clear the clock unconditionally — the same shape
+    /// T-636(c) fixed on the single-task completion door beside it. A refused commit here now leaves
+    /// `timerState` untouched, so the session is still there to log again rather than gone for good.
     private func logBundleSession(_ bundle: TaskBundle) {
-        CadenceFocusSupport.logElapsedSeconds(
-            elapsedSeconds,
-            across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs),
-            in: modelContext
-        )
-        try? modelContext.save()
+        do {
+            try CadenceFocusSupport.logElapsedSeconds(
+                elapsedSeconds,
+                across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs),
+                in: modelContext
+            )
+        } catch {
+            CadenceTaskSettleFailureCenter.shared.record()
+            return
+        }
         resetTimer()
     }
 }

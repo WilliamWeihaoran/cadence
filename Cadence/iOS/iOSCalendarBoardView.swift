@@ -37,6 +37,10 @@ struct iOSCalendarBoardPlanner: View {
     /// nothing it is told about where it is scrolled — see the switch in `board(columnWidth:)`.
     @State private var didConfirmInitialColumn = false
     @State private var windowStartDate: Date?
+    /// T-760: `formBundle` commits through the shared mutation now, and this is the one place on
+    /// this board that can name a refusal. Same alert macOS's `TimelineDayCanvas` already shows for
+    /// the identical gesture.
+    @State private var bundleCreateFailed = false
 
     private let calendar = Calendar.current
     private let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
@@ -93,6 +97,11 @@ struct iOSCalendarBoardPlanner: View {
     var body: some View {
         GeometryReader { geometry in
             board(columnWidth: columnWidth(containerWidth: geometry.size.width))
+        }
+        .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
         }
     }
 
@@ -239,15 +248,30 @@ struct iOSCalendarBoardPlanner: View {
         try? CadenceTaskMutationSupport.moveBundle(bundle, to: dateKey, modelContext: modelContext)
     }
 
+    /// **Still the swallow the `try? save()` rule allows (T-760).** `addTask` now throws — it has
+    /// to, since `insertBundle` below shares its committing shape — but this call is the in-place
+    /// move onto a bundle that already exists, the same shape `move(_:on:)` above swallows: nothing
+    /// is inserted or deleted, the column redraws from the model, and there is no notice to land a
+    /// refusal in.
     private func add(_ task: AppTask, to bundle: TaskBundle) {
-        CadenceTaskMutationSupport.addTask(task, to: bundle, modelContext: modelContext)
+        try? CadenceTaskMutationSupport.addTask(task, to: bundle, modelContext: modelContext)
     }
 
     /// Drop a task on a timed task and the two become a block — the gesture macOS's timeline has
     /// had all along as `SchedulingActions.createBundle(from:adding:)`, which now delegates to the
     /// same shared mutation this calls (T-190).
+    ///
+    /// **Names a refusal now (T-760).** `insertBundle` used to commit through two saves nobody
+    /// could hear refuse — the block landed in the store either way, so this call reported nothing
+    /// because there was, in the swallowed sense, nothing to report. It throws now, and this is one
+    /// of the three canvases sharing that one answer, alongside macOS's `TimelineDayCanvas` and this
+    /// board's sibling in `iOSCalendarTimelineViews.swift`.
     private func formBundle(from target: AppTask, adding dragged: AppTask) {
-        _ = CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: modelContext)
+        do {
+            _ = try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: modelContext)
+        } catch {
+            bundleCreateFailed = true
+        }
     }
 }
 

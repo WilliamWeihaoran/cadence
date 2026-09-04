@@ -29,32 +29,52 @@ enum FocusSessionSupport {
         return (total / 60, total % 60)
     }
 
+    /// **Throws and takes `commit:` now (T-654).** It used to bank through
+    /// `CadenceFocusLedger.bank` — a pending insert since T-621 — and, when `complete` was ticked,
+    /// finish the task through `TaskWorkflowService.markDone` directly: neither ever reached a
+    /// `save()`, swallowed or otherwise, so the manual "Log Session" popover's checkmark could mint
+    /// a recurrence successor with nothing to commit it. Both writes are one unit now, the same
+    /// shape `CadenceFocusSupport.complete` uses for the focus timer's own completion door
+    /// (T-636(c)): the bank is written pending, then `complete` settles through the funnel that
+    /// commits the successor too, or (when not completing) the bank commits on its own — either
+    /// way exactly one commit, and the banked minutes are undone if it refuses.
     static func logSession(
         hours: Int,
         minutes: Int,
         complete: Bool,
         task: AppTask,
         modelContext: ModelContext,
-        focusManager: FocusManager
-    ) {
+        focusManager: FocusManager,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         let totalMinutes = hours * 60 + minutes
+        let banked = CadenceFocusSupport.BankedMinutes(task)
         CadenceFocusLedger.bank(totalMinutes, forTaskAndItsList: task, in: modelContext)
-
-        if complete {
-            TaskWorkflowService.markDone(task, in: modelContext)
+        do {
+            if complete {
+                try CadenceTaskMutationSupport.commitSettle(task, in: modelContext, commit: commit) {
+                    TaskWorkflowService.markDone(task, in: modelContext)
+                }
+            } else {
+                try commit(modelContext)
+            }
+        } catch {
+            banked.restore(in: modelContext)
+            throw error
         }
-
         focusManager.reset()
     }
 
+    /// - Parameter commit: See `distributeBundleMinutes(_:across:in:commit:)`.
     static func logBundleSession(
         hours: Int,
         minutes: Int,
         tasks: [AppTask],
         modelContext: ModelContext,
-        focusManager: FocusManager
-    ) {
-        distributeBundleMinutes(hours * 60 + minutes, across: tasks, in: modelContext)
+        focusManager: FocusManager,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        try distributeBundleMinutes(hours * 60 + minutes, across: tasks, in: modelContext, commit: commit)
         focusManager.reset()
     }
 
@@ -62,8 +82,15 @@ enum FocusSessionSupport {
     /// `Shared/` under T-242 — it touched nothing but models, and living behind `#if os(macOS)` is
     /// why an iPhone could not run a block's timer at all. The Mac's spelling stays because the
     /// popovers here read better in this file's vocabulary; it must not grow a body again.
-    static func distributeBundleMinutes(_ totalMinutes: Int, across tasks: [AppTask], in modelContext: ModelContext) {
-        CadenceFocusSupport.distributeMinutes(totalMinutes, across: tasks, in: modelContext)
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    static func distributeBundleMinutes(
+        _ totalMinutes: Int,
+        across tasks: [AppTask],
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        try CadenceFocusSupport.distributeMinutes(totalMinutes, across: tasks, in: modelContext, commit: commit)
     }
 
 }

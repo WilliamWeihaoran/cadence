@@ -225,17 +225,44 @@ extension CadenceFocusSupport {
     }
 
     /// Spread `totalMinutes` across `tasks`, weighted by estimate, and roll the same minutes up into
-    /// each task's list the way `logElapsedSeconds(_:to:)` does for a single task.
+    /// each task's list the way `bankElapsedSeconds(_:to:)` does for a single task.
     ///
     /// Moved from `FocusSessionSupport.distributeBundleMinutes` — arithmetic over models, inside
     /// `#if os(macOS)`, which is why an iPhone could not run a block's timer at all. The last member
     /// absorbs the remainder rather than each share being rounded independently, so the minutes
     /// handed out always total exactly what the stopwatch measured.
-    static func distributeMinutes(_ totalMinutes: Int, across tasks: [AppTask], in modelContext: ModelContext) {
+    ///
+    /// **Throws and takes `commit:` now (T-654).** Every increment `CadenceFocusLedger.bank` writes
+    /// is a pending insert (a `FocusSessionLog` row per task/project/area) plus an `actualMinutes` /
+    /// `loggedMinutes` `+=` — and `+=` is exactly the shape the standing "a refused save is fine
+    /// because the next fetch corrects it" reasoning does not cover: a fetch re-reads whatever the
+    /// counter now holds, and a lost increment stays lost. `BankedMinutes` is captured for every task
+    /// actually credited, **before** its bank runs, so a refused commit restores every one of them —
+    /// with exactly one task in `tasks` this reduces to the same shape `CadenceFocusSupport.complete`
+    /// already uses for the single-task door (T-636(c)), which is what lets `endSession` below share
+    /// one call for both the task-leaving and bundle-leaving cases.
+    ///
+    /// **Commits through `commitEdit(in:commit:undo:)`, not `commitInsert`, and that is
+    /// deliberate.** The pending change here is `BankedMinutes`' captured-before snapshot restored
+    /// on refusal — the same shape `updateBundle`/`moveBundle` use for their field edits — not a
+    /// list of freshly-inserted models `commitInsert` could delete. Routing the actual commit
+    /// through `CadencePendingChangePersistence` rather than calling `commit(modelContext)` inline
+    /// also keeps this reachable by `AGENTS.md`'s "the `try? save()` rule" scan, which recognizes a
+    /// commit by name (`.save()` or `CadencePendingChangePersistence.commit…`) and cannot see
+    /// through a bare call to a parameter.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    static func distributeMinutes(
+        _ totalMinutes: Int,
+        across tasks: [AppTask],
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         guard totalMinutes > 0, !tasks.isEmpty else { return }
         let weights = tasks.map { max($0.estimatedMinutes, 5) }
         let totalWeight = max(weights.reduce(0, +), 1)
         var remaining = totalMinutes
+        var banked: [CadenceFocusSupport.BankedMinutes] = []
 
         for (index, task) in tasks.enumerated() {
             let minutes: Int
@@ -249,7 +276,23 @@ extension CadenceFocusSupport {
                 remaining -= minutes
             }
             guard minutes > 0 else { continue }
+            banked.append(CadenceFocusSupport.BankedMinutes(task))
             CadenceFocusLedger.bank(minutes, forTaskAndItsList: task, in: modelContext)
+        }
+
+        guard !banked.isEmpty else { return }
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            // **Reversed, and it has to be.** Two tasks in the same project each snapshot that
+            // project's counter — the second snapshot captures whatever the *first* task's write
+            // already left it at, not the true pre-distribution value. Restoring forward would let
+            // that second, already-mutated snapshot win. Restoring in reverse — last write undone
+            // first — means the snapshot taken before any write in this distribution ran (the
+            // first task's) is applied last, so it is the one left standing. Measured: forward
+            // order left a shared project's `loggedMinutes` at an intermediate value rather than
+            // its original one.
+            for snapshot in banked.reversed() {
+                snapshot.restore(in: modelContext)
+            }
         }
     }
 
@@ -259,8 +302,15 @@ extension CadenceFocusSupport {
     /// is worth — rather than re-deriving it, for the same reason the log-session seeds do: a second
     /// rounding rule here would make the same clock log a different number depending on whether the
     /// subject was a task or a block.
-    static func logElapsedSeconds(_ seconds: Int, across tasks: [AppTask], in modelContext: ModelContext) {
-        distributeMinutes(minutes(fromElapsedSeconds: seconds), across: tasks, in: modelContext)
+    ///
+    /// - Parameter commit: See `distributeMinutes(_:across:in:commit:)`.
+    static func logElapsedSeconds(
+        _ seconds: Int,
+        across tasks: [AppTask],
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        try distributeMinutes(minutes(fromElapsedSeconds: seconds), across: tasks, in: modelContext, commit: commit)
     }
 
     /// Leave one focus subject for another: bank the seconds the outgoing one earned, then hand the
@@ -272,15 +322,18 @@ extension CadenceFocusSupport {
     /// leaving a session and returns the state untouched, and under a whole minute nothing is
     /// written, because `minutes(fromElapsedSeconds:)` rounds to the nearest minute and a zero is not
     /// worth a `save()`.
+    ///
+    /// **Throws now (T-654).** See `endSession(leaving:state:modelContext:now:commit:)`.
     static func commitElapsed(
         leaving outgoing: CadenceFocusSubject?,
         switchingTo next: CadenceFocusTarget,
         state: CadenceFocusTimerState,
         modelContext: ModelContext,
-        now: Date = Date()
-    ) -> CadenceFocusTimerState {
+        now: Date = Date(),
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> CadenceFocusTimerState {
         guard outgoing?.target != next else { return state }
-        return endSession(leaving: outgoing, state: state, modelContext: modelContext, now: now)
+        return try endSession(leaving: outgoing, state: state, modelContext: modelContext, now: now, commit: commit)
     }
 
     /// Leave a focus session for **nothing**: bank the seconds it earned and clear the clock.
@@ -295,12 +348,24 @@ extension CadenceFocusSupport {
     /// Same two silences as the switching form, deliberately: no subject writes nothing, and a
     /// clock under a whole minute writes nothing, because `minutes(fromElapsedSeconds:)` rounds to
     /// the nearest minute and a zero is not worth a `save()`.
+    ///
+    /// **Throws and takes `commit:` now (T-654).** It used to bank through the swallowing
+    /// `logElapsedSeconds` and always return the *reset* state, so a refused (or, on macOS, never
+    /// attempted — `FocusManager.commitElapsed` called none of this) commit cleared the only copy of
+    /// the elapsed seconds with nothing left to retry. The task and bundle branches both now go
+    /// through the same `distributeMinutes(_:across:in:commit:)` — a single task is just a
+    /// one-element credit list — so there is one commit, one undo, and the clock is only reset once
+    /// that commit actually lands; on a refusal the caller gets the thrown error and the *original*
+    /// `state`, unreset, so the session already running is still there to retry.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     static func endSession(
         leaving outgoing: CadenceFocusSubject?,
         state: CadenceFocusTimerState,
         modelContext: ModelContext,
-        now: Date = Date()
-    ) -> CadenceFocusTimerState {
+        now: Date = Date(),
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> CadenceFocusTimerState {
         var reset = state
         reset.reset()
 
@@ -308,17 +373,14 @@ extension CadenceFocusSupport {
         let seconds = state.elapsedSeconds(now: now)
         guard minutes(fromElapsedSeconds: seconds) > 0 else { return reset }
 
+        let creditedTasks: [AppTask]
         switch outgoing {
         case .task(let task):
-            logElapsedSeconds(seconds, to: task, in: modelContext)
+            creditedTasks = [task]
         case .bundle(let bundle, let selectedTaskIDs):
-            logElapsedSeconds(
-                seconds,
-                across: selectedTasks(in: bundle, selectedTaskIDs: selectedTaskIDs),
-                in: modelContext
-            )
+            creditedTasks = selectedTasks(in: bundle, selectedTaskIDs: selectedTaskIDs)
         }
-        try? modelContext.save()
+        try logElapsedSeconds(seconds, across: creditedTasks, in: modelContext, commit: commit)
         return reset
     }
 

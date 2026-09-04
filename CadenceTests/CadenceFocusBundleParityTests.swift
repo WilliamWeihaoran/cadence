@@ -59,7 +59,7 @@ struct CadenceFocusBundleParityTests {
         let block = bundle("Sweep", estimates: [45, 15])
         let members = block.sortedTasks
 
-        CadenceFocusSupport.distributeMinutes(60, across: members, in: context)
+        try CadenceFocusSupport.distributeMinutes(60, across: members, in: context)
 
         #expect(members.map(\.actualMinutes) == [45, 15])
         #expect(members.reduce(0) { $0 + $1.actualMinutes } == 60)
@@ -73,7 +73,7 @@ struct CadenceFocusBundleParityTests {
         let block = bundle("Uneven", estimates: [10, 10, 10])
         let members = block.sortedTasks
 
-        CadenceFocusSupport.distributeMinutes(100, across: members, in: context)
+        try CadenceFocusSupport.distributeMinutes(100, across: members, in: context)
 
         #expect(members.reduce(0) { $0 + $1.actualMinutes } == 100)
         #expect(members.map(\.actualMinutes) == [33, 33, 34])
@@ -96,7 +96,7 @@ struct CadenceFocusBundleParityTests {
         context.insert(block)
         for member in members { context.insert(member) }
 
-        CadenceFocusSupport.distributeMinutes(40, across: members, in: context)
+        try CadenceFocusSupport.distributeMinutes(40, across: members, in: context)
 
         #expect(project.loggedMinutes == 20)
         #expect(area.loggedMinutes == 20)
@@ -112,8 +112,8 @@ struct CadenceFocusBundleParityTests {
             let block = bundle("Rounding", estimates: [30])
             let single = AppTask(title: "Alone")
 
-            CadenceFocusSupport.logElapsedSeconds(seconds, across: block.sortedTasks, in: context)
-            CadenceFocusSupport.logElapsedSeconds(seconds, to: single, in: context)
+            try CadenceFocusSupport.logElapsedSeconds(seconds, across: block.sortedTasks, in: context)
+            CadenceFocusSupport.bankElapsedSeconds(seconds, to: single, in: context)
 
             #expect(block.sortedTasks[0].actualMinutes == single.actualMinutes)
             #expect(single.actualMinutes == CadenceFocusSupport.minutes(fromElapsedSeconds: seconds))
@@ -152,7 +152,7 @@ struct CadenceFocusBundleParityTests {
         let block = bundle("Partial", estimates: [30, 30])
         let members = block.sortedTasks
 
-        CadenceFocusSupport.logElapsedSeconds(
+        try CadenceFocusSupport.logElapsedSeconds(
             30 * 60,
             across: CadenceFocusSupport.selectedTasks(in: block, selectedTaskIDs: [members[0].id]),
             in: context
@@ -178,7 +178,7 @@ struct CadenceFocusBundleParityTests {
         for member in members { context.insert(member) }
         context.insert(next)
 
-        let after = CadenceFocusSupport.commitElapsed(
+        let after = try CadenceFocusSupport.commitElapsed(
             leaving: .bundle(block, selectedTaskIDs: [members[0].id]),
             switchingTo: .task(next.id),
             state: timerState(elapsedSeconds: 20 * 60),
@@ -202,7 +202,7 @@ struct CadenceFocusBundleParityTests {
         context.insert(block)
         for member in members { context.insert(member) }
 
-        let after = CadenceFocusSupport.commitElapsed(
+        let after = try CadenceFocusSupport.commitElapsed(
             leaving: .bundle(block, selectedTaskIDs: Set(members.map(\.id))),
             switchingTo: .task(members[0].id),
             state: timerState(elapsedSeconds: 30 * 60),
@@ -222,7 +222,7 @@ struct CadenceFocusBundleParityTests {
         context.insert(block)
         for member in block.sortedTasks { context.insert(member) }
 
-        let after = CadenceFocusSupport.commitElapsed(
+        let after = try CadenceFocusSupport.commitElapsed(
             leaving: .bundle(block, selectedTaskIDs: CadenceFocusSupport.defaultSelectedTaskIDs(for: block)),
             switchingTo: .bundle(block.id),
             state: timerState(elapsedSeconds: 12 * 60),
@@ -359,7 +359,7 @@ struct CadenceFocusBundleParityTests {
         let block = bundle("Sweep", estimates: [45, 15])
         let members = block.sortedTasks
 
-        FocusSessionSupport.distributeBundleMinutes(60, across: members, in: context)
+        try FocusSessionSupport.distributeBundleMinutes(60, across: members, in: context)
 
         #expect(members.map(\.actualMinutes) == [45, 15])
     }
@@ -380,7 +380,7 @@ struct CadenceFocusBundleParityTests {
         context.insert(block)
         for member in block.sortedTasks { context.insert(member) }
 
-        manager.startFocus(bundle: block, in: context)
+        try manager.startFocus(bundle: block, in: context)
 
         #expect(manager.selectedBundleTaskIDs == CadenceFocusSupport.defaultSelectedTaskIDs(for: block))
     }

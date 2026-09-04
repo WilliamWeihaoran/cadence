@@ -199,7 +199,7 @@ struct CrossPlatformParityTests {
         let task = AppTask(title: "Write copy")
         task.project = project
 
-        CadenceFocusSupport.logElapsedSeconds(25 * 60, to: task, in: modelContext)
+        CadenceFocusSupport.bankElapsedSeconds(25 * 60, to: task, in: modelContext)
 
         #expect(task.actualMinutes == 25)
         #expect(project.loggedMinutes == 25)
@@ -212,7 +212,7 @@ struct CrossPlatformParityTests {
         let task = AppTask(title: "Errand")
         task.area = area
 
-        CadenceFocusSupport.logElapsedSeconds(90, to: task, in: modelContext)
+        CadenceFocusSupport.bankElapsedSeconds(90, to: task, in: modelContext)
 
         #expect(task.actualMinutes == 2)
         #expect(area.loggedMinutes == 2)

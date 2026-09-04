@@ -58,7 +58,7 @@ struct FocusView: View {
             FocusSessionHeader(
                 task: task,
                 estimateLabel: durationLabel(for: task),
-                onClose: { focusManager.endSession(in: modelContext) }
+                onClose: { reportingFocusFailure { try focusManager.endSession(in: modelContext) } }
             )
 
             GeometryReader { proxy in
@@ -86,7 +86,7 @@ struct FocusView: View {
                         FocusSidebar(
                             task: task,
                             nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(4)),
-                            onSelectTask: { focusManager.startFocus(task: $0, in: modelContext) }
+                            onSelectTask: { task in reportingFocusFailure { try focusManager.startFocus(task: task, in: modelContext) } }
                         )
                         .frame(
                             minWidth: CadenceDesktopSplitLayout.focusSidebarPaneMinWidth,
@@ -141,15 +141,21 @@ struct FocusView: View {
                     task: task,
                     elapsedSeconds: focusManager.elapsed,
                     onLog: { hours, minutes, complete in
-                        FocusSessionSupport.logSession(
-                            hours: hours,
-                            minutes: minutes,
-                            complete: complete,
-                            task: task,
-                            modelContext: modelContext,
-                            focusManager: focusManager
-                        )
-                        showLogSheet = false
+                        let committed = reportingFocusFailure {
+                            try FocusSessionSupport.logSession(
+                                hours: hours,
+                                minutes: minutes,
+                                complete: complete,
+                                task: task,
+                                modelContext: modelContext,
+                                focusManager: focusManager
+                            )
+                        }
+                        // T-566: dismissing over a refused commit reports a save that did not
+                        // happen. The popover stays open so the entered hours/minutes are not lost.
+                        if committed {
+                            showLogSheet = false
+                        }
                     },
                     onDiscard: {
                         focusManager.reset()
@@ -166,7 +172,7 @@ struct FocusView: View {
             FocusBundleHeader(
                 bundle: bundle,
                 selectedCount: selectedBundleTasks(bundle).count,
-                onClose: { focusManager.endSession(in: modelContext) }
+                onClose: { reportingFocusFailure { try focusManager.endSession(in: modelContext) } }
             )
 
             GeometryReader { proxy in
@@ -200,7 +206,7 @@ struct FocusView: View {
                         FocusBundleSidebar(
                             bundle: bundle,
                             nextTasks: Array(readyTasks.filter { !bundle.sortedTasks.map(\.id).contains($0.id) }.prefix(4)),
-                            onSelectTask: { focusManager.startFocus(task: $0, in: modelContext) }
+                            onSelectTask: { task in reportingFocusFailure { try focusManager.startFocus(task: task, in: modelContext) } }
                         )
                         .frame(
                             minWidth: CadenceDesktopSplitLayout.focusSidebarPaneMinWidth,
@@ -256,14 +262,19 @@ struct FocusView: View {
                     elapsedSeconds: focusManager.elapsed,
                     selectedTasks: selectedBundleTasks(bundle),
                     onLog: { hours, minutes in
-                        FocusSessionSupport.logBundleSession(
-                            hours: hours,
-                            minutes: minutes,
-                            tasks: selectedBundleTasks(bundle),
-                            modelContext: modelContext,
-                            focusManager: focusManager
-                        )
-                        showLogSheet = false
+                        let committed = reportingFocusFailure {
+                            try FocusSessionSupport.logBundleSession(
+                                hours: hours,
+                                minutes: minutes,
+                                tasks: selectedBundleTasks(bundle),
+                                modelContext: modelContext,
+                                focusManager: focusManager
+                            )
+                        }
+                        // T-566: see the sibling task popover's identical guard above.
+                        if committed {
+                            showLogSheet = false
+                        }
                     },
                     onDiscard: {
                         focusManager.reset()
@@ -290,8 +301,8 @@ struct FocusView: View {
                         clockDisplay: clockDisplay,
                         searchText: $idleSearchText,
                         items: focusPickerItems,
-                        onSelectTask: { focusManager.startFocus(task: $0, in: modelContext) },
-                        onSelectBundle: { focusManager.startFocus(bundle: $0, in: modelContext) }
+                        onSelectTask: { task in reportingFocusFailure { try focusManager.startFocus(task: task, in: modelContext) } },
+                        onSelectBundle: { bundle in reportingFocusFailure { try focusManager.startFocus(bundle: bundle, in: modelContext) } }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
@@ -325,6 +336,26 @@ struct FocusView: View {
 
     private func durationLabel(for task: AppTask) -> String? {
         FocusSessionSupport.durationLabel(for: task)
+    }
+
+    /// **T-654.** Every close/switch on this screen now commits a pending bank through
+    /// `FocusManager`, and a refusal has to be named somewhere: this is macOS's one place for it,
+    /// reusing the alert `macOSRootView` already shows for a refused settle
+    /// (`TaskCompletionAnimationManager.settleFailed`) rather than adding a second notice for what
+    /// is, from the user's side, the same event — a task mutation the store did not take.
+    ///
+    /// Returns whether `body` committed, so a caller that would otherwise dismiss a popover or
+    /// sheet on top of it — `LogSessionPopover`'s and `BundleLogSessionPopover`'s `onLog` — can
+    /// leave it open on a refusal instead of reporting success over one (T-566's rule).
+    @discardableResult
+    private func reportingFocusFailure(_ body: () throws -> Void) -> Bool {
+        do {
+            try body()
+            return true
+        } catch {
+            TaskCompletionAnimationManager.shared.recordSettleFailure()
+            return false
+        }
     }
 }
 #endif

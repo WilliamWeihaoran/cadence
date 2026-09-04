@@ -93,6 +93,10 @@ struct iOSCalendarTimelineGrid: View {
     /// Latches a `leadingDate` write this view made itself, so the change coming back does not
     /// re-scroll the grid under the finger that caused it. The Board carries the same latch.
     @State private var isReportingLeadingDate = false
+    /// T-760: `formBundle` commits through the shared mutation now, and this is the one place on
+    /// this grid that can name a refusal. Same alert macOS's `TimelineDayCanvas` and this file's
+    /// sibling board (`iOSCalendarBoardPlanner`) already show for the identical gesture.
+    @State private var bundleCreateFailed = false
     /// The zoom *during* a pinch. `zoom` is `@AppStorage`-backed two views up, and writing a
     /// defaults key sixty times a second is not a thing to do to a gesture — so the live value
     /// lives here and is committed once, on `onEnded`.
@@ -181,18 +185,31 @@ struct iOSCalendarTimelineGrid: View {
             }
             alignWindow(to: newDate, animated: true)
         }
+        .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
+        }
     }
 
     /// Drop a block on a block and the two become one — the gesture macOS's `TimelineDayCanvas` has
     /// had all along, and which T-190 could only give iOS's Calendar *Board* because this file had
     /// no drag mesh at all (T-243).
     ///
-    /// **One line, and it must stay one line.** `CadenceTaskMutationSupport.insertBundle(from:adding:)`
-    /// is the single implementation of "two tasks become a block"; `SchedulingActions.createBundle`
-    /// is a delegation to it and `iOSCalendarBoardPlanner.formBundle` is this same call. A second
-    /// body here would be the fourth spelling of the thing T-190 existed to unify.
+    /// `CadenceTaskMutationSupport.insertBundle(from:adding:)` is the single implementation of "two
+    /// tasks become a block"; `SchedulingActions.createBundle` is a delegation to it and
+    /// `iOSCalendarBoardPlanner.formBundle` is this same call. A second body here would be the
+    /// fourth spelling of the thing T-190 existed to unify.
+    ///
+    /// **Names a refusal now (T-760).** It used to commit through two saves nobody could hear
+    /// refuse — the block landed either way, so there was, in the swallowed sense, nothing to
+    /// report. It throws now, and this is one of the three canvases sharing that one answer.
     private func formBundle(from target: AppTask, adding dragged: AppTask) {
-        _ = CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: modelContext)
+        do {
+            _ = try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: modelContext)
+        } catch {
+            bundleCreateFailed = true
+        }
     }
 
     private func gridScroller(colWidth: CGFloat, contentWidth: CGFloat, canvasHeight: CGFloat) -> some View {

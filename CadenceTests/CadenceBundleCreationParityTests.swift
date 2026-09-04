@@ -7,7 +7,7 @@ import Testing
 /// T-190: "drop a task on a task and the two become a block" existed only on the Mac timeline.
 /// `SchedulingActions.createBundle(from:adding:)` sat inside `#if os(macOS)` in a file that imports
 /// no AppKit, so the gesture was macOS-only by accident rather than by anything about the platform.
-/// The mutation is now `CadenceTaskMutationSupport.insertBundle(from:adding:)` in `Shared/`; the Mac
+/// The mutation is now `try CadenceTaskMutationSupport.insertBundle(from:adding:)` in `Shared/`; the Mac
 /// delegates to it and iOS's Calendar Board calls it.
 ///
 /// **The ticket's premise was already false when this was written, and that is worth recording.**
@@ -46,7 +46,7 @@ struct CadenceBundleCreationParityTests {
         context.insert(dragged)
 
         let bundle = try #require(
-            CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
+            try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
         )
 
         #expect(bundle.dateKey == "2026-08-21")
@@ -70,19 +70,19 @@ struct CadenceBundleCreationParityTests {
 
         let sameTask = scheduledTask("Only one", dateKey: "2026-08-21", startMin: 600, estimate: 30)
         context.insert(sameTask)
-        #expect(CadenceTaskMutationSupport.insertBundle(from: sameTask, adding: sameTask, modelContext: context) == nil)
+        #expect(try CadenceTaskMutationSupport.insertBundle(from: sameTask, adding: sameTask, modelContext: context) == nil)
 
         let undated = AppTask(title: "No day")
         let dragged = scheduledTask("Dragged", dateKey: "2026-08-21", startMin: 600, estimate: 10)
         context.insert(undated)
         context.insert(dragged)
-        #expect(CadenceTaskMutationSupport.insertBundle(from: undated, adding: dragged, modelContext: context) == nil)
+        #expect(try CadenceTaskMutationSupport.insertBundle(from: undated, adding: dragged, modelContext: context) == nil)
 
         let doDatedOnly = AppTask(title: "Day but no slot")
         doDatedOnly.scheduledDate = "2026-08-21"
         doDatedOnly.scheduledStartMin = -1
         context.insert(doDatedOnly)
-        #expect(CadenceTaskMutationSupport.insertBundle(from: doDatedOnly, adding: dragged, modelContext: context) == nil)
+        #expect(try CadenceTaskMutationSupport.insertBundle(from: doDatedOnly, adding: dragged, modelContext: context) == nil)
 
         #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
     }
@@ -101,7 +101,7 @@ struct CadenceBundleCreationParityTests {
         context.insert(target)
         context.insert(dragged)
 
-        _ = CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
+        _ = try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
 
         #expect(target.calendarEventID.isEmpty)
         #expect(dragged.calendarEventID.isEmpty)
@@ -119,7 +119,7 @@ struct CadenceBundleCreationParityTests {
         context.insert(dragged)
 
         let bundle = try #require(
-            CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
+            try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
         )
 
         #expect(bundle.startMin == 1435)
@@ -193,7 +193,7 @@ struct CadenceBundleCreationParityTests {
     @Test func theCalendarBoardWiresTheSharedBundleFormingMutation() throws {
         let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
 
-        #expect(occurrences(of: "CadenceTaskMutationSupport.insertBundle(from:", in: source) == 1)
+        #expect(occurrences(of: "try CadenceTaskMutationSupport.insertBundle(from:", in: source) == 1)
         #expect(occurrences(of: "bundleFormingDrop:", in: source) == 1)
         // The board must not grow its own `TaskBundle(` — that would be the near-copy this ticket
         // exists to avoid.
@@ -221,7 +221,7 @@ struct CadenceBundleCreationParityTests {
     @Test func theDayTimelineWiresTheSameSharedBundleFormingMutation() throws {
         let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
 
-        #expect(occurrences(of: "CadenceTaskMutationSupport.insertBundle(from:", in: source) == 1)
+        #expect(occurrences(of: "try CadenceTaskMutationSupport.insertBundle(from:", in: source) == 1)
         #expect(occurrences(of: "TaskBundle(", in: source) == 0)
         // The gesture itself, which is the half that did not exist: a block that can be lifted and a
         // block that can be dropped on.

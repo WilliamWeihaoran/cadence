@@ -140,7 +140,7 @@ struct FocusSessionSwitchCommitTests {
         context.insert(outgoing)
         context.insert(incoming)
 
-        let next = CadenceFocusSupport.commitElapsed(
+        let next = try CadenceFocusSupport.commitElapsed(
             leaving: outgoing,
             switchingTo: incoming.id,
             state: runningClock(from: 25 * 60),
@@ -170,7 +170,7 @@ struct FocusSessionSwitchCommitTests {
         var running = CadenceFocusTimerState()
         running.toggle(now: epoch)
 
-        _ = CadenceFocusSupport.commitElapsed(
+        _ = try CadenceFocusSupport.commitElapsed(
             leaving: outgoing,
             switchingTo: UUID(),
             state: running,
@@ -190,7 +190,7 @@ struct FocusSessionSwitchCommitTests {
         let task = AppTask(title: "Write copy")
         context.insert(task)
 
-        let next = CadenceFocusSupport.commitElapsed(
+        let next = try CadenceFocusSupport.commitElapsed(
             leaving: task,
             switchingTo: task.id,
             state: runningClock(from: 12 * 60),
@@ -217,7 +217,7 @@ struct FocusSessionSwitchCommitTests {
         context.insert(project)
         context.insert(outgoing)
 
-        let next = CadenceFocusSupport.commitElapsed(
+        let next = try CadenceFocusSupport.commitElapsed(
             leaving: outgoing,
             switchingTo: UUID(),
             state: runningClock(from: 20),
@@ -236,7 +236,7 @@ struct FocusSessionSwitchCommitTests {
         let container = try makeContainer()
         let context = ModelContext(container)
 
-        let next = CadenceFocusSupport.commitElapsed(
+        let next = try CadenceFocusSupport.commitElapsed(
             leaving: nil,
             switchingTo: UUID(),
             state: runningClock(from: 25 * 60),
@@ -454,7 +454,7 @@ struct FocusHandoffTests {
         var running = CadenceFocusTimerState()
         running.toggle(now: epoch)
 
-        let next = CadenceFocusSupport.endSession(
+        let next = try CadenceFocusSupport.endSession(
             leaving: .task(task),
             state: running,
             modelContext: context,
@@ -487,7 +487,7 @@ struct FocusHandoffTests {
         var banked = CadenceFocusTimerState()
         banked.accumulatedSeconds = 30 * 60
 
-        _ = CadenceFocusSupport.endSession(
+        _ = try CadenceFocusSupport.endSession(
             leaving: .bundle(bundle, selectedTaskIDs: [included.id]),
             state: banked,
             modelContext: context,
@@ -510,7 +510,7 @@ struct FocusHandoffTests {
         var banked = CadenceFocusTimerState()
         banked.accumulatedSeconds = 20
 
-        _ = CadenceFocusSupport.endSession(
+        _ = try CadenceFocusSupport.endSession(
             leaving: .task(task),
             state: banked,
             modelContext: context,
@@ -529,7 +529,7 @@ struct FocusHandoffTests {
         var banked = CadenceFocusTimerState()
         banked.accumulatedSeconds = 25 * 60
 
-        let next = CadenceFocusSupport.endSession(
+        let next = try CadenceFocusSupport.endSession(
             leaving: nil,
             state: banked,
             modelContext: context,
@@ -550,7 +550,7 @@ struct FocusHandoffTests {
         var banked = CadenceFocusTimerState()
         banked.accumulatedSeconds = 12 * 60
 
-        let next = CadenceFocusSupport.commitElapsed(
+        let next = try CadenceFocusSupport.commitElapsed(
             leaving: .task(task),
             switchingTo: .task(task.id),
             state: banked,

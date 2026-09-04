@@ -208,18 +208,27 @@ enum SchedulingActions {
         normalizeBundleOrder(bundle)
     }
 
-    /// Forms a bundle out of a scheduled task plus a task dropped onto it.
+    /// Forms a bundle out of a scheduled task plus a task dropped onto it, **without committing**.
     ///
     /// The mutation itself is `CadenceTaskMutationSupport.insertBundle(from:adding:)` — shared, and
-    /// therefore reachable from iOS's Calendar Board too (T-190). This spelling stays because the
-    /// timeline calls it and reads better in `SchedulingActions`' vocabulary; it must not grow a
-    /// second body.
+    /// therefore reachable from iOS's Calendar Board too (T-190). This spelling stays because
+    /// `insertBundle(from:adding:in:commit:)` below calls it and reads better in `SchedulingActions`'
+    /// vocabulary; it must not grow a second body.
+    ///
+    /// **Passes a commit that never runs (T-760).** The shared mutation used to commit on its own
+    /// behalf regardless of what this frame did — `addTask` ended its own `try? modelContext.save()`
+    /// twice — which made this function's name a lie: it returned as though nothing were committed
+    /// while the store already held the block. Since the shared mutation now takes a `commit:` and
+    /// owns exactly one commit for the whole unit, handing it `{ _ in }` here keeps this function's
+    /// contract true again — the bundle and both memberships land in the context, pending, and
+    /// `insertBundle(from:adding:in:commit:)` below is what actually saves them.
     @discardableResult
     static func createBundle(from targetTask: AppTask, adding draggedTask: AppTask, in context: ModelContext) -> TaskBundle? {
-        CadenceTaskMutationSupport.insertBundle(
+        try? CadenceTaskMutationSupport.insertBundle(
             from: targetTask,
             adding: draggedTask,
-            modelContext: context
+            modelContext: context,
+            commit: { _ in }
         )
     }
 
@@ -236,14 +245,14 @@ enum SchedulingActions {
     /// calendar link — the same five fields `insertBundle(title:…adding:in:)` restores through
     /// `BundleMembership`, and the same reason.
     ///
-    /// **It cannot promise the store holds no block, and that is a finding rather than a caveat.**
-    /// `CadenceTaskMutationSupport.addTask` — the shared mutation moves each task with — ends
-    /// `try? modelContext.save()`, so the pair is already committed before this frame's `commit` is
-    /// asked. In the app the two are the same `save()` and refuse together, so a real refusal
-    /// leaves nothing behind; an injected one cannot model that. What this frame does own either
-    /// way is that neither task is left where the store never agreed to put it, and that the
-    /// canvas is told. `SchedulingActions.addTask`, which `insertBundle(title:…adding:in:)` uses,
-    /// has no save of its own. [[T-760]].
+    /// **It can now promise the store holds no block on a refusal (T-760).** `createBundle` above
+    /// used to be the shared mutation's own self-committing call — `addTask` ended `try?
+    /// modelContext.save()` twice, so the pair was already committed before this frame's `commit`
+    /// was ever asked, and an injected refusal here could not model the store's real answer
+    /// (`theSharedTwoTaskBlockMutationCommitsThroughAswallowedSaveOfItsOwn` pinned exactly that gap).
+    /// `createBundle` now hands the shared mutation a commit that never runs, so the bundle and both
+    /// memberships are still pending by the time `commitInsert` below asks for the real one — this
+    /// frame is the single commit for the whole gesture, same as it always claimed to be.
     ///
     /// Answers `nil` for a pair the shared mutation refuses — the same task twice, or a target
     /// with no day and time — which is "nothing to make" rather than a failure, so there is

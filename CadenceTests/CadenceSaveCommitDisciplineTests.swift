@@ -1145,17 +1145,11 @@ enum CadenceSaveCommitRule {
         // there is no user to tell.
         "Cadence/Services/CadenceUITestSupport.swift": ["seedDataIfNeeded"],
 
-        // [[T-621]], and the interesting half of it. `CadenceFocusSupport.endSession` and
-        // `iOSFocusView.logBundleSession` bank a session over `try? modelContext.save()` and then
-        // clear the clock. [[T-654]] filed exactly this and recorded that **no half of the rule
-        // could see it**: nothing was inserted or deleted, and `resetTimer()` is not in half 2's
-        // success vocabulary. Making each increment its own row changed that — the bank is an
-        // insert now, so half 1 finds both sites on its own. Held here, named, until [[T-654]]
-        // lands the commit; the ledger already makes the failure recoverable rather than
-        // permanent, because a pending row lands with the next save and
-        // `CadenceFocusLedger.reconcile(in:)` raises the counter back.
-        "Cadence/Shared/CadenceFocusBundleSupport.swift": ["endSession"],
-        "Cadence/iOS/iOSFocusView.swift": ["logBundleSession"],
+        // [[T-654]] closed the `CadenceFocusSupport.endSession` / `iOSFocusView.logBundleSession`
+        // entries that used to sit here: both now commit through
+        // `CadenceFocusBundleSupport.distributeMinutes(_:across:in:commit:)`, which snapshots every
+        // credited task's minutes before writing and restores them all on a refusal, and neither
+        // clears its clock until that commit actually lands.
 
         // MARK: Found by T-627's widening, held for the tickets that own them
         //
@@ -1369,13 +1363,13 @@ enum CadenceSaveCommitRule {
         // a name only when every overload of it commits, so a commit added to one `createBundle`
         // would have silenced nothing while the other still inserted and returned. Pinned by
         // `CadenceFocusSessionAndBlockCommitTests`.
-        // [[T-636]](a): the completion spine again, reached from a control that has no `try?` at
-        // all — which is why only this half can see these two.
-        // [[T-621]] added `bundleTimerControls` beside it. Banking a focus session now inserts a
-        // `FocusSessionLog` row, so the block timer's control reaches an insert where it used to
-        // reach nothing but field edits — the same shape `timerControls` already had, newly
-        // visible on the block half. The fix is [[T-654]]'s, which owns both focus timers' commits.
-        "Cadence/macOS/Views/FocusView.swift": ["bundleTimerControls", "timerControls"],
+        // [[T-654]] closed the `FocusView.swift: ["bundleTimerControls", "timerControls"]` entry
+        // that used to sit here. Both controls now reach `FocusManager.commitElapsed`/`endSession`/
+        // `startFocus`, which commit for real (they used to write the pending bank and stop, with
+        // no `save()` of any kind — the reason this half, rather than half 1 or 2, was the one that
+        // could see them at all), and `FocusSessionSupport.logSession`/`logBundleSession` commit
+        // their own writes the same way. `FocusView.reportingFocusFailure` names a refusal on
+        // `TaskCompletionAnimationManager.settleFailed`, the alert `macOSRootView` already shows.
         "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": ["setStatus"],
         // **Not a defect, and the one entry here that is a limit of the scan rather than a
         // finding.** `CadenceWriteService.resolvedTags` reaches for the service's own stored

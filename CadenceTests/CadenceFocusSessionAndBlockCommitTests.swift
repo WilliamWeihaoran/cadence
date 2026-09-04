@@ -386,21 +386,30 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(dragged.scheduledDate == "2026-04-28")
         #expect(dragged.scheduledStartMin == 780)
         #expect(dragged.calendarEventID == "evt-dragged")
-        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty, "the block is still pending")
+
+        // **Reads the store now, not just the context (T-760).** Before this ticket the pair was
+        // already committed by `addTask`'s own swallowed saves before this frame's injected
+        // `commit:` was ever consulted, so an injected refusal here could not model the store's
+        // real answer — asserting against `context` was the honest ceiling. `insertBundle` owns the
+        // whole unit under one commit now, so the injected refusal *is* the store's answer: saving
+        // the same context again proves nothing was left pending for an unrelated save to take, and
+        // a fresh context over the same container proves the block never landed.
+        try context.save()
+        let reader = ModelContext(container)
+        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).isEmpty, "the block reached the store")
+        let storedTarget = try #require(
+            try reader.fetch(FetchDescriptor<AppTask>(predicate: #Predicate { $0.title == "Target" })).first
+        )
+        #expect(storedTarget.scheduledStartMin == 600, "the store still disagrees with a task the refusal moved")
     }
 
-    /// **Why the test above asserts the context and its sibling asserts the store**, and it is a
-    /// finding rather than a weaker claim: `CadenceTaskMutationSupport.addTask` — the shared
-    /// mutation `createBundle(from:adding:)` moves each task with — ends `try? modelContext.save()`.
-    /// So the pair is already committed before this frame's `commit` is asked at all, and an
-    /// injected refusal cannot model the store's answer to the insert itself. In the app the two
-    /// are the same `save()` and refuse together; in a test they are not.
-    ///
-    /// Pinned rather than described so the day that swallow goes this test goes red and the pair
-    /// above can be strengthened in the same change. `SchedulingActions.addTask`, the macOS
-    /// spelling `insertBundle(title:…adding:in:)` uses, has no save of its own — which is exactly
-    /// why `arefusedBlockCreationLeavesNoBlockAndNoMovedTasks` *can* read the store. [[T-760]].
-    @Test func theSharedTwoTaskBlockMutationCommitsThroughAswallowedSaveOfItsOwn() throws {
+    /// **The swallow is gone (T-760).** `addTask`'s five-field write moved into the pending,
+    /// non-committing `assignTask(_:to:)`, and `insertBundle` writes both memberships through that
+    /// rather than through `addTask` — so the pair is no longer committed by two saves nobody can
+    /// hear refuse before this frame's own `commit:` is ever asked. `addTask` keeps a default
+    /// commit only for its one legitimate direct caller left, `iOSCalendarBoardView.add(_:to:)`
+    /// (dragging onto a bundle that already exists, no insert anywhere in that call).
+    @Test func theSharedTwoTaskBlockMutationNoLongerCommitsThroughASwallowedSaveOfItsOwn() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         let target = AppTask(title: "Target")
@@ -411,15 +420,53 @@ struct CadenceFocusSessionAndBlockCommitTests {
         context.insert(dragged)
         try context.save()
 
-        _ = CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
+        _ = try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
 
-        // Nothing here asked for a commit, and the store has one anyway.
         let reader = ModelContext(container)
-        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).count == 1)
+        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).count == 1, "the accepted drop still reaches the store")
 
         let shared = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceTaskMutationSupport.swift")
         let addTask = try CadenceCommitSurfaceScan.declarationBody(named: "addTask", in: shared)
-        #expect(addTask.contains("try? modelContext.save()"), "the swallow this test is about is gone")
+        #expect(
+            addTask.contains("try? modelContext.save()") == false,
+            "the swallow this ticket removed must not come back"
+        )
+    }
+
+    /// **The shared mutation's own refusal proof (T-760).** Independent of `SchedulingActions`:
+    /// calling `CadenceTaskMutationSupport.insertBundle` directly with a refusing `commit:` has to
+    /// leave the store exactly where it was, since this is now the one frame that commits the
+    /// whole two-task drop.
+    @Test func arefusedSharedTwoTaskBlockMutationLeavesTheStoreUntouched() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let target = AppTask(title: "Target")
+        target.scheduledDate = "2026-05-01"
+        target.scheduledStartMin = 600
+        target.calendarEventID = "evt-target"
+        let dragged = AppTask(title: "Dragged")
+        dragged.calendarEventID = "evt-dragged"
+        context.insert(target)
+        context.insert(dragged)
+        try context.save()
+
+        #expect(throws: CommitRefused.self) {
+            try CadenceTaskMutationSupport.insertBundle(
+                from: target,
+                adding: dragged,
+                modelContext: context,
+                commit: { _ in throw CommitRefused() }
+            )
+        }
+
+        #expect(target.bundle == nil)
+        #expect(dragged.bundle == nil)
+        #expect(target.calendarEventID == "evt-target")
+        #expect(dragged.calendarEventID == "evt-dragged")
+
+        try context.save()
+        let reader = ModelContext(container)
+        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
     }
 
     /// The accepted drop: the block and both memberships are in the store together.

@@ -179,7 +179,20 @@ enum CadenceFocusSupport {
         max(0, Int((Double(seconds) / 60.0).rounded()))
     }
 
-    static func logElapsedSeconds(_ seconds: Int, to task: AppTask, in modelContext: ModelContext) {
+    /// The pending, non-committing write `complete(_:elapsedSeconds:modelContext:commit:)` below
+    /// needs — banking and settling have to land as one commit, so this cannot save on its own.
+    ///
+    /// **Renamed from `logElapsedSeconds(_:to:in:)` (T-654).** The bundle-shaped door in
+    /// `CadenceFocusBundleSupport.swift` used to share that name while *also* being
+    /// `logElapsedSeconds`, just committing — and `CadenceSaveCommitDisciplineTests`' commit index
+    /// "resolves a call by name and type and cannot see an argument list, so a name is only allowed
+    /// to vouch for itself when every overload of it agrees" (see `CadenceTaskMutationSupport`'s
+    /// `createBundle`/`insertBundle` split for the same reasoning). One overload committing and one
+    /// deliberately not is exactly the disagreement that rule exists to catch, and it made
+    /// `iOSFocusView.logBundleSession`'s real commit invisible to the scan. `bank` is this file's
+    /// own vocabulary for the write (`CadenceFocusLedger.bank`), so the rename costs nothing a
+    /// reader did not already know.
+    static func bankElapsedSeconds(_ seconds: Int, to task: AppTask, in modelContext: ModelContext) {
         let minutes = minutes(fromElapsedSeconds: seconds)
         guard minutes > 0 else { return }
 
@@ -203,19 +216,25 @@ enum CadenceFocusSupport {
     ///
     /// Forwards to the subject-shaped version in `CadenceFocusBundleSupport.swift`, which is the
     /// same rule with a `TaskBundle` allowed as the thing being left.
+    ///
+    /// **Throws now (T-654).** The subject-shaped version banks through `endSession`, which commits
+    /// and can refuse; this forwarder has nothing of its own to add to that answer, so it passes the
+    /// throw straight up rather than swallowing it into a state the caller cannot tell from success.
     static func commitElapsed(
         leaving outgoingTask: AppTask?,
         switchingTo nextTaskID: UUID,
         state: CadenceFocusTimerState,
         modelContext: ModelContext,
-        now: Date = Date()
-    ) -> CadenceFocusTimerState {
-        commitElapsed(
+        now: Date = Date(),
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> CadenceFocusTimerState {
+        try commitElapsed(
             leaving: outgoingTask.map { .task($0) },
             switchingTo: .task(nextTaskID),
             state: state,
             modelContext: modelContext,
-            now: now
+            now: now,
+            commit: commit
         )
     }
 
@@ -245,7 +264,7 @@ enum CadenceFocusSupport {
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
         let banked = BankedMinutes(task)
-        logElapsedSeconds(elapsedSeconds, to: task, in: modelContext)
+        bankElapsedSeconds(elapsedSeconds, to: task, in: modelContext)
         do {
             try CadenceTaskMutationSupport.commitSettle(task, in: modelContext, commit: commit) {
                 CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
@@ -256,7 +275,7 @@ enum CadenceFocusSupport {
         }
     }
 
-    /// The three accumulators `logElapsedSeconds(_:to:)` adds to, captured before the write.
+    /// The three accumulators `bankElapsedSeconds(_:to:)` adds to, captured before the write.
     ///
     /// A snapshot rather than a subtraction, for the reason `CadenceTaskFieldSnapshot` gives:
     /// putting the old value back is an exact no-op when the commit lands and an exact undo when
@@ -273,7 +292,13 @@ enum CadenceFocusSupport {
     /// `CadenceFocusLedger.reconcile(in:)` then raises the counter back to include a session the
     /// user was told was not recorded. Rows are identified by what was present beforehand rather
     /// than by asking `bank` what it wrote, so a future second row on the same write is undone too.
-    private struct BankedMinutes {
+    ///
+    /// **Not `private` (T-654).** `CadenceFocusBundleSupport.swift`'s `distributeMinutes` needs the
+    /// identical snapshot-and-restore shape for the tasks a block session credits, and a second copy
+    /// of this struct would be the near-duplicate `CadenceBundleTaskRowSupport`'s own doc warns
+    /// against. Both files extend the same `CadenceFocusSupport`, so this is reached as
+    /// `CadenceFocusSupport.BankedMinutes` from either.
+    struct BankedMinutes {
         private let task: AppTask
         private let taskMinutes: Int
         private let project: Project?

@@ -39,9 +39,19 @@ final class FocusManager {
 
     /// Begin focusing on a task, navigating to the focus view.
     /// If switching to a different task, commits any accumulated elapsed time first.
-    func startFocus(task: AppTask, in modelContext: ModelContext) {
+    ///
+    /// **Throws on a refused switch, and does not switch over one (T-654).** `commitElapsed` now
+    /// actually commits (it used to write the pending bank and never call `save()` at all — the
+    /// worst of the three shapes this ticket found, since not even a swallowed `try?` sat between
+    /// the write and the caller). Starting the new task anyway would show its clock at zero while
+    /// the outgoing one's session — still running, un-banked — had nothing left pointing at it.
+    func startFocus(
+        task: AppTask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         if activeTask?.id != task.id || activeBundle != nil {
-            commitElapsed(in: modelContext)
+            try commitElapsed(in: modelContext, commit: commit)
         }
         activeSession = .task(task)
         selectedBundleTaskIDs.removeAll()
@@ -49,9 +59,13 @@ final class FocusManager {
         wantsNavToFocus = true
     }
 
-    func startFocus(bundle: TaskBundle, in modelContext: ModelContext) {
+    func startFocus(
+        bundle: TaskBundle,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         if activeBundle?.id != bundle.id || activeTask != nil {
-            commitElapsed(in: modelContext)
+            try commitElapsed(in: modelContext, commit: commit)
         }
         activeSession = .bundle(bundle)
         selectedBundleTaskIDs = CadenceFocusSupport.defaultSelectedTaskIDs(for: bundle)
@@ -74,20 +88,29 @@ final class FocusManager {
     /// (`AGENTS.md`, "The `try? save()` rule") requires the caller to own the commit rather than
     /// this helper to reach for an ambient store. That is why `startFocus` and `endSession` take
     /// one too: they are the frames that bank on the user's behalf.
-    func commitElapsed(in modelContext: ModelContext) {
+    ///
+    /// **Throws and takes `commit:` now (T-654).** It used to write the bank and stop — no `save()`
+    /// of any kind, swallowed or otherwise, which is why `FocusView.timerControls`/
+    /// `bundleTimerControls` were held in `CadenceSaveCommitRule.commitReachExemptions` rather than
+    /// `existenceExemptions`: there was no commit for half 1/2 to find. Routes through the same
+    /// `CadenceFocusSupport.logElapsedSeconds(_:across:in:commit:)` iOS uses — a single active task
+    /// is a one-element credit list — so both platforms share one commit-and-undo shape. `isRunning`
+    /// and `elapsed` are only cleared once that commit actually lands.
+    func commitElapsed(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         guard elapsed > 0 else { return }
+        let creditedTasks: [AppTask]
         switch activeSession {
         case .task(let task):
-            CadenceFocusSupport.logElapsedSeconds(elapsed, to: task, in: modelContext)
+            creditedTasks = [task]
         case .bundle(let bundle):
-            CadenceFocusSupport.logElapsedSeconds(
-                elapsed,
-                across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs),
-                in: modelContext
-            )
+            creditedTasks = CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs)
         case nil:
-            break
+            return
         }
+        try CadenceFocusSupport.logElapsedSeconds(elapsed, across: creditedTasks, in: modelContext, commit: commit)
         isRunning = false
         elapsed = 0
     }
@@ -102,8 +125,15 @@ final class FocusManager {
     /// `case nil` branch and zeroed `elapsed`, so a 25-minute session closed rather than switched
     /// away from logged nothing at all. `startFocus` already commits on a switch; closing is the
     /// same act of leaving a session, so it commits too.
-    func endSession(in modelContext: ModelContext) {
-        commitElapsed(in: modelContext)
+    ///
+    /// **Throws, and does not clear the session over a refusal (T-654).** The close button's own
+    /// `onClose` names the refusal; leaving `activeSession` alone means the timer is still there,
+    /// still running, if the user tries again rather than closing over lost minutes.
+    func endSession(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        try commitElapsed(in: modelContext, commit: commit)
         activeSession = nil
         selectedBundleTaskIDs.removeAll()
         reset()

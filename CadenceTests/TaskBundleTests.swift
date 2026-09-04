@@ -428,7 +428,7 @@ struct TaskBundleTests {
         let long = AppTask(title: "Long")
         long.estimatedMinutes = 20
 
-        FocusSessionSupport.distributeBundleMinutes(30, across: [short, long], in: context)
+        try FocusSessionSupport.distributeBundleMinutes(30, across: [short, long], in: context)
 
         #expect(short.actualMinutes == 10)
         #expect(long.actualMinutes == 20)

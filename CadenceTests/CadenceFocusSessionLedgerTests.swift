@@ -273,7 +273,7 @@ struct CadenceFocusSessionLedgerTests {
         #expect(try context.fetchCount(FetchDescriptor<FocusSessionLog>()) == 2)
     }
 
-    /// The stopwatch door. `CadenceFocusSupport.logElapsedSeconds(_:to:)` is what the single-task
+    /// The stopwatch door. `CadenceFocusSupport.bankElapsedSeconds(_:to:)` is what the single-task
     /// timer banks through on both platforms, and it must now leave a row behind.
     @Test func theStopwatchLogsThroughTheLedger() throws {
         let context = ModelContext(try CadenceTestStore.container())
@@ -284,7 +284,7 @@ struct CadenceFocusSessionLedgerTests {
         context.insert(task)
         try context.save()
 
-        CadenceFocusSupport.logElapsedSeconds(25 * 60, to: task, in: context)
+        CadenceFocusSupport.bankElapsedSeconds(25 * 60, to: task, in: context)
         try context.save()
 
         #expect(task.actualMinutes == 25)
@@ -309,7 +309,7 @@ struct CadenceFocusSessionLedgerTests {
         context.insert(second)
         try context.save()
 
-        CadenceFocusSupport.distributeMinutes(60, across: [first, second], in: context)
+        try CadenceFocusSupport.distributeMinutes(60, across: [first, second], in: context)
         try context.save()
 
         #expect(first.actualMinutes == 30)
@@ -328,7 +328,7 @@ struct CadenceFocusSessionLedgerTests {
         context.insert(task)
         try context.save()
 
-        CadenceFocusSupport.logElapsedSeconds(20, to: task, in: context)
+        CadenceFocusSupport.bankElapsedSeconds(20, to: task, in: context)
 
         #expect(task.actualMinutes == 0)
         #expect(try context.fetchCount(FetchDescriptor<FocusSessionLog>()) == 0)
@@ -369,6 +369,60 @@ struct CadenceFocusSessionLedgerTests {
         // And the reconcile has nothing to resurrect.
         #expect(CadenceFocusLedger.reconcile(in: context) == false)
         #expect(task.actualMinutes == 10)
+    }
+
+    /// **The block door's own version of the test above (T-654).** `distributeMinutes` is what
+    /// `CadenceFocusBundleSupport.endSession` and `iOSFocusView.logBundleSession` share, and it
+    /// snapshots every credited member before writing — a refusal has to put every one of them
+    /// back, not just the first. Proved across a **second** `ModelContext` over the same container,
+    /// not just the one that ran the refused commit: reading the same context back only shows
+    /// whatever is still pending in memory, which is true whether the write rolled back or is
+    /// merely uncommitted. A fresh context can only see what the store actually holds, which is
+    /// what distinguishes "restored" from "never left this process".
+    @Test func arefusedBlockSessionLeavesNoLedgerRowBehindForAnyMember() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let project = Project(name: "Launch")
+        let first = AppTask(title: "One")
+        first.estimatedMinutes = 30
+        first.actualMinutes = 5
+        first.project = project
+        let second = AppTask(title: "Two")
+        second.estimatedMinutes = 30
+        second.actualMinutes = 7
+        second.project = project
+        project.loggedMinutes = 12
+        context.insert(project)
+        context.insert(first)
+        context.insert(second)
+        try context.save()
+
+        #expect(throws: CommitRefused.self) {
+            try CadenceFocusSupport.distributeMinutes(
+                60,
+                across: [first, second],
+                in: context,
+                commit: { _ in throw CommitRefused() }
+            )
+        }
+
+        // The context itself is back to what it was before the write.
+        #expect(first.actualMinutes == 5)
+        #expect(second.actualMinutes == 7)
+        #expect(project.loggedMinutes == 12)
+        #expect((first.focusSessions ?? []).isEmpty)
+        #expect((second.focusSessions ?? []).isEmpty)
+        #expect((project.focusSessions ?? []).isEmpty)
+
+        // Saving the same context again proves nothing was left pending for an unrelated save to
+        // take, and a fresh context over the same container proves the store itself never moved.
+        try context.save()
+        let reader = ModelContext(container)
+        let storedProject = try #require(try reader.fetch(FetchDescriptor<Project>()).first)
+        #expect(storedProject.loggedMinutes == 12)
+        #expect(try reader.fetchCount(FetchDescriptor<FocusSessionLog>()) == 0)
+        let storedTasks = try reader.fetch(FetchDescriptor<AppTask>()).sorted { $0.title < $1.title }
+        #expect(storedTasks.map(\.actualMinutes) == [5, 7])
     }
 
     // MARK: - The model reaches every surface a `@Model` has to

@@ -1037,17 +1037,35 @@ enum CadenceTaskMutationSupport {
     /// Returns `nil` when the drop cannot form a block: the same task twice, or a target with no day
     /// or no time-of-day slot. A bundle *is* a timeline block — `dateKey` plus `startMin` — so a
     /// target that is merely do-dated has nothing for the block to sit on, and inventing a start
-    /// minute for it would be this platform guessing where the other one refuses to.
+    /// minute for it would be this platform guessing where the other one refuses to. This is
+    /// "nothing to make" rather than a failure, so it does not throw — only a commit that was
+    /// actually attempted can be refused.
+    ///
+    /// **Throws and takes `commit:` now (T-760).** It used to insert the bundle and call `addTask`
+    /// twice, each ending its own `try? modelContext.save()` — so the block was committed by two
+    /// saves nobody could hear refuse, from a frame with no `try?` of its own. That shape is why
+    /// `iOSCalendarTimelineViews.formBundle` and `iOSCalendarBoardView.formBundle` reported nothing:
+    /// the mutation *did* reach a commit, just not one that answered. `addTask` now writes its five
+    /// fields through the pending, non-committing `assignTask(_:to:)`, and this frame is the one
+    /// commit for the whole unit — the bundle insert and both memberships — through
+    /// `CadencePendingChangePersistence.commitInsert`. A refusal restores both tasks via
+    /// `BundleMembership`, the shared-mutation twin of `SchedulingActions.BundleMembership` (macOS's
+    /// own committing wrapper now forwards `commit:` straight here rather than keeping a second
+    /// copy of this undo).
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
     static func insertBundle(
         from targetTask: AppTask,
         adding draggedTask: AppTask,
-        modelContext: ModelContext
-    ) -> TaskBundle? {
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> TaskBundle? {
         guard targetTask.id != draggedTask.id,
               !targetTask.scheduledDate.isEmpty,
               targetTask.scheduledStartMin >= 0 else { return nil }
 
+        let members = [BundleMembership(targetTask), BundleMembership(draggedTask)]
         let bundle = TaskBundle(
             title: TaskBundle.defaultDisplayTitle,
             dateKey: targetTask.scheduledDate,
@@ -1058,9 +1076,50 @@ enum CadenceTaskMutationSupport {
             )
         )
         modelContext.insert(bundle)
-        addTask(targetTask, to: bundle, modelContext: modelContext)
-        addTask(draggedTask, to: bundle, modelContext: modelContext)
+        assignTask(targetTask, to: bundle)
+        assignTask(draggedTask, to: bundle)
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: bundle, in: modelContext, commit: commit)
+        } catch {
+            for member in members {
+                member.restore()
+            }
+            throw error
+        }
         return bundle
+    }
+
+    /// The fields `assignTask(_:to:)` writes on a task it moves into a bundle, captured before the
+    /// write — the shared-mutation twin of `SchedulingActions.BundleMembership` on macOS (T-760).
+    ///
+    /// The bundle itself is un-inserted by `commitInsert`, but that does not put either task back:
+    /// both were detached from whatever block they were in, given a `bundleOrder`, moved onto the
+    /// new block's day, stripped of their time slot and of any calendar-event link. A refusal that
+    /// restored only the block would leave both tasks scheduled somewhere the store never agreed to.
+    private struct BundleMembership {
+        private let task: AppTask
+        private let bundle: TaskBundle?
+        private let bundleOrder: Int
+        private let scheduledDate: String
+        private let scheduledStartMin: Int
+        private let calendarEventID: String
+
+        init(_ task: AppTask) {
+            self.task = task
+            bundle = task.bundle
+            bundleOrder = task.bundleOrder
+            scheduledDate = task.scheduledDate
+            scheduledStartMin = task.scheduledStartMin
+            calendarEventID = task.calendarEventID
+        }
+
+        func restore() {
+            task.bundle = bundle
+            task.bundleOrder = bundleOrder
+            task.scheduledDate = scheduledDate
+            task.scheduledStartMin = scheduledStartMin
+            task.calendarEventID = calendarEventID
+        }
     }
 
     @discardableResult
@@ -1165,7 +1224,11 @@ enum CadenceTaskMutationSupport {
         )
     }
 
-    static func addTask(_ task: AppTask, to bundle: TaskBundle, modelContext: ModelContext) {
+    /// The five-field write `addTask(_:to:modelContext:commit:)` and
+    /// `insertBundle(from:adding:modelContext:commit:)` both need — pending only, no commit,
+    /// because `insertBundle` credits two tasks under one commit and cannot call the committing
+    /// `addTask` twice without saving twice for a single gesture (T-760).
+    private static func assignTask(_ task: AppTask, to bundle: TaskBundle) {
         let nextOrder = ((bundle.tasks ?? []).map(\.bundleOrder).max() ?? -1) + 1
         task.bundle = bundle
         task.bundleOrder = nextOrder
@@ -1180,7 +1243,29 @@ enum CadenceTaskMutationSupport {
         if !(bundle.tasks ?? []).contains(where: { $0.id == task.id }) {
             bundle.tasks = (bundle.tasks ?? []) + [task]
         }
-        try? modelContext.save()
+    }
+
+    /// Moves a task into an existing bundle, and commits on its own behalf.
+    ///
+    /// **Throws and takes `commit:` now (T-760), and this is the site that stays swallow-able.**
+    /// `iOSCalendarBoardView.add(_:to:)` calls this directly for "drag a task onto a bundle that
+    /// already exists" — an in-place move between two objects the store already holds, no insert or
+    /// delete anywhere in the call, the same shape its sibling `move(_:on:)` three lines above it
+    /// swallows on purpose: the row redraws from the model and the next fetch corrects it. The
+    /// default `commit:` keeps that caller's behaviour identical to before — still `try?`, still
+    /// self-committing — while `insertBundle(from:adding:modelContext:commit:)` below now moves
+    /// each task through the pending `assignTask(_:to:)` instead of calling this, because it needs
+    /// both memberships and the bundle's own insert to land under one commit rather than three.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    static func addTask(
+        _ task: AppTask,
+        to bundle: TaskBundle,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        assignTask(task, to: bundle)
+        try commit(modelContext)
     }
 
     static func removeTaskFromBundle(_ task: AppTask, modelContext: ModelContext) {

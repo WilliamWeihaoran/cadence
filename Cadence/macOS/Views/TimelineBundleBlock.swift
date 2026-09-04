@@ -118,8 +118,13 @@ struct TimelineBundleBlock: View {
                     areas: areas,
                     projects: projects,
                     onFocus: {
-                        focusManager.startFocus(bundle: bundle, in: modelContext)
-                        selectedBundleID = nil
+                        // T-654: see `CalendarBoardItemSupportViews`'s identical guard.
+                        do {
+                            try focusManager.startFocus(bundle: bundle, in: modelContext)
+                            selectedBundleID = nil
+                        } catch {
+                            TaskCompletionAnimationManager.shared.recordSettleFailure()
+                        }
                     },
                     onAddTask: { task in
                         SchedulingActions.addTask(task, to: bundle)

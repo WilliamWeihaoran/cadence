@@ -309,7 +309,7 @@ struct TaskDeleteHelpersScenarioTests {
         modelContext.insert(task)
         try modelContext.save()
 
-        FocusManager.shared.startFocus(task: task, in: modelContext)
+        try FocusManager.shared.startFocus(task: task, in: modelContext)
         #expect(FocusManager.shared.activeTask?.id == task.id)
 
         modelContext.deleteTask(task)
@@ -339,7 +339,7 @@ struct TaskDeleteHelpersScenarioTests {
         modelContext.insert(taskB)
         try modelContext.save()
 
-        FocusManager.shared.startFocus(bundle: bundle, in: modelContext)
+        try FocusManager.shared.startFocus(bundle: bundle, in: modelContext)
         #expect(FocusManager.shared.activeBundle?.id == bundle.id)
 
         // Deleting every member task empties the bundle, which is then itself deleted by
@@ -371,7 +371,7 @@ struct TaskDeleteHelpersScenarioTests {
         modelContext.insert(taskB)
         try modelContext.save()
 
-        FocusManager.shared.startFocus(bundle: bundle, in: modelContext)
+        try FocusManager.shared.startFocus(bundle: bundle, in: modelContext)
         FocusManager.shared.selectedBundleTaskIDs = [taskA.id, taskB.id]
 
         modelContext.deleteTask(taskA)

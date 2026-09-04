@@ -199,7 +199,14 @@ struct MacTaskRow: View {
             // was the *only* surface in the app asking the question, and the three iOS entry points
             // added since did not ask it at all (T-276).
             if CadenceFocusSupport.canFocus(task) {
-                Button { focusManager.startFocus(task: task, in: modelContext) } label: {
+                Button {
+                    // T-654: `startFocus` commits a pending bank and can refuse.
+                    do {
+                        try focusManager.startFocus(task: task, in: modelContext)
+                    } catch {
+                        TaskCompletionAnimationManager.shared.recordSettleFailure()
+                    }
+                } label: {
                     Image(systemName: "play.fill")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(Theme.onColor)

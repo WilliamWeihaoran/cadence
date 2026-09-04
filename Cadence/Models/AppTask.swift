@@ -677,7 +677,7 @@ nonisolated enum CadenceFocusLedger {
     /// `task.modelContext` and committed nothing on the macOS timer's path.
     ///
     /// The project-before-area precedence is the one the three former increment sites already had
-    /// (`CadenceFocusSupport.logElapsedSeconds(_:to:)`, `CadenceFocusSupport.distributeMinutes`,
+    /// (`CadenceFocusSupport.bankElapsedSeconds(_:to:)`, `CadenceFocusSupport.distributeMinutes`,
     /// `FocusSessionSupport.logSession`): a task in a project rolls up to the project only, because
     /// the project rolls up to the area itself.
     static func bank(

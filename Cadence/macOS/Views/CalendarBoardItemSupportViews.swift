@@ -120,8 +120,15 @@ struct CalendarBoardBundleCard: View {
             areas: areas,
             projects: projects,
             onFocus: {
-                focusManager.startFocus(bundle: bundle, in: modelContext)
-                showPopover = false
+                // T-654: `startFocus` commits a pending bank from whatever session was running
+                // before this one and can refuse; the popover stays open on a refusal rather than
+                // reporting a switch that did not happen.
+                do {
+                    try focusManager.startFocus(bundle: bundle, in: modelContext)
+                    showPopover = false
+                } catch {
+                    TaskCompletionAnimationManager.shared.recordSettleFailure()
+                }
             },
             onAddTask: { task in
                 SchedulingActions.addTask(task, to: bundle)
