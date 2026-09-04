@@ -250,18 +250,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   untitled-row tickets ([[T-505]], [[T-513]], [[T-687]]); the fix is routing both `Text`s through
   the same call the accessibility value already makes.
 
-- [T-771] **Two words for one bucket, and a third that means something else.** The catch-all over
-  "lists no offered context owns" is called **"Other"** by `CadenceSidebarLists.ungroupedTitle` —
-  read by the macOS sidebar, the iPad sidebar and `ContainerPickerFilterSupport.groups` — and
-  **"No Context"** by the two goal-attach surfaces (`CreateGoalSheet`'s initial-linked-list picker
-  and `GoalLinkCandidateGroup.title`, which is both platforms' goal sheet). Same rows, same rule,
-  two words. Separately, the macOS context picker's own none-row says **"No context"**, which is a
-  *different* idea — an unset field on the thing being edited, not a bucket of leftovers — and must
-  stay distinct whichever way the first two go. Converging "Other" and "No Context" is a
-  user-visible copy change, so it needs a decision rather than a refactor; both current values are
-  pinned by `CadenceContextlessListSurfaceTests` so whichever way it goes has to be written down.
-  Filed by [[T-683]], which did the mechanical half and left this.
-
 - [T-768] **The two macOS event deletes still report through the global alert, and the reason is
   reasoned rather than measured.** Residue of [[T-658]], which moved Save and quick-create to an
   inline notice on the popover holding the draft and deliberately left Delete where it was.
@@ -338,38 +326,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   answer. It no longer leaves the rule *pending* — the commit and its undo are real now — but a
   refused rule is still silent there, and a `Menu` has the same no-surface problem
   `iOSTaskMoveFailureAlertModifier` solves for the list move. The same alert would do it.
-
-- [T-741] **A legacy list note whose body still reads `# Untitled` is re-titled `Untitled` on its
-  next content commit, and cleared again on the next launch.** Found while closing [[T-733]] and
-  deliberately left. `MarkdownNoteTitleSync` writes the first line of the body to `title` for `.list`
-  and `.permanent` notes, so a row created before T-733 — whose body genuinely says `# Untitled`,
-  because that is what the old seed wrote — gets the word back the first time its body is committed.
-  `DataIntegrityRepairService.repairStoredDefaultNoteTitles` then clears it on the following launch.
-  **Nothing is damaged and nothing loops without a user in it**: the H1 rule is working as designed
-  (the body really does say `Untitled`), the pass is idempotent, and each cycle needs a fresh content
-  commit. What it costs is one extra store write per launch for those rows, and a title that flickers
-  back to the stored word between an edit and a relaunch.
-  Three ways out, and the choice is a judgement about the user's own text: (a) leave it — the body is
-  the user's document and the title is only following it; (b) have the load-time pass also rewrite a
-  body whose *entire* first line is `# Untitled` to `# `, which edits `content` and is a much bigger
-  claim than editing `title`; (c) teach `MarkdownNoteTitleSync` to treat an H1 equal to the retired
-  default as "say nothing", which is a special case in the one place the repo has been careful to
-  keep general. Not obvious; wants a decision, not an edit.
-
-- [T-740] **`Document.title` still defaults to the stored word `"Untitled"`** —
-  `Cadence/Models/Document.swift:7` and `:16`, the same shape [[T-733]] removed from `Note`.
-  Not user-visible today and that is why it was left: `Document` is a **legacy migration source
-  only** (`Cadence/Models/AGENTS.md`, "Notes: One Live Model, Five Legacy Ones"), `Area.documents`
-  and `Project.documents` survive as relationship declarations for cascade deletes, and no UI builds
-  on it. So there is no field for the word to sit in front of.
-  It is worth a decision rather than a silent leave for two reasons. It is now the **only** stored
-  `"Untitled"` default in the app, so the shape T-733 removed is one file from coming back by
-  imitation; and `CadenceSharedConstantReuseSweepTests.everyPlaceholderLabelInTheAppIsDeclaredOrRecorded`
-  names `Document.swift` as one of its two witnesses, so anyone reading that test finds a live
-  example of the pattern being pointed at approvingly. Changing it is **not** free: removing a stored
-  property's default has no migration behind it, and the rows are exactly the pre-merge ones the
-  migration reads. Either change it with the same load-time pass T-733 used, or write down here why
-  a legacy source keeps it.
 
 - [T-739] **`#expect(x == 0.5 * 1.6)` fails where `#expect(x == retired * 1.6)` passes, for the same
   numbers.** Measured 2026-09-03 while writing [[T-496]]'s suite, in `CadenceTests` on macOS:
@@ -1474,18 +1430,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Theme.rowSeparator` would be exactly the unreviewed visual change T-617 and T-618 both refused.
   Decide the weight, then name the survivors on `Theme` beside `rowSeparator` and `rule`.
 
-- [T-688] **Two fallback strings that disagree with the family, and neither is decidable from the
-  literal.** Found while sweeping [[T-609]] and deliberately left, because T-609's rule was "route
-  through the trim, change no copy":
-  (1) `iOSTaskRowActionViews.swift:373` labels a blank-titled goal `"Goal"`, where
-  `CadenceTitleNormalization.defaultGoalTitle` is `"Untitled Goal"` and `:410` in the *same file*
-  already reads `defaultMilestoneTitle` — so the same nested goal reads two ways depending on which
-  chip you are looking at.
-  (2) `TimelineDayCanvas.swift:247` names a blank quick-created task `"New Task"`, and
+- [T-688] **`TimelineDayCanvas.swift:247` names a blank quick-created task `"New Task"`, against
+  `CadenceEventTitleSupport`'s own argument for the opposite word.** Found while sweeping [[T-609]]
+  and deliberately left, because T-609's rule was "route through the trim, change no copy".
   `CadenceEventTitleSupport`'s header already argues the opposite case in writing: `"New Event"` was
-  retired for `"Untitled Event"` because an event created last year is not new but is still untitled.
-  The argument applies here unchanged, and this one is **stored**, not drawn.
-  Both are copy decisions. Neither is a de-duplication.
+  retired for `"Untitled Event"` because an event created last year is not new but is still
+  untitled. The argument applies here unchanged, and this one is **stored**, not drawn. A copy
+  decision, not a de-duplication.
+  **Split 2026-09-04.** This ticket used to carry a second, unrelated pair —
+  `iOSTaskRowActionViews.swift`'s two disagreeing blank-goal fallbacks, both in the same file as
+  each other but nothing to do with this one — closed separately as [[T-924]] once T-609's freeze
+  was lifted for that pair specifically.
 
 - [T-695] **The area lifecycle row's `"No context"` fallback is the project row's un-converged twin.**
   `SettingsListManagementSections.lifecycleCard` and `iOSSettingsTemplateAndListSections.lifecycleCard`
@@ -2065,6 +2020,58 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   already a second synced caller — so the sweep is worth having before one is added, not after.
 
 ## Done
+- [T-771] **CLOSED 2026-09-04 (`1169e59a`).** Decided in favour of `CadenceSidebarLists.ungroupedTitle`
+  ("Other") over the goal-attach surfaces' own `"No Context"` literal — same row, same rule, one
+  spelling. `CreateGoalSheet`'s initial-linked-list picker and `GoalLinkCandidateGroup.title` (both
+  platforms' goal sheet) now read the shared constant instead of retyping it. The context picker's
+  own none-row, `"No context"` — a different idea, an unset field rather than a catch-all bucket —
+  is untouched. `ungroupedTitle`'s value is nine characters, under the general shared-constant
+  sweep's twelve-character floor, so a dedicated sweep
+  (`theCatchAllNeverRespellsItselfAsNoContextAgain`) guards the rename on its own; the tests that
+  had pinned the old divergence as a recorded decision now pin the converged spelling instead.
+
+- [T-924] **CLOSED 2026-09-04 (`1169e59a`).** The `iOSTaskRowActionViews` half of [[T-688]]: the row's goal
+  chip fell back to a bare `"Goal"` while its own picker, in the same file, used
+  `CadenceTitleNormalization.defaultMilestoneTitle` ("Untitled Milestone") for the identical blank
+  case — two spellings for one field, and neither matched the family's own `defaultGoalTitle`
+  ("Untitled Goal"). The picker's `@Query(sort: \Goal.order)` draws every `Goal` in the store, not
+  only milestones, so `defaultGoalTitle` is the fallback that actually describes what it shows; both
+  sites now read it through the call each already used (`TaskTitleSupport.displayTitle` /
+  `CadenceTitleNormalization.display`). T-609's "route through the trim, change no copy" freeze,
+  which is why these two were left, is lifted for this pair only — the `TimelineDayCanvas.swift`
+  "New Task" half of the original ticket is untouched and stays open as [[T-688]].
+
+- [T-741] **CLOSED 2026-09-04 (`1169e59a`).** Option (b) from the ticket's own list.
+  `DataIntegrityRepairService.repairStoredDefaultNoteTitles` now also blanks the matching stale
+  `# Untitled` heading (to `# `, the same shape a note born today seeds for an empty title)
+  whenever it clears a row's `title` from the retired default, so `MarkdownNoteTitleSync` has
+  nothing left to read back into `title` on the note's next content commit. Reproduced with a
+  pre-T-733 fixture (`title == "Untitled"`, `content` starting `"# Untitled\n\n"`) before fixing,
+  and the fixed point is asserted under a second launch with no further edits.
+  Option (c) — teaching `MarkdownNoteTitleSync` itself to treat an H1 equal to the retired literal
+  as "say nothing" — was considered and rejected: it cannot distinguish the legacy artifact from a
+  user genuinely typing "Untitled" as a new note's real heading, and would trade this one-time
+  migration cost for a permanent inability to ever name a note "Untitled" from empty.
+  The one existing test this reverses (`theMigrationAlsoClearsATitleAUserTypedOnPurpose`, renamed
+  `…AndItsMatchingHeadingAUserTypedOnPurpose`) had pinned the pass's incidental scope at the time —
+  its doc comment argued only about `title`, never about `content` — not an argued boundary: traced
+  to `517982e`, whose own commit message independently fixed the identical oscillation for *new*
+  notes in the same breath ("the load-time pass would clear it again on the next launch, forever").
+  That reasoning is what this change extends to rows already on disk.
+
+- [T-740] **CLOSED 2026-09-04, decided against changing it — verified true, not fixed.** Confirmed no
+  shipping path ever constructs a new `Document`: only `Cadence/Models/Document.swift`'s own
+  declaration and test fixtures do, so the stored default is exercised nowhere the user can reach.
+  A default change cannot repair rows already on disk either way — the same lesson [[T-733]]
+  established for `Note.title` — and the one path where a legacy `Document`'s title becomes
+  user-visible, migration into a `.list` `Note` (`NoteMigrationService.migrateDocumentNotes` copies
+  `legacy.title` verbatim), is now already normalised by [[T-741]]'s fix: whatever a migrated Note's
+  title carries, `DataIntegrityRepairService.repairStoredDefaultNoteTitles` catches it on the next
+  launch the same as any other row. So the honest close is the ticket's own last option: a legacy
+  source keeps the word, because changing it costs a stored-property edit on a CloudKit-synced
+  model with no `SchemaMigrationPlan` in this repo, for a default that nothing left running ever
+  applies.
+
 - [T-743] **CLOSED 2026-09-04 (`11c1ec65`).** `mergeArea` / `mergeProject` re-pointed
   the duplicate's tasks, notes, documents, links and goal links away from a list about to be
   deleted, but never `Area.focusSessions` / `Project.focusSessions` (new with [[T-621]]). A
