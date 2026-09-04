@@ -734,7 +734,6 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Cadence/Info.plist;
-				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Cadence uses Calendar to show events and to create, update, or delete calendar events when you ask it to.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Cadence uses Reminders to show your active reminders in Inbox and mark them complete when you check them off.";
@@ -776,7 +775,6 @@
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Cadence/Info.plist;
-				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Cadence uses Calendar to show events and to create, update, or delete calendar events when you ask it to.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Cadence uses Reminders to show your active reminders in Inbox and mark them complete when you check them off.";

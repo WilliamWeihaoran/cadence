@@ -15,14 +15,8 @@
 			</array>
 		</dict>
 	</array>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Cadence uses Calendar to show events and to create, update, or delete calendar events when you ask it to.</string>
-	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Cadence uses Reminders to show your active reminders in Inbox and mark them complete when you check them off.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
