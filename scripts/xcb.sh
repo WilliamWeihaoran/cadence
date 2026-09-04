@@ -42,6 +42,12 @@
 #    agent under time pressure skips, so the runner enforces it instead: a `test` action that
 #    xcodebuild called successful while running no test at all exits 4 from here.
 #
+# 4. A TEST RUN AGAINST A CHECKOUT THAT IS NOT HEAD (T-975). `agent-commit.sh` commits through a
+#    private index so a landed commit never writes the shared checkout; the checkout therefore
+#    drifts behind HEAD, and `git status` reports a stale copy in the same three characters it
+#    reports real in-flight work with. A `test` action runs `scripts/worktree-drift.sh check`
+#    first and exits 7 without taking the test-host lock if any tracked file is behind HEAD.
+#
 # It never kills anything. The user's Cadence, the user's Xcode and other agents' builds are all
 # off limits; a stall is reported, and the decision to wait or abandon stays with the caller.
 
@@ -237,6 +243,43 @@ if screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]] \
   say "   loginwindow holds the foreground, so the launched app never leaves Running Background"
   say "   and app.launch() fails after ~60s per test. Unlock the screen and re-run (T-563)."
   exit 5
+fi
+
+# --- the drifted-worktree guard (T-975) --------------------------------------
+# `agent-commit.sh` commits through a private index, so a landed commit never writes the shared
+# checkout -- deliberately, because writing it would clobber a sibling mid-edit. The cost is that
+# the checkout drifts behind HEAD and NOTHING SAYS SO: `git status` prints ` M <path>` for a stale
+# copy exactly as it does for real in-flight work. Measured four times between 2026-09-04 and
+# 2026-09-05; the worst instance had `docs/TODO.md` five ticket ids behind and a test file 101
+# lines behind a fix already committed, with an integration run already launched against it.
+#
+# So a `test` action asks first, and the reasoning is the locked-screen guard's: a run that cannot
+# be trusted must not hold the test host while it produces an answer about the wrong code.
+# `build` is not gated -- a build tells you about the files you handed it, and an agent that has
+# deliberately not synced a sibling's landed change still needs to compile its own.
+# `raw` is not gated either, and that is load-bearing: `mutate.sh` runs `raw test` inside a scratch
+# tree it has deliberately mutated (and which may not be a git checkout at all), so gating `raw`
+# would refuse every mutation run whose needle deletes lines.
+#
+# Only WORKTREE-BEHIND-HEAD refuses, and that distinction is load-bearing rather than tidy. The
+# standing advice for a batch is to build in a `git archive HEAD` tree, which has no `.git` at all,
+# so the check there answers NOT-REPO-ROOT -- *a question that could not be asked*. Refusing on
+# that would refuse the very workflow the runbook prescribes. A guard that cannot answer says so
+# and gets out of the way; only a real, positive finding stops the run.
+if [[ "$ACTION" == "test" ]]; then
+  DRIFT_OUT="$(cd "$ROOT_DIR" && "$ROOT_DIR/scripts/worktree-drift.sh" check 2>&1)"; DRIFT_STATUS=$?
+  if [[ "$DRIFT_OUT" == *WORKTREE-BEHIND-HEAD* ]]; then
+    say ""
+    print -r -- "$DRIFT_OUT"
+    say ""
+    say "!! REFUSING: this run would test a checkout that is not HEAD (T-975). Nothing was built"
+    say "   and the test-host lock was not taken."
+    exit 7
+  elif (( DRIFT_STATUS != 0 )); then
+    say "  worktree vs HEAD: not answered ($(print -r -- "$DRIFT_OUT" | tail -1 | cut -c1-70)) -- proceeding"
+  else
+    say "  worktree vs HEAD: $(print -r -- "$DRIFT_OUT" | head -1)"
+  fi
 fi
 
 # --- the test-host lock ------------------------------------------------------

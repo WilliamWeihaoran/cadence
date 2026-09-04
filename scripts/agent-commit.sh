@@ -49,6 +49,9 @@
 #   LEDGER-IDS-LOST      a `TODO.md` you are committing no longer has a `- [T-n]` entry HEAD had.
 #                        `--drops-ids <exact,sorted,list>` retires them deliberately. A line count
 #                        cannot show you this; an id can.
+#   LEDGER-CLOSURE-LOST  a `TODO.md` entry that is CLOSED in HEAD is open again in the content you
+#                        are staging, with its id intact -- so LEDGER-IDS-LOST sees nothing wrong.
+#                        `--reopens-ids <exact,sorted,list>` reopens them deliberately.
 #   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
 #                        `--removes <exact count>` acknowledges them. A reconstruction built on a
 #                        stale HEAD reverts a sibling's landed work in exactly this shape.
@@ -160,6 +163,31 @@ ledger_ids() {  # $1 = file
 }
 is_ledger_path() { [[ "${1:t}" == "TODO.md" ]] }
 
+# T-981. LEDGER-IDS-LOST compares ID SETS, and that is one level too shallow. An entry whose text
+# reverts from its closure back to the original open ticket keeps its id, so the id sets are equal
+# and the guard passes -- while the ledger now says a shipped ticket is not started. Two measured
+# instances in this repository's own 349 ledger commits, both found by replaying that history:
+#   169d594d  reverted T-679, T-719 and T-787 from CLOSED back to their open text, in a commit
+#             about three unrelated instruments, and nothing said a word.
+#   f566723b  deduped T-777 by deleting the CLOSED copy and keeping the open one.
+#
+# The marker is `CLOSED` on the entry's OWN first line -- the `- [T-n] **CLOSED <date> (`sha`).**`
+# form, 161 of the file's 387 entries at the time of writing. Deliberately narrow, twice over:
+#
+#   * Not the whole entry BODY. Sixteen open tickets mention the word in prose ("closed above",
+#     "CLOSED, FALSE PREMISE" quoted from elsewhere), so a body-wide reading would mark them
+#     closed and then refuse the ordinary rewrite that drops the mention. That is a false refusal
+#     in the commit path, which is the one failure this family of guards must not have.
+#   * Not the `## Done` SECTION. An entry legitimately moves from Open to Done, and 112 entries
+#     in Done carry no closure marker at all, so the section answers a different question. The
+#     refusal is about closed TEXT becoming open TEXT for one id, nothing else.
+#
+# Replayed over all 349 commits that have ever touched docs/TODO.md, this reading fires on exactly
+# those two and on none of the other 347.
+ledger_closed_ids() {  # $1 = file
+    sed -n 's/^- \[\(T-[0-9][0-9]*\)\].*CLOSED.*/\1/p' -- "$1" 2>/dev/null | sort -u
+}
+
 STALE_MINUTES="${CADENCE_DECLINED_STALE_MINUTES:-30}"
 
 # Age from the record's mtime, not from a field inside it: records written before this check
@@ -240,7 +268,7 @@ cmd_accept() {
 
 cmd_commit() {
     local id=$1; shift
-    local message="" have_message=0 declared_removals="" declared_dropped_ids=""
+    local message="" have_message=0 declared_removals="" declared_dropped_ids="" declared_reopened_ids=""
     local -a paths accepted
     paths=(); accepted=()
 
@@ -256,6 +284,8 @@ cmd_commit() {
                 declared_removals="$2"; shift 2 ;;
             --drops-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--drops-ids needs a comma-separated id list"
                 declared_dropped_ids="$2"; shift 2 ;;
+            --reopens-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--reopens-ids needs a comma-separated id list"
+                declared_reopened_ids="$2"; shift 2 ;;
             --) shift; paths+=("$@"); break ;;
             -*) refuse BAD-OPTION "unknown option $1" ;;
             *)  paths+=("$1"); shift ;;
@@ -433,6 +463,41 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   A reconstruction built on a stale copy loses a sibling's tickets in exactly this shape, and a
   line count hides it. Re-read \`git show HEAD:<path>\` and rebuild, or, if you really mean to
   retire them, say so: --drops-ids $lost_sorted"
+        fi
+    fi
+
+    # 3a2. T-981, and it is the same shape as 3a one level down. An id that survives while its
+    #      CLOSURE does not is a shipped ticket the ledger now describes as not started, and every
+    #      guard above is satisfied: the id sets are equal, so LEDGER-IDS-LOST passes; the line
+    #      count is whatever the two texts happen to differ by, so REMOVES-HEAD-LINES is a number
+    #      somebody acknowledges without reading. Only ids present in BOTH versions are asked
+    #      about -- an id that vanished entirely is 3a's finding and naming it twice buries both.
+    local -a reopened_ids
+    reopened_ids=(); local reopened_in=""
+    for name in "${names[@]}"; do
+        is_ledger_path "$name" || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue
+        git cat-file -e "$headsha:$name" 2>/dev/null || continue
+        local closure_head="$scratch/$(ledger_key "$name").closurehead"
+        git cat-file -p "$headsha:$name" > "$closure_head"
+        local reopened
+        reopened=$(comm -12 \
+            <(comm -23 <(ledger_closed_ids "$closure_head") <(ledger_closed_ids "${staged_content[$name]}")) \
+            <(ledger_ids "${staged_content[$name]}"))
+        [[ -n "$reopened" ]] || continue
+        reopened_ids+=(${(f)reopened}); reopened_in="$name"
+    done
+    if (( ${#reopened_ids} )); then
+        local declared_reopened_sorted="${(j:,:)${(o)${(s:,:)declared_reopened_ids}}}"
+        local reopened_sorted="${(j:,:)${(o)reopened_ids}}"
+        if [[ "$declared_reopened_sorted" != "$reopened_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-CLOSURE-LOST "this commit reverts ledger entries from closed back to open: ${(j:, :)reopened_ids}
+  Each id is still there, so LEDGER-IDS-LOST has nothing to say about it -- the entry's own text
+  changed from a closure back to the open ticket it was before, which is what a reconstruction
+  built on a stale copy does to a ticket somebody closed while you were working. Re-read
+  \`git show HEAD:$reopened_in\` and rebuild on it, or, if you really are reopening them, say so:
+  --reopens-ids $reopened_sorted"
         fi
     fi
 
@@ -713,6 +778,72 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
       print -rl -- "" "- [T-104] fourth" "  body" >> grown.md ) >/dev/null 2>&1
     out=$( cd "$ws" && zsh "$here" d2 -m "$M" TODO.md=grown.md 2>&1 ); rc=$?
     check "an append-only ledger edit needs no flag" $(( rc == 0 )) "exit $rc: $out"
+
+    say ""
+    say " mode 4d (LEDGER-CLOSURE-LOST) -- a closed entry must not quietly become an open one again"
+    # T-981, and the reason 4c is not enough: comparing ID SETS cannot see an entry whose TEXT went
+    # back to the open ticket it was before. Reproduced from this repository's own history before
+    # it was fixed -- 169d594d reverted T-679, T-719 and T-787 that way inside a commit about three
+    # unrelated instruments, and every guard passed.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    # Fixture housekeeping: 4c left the worktree TODO.md holding the `T-102` line it deliberately
+    # retired from HEAD, so every `=` reconstruction below would record that as a declined hunk and
+    # every check in this mode would read DECLINED-HUNK-LOST instead of what it is about.
+    ( cd "$ws" && git show HEAD:TODO.md > TODO.md ) >/dev/null 2>&1
+    ( cd "$ws"
+      git show HEAD:TODO.md > closing.md
+      print -rl -- "" "- [T-105] **CLOSED 2026-09-05 (\`deadbee\`).** shipped and verified" "  body" >> closing.md
+      print -rl -- "" "- [T-106] **CLOSED 2026-09-05 (\`deadbef\`).** also shipped" "  body" >> closing.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e1 -m "$M" TODO.md=closing.md 2>&1 ); rc=$?
+    check "closing two entries is an ordinary append and needs no flag" $(( rc == 0 )) "exit $rc: $out"
+    # The revert: same ids, same count, T-105's closure replaced by its original open text. T-106
+    # stays closed, so the refusal has to name one id and not the other.
+    ( cd "$ws"
+      git show HEAD:TODO.md \
+        | sed 's/^- \[T-105\] \*\*CLOSED.*/- [T-105] **the thing that is still not done** filed 2026-09-01/' > reopen.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e2 -m "$M" TODO.md=reopen.md 2>&1 ); rc=$?
+    check "reverting a closure back to open text is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "the reopened id is named, and the still-closed one is not" \
+        $( [[ "$out" == *"T-105"* && "$out" != *"T-106"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) == *"T-105] **CLOSED"* ]] && print 1 || print 0 )
+    # It is NOT REMOVES-HEAD-LINES wearing a different hat: that one fires here too, and firing
+    # second is the whole point -- a count somebody acknowledges without reading is exactly how
+    # this reverted 51 tickets' worth of text without anyone seeing a ticket in it.
+    check "and it is the closure that is complained about, not the line count" \
+        $( [[ "$out" != *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" e2 -m "$M" --reopens-ids T-106 TODO.md=reopen.md 2>&1 ); rc=$?
+    check "naming the WRONG id is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" e2 -m "$M" --reopens-ids T-105 --removes 1 TODO.md=reopen.md 2>&1 ); rc=$?
+    check "reopening it deliberately is allowed" $(( rc == 0 )) "exit $rc: $out"
+    # The negative control that decides whether this guard is usable at all: the ordinary ledger
+    # move -- an entry going from the Open section to Done, gaining its closure -- must not refuse.
+    ( cd "$ws"
+      git show HEAD:TODO.md \
+        | sed 's/^- \[T-105\] \*\*the thing.*/- [T-105] **CLOSED 2026-09-05 (`deadc0d`).** done after all/' > close105.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e3 -m "$M" --removes 1 TODO.md=close105.md 2>&1 ); rc=$?
+    check "an entry moving from open to CLOSED needs no flag" $(( rc == 0 )) "exit $rc: $out"
+    # And the second control, for the narrowness of the marker: an OPEN entry whose BODY mentions
+    # the word is not a closed entry, so rewriting that prose must not read as a reversion.
+    # Sixteen real open tickets in docs/TODO.md say "closed above" or quote "CLOSED, FALSE
+    # PREMISE"; a body-wide reading would mark all sixteen closed and then refuse the next edit to
+    # any of them. The mention is written in the repository's real cross-reference form, `[[T-n]]`,
+    # so this also catches a marker whose anchor has been loosened from the entry's own first line
+    # to "any line naming an id". That is a false refusal in the commit path, and this is the check that decides
+    # the guard is narrow enough to live there.
+    ( cd "$ws"
+      git show HEAD:TODO.md > mentions.md
+      print -rl -- "" "- [T-107] **still open, and it stays open.**" \
+                      "  Blocked on [[T-104]], which is CLOSED, FALSE PREMISE and says so above." >> mentions.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e4 -m "$M" TODO.md=mentions.md 2>&1 ); rc=$?
+    check "filing an open entry whose BODY mentions the word is accepted" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws"
+      git show HEAD:TODO.md | sed 's/^  Blocked on .*/  Blocked on the other one./' > rewrite.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e5 -m "$M" --removes 1 TODO.md=rewrite.md 2>&1 ); rc=$?
+    check "and rewriting that prose away is NOT a lost closure" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"

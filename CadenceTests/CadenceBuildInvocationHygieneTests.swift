@@ -208,6 +208,48 @@ struct CadenceBuildInvocationHygieneTests {
         )
     }
 
+    /// T-975. The runner asks whether this checkout is still HEAD before it runs tests, and it
+    /// asks BEFORE taking the test-host lock — a run that cannot be trusted must not hold the host
+    /// while it produces an answer about the wrong code, which is the same reasoning the
+    /// locked-screen guard is placed by.
+    ///
+    /// Read over the script's commands with comment lines blanked, for the reason the zero-test
+    /// pin gives: prose describing a guard must not be able to stand in for the guard. The order
+    /// is asserted, not just the presence of both, because a drift check placed after `acquire`
+    /// would still contain both strings and would still be wrong.
+    @Test func theGuardedRunnerAsksWhetherTheCheckoutIsStillHeadBeforeTakingTheTestHost() throws {
+        let runner = try CadenceSourceScan.sourceFile("scripts/xcb.sh")
+        #expect(runner.contains("Guarded xcodebuild"), "scripts/xcb.sh is not the runner any more")
+
+        let commands = CadenceTestRunGuard.commandLines(runner)
+        let drift = try #require(
+            commands.range(of: #"worktree-drift.sh" check"#),
+            "scripts/xcb.sh no longer runs the T-975 drift check; a test run against a checkout behind HEAD tests the wrong code"
+        )
+        let lock = try #require(
+            commands.range(of: #"test-host-lock.sh" acquire"#),
+            "scripts/xcb.sh no longer acquires the test-host lock"
+        )
+        #expect(
+            drift.lowerBound < lock.lowerBound,
+            "the drift check runs after the test-host lock is taken, so a run that will be refused holds the host anyway"
+        )
+        // The refusal has to be a refusal. A check whose exit status nothing reads is a report.
+        #expect(commands.contains("exit 7"),
+                "scripts/xcb.sh reads the drift check's verdict but no longer fails on it")
+        // And it must refuse on the FINDING, not merely on a non-zero exit. The runbook tells
+        // agents to build in a `git archive HEAD` tree, which has no `.git`, so the check there
+        // answers NOT-REPO-ROOT — a question that could not be asked. Refusing on that would
+        // refuse the prescribed workflow, so the finding has to be named.
+        #expect(commands.contains("WORKTREE-BEHIND-HEAD"),
+                "scripts/xcb.sh refuses on any non-zero drift exit, which also refuses an archive tree that has no .git to compare against")
+        // And it has to be scoped to the action that executes tests against this checkout. `raw`
+        // must stay ungated: `mutate.sh` runs `raw test` inside a scratch tree it has deliberately
+        // mutated, and gating that would refuse every mutation whose needle deletes lines.
+        #expect(commands.contains(#"$ACTION" == "test""#),
+                "the drift check is no longer scoped to the `test` action")
+    }
+
     /// The other half, and the one a text scan usually cannot give: the runner's detector still
     /// *discriminates*. The pattern is lifted out of the script and run against two literal logs —
     /// the empty run xcodebuild calls a success, and a real one — so a typo inside the shell

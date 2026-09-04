@@ -61,11 +61,21 @@ struct CadenceGuardScriptSelftestTests {
         "DECLINED-HUNK-STALE",
         "DECLINED-HUNKS-OUTSTANDING",
         "LEDGER-IDS-LOST",
+        "LEDGER-CLOSURE-LOST",
         "REMOVES-HEAD-LINES",
         "NO-PATHS",
         "UNKNOWN-PATH",
         "NOTHING-TO-COMMIT",
         "NO-COAUTHOR-TRAILER",
+        "NOT-REPO-ROOT",
+    ]
+
+    /// Every refusal `scripts/worktree-drift.sh` makes (T-975). Two, because the script's job is
+    /// almost entirely to NOT refuse: it exists because `git status` prints ` M <path>` for a
+    /// stale checkout copy and for real in-flight work in the same three characters, and telling
+    /// those apart wrongly in the other direction would stop the whole batch.
+    static let worktreeDriftRefusals = [
+        "WORKTREE-BEHIND-HEAD",
         "NOT-REPO-ROOT",
     ]
 
@@ -121,6 +131,16 @@ struct CadenceGuardScriptSelftestTests {
         let run = try CadenceSelftestRun.of("scripts/agent-commit.sh")
         let complaints = run.complaints(requiring: Self.commitHelperRefusals)
         #expect(complaints.isEmpty, "./scripts/agent-commit.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
+    /// T-975. Runs entirely inside a throwaway git repository under `$TMPDIR`, so it is safe
+    /// alongside siblings editing the real checkout — and it never reads the real checkout's own
+    /// drift, which would make this test's result depend on what other agents happen to have
+    /// in flight. About a second, like the two above it.
+    @Test func theWorktreeDriftGuardsOwnGuardsStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/worktree-drift.sh")
+        let complaints = run.complaints(requiring: Self.worktreeDriftRefusals)
+        #expect(complaints.isEmpty, "./scripts/worktree-drift.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
     /// T-748. Runs against the REAL lock's own sandbox (`CADENCE_LOCK_DIR`, not the live
@@ -261,6 +281,7 @@ struct CadenceGuardScriptSelftestTests {
         for (script, refusals) in [
             ("scripts/mutate.sh", Self.mutationRunnerRefusals),
             ("scripts/agent-commit.sh", Self.commitHelperRefusals),
+            ("scripts/worktree-drift.sh", Self.worktreeDriftRefusals),
         ] {
             let source = try String(
                 contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent(script),
@@ -279,7 +300,7 @@ struct CadenceGuardScriptSelftestTests {
         }
     }
 
-    /// And all four scripts have to be there to be run. A renamed script would otherwise make the
+    /// And all five scripts have to be there to be run. A renamed script would otherwise make the
     /// tests above fail for a reason that reads nothing like "the guard is gone".
     @Test func allGuardScriptsExistAndAreExecutable() throws {
         for script in [
@@ -287,6 +308,7 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/agent-commit.sh",
             "scripts/test-host-lock.sh",
             "scripts/simulator-claim.sh",
+            "scripts/worktree-drift.sh",
         ] {
             let path = CadenceSelftestRun.repositoryRoot().appendingPathComponent(script).path
             #expect(FileManager.default.isExecutableFile(atPath: path), "\(script) is missing or not executable")
