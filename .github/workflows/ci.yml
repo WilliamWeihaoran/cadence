@@ -1,4 +1,12 @@
-# Cadence CI — PROPOSAL. Nothing runs until Actions is enabled on this repository.
+# Cadence CI — ACTIVE. Actions is enabled on this repository and every job below has been running
+# on push/PR to `main` since 2026-08-31. Confirmed 2026-09-04 via
+# `gh api repos/WilliamWeihaoran/cadence/actions/permissions` (`enabled: true`) and the workflow's
+# own run history: 22 runs, all green except the bootstrapping run before this file settled
+# (33355551830, fixed the same day in 33356061476). "Build CadenceMCPServer (macOS)" specifically
+# has passed on every run since — this file, not a local one-off build, is what keeps that target's
+# drift visible now (T-852). The paragraph below calling it a "PROPOSAL" is what an outside audit
+# read to conclude "nothing runs" (T-852); it was true when this file was added and is stale now.
+# Do not re-derive that conclusion from this comment alone — check the run history.
 #
 # Why this file exists
 # --------------------
@@ -51,8 +59,9 @@
 # That is why `paths-ignore` below is load-bearing rather than tidy: 106 of this repository's last
 # 120 commits touch only docs/**, AGENTS.md, CLAUDE.md or README.md. Skipping those is an ~88%
 # reduction in billed minutes, and it costs nothing real — no doc change can break a build.
-# If the cost is still unacceptable, the cheap subset is the `mcp-server` job alone (~2 min): it is
-# the one gate that catches something the local loop structurally cannot.
+# As of 2026-09-04 all three jobs are enabled and running (see the header); the cost was accepted,
+# not avoided. If it ever needs trimming again, `mcp-server` is the one job to keep no matter what:
+# it is the one gate that catches something the local loop structurally cannot.
 
 name: CI
 
