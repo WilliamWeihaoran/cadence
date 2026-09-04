@@ -445,7 +445,7 @@ Theme.rule         = #52525b   // standalone horizontal rules
 Theme.text    = #ededef   // primary
 Theme.muted   = #a1a1aa   // secondary
 Theme.subdued = #95959e   // label half of a label/value pair, annotating captions
-Theme.dim     = #71717a   // genuinely de-emphasized / disabled
+Theme.dim     = #878791   // genuinely de-emphasized / disabled (T-847: clears 4.5:1 everywhere)
 
 // Accents (+ derived `*Light` variants blended toward white). EVERY accent is declared
 // hex-string-first — `blueHex`, `redHex`, `greenHex`, `amberHex`, `purpleHex`, `tealHex` — and its

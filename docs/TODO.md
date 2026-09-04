@@ -43,19 +43,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
-- [T-847] **`Theme.dim` fails the body-text contrast floor on every surface.** Measured by an outside
-  audit (R30 in `docs/CODEX_REQUESTS.md`) against all four backgrounds: **4.12 / 3.84 / 3.59 / 3.40**.
-  WCAG wants 4.5 for body text; `dim` clears only the 3.0 large-text/control floor. This is the
-  widest-spread quality defect found in the run — and note that [[T-672]] has just converged eleven
-  search-field clear buttons onto `Theme.dim`, so the population is growing, not shrinking. **Premise
-  correction that matters:** Cadence has no light appearance — `Theme.preferredColorScheme` is fixed
-  to dark — so these are the only numbers that exist, not half of them. Decide whether `dim` is a
-  large-text-and-controls-only token and enforce that, or raise it.
 - [T-848] **The accent palettes and the Markdown highlight fail even the 3:1 floor.** Cadence: blue
   2.75, red 2.78, green 2.08, amber 1.90, purple 2.72, teal 1.98. Glacier is worse — amber **1.54**,
   teal 1.75. Highlighted Markdown text measures **1.48:1** (`Theme.swift:314-316`;
   `MarkdownEditorSupport.swift:219-221`), which is close to unreadable. User-chosen accents are a
   design decision, but a shipped default that no one can read is not.
+  **CORRECTION 2026-09-04, [[T-853]] — three of these four numbers are arithmetic over a pair the
+  app never draws.** Every accent ratio above reproduces exactly when the second operand is
+  **white**, not the background: they are `Theme.onColor` measured on an accent **fill**, not the
+  accents measured as foregrounds. As foregrounds the six are fine and always were —
+  `CadenceAccentPaletteCatalogueTests.everyHueIsLightEnoughToReadOnTheAppBackground` has held every
+  hue above 4.5:1 on `Theme.bg` since [[T-15]], and it is green. The Markdown highlight is the same
+  shape: `markerHighlightFill` is **never drawn opaque**, so 1.48:1 is a pair that never meets.
+  `MarkdownEditorLayoutManager.swift:135` fills it at 0.38 alpha over `Theme.nsBg`, and the
+  composite a reader actually sees carries `markerHighlightText` at **7.03:1**. The defect
+  underneath is real and is [[T-855]]; the token trap the alpha is hiding is [[T-856]]. Do not act
+  on the numbers above as written.
+- [T-855] **`Theme.onColor` is plain white on every accent fill, and white loses to dark ink on all
+  eighteen.** The real defect behind [[T-848]]'s mis-attributed numbers, and it needs a decision
+  rather than an edit, because it changes what filled calendar blocks, selected day cells and accent
+  buttons look like. Measured 2026-09-04 by `CadenceContrastFloorTests`, recomputed from the tokens:
+  white on the fill is **1.54-3.23:1** across the three sets (worst Glacier amber 1.54, Glacier teal
+  1.75, Cadence amber 1.90, Cadence teal 1.98; best Ember blue 3.23) - not one of the eighteen
+  reaches even 3:1. `Theme.bg` as the ink on those same eighteen fills is **6.16-12.93:1**, and
+  clears 4.5:1 on every one. **So no accent hue has to move**, which is why this is not the
+  hue-replacement proposal the audit implied. The proposal is a luminance-aware foreground -
+  `Theme.onColor(for:)` returning `bg` above a relative-luminance threshold and white below it -
+  preserving every hue exactly as the user chose it while fixing all eighteen pairs. The threshold
+  is the only tunable, and it is the part to look at before agreeing: every current accent sits
+  above the crossover, so today every filled block would take dark ink. Two arms of
+  `whiteOnAnAccentFillFailsEveryHueWhileDarkInkClearsThemAll` already hold both halves of the
+  measurement and go red the moment either stops being true.
+- [T-856] **The marker-highlight tokens are only legible because of an alpha declared in another
+  file.** `Theme.markerHighlightText` on `Theme.markerHighlightFill`, compared as the pair is
+  spelled, is **1.48:1**. It ships at 7.03:1 only because `MarkdownEditorLayoutManager.swift:135`
+  paints the fill at 0.38 alpha over `Theme.nsBg`. Nothing in `Theme` says so, so a second surface
+  that reasonably draws `markerHighlightText` on an opaque `markerHighlightFill` gets the 1.48 -
+  and the reuse has already started: `MarkdownTaskEmbedDrawingSupport.swift` takes
+  `highlightFillColor` as a chip tint at 0.13/0.22 alpha. The shipped path is pinned by
+  `theMarkerHighlightIsMeasuredAtTheAlphaTheEditorActuallyDrawsIt`, which reads the alpha out of the
+  drawing code and fails if it moves toward opaque; a *new* call site is not. Options: name the
+  composite as its own token so the legible pair is the spellable one, or extend the scan to every
+  read of `markerHighlightFill` and require an alpha at each.
 - [T-843] **"Block" has drifted back to "Bundle" in 11 live UI literals across 9 files.**
   `TaskBundle.defaultDisplayTitle` says Block and iOS block creation agrees, but Focus and macOS
   creation/edit/delete still say `Bundle`, `Bundle tasks`, `Bundle Focus`, `Log Bundle Session`,
@@ -2223,6 +2252,42 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Done
 
+- [T-847] **CLOSED 2026-09-04 - `Theme.dim` was under the body-text floor on every surface, and it
+  was raised rather than reclassified.** `#71717a` -> `#878791`. Recomputed from the tokens by
+  `CadenceContrastFloorTests`, before -> after: `bg` 4.12 -> 5.59, `surfaceRecessed` 4.02 -> 5.46,
+  `surface` 3.84 -> 5.21, `surfaceHover` 3.70 -> 5.03, `surfaceElevated` 3.59 -> 4.88,
+  `surfaceHighlight` 3.40 -> 4.62. The audit's four numbers reproduced to three decimals; the two it
+  did not look at were **worse** than the four it did, because `surfaceHover` and `surfaceHighlight`
+  are lighter than `surfaceElevated`.
+  **The reclassification option was rejected on the population, not on taste.** Declaring `dim`
+  large-text-and-controls-only means classifying 792 `Theme.dim` / `Theme.nsDim` reads by rendered
+  font size, and Cadence draws body copy at 11-15pt - under the 18pt (14pt bold) threshold where
+  WCAG's large-text exemption begins. There is no population to exempt, so the enforcement would
+  have been a rule with no true instances.
+  Same hue (240 degrees) and near the same chroma: this is that grey lifted, not a different grey.
+  And deliberately **not** the first value that merely passes - a `dim` raised much further closes
+  on `subdued` and the ramp becomes three colours and a spare, which
+  `theBodyTextRampStaysOrderedAndVisiblySeparated` now fails on.
+  `Cadence/iOS/iOSDesignSystem.swift` had already written this defect down in prose ("under the
+  4.5:1 floor for normal text") and nothing enforced it; that note is corrected in place, as is the
+  ramp listing in `docs/CLAUDE_REFERENCE.md`. 7 mutations, 7 killed.
+- [T-853] **CLOSED 2026-09-04 - the contrast floors are arithmetic over `Theme` now, not prose about
+  it.** `CadenceTests/CadenceContrastFloorTests.swift`, seven tests. The load-bearing property is
+  what is *absent*: there is no table of ratios anywhere in the suite. Every number is recomputed
+  from the live token on every run, because a remembered table is the exact failure this ticket came
+  out of - the audit that produced [[T-847]] and [[T-848]] recorded ten ratios, and six of them were
+  correct arithmetic over the wrong pair with nothing in the repo able to notice.
+  What it pins: the 4.5:1 floor for all four text stops against all six surface stops (24 pairs, not
+  the audited four - `surfaceHover` and `surfaceHighlight` are lighter than `surfaceElevated` and
+  were the worst two); the ramp's order *and* its separation, so fixing the floor cannot quietly
+  merge `dim` into `subdued`; that the four stops it sweeps are exactly the four `Theme` declares,
+  by scanning the declaration run rather than trusting its own list; that the structural neutrals
+  stay clear of text territory; the marker highlight measured at the alpha **read out of the drawing
+  code**, so an edit toward opaque recomputes and fails; and both halves of [[T-855]]'s measurement.
+  Three self-checks stop it grading itself: the ratio function is held against `#767676`-on-white
+  (WCAG's canonical 4.54 boundary grey), black-on-white and white-on-white; alpha compositing is
+  proved to matter by measuring a 50% white that must not read as white; and every source needle is
+  run against a literal positive and a literal negative fixture before it is trusted on the tree.
 - [T-614] **CLOSED 2026-09-04 — a visible rearrangement *is* a success report, and both platforms
   now say so.** The user's decision. It is written into `AGENTS.md` rather than into a pane, because
   it narrows the standing rule: `try? save()` is permitted only when **both** halves hold — the save

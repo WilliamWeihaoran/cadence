@@ -395,8 +395,11 @@ struct iOSSegmentedPill: View {
                     .multilineTextAlignment(.center)
             }
             // `Theme.muted`, not `Theme.dim`: an unselected segment is a label you are meant to
-            // read and tap. `dim` (#71717a) on `Theme.bg` lands at roughly 4.1:1 at 12pt, under
-            // the 4.5:1 floor for normal text — `dim` is for genuinely de-emphasised content.
+            // read and tap, so it sits above the quietest stop rather than at it. This used to be
+            // a legibility argument — `dim` was `#71717a` and landed near 4.1:1 on `Theme.bg`,
+            // under the 4.5:1 floor for normal text. T-847 raised `dim` clear of that floor on
+            // every surface, so it is a hierarchy call now: `dim` is for genuinely de-emphasised
+            // content, and an unselected segment is not that.
             .foregroundStyle(isSelected ? tint : Theme.muted)
             .padding(.horizontal, 10)
             .frame(

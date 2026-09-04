@@ -266,11 +266,26 @@ nonisolated struct Theme {
     /// Supporting text one stop below `muted`: the label half of a label/value pair, and captions
     /// that annotate the thing above them rather than say anything on their own. It exists because
     /// `muted` and `dim` are two stops too far apart to express "quieter than secondary, but still
-    /// ordinary reading text" — `dim` is reserved for genuinely de-emphasized or disabled content
-    /// and lands 9pt captions near 0.42 effective white on `bg`, which is too faint to read on a
-    /// device. Sits between the two, nearer `muted`.
+    /// ordinary reading text" — `dim` is reserved for genuinely de-emphasized or disabled content.
+    /// Sits between the two, nearer `muted`.
     static let subdued = Color(hex: "#95959e")
-    static let dim = Color(hex: "#71717a")
+    /// The quietest stop a reader is still expected to read words in: disabled controls, cancelled
+    /// tasks, `priorityColor(.none)`, and the placeholder half of a field.
+    ///
+    /// **T-847 raised this from `#71717a`, and the reason is arithmetic rather than taste.** At the
+    /// old value it read at 4.12:1 on `bg` and fell to 3.40:1 on `surfaceHighlight` — under WCAG's
+    /// 4.5:1 floor for normal-size text on every one of the six surface stops, and Cadence has no
+    /// light appearance for those numbers to be half of. `subdued`'s note above already said as
+    /// much in prose ("too faint to read on a device"); nothing enforced it, so 792 call sites
+    /// accumulated underneath. It now clears the floor everywhere, 5.59:1 on `bg` down to 4.62:1 on
+    /// `surfaceHighlight`, at the same hue (240°) and near the same chroma — this is the same grey,
+    /// lifted, not a different one.
+    ///
+    /// Deliberately **not** raised to the first value that merely passes: the stop has to stay
+    /// visibly below `subdued` or the ramp has three colours and a spare.
+    /// `CadenceContrastFloorTests` enforces both halves — the floor and the separation — by
+    /// recomputing them from these tokens, so neither can be lost to a future retune.
+    static let dim = Color(hex: "#878791")
 
     // MARK: - Extended neutral ramp
     // Stops that sit *between* (or just below) the four surface values above. They exist for
