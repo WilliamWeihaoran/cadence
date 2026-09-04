@@ -43,6 +43,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-977] **`scripts/real-tree-sweep-manifest.sh selftest` is a check nothing runs.** [[T-873]] fixed the
+  regenerator and pinned the fix with a `selftest` subcommand that drives the script against a
+  deliberately stale manifest and fails on an empty body — and no caller invokes it: it is not in
+  `scripts/xcb.sh`'s preflight, not in `.github/workflows/ci.yml`, and not reachable from
+  `CadenceTests` (a shell script driving `xcodebuild` cannot run inside the App-Sandboxed test host,
+  the same boundary [[T-954]] records). So the regression T-873 measured would come back silently.
+  Same decision as [[T-954]] and probably the same answer: pick a caller, or say in the script's
+  header that it is a manual check and why.
+
+- [T-976] **One markdown command title is still Title Case, in the one place [[T-845]]'s table does not
+  reach.** `iOSMarkdownTextView.swift:64` registers a `UIKeyCommand` whose discoverability title is
+  the literal `"Bulleted List"`, while both format toolbars now read
+  `MarkdownFormatCommandTitle.sentenceCase(for:)` and say "Bulleted list". T-845 converged the
+  toolbars specifically and this key-command table was outside it. Small, but it is the same
+  vocabulary in the same editor on the same platform, and a hand-typed literal is how the drift
+  T-845 closed started. Check the whole `command(...)` table there, not only this row.
+
 - [T-975] **The shared working tree silently drifts behind HEAD while agents run, and an integration
   run started against it tests the wrong code.** Measured four times between 2026-09-04 and
   2026-09-05. The worst instance: after Batch V the worktree's `docs/TODO.md` was missing **five**
@@ -166,16 +183,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   files use it, so it is not dead. Record it as an adapter with no seam so the next "untested file"
   sweep does not re-derive this.
 
-- [T-873] **The sweep-manifest regenerator only works when regeneration is unnecessary.**
-  `scripts/real-tree-sweep-manifest.sh <id> --write` prints its `BEGIN`/`END` banners with **nothing
-  between them** when `theRealTreeSweepManifestIsExactlyWhatTheScanFinds` fails — which is the only
-  situation in which anyone runs it. Measured 2026-09-04 while repairing integ26: exit 65, 0 compile
-  errors, both banners present, zero lines of manifest. The entry had to be added by hand, which is
-  precisely what [[T-808]] built the generator to avoid. The regenerated list is presumably emitted
-  from the passing branch of that test, so a failing run never reaches it. Fix: emit the scan's
-  output before the equality assertion, not after it, and pin that with a test that runs the script
-  against a deliberately stale manifest and requires a non-empty body.
-
 - [T-848] **The accent palettes and the Markdown highlight fail even the 3:1 floor.** Cadence: blue
   2.75, red 2.78, green 2.08, amber 1.90, purple 2.72, teal 1.98. Glacier is worse — amber **1.54**,
   teal 1.75. Highlighted Markdown text measures **1.48:1** (`Theme.swift:314-316`;
@@ -207,37 +214,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   above the crossover, so today every filled block would take dark ink. Two arms of
   `whiteOnAnAccentFillFailsEveryHueWhileDarkInkClearsThemAll` already hold both halves of the
   measurement and go red the moment either stops being true.
-- [T-843] **"Block" has drifted back to "Bundle" in 11 live UI literals across 9 files.**
-  `TaskBundle.defaultDisplayTitle` says Block and iOS block creation agrees, but Focus and macOS
-  creation/edit/delete still say `Bundle`, `Bundle tasks`, `Bundle Focus`, `Log Bundle Session`,
-  `Bundle title`, `Delete Bundle?` and `Delete Bundle`: `CadenceFocusBundleSupport.swift:163`,
-  `iOSFocusView.swift:500`, `FocusChromeSupportViews.swift:120`,
-  `FocusBundleTaskSupportViews.swift:20`, `FocusLogSessionPopovers.swift:163`,
-  `FocusSidebarSupportViews.swift:155`, `QuickCreateChoicePopover.swift:248,355`,
-  `TimelineBundleBlock.swift:62`, `TimelineBundleBlockSupportViews.swift:71,203`. Reachable through
-  ordinary Block creation, editing and Focus. **[[T-567]] is closed and does not cover this** — it
-  centralised only the untitled fallback. Fix: shared user-facing Block vocabulary beside
-  `defaultDisplayTitle`, product words only (leave Settings' technical `Bundle ID` alone), plus a
-  source scan for `Bundle` in UI literals outside an explicit exemption.
-- [T-844] **Four count strings are ungrammatical at 1.** "1 selected tasks"
-  (`FocusLogSessionPopovers.swift:166`), "1 tasks" (`FocusSidebarSupportViews.swift:156`),
-  "Collapsed, 1 notes" (`CadenceNotesListSupport.swift:692`), "1 milestones / 1 habits"
-  (`iOSFeatureViews.swift:184-190`). One shared pluralisation helper; test 0, 1 and 2.
-- [T-845] **The two Markdown editors disagree on capitalisation.** iOS says `Bulleted List`,
-  `Code Block`, `Note Link`; macOS VoiceOver says `Bulleted list`, `Code block`, `Note link`. The
-  shared vocabulary already exists at `MarkdownSlashCommandCoreSupport.swift:34-50`. Have the core
-  own sentence-case titles and both adapters read them — do not build a second case table.
-- [T-846] **Reminders demands access before the user has chosen.** `.notDetermined` says "Reminders
-  access required" (`CadenceRemindersPresentationSupport.swift:91-97`), where Calendar and
-  Notifications correctly use a neutral `Connect …` offer and reserve `… access required` for after
-  a denial. Reachable on the first visit to Reminders settings. Give it the same two-title model.
-- [T-851] **Milestone Momentum is the only widget whose reload calculation is unshared.** Its three
-  sibling support types already share one. Widgets ship inside the submitted binary, so a timeline
-  that never reloads is a shipped defect. Reuse a shared policy that accepts ready/empty intervals.
-- [T-852] **Nothing has ever proved `CadenceMCPServer` compiles.** It uses an explicit Sources list,
-  so the app scheme cannot see it break, and it has been outside every green run of this project.
-  An outside audit confirmed its membership and schema check out but stated plainly it cannot
-  determine the target compiles without building it. Somebody must build it.
 - [T-850] **iOS calendar quick-create branches on only one denied state.**
   `iOSCalendarQuickCreateSheet.swift:342-357` should consume the shared Calendar authorization
   presentation. Real, but iOS is not the v1 distribution channel — **parked behind macOS work.**
@@ -277,21 +253,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   0 compile errors, 0 warnings on a run that recompiled the file), including
   `everyRealTreeSweepOnTheManifestStillExists`/`theRealTreeSweepManifestIsExactlyWhatTheScanFinds`
   (proving the T-808 manifest itself is untouched and still exact) alongside all four new tests.
-
-- [T-795] **The icon-only-button suite is red on HEAD independent of T-674, for a reason worth
-  fixing before the next agent reads its output as a regression.** Measured 2026-09-04 against an
-  unmodified HEAD (`8bec9eb`) in an isolated `git archive` tree, twice: `CadenceIconOnlyButtonAccessibilityTests`
-  fails two different ways that are really one cause. First, its ledger still lists five files
-  [[T-673]]'s own commit (`a3068e3`) already cleaned —
-  `Sheets/CreateTaskSheet.swift`, `Views/GoalsSupportViews.swift`, `Views/HabitsSupportViews.swift`,
-  `Views/QuickCreateChoiceSupportViews.swift`, `Views/TasksPanelSupportViews.swift` — so
-  `theUnnamedIconButtonLedgerStatesHowManySitesEachFileStillHas` reports a stale ledger. Second, and
-  less obvious, `theIconOnlyButtonDetectorSeesABareGlyphAndLeavesALabelledOneAlone`'s own
-  non-vacuity witness for "the detector still reaches the desktop tree" is
-  `Views/TasksPanelSupportViews.swift` — the same file T-673 just named, now clean, so the fixture
-  no longer proves what its own comment claims. [[T-792]] tracks a *different* T-673 residue (the
-  raw `Text` beside two glyphs); this is the ledger/witness staleness itself, filed separately so it
-  does not get lost inside T-792's narrower scope.
 
 - [T-934] **`iOSTrackingColorGrid` still names its colour swatches by their hex value
   (`.accessibilityLabel("Color \(color)")`), the one holdout against the convention every other
@@ -351,17 +312,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `.calendarWriteFailureAlert()` already has. Widen `presentRefusable` (or add a typed sibling) so
   a refused calendar-event delete can report the real cause through the confirmation manager, the
   way Save's inline notice already does.
-
-- [T-759] **Two `SchedulingActions.createTask` overloads no longer have an app caller.** Found while
-  landing [[T-655]] and deliberately left. `createTask(title:dateKey:startMin:endMin:in:)` had none
-  before that ticket; `createTask(title:…containerSelection:…in:)` lost its last one when
-  `CalDayColumn` moved to `insertTask`. Both are still reached from `TaskBundleTests`
-  (`noSchedulingEntryPointEverGivesATaskACalendarEventID` enumerates them as "scheduling entry
-  points"), so deleting them means deciding what that test is enumerating now — entry points the app
-  has, or entry points that exist. They are also what keeps the *name* `createTask` pending on
-  `SchedulingActions` in the commit index, which costs nothing today and would matter to the next
-  caller. The decision is delete-and-retitle-the-test, or keep-and-say-why in a doc comment; the
-  wrong answer is leaving two production functions with no production caller and no note.
 
 - [T-760] **The shared "two tasks become a block" mutation commits through a swallowed save, and
   iOS still relies on it.** Found while landing [[T-655]].
@@ -513,22 +463,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   spelling. Found while choosing mutation needles for [[T-530]] — `return "Daily"` occurs three times in
   that file, twice of them here. Decide whether `shortLabel` earns its existence at all; if it does, it
   should derive from `label` and override the one arm rather than re-type the other four.
-
-- [T-714] **A refused column rename still has one path with nowhere to appear.**
-  Residue from [[T-645]], same family as [[T-646]]. The rename now commits at `onSubmit`, at the name
-  field losing focus, and from every other control in the popover — all while the popover is up. The
-  path left is: type a name, then dismiss the popover without touching anything else. The edit is not
-  lost (one `ModelContext`, so the next commit anywhere takes it), but a refusal at that moment has no
-  surface, which is the shape [[T-646]] was about.
-  Two candidate answers, both real work: make the dismissal itself a commit that can refuse to close,
-  or route the flush's notice to the column header the way [[T-646]] routes the commit ones — that
-  second one is nearly free now, but `CadenceInPlaceEditFlush.failureNotice` ("They're still here")
-  reads oddly on a column rather than beside the field it is about.
-  **Also unverified by observation:** the focus-loss trigger is a `@FocusState` `onChange`, and
-  whether clicking a colour swatch in a macOS popover actually moves focus off the `TextField` was
-  reasoned, not seen. `onSubmit` covers Return regardless, and every other control commits, so the
-  worst case is that this path is wider than described.
-
 
 - [T-698] **CLOSED 2026-09-04 (`85b63c3d`).** `GoalLinkPickerButton` and `GoalLinkPickerList`
   in `macOS/Views/GoalPickerViews.swift` lost the `emptyText` property both were retyping; the
@@ -1509,19 +1443,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **file**, so today it is asserting over the copy that may not be the one that ships.
 
 
-- [T-675] **The app has three row-separator weights and only one of them is named.** Found while
-  closing [[T-618]], which named the 0.35 one as `Theme.rowSeparator` over four agreeing sites. The
-  other two are in `Cadence/macOS/Views/GoalTimelineSupportViews.swift`: a goal row's bottom rule
-  `:252` and a bar's bottom edge `:113` draw `Theme.borderSubtle.opacity(0.55)`, while three 1pt
-  rules doing the same job — `:85`, `:213`, and the iOS row `iOSListSupportViews.swift:10` documents
-  as the same idiom — draw plain `Theme.borderSubtle`. So one file draws two of the three weights,
-  eleven lines apart in one case.
-  **This is a decision, not a hoist**, which is why T-618 stopped at the four that agreed. 0.35, 0.55
-  and 1.0 over the same near-black border on the same surface are three visibly different rules
-  between two rows; picking one is a look at the screen, and a mechanical sweep onto
-  `Theme.rowSeparator` would be exactly the unreviewed visual change T-617 and T-618 both refused.
-  Decide the weight, then name the survivors on `Theme` beside `rowSeparator` and `rule`.
-
 - [T-688] **`TimelineDayCanvas.swift:247` names a blank quick-created task `"New Task"`, against
   `CadenceEventTitleSupport`'s own argument for the opposite word.** Found while sweeping [[T-609]]
   and deliberately left, because T-609's rule was "route through the trim, change no copy".
@@ -1534,46 +1455,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   each other but nothing to do with this one — closed separately as [[T-924]] once T-609's freeze
   was lifted for that pair specifically.
 
-- [T-695] **The area lifecycle row's `"No context"` fallback is the project row's un-converged twin.**
-  `SettingsListManagementSections.lifecycleCard` and `iOSSettingsTemplateAndListSections.lifecycleCard`
-  each write `subtitle: area.context?.name ?? "No context"` inline, byte-identical, a dozen lines above
-  the *project* branch that reads the shared `CadenceListSettingsCopy.parentSubtitle(contextName:areaName:)`
-  — [[T-577]] converged the project half of that row and left the area half at both call sites. The sweep
-  cannot see it either: `"No context"` is **10 characters**, under `cadenceSharedStringConstants`'
-  twelve-character floor, so however many surfaces spell it the reuse sweep catches none of them —
-  `CadenceReadService` (4 sites), `iOSFeatureComponents.swift:452` and both settings cards spell it today.
-  Same shape as `CadenceTitleNormalization.defaultCompactTitle`, which the placeholder ledger unions in
-  by hand for exactly this reason. Found while hoisting [[T-546]]'s six section labels out of those two
-  functions.
-
-- [T-696] **Both work-hours subtitles describe a band that is not drawn two days a week.**
-  `CalendarWorkHoursPreferences.shouldShowHighlight(on:)` is `!calendar.isDateInWeekend(date)`, and both
-  `TimelineDayCanvas` and `iOSCalendarTimelineViews.workHoursBand` gate on it — so a Saturday or Sunday
-  column carries no amber band at all. macOS now says "Calendar and Timeline day columns gently highlight
-  9:00 AM – 5:00 PM." and iOS "Calendar day columns gently highlight …"; both read as unconditional.
-  Left out of [[T-544]] deliberately: [[T-524]]'s `bothWorkHoursRowsReadOneWorkdayBoundaryTitle` pins the
-  shared tail `gently highlight \(workHoursLabel).` on **both** surfaces, so adding "on weekdays" changes
-  two sentences and that pin — a second copy decision rather than the correction T-544 was. The behaviour
-  is pinned meanwhile by `CadenceSettingsSectionCopyTests.theWorkHoursBandIsSuppressedAtTheWeekendOnBothSurfaces`.
-
-- [T-697] **"Workday boundary" decides more than the band, and Settings mentions only the band.** The two
-  `calendar.workHours.*.v1` keys also feed `CadenceScheduleSupport.readyScheduleSlots` — the "Ready to
-  Schedule" chips on iPad's Timeline pane (`iOSTodaySchedulePanel.readyScheduleContext`) propose start
-  times inside the work window and leave it only when the window is full — and
-  `CadenceScheduleSupport.initialTimelineHour`, the hour a non-today calendar column opens at
-  (`iOSCalendarTimelineViews.swift:470`). Both are iOS-only today, and iOS is the surface with the
-  *shorter* subtitle: a user narrowing the window to move where suggestions land has nothing on the
-  settings row that says the control does that. Found while making the macOS sentence true in [[T-544]].
-
-- [T-692] **`calendar.source?.title` answers two different things on the same platform.** Settings →
-  Calendar falls back to `CadenceAppleCalendarNaming.unnamedAccountTitle` ("Apple Calendar") when a
-  calendar's account has no name; `Cadence/macOS/CadenceCalendarPicker.swift:31` reads the *same*
-  `cal.source?.title` for the *same* absence and falls back to `"Other"`, which is also the label it
-  groups those calendars under. So the Mac tells a user "Apple Calendar" on one screen and "Other" on
-  another about one fact. [[T-547]] split the concepts and hoisted each; it deliberately did **not**
-  decide this, because "Other" is a grouping bucket as well as a fallback and collapsing the two is a
-  copy decision. Under the sweep's 12-character floor, so nothing will find it again by machine.
-
 - [T-703] **CLOSED 2026-09-04, declined — no code change.** Re-opened the composer question this
   ticket asked (compose only if it reads as well as the six/eight literals) and found it already
   answered, in code, by `663bc139` (T-690, 2026-09-03): that commit tried building the composer
@@ -1584,50 +1465,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   express. The escape hatch this ticket named — "only if the composition reads as well as the
   literals do" — is not met, so eight honest strings stay. Nothing to build; this entry formalizes
   the decision the codebase already made.
-
-- [T-704] **[[T-560]]'s leak was cleaned and its mechanism closed, but never reproduced — so it is not
-  known to be fixed.** **Closed 2026-09-05.** Two earlier instrumented runs on 2026-09-02 (21 tests,
-  19 of them building and saving through an in-memory `ModelContainer` in the *unfixed* shape, plus a
-  third of 40 tests after the fix) created zero `<app container>/tmp/<UUID>/inMemory_store_ckAssets`
-  directories, leaving genuine doubt about whether `cloudKitDatabase` was the real gate.
-  **Reproduced this time, both directions, back to back on the same machine:** `CadenceTestStoreSupport.swift`'s
-  one line reverted to the unfixed spelling (`ModelConfiguration(isStoredInMemoryOnly: true)`, no
-  `cloudKitDatabase: .none`) in a scratch `git archive HEAD` tree, then the *entire* `CadenceTests`
-  target run through it rather than a 21-test slice — 4384 tests. Container tmp held 9 entries and
-  zero `inMemory_store_ckAssets` directories before; 26 entries and **17**, all empty, after, every one
-  timestamped inside the run's own window. Purged those 17, then ran the unmodified (fixed) tree
-  through the identical `-only-testing:CadenceTests` invocation immediately after: 4391 tests, and the
-  container held its original 9 entries and zero `inMemory_store_ckAssets` afterward. Same machine,
-  same test-host, run back to back within the hour -- the only variable was the one line. The earlier
-  nulls were not a false negative about the mechanism; they were too small a sample; a batch of 21
-  apparently is not enough to reliably trip whatever inside SwiftData's CloudKit mirroring setup takes
-  more than that to initialise, and 4384 reliably is. `cloudKitDatabase: .none` is confirmed as the
-  fix, not merely the last thing changed before the residue stopped appearing.
-
-- [T-705] **Nothing prunes an orphaned shared-DerivedData entry, and the judgement [[T-517]] said no
-  script should make unattended is now mechanical.** **Closed 2026-09-04 in `d04c0d33`.** T-517
-  declined to automate the cleanup because "one of the fourteen is the user's own Xcode entry" and
-  telling them apart needed a human. Two discriminators now do it without one. **The cheap one:** an
-  entry that has an `info.plist` carries `WorkspacePath`, so it is an orphan exactly when that path
-  does not exist — no hashing required. **The one for entries with no `info.plist`**: Xcode's
-  directory suffix is MD5 of the absolute project path, split into two big-endian `UInt64`s, each
-  rendered as 14 base-26 letters, most-significant first (that ordering, not the reverse, is what
-  reproduces this machine's own known-live hash — checked again every run, not just once). Hash
-  every `Cadence.xcodeproj` that exists and an entry matching none of them is unattributable to any
-  live tree. Both were positively controlled against the known-live entry before being trusted for
-  anything else, same as T-517 did by hand.
-  **Landed as `scripts/prune-shared-derived-data.sh`, a new script, not a change to
-  `scripts/xcb.sh`** — that file had a live sibling owning it this batch too, and the pruner does not
-  need to live there. `audit` (read-only, the default) and `prune` share one classifier;
-  `selftest` proves it against synthetic fixtures in a scratch directory, including the case the
-  hard rule below exists for: an entry a live `tail -f` holds open is reported LIVE and survives a
-  prune pass regardless of what the two discriminators would otherwise have said. **The absolute
-  rule, unconditionally checked before every deletion:** `lsof +D` on the entry; a live handle wins
-  over both discriminators, no exceptions. Run for real on this machine: 6 orphaned `Cadence-*`
-  entries (no `info.plist`, hash matching none of 14-18 `Cadence.xcodeproj` trees actually present —
-  the exact `Logs/`+`SourcePackages/`, no `Build/Products` signature T-517 found by hand) removed,
-  129M each, 774M total; the one entry a live Xcode (pid 76700) held open throughout was correctly
-  skipped every time, never deleted.
 
 - [T-706] **`/private/tmp/cadence-uitest-auth` is a 1.4 GB DerivedData directory, not an authorization
   store — and ~2.7 GB of other agent debris is still in `/private/tmp`.** **Confirmed and partly
@@ -1669,22 +1506,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   needs a cheap ubuntu `changes` job emitting an output the `if:` reads, or a third-party
   paths-filter action and the supply-chain surface that brings. **Decide it rather than leaving it in
   a comment**, and note the cost the file records: ~6-10 billed runner-minutes per iOS run.
-
-- [T-709] **`CadenceBuildInvocationHygieneTests` sweeps `.md` and `.sh`, and CI is `.yml`.**
-  **Closed 2026-09-04 in `0185752f`.** From [[T-535]]. `scannedPaths()` appended a file only when it
-  `hasSuffix(".md")` or `hasSuffix(".sh")`, so `.github/workflows/*.yml` sat outside the walk entirely
-  — and those files contain `xcodebuild` invocations. **There was no live offender**: every invocation
-  in `ci.yml` goes through `scripts/xcb.sh`, which supplies a private `-derivedDataPath` itself. The
-  gap was that nothing would have noticed a future workflow step calling `xcodebuild` directly.
-  `scannedPaths()` now also walks `.yml`/`.yaml`, and `shellText(at:)` grew the third branch the
-  ticket named: a new `yamlRunBlocks(_:)` extracts a workflow's `run:` steps -- both the inline form
-  and the block-scalar (`run: |`) form this repository's own `ci.yml` is written in -- rather than
-  reading the whole YAML document, so sibling keys such as `if:` or `uses:` are never misread as
-  shell. Pinned with `theWalkAndTheParserReachGitHubWorkflowRunSteps`, a fixture mirroring `ci.yml`'s
-  own shape (comment line inside a block scalar, an `if: >-` sibling key, an inline `run:`), plus a
-  non-vacuity check that `.github/workflows/ci.yml` itself extracts to shell text containing
-  `xcb.sh` and none of `runs-on:`. Two mutations killed 2/2 against `scripts/mutate.sh`: reverting the
-  `.yml`/`.yaml` suffix, and short-circuiting `yamlRunBlocks` to return the raw document unfiltered.
 
 - [T-722] **Drag-to-create has never been observed, and the simulator can now do the gesture.**
   Was item 4 of `docs/device-checks.md`; it left that list in [[T-561]] because `control`'s
@@ -1733,21 +1554,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   opened the linked-note sheet with its backlink present. **Task embed:** one tap opened Edit Task
   from both spellings — the standalone card and the same reference drawn inline.
   Found [[T-734]] on the way, which is the reason this was worth driving rather than reasoning.
-
-- [T-728] **The collapsed rail's slot has no asserted relationship to the label it holds.**
-  `collapsedRailLabelSlotHeight = 96` is a constant; the rotated `UNSCHEDULED` run measures **88pt at
-  the loosest [[T-496]] candidate** (83 at the tightest). Measured 2026-09-02.
-  **The reason this needs a test rather than a comment: rotation is a render transform, so an overhang
-  cannot fail layout.** A longer rail name, a heavier weight or a tracking change would push the run
-  past the slot and nothing would go red — it would simply draw over its neighbour. A macOS test can
-  measure the advance (`NSAttributedString.size()` and `ImageRenderer` agreed exactly today) and assert
-  it against the constant with real headroom.
-
-- [T-729] **The collapsed rail's slot width is derived from the wrong figure.** It is
-  `.frame(width: CadenceBoardColumnHeaderMetrics.labelSize)` — the **point size, 10** — while the
-  rotated line is **13pt tall**, so the glyph run overhangs the frame about 1.5pt each side. Harmless
-  at today's 60pt rail and not a visible defect; wrong as a derivation, because a font's line height is
-  not its point size and the two only coincide by accident. Found while measuring [[T-496]].
 
 - [T-730] **macOS visual verification is unavailable whenever the user's own Cadence is running, which
   is most of the time.** Measured 2026-09-02: `scripts/run-macos-app.sh start` refused with exit 3 —
@@ -1824,6 +1630,14 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Second gap, same family, cheaper to state than to fix: **an app started by tapping its icon on the
   simulator carries no launch arguments**, so it is back on the device-wide domain. Both are written
   down in `CadenceDefaults`'s doc comment; this ticket is the decision about whether to close them.
+  **Answered in part 2026-09-05, still open.** [[T-949]] re-counted this audit directly against HEAD and
+  found the product half is a non-issue: `CadenceDefaults.store` **is** `UserDefaults.standard` unless a
+  `-CadenceSuiteName` launch argument is present, and nothing outside `scripts/simulator-claim.sh` sets
+  one — so none of the 19 direct `UserDefaults.standard` sites diverge in any shipping configuration.
+  What landed is that measurement; **what remains is this ticket's actual ask** — the decision whether to
+  route those sites anyway, and no code has changed (`NotificationManager`, `DataIntegrityRepairService`,
+  `MarkdownNoteSupport`, `PersistenceController` still read `.standard` directly). The test-tooling
+  residue is tracked separately in [[T-949]].
 
 - [T-747] **CLOSED 2026-09-04 (`f3a7fba1`) - the log survives, named by invocation.**
   `scripts/xcb.sh` now writes each run to `${TMPDIR}cadence-xcb-<id>.<timestamp>-<pid>.log` and keeps
@@ -1834,65 +1648,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   pointing at the last one.
   `.github/scripts/check-log.sh` and `scripts/real-tree-sweep-manifest.sh` both read the unsuffixed
   path, and a symlink is transparent to `cat`/`grep`, so neither needed a change.
-
-- [T-736] **A column being renamed draws as empty until the rename commits.** Filed while landing
-  [[T-713]], and it is the visible cost of the decision that ticket took rather than a defect in it.
-  `KanbanListSectionSupportViews.sortedTasksForSection` groups the board by
-  `resolvedSectionName.caseInsensitiveCompare(section.name)`, and [[T-645]] writes the *config's*
-  name on every keystroke while [[T-713]] moves the *cards* only at the commit point — so from the
-  first character until Return or focus leaving the field, the column the user is typing into has no
-  cards in it. They come back on the commit.
-  This is strictly better than what it replaced: before [[T-713]] the column also emptied, from the
-  second keystroke, and **never** refilled, because the cards were stranded on a name no column had.
-  Transient is not free, though, and the fix is not "move sooner" — that is the bug. Candidates: group
-  the board by the column's `uuid`-stable identity for the duration of an open editor, or have the
-  editor publish the name the cards are still under so the column can draw them.
-  **Not observed.** Reasoned from the two call sites; nobody has watched a rename being typed.
-
-- [T-737] **The editor's Archive and Mark-Completed settle on the *config's* name, so pressed
-  mid-rename they settle nothing.** Same family as [[T-713]] and **not** introduced by it — the
-  config's name has advanced per keystroke since [[T-645]].
-  `TaskContainerLifecycleService.tasks(in:area:project:)` filters on
-  `resolvedSectionName.caseInsensitiveCompare(section.name)`, and `toggleSectionArchive` /
-  `saveSection` both hand it `section` — the live config. Type two characters into the name field and
-  press Archive without committing: the flag flips and `cancelRemainingActiveTasks` walks a name no
-  card carries, so the column archives with its stack untouched. `editSnapshot(settling:)` takes the
-  same walk, so the undo for a refused commit snapshots zero cards as well.
-  Whether it is reachable in practice turns on the open question in [[T-714]] — whether pressing a
-  button in a macOS popover moves focus off the `TextField` and fires `onNameCommitted` first. That
-  is still unverified by observation, so this is real until someone looks.
-  [[T-713]] gave the column a `filedCardName` for exactly this question; the fix is probably to hand
-  the lifecycle walk a config wearing that name. Not folded in because it is the completion and
-  archive paths, which four suites pin.
-
-- [T-738] **Every keystroke of a column rename rewrites the container's whole section blob.** Noticed
-  while reading for [[T-713]]. `applySectionEdits` runs per character and calls
-  `applySectionConfigEdits`, which assigns `sectionConfigs = merged(...)` **unconditionally** — unlike
-  `mutateSectionConfigs`, which guards on `merged != current`. The guard would not help here anyway,
-  since each keystroke genuinely is a change.
-  So renaming a column to a ten-character name rewrites `sectionConfigsRaw` ten times and dirties the
-  `Area`/`Project` ten times, and each is a CloudKit record push. [[T-645]] chose the per-keystroke
-  *write* deliberately, so the board's header tracks the field; nothing about that choice required the
-  write to reach the persisted blob every time. Candidate: keep the header on the field's own value
-  and let the blob take the name at the commit point, which is where the cards go since [[T-713]].
-  **Not measured.** No CloudKit traffic was observed; this is read off the two write paths.
-
-- [T-751] **The thing that keeps [[T-623]] cheap is an accident, and nothing pins it.** [[T-623]] is
-  parked because a child row that outlives a list cascade is inert at every read site — but each of
-  those filters was written for an unrelated reason and none of them names partial deletion.
-  `GoalLinkPresentation.links(of:)` filters `area != nil || project != nil` to avoid a cosmetic
-  "Missing List" row; `GoalContributionSummary.swift:114` filters the same way to keep
-  `linkedListCount` honest; `CadenceReadService.swift:1144` mirrors it for the MCP DTO;
-  `DataIntegrityRepairService.repairDuplicateHabitCompletions` skips a habit-less completion only
-  because it groups by `habit.id`; `LinksView` and `iOSListSupportViews` filter saved links by owner
-  id because that is how a per-list panel is built at all.
-  Remove any one of them for a good local reason and [[T-623]] silently becomes a visible-corruption
-  bug — a "Missing List" contributor inside a goal's percentage, a phantom saved link — with no test
-  going red and a parked ticket saying it does not matter.
-  The ask is one suite that asserts the inertness *as the invariant it now is*: an owner-less
-  `GoalListLink`, `HabitCompletion` and `SavedLink` in a store, and every surface that could show
-  one showing nothing. Same shape as `CadenceInMemoryStoreHygieneTests` — the property is already
-  true, and the test is what stops it quietly stopping.
 
 - [T-748] **CLOSED 2026-09-04 (`f3a7fba1`) - the head checks its own pulse before taking the
   lock.** `test-host-lock.sh acquire`'s head-of-queue block now refuses `mkdir` (and drops its own
@@ -2113,35 +1868,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   rather than a request: adding container writes is a real decision (they cascade into task
   ownership and section normalisation), and the screenshot work only needs it once.
 
-- [T-868] **Two more reorders swallow the save that [[T-614]] just decided.**
-  `TasksPanelSupport.reorderTask` (`Cadence/macOS/Views/TasksPanelSupport.swift`) and
-  `SidebarComponents.reorderList` (`Cadence/macOS/Views/SidebarComponents.swift`) each renumber
-  `order` across a dragged list inside `withAnimation` and end in `try? modelContext.save()` —
-  character for character the shape `SettingsView.moveContext` had. **Deliberately not swept in with
-  T-614**, which was the decision plus one site; each of these wants its own failing-first test.
-  The fix shape is settled: `CadencePendingChangePersistence.commitEdit(in:undo:)` over a captured
-  `[Int]` of the previous orders, and the sentence where the user is already looking. Note the real
-  work is the second half — Settings had a notice surface to reuse and the sidebar has none.
-
-- [T-869] **Two reorders reach no commit at all, which is the worse half of the same audit.**
-  `ListDetailComponents.reorderTask` writes `t.order = i` across the list and stops;
-  `Cadence/macOS/Views/ListDetailComponents.swift` contains no `save()` and no persistence call
-  anywhere in it. The Kanban card drop is the same shape: `KanbanBoardSupport.reorder` renumbers and
-  returns, and neither caller — `KanbanListColumnView.moveTask`, `KanbanSectionColumnView.moveTask` —
-  commits. **`KanbanListColumnView.handleTaskDrop` then answers `true` over it**, which is already in
-  half 2's vocabulary; it is invisible only because there is no swallowed commit in the frame for the
-  detector to hang it on. Half 3 does not see them either — it fires on insert and delete, not on a
-  field write. So both rely on autosave, which is the thing [[T-327]] measured the cost of.
-
-- [T-870] **The Kanban *column* reorder commits nothing either, one layer further in.**
-  `KanbanListSectionSupportViews.reorderSection` → `CadenceSectionConfigMerge.reorderSectionConfigs`
-  → `mutateSectionConfigs`, which merges, assigns `sectionConfigs` and returns. Dragging a column is
-  as visible a rearrangement as dragging a row, and this ordering is a **blob on the container**
-  rather than an `order` field — so the `\.order` sweep that found [[T-868]] and [[T-869]] cannot
-  find it, and neither will the next one. Check for other blob-stored orderings before assuming this
-  is the last. [[T-358]] is not a defence: last-writer-wins is about the *merge*, not about whether
-  the write is ever committed.
-
 - [T-858] **Reminders' pre-prompt access card still wears the denied state's warning triangle.**
   [[T-846]] fixed `RemindersConnectionState.accessTitle`'s `.notDetermined` wording — "Connect Apple
   Reminders" rather than "Reminders access required" — but all four consumers
@@ -2188,6 +1914,396 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   already a second synced caller — so the sweep is worth having before one is added, not after.
 
 ## Done
+- [T-873] **CLOSED 2026-09-05 (`f15143ce`).** `run_scan_once` captures and prints the regenerated
+  manifest before the equality assertion, so a stale manifest regenerates; a `selftest` subcommand
+  drives the script against a deliberately stale manifest and fails on an empty body.
+  **Filed as:** **The sweep-manifest regenerator only works when regeneration is unnecessary.**
+  `scripts/real-tree-sweep-manifest.sh <id> --write` prints its `BEGIN`/`END` banners with **nothing
+  between them** when `theRealTreeSweepManifestIsExactlyWhatTheScanFinds` fails — which is the only
+  situation in which anyone runs it. Measured 2026-09-04 while repairing integ26: exit 65, 0 compile
+  errors, both banners present, zero lines of manifest. The entry had to be added by hand, which is
+  precisely what [[T-808]] built the generator to avoid. The regenerated list is presumably emitted
+  from the passing branch of that test, so a failing run never reaches it. Fix: emit the scan's
+  output before the equality assertion, not after it, and pin that with a test that runs the script
+  against a deliberately stale manifest and requires a non-empty body.
+
+- [T-870] **CLOSED 2026-09-05 (`66d8ea8d`).** `CadenceSectionConfigMerge.reorderSectionConfigs`
+  commits through `CadencePendingChangePersistence.commitEdit`, and `KanbanListSectionSupportViews`
+  shows the refusal.
+  **Filed as:** **The Kanban *column* reorder commits nothing either, one layer further in.**
+  `KanbanListSectionSupportViews.reorderSection` → `CadenceSectionConfigMerge.reorderSectionConfigs`
+  → `mutateSectionConfigs`, which merges, assigns `sectionConfigs` and returns. Dragging a column is
+  as visible a rearrangement as dragging a row, and this ordering is a **blob on the container**
+  rather than an `order` field — so the `\.order` sweep that found [[T-868]] and [[T-869]] cannot
+  find it, and neither will the next one. Check for other blob-stored orderings before assuming this
+  is the last. [[T-358]] is not a defence: last-writer-wins is about the *merge*, not about whether
+  the write is ever committed.
+
+- [T-869] **CLOSED 2026-09-05 (`66d8ea8d`).** `ListDetailComponents.reorderTask` and
+  `KanbanBoardSupport.reorder` (both column callers) now commit and report; a refused drop names
+  itself instead of relying on autosave.
+  **Filed as:** **Two reorders reach no commit at all, which is the worse half of the same audit.**
+  `ListDetailComponents.reorderTask` writes `t.order = i` across the list and stops;
+  `Cadence/macOS/Views/ListDetailComponents.swift` contains no `save()` and no persistence call
+  anywhere in it. The Kanban card drop is the same shape: `KanbanBoardSupport.reorder` renumbers and
+  returns, and neither caller — `KanbanListColumnView.moveTask`, `KanbanSectionColumnView.moveTask` —
+  commits. **`KanbanListColumnView.handleTaskDrop` then answers `true` over it**, which is already in
+  half 2's vocabulary; it is invisible only because there is no swallowed commit in the frame for the
+  detector to hang it on. Half 3 does not see them either — it fires on insert and delete, not on a
+  field write. So both rely on autosave, which is the thing [[T-327]] measured the cost of.
+
+- [T-868] **CLOSED 2026-09-05 (`66d8ea8d`).** `TasksPanelSupport.reorderTask` and
+  `SidebarComponents.reorderList` both commit through `CadenceOrderCommit` and set
+  `reorderFailureNotice` from `CadenceOrderCommit.failureNotice` — the sidebar got the notice
+  surface it lacked.
+  **Filed as:** **Two more reorders swallow the save that [[T-614]] just decided.**
+  `TasksPanelSupport.reorderTask` (`Cadence/macOS/Views/TasksPanelSupport.swift`) and
+  `SidebarComponents.reorderList` (`Cadence/macOS/Views/SidebarComponents.swift`) each renumber
+  `order` across a dragged list inside `withAnimation` and end in `try? modelContext.save()` —
+  character for character the shape `SettingsView.moveContext` had. **Deliberately not swept in with
+  T-614**, which was the decision plus one site; each of these wants its own failing-first test.
+  The fix shape is settled: `CadencePendingChangePersistence.commitEdit(in:undo:)` over a captured
+  `[Int]` of the previous orders, and the sentence where the user is already looking. Note the real
+  work is the second half — Settings had a notice surface to reuse and the sidebar has none.
+
+- [T-852] **CLOSED 2026-09-05 (`718890fb`).** `.github/workflows/ci.yml` carries a "Build
+  CadenceMCPServer (macOS)" job on its own scheme, and the header's stale "PROPOSAL / nothing runs
+  this" framing is gone.
+  **Filed as:** **Nothing has ever proved `CadenceMCPServer` compiles.** It uses an explicit Sources list,
+  so the app scheme cannot see it break, and it has been outside every green run of this project.
+  An outside audit confirmed its membership and schema check out but stated plainly it cannot
+  determine the target compiles without building it. Somebody must build it.
+
+- [T-851] **CLOSED 2026-09-05 (`6e4e57fc`).** `CadenceMilestoneWidgetSupport.recommendedReloadDate`
+  forwards to `CadenceWidgetReloadPolicy`, the rule its three siblings already share.
+  **Filed as:** **Milestone Momentum is the only widget whose reload calculation is unshared.** Its three
+  sibling support types already share one. Widgets ship inside the submitted binary, so a timeline
+  that never reloads is a shipped defect. Reuse a shared policy that accepts ready/empty intervals.
+
+- [T-846] **CLOSED 2026-09-05 (`90c9303d`).** `.notDetermined` now reads "Connect Apple Reminders";
+  `… access required` is reserved for a denial, matching Calendar and Notifications.
+  **Filed as:** **Reminders demands access before the user has chosen.** `.notDetermined` says "Reminders
+  access required" (`CadenceRemindersPresentationSupport.swift:91-97`), where Calendar and
+  Notifications correctly use a neutral `Connect …` offer and reserve `… access required` for after
+  a denial. Reachable on the first visit to Reminders settings. Give it the same two-title model.
+
+- [T-845] **CLOSED 2026-09-05 (`8d565eef`).** `MarkdownFormatCommandTitle.sentenceCase(for:)` is the
+  one table and both toolbars read it — `iOSMarkdownAccessoryViews` for the iOS accessibility title,
+  `MarkdownEditorToolbar` on the Mac.
+  **Filed as:** **The two Markdown editors disagree on capitalisation.** iOS says `Bulleted List`,
+  `Code Block`, `Note Link`; macOS VoiceOver says `Bulleted list`, `Code block`, `Note link`. The
+  shared vocabulary already exists at `MarkdownSlashCommandCoreSupport.swift:34-50`. Have the core
+  own sentence-case titles and both adapters read them — do not build a second case table.
+
+- [T-844] **CLOSED 2026-09-05 (`996eeb02`).** All four sites read
+  `CadencePluralization.phrase(_:singular:plural:)`; the helper is shared with the list-deletion and
+  note-action summaries.
+  **Filed as:** **Four count strings are ungrammatical at 1.** "1 selected tasks"
+  (`FocusLogSessionPopovers.swift:166`), "1 tasks" (`FocusSidebarSupportViews.swift:156`),
+  "Collapsed, 1 notes" (`CadenceNotesListSupport.swift:692`), "1 milestones / 1 habits"
+  (`iOSFeatureViews.swift:184-190`). One shared pluralisation helper; test 0, 1 and 2.
+
+- [T-843] **CLOSED 2026-09-05 (`ab6ef7b8`).** Seven shared Block constants sit beside
+  `TaskBundle.defaultDisplayTitle` (`shortLabel` among them) and all nine cited files carry no
+  `Bundle` UI literal; a comment-stripped source scan in `TaskBundleTests` now fails on a new one
+  outside the named technical exemptions.
+  **Filed as:** **"Block" has drifted back to "Bundle" in 11 live UI literals across 9 files.**
+  `TaskBundle.defaultDisplayTitle` says Block and iOS block creation agrees, but Focus and macOS
+  creation/edit/delete still say `Bundle`, `Bundle tasks`, `Bundle Focus`, `Log Bundle Session`,
+  `Bundle title`, `Delete Bundle?` and `Delete Bundle`: `CadenceFocusBundleSupport.swift:163`,
+  `iOSFocusView.swift:500`, `FocusChromeSupportViews.swift:120`,
+  `FocusBundleTaskSupportViews.swift:20`, `FocusLogSessionPopovers.swift:163`,
+  `FocusSidebarSupportViews.swift:155`, `QuickCreateChoicePopover.swift:248,355`,
+  `TimelineBundleBlock.swift:62`, `TimelineBundleBlockSupportViews.swift:71,203`. Reachable through
+  ordinary Block creation, editing and Focus. **[[T-567]] is closed and does not cover this** — it
+  centralised only the untitled fallback. Fix: shared user-facing Block vocabulary beside
+  `defaultDisplayTitle`, product words only (leave Settings' technical `Bundle ID` alone), plus a
+  source scan for `Bundle` in UI literals outside an explicit exemption.
+
+- [T-795] **CLOSED 2026-09-05 (`258f15f4`).** The ledger no longer names the five files `a3068e3`
+  had already cleaned (its desktop half asserts a count of zero), and the walk's macOS witness now
+  pins reach only, not offender-hood.
+  **Filed as:** **The icon-only-button suite is red on HEAD independent of T-674, for a reason worth
+  fixing before the next agent reads its output as a regression.** Measured 2026-09-04 against an
+  unmodified HEAD (`8bec9eb`) in an isolated `git archive` tree, twice: `CadenceIconOnlyButtonAccessibilityTests`
+  fails two different ways that are really one cause. First, its ledger still lists five files
+  [[T-673]]'s own commit (`a3068e3`) already cleaned —
+  `Sheets/CreateTaskSheet.swift`, `Views/GoalsSupportViews.swift`, `Views/HabitsSupportViews.swift`,
+  `Views/QuickCreateChoiceSupportViews.swift`, `Views/TasksPanelSupportViews.swift` — so
+  `theUnnamedIconButtonLedgerStatesHowManySitesEachFileStillHas` reports a stale ledger. Second, and
+  less obvious, `theIconOnlyButtonDetectorSeesABareGlyphAndLeavesALabelledOneAlone`'s own
+  non-vacuity witness for "the detector still reaches the desktop tree" is
+  `Views/TasksPanelSupportViews.swift` — the same file T-673 just named, now clean, so the fixture
+  no longer proves what its own comment claims. [[T-792]] tracks a *different* T-673 residue (the
+  raw `Text` beside two glyphs); this is the ledger/witness staleness itself, filed separately so it
+  does not get lost inside T-792's narrower scope.
+
+- [T-759] **CLOSED 2026-09-05 (`1b29d07b`).** Both zero-caller `SchedulingActions.createTask`
+  overloads are deleted — `SchedulingService.swift` declares no `createTask` at all now — and the
+  enumerating test was retitled with them; `6109adb` cleaned the three comments left pointing at
+  them.
+  **Filed as:** **Two `SchedulingActions.createTask` overloads no longer have an app caller.** Found while
+  landing [[T-655]] and deliberately left. `createTask(title:dateKey:startMin:endMin:in:)` had none
+  before that ticket; `createTask(title:…containerSelection:…in:)` lost its last one when
+  `CalDayColumn` moved to `insertTask`. Both are still reached from `TaskBundleTests`
+  (`noSchedulingEntryPointEverGivesATaskACalendarEventID` enumerates them as "scheduling entry
+  points"), so deleting them means deciding what that test is enumerating now — entry points the app
+  has, or entry points that exist. They are also what keeps the *name* `createTask` pending on
+  `SchedulingActions` in the commit index, which costs nothing today and would matter to the next
+  caller. The decision is delete-and-retitle-the-test, or keep-and-say-why in a doc comment; the
+  wrong answer is leaving two production functions with no production caller and no note.
+
+- [T-751] **CLOSED 2026-09-05 (`e826cac7`).** `CadenceOrphanRowInertnessTests` asserts the inertness
+  as an invariant: owner-less `GoalListLink`, `HabitCompletion` and `SavedLink` rows in a store, and
+  every surface that could show one showing nothing.
+  **Filed as:** **The thing that keeps [[T-623]] cheap is an accident, and nothing pins it.** [[T-623]] is
+  parked because a child row that outlives a list cascade is inert at every read site — but each of
+  those filters was written for an unrelated reason and none of them names partial deletion.
+  `GoalLinkPresentation.links(of:)` filters `area != nil || project != nil` to avoid a cosmetic
+  "Missing List" row; `GoalContributionSummary.swift:114` filters the same way to keep
+  `linkedListCount` honest; `CadenceReadService.swift:1144` mirrors it for the MCP DTO;
+  `DataIntegrityRepairService.repairDuplicateHabitCompletions` skips a habit-less completion only
+  because it groups by `habit.id`; `LinksView` and `iOSListSupportViews` filter saved links by owner
+  id because that is how a per-list panel is built at all.
+  Remove any one of them for a good local reason and [[T-623]] silently becomes a visible-corruption
+  bug — a "Missing List" contributor inside a goal's percentage, a phantom saved link — with no test
+  going red and a parked ticket saying it does not matter.
+  The ask is one suite that asserts the inertness *as the invariant it now is*: an owner-less
+  `GoalListLink`, `HabitCompletion` and `SavedLink` in a store, and every surface that could show
+  one showing nothing. Same shape as `CadenceInMemoryStoreHygieneTests` — the property is already
+  true, and the test is what stops it quietly stopping.
+
+- [T-738] **CLOSED 2026-09-05 (`df8537e8`).** `applySectionEdits` has one caller left, the commit
+  point, so a ten-character rename rewrites `sectionConfigsRaw` once instead of ten times.
+  **Filed as:** **Every keystroke of a column rename rewrites the container's whole section blob.** Noticed
+  while reading for [[T-713]]. `applySectionEdits` runs per character and calls
+  `applySectionConfigEdits`, which assigns `sectionConfigs = merged(...)` **unconditionally** — unlike
+  `mutateSectionConfigs`, which guards on `merged != current`. The guard would not help here anyway,
+  since each keystroke genuinely is a change.
+  So renaming a column to a ten-character name rewrites `sectionConfigsRaw` ten times and dirties the
+  `Area`/`Project` ten times, and each is a CloudKit record push. [[T-645]] chose the per-keystroke
+  *write* deliberately, so the board's header tracks the field; nothing about that choice required the
+  write to reach the persisted blob every time. Candidate: keep the header on the field's own value
+  and let the blob take the name at the commit point, which is where the cards go since [[T-713]].
+  **Not measured.** No CloudKit traffic was observed; this is read off the two write paths.
+
+- [T-737] **CLOSED 2026-09-05 (`9753cb25`).** Dissolved by T-736/T-738 rather than patched — no
+  keystroke advances the config any more — and pinned structurally by
+  `archiveAndCompletionNeverReadTheRenameDraft`, which requires neither lifecycle route to read
+  `editorName`.
+  **Filed as:** **The editor's Archive and Mark-Completed settle on the *config's* name, so pressed
+  mid-rename they settle nothing.** Same family as [[T-713]] and **not** introduced by it — the
+  config's name has advanced per keystroke since [[T-645]].
+  `TaskContainerLifecycleService.tasks(in:area:project:)` filters on
+  `resolvedSectionName.caseInsensitiveCompare(section.name)`, and `toggleSectionArchive` /
+  `saveSection` both hand it `section` — the live config. Type two characters into the name field and
+  press Archive without committing: the flag flips and `cancelRemainingActiveTasks` walks a name no
+  card carries, so the column archives with its stack untouched. `editSnapshot(settling:)` takes the
+  same walk, so the undo for a refused commit snapshots zero cards as well.
+  Whether it is reachable in practice turns on the open question in [[T-714]] — whether pressing a
+  button in a macOS popover moves focus off the `TextField` and fires `onNameCommitted` first. That
+  is still unverified by observation, so this is real until someone looks.
+  [[T-713]] gave the column a `filedCardName` for exactly this question; the fix is probably to hand
+  the lifecycle walk a config wearing that name. Not folded in because it is the completion and
+  archive paths, which four suites pin.
+
+- [T-736] **CLOSED 2026-09-05 (`df8537e8`).** `onNameChanged` is gone: the name field's
+  per-character effect is its own binding, the header takes a `displayName` string, and the blob
+  (and the card grouping with it) moves only at the commit point, so the column keeps its stack
+  while a name is typed.
+  **Filed as:** **A column being renamed draws as empty until the rename commits.** Filed while landing
+  [[T-713]], and it is the visible cost of the decision that ticket took rather than a defect in it.
+  `KanbanListSectionSupportViews.sortedTasksForSection` groups the board by
+  `resolvedSectionName.caseInsensitiveCompare(section.name)`, and [[T-645]] writes the *config's*
+  name on every keystroke while [[T-713]] moves the *cards* only at the commit point — so from the
+  first character until Return or focus leaving the field, the column the user is typing into has no
+  cards in it. They come back on the commit.
+  This is strictly better than what it replaced: before [[T-713]] the column also emptied, from the
+  second keystroke, and **never** refilled, because the cards were stranded on a name no column had.
+  Transient is not free, though, and the fix is not "move sooner" — that is the bug. Candidates: group
+  the board by the column's `uuid`-stable identity for the duration of an open editor, or have the
+  editor publish the name the cards are still under so the column can draw them.
+  **Not observed.** Reasoned from the two call sites; nobody has watched a rename being typed.
+
+- [T-729] **CLOSED 2026-09-05 (`de9313e3`).** The rotated label's frame width reads
+  `CadenceBoardColumnHeaderMetrics.labelLineHeight` — the platform's own line height — instead of
+  `labelSize`.
+  **Filed as:** **The collapsed rail's slot width is derived from the wrong figure.** It is
+  `.frame(width: CadenceBoardColumnHeaderMetrics.labelSize)` — the **point size, 10** — while the
+  rotated line is **13pt tall**, so the glyph run overhangs the frame about 1.5pt each side. Harmless
+  at today's 60pt rail and not a visible defect; wrong as a derivation, because a font's line height is
+  not its point size and the two only coincide by accident. Found while measuring [[T-496]].
+
+- [T-728] **CLOSED 2026-09-05 (`de9313e3`).** `labelFitsTheCollapsedRailSlot` measures the rotated
+  run and asserts it against `collapsedRailLabelSlotHeight` with headroom, so an overhang rotation
+  cannot fail in layout now fails a test.
+  **Filed as:** **The collapsed rail's slot has no asserted relationship to the label it holds.**
+  `collapsedRailLabelSlotHeight = 96` is a constant; the rotated `UNSCHEDULED` run measures **88pt at
+  the loosest [[T-496]] candidate** (83 at the tightest). Measured 2026-09-02.
+  **The reason this needs a test rather than a comment: rotation is a render transform, so an overhang
+  cannot fail layout.** A longer rail name, a heavier weight or a tracking change would push the run
+  past the slot and nothing would go red — it would simply draw over its neighbour. A macOS test can
+  measure the advance (`NSAttributedString.size()` and `ImageRenderer` agreed exactly today) and assert
+  it against the constant with real headroom.
+
+- [T-714] **CLOSED 2026-09-05 (`df8537e8`).** With the rename now draft state, `.onDisappear`
+  commits it through `commitEditsOnDismiss`, guarded by
+  `KanbanSectionStateSupport.hasUncommittedRename` so a success cannot wipe a refusal the column
+  header is about to take over.
+  **Filed as:** **A refused column rename still has one path with nowhere to appear.**
+  Residue from [[T-645]], same family as [[T-646]]. The rename now commits at `onSubmit`, at the name
+  field losing focus, and from every other control in the popover — all while the popover is up. The
+  path left is: type a name, then dismiss the popover without touching anything else. The edit is not
+  lost (one `ModelContext`, so the next commit anywhere takes it), but a refusal at that moment has no
+  surface, which is the shape [[T-646]] was about.
+  Two candidate answers, both real work: make the dismissal itself a commit that can refuse to close,
+  or route the flush's notice to the column header the way [[T-646]] routes the commit ones — that
+  second one is nearly free now, but `CadenceInPlaceEditFlush.failureNotice` ("They're still here")
+  reads oddly on a column rather than beside the field it is about.
+  **Also unverified by observation:** the focus-loss trigger is a `@FocusState` `onChange`, and
+  whether clicking a colour swatch in a macOS popover actually moves focus off the `TextField` was
+  reasoned, not seen. `onSubmit` covers Return regardless, and every other control commits, so the
+  worst case is that this path is wider than described.
+
+- [T-709] **CLOSED 2026-09-05 (`0185752f`).** `scannedPaths()` walks `.yml`/`.yaml` and
+  `yamlRunBlocks(_:)` extracts only `run:` steps (inline and block-scalar), pinned by
+  `theWalkAndTheParserReachGitHubWorkflowRunSteps` plus a non-vacuity check against the real
+  `ci.yml`.
+  **Filed as:** **`CadenceBuildInvocationHygieneTests` sweeps `.md` and `.sh`, and CI is `.yml`.**
+  **Closed 2026-09-04 in `0185752f`.** From [[T-535]]. `scannedPaths()` appended a file only when it
+  `hasSuffix(".md")` or `hasSuffix(".sh")`, so `.github/workflows/*.yml` sat outside the walk entirely
+  — and those files contain `xcodebuild` invocations. **There was no live offender**: every invocation
+  in `ci.yml` goes through `scripts/xcb.sh`, which supplies a private `-derivedDataPath` itself. The
+  gap was that nothing would have noticed a future workflow step calling `xcodebuild` directly.
+  `scannedPaths()` now also walks `.yml`/`.yaml`, and `shellText(at:)` grew the third branch the
+  ticket named: a new `yamlRunBlocks(_:)` extracts a workflow's `run:` steps -- both the inline form
+  and the block-scalar (`run: |`) form this repository's own `ci.yml` is written in -- rather than
+  reading the whole YAML document, so sibling keys such as `if:` or `uses:` are never misread as
+  shell. Pinned with `theWalkAndTheParserReachGitHubWorkflowRunSteps`, a fixture mirroring `ci.yml`'s
+  own shape (comment line inside a block scalar, an `if: >-` sibling key, an inline `run:`), plus a
+  non-vacuity check that `.github/workflows/ci.yml` itself extracts to shell text containing
+  `xcb.sh` and none of `runs-on:`. Two mutations killed 2/2 against `scripts/mutate.sh`: reverting the
+  `.yml`/`.yaml` suffix, and short-circuiting `yamlRunBlocks` to return the raw document unfiltered.
+
+- [T-705] **CLOSED 2026-09-05 (`d04c0d33`).** `scripts/prune-shared-derived-data.sh` audits and
+  prunes orphaned `Cadence-*` DerivedData entries by `WorkspacePath` and by the reproduced base-26
+  project-path hash, with `lsof +D` an unconditional veto.
+  **Filed as:** **Nothing prunes an orphaned shared-DerivedData entry, and the judgement [[T-517]] said no
+  script should make unattended is now mechanical.** **Closed 2026-09-04 in `d04c0d33`.** T-517
+  declined to automate the cleanup because "one of the fourteen is the user's own Xcode entry" and
+  telling them apart needed a human. Two discriminators now do it without one. **The cheap one:** an
+  entry that has an `info.plist` carries `WorkspacePath`, so it is an orphan exactly when that path
+  does not exist — no hashing required. **The one for entries with no `info.plist`**: Xcode's
+  directory suffix is MD5 of the absolute project path, split into two big-endian `UInt64`s, each
+  rendered as 14 base-26 letters, most-significant first (that ordering, not the reverse, is what
+  reproduces this machine's own known-live hash — checked again every run, not just once). Hash
+  every `Cadence.xcodeproj` that exists and an entry matching none of them is unattributable to any
+  live tree. Both were positively controlled against the known-live entry before being trusted for
+  anything else, same as T-517 did by hand.
+  **Landed as `scripts/prune-shared-derived-data.sh`, a new script, not a change to
+  `scripts/xcb.sh`** — that file had a live sibling owning it this batch too, and the pruner does not
+  need to live there. `audit` (read-only, the default) and `prune` share one classifier;
+  `selftest` proves it against synthetic fixtures in a scratch directory, including the case the
+  hard rule below exists for: an entry a live `tail -f` holds open is reported LIVE and survives a
+  prune pass regardless of what the two discriminators would otherwise have said. **The absolute
+  rule, unconditionally checked before every deletion:** `lsof +D` on the entry; a live handle wins
+  over both discriminators, no exceptions. Run for real on this machine: 6 orphaned `Cadence-*`
+  entries (no `info.plist`, hash matching none of 14-18 `Cadence.xcodeproj` trees actually present —
+  the exact `Logs/`+`SourcePackages/`, no `Build/Products` signature T-517 found by hand) removed,
+  129M each, 774M total; the one entry a live Xcode (pid 76700) held open throughout was correctly
+  skipped every time, never deleted.
+
+- [T-704] **CLOSED 2026-09-05 (`95d1cce9`).** Reproduced both directions on one machine at full
+  target size (4384 tests unfixed -> 17 `inMemory_store_ckAssets` directories; 4391 fixed -> zero),
+  so `cloudKitDatabase: .none` in `CadenceTestStoreSupport` is confirmed as the fix rather than the
+  last thing changed.
+  **Filed as:** **[[T-560]]'s leak was cleaned and its mechanism closed, but never reproduced — so it is not
+  known to be fixed.** **Closed 2026-09-05.** Two earlier instrumented runs on 2026-09-02 (21 tests,
+  19 of them building and saving through an in-memory `ModelContainer` in the *unfixed* shape, plus a
+  third of 40 tests after the fix) created zero `<app container>/tmp/<UUID>/inMemory_store_ckAssets`
+  directories, leaving genuine doubt about whether `cloudKitDatabase` was the real gate.
+  **Reproduced this time, both directions, back to back on the same machine:** `CadenceTestStoreSupport.swift`'s
+  one line reverted to the unfixed spelling (`ModelConfiguration(isStoredInMemoryOnly: true)`, no
+  `cloudKitDatabase: .none`) in a scratch `git archive HEAD` tree, then the *entire* `CadenceTests`
+  target run through it rather than a 21-test slice — 4384 tests. Container tmp held 9 entries and
+  zero `inMemory_store_ckAssets` directories before; 26 entries and **17**, all empty, after, every one
+  timestamped inside the run's own window. Purged those 17, then ran the unmodified (fixed) tree
+  through the identical `-only-testing:CadenceTests` invocation immediately after: 4391 tests, and the
+  container held its original 9 entries and zero `inMemory_store_ckAssets` afterward. Same machine,
+  same test-host, run back to back within the hour -- the only variable was the one line. The earlier
+  nulls were not a false negative about the mechanism; they were too small a sample; a batch of 21
+  apparently is not enough to reliably trip whatever inside SwiftData's CloudKit mirroring setup takes
+  more than that to initialise, and 4384 reliably is. `cloudKitDatabase: .none` is confirmed as the
+  fix, not merely the last thing changed before the residue stopped appearing.
+
+- [T-697] **CLOSED 2026-09-05 (`4e7aa8a4`).** The iOS subtitle names the other two readers: "Ready
+  to Schedule and the day timeline's opening hour use this window every day."
+  **Filed as:** **"Workday boundary" decides more than the band, and Settings mentions only the band.** The two
+  `calendar.workHours.*.v1` keys also feed `CadenceScheduleSupport.readyScheduleSlots` — the "Ready to
+  Schedule" chips on iPad's Timeline pane (`iOSTodaySchedulePanel.readyScheduleContext`) propose start
+  times inside the work window and leave it only when the window is full — and
+  `CadenceScheduleSupport.initialTimelineHour`, the hour a non-today calendar column opens at
+  (`iOSCalendarTimelineViews.swift:470`). Both are iOS-only today, and iOS is the surface with the
+  *shorter* subtitle: a user narrowing the window to move where suggestions land has nothing on the
+  settings row that says the control does that. Found while making the macOS sentence true in [[T-544]].
+
+- [T-696] **CLOSED 2026-09-05 (`4e7aa8a4`).** Both subtitles say "on weekdays" now —
+  `SettingsCalendarWorkHoursSection` and `iOSCalendarSettingsSection`.
+  **Filed as:** **Both work-hours subtitles describe a band that is not drawn two days a week.**
+  `CalendarWorkHoursPreferences.shouldShowHighlight(on:)` is `!calendar.isDateInWeekend(date)`, and both
+  `TimelineDayCanvas` and `iOSCalendarTimelineViews.workHoursBand` gate on it — so a Saturday or Sunday
+  column carries no amber band at all. macOS now says "Calendar and Timeline day columns gently highlight
+  9:00 AM – 5:00 PM." and iOS "Calendar day columns gently highlight …"; both read as unconditional.
+  Left out of [[T-544]] deliberately: [[T-524]]'s `bothWorkHoursRowsReadOneWorkdayBoundaryTitle` pins the
+  shared tail `gently highlight \(workHoursLabel).` on **both** surfaces, so adding "on weekdays" changes
+  two sentences and that pin — a second copy decision rather than the correction T-544 was. The behaviour
+  is pinned meanwhile by `CadenceSettingsSectionCopyTests.theWorkHoursBandIsSuppressedAtTheWeekendOnBothSurfaces`.
+
+- [T-695] **CLOSED 2026-09-05 (`4e7aa8a4`).** `CadenceListSettingsCopy.noContextSubtitle` is the one
+  name, read by the area branch of both `SettingsListManagementSections.lifecycleCard` and
+  `iOSSettingsTemplateAndListSections.lifecycleCard` — deliberately a constant rather than
+  `parentSubtitle`, whose wording an area row must not inherit.
+  **Filed as:** **The area lifecycle row's `"No context"` fallback is the project row's un-converged twin.**
+  `SettingsListManagementSections.lifecycleCard` and `iOSSettingsTemplateAndListSections.lifecycleCard`
+  each write `subtitle: area.context?.name ?? "No context"` inline, byte-identical, a dozen lines above
+  the *project* branch that reads the shared `CadenceListSettingsCopy.parentSubtitle(contextName:areaName:)`
+  — [[T-577]] converged the project half of that row and left the area half at both call sites. The sweep
+  cannot see it either: `"No context"` is **10 characters**, under `cadenceSharedStringConstants`'
+  twelve-character floor, so however many surfaces spell it the reuse sweep catches none of them —
+  `CadenceReadService` (4 sites), `iOSFeatureComponents.swift:452` and both settings cards spell it today.
+  Same shape as `CadenceTitleNormalization.defaultCompactTitle`, which the placeholder ledger unions in
+  by hand for exactly this reason. Found while hoisting [[T-546]]'s six section labels out of those two
+  functions.
+
+- [T-692] **CLOSED 2026-09-05 (`4e7aa8a4`).** `CadenceCalendarPicker` falls back to
+  `CadenceAppleCalendarNaming.unnamedAccountTitle` for the same absence Settings does; "Other" is
+  left as the grouping bucket only.
+  **Filed as:** **`calendar.source?.title` answers two different things on the same platform.** Settings →
+  Calendar falls back to `CadenceAppleCalendarNaming.unnamedAccountTitle` ("Apple Calendar") when a
+  calendar's account has no name; `Cadence/macOS/CadenceCalendarPicker.swift:31` reads the *same*
+  `cal.source?.title` for the *same* absence and falls back to `"Other"`, which is also the label it
+  groups those calendars under. So the Mac tells a user "Apple Calendar" on one screen and "Other" on
+  another about one fact. [[T-547]] split the concepts and hoisted each; it deliberately did **not**
+  decide this, because "Other" is a grouping bucket as well as a fallback and collapsing the two is a
+  copy decision. Under the sweep's 12-character floor, so nothing will find it again by machine.
+
+- [T-675] **CLOSED 2026-09-05 (`782a702d`).** Decision taken — 0.35 for all of them.
+  `CadenceFieldDivider` and the Goal Timeline rail's three row rules read `Theme.rowSeparator`;
+  `CadenceRowSeparatorConvergenceTests` pins each declaration and names why the other `borderSubtle`
+  hairlines are a different job.
+  **Filed as:** **The app has three row-separator weights and only one of them is named.** Found while
+  closing [[T-618]], which named the 0.35 one as `Theme.rowSeparator` over four agreeing sites. The
+  other two are in `Cadence/macOS/Views/GoalTimelineSupportViews.swift`: a goal row's bottom rule
+  `:252` and a bar's bottom edge `:113` draw `Theme.borderSubtle.opacity(0.55)`, while three 1pt
+  rules doing the same job — `:85`, `:213`, and the iOS row `iOSListSupportViews.swift:10` documents
+  as the same idiom — draw plain `Theme.borderSubtle`. So one file draws two of the three weights,
+  eleven lines apart in one case.
+  **This is a decision, not a hoist**, which is why T-618 stopped at the four that agreed. 0.35, 0.55
+  and 1.0 over the same near-black border on the same surface are three visibly different rules
+  between two rows; picking one is a look at the screen, and a mechanical sweep onto
+  `Theme.rowSeparator` would be exactly the unreviewed visual change T-617 and T-618 both refused.
+  Decide the weight, then name the survivors on `Theme` beside `rowSeparator` and `rule`.
+
 - [T-974] **CLOSED 2026-09-04 (`c1cc8c27`).** The race was **reproduced before it was fixed**, not
   inferred: a fixture repository plus an interception that lands a sibling commit exactly at
   `write-tree` produced the measured failure verbatim — exit 0, the commit parented on the sibling's
