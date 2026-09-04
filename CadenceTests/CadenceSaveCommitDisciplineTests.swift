@@ -1360,8 +1360,9 @@ enum CadenceSaveCommitRule {
             "body", "noteTagsBinding", "persistEditorContentIfNeeded",
         ],
         // [[T-636]](e) and [[T-655]] emptied the three canvas entries that used to sit here.
-        // `SchedulingActions.createTask`/`createBundle` insert into a context they were handed and
-        // commit nothing — correctly — and `SchedulePanel.body`, `CalDayColumn.body` and
+        // `SchedulingActions.createBundle` inserts into a context it was handed and commits
+        // nothing — correctly. Its `createTask` sibling was deleted outright by [[T-759]], having
+        // had no production caller left. `SchedulePanel.body`, `CalDayColumn.body` and
         // `TimelineDayCanvas.body` each committed nothing either. All three own their unit of work
         // now, through `SchedulingActions.insertTask` / `insertBundle`, and each names its refusal
         // in an alert. **The siblings stayed** rather than growing a commit: the index vouches for

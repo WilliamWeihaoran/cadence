@@ -547,6 +547,7 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Services/MarkdownLineBreakSupport.swift `MarkdownListSupport.continuation`",
         "Cadence/Services/MarkdownNoteSupport.swift `NoteEditorPane.syncTitleFromH1IfNeeded`",
         "Cadence/Services/MarkdownTaskEmbedSupport.swift `CadenceTextView.legacyChecklistMarkerHit`",
+        "Cadence/Services/TaskCreationService.swift `SchedulingActions.createTask`",
         "Cadence/Shared/CadenceColorPalette.swift `ColorGrid.colors`",
         "Cadence/Shared/Components/CadenceFieldRows.swift `SettingsAISection.settingsField`",
         "Cadence/Shared/Components/CadenceFieldRows.swift `SidebarTabEditorSheet.settingsPanelRow`",
@@ -554,6 +555,7 @@ enum CadenceCommentSymbolClaim {
         "Cadence/iOS/iOSCalendarMetrics.swift `CadencePageHeaderMetrics.iconSize`",
         "Cadence/iOS/iOSListNotesView.swift `CadenceListNoteSupport.firstOrCreateNote`",
         "Cadence/iOS/iOSSchedulePanelCopy.swift `CadenceTodayPresentationSupport.emptyScheduleHint`",
+        "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift `SchedulingActions.createTask`",
         "Cadence/macOS/Views/SettingsSupportViews.swift `SidebarTabEditorSheet.settingsPanelRow`",
         "Cadence/macOS/Views/SettingsTemplatesSection.swift `SettingsAISection.settingsField`",
         "Cadence/macOS/Views/TasksPanelSupport.swift `TasksPanel.taskSections`",
@@ -594,7 +596,7 @@ enum CadenceCommentSymbolClaim {
         #expect(Set(tombstones).isDisjoint(with: Set(stale)))
         #expect(tombstones == tombstones.sorted())
         #expect(stale == stale.sorted())
-        #expect(tombstones.count == 30)
+        #expect(tombstones.count == 32)
         #expect(stale.count == 0)
     }
 

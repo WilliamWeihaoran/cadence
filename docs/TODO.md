@@ -43,6 +43,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-885] **A kanban column can be created, drawn, and gone at next launch.**
+  `ListSectionsKanbanView.addSection` calls `container.addSectionConfig(...)` at
+  `KanbanListSectionSupportViews.swift:157` and **no `save()` exists anywhere in that file**. Same
+  family as [[T-870]] — a `mutateSectionConfigs` blob write reaching no commit — but on a *creation*
+  rather than a reorder, which is worse: the user names a column, sees it appear, and loses it. Found
+  by r3 while fixing the reorder paths and deliberately left alone under that ticket's scope rule.
+- [T-884] **The two row-drop surfaces disagree about which sequence a drag rewrites.**
+  `TasksPanelSupport.reorderTask` sorts `scopeTasks` by `order` and renumbers that;
+  `ListTasksView.reorderTask` renumbers the *displayed* order — the tab's active sort plus its hover
+  freeze. Under a non-`order` sort the same gesture means different things on Today/All Tasks than on
+  a list's Tasks tab. Both semantics were preserved exactly as found while [[T-869]] made them
+  commit. **This is a judgement call about what a drag under a date sort should mean**, and needs
+  deciding rather than harmonising by whichever is easier.
+- [T-881] **`CadenceTaskStatusEditing`'s catch-and-record path is pinned only by source-text ordering.**
+  All three entry points document "nothing is reconciled on the failure path", asserted by
+  `body.range(of:)` string ordering in `CadenceTaskStatusLifecycleSurfaceTests`. Driving it
+  behaviourally needs the wrapper to forward a `commit:` closure to the shared helper, the way
+  `CadenceFocusPlanningSupport.complete` already does. **That is a production signature change made
+  for testability** — worth deciding deliberately rather than inside a coverage batch.
+- [T-882] **Correct the record on the seven-file coverage audit.** R24 in `docs/CODEX_REQUESTS.md`
+  named seven shared files that iOS depends on and "neither macOS nor any test reaches". Measured by
+  r2 on 2026-09-04: **six of the seven have dedicated behavioural suites** —
+  `CadenceCapturePaletteSupport` alone has 115 mentions across 10 of its 11 types and a 967-line
+  suite. The proxy was static type-name matching, which measured the wrong thing. The one file with
+  zero mentions, `CadenceWrappingHStack`, is untestable by construction ([[T-883]]). **The audit's
+  real value was elsewhere:** it pointed at files whose *covered* status hid live holes — see
+  [[T-879]] and [[T-880]].
+- [T-883] **`CadenceWrappingHStack` is untestable by construction, and a census will keep flagging it.**
+  `Layout.Subviews` has no public initialiser; all its arithmetic is delegated to
+  `CadenceFlowLayoutSupport`, which has its own 12-test suite covering the empty and single-item
+  cases; its only own logic is a private `itemSizes` clamp unreachable from a unit test. Five iOS
+  files use it, so it is not dead. Record it as an adapter with no seam so the next "untested file"
+  sweep does not re-derive this.
+
 - [T-873] **The sweep-manifest regenerator only works when regeneration is unnecessary.**
   `scripts/real-tree-sweep-manifest.sh <id> --write` prints its `BEGIN`/`END` banners with **nothing
   between them** when `theRealTreeSweepManifestIsExactlyWhatTheScanFinds` fails — which is the only
