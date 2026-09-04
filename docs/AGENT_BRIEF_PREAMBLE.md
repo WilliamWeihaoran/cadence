@@ -14,7 +14,20 @@ Open a whole file only when you are editing it. Never read `docs/TODO.md` or `do
 
 ## Loop less
 
-**Block inside one Bash call; never end your turn waiting.** Four agents have lost round-trips to this.
+**The scratchpad is shared by every agent in the batch. Namespace your files.** Put everything under
+`<scratchpad>/<your-agent-id>/` and prefix log and plan names with your id. An agent using generic
+names — `plan.txt`, `mut.log`, `tree` — has already collided with a sibling mid-mutation-run and had
+to terminate a runner to recover. Same for build ids: `xcb.sh <your-id>`, never a shared word.
+
+**Build in a `git archive HEAD` tree, not the working tree, whenever siblings are in flight.** The
+shared checkout routinely will not compile because another agent is mid-edit in a file you do not
+own. Two agents this batch hit 48 and 2 compile errors that were not theirs. Copy your own files over
+an archive of HEAD and build that.
+
+**Block inside one Bash call; never end your turn waiting.** Ending a turn does not pause you — it
+**stops** you, until a human notices and sends a message. There is no notification that resumes you.
+Seven agents have now stalled this way, several while explaining that they were being considerate of
+a sibling's in-flight work. Waiting politely and dying are the same thing here.
 
     for i in $(seq 1 30); do pgrep -f '<runner>' >/dev/null || break; /bin/sleep 20; done; cat <log>
 

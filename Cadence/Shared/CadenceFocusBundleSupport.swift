@@ -248,8 +248,9 @@ extension CadenceFocusSupport {
     /// list of freshly-inserted models `commitInsert` could delete. Routing the actual commit
     /// through `CadencePendingChangePersistence` rather than calling `commit(modelContext)` inline
     /// also keeps this reachable by `AGENTS.md`'s "the `try? save()` rule" scan, which recognizes a
-    /// commit by name (`.save()` or `CadencePendingChangePersistence.commit…`) and cannot see
-    /// through a bare call to a parameter.
+    /// commit by name -- `.save()`, or one of `CadencePendingChangePersistence`'s commit helpers
+    /// such as `CadencePendingChangePersistence.commitEdit(in:commit:_:)` -- and cannot see through
+    /// a bare call to a parameter.
     ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     static func distributeMinutes(

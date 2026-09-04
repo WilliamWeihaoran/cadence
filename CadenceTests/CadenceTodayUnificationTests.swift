@@ -320,8 +320,13 @@ struct CadenceTodayUnificationTests {
 
         for owner in ["MacTaskRow", "MacTaskRowEstimateChip"] {
             let body = try declarationBody(of: owner, in: "Cadence/macOS/Views/TasksPanelComponents.swift")
+            // The rule is about *observation*, not about the identifier. `@Environment(...)` on a
+            // row re-renders it on every display-link tick; a `.shared` call inside a button action
+            // observes nothing and costs nothing. T-654 added exactly that -- a refused focus start
+            // reporting through the one app-wide settle alert -- and this pin failed it for using
+            // the word. Pin what the constraint means.
             #expect(
-                !body.contains("TaskCompletionAnimationManager"),
+                !body.contains("@Environment(TaskCompletionAnimationManager.self)"),
                 "\(owner) observes TaskCompletionAnimationManager — every visible row will re-render on animation ticks"
             )
         }
