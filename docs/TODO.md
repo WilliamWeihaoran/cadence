@@ -236,6 +236,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   what `iOSTrackingEditorComponents.swift`'s picker announces on the phone, a real screen's
   behaviour and not a call to make in passing while fixing an unrelated file.
 
+- [T-935] **Seven private helpers wrap `Button` around a bare `Image(systemName:)` with a
+  required name parameter, and none of them know about the other six.** Found while closing
+  [[T-791]], which pinned the population (`CadenceIconOnlyHelperIdiomDuplicationTests`) rather than
+  hoisting it: `HabitsFormSupportViews.stepButton`, `GoalTimelineView.timelineNavButton`,
+  `SettingsSupportViews.actionButton`, `FocusBundleTaskSupportViews.focusRowIconButton`,
+  `TimelineBundleBlockSupportViews.rowIconButton`, `TaskInspectorContentSupportViews.iconButton`
+  and `SettingsTagsSection.rowButton` — plus `ListEditorSupportViews.ListEditorIconCell`, the same
+  idiom as a `struct`. Every one already requires a name and draws the same three lines
+  (`Button(action:) { Image(systemName:)…} .buttonStyle(…) .cadenceControlLabel(…)`), which is
+  exactly the shape [[T-672]] hoisted into `CadenceSearchFieldClearButton`. Not attempted here: a
+  shared component would need to reconcile at least four drifted details across the eight call
+  sites (frame size — 22 to 32pt; background — plain, `Theme.surface`, `Theme.surfaceElevated`, or
+  none; corner radius — 6 to 8pt with two different `RoundedRectangle` styles; an optional
+  `isDisabled` three take and five do not, and a customisable tint five take — two of them
+  required, the other three defaulted to `Theme.dim` — while three hardcode their own colour
+  instead), which is the same "parameter list to design" judgement call [[T-790]] declined for
+  the search row, not a mechanical duplication removal.
+
 - [T-792] **A goal's linked-list and task-contributor rows now announce a normalised title;
   the visible `Text` beside them still reads it raw.** Found while landing [[T-673]] and
   deliberately left — fixing it would have been a copy change to a display the ticket was not
