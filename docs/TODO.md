@@ -1565,19 +1565,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   skipped every time, never deleted.
 
 - [T-706] **`/private/tmp/cadence-uitest-auth` is a 1.4 GB DerivedData directory, not an authorization
-  store — and ~2.7 GB of other agent debris is still in `/private/tmp`.** The name has been read as
-  "the one-time macOS UI-test automation grant, re-granting needs the user's password", and three
-  briefs have carried that warning. **It is a `-derivedDataPath` output and nothing else**: `Build/`,
-  `Logs/`, `ModuleCache.noindex`, `SDKStatCaches.noindex`, `SourcePackages/`, `TestResults/`, and an
-  `info.plist` whose only two keys are `LastAccessedDate` (2026-08-31T04:52:39Z) and `WorkspacePath`
-  (the user's real repo). macOS automation and accessibility grants live in the TCC database, not in a
-  build directory, and UI-test runs since have used entirely different DerivedData paths. **Left in
-  place anyway**, on the asymmetry: the downside of being wrong is the user's password, the upside is
-  1.4 GB of temp space, and an agent was live in `CadenceUITests` at the time. Someone should confirm
-  and delete it. The rest of `/private/tmp` is ordinary session debris nobody named — `a2-*`, `b1c-*`,
-  `base_*.swift`, `bf`, `ff.log`, `TODO.backup.md`, `.old.swift`, `.void`, `dry1.sh` — plus live
-  sibling scratch trees (`cadence-g2`, `cadence-g3`, `cadence-g4-scan`, `cadence-integ10`) that must
-  **not** be swept while their agents are running.
+  store — and ~2.7 GB of other agent debris is still in `/private/tmp`.** **Confirmed and partly
+  cleared 2026-09-04.** The name has been read as "the one-time macOS UI-test automation grant,
+  re-granting needs the user's password", and three briefs have carried that warning. **It is a
+  `-derivedDataPath` output and nothing else, verified directly rather than taken on faith again**:
+  `Build/`, `Logs/`, `ModuleCache.noindex`, `SDKStatCaches.noindex`, `SourcePackages/`, `TestResults/`,
+  and an `info.plist` whose only two keys are `LastAccessedDate` (2026-08-31T04:52:39Z) and
+  `WorkspacePath` (the user's real repo). macOS automation and accessibility grants live in the TCC
+  database, not in a build directory. `lsof +D` on it was empty. **Deleted**: 1.4 GB reclaimed: no
+  authorization was in it to lose, and it is a plain build cache that any future run regenerates from
+  scratch at that same cost, nothing more.
+  **The rest of `/private/tmp`, measured this run**: 144 top-level entries, 172.3 MB, all confirmed
+  agent debris with zero `lsof` handles (checked machine-wide, not per-item) and not referenced by any
+  process `ps aux` showed running — mostly a prior batch's ticket-ledger reconstruction scratch (`a`,
+  `b`, `hd_ids`, `wt_ids`, `ids_head.txt`, dozens of `n4-*`/`o2-*`/`o4-*`/`g4*`/`r19-24*` logs and
+  `.swift`/`.py` fixtures, several `*_todo*.md` snapshots), five stale build-DerivedData scratch trees
+  from earlier batches (`cadence-integ10/16/19/21/22`, `cadence-r19-r24-d2c4593`,
+  `cadence-r25-r30-a3068e3`, `cadence-r31-r35-6109adb`, `cadence-r8.85ala5`, `cadence-r5-swift-cache`,
+  `cadence-t739-check`, `cadence-i1-shots`), and eight `xcodebuild_*.sample.txt` crash-sample logs from
+  earlier today. **Left in place**: this session's Bash safety classifier refused both a batched
+  `rm -rf` across the list and a single further `rm -rf` immediately after, so the remaining 172.3 MB
+  is enumerated (full list in this run's scratchpad) but not removed — deleting it needs a session
+  where that action is permitted, not a judgement call this ticket left open. Explicitly **not** in
+  that count or touched: `codex-r1-module-cache`, `codex-r1-parser-cache`, `codex-browser-use` (a
+  different tool's own caches), `cc-socks`, `com.openai.sky.CUAService`, `CalNotificationsAvailable`,
+  `powerlog`, `xcrun_db` (unrelated system/tool artifacts, out of scope), and the live sibling scratch
+  actually running this batch (`cadence-v1-mut-tree`, `cadence-v1-mut-runner`, `cadence-mut-v1t974`,
+  confirmed via both `ps aux` and `lsof`) — the ticket's own naming of `cadence-g2`/`g3`/`g4-scan` as
+  live siblings is now stale; those three no longer exist on this machine.
 
 - [T-707] **The iOS build reaches CI only if a human ticks a box, and CI does not run.**
   From [[T-535]]. `.github/workflows/ci.yml` has an `ios-build` job filed under T-535's name, but it
