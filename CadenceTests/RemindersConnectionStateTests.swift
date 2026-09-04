@@ -27,6 +27,21 @@ struct RemindersConnectionStateTests {
         #expect(state.accessAction?.title == "Allow Access")
     }
 
+    /// **T-846.** The first visit to this screen used to say "Reminders access required" — a
+    /// demand before anyone had been asked anything, the same defect T-694/T-777 already fixed on
+    /// Calendar and Notifications by splitting a neutral pre-prompt offer ("Connect Apple
+    /// Calendar" / "Connect Notifications") from the post-denial fault report. `.notDetermined`
+    /// reads as the equivalent offer now, and is a different sentence from `.denied`'s — which is
+    /// the state that is actually a fault the reader has to go and fix, and keeps its own wording.
+    @Test func notDeterminedTitleIsAnOfferRatherThanADemand() {
+        let state = RemindersConnectionState.resolve(isAuthorized: false, isDenied: false)
+
+        #expect(state.accessTitle == "Connect Apple Reminders")
+        #expect(!state.accessTitle.localizedCaseInsensitiveContains("required"))
+        #expect(state.accessTitle != RemindersConnectionState.denied.accessTitle)
+        #expect(RemindersConnectionState.denied.accessTitle == "Reminders access denied")
+    }
+
     @Test func authorizedReadsAsConnectedAndAsksForNothing() {
         let state = RemindersConnectionState.resolve(isAuthorized: true, isDenied: false)
 

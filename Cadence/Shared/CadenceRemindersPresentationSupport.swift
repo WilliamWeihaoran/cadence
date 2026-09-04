@@ -88,12 +88,20 @@ enum RemindersConnectionState: Equatable {
         }
     }
 
+    /// **T-846.** `.notDetermined` used to read "Reminders access required" — a demand before
+    /// anyone had been asked anything, on the very first visit to this screen. Calendar carried
+    /// the identical defect until T-694/T-777 split it into `connectOfferTitle` (before) and
+    /// `accessDeniedTitle` (after a refusal); Notifications got the same split from the start.
+    /// Reminders already draws its title from one shared switch rather than two copy structs, so
+    /// the fix is smaller here: `.notDetermined`'s own arm becomes the neutral offer, and
+    /// `"required"` stays exactly where it belongs, on `.denied` — a state the reader really does
+    /// have to go and fix.
     var accessTitle: String {
         switch self {
         case .connected: return "Apple Reminders connected"
         case .denied: return "Reminders access denied"
         case .restricted: return "Reminders access restricted"
-        case .notDetermined: return "Reminders access required"
+        case .notDetermined: return "Connect Apple Reminders"
         }
     }
 

@@ -2240,6 +2240,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is the last. [[T-358]] is not a defence: last-writer-wins is about the *merge*, not about whether
   the write is ever committed.
 
+- [T-858] **Reminders' pre-prompt access card still wears the denied state's warning triangle.**
+  [[T-846]] fixed `RemindersConnectionState.accessTitle`'s `.notDetermined` wording — "Connect Apple
+  Reminders" rather than "Reminders access required" — but all four consumers
+  (`SettingsRemindersSection`, `iOSRemindersSettingsSection`, `InboxSupportViews.AppleRemindersAccessRow`
+  via its hardcoded `checklist`/purple, `iOSInboxRemindersSection.accessRow`) still key the icon
+  either on `state.isConnected` alone (amber `exclamationmark.triangle.fill` for every
+  not-connected state, `.notDetermined` included) or hardcode the triangle outright
+  (`iOSInboxRemindersSection`). Calendar's T-543 precedent split exactly this: a neutral glyph for
+  the not-yet-asked offer, the triangle reserved for a real fault (denied/restricted). Out of
+  T-846's stated scope ("the two-title model"), so left as a title-only fix; the icon should get
+  the same treatment in a follow-up.
+
 - [T-871] **"A rearrangement the user can see" is a rule clause no detector can enforce.**
   [[T-614]] added it to `AGENTS.md`'s half 2 and left `CadenceSaveCommitDisciplineTests` alone on
   purpose: half 2 matches a vocabulary of *spellings*, and a row staying where it was dropped has
