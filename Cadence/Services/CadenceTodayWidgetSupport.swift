@@ -162,7 +162,7 @@ nonisolated enum CadenceTodayWidgetSupport {
         tasks.compactMap { task -> (task: AppTask, rank: Int, priorityRank: Int)? in
             guard task.isTodayWork(todayKey: todayKey),
                   let standing = task.todayStanding(todayKey: todayKey) else { return nil }
-            return (task, standing.rawValue, priorityRank(task.priority))
+            return (task, standing.rawValue, task.priority.rank)
         }
             .sorted { lhs, rhs in
                 if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
@@ -187,8 +187,6 @@ nonisolated enum CadenceTodayWidgetSupport {
             containerName: task.containerName
         )
     }
-
-    private nonisolated static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 
     /// The rows the store has to hand over for `todayTasks` to pick from — **a deliberate
     /// superset, and deliberately ignorant of what day it is.**

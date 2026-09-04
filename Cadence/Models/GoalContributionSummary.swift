@@ -158,8 +158,17 @@ nonisolated enum GoalContributionResolver {
 
         let nextAction = actionableTasks
             .sorted { lhs, rhs in
-                if lhs.priority != rhs.priority {
-                    return priorityRank(lhs.priority) > priorityRank(rhs.priority)
+                // Guarded on the *ranks*, not on the enum cases. Those are the same question
+                // only while `TaskPriority.rank` stays injective, and a comparator that asks the
+                // wrong one does not merely mis-sort when it stops being: it answers `false` in
+                // both directions for a pair it considers unequal, which is a tie the stable sort
+                // resolves from SwiftData's row order instead of falling through to the due date
+                // below. Measured — with two priorities sharing a rank, this sort named whichever
+                // task the container happened to hand over first (T-670).
+                let lhsRank = lhs.priority.rank
+                let rhsRank = rhs.priority.rank
+                if lhsRank != rhsRank {
+                    return lhsRank > rhsRank
                 }
                 let lhsDue = TaskOrdering.dateSortKey(lhs.dueDate)
                 let rhsDue = TaskOrdering.dateSortKey(rhs.dueDate)
@@ -201,8 +210,6 @@ nonisolated enum GoalContributionResolver {
         var seen = Set<UUID>()
         return tasks.filter { seen.insert($0.id).inserted }
     }
-
-    private static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 }
 
 nonisolated enum GoalHabitMomentumResolver {

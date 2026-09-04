@@ -138,6 +138,43 @@ struct WidgetSupportTests {
         ])
     }
 
+    /// The widget's priority tie-break, over **every** rung of `TaskPriority.rank`, with the
+    /// fallback pointing the other way.
+    ///
+    /// The test above reads high against medium and nothing else, so collapsing `.low` onto
+    /// `.none` — or inverting any other single branch of the rank ladder — left it green. This
+    /// comparator used to reach the ladder through a `private` forwarder of its own that no test
+    /// could name (T-670); it reads `priority.rank` now, and `CadenceWidgets` does not compile
+    /// `Shared/`, so this is the only place the widget's ordering is measured.
+    @Test func todayWidgetOrdersEveryRungOfThePriorityLadder() {
+        let todayKey = "2026-05-11"
+
+        // One standing for all four (do-today), and `order` ascending in the *opposite*
+        // direction to priority: `TaskOrdering.fallbackPrecedes` alone yields the exact reverse,
+        // so any two ranks that stop differing swap the pair that shares them.
+        func scheduled(_ title: String, _ priority: TaskPriority, order: Int) -> AppTask {
+            let task = AppTask(title: title)
+            task.scheduledDate = todayKey
+            task.priority = priority
+            task.order = order
+            return task
+        }
+
+        let high = scheduled("high", .high, order: 4)
+        let medium = scheduled("medium", .medium, order: 3)
+        let low = scheduled("low", .low, order: 2)
+        let unset = scheduled("none", .none, order: 1)
+        let input = [unset, low, medium, high]
+
+        #expect(CadenceTodayWidgetSupport.todayTasks(from: input, todayKey: todayKey).map(\.title)
+            == ["high", "medium", "low", "none"])
+
+        // Non-vacuity: the tie-break underneath really does disagree, so the sequence above is
+        // the priority ladder's doing rather than the input order's or the fallback's.
+        #expect(input.sorted(by: TaskOrdering.fallbackPrecedes).map(\.title)
+            == ["none", "low", "medium", "high"])
+    }
+
     @Test func todayWidgetSnapshotCapsTasksAndComputesCounts() {
         let todayKey = "2026-05-11"
 

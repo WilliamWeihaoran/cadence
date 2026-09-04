@@ -219,6 +219,43 @@ struct TrackingDeleteHelpersTests {
         }
     }
 
+    /// The loop above can only name a spelling a test can *reach*, and two were out of reach of
+    /// it: `CadenceTodayWidgetSupport` and `GoalContributionSummary` each carried a
+    /// `private static func priorityRank` forwarder. Both were correct, which is the state that
+    /// precedes drift — and the widget's was the dangerous one, because `CadenceWidgets` compiles
+    /// `Services/` and `Models/` but not `Shared/`, so a divergence there ships to the Home Screen
+    /// with this suite green.
+    ///
+    /// They are gone: both call sites read `priority.rank`. This pins the declaring set to the two
+    /// the loop asserts, so a re-grown forwarder — private or not — fails here rather than waiting
+    /// to be found by the drift (T-670).
+    @Test func everyPriorityRankSpellingInProductionSourceIsOneTheRankLoopReaches() throws {
+        let readStripped = CadenceSourceScan.strippedSourceReader()
+        var declaringFiles: [String] = []
+
+        for root in ["Cadence", "CadenceWidgets", "CadenceMCPServer"] {
+            for path in try CadenceSourceScan.swiftFiles(under: root) {
+                if try readStripped(path).contains("func priorityRank(") {
+                    declaringFiles.append(path)
+                }
+            }
+        }
+
+        #expect(declaringFiles.sorted() == [
+            "Cadence/Shared/CadenceCalendarPlanningSupport.swift",
+            "Cadence/Shared/CadenceTaskQuerySupport.swift",
+        ])
+
+        // Non-vacuity: the sweep opened the two files that lost a forwarder, and the needle it
+        // looked for is one that really does still occur somewhere in the tree it walked.
+        #expect(try readStripped("Cadence/Services/CadenceTodayWidgetSupport.swift")
+            .contains("static func todayTasks("))
+        #expect(try readStripped("Cadence/Models/GoalContributionSummary.swift")
+            .contains("static func summary("))
+        #expect(try readStripped("Cadence/Shared/CadenceTaskQuerySupport.swift")
+            .contains("func priorityRank("))
+    }
+
     /// Asserting the rank forwarders is not enough on its own — the comparator could stop calling
     /// them. This pins the pair the rank loop above cannot reach: `.low` against `.none`, through
     /// `TaskOrdering.precedes` itself.

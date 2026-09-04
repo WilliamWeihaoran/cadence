@@ -189,6 +189,79 @@ struct GoalContributionResolverTests {
         #expect(summary.overdueTaskCount == 1)
     }
 
+    /// Next Action is `.first` of a sort whose leading key is the priority ladder, so a single
+    /// wrong rung renames the task the goal card tells you to go do. `nextActionTitle` exposes
+    /// only the winner, so the ladder is read one adjacent pair at a time: three pairs cover all
+    /// four ranks.
+    ///
+    /// This comparator used to reach the ladder through a `private` forwarder no test could name
+    /// (T-670). It reads `priority.rank` now, and this is the only place the goal card's ordering
+    /// is measured.
+    ///
+    /// **Each pair is read from both sides, and that is not symmetry for its own sake.** With the
+    /// higher priority on the buried task only, a rung that collapses makes the comparator answer
+    /// `false` in *both* directions, and `sorted` — stable since Swift 5 — then hands back
+    /// whatever order SwiftData supplied. Whether that happens to be the expected one is luck: a
+    /// mutation collapsing `.medium` onto `.low` was caught this way and the same mutation on
+    /// `.high` survived. Asking for the opposite winner in the mirrored case makes a tie fail one
+    /// of the two, whichever way the container's order falls.
+    @Test func nextActionReadsEveryRungOfThePriorityLadder() throws {
+        let adjacentPairs: [(TaskPriority, TaskPriority)] = [
+            (.high, .medium),
+            (.medium, .low),
+            (.low, .none),
+        ]
+
+        for (higher, lower) in adjacentPairs {
+            for higherIsBuried in [true, false] {
+                let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+                let modelContext = ModelContext(container)
+
+                let context = Context(name: "Work")
+                let area = Area(name: "Current Work", context: context)
+                let goal = Goal(title: "Ship v1", context: context)
+
+                // "early" wins every key *below* priority — earlier due date, earlier do date,
+                // lower `order` — so when it holds the lower priority only the ladder can beat it.
+                let early = AppTask(title: "early")
+                early.area = area
+                early.context = context
+                early.priority = higherIsBuried ? lower : higher
+                early.dueDate = "2026-01-01"
+                early.scheduledDate = "2026-01-01"
+                early.order = 0
+
+                let late = AppTask(title: "late")
+                late.area = area
+                late.context = context
+                late.priority = higherIsBuried ? higher : lower
+                late.dueDate = "2026-06-01"
+                late.scheduledDate = "2026-06-01"
+                late.order = 9
+
+                modelContext.insert(context)
+                modelContext.insert(area)
+                modelContext.insert(goal)
+                modelContext.insert(early)
+                modelContext.insert(late)
+                modelContext.insert(GoalListLink(goal: goal, area: area))
+                try modelContext.save()
+
+                let summary = GoalContributionResolver.summary(
+                    for: goal,
+                    now: DateFormatters.date(from: "2025-12-01") ?? Date()
+                )
+
+                let expected = higherIsBuried ? "late" : "early"
+                #expect(summary.totalTasks == 2, "\(higher) vs \(lower): both tasks must contribute")
+                #expect(
+                    summary.nextActionTitle == expected,
+                    "\(higher) did not outrank \(lower) with the higher priority on `\(expected)`"
+                )
+            }
+        }
+    }
+
     /// Habits attach to milestones as readily as to directions — both editors offer them — so a
     /// direction that reported "0 habits" was hiding work its own percentage was already counting.
     @Test func habitMomentumRollsUpHabitsAttachedToMilestones() throws {
