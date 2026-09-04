@@ -432,7 +432,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   refusal test. Green across 4 targets; 2 mutations (dropped member restore, reintroduced swallow)
   killed.
 
-- [T-761] **The [[T-656]] class's remaining members, in components and files that batch could not
+- [T-761] **PARTLY CLOSED 2026-09-05 (`4d1bf57a`).** **Part (a) only.** `iOSTaskDetailSheet`'s time picker reached `setScheduledTime`'s swallowed commit while the popover closed on the tap -- the full [[T-614]] shape. Both entry points now take and forward `commit:`. y3's [[T-765]] finding was checked against these sites and does not apply: they go through `CadenceInPlaceEditFlush` with no hand-rolled undo. Remaining parts of the ticket, including the `EstimatePickerControl` half, are still open. **Filed as:** **The [[T-656]] class's remaining members, in components and files that batch could not
   reach.** Counted while landing T-656/[[T-727]] and named rather than left implicit.
   (a) **`iOSTaskDetailSheet`'s time picker.** `scheduledStartSelection`'s setter reaches
   `CadenceTaskDateEditing.setScheduledTime` → `CadenceTaskMutationSupport.setScheduledTime`, which
@@ -513,7 +513,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   numeric floor over a shrinking population is about. Left open rather than closed: the underlying
   gap is real and the measurement above is evidence for the next attempt, not a dead end.
 
-- [T-765] **Two callers still write out an undo `CadenceTaskFieldSnapshot` can now do for them.**
+- [T-765] **CLOSED 2026-09-05 (`c9ef1f42`).** Both field sets were enumerated before anything was folded, and **they were not equivalent**. `moveToContainer`'s hand-rolled restore is an exact subset of the snapshot's 16 fields -- safe. `rename`'s is **not**, despite the field names matching: it round-trips priority through the *computed* `task.priority`, which coerces an unrecognised `priorityRaw` to `.none` on read and writes `"none"` back, silently discarding whatever the store actually held. The snapshot restores `priorityRaw` directly and is exact. Pinned by `aRefusedEmbeddedRenameRestoresAnUnrecognisedPriorityRawExactly`. **Converging on matching names alone would have destroyed data on every refused rename.** **Filed as:** **Two callers still write out an undo `CadenceTaskFieldSnapshot` can now do for them.**
   [[T-701]] put `title` and `order` in the snapshot, which was the entire reason
   `CadenceNoteTaskEmbedEditing.rename` and `CadenceTaskMutationSupport.moveToContainer` each restore
   their fields by hand — the doc comment on each said so, and both now say it in the past tense. The
@@ -544,7 +544,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `docs/DECISIONS_PENDING.md`. Do not land it before that is answered.
 
 
-- [T-720] **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
+- [T-720] **CLOSED 2026-09-05 (`1d76ede1`).** Resolved by **deletion, not a shared base**. Every one of the four `shortLabel` callers is guarded by `recurrenceRule != .none` / `task.isRecurring` before it reads the property, so the single arm where `label` and `shortLabel` disagreed -- "Never" against "None" -- was unreachable through all four. Nobody needed the distinction. **No surface changes:** all four already showed only the byte-identical arms, and the pickers that do show `.none` already read `.label`. `TaskRecurrenceEndMode.shortLabel` deliberately left alone -- it differs on 2 of 3 arms and is doing real work. **Filed as:** **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
   `Cadence/Models/ModelEnums.swift` — `label` returns Never/Daily/Weekly/Monthly/Yearly and `shortLabel`
   returns None/Daily/Weekly/Monthly/Yearly. Four of the five arms are byte-identical, so four strings are
   spelled twice in one file and only `.none` actually differs; there is nothing "short" about the second
