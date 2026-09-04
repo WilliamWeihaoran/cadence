@@ -84,7 +84,11 @@ struct CadenceGuardScriptSelftestTests {
     /// the lease-vs-live-host conjunction that stops a second test host starting against the same
     /// app-group container; `dead-parent-declines` / `dead-parent-recovers` are T-748 -- a waiter
     /// whose caller died must decline the lock at the head of the queue rather than take it and
-    /// strand it, and the queue behind it must not stall because one waiter declined.
+    /// strand it, and the queue behind it must not stall because one waiter declined. `dead-owner-
+    /// reclaims-early` / `dead-owner-defers-to-live-host` are T-956 -- the symmetric case one level
+    /// later: an OWNER that dies after already taking the lock must not strand it for the full
+    /// LEASE (a dead owner pid shortcuts the wait), but still must not reclaim out from under a
+    /// live test host the dead owner's shell happened to start.
     static let testHostLockProperties = [
         "ordering",
         "no-reclaim",
@@ -92,6 +96,8 @@ struct CadenceGuardScriptSelftestTests {
         "killed-waiter",
         "dead-parent-declines",
         "dead-parent-recovers",
+        "dead-owner-reclaims-early",
+        "dead-owner-defers-to-live-host",
     ]
 
     /// `ordering` and `no-reclaim` cannot be PROVEN from inside this test host -- not "are awkward
@@ -104,7 +110,16 @@ struct CadenceGuardScriptSelftestTests {
     /// two scripts here. So these two are TOLERATED failures below, not required, and they are
     /// proven the other way instead: direct terminal invocation, captured in docs/TODO.md's T-748
     /// and T-650 entries (`w4 w1 w2 w3` before the fix, `w1 w2 w3 w4` after, three runs of three).
-    static let testHostLockPropertiesUnverifiableInThisSandbox: Set<String> = ["ordering", "no-reclaim"]
+    ///
+    /// `dead-owner-defers-to-live-host` (T-956) joins them for the identical reason: it also proves
+    /// its property through `live_test_hosts`'s `pgrep`, by way of the same fake-host fixture as
+    /// `no-reclaim`. `dead-owner-reclaims-early` does NOT join them -- it asserts the no-live-host
+    /// path, where a `pgrep` that cannot even spawn still degrades to reporting zero matches (empty
+    /// stdin into `wc -l`), which is indistinguishable from a real zero and proves the property
+    /// regardless of whether `pgrep` itself works here.
+    static let testHostLockPropertiesUnverifiableInThisSandbox: Set<String> = [
+        "ordering", "no-reclaim", "dead-owner-defers-to-live-host",
+    ]
 
     /// Every property `scripts/simulator-claim.sh`'s selftest names. T-749 ported
     /// `test-host-lock.sh`'s T-650 queue over wholesale rather than reinventing it, so it is pinned

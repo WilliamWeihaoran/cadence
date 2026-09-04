@@ -35,6 +35,19 @@
 # declines and drops its ticket instead, which is what a caller with nothing left
 # to run under should do.
 #
+# Why the held lock ALSO checks the owner's pulse (T-956). T-748 covers a waiter
+# that dies before it ever takes the lock. Nothing covered the symmetric case: an
+# owner that dies AFTER taking it. That owner never runs its `release` trap, so the
+# lock just sits there, and the reclaim branch below used to gate on lease age
+# alone -- meaning a dead owner stranded every waiter for the full 2700s LEASE
+# even though `kill -0` on the recorded owner pid would have said "gone" instantly.
+# Measured: released by hand mid-run because nobody was going to wait 45 minutes.
+# The fix checks the owner pid the same way T-748 checks $PPID -- but a dead owner
+# pid is NOT sufficient by itself to reclaim: the owner's shell can die (SIGKILL,
+# a crash) while a `nohup`'d `xcodebuild test` it started keeps running detached,
+# same as the existing lease-expiry path. So a dead owner only shortcuts the LEASE
+# wait; it still defers to `live_test_hosts` before actually removing the lock.
+#
 #   ./scripts/test-host-lock.sh acquire [timeout_seconds] [id]  # blocks, exits 0 when held
 #   ./scripts/test-host-lock.sh release [id]
 #   ./scripts/test-host-lock.sh status                          # holder + the queue behind it
@@ -221,6 +234,16 @@ case "$CMD" in
           # $PPID is the caller's shell, which lives for the duration of its run.
           print -r -- "$PPID" > "$LOCK/pid"; print -r -- "$ID" > "$LOCK/id"; date +%s > "$LOCK/since"
           [[ -n "$TICKET" ]] && rm -f "$TICKET" 2>/dev/null
+          # CADENCE_LOCK_ACQUIRE_DELAY exists for testing a caller's OWN race against this moment
+          # (T-955): the lock is real and on disk the instant `mkdir` above returns, but a caller
+          # that records "I hold it" only after THIS PROCESS exits has a gap between the two -- a
+          # gap normally microseconds wide. This widens it to whole seconds so a plain SIGTERM sent
+          # from a test can land inside it reliably. Gated under CADENCE_LOCK_TESTING for the same
+          # reason every other testing knob here is: an unwanted delay on the real lock would look
+          # exactly like the contention this file exists to report honestly.
+          if [[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_ACQUIRE_DELAY:-}" ]]; then
+            sleep "$CADENCE_LOCK_ACQUIRE_DELAY"
+          fi
           print -r -- "acquired after ${waited}s (id $ID, owner pid $PPID)"; exit 0
         fi
         # Reclaim on a LEASE, not on liveness, and only from the head of the
@@ -234,21 +257,39 @@ case "$CMD" in
         # survives the acquiring shell exiting.
         if [[ -f "$LOCK/since" ]]; then
           age=$(( $(date +%s) - $(cat "$LOCK/since" 2>/dev/null || print 0) ))
-          if (( age > LEASE )); then
-            # A lease alone is not enough to reclaim. Measured 2026-08-25: an agent's
-            # batch overran the 45-minute lease by 9 seconds and a sibling took the
-            # lock while the first was still mid-run -- which starts a SECOND test
-            # host against the same app-group container, i.e. exactly the T-236
-            # contention this lock exists to prevent. So the lease is necessary and
-            # a live test host is disqualifying: if a real `xcodebuild test` is
-            # running, someone is legitimately using the host no matter how old the
-            # lock is.
+          # T-956: the owner's pulse, checked the moment we would otherwise sit out
+          # the whole LEASE. $LOCK/pid is the owner shell recorded at acquire time
+          # (see the $PPID comment above); if it is gone, that shell can never run
+          # its `release` trap, so there is no reason to wait for lease age at all.
+          owner_pid=$(cat "$LOCK/pid" 2>/dev/null)
+          owner_dead=0
+          [[ -n "$owner_pid" ]] && ! kill -0 "$owner_pid" 2>/dev/null && owner_dead=1
+          if (( age > LEASE || owner_dead )); then
+            # A lease alone is not enough to reclaim, and neither is a dead owner
+            # pid alone. Measured 2026-08-25: an agent's batch overran the 45-minute
+            # lease by 9 seconds and a sibling took the lock while the first was
+            # still mid-run -- which starts a SECOND test host against the same
+            # app-group container, i.e. exactly the T-236 contention this lock
+            # exists to prevent. The same risk applies to a dead owner pid: its
+            # shell can die while a `nohup`'d `xcodebuild test` it started keeps
+            # running detached. So either trigger still defers to a live test host:
+            # if a real `xcodebuild test` is running, someone is legitimately using
+            # the host no matter how old the lock is or whether its owner shell
+            # survived.
             live=$(live_test_hosts)
             if (( live > 0 )); then
-              print -r -- "  lease expired (${age}s) but ${live} test host(s) still running; NOT reclaiming"
+              if (( owner_dead )); then
+                print -r -- "  owner pid $owner_pid is dead but ${live} test host(s) still running; NOT reclaiming"
+              else
+                print -r -- "  lease expired (${age}s) but ${live} test host(s) still running; NOT reclaiming"
+              fi
               sleep "$POLL"; (( waited += POLL )); continue
             fi
-            print -r -- "lease expired after ${age}s (limit ${LEASE}s), no live test host; reclaiming from $(cat "$LOCK/id" 2>/dev/null)"
+            if (( owner_dead )); then
+              print -r -- "owner pid $owner_pid is dead (age ${age}s), no live test host; reclaiming from $(cat "$LOCK/id" 2>/dev/null)"
+            else
+              print -r -- "lease expired after ${age}s (limit ${LEASE}s), no live test host; reclaiming from $(cat "$LOCK/id" 2>/dev/null)"
+            fi
             rm -rf "$LOCK"; continue
           fi
         fi
@@ -279,7 +320,16 @@ case "$CMD" in
     if [[ -d "$LOCK" ]]; then
       owner=$(cat "$LOCK/pid" 2>/dev/null); since=$(cat "$LOCK/since" 2>/dev/null); oid=$(cat "$LOCK/id" 2>/dev/null)
       age=$(( $(date +%s) - ${since:-0} ))
-      alive=$( (( age > LEASE )) && print "LEASE EXPIRED" || print held )
+      # T-956: report a dead owner distinctly and first -- it is reclaimable as
+      # soon as live_test_hosts is zero, regardless of lease age, so "LEASE
+      # EXPIRED" alone would undersell how close a dead-owner lock is to freeing.
+      if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
+        alive="OWNER DEAD"
+      elif (( age > LEASE )); then
+        alive="LEASE EXPIRED"
+      else
+        alive="held"
+      fi
       print -r -- "locked by ${oid:-?} / pid $owner ($alive) for ${age}s"
     else
       print -r -- "free"
@@ -439,6 +489,56 @@ case "$CMD" in
     else
       print -r -- "FAIL dead-parent-recovers: queue stuck behind the declined orphan; rc=$rc out='$out'"; (( fails++ ))
     fi
+    cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+
+    # 5. A DEAD LOCK OWNER RECLAIMS WITHOUT WAITING OUT THE LEASE (T-956). Property
+    #    2 already proves a dead owner pid does not bypass a live test host; this
+    #    proves the other half -- with no live host, a dead owner must not have to
+    #    wait for LEASE to become reclaimable, which is exactly the strand this
+    #    ticket fixes. LEASE is bumped far above this property's own timeout so a
+    #    prompt reclaim can only be explained by the owner-pulse check, not by the
+    #    lease having quietly expired anyway.
+    saved_lease=$CADENCE_LOCK_LEASE
+    export CADENCE_LOCK_LEASE=300
+    ( "$SELF" acquire 20 deadowner2 >/dev/null 2>&1; : )  # subshell exits: owner pid dies immediately
+    sleep 1
+    dead_pid=$(cat "$CADENCE_LOCK_DIR/pid" 2>/dev/null)
+    if [[ -n "$dead_pid" ]] && ! kill -0 "$dead_pid" 2>/dev/null; then
+      start=$(date +%s)
+      out="$("$SELF" acquire 15 prober2 2>&1)"; rc=$?
+      elapsed=$(( $(date +%s) - start ))
+      if (( rc == 0 )) && (( elapsed < 10 )); then
+        print -r -- "PASS dead-owner-reclaims-early: reclaimed in ${elapsed}s despite a ${CADENCE_LOCK_LEASE}s lease"
+        "$SELF" release prober2 >/dev/null
+      else
+        print -r -- "FAIL dead-owner-reclaims-early: rc=$rc elapsed=${elapsed}s out='$out'"; (( fails++ ))
+      fi
+    else
+      print -r -- "FAIL dead-owner-reclaims-early: fixture did not set up (pid '$dead_pid' still alive or missing)"; (( fails++ ))
+    fi
+    cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+
+    # 5b. ...but a dead owner still defers to a live test host even with the lease
+    #     bumped: the fix is "dead owner pid shortcuts the LEASE wait", not "dead
+    #     owner pid always wins" -- that second reading would restart T-236.
+    export CADENCE_LOCK_PGREP="$root/fakehost2"
+    print -r -- 'sleep 90' > "$root/fakehost2"; zsh "$root/fakehost2" & host2=$!
+    ( "$SELF" acquire 10 deadowner3 >/dev/null 2>&1; : )
+    sleep 1
+    dead_pid2=$(cat "$CADENCE_LOCK_DIR/pid" 2>/dev/null)
+    if kill -0 $host2 2>/dev/null && [[ -n "$dead_pid2" ]] && ! kill -0 "$dead_pid2" 2>/dev/null; then
+      out="$("$SELF" acquire 6 prober3 2>&1)"; rc=$?
+      if (( rc != 0 )) && [[ "$out" == *"NOT reclaiming"* ]] && [[ "$(cat "$CADENCE_LOCK_DIR/id" 2>/dev/null)" == deadowner3 ]]; then
+        print -r -- "PASS dead-owner-defers-to-live-host: dead owner + live host stayed with 'deadowner3'"
+      else
+        print -r -- "FAIL dead-owner-defers-to-live-host: rc=$rc out='$out'"; (( fails++ ))
+      fi
+    else
+      print -r -- "FAIL dead-owner-defers-to-live-host: fixture did not set up"; (( fails++ ))
+    fi
+    pkill -P $host2 2>/dev/null; kill $host2 2>/dev/null; wait $host2 2>/dev/null
+    unset CADENCE_LOCK_PGREP
+    export CADENCE_LOCK_LEASE=$saved_lease
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
     cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"

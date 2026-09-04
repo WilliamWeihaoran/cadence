@@ -165,6 +165,12 @@ KILLED = "KILLED"
 SURVIVED = "SURVIVED"
 INCONCLUSIVE = "INCONCLUSIVE"
 
+# T-955: the signals `on_signal` treats as "restore and release, then stop". Named once so the
+# registration below and the atomic acquire/release sections in `Runner` block exactly the same set
+# -- a signal this runner does not otherwise plan to handle (e.g. SIGKILL, which cannot be blocked
+# or handled at all) is deliberately excluded from both.
+CLEANUP_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+
 
 def say(*parts):
     print(*parts, flush=True)
@@ -700,11 +706,44 @@ class Runner:
                                "restored" if ok else "NOT RESTORED -- THE MUTATION IS STILL IN THE TREE"))
         self.live = []
 
+    def acquire_lock(self, lock_script, timeout):
+        """Take the test-host lock and record that we hold it, as ONE atomic step (T-955).
+
+        `test-host-lock.sh acquire` runs as a CHILD process, and the instant its own `mkdir`
+        succeeds the lock is real and on disk, owned (its `pid` file says) by US -- but this used
+        to be two separate moments: the child returning, and THEN `self.lock_held = True` running
+        in the parent. A signal landing in that gap reaches `on_signal` -> `release_lock()` with
+        `lock_held` still False, which no-ops: we strand a lock this very process took, for a pid
+        that is about to die, and every sibling queues behind it. Measured: a sibling `xcb.sh` sat
+        283s behind a runner that was already dead.
+
+        Blocking SIGINT/SIGTERM/SIGHUP for the span of the subprocess call AND the flag update
+        closes the gap: a signal arriving during it is merely deferred (POSIX queues it, does not
+        drop it), and is delivered the instant we unblock -- by which point `lock_held` already
+        matches reality, so `on_signal` releases exactly what we hold.
+        """
+        signal.pthread_sigmask(signal.SIG_BLOCK, CLEANUP_SIGNALS)
+        try:
+            taken = subprocess.run([lock_script, "acquire", timeout, self.lock_id])
+            if taken.returncode == 0:
+                self.lock_held = True
+            return taken
+        finally:
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, CLEANUP_SIGNALS)
+
     def release_lock(self):
         if not self.lock_held:
             return
-        subprocess.run([os.path.join(ROOT, "scripts", "test-host-lock.sh"), "release", self.lock_id])
-        self.lock_held = False
+        # Same atomicity as `acquire_lock`, and for the same reason: a second signal landing
+        # between the subprocess call returning and the flag actually clearing must not read as
+        # "still held" to a reentrant `on_signal` and re-run a release nothing needs, nor -- the
+        # direction that would matter -- leave `lock_held` true if this call is ever reordered.
+        signal.pthread_sigmask(signal.SIG_BLOCK, CLEANUP_SIGNALS)
+        try:
+            subprocess.run([os.path.join(ROOT, "scripts", "test-host-lock.sh"), "release", self.lock_id])
+            self.lock_held = False
+        finally:
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, CLEANUP_SIGNALS)
 
     def on_signal(self, signum, _frame):
         # A handler that restores and then returns lets the runner carry on mutating, which is how
@@ -824,7 +863,7 @@ def main():
                 shutil.copyfile(path, backup)
                 runner.backups[path] = backup
 
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    for sig in CLEANUP_SIGNALS:
         signal.signal(sig, runner.on_signal)
 
     results = []
@@ -832,11 +871,10 @@ def main():
         if options["lock"] and options["build"]:
             lock = os.path.join(ROOT, "scripts", "test-host-lock.sh")
             say("acquiring the test-host lock as %s (one lease for the whole batch) ..." % runner.lock_id)
-            taken = subprocess.run([lock, "acquire", os.environ.get("CADENCE_LOCK_TIMEOUT", "5400"), runner.lock_id])
+            taken = runner.acquire_lock(lock, os.environ.get("CADENCE_LOCK_TIMEOUT", "5400"))
             if taken.returncode != 0:
                 say("could not acquire the test-host lock; refusing to run tests without it")
                 return 1
-            runner.lock_held = True
 
         if options["build"]:
             # The baseline run. Every mutation verdict is relative to it: in a tree whose suite is
@@ -1276,6 +1314,121 @@ def selftest():
             check("a no-op mutation is refused", True)
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
+
+    say("")
+    say(" mode 6 (T-955) -- a SIGTERM landing between the lock's own `mkdir` and this runner")
+    say("     noticing the subprocess returned must not strand a lock it genuinely holds")
+    # `test-host-lock.sh acquire` runs as a CHILD process, and the instant its `mkdir` succeeds the
+    # lock is real and on disk. The bug this guards: this runner used to set `self.lock_held = True`
+    # only AFTER that child's `subprocess.run` call returned, so a signal landing in the gap reached
+    # `on_signal` -> `release_lock()` with `lock_held` still False, which no-ops -- stranding a lock
+    # this very process took, for a pid that is about to die. Measured: a sibling `xcb.sh` sat 283s
+    # behind a runner that was already dead.
+    #
+    # Proving this needs a REAL subprocess and a REAL signal -- exactly the shape this file's own
+    # docstring says a hand-rolled Swift-side check cannot give you, and precisely why this selftest
+    # exists to be shelled out to (see CadenceGuardScriptSelftestTests). The real race is a few
+    # microseconds wide; `test-host-lock.sh`'s own `CADENCE_LOCK_ACQUIRE_DELAY` testing knob (T-955)
+    # widens it to whole seconds -- long enough for a plain SIGTERM to land inside it on any machine
+    # -- by making the REAL `test-host-lock.sh acquire` sleep after its `mkdir` and before returning.
+    #
+    # This runs the REAL, already-on-disk `scripts/mutate.sh` and `scripts/test-host-lock.sh`
+    # (redirected onto a throwaway lock via `CADENCE_LOCK_TESTING`/`CADENCE_LOCK_DIR`, the same
+    # mechanism `test-host-lock.sh selftest` itself uses) rather than copies planted under a
+    # throwaway root. Earlier attempts did the latter and hit the App-Sandboxed test host's OTHER
+    # limit: a file this run just wrote and `chmod +x`'d cannot be exec'd at all -- not "restricted",
+    # `PermissionError: Operation not permitted` before a single byte of output, generalising T-959
+    # (ps/pgrep are not special cases; an unrecognised exec target is) past the two scripts that
+    # ticket named. The REAL scripts, sitting where they always have, are not "an unrecognised exec
+    # target" and are exactly what a batch actually runs -- so this proves what ships, not a stand-in.
+    #
+    # Still probed rather than assumed: some other sandbox (or a future, stricter one) may refuse
+    # even this, and that must read as unverifiable, not as a failed check -- the exact trap of "an
+    # in-host approximation that proves less than it appears to".
+    lock_script = os.path.join(ROOT, "scripts", "test-host-lock.sh")
+    signal_workspace = tempfile.mkdtemp(prefix="cadence-mutate-selftest-signal-")
+    try:
+        lockdir = os.path.join(signal_workspace, "lock")
+        lock_env = dict(os.environ)
+        lock_env["CADENCE_LOCK_TESTING"] = "1"
+        lock_env["CADENCE_LOCK_DIR"] = lockdir
+        lock_env["CADENCE_LOCK_ACQUIRE_DELAY"] = "2"
+
+        # Two independent things this environment might refuse, probed rather than assumed, each
+        # separately caught: exec'ing the real `test-host-lock.sh` (as `acquire_lock`/`release_lock`
+        # do), and writing to `/private/tmp` (where `Runner.scratch` -- unconditionally, this is not
+        # a fixture choice -- puts the CHILD's own runner.pid/backups/logs). The second is the one
+        # that actually bites: measured, the child died with `PermissionError: [Errno 1] Operation
+        # not permitted: '/private/tmp/cadence-mut-<id>/runner.pid'` before ever reaching the lock.
+        # `Runner.scratch` is deliberately outside `$TMPDIR` (see its own comment) so every agent's
+        # mutation scratch lands in one shared, predictable place -- that is correct for the only
+        # environment this ever really runs in, an ordinary unsandboxed agent shell, and is not
+        # something this selftest should change production code to route around.
+        probe_error = None
+        try:
+            subprocess.run([lock_script, "status"], env=lock_env,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        except OSError as exc:
+            probe_error = exc
+
+        if probe_error is None:
+            probe_scratch = tempfile.mktemp(prefix="cadence-mutate-selftest-scratch-probe-",
+                                             dir="/private/tmp")
+            try:
+                os.mkdir(probe_scratch)
+                os.rmdir(probe_scratch)
+            except OSError as exc:
+                probe_error = exc
+
+        if probe_error is not None:
+            say("   SKIPPED -- this environment refuses something a real run needs (%s); the "
+                "property is unverifiable here, not disproved (T-959)." % probe_error)
+        else:
+            tree = os.path.join(signal_workspace, "tree")
+            os.makedirs(os.path.join(tree, "scripts"))
+            write_bytes(os.path.join(tree, "scripts", "xcb.sh"), b"#!/bin/zsh\nsleep 120\n")
+            os.chmod(os.path.join(tree, "scripts", "xcb.sh"), 0o755)
+            write_bytes(os.path.join(tree, "dummy.txt"), b"hello\n")
+
+            plan_path = os.path.join(signal_workspace, "plan.txt")
+            write_bytes(plan_path,
+                        b"mutation: m1\nfile: dummy.txt\n--- old\nhello\n--- new\ngoodbye\n--- end\n")
+
+            # `/bin/zsh <script>` (the already-permitted interpreter, script as a plain data
+            # argument), never `[mutate_path, ...]` directly -- this outer spawn is the one place
+            # in this fixture with a proven-good alternative (it is exactly how `CadenceSelftestRun`
+            # invokes this very selftest), so it takes it rather than relying on the probe above to
+            # have covered this exec shape too.
+            proc = subprocess.Popen(
+                ["/bin/zsh", os.path.join(ROOT, "scripts", "mutate.sh"), "selftest-signal-child",
+                 plan_path, "--tree", tree],
+                env=lock_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            )
+            deadline = time.time() + 15
+            while time.time() < deadline and not os.path.isdir(lockdir):
+                time.sleep(0.05)
+            lock_seen = os.path.isdir(lockdir)
+            if lock_seen:
+                proc.send_signal(signal.SIGTERM)
+            # Read the child's output BEFORE the first check(), not after: a check that fires
+            # `lock_seen == False` is exactly the moment something needs explaining, and reading
+            # it only on the failure path this file's own comments warn against -- an assertion
+            # with nothing behind it to say why is the same hollow-instrument shape one level down.
+            try:
+                child_out, _ = proc.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                child_out, _ = proc.communicate()
+            child_out = (child_out or b"").decode("utf-8", "replace")
+            check("the widened-race fixture actually took the on-disk lock before SIGTERM", lock_seen,
+                  "" if lock_seen else "child's own output:\n%s" % child_out)
+            check("a SIGTERM landing between the lock's own mkdir and this runner noticing it still "
+                  "releases the lock",
+                  lock_seen and not os.path.isdir(lockdir),
+                  "lock dir still exists after the SIGTERM'd runner exited: %s\nchild's own output:\n%s"
+                  % (lockdir, child_out))
+    finally:
+        shutil.rmtree(signal_workspace, ignore_errors=True)
 
     say("")
     # A machine-readable tally, derived from the checks that actually ran. A selftest gutted to
