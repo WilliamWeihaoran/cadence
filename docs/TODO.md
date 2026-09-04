@@ -1540,19 +1540,29 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and 4 in the tree that leaked.
 
 - [T-705] **Nothing prunes an orphaned shared-DerivedData entry, and the judgement [[T-517]] said no
-  script should make unattended is now mechanical.** T-517 declined to automate the cleanup because
-  "one of the fourteen is the user's own Xcode entry" and telling them apart needed a human. Two
-  discriminators now do it without one. **The cheap one:** an entry that has an `info.plist` carries
-  `WorkspacePath`, so it is an orphan exactly when that path does not exist — no hashing required.
-  **The one for entries with no `info.plist`** (all 13 of T-517's were in that state): Xcode's
+  script should make unattended is now mechanical.** **Closed 2026-09-04 in `d04c0d33`.** T-517
+  declined to automate the cleanup because "one of the fourteen is the user's own Xcode entry" and
+  telling them apart needed a human. Two discriminators now do it without one. **The cheap one:** an
+  entry that has an `info.plist` carries `WorkspacePath`, so it is an orphan exactly when that path
+  does not exist — no hashing required. **The one for entries with no `info.plist`**: Xcode's
   directory suffix is MD5 of the absolute project path, split into two big-endian `UInt64`s, each
-  rendered as 14 base-26 letters most-significant digit last. Hash every `Cadence.xcodeproj` that
-  exists and an entry matching none of them is unattributable to any live tree. Both were used to clear
-  T-517 and both were positively controlled against the known-live entry first. A
-  `scripts/xcb.sh audit --prune` built on them would refuse to touch an entry it could attribute, which
-  is stricter than the human judgement it replaces. **Not done here because `scripts/xcb.sh` was being
-  edited by another agent at the time** — this is a one-file change to a file with a live sibling, not a
-  hard one.
+  rendered as 14 base-26 letters, most-significant first (that ordering, not the reverse, is what
+  reproduces this machine's own known-live hash — checked again every run, not just once). Hash
+  every `Cadence.xcodeproj` that exists and an entry matching none of them is unattributable to any
+  live tree. Both were positively controlled against the known-live entry before being trusted for
+  anything else, same as T-517 did by hand.
+  **Landed as `scripts/prune-shared-derived-data.sh`, a new script, not a change to
+  `scripts/xcb.sh`** — that file had a live sibling owning it this batch too, and the pruner does not
+  need to live there. `audit` (read-only, the default) and `prune` share one classifier;
+  `selftest` proves it against synthetic fixtures in a scratch directory, including the case the
+  hard rule below exists for: an entry a live `tail -f` holds open is reported LIVE and survives a
+  prune pass regardless of what the two discriminators would otherwise have said. **The absolute
+  rule, unconditionally checked before every deletion:** `lsof +D` on the entry; a live handle wins
+  over both discriminators, no exceptions. Run for real on this machine: 6 orphaned `Cadence-*`
+  entries (no `info.plist`, hash matching none of 14-18 `Cadence.xcodeproj` trees actually present —
+  the exact `Logs/`+`SourcePackages/`, no `Build/Products` signature T-517 found by hand) removed,
+  129M each, 774M total; the one entry a live Xcode (pid 76700) held open throughout was correctly
+  skipped every time, never deleted.
 
 - [T-706] **`/private/tmp/cadence-uitest-auth` is a 1.4 GB DerivedData directory, not an authorization
   store — and ~2.7 GB of other agent debris is still in `/private/tmp`.** The name has been read as
