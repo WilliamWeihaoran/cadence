@@ -317,12 +317,15 @@ struct CadenceFocusBundleParityTests {
 
         let line = CadenceFocusBundlePresentation.summaryLine(for: block, todayKey: "2026-08-22")
 
-        #expect(line.hasPrefix("Bundle / 2 tasks / Today / "))
+        #expect(line.hasPrefix("\(TaskBundle.shortLabel) / 2 tasks / Today / "))
         #expect(line.hasSuffix("55m tasks"))
-        // The chip strip under a block's own title drops the leading "Bundle" label: the title is
-        // already one, and a chip repeating it says nothing the screen does not.
+        // The chip strip under a block's own title drops the leading label: the title is already
+        // one, and a chip repeating it says nothing the screen does not. Reads the shared noun
+        // rather than freezing it -- T-843 renamed this word and this test is how we learned the
+        // parity check had a copy of its own.
         #expect(
-            CadenceFocusBundlePresentation.summaryParts(for: block, todayKey: "2026-08-22").first == "Bundle"
+            CadenceFocusBundlePresentation.summaryParts(for: block, todayKey: "2026-08-22").first
+                == TaskBundle.shortLabel
         )
     }
 

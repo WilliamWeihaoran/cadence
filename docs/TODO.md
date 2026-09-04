@@ -43,6 +43,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-873] **The sweep-manifest regenerator only works when regeneration is unnecessary.**
+  `scripts/real-tree-sweep-manifest.sh <id> --write` prints its `BEGIN`/`END` banners with **nothing
+  between them** when `theRealTreeSweepManifestIsExactlyWhatTheScanFinds` fails — which is the only
+  situation in which anyone runs it. Measured 2026-09-04 while repairing integ26: exit 65, 0 compile
+  errors, both banners present, zero lines of manifest. The entry had to be added by hand, which is
+  precisely what [[T-808]] built the generator to avoid. The regenerated list is presumably emitted
+  from the passing branch of that test, so a failing run never reaches it. Fix: emit the scan's
+  output before the equality assertion, not after it, and pin that with a test that runs the script
+  against a deliberately stale manifest and requires a non-empty body.
+
 - [T-848] **The accent palettes and the Markdown highlight fail even the 3:1 floor.** Cadence: blue
   2.75, red 2.78, green 2.08, amber 1.90, purple 2.72, teal 1.98. Glacier is worse — amber **1.54**,
   teal 1.75. Highlighted Markdown text measures **1.48:1** (`Theme.swift:314-316`;

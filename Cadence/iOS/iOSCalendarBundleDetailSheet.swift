@@ -97,7 +97,7 @@ struct iOSCalendarBundleDetailSheet: View {
                 iOSTaskInspectorSheet(task: task) { selectedTask = nil }
             }
             .confirmationDialog("Delete this block?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
-                Button("Delete Block", role: .destructive) {
+                Button(TaskBundle.deleteConfirmationButtonTitle, role: .destructive) {
                     do {
                         try CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: modelContext)
                     } catch {
@@ -132,13 +132,13 @@ struct iOSCalendarBundleDetailSheet: View {
     // one that needs its own spacing: at the 0 default the title field and the summary row below it
     // sat flush against each other.
     private var titleSection: some View {
-        iOSEditorSection(title: "Block", style: .ruled, contentSpacing: 10) {
+        iOSEditorSection(title: TaskBundle.shortLabel, style: .ruled, contentSpacing: 10) {
             // No inset well (T-604). It was `Theme.surfaceElevated.opacity(0.65)`, which was
             // legible only because the group sat on a `.card` — on the sheet's own elevated plate
             // it is the plate, at 65%, on itself. The sibling sheets' subject field is bare 22pt
             // bold and reads from `iOSEditorSheetMetrics`, so this is now the third caller of one
             // decision rather than a fourth literal.
-            TextField("Block title", text: $title)
+            TextField(TaskBundle.titleFieldPlaceholder, text: $title)
                 .textInputAutocapitalization(.words)
                 .font(.system(size: iOSEditorSheetMetrics.titleSize, weight: .bold))
                 .foregroundStyle(Theme.text)
@@ -273,7 +273,7 @@ struct iOSCalendarBundleDetailSheet: View {
 
     private var deleteSection: some View {
         iOSActionButton(
-            title: "Delete Block",
+            title: TaskBundle.deleteConfirmationButtonTitle,
             systemImage: "trash",
             role: .destructive,
             fullWidth: true
