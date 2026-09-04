@@ -163,7 +163,7 @@ struct BundleLogSessionPopover: View {
                 Text(TaskBundle.logSessionTitle)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
-                Text("\(selectedTasks.count) selected tasks")
+                Text(CadencePluralization.phrase(selectedTasks.count, singular: "selected task", plural: "selected tasks"))
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
                     .lineLimit(1)

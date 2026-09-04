@@ -189,7 +189,7 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
 
     private static func line(_ count: Int, _ singular: String, _ plural: String) -> String? {
         guard count > 0 else { return nil }
-        return "\(count) \(count == 1 ? singular : plural)"
+        return CadencePluralization.phrase(count, singular: singular, plural: plural)
     }
 
     /// The call-site API: counts against the whole store, so `images` matches what the sweep in

@@ -689,7 +689,7 @@ struct NotesMonthHeader: View {
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeOut(duration: 0.16), value: isCollapsed)
         .accessibilityLabel(title)
-        .accessibilityValue(isCollapsed ? "Collapsed, \(noteCount) notes" : "Expanded")
+        .accessibilityValue(isCollapsed ? "Collapsed, \(CadencePluralization.phrase(noteCount, singular: "note", plural: "notes"))" : "Expanded")
         // **T-521 — a shared control may not name a touch gesture.** This read "Double tap to
         // expand" / "Double tap to collapse", and `NotesGroupedListColumn` puts this exact header
         // in macOS's `HSplitView` as well as the iPad pane and the iPhone screen — the `.onHover`

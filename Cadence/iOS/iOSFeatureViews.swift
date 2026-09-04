@@ -186,7 +186,7 @@ struct iOSGoalsView: View {
             return CadenceTitleNormalization.display(parent.title, fallback: CadenceTitleNormalization.defaultGoalTitle)
         }
         let summary = CadenceGoalGroupSupport.summary(for: goal)
-        return "\(summary.activeGoalCount) milestones / \(summary.activeHabitCount) habits"
+        return "\(CadencePluralization.phrase(summary.activeGoalCount, singular: "milestone", plural: "milestones")) / \(CadencePluralization.phrase(summary.activeHabitCount, singular: "habit", plural: "habits"))"
     }
 
     private func detailView(for goal: Goal, showsBackControl: Bool = false) -> some View {
