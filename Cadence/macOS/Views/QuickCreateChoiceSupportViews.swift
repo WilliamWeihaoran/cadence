@@ -16,7 +16,7 @@ struct QuickCreateTaskPanelHandoffView: View {
                     .foregroundStyle(Theme.blue)
                     .frame(width: 34, height: 34)
                     .background(Theme.blue.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Use the task panel")
@@ -292,9 +292,9 @@ struct QuickCreateCompactSection<Content: View>: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
         .background(Theme.surface.opacity(0.76))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
         )
     }

@@ -92,11 +92,11 @@ struct ContextSettingsRow: View {
             .padding(.horizontal, 2)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.radiusControl)
                     .fill(isDropTarget ? Theme.blue.opacity(0.10) : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.radiusControl)
                     .strokeBorder(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
             )
 
@@ -284,11 +284,11 @@ struct SidebarTabSettingsRow: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 2)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .fill(isDropTarget ? Theme.blue.opacity(0.10) : Color.clear)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .strokeBorder(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
         )
         .draggable(destination.rawValue)
@@ -312,7 +312,7 @@ struct SidebarTabEditorSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .center, spacing: 12) {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.radiusControl)
                     .fill(Color(hex: tintHex).opacity(0.16))
                     .frame(width: 42, height: 42)
                     .overlay {

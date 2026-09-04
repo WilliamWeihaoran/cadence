@@ -259,7 +259,7 @@ struct GlobalSearchResultRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.radiusControl)
                     .fill(result.tint.opacity(0.18))
                     .frame(width: 34, height: 34)
                     .overlay {

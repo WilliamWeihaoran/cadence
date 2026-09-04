@@ -58,8 +58,8 @@ struct AttachWorkSheet: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radiusControl).strokeBorder(Theme.borderSubtle, lineWidth: 1))
             .padding(16)
 
             ScrollView(.vertical, showsIndicators: false) {

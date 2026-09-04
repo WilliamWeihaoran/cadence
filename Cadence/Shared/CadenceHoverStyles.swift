@@ -25,13 +25,13 @@ private struct CadencePlainButtonBody: View {
     var body: some View {
         #if os(macOS)
         configuration.label
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
             .background(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.radiusControl)
                     .fill(Theme.blue.opacity(backgroundOpacity))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.radiusControl)
                     .strokeBorder(Theme.blue.opacity(strokeOpacity))
             }
             .animation(.easeOut(duration: 0.12), value: isHovered)
@@ -50,7 +50,7 @@ private struct CadencePlainButtonBody: View {
         // of macOS's `.cadencePlain` hover wash", and this is that sentence made executable.
         // `contentShape` is kept so the hit area does not change with the paint.
         iOSPressableButtonStyle().makeBody(configuration: configuration)
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
         #endif
     }
 }

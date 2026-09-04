@@ -639,7 +639,7 @@ private struct iOSMarkdownPreviewEmptyState: View {
                 .foregroundStyle(Theme.blue)
                 .frame(width: 38, height: 38)
                 .background(Theme.blue.opacity(0.11))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Nothing rendered yet")

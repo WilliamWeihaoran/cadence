@@ -482,7 +482,7 @@ private struct StoreBackupRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .fill(Theme.amber.opacity(0.14))
                 .frame(width: 32, height: 32)
                 .overlay {

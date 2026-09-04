@@ -260,7 +260,7 @@ final class CadenceLayoutManager: NSLayoutManager {
             containerWidth: textContainer.containerSize.width
         )
 
-        let path = NSBezierPath(roundedRect: blockRect, xRadius: 10, yRadius: 10)
+        let path = NSBezierPath(roundedRect: blockRect, xRadius: Theme.radiusControl, yRadius: Theme.radiusControl)
         MarkdownStylist.codeBackground.withAlphaComponent(0.94).setFill()
         path.fill()
 

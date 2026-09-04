@@ -266,7 +266,7 @@ struct HabitGoalSupportCard: View {
                     .foregroundStyle(Color(hex: goal.colorHex))
                     .frame(width: 36, height: 36)
                     .background(Color(hex: goal.colorHex).opacity(0.13))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(goal.title)

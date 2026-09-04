@@ -284,7 +284,7 @@ struct CalendarEventEditPopover: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
             }
             .buttonStyle(.cadencePlain)
 
@@ -295,7 +295,7 @@ struct CalendarEventEditPopover: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
             }
             .buttonStyle(.cadencePlain)
         }

@@ -53,7 +53,7 @@ struct iOSMarkdownImageLayoutInfo {
 
             if let image {
                 context.cgContext.saveGState()
-                UIBezierPath(roundedRect: imageRect, cornerRadius: 10).addClip()
+                UIBezierPath(roundedRect: imageRect, cornerRadius: Theme.radiusControl).addClip()
                 image.draw(in: imageRect)
                 context.cgContext.restoreGState()
             } else {
@@ -93,7 +93,7 @@ struct iOSMarkdownImageLayoutInfo {
     }
 
     private func drawMissingImage(in rect: CGRect) {
-        let path = UIBezierPath(roundedRect: rect, cornerRadius: 10)
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: Theme.radiusControl)
         UIColor(Theme.surface).withAlphaComponent(0.84).setFill()
         path.fill()
         UIColor(Theme.borderSubtle).withAlphaComponent(0.56).setStroke()

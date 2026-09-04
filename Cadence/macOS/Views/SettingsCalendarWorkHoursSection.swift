@@ -59,7 +59,7 @@ struct SettingsCalendarWorkHoursSection: View {
     }
 
     private var icon: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
+        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
             .fill(Theme.amber.opacity(0.13))
             .frame(width: 38, height: 38)
             .overlay {

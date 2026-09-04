@@ -167,9 +167,9 @@ private struct HabitFrequencyPicker: View {
             .padding(10)
             .frame(minHeight: 54)
             .background(isSelected ? tint.opacity(0.10) : Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.radiusControl)
                     .strokeBorder(isSelected ? tint.opacity(0.42) : Theme.borderSubtle, lineWidth: 1)
             )
         }
@@ -269,8 +269,8 @@ private struct HabitNumberStepper: View {
         }
         .padding(12)
         .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusControl).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 
     private func stepButton(
@@ -357,8 +357,8 @@ private struct HabitReminderPicker: View {
         }
         .padding(12)
         .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusControl).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 }
 
@@ -390,8 +390,8 @@ private struct HabitFrequencyNote: View {
         }
         .padding(12)
         .background(Theme.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusControl).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 }
 #endif

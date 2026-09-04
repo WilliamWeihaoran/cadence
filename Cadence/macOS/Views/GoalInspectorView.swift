@@ -144,7 +144,7 @@ struct GoalInspectorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
                 .background(Theme.surfaceElevated.opacity(0.38))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
             } else {
                 VStack(spacing: 8) {
                     ForEach(linkedLists) { link in

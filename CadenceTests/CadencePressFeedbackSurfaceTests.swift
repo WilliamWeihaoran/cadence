@@ -97,9 +97,16 @@ struct CadencePressFeedbackSurfaceTests {
         // The finger draws nothing of its own. It delegates, and the only thing it adds back is the
         // hit area, which is shape rather than paint.
         #expect(touchBranch.contains("iOSPressableButtonStyle().makeBody(configuration: configuration)"))
-        #expect(touchBranch.contains(".contentShape(RoundedRectangle(cornerRadius: 10))"))
+        let shapeLine = ".contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))"
+        #expect(touchBranch.contains(shapeLine))
+        // T-754 moved the hit area's radius onto `Theme.radiusControl`, so the branch legitimately
+        // reads `Theme.` once now — the shape line just pinned above. Strip exactly that pinned
+        // substring before the paint sweep below, rather than loosen the "Theme." needle itself:
+        // a real paint token (`Theme.blue`, say) reintroduced anywhere else in the branch must
+        // still turn this red.
+        let touchBranchWithoutShape = touchBranch.replacingOccurrences(of: shapeLine, with: "")
         for paint in ["Theme.", ".background(", ".overlay", ".fill(", "strokeBorder", "opacity("] {
-            #expect(touchBranch.contains(paint) == false, "the touch branch paints \(paint)")
+            #expect(touchBranchWithoutShape.contains(paint) == false, "the touch branch paints \(paint)")
         }
 
         // Counted over the whole body, so the wash cannot be drawn twice under either branch.

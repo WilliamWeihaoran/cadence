@@ -44,8 +44,8 @@ struct GoalsViewModeToggle: View {
         }
         .padding(3)
         .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusControl).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 }
 
@@ -180,8 +180,8 @@ struct GoalTimelineView: View {
             }
             .padding(3)
             .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radiusControl).strokeBorder(Theme.borderSubtle, lineWidth: 1))
 
             HStack(spacing: 4) {
                 timelineNavButton(systemImage: "chevron.left", accessibilityLabel: "Earlier") {
@@ -196,8 +196,8 @@ struct GoalTimelineView: View {
             }
             .padding(3)
             .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radiusControl).strokeBorder(Theme.borderSubtle, lineWidth: 1))
 
             Button {
                 showsFilter.toggle()

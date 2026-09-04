@@ -18,7 +18,7 @@ let kanbanColumnWidth: CGFloat = 236
 // the shared spelling directly rather than through an alias here, so there is one name per number.
 /// Kanban columns are containerless (no fill, no border). This radius is only used for the
 /// transient drop-target wash / dashed outline and the search-navigation highlight ring.
-let kanbanColumnCornerRadius: CGFloat = 10
+let kanbanColumnCornerRadius: CGFloat = Theme.radiusControl
 /// Cards keep a container so they read as objects sitting directly on the canvas.
 let kanbanCardCornerRadius: CGFloat = Theme.radiusControlCompact
 

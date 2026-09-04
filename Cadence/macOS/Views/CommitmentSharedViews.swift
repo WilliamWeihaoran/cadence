@@ -126,9 +126,9 @@ struct CommitmentFilterBar<Item: Hashable>: View {
         }
         .padding(3)
         .background(Theme.surfaceElevated.opacity(0.46))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
         }
     }
