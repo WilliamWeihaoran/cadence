@@ -38,6 +38,8 @@ struct CadenceChoicePickerDismissalTests {
     private static let listPath = "Cadence/Shared/Components/CadenceChoicePicker.swift"
     private static let containerPath = "Cadence/iOS/iOSChoicePicker.swift"
     private static let rowActionsPath = "Cadence/iOS/iOSTaskRowActionViews.swift"
+    private static let detailSheetPath = "Cadence/iOS/iOSTaskDetailSheet.swift"
+    private static let detailSheetSectionsPath = "Cadence/iOS/iOSTaskDetailSheetSections.swift"
 
     // MARK: - The two components say the same thing
 
@@ -101,9 +103,10 @@ struct CadenceChoicePickerDismissalTests {
     /// picker anywhere lands here in the same change — which is the point, because the question
     /// "does this one's selection setter commit?" has to be asked at that moment and not later.
     ///
-    /// Three of thirty-seven commit, and all three are task-row chips. `iOSTaskDetailSheet`'s time
-    /// picker is a fourth site of the same defect and is **not** fixed here: its setter lives in a
-    /// file another agent held in this batch. [[T-761]].
+    /// Four of thirty-seven commit. Three are task-row chips; the fourth is
+    /// `iOSTaskDetailSheetSections`' time picker, the same defect closing over a swallowed
+    /// `try? modelContext.save()` two calls down its old `Binding<Int>` setter — fixed by routing it
+    /// through `iOSTaskDetailSheet.selectScheduledTime` and the committing initialiser [[T-761]].
     @Test func everyChoicePopoverCallSiteIsCountedAndOnlyTheCommittingOnesAnswer() throws {
         let expected: [String: (calls: Int, committing: Int)] = [
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
@@ -114,7 +117,7 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/iOS/iOSListEditorViews.swift": (2, 0),
             "Cadence/iOS/iOSSettingsOverviewSections.swift": (4, 0),
             "Cadence/iOS/iOSTaskDetailComponents.swift": (2, 0),
-            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (6, 0),
+            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (6, 1),
             "Cadence/iOS/iOSTaskRowActionViews.swift": (3, 3),
             "Cadence/iOS/iOSTaskViews.swift": (1, 0),
             "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),
@@ -145,7 +148,7 @@ struct CadenceChoicePickerDismissalTests {
             )
         }
         #expect(found.values.map(\.calls).reduce(0, +) == 37)
-        #expect(found.values.map(\.committing).reduce(0, +) == 3)
+        #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 
     /// **The defect itself, as a detector rather than a list.**
@@ -240,6 +243,40 @@ struct CadenceChoicePickerDismissalTests {
         #expect(
             CadenceSourceScan.matchCount(#"task\.goal = goalID\.flatMap"#, in: source) == 0,
             "the milestone picker still writes through the binding setter"
+        )
+    }
+
+    /// **The fourth site, [[T-761]].** Its `select` closure is not in `rowActionsPath` like the other
+    /// three: it lives in `iOSTaskDetailSheet.swift`, because the "materialise today" step it wraps
+    /// reads and writes `hasScheduledDate` / `scheduledDate` — this sheet's own `@State` — before the
+    /// minute can mean anything. `iOSTaskDetailSheetSections.swift` only holds the call site.
+    @Test func theDetailSheetsTimePickerCommitsTheMinuteAndStaysOpenWhenTheStoreRefusesIt() throws {
+        let sheetSource = try CadenceCommitSurfaceScan.scanned(Self.detailSheetPath)
+        let select = try CadenceCommitSurfaceScan.declarationBody(named: "selectScheduledTime", in: sheetSource)
+
+        #expect(
+            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)"#, in: select) == 0,
+            "the time selection still swallows its commit"
+        )
+        #expect(
+            select.contains("CadenceTaskDateEditing.setScheduledTime(minutes, for: task, in: modelContext)"),
+            "the committing branch does not route the write through the reconciling wrapper"
+        )
+        #expect(
+            select.contains("CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)"),
+            "the \"No time\" branch does not route the clear through the reconciling wrapper"
+        )
+        #expect(select.contains("saveFailureNotice = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice"))
+        #expect(select.contains("return landed"), "the function does not answer whether the write landed")
+
+        let sectionsSource = try CadenceCommitSurfaceScan.scanned(Self.detailSheetSectionsPath)
+        #expect(
+            sectionsSource.contains("select: selectScheduledTime"),
+            "the time picker still uses the draft form"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"selection: scheduledStartSelection"#, in: sectionsSource) == 0,
+            "the time picker still writes through the old plain Binding<Int>"
         )
     }
 

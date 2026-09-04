@@ -118,7 +118,9 @@ struct iOSTaskScheduleSection: View {
     let scheduledDate: Binding<Date>
     let hasDueDate: Binding<Bool>
     let dueDate: Binding<Date>
-    let scheduledStartSelection: Binding<Int>
+    /// Committing: answers whether the minute landed, so the picker below can stay open over a
+    /// refusal instead of closing over it (T-761). See `iOSTaskDetailSheet.selectScheduledTime`.
+    let selectScheduledTime: (Int) -> Bool
     let scheduledTimeLabel: String
 
     @State private var showRepeatPicker = false
@@ -261,8 +263,9 @@ struct iOSTaskScheduleSection: View {
                                 color: Theme.dim
                             )
                         },
-                    selection: scheduledStartSelection,
-                    isPresented: $showTimePicker
+                    selection: task.scheduledStartMin,
+                    isPresented: $showTimePicker,
+                    select: selectScheduledTime
                 )
             }
         }

@@ -262,7 +262,7 @@ struct iOSTaskDetailSheet: View {
             scheduledDate: $scheduledDate,
             hasDueDate: $hasDueDate,
             dueDate: $dueDate,
-            scheduledStartSelection: scheduledStartSelection,
+            selectScheduledTime: selectScheduledTime,
             scheduledTimeLabel: scheduledTimeLabel
         )
     }
@@ -369,27 +369,35 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
-    /// The time picker's own "No time" row is what clears the time, so this binding is the single
-    /// control for the field — there is no separate switch beside it to fall out of step.
-    private var scheduledStartSelection: Binding<Int> {
-        Binding(
-            get: { task.scheduledStartMin },
-            set: { minutes in
-                guard minutes >= 0 else {
-                    CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
-                    return
+    /// The time picker's own "No time" row is what clears the time, so this is the single control
+    /// for the field — there is no separate switch beside it to fall out of step.
+    ///
+    /// **T-761.** This used to be a plain `Binding<Int>`: `iOSChoicePopoverList`'s draft form writes
+    /// a binding's setter and closes the popover unconditionally, so a refused
+    /// `try? modelContext.save()` two calls down closed over it anyway — the same shape T-614 named
+    /// for a dismissed sheet, this time for a popover that never dismisses at all. Now the popover
+    /// uses the committing form: this answers whether the write landed, and `saveFailureNotice` is
+    /// the one slot this sheet reports every refusal through (T-646), same as `applyContainerSelection`.
+    private func selectScheduledTime(_ minutes: Int) -> Bool {
+        let landed: Bool
+        if minutes >= 0 {
+            // A time needs a day under it, so an untimed task adopts today first. `applyDates`
+            // reconciles the new day; the wrapper below reconciles the minute (T-362) — before this
+            // ticket neither half's answer stopped a picker that was about to close over it.
+            if !hasScheduledDate {
+                scheduledDate = Date()
+                hasScheduledDate = true
+                guard applyDates() else {
+                    saveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+                    return false
                 }
-                // A time needs a day under it, so an untimed task adopts today first. `applyDates`
-                // reconciles the new day; the wrapper below reconciles the minute (T-362) — before
-                // this ticket only the first half did.
-                if !hasScheduledDate {
-                    scheduledDate = Date()
-                    hasScheduledDate = true
-                    applyDates()
-                }
-                CadenceTaskDateEditing.setScheduledTime(minutes, for: task, in: modelContext)
             }
-        )
+            landed = CadenceTaskDateEditing.setScheduledTime(minutes, for: task, in: modelContext)
+        } else {
+            landed = CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
+        }
+        saveFailureNotice = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice
+        return landed
     }
 
     /// **T-497.** This ended `try? modelContext.save(); dismiss()`, and the dismissal is what told
