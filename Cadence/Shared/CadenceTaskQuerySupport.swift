@@ -443,7 +443,16 @@ enum CadenceTaskQuerySupport {
         return sortTasks(lhs, rhs, sortMode: sortMode)
     }
 
-    /// Every branch ends in `TaskOrdering.fallbackPrecedes`, never in a bare `order` comparison.
+    /// Every branch ends in `TaskOrdering.fallbackPrecedes`, never in a bare `order` comparison —
+    /// and the two that `TaskOrdering` already spells end in it by *delegating* rather than by
+    /// restating (T-669). `.doDate` was fourteen lines stepping through exactly what `.date` +
+    /// `.ascending` does, and `.priority` the same shape against `.priority` + `.descending`. The
+    /// one textual difference was `.priority`'s guard: `lhs.priority != rhs.priority` where
+    /// `TaskOrdering` compares the two ranks, which is the same question only because
+    /// `TaskPriority.rank` is injective — asserted, not assumed, by
+    /// `TrackingDeleteHelpersTests.priorityRankIsOneOrderingSharedByEveryCaller`.
+    /// `MobileTaskSortStabilityTests` measures the equivalence over every ordered pair of a probe
+    /// set rather than taking it from the shape of the two functions.
     ///
     /// `order` is assigned **per container** (`CadenceTaskMutationSupport.nextContainerOrder`), so
     /// on a cross-container surface — All Tasks, whose default mode is `.listOrder` — two tasks
@@ -473,25 +482,9 @@ enum CadenceTaskQuerySupport {
             }
             return TaskOrdering.fallbackPrecedes(lhs, rhs)
         case .priority:
-            if lhs.priority != rhs.priority {
-                return priorityRank(lhs.priority) > priorityRank(rhs.priority)
-            }
-            return TaskOrdering.fallbackPrecedes(lhs, rhs)
+            return TaskOrdering.precedes(lhs, rhs, field: .priority, direction: .descending)
         case .doDate:
-            let leftDate = TaskOrdering.dateSortKey(lhs.scheduledDate)
-            let rightDate = TaskOrdering.dateSortKey(rhs.scheduledDate)
-            if leftDate != rightDate {
-                return leftDate < rightDate
-            }
-            let leftTimed = lhs.scheduledStartMin >= 0
-            let rightTimed = rhs.scheduledStartMin >= 0
-            if leftTimed != rightTimed {
-                return leftTimed
-            }
-            if leftTimed && lhs.scheduledStartMin != rhs.scheduledStartMin {
-                return lhs.scheduledStartMin < rhs.scheduledStartMin
-            }
-            return TaskOrdering.fallbackPrecedes(lhs, rhs)
+            return TaskOrdering.precedes(lhs, rhs, field: .date, direction: .ascending)
         case .dueDate:
             if lhs.dueDate != rhs.dueDate {
                 if lhs.dueDate.isEmpty { return false }
