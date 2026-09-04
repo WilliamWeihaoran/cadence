@@ -180,13 +180,11 @@ struct TaskEmbedFieldEditorPopover: View {
             // 5-minute column. A value like 50m was not reachable from here at all.
             VStack(alignment: .leading, spacing: 8) {
                 EstimatePickerPopoverContent(
-                    value: Binding(
-                        get: { task.estimatedMinutes },
-                        set: { minutes in
-                            commit { task.estimatedMinutes = max(0, min(minutes, 1440)) }
-                        }
-                    ),
-                    onClose: { dismiss() }
+                    value: task.estimatedMinutes,
+                    onClose: { dismiss() },
+                    onCommit: { minutes in
+                        commit { task.estimatedMinutes = max(0, min(minutes, 1440)) }
+                    }
                 )
 
                 if task.actualMinutes > 0 {

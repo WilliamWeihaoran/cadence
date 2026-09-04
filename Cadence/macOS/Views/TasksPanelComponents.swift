@@ -481,6 +481,11 @@ private struct MacTaskRowEstimateChip: View {
     @Bindable var task: AppTask
     @Environment(\.modelContext) private var modelContext
     @State private var showPicker = false
+    /// Set when the store refused an estimate change. See `EstimatePickerPopoverContent`'s
+    /// committing form (T-761(b)): this used to write through a `Binding` whose setter reached
+    /// `CadenceTaskMutationSupport.setEstimatedMinutes`'s swallowed `try? modelContext.save()`,
+    /// while the popover's own Done/Clear/preset buttons closed unconditionally.
+    @State private var estimateFailure: String?
 
     /// Reads `.desktop` itself rather than taking it as a prop: it is a macOS-only chip that can
     /// only ever be on a macOS row, and threading the value through would imply a caller gets to
@@ -518,13 +523,17 @@ private struct MacTaskRowEstimateChip: View {
         .onHover { isHovered = $0 }
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             EstimatePickerPopoverContent(
-                value: Binding(
-                    get: { task.estimatedMinutes },
-                    set: { CadenceTaskMutationSupport.setEstimatedMinutes($0, for: task, modelContext: modelContext) }
-                )
-            ) {
-                showPicker = false
-            }
+                value: task.estimatedMinutes,
+                failureNotice: estimateFailure,
+                onClose: { showPicker = false },
+                onCommit: { minutes in
+                    let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
+                        task.estimatedMinutes = max(0, min(minutes, 1440))
+                    }
+                    estimateFailure = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice
+                    return landed
+                }
+            )
         }
     }
 

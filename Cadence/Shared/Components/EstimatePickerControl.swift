@@ -80,6 +80,42 @@ struct EstimatePickerPopoverContent: View {
     /// "Actual" minutes) pass their own so the panel is not mislabelled.
     var title: String = "ESTIMATE"
     var onClose: () -> Void = {}
+    /// **T-761(b).** `nil` on the draft form: `value`'s own setter is the only write, so nothing
+    /// here can be refused and closing stays unconditional. Non-`nil` on the committing form: this
+    /// answers whether the write landed, and every button below closes only when it does — same
+    /// shape as `CadenceChoicePopoverList`'s two initialisers, and for the same reason a `Binding`
+    /// beside it would be two write paths, and a mutation hidden in the binding's setter is exactly
+    /// what T-656 could not see. Named `onCommit` rather than `select` (`CadenceChoicePopoverList`'s
+    /// own name for the same role): `CadenceChoicePickerDismissalTests`' census counts a `select:`
+    /// argument anywhere in a file as evidence of *that* component, and this is a different one.
+    private let onCommit: ((Int) -> Bool)?
+    /// Shown under the footer when `onCommit` refuses. `nil` on every draft caller.
+    var failureNotice: String?
+
+    /// The draft form. `value`'s setter is the only write, so every close is unconditional.
+    init(value: Binding<Int>, title: String = "ESTIMATE", onClose: @escaping () -> Void = {}) {
+        self._value = value
+        self.title = title
+        self.onClose = onClose
+        self.onCommit = nil
+        self.failureNotice = nil
+    }
+
+    /// The committing form. `value` is read-only here — it only seeds the rollers' starting
+    /// position — and `onCommit` is the only write.
+    init(
+        value: Int,
+        title: String = "ESTIMATE",
+        failureNotice: String? = nil,
+        onClose: @escaping () -> Void = {},
+        onCommit: @escaping (Int) -> Bool
+    ) {
+        self._value = .constant(value)
+        self.title = title
+        self.onClose = onClose
+        self.onCommit = onCommit
+        self.failureNotice = failureNotice
+    }
 
     private enum RollerColumn: Hashable { case hours, minutes }
 
@@ -90,6 +126,10 @@ struct EstimatePickerPopoverContent: View {
     /// it would silently round an off-step value (focus-logged "Actual" minutes are rarely
     /// multiples of 5) merely because the popover was opened.
     @State private var isSeeding = true
+    /// Whichever of `commit(force:)`'s three writers ran most recently. Read only by
+    /// `closeIfLanded()`, so a caller that presses Done a beat after a live scroll's own commit
+    /// was refused still gets the refusal rather than a stale success.
+    @State private var lastCommitLanded = true
     @FocusState private var focusedColumn: RollerColumn?
 
     private static let hourValues = EstimateRollerMetrics.hourValues
@@ -176,7 +216,7 @@ struct EstimatePickerPopoverContent: View {
         .onKeyPress(.downArrow) { step(1, in: values, selection: selection); return .handled }
         .onKeyPress(.leftArrow) { focusedColumn = .hours; return .handled }
         .onKeyPress(.rightArrow) { focusedColumn = .minutes; return .handled }
-        .onKeyPress(.return) { onClose(); return .handled }
+        .onKeyPress(.return) { closeIfLanded(); return .handled }
     }
 
     @ViewBuilder
@@ -186,7 +226,7 @@ struct EstimatePickerPopoverContent: View {
                 let isSelected = total == preset
                 Button {
                     apply(preset)
-                    onClose()
+                    closeIfLanded()
                 } label: {
                     Text(CadenceTaskPresentationSupport.estimateLabel(minutes: preset))
                         .font(.system(size: 10, weight: .medium))
@@ -208,37 +248,43 @@ struct EstimatePickerPopoverContent: View {
 
     @ViewBuilder
     private var footer: some View {
-        HStack(spacing: 8) {
-            Button {
-                apply(0)
-                onClose()
-            } label: {
-                Text("Clear")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.red)
-                    .padding(.horizontal, 10)
-                    .frame(height: Self.footerPlateHeight)
-                    .estimatePickerTouchTarget(plateHeight: Self.footerPlateHeight)
-            }
-            .buttonStyle(.plain)
-            .cadenceHoverHighlight(cornerRadius: 6, fillColor: Theme.surfaceElevated, strokeColor: .clear)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    apply(0)
+                    closeIfLanded()
+                } label: {
+                    Text("Clear")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.red)
+                        .padding(.horizontal, 10)
+                        .frame(height: Self.footerPlateHeight)
+                        .estimatePickerTouchTarget(plateHeight: Self.footerPlateHeight)
+                }
+                .buttonStyle(.plain)
+                .cadenceHoverHighlight(cornerRadius: 6, fillColor: Theme.surfaceElevated, strokeColor: .clear)
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
 
-            Button {
-                commit(force: true)
-                onClose()
-            } label: {
-                Text("Done")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .padding(.horizontal, 12)
-                    .frame(height: Self.footerPlateHeight)
-                    .background(Theme.blue.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .estimatePickerTouchTarget(plateHeight: Self.footerPlateHeight)
+                Button {
+                    commit(force: true)
+                    closeIfLanded()
+                } label: {
+                    Text("Done")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                        .padding(.horizontal, 12)
+                        .frame(height: Self.footerPlateHeight)
+                        .background(Theme.blue.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .estimatePickerTouchTarget(plateHeight: Self.footerPlateHeight)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+
+            if let failureNotice {
+                CadenceInlineFailureNotice(text: failureNotice)
+            }
         }
     }
 
@@ -269,9 +315,32 @@ struct EstimatePickerPopoverContent: View {
         commit(force: true)
     }
 
-    private func commit(force: Bool = false) {
-        guard force || !isSeeding else { return }
-        if value != total { value = total }
+    /// **T-761(b).** Answers whether the value is in the store, and records it in
+    /// `lastCommitLanded` so every button below can gate its own close on the same answer without
+    /// re-deriving it. `true` when nothing needed writing — the draft form's old behaviour, and
+    /// still correct for the committing form: nothing was written, so nothing could be refused.
+    @discardableResult
+    private func commit(force: Bool = false) -> Bool {
+        guard force || !isSeeding else { return true }
+        guard value != total else {
+            lastCommitLanded = true
+            return true
+        }
+        guard let onCommit else {
+            value = total
+            lastCommitLanded = true
+            return true
+        }
+        let landed = onCommit(total)
+        lastCommitLanded = landed
+        return landed
+    }
+
+    /// The one place a button closes the popover, so a refusal recorded anywhere above — a live
+    /// scroll's own commit, not just the tap that is closing now — keeps it open.
+    private func closeIfLanded() {
+        guard lastCommitLanded else { return }
+        onClose()
     }
 }
 

@@ -284,13 +284,6 @@ enum CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
-    /// Clamped to the same 0…24h range every other duration field in the app accepts, so a chip
-    /// that edits an estimate in place cannot write a value the pickers could not have produced.
-    static func setEstimatedMinutes(_ minutes: Int, for task: AppTask, modelContext: ModelContext) {
-        task.estimatedMinutes = min(max(0, minutes), 24 * 60)
-        try? modelContext.save()
-    }
-
     static func dueToday(_ task: AppTask, modelContext: ModelContext) {
         task.dueDate = DateFormatters.todayKey()
         try? modelContext.save()
@@ -618,6 +611,13 @@ enum CadenceTaskMutationSupport {
     /// "Move" rather than "Update": `settleFailureAlertTitle` is already the *settle* family's
     /// title, and a refused move and a refused tick are different events.
     static let moveFailureAlertTitle = "Couldn't Move Task"
+
+    /// **T-761(c).** The row context menu's repeat submenu is the same shape as the move menu
+    /// above: `iOSTaskRecurrenceSelection.select` has answered whether the rule landed since
+    /// T-656, but the menu closes on the tap either way and, until this ticket, nothing read the
+    /// answer. A `Menu` has no surface of its own to stay open and say so, same reasoning as
+    /// `moveFailureAlertTitle`.
+    static let recurrenceFailureAlertTitle = "Couldn't Change Repeat"
 
     /// Shown when a block the user asked for could not be committed (T-471).
     ///

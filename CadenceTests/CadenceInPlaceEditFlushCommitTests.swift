@@ -550,6 +550,45 @@ struct CadenceInPlaceEditFlushCommitTests {
         #expect(row.contains("moveFailed: $moveFailed,"), "the context menu is not handed the row's flag")
     }
 
+    /// **T-761(c).** The repeat submenu's report, the same shape as the move menu's just above: a
+    /// `Menu` closes on the tap and cannot be told not to, so `selectRecurrenceRule` reports
+    /// through the row's own alert rather than a surface that stays open. The chip beside it
+    /// already reports inline through a committing form (T-656) — this is only the menu's half.
+    @Test func theRowsRepeatSubmenuNamesArefusalTheSameWayTheMoveMenuDoes() throws {
+        let actions = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskRowActionViews.swift")
+
+        let selectRule = try CadenceCommitSurfaceScan.declarationBody(named: "selectRecurrenceRule", in: actions)
+        #expect(
+            selectRule.contains("iOSTaskRecurrenceSelection.select("),
+            "selectRecurrenceRule no longer routes through the answering form"
+        )
+        #expect(
+            selectRule.contains("recurrenceFailed = !landed"),
+            "selectRecurrenceRule discards the answer again"
+        )
+
+        #expect(actions.contains("struct iOSTaskRowRecurrenceFailureAlertModifier: ViewModifier {"))
+        #expect(
+            actions.contains(".alert(CadenceTaskMutationSupport.recurrenceFailureAlertTitle, isPresented: $isPresented)"),
+            "the recurrence alert types its own title"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"Text\(CadenceTaskFieldEditCommit\.saveFailureNotice\)"#, in: actions) == 2,
+            "the move alert and the recurrence alert are the only two callers of this sentence in the file"
+        )
+
+        let row = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskViews.swift")
+        #expect(row.contains("@State private var recurrenceFailed = false"))
+        #expect(
+            row.contains(".iOSTaskRowRecurrenceFailureAlert(isPresented: $recurrenceFailed)"),
+            "the row sets a flag it never raises an alert from"
+        )
+        #expect(
+            row.contains("recurrenceFailed: $recurrenceFailed,"),
+            "the context menu is not handed the row's flag"
+        )
+    }
+
     /// **The set, not three names.** `moveToContainer` answers `Bool` because `false` means the
     /// task is back where it started; a caller that ignores it is reporting a move that did not
     /// happen. Every call in the product guards, and the four are named — an exact set rather than
@@ -659,6 +698,16 @@ struct CadenceInPlaceEditFlushCommitTests {
         #expect(CadenceTaskMutationSupport.moveFailureAlertTitle != CadenceTaskMutationSupport.deleteFailureAlertTitle)
         // The sentence under it is the one the other three callers show, not a fourth spelling.
         #expect(CadenceTaskFieldEditCommit.saveFailureNotice == "Couldn't save this change.")
+    }
+
+    /// Same shape, one submenu over (T-761(c)): its own title, no full stop, distinct from every
+    /// other alert title in the family.
+    @Test func therecurrenceFailureAlertTitleNamesTheRepeatAndNotTheMove() {
+        #expect(CadenceTaskMutationSupport.recurrenceFailureAlertTitle == "Couldn't Change Repeat")
+        #expect(!CadenceTaskMutationSupport.recurrenceFailureAlertTitle.hasSuffix("."))
+        #expect(CadenceTaskMutationSupport.recurrenceFailureAlertTitle != CadenceTaskMutationSupport.moveFailureAlertTitle)
+        #expect(CadenceTaskMutationSupport.recurrenceFailureAlertTitle != CadenceTaskMutationSupport.settleFailureAlertTitle)
+        #expect(CadenceTaskMutationSupport.recurrenceFailureAlertTitle != CadenceTaskMutationSupport.deleteFailureAlertTitle)
     }
 
     /// Whether every occurrence of `report` sits below the first occurrence of `marker`.

@@ -502,6 +502,12 @@ struct iOSTaskRowEstimateChip: View {
     let task: AppTask
     @Environment(\.modelContext) private var modelContext
     @State private var showPicker = false
+    /// Set when the store refused an estimate change. See `EstimatePickerPopoverContent`'s
+    /// committing form (T-761(b)): this used to write through a `Binding` whose setter reached
+    /// `CadenceTaskMutationSupport.setEstimatedMinutes`'s swallowed `try? modelContext.save()`,
+    /// while the popover's own Done/Clear/preset buttons closed unconditionally — the same shape
+    /// T-656 was written from, one component over.
+    @State private var estimateFailure: String?
 
     var body: some View {
         iOSTaskAttributeChip(
@@ -516,13 +522,17 @@ struct iOSTaskRowEstimateChip: View {
         }
         .popover(isPresented: $showPicker, arrowEdge: .top) {
             EstimatePickerPopoverContent(
-                value: Binding(
-                    get: { task.estimatedMinutes },
-                    set: { CadenceTaskMutationSupport.setEstimatedMinutes($0, for: task, modelContext: modelContext) }
-                )
-            ) {
-                showPicker = false
-            }
+                value: task.estimatedMinutes,
+                failureNotice: estimateFailure,
+                onClose: { showPicker = false },
+                onCommit: { minutes in
+                    let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
+                        task.estimatedMinutes = max(0, min(minutes, 1440))
+                    }
+                    estimateFailure = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice
+                    return landed
+                }
+            )
             .presentationCompactAdaptation(.popover)
         }
     }
@@ -577,6 +587,10 @@ struct iOSTaskRowContextMenu: View {
     /// See `iOSTaskRowContainerChip.moveFailed`. A `Menu` closes itself on the tap exactly as the
     /// popover does, so this refusal has no surface of its own either (T-702).
     @Binding var moveFailed: Bool
+    /// **T-761(c).** Same shape as `moveFailed`, one submenu over: `selectRecurrenceRule` below
+    /// discarded `iOSTaskRecurrenceSelection.select`'s answer, so a refused rule was silent here
+    /// even after T-656 made the repeat *chip* report it.
+    @Binding var recurrenceFailed: Bool
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -815,14 +829,20 @@ struct iOSTaskRowContextMenu: View {
         }
     }
 
+    /// **T-761(c).** Answers were already there to read — `iOSTaskRecurrenceSelection.select`
+    /// has meant "did the rule land, or is a scope dialog about to ask" since T-656 — this just
+    /// stopped discarding the second one. `recurrenceFailed` only follows a genuine refusal:
+    /// `select` answers `true` for the series branch too, since the menu still has to close for
+    /// `iOSTaskRowRecurrenceScopeDialog` behind it to show.
     private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
-        iOSTaskRecurrenceSelection.select(
+        let landed = iOSTaskRecurrenceSelection.select(
             rule,
             for: task,
             allTasks: allTasks,
             modelContext: modelContext,
             pendingRecurrenceRule: $pendingRecurrenceRule
         )
+        recurrenceFailed = !landed
     }
 
     /// **T-702.** The other half of the same discard. The menu's checkmarks read the task rather
@@ -1002,6 +1022,23 @@ struct iOSTaskMoveFailureAlertModifier: ViewModifier {
     }
 }
 
+/// A refused **repeat rule**, on the row context menu's submenu — the same no-surface problem
+/// `iOSTaskMoveFailureAlertModifier` solves for the list move, one submenu over (T-761(c)).
+/// `iOSTaskRowRepeatChip`'s own popover already reports this inline with a committing form
+/// (T-656); the menu has no such choice, so it gets the alert instead.
+struct iOSTaskRowRecurrenceFailureAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .alert(CadenceTaskMutationSupport.recurrenceFailureAlertTitle, isPresented: $isPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskFieldEditCommit.saveFailureNotice)
+            }
+    }
+}
+
 extension View {
     /// See `iOSTaskDeleteFailureAlertModifier`.
     func iOSTaskDeleteFailureAlert(isPresented: Binding<Bool>) -> some View {
@@ -1011,6 +1048,11 @@ extension View {
     /// See `iOSTaskMoveFailureAlertModifier`.
     func iOSTaskMoveFailureAlert(isPresented: Binding<Bool>) -> some View {
         modifier(iOSTaskMoveFailureAlertModifier(isPresented: isPresented))
+    }
+
+    /// See `iOSTaskRowRecurrenceFailureAlertModifier`.
+    func iOSTaskRowRecurrenceFailureAlert(isPresented: Binding<Bool>) -> some View {
+        modifier(iOSTaskRowRecurrenceFailureAlertModifier(isPresented: isPresented))
     }
 
     func iOSTaskRowRecurrenceScopeDialog(

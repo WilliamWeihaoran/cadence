@@ -37,6 +37,8 @@ struct iOSTaskRow: View {
     /// menu — because both dismiss themselves on the tap and neither can report a refusal itself
     /// (T-702). See `iOSTaskMoveFailureAlertModifier`.
     @State private var moveFailed = false
+    /// The context menu's repeat submenu (T-761(c)). See `iOSTaskRowRecurrenceFailureAlertModifier`.
+    @State private var recurrenceFailed = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var isRegularWidth: Bool {
@@ -84,6 +86,7 @@ struct iOSTaskRow: View {
                     openDetail: openDetail,
                     showDeleteConfirmation: $showDeleteConfirmation,
                     moveFailed: $moveFailed,
+                    recurrenceFailed: $recurrenceFailed,
                     pendingRecurrenceRule: $pendingRecurrenceRule
                 )
             }
@@ -141,6 +144,9 @@ struct iOSTaskRow: View {
             // context menu both close themselves on the tap, so a refused move had nowhere to be
             // reported and the row simply stayed where it was (T-702).
             .iOSTaskMoveFailureAlert(isPresented: $moveFailed)
+            // The repeat submenu's equivalent: it closes on the tap exactly as the move menu
+            // does, and until T-761(c) a refused rule had nowhere to be reported either.
+            .iOSTaskRowRecurrenceFailureAlert(isPresented: $recurrenceFailed)
             .onAppear(perform: handlePendingDeepLink)
             .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
                 handlePendingDeepLink()
