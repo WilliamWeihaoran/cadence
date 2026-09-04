@@ -43,6 +43,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-981] **CLOSED 2026-09-05 (`0fbe7ecc`) — a closure could revert inside an intact id set.**
+  `LEDGER-IDS-LOST` compares ids, not content, so an entry whose text changed from a closure back to
+  the original open ticket lost no id and nothing refused. `LEDGER-CLOSURE-LOST` now refuses an id
+  that is CLOSED in HEAD and open in the staged content; `--reopens-ids` takes the exact set.
+  Reproduced twice before fixing, including by replaying all 349 commits that have ever touched this
+  file, where it fires on exactly the 2 real offenders and none of the other 347.
+
+- [T-985] **The "51 reverted closures" figure was wrong, and the correction is worth keeping.**
+  The coordinator read `169d594d`'s net line delta (187 insertions, 136 deletions) as a ticket count
+  and reported 51 tickets silently reverting from closed to open. Measured by w2 across **all 349
+  commits that have ever touched this file**: there are **4 closure reversions in 2 commits** —
+  `169d594d` reverted T-679, T-719 and T-787 inside a commit about three unrelated instruments, and
+  `f566723b` deduped T-777 by deleting the CLOSED copy and keeping the open one — plus 3 ids dropped
+  outright at `169d594d`, before [[T-679]]'s id guard existed. The drift [[T-975]] describes was
+  real and 27 tickets were genuinely fixed-but-open; the *mechanism* was mostly closures **never
+  written**, not closures reverted. Do not re-cite the 51.
+- [T-984] **A copy that is behind HEAD *and* has deletions reads as in-flight.**
+  `scripts/worktree-drift.sh` finds the newest revision whose every non-trivial line the worktree
+  still contains. A stale copy with lines removed contains no such revision, so it is reported as
+  "cannot tell" and never refused. That is the safe direction — the alternative would refuse real
+  work — but it is a real blind spot and the one shape the check cannot see.
+- [T-983] **The closure marker reads only `CLOSED`.** `LEDGER-CLOSURE-LOST` anchors on `CLOSED` on
+  an entry's own first line. `RESOLVED` and `VERIFIED` closures are invisible to it. Deliberately
+  narrow: 16 open tickets mention the word in prose and a body-wide reading would mark them closed
+  and refuse the next ordinary rewrite. Widening needs a marker convention, not a looser regex.
+- [T-982] **`agent-commit.sh` will still commit a worktree-form path that is behind HEAD.**
+  [[T-975]]'s check gates `xcb.sh test`, which is where drift is *detected*; it is **created** one
+  step earlier, when an agent commits a stale worktree copy. The same check belongs in the commit
+  path — refusing a bare `<path>` whose content is behind HEAD, while leaving the
+  `<path>=<content-file>` reconstruction form alone, since that form is how an agent deliberately
+  rebuilds from HEAD.
+- [T-986] **`agent-commit.sh check`'s gate has no in-repo caller, and cannot have one.**
+  Resolving [[T-954]]: `xcb.sh`'s postflight is the wrong cadence, not merely somebody else's file —
+  every intra-batch run (`mutate.sh` alone runs it dozens of times) would see a sibling's freshly
+  declined, still-normal in-flight hunk, which is the exact case `DECLINED-HUNK-STALE`'s 30-minute
+  grace exists **not** to block. The 15-minute heartbeat is the right cadence but is not a file in
+  this repository — it is a prompt the coordinator sets up per batch. **Landed 2026-09-05 by putting
+  the call in the heartbeat prompt itself, as step 2, ahead of batch work.** What remains is the
+  runbook line so the next coordinator does the same; until then it is reachable only by memory.
+
 - [T-977] **`scripts/real-tree-sweep-manifest.sh selftest` is a check nothing runs.** [[T-873]] fixed the
   regenerator and pinned the fix with a `selftest` subcommand that drives the script against a
   deliberately stale manifest and fails on an empty body — and no caller invokes it: it is not in
@@ -60,7 +100,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   vocabulary in the same editor on the same platform, and a hand-typed literal is how the drift
   T-845 closed started. Check the whole `command(...)` table there, not only this row.
 
-- [T-975] **The shared working tree silently drifts behind HEAD while agents run, and an integration
+- [T-975] **CLOSED 2026-09-05 (`0fbe7ecc`).** scripts/worktree-drift.sh plus an xcb.sh preflight gate; refuses a test run at exit 7 before taking the lock, and distinguishes a stale copy (repairable) from a stale base (repair refuses, because it would destroy an agent's edits). Found a fifth instance on its first real run. **Filed as:** **The shared working tree silently drifts behind HEAD while agents run, and an integration
   run started against it tests the wrong code.** Measured four times between 2026-09-04 and
   2026-09-05. The worst instance: after Batch V the worktree's `docs/TODO.md` was missing **five**
   ticket ids HEAD had (T-954, T-955, T-956, T-959, T-965) and its
@@ -76,7 +116,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   The working practice that has caught all four instances is `comm -23` on the id sets; make it a
   script and call it from `xcb.sh`'s preflight for the `test` action.
 
-- [T-954] **`agent-commit.sh check` is a gate nothing calls.** [[T-781]] gave the declined-hunk
+- [T-954] **CLOSED 2026-09-05 (`0ecdcd12`).** resolved as a decision rather than a code change -- see [[T-986]]. The call now runs as step 2 of the coordinator heartbeat. **Filed as:** **`agent-commit.sh check` is a gate nothing calls.** [[T-781]] gave the declined-hunk
   ledger a check that *fails* rather than reports, which is what a batch-completion gate needs — and
   nothing in this repository invokes it. The two candidates both belong to somebody else: the
   15-minute heartbeat (which today calls only `scripts/codex-inbox.sh`, itself deliberately "a
@@ -86,7 +126,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the same sandbox boundary recorded in `docs/SUBAGENT_RUNBOOK.md` for [[T-974]]. Decide between the
   heartbeat and `xcb.sh`; `DECLINED-HUNK-STALE` covers the interval in the meantime.
 
-- [T-955] **`scripts/mutate.sh` did not release the test-host lock when SIGTERMed during a build.**
+- [T-955] **CLOSED 2026-09-05 (`0ecdcd12`).** a real TOCTOU race, not the naive signal-during-baseline case: mkdir took the lock before the runner recorded holding it, so a signal in that gap released nothing. Signals are now blocked around both steps. **Filed as:** **`scripts/mutate.sh` did not release the test-host lock when SIGTERMed during a build.**
   Measured 2026-09-04: a runner killed with a plain `kill` (not `-9`) between acquiring the lock and
   finishing its baseline left the lock held by a dead pid; a sibling `xcb.sh` run sat in the queue
   283s and would have sat there indefinitely. The tree restore *did* happen — `mutate.sh` reported
@@ -95,7 +135,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is `SIGTERM` failing to complete one while a subprocess build is in flight. Reproduce by killing a
   runner during `-- baseline --` and reading `scripts/test-host-lock.sh status`.
 
-- [T-956] **`scripts/test-host-lock.sh` does not reap a lock whose owner process is gone.** The
+- [T-956] **CLOSED 2026-09-05 (`0ecdcd12`).** the reclaim branch checks kill -0 on the recorded owner as well as lease age, still deferring to live test hosts so a nohup'd build survives its shell. status reports OWNER DEAD distinctly. **Filed as:** **`scripts/test-host-lock.sh` does not reap a lock whose owner process is gone.** The
   other half of [[T-955]], and the more general one: `status` printed `locked by mut-v1t974 / pid
   75603 (held)` for a pid that no longer existed, while a queued sibling waited. Whatever the holder
   does or fails to do on the way out, a lock naming a dead pid is reclaimable — `kill -0` on the
