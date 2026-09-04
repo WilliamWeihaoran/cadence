@@ -216,9 +216,16 @@ enum MarkdownStylist {
     nonisolated static let ruleColor      = Theme.nsRule
 
     // Semantic (non-palette) highlight colors — deliberately unchanged by the neutral repaint.
+    /// Already the pre-composited, opaque swatch (`Theme.markerHighlightFill`'s doc comment has
+    /// the T-856 reasoning) — paint this directly as a background; it needs no alpha of its own to
+    /// stay legible against `highlightTextColor`.
     nonisolated static let highlightFillColor = Theme.nsMarkerHighlightFill
     nonisolated static let highlightBorderColor = Theme.nsMarkerHighlightBorder
     nonisolated static let highlightTextColor = Theme.nsMarkerHighlightText
+    /// The marker pen's raw, undiluted hue — for a tint that is not a highlighted-text background
+    /// (a chip fill, say). Reading this instead of `highlightFillColor` for that job is deliberate;
+    /// see `Theme.markerHighlightAccent`.
+    nonisolated static let highlightAccentColor = Theme.nsMarkerHighlightAccent
 
     static let baseFont   = NSFont.systemFont(ofSize: 14)
     static let monoFont   = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

@@ -318,7 +318,7 @@ enum MarkdownTaskEmbedDrawing {
 
         let scheduledColor: NSColor = isOverdo(task)
             ? MarkdownStylist.redColor
-            : (isDoToday(task) ? MarkdownStylist.highlightFillColor : MarkdownStylist.dimColor)
+            : (isDoToday(task) ? MarkdownStylist.highlightAccentColor : MarkdownStylist.dimColor)
         chips.append(Chip(
             label: scheduledLabel(for: task),
             color: scheduledColor,
@@ -545,7 +545,7 @@ enum MarkdownTaskEmbedDrawing {
         case .high:
             return MarkdownStylist.redColor
         case .medium:
-            return MarkdownStylist.highlightFillColor
+            return MarkdownStylist.highlightAccentColor
         case .low:
             return MarkdownStylist.blueColor
         case .none:

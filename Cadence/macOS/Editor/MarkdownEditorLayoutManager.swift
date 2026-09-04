@@ -132,7 +132,10 @@ final class CadenceLayoutManager: NSLayoutManager {
 
                 let radius = MarkdownDecorationGeometry.highlightCornerRadius(for: highlightRect)
                 let path = NSBezierPath(roundedRect: highlightRect, xRadius: radius, yRadius: radius)
-                MarkdownStylist.highlightFillColor.withAlphaComponent(0.38).setFill()
+                // T-856: `highlightFillColor` is already the pre-composited, opaque swatch — the
+                // alpha that keeps `highlightTextColor` legible on it lives in
+                // `Theme.markerHighlightFill`'s own definition now, not here.
+                MarkdownStylist.highlightFillColor.setFill()
                 path.fill()
                 MarkdownStylist.highlightBorderColor.withAlphaComponent(0.62).setStroke()
                 path.lineWidth = 0.8

@@ -151,51 +151,92 @@ struct CadenceContrastFloorTests {
     // MARK: - The marker highlight
 
     /// T-848 measured highlighted markdown text at 1.48:1 and called it unreadable. The arithmetic
-    /// is right and the pair is wrong: `markerHighlightFill` is **never drawn opaque**. The editor
-    /// fills the highlight rect at a fraction of alpha over a near-black text view, so what a
-    /// reader actually sees is `markerHighlightText` on that composite — around 7:1, not 1.48:1.
+    /// was right and the pair was wrong: `Theme.markerHighlightAccent` (the raw pen hue) is never
+    /// drawn opaque behind `markerHighlightText` — the editor used to fill the highlight rect at a
+    /// fraction of alpha over a near-black text view, so what a reader actually saw was
+    /// `markerHighlightText` on that composite, around 7:1, not 1.48:1. T-856 found the alpha was
+    /// therefore load-bearing for legibility and lived nowhere Theme-adjacent — a second drawer
+    /// (`MarkdownTaskEmbedDrawingSupport`) already reused the raw accent for an unrelated chip
+    /// tint, and a third one reaching for "the fill" and painting it opaque would have shipped
+    /// unreadable text with nothing going red.
     ///
-    /// Which makes the alpha load-bearing rather than cosmetic, and that is what this pins. The
-    /// fraction is **read out of the drawing code** and fed into the arithmetic, so raising it
-    /// toward opaque — the one edit that would make the audit's number the real one — recomputes
-    /// the ratio here and fails. A remembered `0.38` would not have caught it.
-    @Test func theMarkerHighlightIsMeasuredAtTheAlphaTheEditorActuallyDrawsIt() throws {
-        let drawing = try t853Source("Cadence/macOS/Editor/MarkdownEditorLayoutManager.swift")
-        let alphaPattern = #"highlightFillColor\.withAlphaComponent\(([0-9.]+)\)"#
+    /// **So the composite is what `Theme` now offers as `markerHighlightFill`.** The alpha moved
+    /// into `Theme.swift`'s own `markerHighlightFillAlpha` and is baked into `markerHighlightFill`
+    /// at declaration, pre-flattened to an opaque colour — `MarkdownEditorLayoutManager` paints it
+    /// with a bare `.setFill()`, no alpha of its own left to drift. This test therefore measures
+    /// `Theme.markerHighlightText` directly against `Theme.markerHighlightFill`, with no alpha
+    /// parameter to read out of the drawing code, because there no longer is one there to read.
+    @Test func theMarkerHighlightFillIsPreCompositedAndStaysLegibleWithItsText() throws {
+        // The fill is opaque by construction now — not a wash a caller still has to attenuate.
+        let fillComponents = t853Components(Theme.markerHighlightFill)
+        #expect(fillComponents.a == 1, "Theme.markerHighlightFill is no longer fully opaque")
 
-        #expect(
-            CadenceSourceScan.captures(alphaPattern, in: "MarkdownStylist.highlightFillColor.withAlphaComponent(0.5).setFill()").map(\.text) == ["0.5"],
-            "self-check: the alpha needle no longer reads an alpha"
-        )
-        #expect(
-            CadenceSourceScan.captures(alphaPattern, in: "MarkdownStylist.highlightBorderColor.withAlphaComponent(0.62).setStroke()").isEmpty,
-            "self-check: the alpha needle reads the border stroke as the fill"
-        )
+        // And it is not simply the raw accent re-exported under a new name — compositing actually
+        // happened. Rather than remember the alpha (the exact trap this ticket is about — a copy
+        // of `0.38` sitting in this file would drift from `Theme`'s exactly the way the drawing
+        // code's copy used to), this checks the invariant every alpha blend must satisfy: each
+        // channel of the result lies between the same channel of the two colours it was mixed
+        // from, and — because `Theme.bg` is near-black and the accent is a saturated yellow, not
+        // equal on any channel — strictly between rather than at either end.
+        let accentComponents = t853Components(Theme.markerHighlightAccent)
+        let bgComponents = t853Components(Theme.bg)
+        for (channel, fill, accent, bg) in [
+            ("red", fillComponents.r, accentComponents.r, bgComponents.r),
+            ("green", fillComponents.g, accentComponents.g, bgComponents.g),
+            ("blue", fillComponents.b, accentComponents.b, bgComponents.b),
+        ] {
+            let lower = min(accent, bg), upper = max(accent, bg)
+            #expect(
+                fill > lower && fill < upper,
+                "Theme.markerHighlightFill's \(channel) channel (\(fill)) is not strictly between the accent's (\(accent)) and Theme.bg's (\(bg)) — not a genuine partial blend of the two"
+            )
+        }
 
-        let alphas = CadenceSourceScan.captures(alphaPattern, in: drawing).map(\.text)
-        #expect(alphas.count == 1, "expected one highlight fill, found \(alphas.count)")
-        let alphaText = try #require(alphas.first)
-        let alpha = try #require(Double(alphaText))
-        #expect(alpha > 0 && alpha <= 1)
-
-        // The surface underneath is the text view's own background, also read rather than assumed.
-        let editor = try t853Source("Cadence/macOS/Editor/MarkdownEditorView.swift")
-        let backgrounds = CadenceSourceScan.captures(#"textView\.backgroundColor = Theme\.(\w+)"#, in: editor).map(\.text)
-        #expect(backgrounds == ["nsBg"], "the markdown text view now draws on \(backgrounds), not Theme.nsBg")
-
-        let painted = t853Ratio(
-            Theme.markerHighlightText,
-            on: Theme.markerHighlightFill.opacity(alpha),
-            over: Theme.bg
-        )
+        let painted = t853Ratio(Theme.markerHighlightText, on: Theme.markerHighlightFill)
         #expect(
             painted >= 4.5,
-            "highlighted markdown text reads at \(t853Rounded(painted)):1 as drawn (fill at \(alpha) over Theme.bg)"
+            "highlighted markdown text reads at \(t853Rounded(painted)):1 against Theme.markerHighlightFill"
         )
 
         // And the pen still reads as a pen: the fill has to lift off the page it is drawn on.
-        let lift = t853Ratio(Theme.markerHighlightFill.opacity(alpha), on: Theme.bg)
+        let lift = t853Ratio(Theme.markerHighlightFill, on: Theme.bg)
         #expect(lift > 1.5, "the highlight fill no longer separates from Theme.bg")
+
+        // The surface underneath the editor is still the text view's own background: the composite
+        // was baked assuming `Theme.bg`, and this is what would silently invalidate that.
+        let editor = try t853Source("Cadence/macOS/Editor/MarkdownEditorView.swift")
+        let backgrounds = CadenceSourceScan.captures(#"textView\.backgroundColor = Theme\.(\w+)"#, in: editor).map(\.text)
+        #expect(backgrounds == ["nsBg"], "the markdown text view now draws on \(backgrounds), not Theme.nsBg")
+    }
+
+    /// The drawing code reads the pre-composited swatch and nothing else: no `.withAlphaComponent`
+    /// reintroduced beside it, which would double up on top of the alpha now baked into
+    /// `Theme.markerHighlightFill` and quietly wash the highlight out again.
+    @Test func theLayoutManagerPaintsTheCompositeWithNoAlphaOfItsOwn() throws {
+        let drawing = try t853Source("Cadence/macOS/Editor/MarkdownEditorLayoutManager.swift")
+        #expect(
+            CadenceSourceScan.matchCount(#"highlightFillColor\.setFill\(\)"#, in: drawing) == 1,
+            "expected exactly one bare `highlightFillColor.setFill()`"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"highlightFillColor\.withAlphaComponent"#, in: drawing) == 0,
+            "the layout manager re-applies its own alpha on top of the pre-composited fill"
+        )
+    }
+
+    /// The one other reader of the marker-highlight hue (`MarkdownTaskEmbedDrawingSupport`'s
+    /// scheduled/priority chips) reads the raw accent, not the text-legible composite — reading
+    /// `highlightFillColor` there would silently wash the chip tint out toward `Theme.bg`.
+    @Test func theTaskEmbedChipsReadTheRawAccentNotTheComposite() throws {
+        let drawing = try t853Source("Cadence/macOS/Editor/MarkdownTaskEmbedDrawingSupport.swift")
+        #expect(
+            CadenceSourceScan.matchCount(#"\bhighlightFillColor\b"#, in: drawing) == 0,
+            "MarkdownTaskEmbedDrawingSupport now reads the pre-composited fill for a non-text-background use"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\bhighlightAccentColor\b"#, in: drawing) == 2,
+            "expected exactly the two known chip/priority call sites"
+        )
     }
 
     // MARK: - White on a saturated fill

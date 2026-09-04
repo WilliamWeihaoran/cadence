@@ -326,9 +326,38 @@ nonisolated struct Theme {
     // read as a physical highlighter, so it deliberately keeps its warm hue through the neutral
     // repaint rather than resolving to `amber`.
 
-    static let markerHighlightFill = Color(hex: "#f6c343")
+    /// The marker pen's own hue, undiluted. **Not** safe to paint as an opaque background behind
+    /// `markerHighlightText` — that pairing reads at 1.48:1. Read this only for a use that is not
+    /// "a highlighted-text background", such as a chip or badge tint that wants the same warm hue
+    /// (`MarkdownTaskEmbedDrawingSupport`'s scheduled/priority chips already do, at their own
+    /// alpha). Anything that wants a highlighted span's background reads `markerHighlightFill`
+    /// below instead — the deliberately less inviting name is the point.
+    static let markerHighlightAccent = Color(hex: "#f6c343")
     static let markerHighlightBorder = Color(hex: "#ffd66b")
     static let markerHighlightText = Color(hex: "#fff4c2")
+
+    /// The alpha `markerHighlightAccent` is painted at behind highlighted markdown text.
+    ///
+    /// **T-856.** This used to be a bare `0.38` inside `MarkdownEditorLayoutManager`'s own
+    /// `NSBezierPath` fill call, the only place in the repository that said so. `markerHighlightText`
+    /// on `markerHighlightAccent` unmodified is 1.48:1; on the accent at *this* alpha over `bg` it
+    /// is ~7:1 — so the alpha was load-bearing for legibility and nothing before this named it
+    /// Theme-side. A second drawer already reusing the accent (`MarkdownTaskEmbedDrawingSupport`,
+    /// for an unrelated chip tint, at its own 0.13/0.38) had no way to know the number mattered
+    /// elsewhere, and a third drawer painting the accent opaque would have shipped unreadable text
+    /// with nothing going red. See `markerHighlightFill`.
+    private static let markerHighlightFillAlpha: Double = 0.38
+
+    /// `markerHighlightAccent` pre-composited over `bg` at `markerHighlightFillAlpha`, flattened to
+    /// an **opaque** colour. This is what "the marker highlight fill" means everywhere outside this
+    /// declaration: `MarkdownEditorLayoutManager` paints it directly with no alpha of its own left
+    /// to remember or drift, and `markerHighlightText` measures at ~7:1 against it rather than the
+    /// 1.48:1 the undiluted accent gives — pinned in `CadenceContrastFloorTests`. A future surface
+    /// that reaches for "the highlight fill" gets an already-legible swatch by construction; reading
+    /// `markerHighlightAccent` and painting *that* opaque behind `markerHighlightText` is still
+    /// possible (Swift cannot forbid it), but it means deliberately naming the accent instead of the
+    /// thing every other call site calls "the fill".
+    static let markerHighlightFill = markerHighlightAccent.opacity(markerHighlightFillAlpha).composited(over: bg)
 
     // MARK: - Accents
     //
@@ -572,6 +601,7 @@ nonisolated extension Theme {
     static let nsRule = nsColor(rule)
 
     static let nsMarkerHighlightFill = nsColor(markerHighlightFill)
+    static let nsMarkerHighlightAccent = nsColor(markerHighlightAccent)
     static let nsMarkerHighlightBorder = nsColor(markerHighlightBorder)
     static let nsMarkerHighlightText = nsColor(markerHighlightText)
 
@@ -607,5 +637,27 @@ nonisolated extension Color {
             (a, r, g, b) = (255, 0, 0, 0)
         }
         self.init(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue: Double(b) / 255, opacity: Double(a) / 255)
+    }
+
+    /// This colour's own alpha, painted over `base`, flattened to an **opaque** result — the
+    /// standard "alpha blend" formula, `top * a + under * (1 - a)` per channel.
+    ///
+    /// `resolve(in:)` rather than an `NSColor`/`UIColor` bridge: `Theme.swift` is a shared file
+    /// (both AppKit's `NSColor` bridge below and a hypothetical `UIColor` one are platform-gated),
+    /// and `Color.Resolved` gives the same sRGB components on both without a second bridge to keep
+    /// in sync. The environment argument does not matter here — every colour this composites is a
+    /// literal `Color(hex:)`, and `Theme.preferredColorScheme` is a fixed `.dark` with no per-view
+    /// environment this could read differently.
+    func composited(over base: Color) -> Color {
+        let top = resolve(in: EnvironmentValues())
+        let under = base.resolve(in: EnvironmentValues())
+        let alpha = Double(top.opacity)
+        return Color(
+            .sRGB,
+            red: Double(top.red) * alpha + Double(under.red) * (1 - alpha),
+            green: Double(top.green) * alpha + Double(under.green) * (1 - alpha),
+            blue: Double(top.blue) * alpha + Double(under.blue) * (1 - alpha),
+            opacity: 1
+        )
     }
 }
