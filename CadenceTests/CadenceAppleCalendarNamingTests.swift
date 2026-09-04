@@ -1,3 +1,4 @@
+import EventKit
 import Foundation
 import Testing
 @testable import Cadence
@@ -44,6 +45,9 @@ struct CadenceAppleCalendarNamingTests {
         // The fallback for `calendar.source?.title`: which account, when the calendar names none.
         ("Cadence/iOS/iOSCalendarSettingsSection.swift", "unnamedAccountTitle", 1),
         ("Cadence/macOS/Views/SettingsListManagementSections.swift", "unnamedAccountTitle", 1),
+        // T-692: the same fallback, converged from a hardcoded "Other" in the calendar-link
+        // picker's own account grouping.
+        ("Cadence/macOS/CadenceCalendarPicker.swift", "unnamedAccountTitle", 1),
     ]
 
     // MARK: - The split
@@ -151,5 +155,37 @@ struct CadenceAppleCalendarNamingTests {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceAppleCalendarNaming.swift")
         #expect(CadenceSourceScan.strippingComments(raw).contains("\"Apple Calendar\""))
         #expect(CadenceSourceScan.codeOnly(raw).contains("\"Apple Calendar\"") == false)
+    }
+
+    // MARK: - T-692: the same absence, two words, on the same platform
+
+    /// **The fixture, not the assumption.** `EKCalendar.source` is only ever unset in code by
+    /// leaving a freshly-minted, never-saved calendar alone — there is no initializer that takes a
+    /// source, and asking a real `EKEventStore` for its sources needs calendar access this suite
+    /// does not have and must not request. A fresh `EKCalendar` has no source until one is
+    /// assigned, so it reproduces the exact absence both call sites fall back on without touching
+    /// EventKit permissions at all.
+    ///
+    /// Before T-692, `calendar.source?.title ?? "Other"` (`CadenceCalendarPicker`) and
+    /// `calendar.source?.title ?? CadenceAppleCalendarNaming.unnamedAccountTitle` (Settings →
+    /// Calendar) disagreed for this identical calendar. This pins that they no longer can: both
+    /// expressions are the same expression now, so there is nothing left for them to disagree
+    /// about, and a regression would have to reintroduce a second literal to reopen the gap.
+    @Test func anUnnamedSourceReadsTheSameWordEverySiteThatFallsBackOnIt() {
+        let store = EKEventStore()
+        let calendarWithNoSource = EKCalendar(for: .event, eventStore: store)
+        calendarWithNoSource.title = "Untitled Calendar"
+
+        #expect(
+            calendarWithNoSource.source == nil,
+            "the fixture calendar already has a source, so it does not reproduce the absence T-692 is about"
+        )
+
+        // Settings → Calendar's fallback, and — after T-692 — `CadenceCalendarPicker`'s: the same
+        // expression, so pinning it once covers both call sites' behaviour. The call-site scan in
+        // `everySiteReadsTheConstantForTheConceptItMeans` is what confirms the picker actually
+        // reads this constant rather than a second copy of the same literal.
+        let resolved = calendarWithNoSource.source?.title ?? CadenceAppleCalendarNaming.unnamedAccountTitle
+        #expect(resolved == "Apple Calendar")
     }
 }

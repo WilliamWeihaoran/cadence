@@ -541,6 +541,13 @@ struct CadenceSettingsSectionCopyTests {
     /// stops a later pass reading this test as "the row is fully shared" and collapsing the
     /// sentences too. They name different surfaces because the surfaces differ (T-544): the phone
     /// draws the band on the Calendar's day columns and nowhere else.
+    ///
+    /// **T-696/T-697.** Both sentences now say "on weekdays" — the band's real gate — and iOS's
+    /// says more besides, because the same two keys reach further on that platform (see the doc
+    /// comment on `iOSCalendarWorkHoursSection`). The suffix each surface owns is asserted in
+    /// `theMacWorkHoursSentenceSaysOnWeekdaysAndNothingElse` and
+    /// `theIOSWorkHoursSentenceNamesTheWeekendGapAndTheSchedulingReach`, so this test only pins the
+    /// shared prefix.
     @Test func bothWorkHoursRowsReadOneWorkdayBoundaryTitle() throws {
         for path in Self.workHoursSurfaces {
             let code = try Self.strippedSource(at: path)
@@ -553,7 +560,7 @@ struct CadenceSettingsSectionCopyTests {
                 "\(path) still spells \"Workday boundary\" beside the constant that holds it"
             )
             #expect(
-                code.contains("gently highlight \\(workHoursLabel)."),
+                code.contains("gently highlight \\(workHoursLabel)"),
                 "\(path) no longer states the window under the title, so the pair below is moot"
             )
         }
@@ -569,6 +576,36 @@ struct CadenceSettingsSectionCopyTests {
         #expect(
             mac.contains("Weekly calendar views") == false,
             "the Mac's work-hours sentence is back to naming a surface that does not draw the band"
+        )
+    }
+
+    /// **T-696.** macOS's subtitle is the band and nothing else — this platform never reads the
+    /// work-hours keys for scheduling — so its whole fix is stating the gate the band already had.
+    @Test func theMacWorkHoursSentenceSaysOnWeekdaysAndNothingElse() throws {
+        let mac = try Self.strippedSource(at: Self.workHoursSurfaces[0])
+        #expect(
+            mac.contains("Text(\"Calendar and Timeline day columns gently highlight \\(workHoursLabel) on weekdays.\")"),
+            "the Mac's work-hours subtitle no longer states the weekday gate the band is actually drawn under"
+        )
+        // Exactly one sentence: unlike iOS, nothing on this platform reads these keys beyond the
+        // band, so a second sentence appearing here would be describing behaviour that does not
+        // exist on the Mac.
+        #expect(CadenceSourceScan.matchCount("gently highlight", in: mac) == 1)
+    }
+
+    /// **T-696/T-697.** iOS's subtitle carries both fixes: "on weekdays" for the band's real gate,
+    /// and a second sentence for the reach T-697 found — the same two keys also feed
+    /// `CadenceScheduleSupport.readyScheduleSlots` ("Ready to Schedule") and `initialTimelineHour`,
+    /// neither of which checks the day of the week, so that sentence says "every day" rather than
+    /// repeating "on weekdays".
+    @Test func theIOSWorkHoursSentenceNamesTheWeekendGapAndTheSchedulingReach() throws {
+        let phone = try Self.strippedSource(at: Self.workHoursSurfaces[1])
+        #expect(
+            phone.contains(
+                "Text(\"Calendar day columns gently highlight \\(workHoursLabel) on weekdays. " +
+                "Ready to Schedule and the day timeline's opening hour use this window every day.\")"
+            ),
+            "the iOS work-hours subtitle no longer names both the weekday gate and the scheduling reach"
         )
     }
 
@@ -869,6 +906,30 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    /// **T-695.** T-577 converged the *project* half of this same card's subtitle into
+    /// `parentSubtitle` and left the *area* half typing `"No context"` inline at both call sites —
+    /// byte-identical in `SettingsListManagementSections.lifecycleCard` (macOS) and
+    /// `iOSSettingsTemplateAndListSections.lifecycleCard` (iOS), a dozen lines above the branch
+    /// that already read the shared function. This is that twin, converged the same way: a shared
+    /// constant instead of a shared function, because an area's empty case is "No context" rather
+    /// than "No parent list" — see the doc comment on `noContextSubtitle` for why those two
+    /// fallbacks are not interchangeable.
+    @Test func neitherInactiveListSurfaceTypesTheAreaFallbackInline() throws {
+        #expect(CadenceListSettingsCopy.noContextSubtitle == "No context")
+
+        for path in Self.inactiveListSurfaces {
+            let code = try Self.strippedSource(at: path)
+            #expect(
+                code.contains("CadenceListSettingsCopy.noContextSubtitle"),
+                "\(path) does not read the shared area-fallback constant"
+            )
+            #expect(
+                !code.contains("\"No context\""),
+                "\(path) still spells \"No context\" beside the constant that holds it"
+            )
+        }
+    }
+
     // MARK: - Values, not source shape
 
     /// The one assertion here that is not a scan: the constants the Mac target **compiles** still
@@ -1056,21 +1117,21 @@ struct CadenceSettingsSectionCopyTests {
         )
         #expect(CadenceSourceScan.matchCount("struct TimelineWorkHoursHighlightLayer", in: layers) == 1)
 
-        // The sentence itself, whole, at its one call site.
+        // The sentence itself, whole, at its one call site. T-696 added "on weekdays" to this
+        // exact spot; the surface set it names ("Calendar and Timeline day columns") is unchanged.
         let mac = try Self.strippedSource(at: Self.workHoursSurfaces[0])
         #expect(
-            mac.contains("Text(\"Calendar and Timeline day columns gently highlight \\(workHoursLabel).\")"),
+            mac.contains("Text(\"Calendar and Timeline day columns gently highlight \\(workHoursLabel) on weekdays.\")"),
             "the Mac's work-hours subtitle no longer names both day-column surfaces"
         )
         #expect(CadenceSourceScan.matchCount("gently highlight", in: mac) == 1)
     }
 
-    /// The band is the same shared rule on both platforms, and neither subtitle mentions the half
-    /// of it that hides the band two days a week.
-    ///
-    /// Recorded rather than fixed (T-696): `shouldShowHighlight(on:)` is the weekend rule, both
-    /// surfaces call it, and both sentences read as unconditional. This pins the behaviour so the
-    /// copy ticket has something to point at.
+    /// The band is the same shared rule on both platforms, and **T-696** made both subtitles say
+    /// so: `shouldShowHighlight(on:)` is the weekend rule, both surfaces call it, and both
+    /// sentences now read "on weekdays" instead of unconditionally. This pins the behaviour *and*
+    /// the words, so a later pass silently dropping "on weekdays" from either sentence — while
+    /// leaving the call-site scans above green — still fails here.
     @Test func theWorkHoursBandIsSuppressedAtTheWeekendOnBothSurfaces() throws {
         var components = DateComponents()
         components.year = 2026
@@ -1088,6 +1149,16 @@ struct CadenceSettingsSectionCopyTests {
             #expect(
                 CadenceSourceScan.matchCount("CalendarWorkHoursPreferences.shouldShowHighlight", in: code) == 1,
                 "\(path) no longer gates the band on the shared weekend rule exactly once"
+            )
+        }
+
+        // The words, not just the gate: both Settings subtitles now say the band the code just
+        // proved is weekday-only is, in fact, weekday-only.
+        for path in Self.workHoursSurfaces {
+            let code = try Self.strippedSource(at: path)
+            #expect(
+                code.contains("on weekdays"),
+                "\(path) gates the band on weekdays in code but its subtitle does not say so"
             )
         }
     }

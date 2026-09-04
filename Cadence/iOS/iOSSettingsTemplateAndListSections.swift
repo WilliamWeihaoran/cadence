@@ -315,7 +315,7 @@ struct iOSListsLifecycleSettingsSection: View {
                             area.name,
                             fallback: CadenceTitleNormalization.defaultAreaName
                         ),
-                        subtitle: area.context?.name ?? "No context",
+                        subtitle: area.context?.name ?? CadenceListSettingsCopy.noContextSubtitle,
                         color: Color(hex: area.colorHex),
                         statusLabel: area.isDone ? "Completed" : "Archived",
                         primaryLabel: area.isDone ? "Reopen" : "Unarchive",

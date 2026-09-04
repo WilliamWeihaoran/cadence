@@ -12,8 +12,9 @@ import Foundation
 /// So the split comes first and the hoist second. The three constants below are byte-identical
 /// today and that is the whole point: each names one concept, so any one of them can be reworded
 /// without dragging the other two along. A future pass that decides an account with no name should
-/// read "iCloud" or "Other" edits `unnamedAccountTitle` alone — see [[T-692]], which is the
-/// divergence that finding turned up.
+/// read "iCloud" or "Other" edits `unnamedAccountTitle` alone — see [[T-692]], which found
+/// `CadenceCalendarPicker` typing "Other" for this exact absence and converged it onto
+/// `unnamedAccountTitle` instead.
 ///
 /// `nonisolated` for the reason `CadenceSettingsSectionCopy` carries the same keyword: the project
 /// sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so a bare enum here would be main-actor
@@ -44,8 +45,10 @@ nonisolated enum CadenceAppleCalendarNaming {
     /// iCloud, an Exchange server, On My Mac — and Settings → Calendar prints it under the
     /// calendar's name. This is what that line says when the source is missing or unnamed.
     ///
-    /// The app currently disagrees with itself here and this constant does not resolve it:
-    /// `CadenceCalendarPicker` groups by the same `source?.title` and falls back to "Other"
-    /// instead. That is a copy decision, filed as [[T-692]] rather than settled by a refactor.
+    /// **T-692.** The app used to disagree with itself here: `CadenceCalendarPicker` grouped by
+    /// the same `source?.title` and fell back to "Other" instead, so an unnamed EventKit account
+    /// read "Apple Calendar" in Settings → Calendar and "Other" in the calendar-link popover for
+    /// the identical absence. The picker now reads this constant too, so both surfaces say the
+    /// same word for the same missing name — see `CadenceCalendarPicker.allGroups`.
     static let unnamedAccountTitle = "Apple Calendar"
 }

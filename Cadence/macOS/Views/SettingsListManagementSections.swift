@@ -691,7 +691,10 @@ struct SettingsListsSection: View {
                             area.name,
                             fallback: CadenceTitleNormalization.defaultAreaName
                         ),
-                        subtitle: area.context?.name ?? "No context",
+                        // T-695: was `area.context?.name ?? "No context"`, typed byte-identically
+                        // in this file and in the iOS twin below — the same duplication T-577
+                        // already converged for the project branch's `parentSubtitle`.
+                        subtitle: area.context?.name ?? CadenceListSettingsCopy.noContextSubtitle,
                         color: Color(hex: area.colorHex),
                         statusLabel: area.isDone ? "Completed" : "Archived",
                         primaryLabel: area.isDone ? "Reopen" : "Unarchive",

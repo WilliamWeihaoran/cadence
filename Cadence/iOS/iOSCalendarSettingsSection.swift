@@ -424,6 +424,19 @@ private struct iOSDormantCalendarLinkRow: View {
 /// `calendar.workHours.*.v1` keys as macOS's `SettingsCalendarWorkHoursSection` — the preference
 /// was `#if os(macOS)` despite its `calendar.*` (not `macos.*`) key namespace, so a window set on
 /// the Mac was invisible and unchangeable here while the iPad timeline drew no band at all.
+///
+/// **T-696.** "on weekdays" in the subtitle below is not decoration: `CalendarWorkHoursPreferences.
+/// shouldShowHighlight(on:)` — the rule the Calendar day columns gate the band on — is false on
+/// Saturday and Sunday, and the sentence used to read as if the band always drew.
+///
+/// **T-697.** These same two keys reach further than the band on this platform, which is exactly
+/// what macOS's copy cannot say about itself (macOS never reads them for scheduling): iPad's
+/// Timeline pane spends them on `CadenceScheduleSupport.ReadyScheduleContext` — the "Ready to
+/// Schedule" chips propose start times inside this window, widening past it only once it is full —
+/// and on `initialTimelineHour`, the hour a non-today day column opens at. Unlike the band, neither
+/// of those checks the day of the week, so the second sentence below says "every day" rather than
+/// "on weekdays": a user who narrows this window to adjust a highlight is also moving where the
+/// app proposes to put their work, seven days a week.
 private struct iOSCalendarWorkHoursSection: View {
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey)
     private var startMinute = CalendarWorkHoursPreferences.defaultStartMinute
@@ -455,7 +468,7 @@ private struct iOSCalendarWorkHoursSection: View {
                             Text(CadenceCalendarSettingsCopy.workdayBoundaryTitle)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Calendar day columns gently highlight \(workHoursLabel).")
+                            Text("Calendar day columns gently highlight \(workHoursLabel) on weekdays. Ready to Schedule and the day timeline's opening hour use this window every day.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)

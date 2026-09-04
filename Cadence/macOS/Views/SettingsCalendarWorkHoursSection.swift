@@ -20,10 +20,19 @@ import SwiftUI
 /// view at all. "Weekly" was wrong a second way: the Calendar page's timeline draws day columns at
 /// Week *and* 2 Weeks, and its Month presentation draws neither a day column nor a band.
 ///
-/// What the sentence still leaves out is the weekend: `CalendarWorkHoursPreferences.shouldShowHighlight(on:)`
-/// suppresses the band on Saturday and Sunday, on both platforms and in neither subtitle (T-696).
-/// The call-site set is pinned by `CadenceSettingsSectionCopyTests`, so a third surface switching
-/// the band on fails a test rather than making this sentence quietly wrong again.
+/// **T-696.** The sentence used to read as unconditional, and it was not:
+/// `CalendarWorkHoursPreferences.shouldShowHighlight(on:)` suppresses the band on Saturday and
+/// Sunday, on both platforms, and neither subtitle said so. "on weekdays" below is that fact,
+/// stated rather than implied. The call-site set for the band itself is pinned by
+/// `CadenceSettingsSectionCopyTests`, so a third surface switching the band on fails a test rather
+/// than making this sentence quietly wrong again.
+///
+/// **T-697.** This window is not only the band's — the same two `calendar.workHours.*.v1` keys
+/// also feed `CadenceScheduleSupport.readyScheduleSlots` and `initialTimelineHour` on the phone,
+/// which is a different fact from a different platform and stays out of *this* sentence for the
+/// same reason "Weekly" did above: macOS never reads these keys for scheduling, only for the band,
+/// so claiming otherwise here would be wrong on this surface. See `iOSCalendarSettingsSection`'s
+/// copy for the sentence that names it.
 struct SettingsCalendarWorkHoursSection: View {
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey) private var startMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var endMinute = CalendarWorkHoursPreferences.defaultEndMinute
@@ -65,7 +74,7 @@ struct SettingsCalendarWorkHoursSection: View {
             Text(CadenceCalendarSettingsCopy.workdayBoundaryTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.text)
-            Text("Calendar and Timeline day columns gently highlight \(workHoursLabel).")
+            Text("Calendar and Timeline day columns gently highlight \(workHoursLabel) on weekdays.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
                 .fixedSize(horizontal: false, vertical: true)

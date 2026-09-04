@@ -69,6 +69,13 @@ nonisolated enum CadenceCalendarSettingsCopy {
     /// iPad's Timeline pane reads the same two preference keys but spends them on
     /// `ReadyScheduleContext`'s slot suggestions, not on a band. The two sentences name their own
     /// surfaces and cannot be converged without one of them becoming false.
+    ///
+    /// Both sentences also used to read as unconditional (T-696): the band is gated by
+    /// `CalendarWorkHoursPreferences.shouldShowHighlight(on:)`, which is false on Saturday and
+    /// Sunday, and neither surface said "weekdays". iOS's sentence additionally used to describe
+    /// only the band (T-697), leaving out that the same window governs where "Ready to Schedule"
+    /// proposes times and where a non-today day column opens — on *every* day, not just weekdays,
+    /// since that half of the rule never checks the calendar.
     static let workdayBoundaryTitle = "Workday boundary"
 
     /// The accessible name of the calendar row's link menu — an icon-only control on both
@@ -276,6 +283,23 @@ nonisolated enum CadenceListSettingsCopy {
         let parts = [contextName, areaName].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? noParentListSubtitle : parts.joined(separator: " • ")
     }
+
+    /// An area filed under no context. The whole line, not a prefix.
+    ///
+    /// **T-695.** The project branch just above reads `parentSubtitle`, a shared function, because
+    /// T-577 found the Mac's copy of it broken and moved the rule here so the two surfaces could
+    /// not drift apart again. The comment on `parentSubtitle` even names this exact fallback —
+    /// "the Mac's own *area* branch twelve lines above already fell back to 'No context'" — as the
+    /// thing that was already fine, and left it inline at both call sites anyway: the area branch
+    /// in `SettingsListManagementSections.lifecycleCard` (macOS) and
+    /// `iOSSettingsTemplateAndListSections.lifecycleCard` (iOS) still typed `"No context"` byte
+    /// for byte, one twin left un-converged while the other was fixed. This is not
+    /// `parentSubtitle(contextName:areaName:)` reused: an area's only possible parent is a
+    /// context, so its empty case reads "No context" rather than "No parent list" — the wording
+    /// project rows need because a project can lack both a context *and* an area. Reusing
+    /// `parentSubtitle` here would have changed that wording as a side effect of de-duplication;
+    /// this constant is the fix that does not.
+    static let noContextSubtitle = "No context"
 }
 
 /// Settings → Contexts and Settings → Lists: the eyebrow over each lifecycle group, on both

@@ -25,10 +25,17 @@ struct CadenceCalendarPickerList: View {
     @FocusState private var isSearchFocused: Bool
 
     /// Calendars grouped by their account/source, each group sorted by name.
+    ///
+    /// **T-692.** This read the same absence — `cal.source?.title` missing — as Settings → Calendar
+    /// and fell back to a different word: "Other" here, `CadenceAppleCalendarNaming
+    /// .unnamedAccountTitle` ("Apple Calendar") there, for the same unnamed EventKit account. Now
+    /// both say "Apple Calendar", which also doubles as this group's own heading (`SectionEyebrowLabel
+    /// (text: group.source, …)` below), so an unnamed source's group in this popover reads the same
+    /// as its row in Settings.
     private var allGroups: [(source: String, cals: [EKCalendar])] {
         var dict: [String: [EKCalendar]] = [:]
         for cal in calendars {
-            let src = cal.source?.title ?? "Other"
+            let src = cal.source?.title ?? CadenceAppleCalendarNaming.unnamedAccountTitle
             dict[src, default: []].append(cal)
         }
         return dict
