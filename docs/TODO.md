@@ -43,24 +43,33 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
-- [T-974] **`agent-commit.sh`'s ledger guard validates against one HEAD and commits onto another.**
-  Measured 2026-09-04. u3's `3a381116` dropped u1's `T-935`, which u1 had filed in `72e3122`, even
-  though u3 passed only `--removes 67` and never declared a dropped id. The guard is **not** broken:
-  probed directly at `d6a808e6` with a fixture missing exactly one entry, it refused with
-  `LEDGER-IDS-LOST: T-935`, and `--removes 999` did not bypass it. So the check works and the flag
-  does not weaken it.
-  What fits the evidence is a **race inside the helper**: it reads `git cat-file -p HEAD:<path>` to
-  build the comparison, then later `update-ref`s onto whatever HEAD is by then. A sibling landing in
-  that window makes the new commit a child of a HEAD the validation never saw — so ids that arrived
-  in that window are invisible to the check and vanish silently. Four agents committing concurrently
-  makes the window reachable; this is the first time it has been caught, and only because u3 diffed
-  ticket-id sets afterwards rather than trusting its own commit.
-  **Fix:** capture the HEAD sha once, validate against that sha, and refuse at `update-ref` if HEAD
-  has moved since — the compare-and-swap the helper is currently missing. `git update-ref` takes an
-  expected old value for exactly this. Then pin it with a selftest that lands a sibling commit inside
-  the window and requires the refusal.
-  Until then the working practice stands and it is what caught this: **diff ticket-id sets against
-  the previous known-good commit after any ledger commit**, rather than trusting the guard alone.
+- [T-954] **`agent-commit.sh check` is a gate nothing calls.** [[T-781]] gave the declined-hunk
+  ledger a check that *fails* rather than reports, which is what a batch-completion gate needs — and
+  nothing in this repository invokes it. The two candidates both belong to somebody else: the
+  15-minute heartbeat (which today calls only `scripts/codex-inbox.sh`, itself deliberately "a
+  report, not a gate", exit 0 always) and `scripts/xcb.sh`, which every agent runs many times a
+  batch. A Swift test **cannot** do it: the ledger lives under `$TMPDIR`, and the App-Sandboxed test
+  host's `$TMPDIR` is its own container, so the host cannot see the shell agents' ledger at all —
+  the same sandbox boundary recorded in `docs/SUBAGENT_RUNBOOK.md` for [[T-974]]. Decide between the
+  heartbeat and `xcb.sh`; `DECLINED-HUNK-STALE` covers the interval in the meantime.
+
+- [T-955] **`scripts/mutate.sh` did not release the test-host lock when SIGTERMed during a build.**
+  Measured 2026-09-04: a runner killed with a plain `kill` (not `-9`) between acquiring the lock and
+  finishing its baseline left the lock held by a dead pid; a sibling `xcb.sh` run sat in the queue
+  283s and would have sat there indefinitely. The tree restore *did* happen — `mutate.sh` reported
+  "every mutated file is back at its baseline" — so it is the lock release specifically, and it is
+  the release that other agents pay for. The runbook already warns that `SIGKILL` skips traps; this
+  is `SIGTERM` failing to complete one while a subprocess build is in flight. Reproduce by killing a
+  runner during `-- baseline --` and reading `scripts/test-host-lock.sh status`.
+
+- [T-956] **`scripts/test-host-lock.sh` does not reap a lock whose owner process is gone.** The
+  other half of [[T-955]], and the more general one: `status` printed `locked by mut-v1t974 / pid
+  75603 (held)` for a pid that no longer existed, while a queued sibling waited. Whatever the holder
+  does or fails to do on the way out, a lock naming a dead pid is reclaimable — `kill -0` on the
+  recorded owner, and a waiter that finds it dead takes the lock and says so. Without that, any
+  crash of a lock holder (not just a kill) stalls every other agent until a human notices. Released
+  by hand this time with `test-host-lock.sh release <id>`.
+
 
 - [T-949] **`CadenceDefaults` only routes `@AppStorage` and the calendar memory; a service reading
   `UserDefaults.standard` directly reaches the wrong store in no shipping configuration — measured,
@@ -423,22 +432,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 - [T-780] **Nothing makes an agent *use* `scripts/agent-commit.sh`.** [[T-679]] is fixed in the sense
-  that the incantation is now a script that refuses the four measured failures — but the instruction
-  to call it is prose in `AGENTS.md` and `docs/SUBAGENT_RUNBOOK.md`, which is exactly the shape T-679
-  was filed about (`git add <specific paths>` was also prose, was also followed, and was also
-  insufficient). A bare `git commit` still works and still sweeps a sibling's staged hunk. Candidate:
-  a repo-checked-in `core.hooksPath` with a `pre-commit` that refuses a commit staging paths the
-  caller did not declare, with an escape hatch for the user's own commits. Not done here because a
-  hook changes the user's git configuration, which is their call, not an agent's.
+  that the incantation is now a script that refuses the measured failures — but the instruction to
+  call it is prose in `AGENTS.md` and `docs/SUBAGENT_RUNBOOK.md`, which is exactly the shape T-679
+  was filed about. A bare `git commit` still works and still sweeps a sibling's staged hunk.
+  **Designed and measured 2026-09-04, deliberately not landed.** A tracked `.githooks/pre-commit`
+  behind `core.hooksPath` refuses a bare `git commit` and `git commit --amend`, from the root and
+  from a subdirectory, and does **not** touch `agent-commit.sh` — that commits by
+  `write-tree`/`commit-tree`/`update-ref`, and git runs no hooks for plumbing, which is the whole
+  reason the hook can be strict. `--no-verify` bypasses it, unfixably. The part the hook does not
+  solve is that `core.hooksPath` lives in the untracked `.git/config`, so a fresh clone has none and
+  nothing reminds anyone — closing that means `xcb.sh`/`agent-commit.sh` setting it idempotently,
+  i.e. installing configuration into the user's repository unasked.
+  **This needs the user's decision, not an agent's**, because it would refuse their own by-hand
+  commits in their own checkout. Options, costs and a recommendation are in
+  `docs/DECISIONS_PENDING.md`. Do not land it before that is answered.
 
-- [T-781] **A declined hunk that is never re-committed is still caught by nothing automatic.**
-  `agent-commit.sh` records what a `path=<content-file>` reconstruction declined and refuses the
-  *next* commit of that path unless it carries them (`DECLINED-HUNK-LOST`) — the Batch M failure
-  where m3 correctly declined m4's work, m4 committed without it, and HEAD stopped compiling. But if
-  nobody commits that path again, no commit-time check ever fires. The backstop is
-  `./scripts/agent-commit.sh status`, and reading it is a habit, not a mechanism. Candidate: have
-  `scripts/xcb.sh` print outstanding records at the end of every run, so the listing lands in front
-  of whoever is already looking at a build log.
 
 - [T-720] **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
   `Cadence/Models/ModelEnums.swift` — `label` returns Never/Daily/Weekly/Monthly/Yearly and `shortLabel`
@@ -2038,6 +2046,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   already a second synced caller — so the sweep is worth having before one is added, not after.
 
 ## Done
+- [T-974] **CLOSED 2026-09-04 (`c1cc8c27`).** The race was **reproduced before it was fixed**, not
+  inferred: a fixture repository plus an interception that lands a sibling commit exactly at
+  `write-tree` produced the measured failure verbatim — exit 0, the commit parented on the sibling's
+  commit, and `T-935` gone from `HEAD:TODO.md` with no refusal of any kind.
+  The cause was **not** a missing compare-and-swap; `update-ref` already took an expected old value.
+  It was that `headsha` was read *after* every check, so the swap compared the new head against
+  itself and passed, while the tree came from a `read-tree` of the old head and reverted whatever
+  the sibling had landed in it.
+  `HEAD` is now read exactly once, before anything, and every check — `FOREIGN-STAGED`,
+  `DECLINED-HUNK-LOST`, `LEDGER-IDS-LOST`, `REMOVES-HEAD-LINES`, `NOTHING-TO-COMMIT` — is answered
+  against that sha; a `HEAD` that has moved is `HEAD-MOVED`, nothing is committed, and the agent
+  re-reads and runs it again. Two selftest modes pin it, each asserting the interception **fired**
+  before asserting anything about its effect: mode 5 races at `write-tree`; mode 5b races one step
+  earlier, between the sha capture and the index diff, where the sibling's own shared-index repair
+  would otherwise be reported as *their* foreign staged hunk and send the next agent to `git reset`
+  a commit.
+  Mutations: re-reading `HEAD` before the swap is KILLED; deleting the pre-swap refusal SURVIVES and
+  deleting it *together with* the expected-old-value is KILLED, which is what shows the swap is the
+  guard rather than the pre-check; and pointing the interception at a subcommand the script never
+  runs is KILLED by the control, so neither mode can pass vacuously.
+  One trap found on the way, recorded in `docs/SUBAGENT_RUNBOOK.md`: the App-Sandboxed test host
+  **cannot exec a file it just wrote**, so the obvious `$PATH` shim was silently skipped and mode 5
+  passed thirty-seven checks while proving nothing. The interception is a `.zshenv` shell function
+  instead — reading a file is not executing one.
+
+- [T-781] **CLOSED 2026-09-04 (`c1cc8c27`).** Two things, because the gap has two halves.
+  `./scripts/agent-commit.sh check` **exits 3** while any declined record is outstanding — that is
+  the batch-completion gate, and it *fails* rather than reports, which is the whole difference from
+  `status`. And `DECLINED-HUNK-STALE` refuses the next commit by **any** agent in the checkout once
+  a record is older than `$CADENCE_DECLINED_STALE_MINUTES` (default 30), quoting the stranded lines;
+  every agent commits, so it fires with nobody in the loop, and a fresh record — the ordinary
+  in-flight case — blocks nothing. `accept <path>` clears one out of band, because
+  `--accept-declined` only reaches a path the current commit names, and the agent who has to clear
+  an abandoned hunk is rarely the one committing that file next.
+  A related hole was found and fixed with it: the record was deleted **while the checks were still
+  running**, so any later refusal left the retry unprotected. That was latent before and reachable
+  now, because `HEAD-MOVED` ([[T-974]]) is a refusal an agent hits and then immediately retries.
+  Clearing is deferred until `update-ref` has actually landed. Mutations: restoring the early
+  `rm -f`, deleting the stale refusal, and making `check` see an empty ledger are each KILLED, and
+  so is backdating the fixture's record by one minute instead of ninety — so it is the age doing the
+  refusing and not something else.
+
 - [T-796] **CLOSED 2026-09-04 (`7f37155b`).** Measured fresh rather than trusted against the
   ticket's own four-day-old count: of the four sites it named, two
   (`MarkdownEditorView.swift`'s `MarkdownReferenceMenuButton`, `iOSCalendarSettingsSection.swift`'s

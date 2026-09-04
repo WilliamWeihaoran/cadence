@@ -93,6 +93,9 @@ Long references, searchable only when needed:
 - Do not revert unrelated user or agent changes.
 - **Commit with `scripts/agent-commit.sh <id> -m <msg> <path>...`, not `git commit`** (T-679). The
   index is shared: it refuses a foreign staged path, commits a private one, then repairs the shared one.
+  `HEAD-MOVED` (T-974) means a sibling landed while you were validating — nothing was committed,
+  re-read `git show HEAD:<path>` and run it again. Before a batch closes,
+  `scripts/agent-commit.sh check` must exit 0 (T-781).
 
 ### The `try? save()` rule
 

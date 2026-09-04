@@ -6,6 +6,9 @@ existing code already assumes, and a recommendation. Written 2026-08-30 against 
 **Five are still open.** T-497 was answered on 2026-09-02; its section at the foot of this file
 records the answer rather than the question.
 
+**T-780 was added on 2026-09-04** and is not one of the six: it is about the agent tooling, and
+it is here because answering it changes how *your* `git commit` behaves in this checkout.
+
 Two are visual and **nobody has seen them on screen** — that is stated where it applies.
 
 ---
@@ -87,6 +90,52 @@ the T-282 rule (placement may differ across widths, capability may not), this is
 **The risk, stated:** a 34% wash with a hard edge down a 1024pt screen may simply read as a rendering
 bug however defensible the reasoning. If it looks broken, take the full-window scrim — the argument
 above is a justification, not a preference, and should not survive contact with the screen.
+
+## T-780 — should a git hook refuse a bare `git commit` in this checkout? **Recommend: yes, installed by the tools agents already run**
+
+Added 2026-09-04. This one is about the agent tooling, not the product, and it is here because it
+would change **your** git behaviour in your own repository — so it is not an agent's call.
+
+**The problem.** `scripts/agent-commit.sh` is mandatory in prose only: it is a line in `AGENTS.md`
+and a section in the runbook. That is exactly the shape T-679 was filed about. `git add <specific
+paths>` was also prose, was also followed every time, and was also insufficient — the index is one
+object shared by every agent in the checkout, so a bare `git commit` still works and still sweeps a
+sibling's staged hunk into your commit. Nothing mechanical prevents it today.
+
+**What a hook would do.** A tracked `.githooks/pre-commit`, with `core.hooksPath` pointed at it,
+that exits non-zero unless `CADENCE_ALLOW_BARE_COMMIT=1` is set. Measured in a throwaway repository
+on 2026-09-04:
+
+- a bare `git commit` is **refused**, from the repo root and from a subdirectory;
+- `git commit --amend` is **refused** too;
+- `agent-commit.sh` is **unaffected** — it commits by `write-tree`/`commit-tree`/`update-ref`, and
+  git runs no hooks for plumbing. This is the whole reason the hook can be strict;
+- `git commit --no-verify` **bypasses it**, by design and unfixably.
+
+`core.hooksPath` is already set explicitly in this checkout's `.git/config` (to the default
+`.git/hooks`), so this is a one-line change to a value that is already non-default.
+
+**What it costs you.** Every `git commit` and `git commit --amend` you type in this checkout is
+refused once, until you use `--no-verify` or set the variable. `git merge` is not affected
+(`pre-merge-commit` is a different hook, which we would not install); `rebase` and `cherry-pick`
+do not run `pre-commit` either. Some GUI git clients pass `--no-verify` themselves and would
+notice nothing. The refusal message can name both escapes, so the cost is one surprise, not a
+recurring one.
+
+**The part that is not solved by the hook.** `core.hooksPath` lives in `.git/config`, which is not
+tracked, so a fresh clone has no hook and nothing reminds anyone to install it — the same prose
+problem one level down. The fix is for the tools every agent already runs (`scripts/xcb.sh`,
+`scripts/agent-commit.sh`) to set `core.hooksPath` idempotently on each invocation, which costs one
+`git config` call. That is the part that makes the hook real rather than aspirational, and it is
+also the part that installs configuration into your repository without asking, which is why the
+whole thing is here.
+
+- **Install it, with both escapes named in the message** — the accident it stops (a swept sibling
+  hunk) has happened; the determination it does not stop has not. **Recommended.**
+- **Install it but gate on `CADENCE_AGENT_SESSION`**, so it only refuses when an agent session is
+  marked active. Costs you nothing at all, and protects nothing during the sessions where nobody
+  remembered to set the variable — which are the sessions where a bare `git commit` happens.
+- **Decline** — zero code. The rule stays prose, and the next sweep is a matter of when.
 
 ## T-497 Tier 3 — what does undo mean for a field the user still has focus in? **ANSWERED**
 

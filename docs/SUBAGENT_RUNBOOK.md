@@ -373,6 +373,8 @@ it, and the failure lands on whoever added it rather than on whoever chose the s
 ./scripts/agent-commit.sh <id> -m "<message ending in the Co-Authored-By line>" <path>...
 ./scripts/agent-commit.sh <id> -m "<message>" Cadence/Foo.swift=/tmp/my-recon-of-Foo.swift
 ./scripts/agent-commit.sh status        # declined hunks that are still in no commit
+./scripts/agent-commit.sh check         # same, but EXITS 3 while any is outstanding
+./scripts/agent-commit.sh accept <path> # clear one record deliberately, out of band
 ```
 
 **Do not hand-roll the incantation.** `git add <specific paths>`, never `git add -A`, is necessary
@@ -418,12 +420,55 @@ Which path form to use:
   until `--removes <exact count>` names how many. Re-read `git show HEAD:<path>` rather than raising
   the number. Measured twice in one hour on 2026-09-03, both on `docs/TODO.md` (`169d594`, `820aa98`).
 
-**The gap it does not close.** If nobody ever commits the declined path again, no commit-time check
-fires. `./scripts/agent-commit.sh status` is the backstop; read it before closing a batch.
+- **Every check above is about ONE `HEAD`, and it used to commit onto another** (T-974). The script
+  re-read `HEAD` at each step and captured the parent sha only just before `commit-tree`, so a
+  sibling landing in that window made the compare-and-swap compare the new head with itself — and
+  the tree, assembled by `read-tree` at the old head, reverted whatever the sibling had just
+  committed. Measured 2026-09-04: u3's commit dropped a sibling's `T-935` while `LEDGER-IDS-LOST`
+  reported nothing, because it had been satisfied against a commit that was no longer `HEAD`. The
+  sha is now read once, everything is answered against it, and a `HEAD` that moved is `HEAD-MOVED`:
+  **nothing is committed, and you re-read `git show HEAD:<path>` and run it again.** With four
+  agents committing at once you will see this; it is a retry, not a failure.
+
+**The gap it does not close, and what now closes it.** `DECLINED-HUNK-LOST` fires on the *next*
+commit of that path. If nobody ever commits that path again it fires never — two records survived a
+whole run that way, printed at the end of every commit and acted on by nobody, which is the same
+prose-shaped protection T-679 was filed about. So, since T-781:
+
+- `./scripts/agent-commit.sh check` **exits 3** while any record is outstanding. That is the
+  batch-completion gate: a batch with a hunk in no commit is not finished. `status` still just reports.
+- `DECLINED-HUNK-STALE` refuses the next commit by **any** agent in the checkout once a record is
+  older than `$CADENCE_DECLINED_STALE_MINUTES` (default 30). Every agent commits, so this fires
+  without anyone remembering. Fresh records — the ordinary in-flight case — block nothing.
+- `./scripts/agent-commit.sh accept <path>` clears a record out of band, for when the hunk really
+  was abandoned and you are not the one committing that file next.
+
+A **refused** commit no longer spends the record it was going to clear, which matters now that
+`HEAD-MOVED` is a refusal an agent hits and then retries.
 
 `./scripts/agent-commit.sh selftest` induces every refusal above against a throwaway repository and
 asserts it. `CadenceGuardScriptSelftestTests` runs it, and `scripts/mutate.sh selftest`, on every
 `CadenceTests` run (T-719) — so neither instrument can go hollow unnoticed.
+
+### The App-Sandboxed test host cannot EXECUTE a file it just wrote
+
+Because `CadenceGuardScriptSelftestTests` runs those selftests inside the macOS test host, anything
+a selftest does has to work under the App Sandbox. Two of those limits are already recorded in the
+scripts (`/usr/bin/git` and `/usr/bin/python3` are xcrun shims that refuse; `$TMPPREFIX` defaults to
+`/tmp/zsh`, which is not writable). Here is the third, measured 2026-09-04 while pinning T-974:
+
+**A shim placed on `$PATH` is silently skipped.** Writing `$scratch/shim/git`, `chmod +x`, and
+prepending `$scratch/shim` to `$PATH` works perfectly from a shell and does nothing in the test
+host — zsh cannot exec it, walks on down `$PATH`, finds the real git, and the run looks *normal*.
+The selftest passed thirty-seven checks and proved nothing about the five it was written for.
+
+Intercept **in-process** instead: zsh sources `$ZDOTDIR/.zshenv` on every non-`-f` invocation, and a
+shell *function* named `git` shadows the `$PATH` lookup and can `command git` through to the real
+one. Reading a file is not executing one, so the sandbox allows it.
+
+**And put a control in.** The only reason this was caught is that mode 5 asserts the interception
+actually fired before asserting anything about its effect. A test whose fixture can quietly fail to
+apply is the hollow instrument again, one layer further down.
 
 ## Two ways a clean build reports someone else's mess as yours
 
