@@ -6,6 +6,14 @@
 #   ./scripts/real-tree-sweep-manifest.sh <id> --write    # rewrite the manifest from the scan
 #   ./scripts/real-tree-sweep-manifest.sh <id> selftest   # T-873: prove a stale manifest still
 #                                                          # yields a non-empty regenerated body
+#   ./scripts/real-tree-sweep-manifest.sh <id> selftest -derivedDataPath <path> CODE_SIGN_IDENTITY=...
+#                                                          # T-977: anything after the mode is
+#                                                          # forwarded verbatim to the internal
+#                                                          # `xcb.sh <id> test` call -- CI.yml's
+#                                                          # macos-tests job needs this to reuse its
+#                                                          # own derived data and signing overrides
+#                                                          # rather than paying for a second full
+#                                                          # build under an unrelated identity.
 #
 # WHY THE MANIFEST EXISTS
 #
@@ -58,6 +66,9 @@ if [[ -n "$MODE" && "$MODE" != "--write" && "$MODE" != "selftest" ]]; then
     print -r -- "real-tree-sweep-manifest.sh: unknown option '$MODE'" >&2
     exit 2
 fi
+# Anything past <id> <mode> is passed straight through to the internal `xcb.sh test` call. Empty
+# in every caller this repository already had; T-977's CI wiring is the first to use it.
+EXTRA_XCB_ARGS=("${@:3}")
 
 MANIFEST="$ROOT_DIR/CadenceTests/CadenceRealTreeSweepManifest.txt"
 _tmp_base="${TMPDIR:-/tmp/}"; [[ "$_tmp_base" != */ ]] && _tmp_base="$_tmp_base/"
@@ -72,7 +83,8 @@ run_scan_once() {
     print -r -- "real-tree-sweep-manifest.sh: running the scan (log: $LOG, xcodebuild log: $XCB_LOG)"
     "$ROOT_DIR/scripts/xcb.sh" "$ID" test \
         -scheme Cadence -destination 'platform=macOS' \
-        -only-testing:CadenceTests/CadenceTestTargetHygieneTests > "$LOG" 2>&1
+        -only-testing:CadenceTests/CadenceTestTargetHygieneTests \
+        "${EXTRA_XCB_ARGS[@]}" > "$LOG" 2>&1
     RUN_STATUS=$?
 
     # The banners are spelled by CadenceRealTreeSweepScan.regeneratedBanner. `awk` rather than

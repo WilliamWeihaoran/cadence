@@ -268,6 +268,41 @@ Two rules, and they generalise well past this script:
   take the run down with it. Assign with `|| true` / `|| continue`, and keep stderr -- when a probe
   fails, the reason *is* the finding.
 
+## `#expect(x == literal * literal)` can fail against a value that is actually equal
+
+Diagnosed 2026-09-03 (T-739, `docs/CODEX_REQUESTS.md` R1), first written down as one suite's doc
+comment (`CadenceTests/CadenceSharedBoardChromeTests.swift:1427`) — this is that finding moved
+somewhere every suite's author will see it, because the shape is generic to `#expect`, not to
+that file.
+
+`#expect(adopted == 0.5 * 1.6)` **fails** where `#expect(adopted == retiredWeekday * 1.6)`
+**passes**, for the identical numbers, with a `CGFloat adopted` on the left in both cases. Both
+sides print `0.8`. It is not a precision or constant-folding difference — a standalone `swiftc
+-Onone` binary computing every spelling prints one identical `3fe999999999999a` bit pattern.
+
+**The mechanism:** `#expect(lhs == rhs)` expands to `Testing.__checkBinaryOperation<T, U>`, whose
+`T` and `U` are inferred **independently** — there is no `T == U` constraint. A typed `CGFloat` on
+the left plus an unannotated `0.5 * 1.6` on the right settles `U == AnyHashable`: the product boxes
+as a `Double`, the left side boxes as a `CGFloat` for the comparison, and
+`AnyHashable(CGFloat(0.8)) != AnyHashable(Double(0.8))` even though both carry the same bit
+pattern. Binding either operand to a typed `let` first forces `U == CGFloat` instead, and the
+comparison passes. An integer literal on the right (`0.4 * 2`, bare `0.8`) does not trigger it,
+because the integer literal can take the contextual `CGFloat` type — it is specifically two
+untyped floating-point literals multiplied together that forms a default `Double` before the
+heterogeneous equality is settled.
+
+**The failure message is actively misleading**: it reports two numbers that print identically as
+unequal, which reads like a precision bug or a flaky test, not a type-inference artifact — do not
+spend time hunting for an arithmetic error before checking for this shape.
+
+**The workaround: never write a bare `literal * literal` inside `#expect`; bind one side to a
+typed constant first**, e.g. `let retired: CGFloat = 0.5` before `#expect(x == retired * 1.6)`.
+
+**Measured 2026-09-03:** a repo-wide scan found zero live `#expect` conditions with this exact
+failing shape (untyped floating-literal `*` untyped floating-literal on one side, typed value on
+the other) — this is a guard against the next suite to write one, not a fix for an existing red
+test.
+
 ## Never assert a numeric floor over a population the repo is shrinking
 
 Three instances in one run, 2026-09-01/02. `matchCount(…) >= 3` over **four** real occurrences let a

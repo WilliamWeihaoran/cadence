@@ -381,7 +381,7 @@ struct GoalLinkedListRow: View {
                 .background(Color(hex: link.colorHex).opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             VStack(alignment: .leading, spacing: 2) {
-                Text(link.title)
+                Text(normalizedTitle)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
@@ -441,7 +441,7 @@ struct GoalTaskContributorRow: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.title)
+                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultDisplayTitle))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .lineLimit(1)

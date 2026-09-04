@@ -165,6 +165,27 @@ jobs:
           name: xcresult
           path: ${{ runner.temp }}/dd-tests/Logs/Test/*.xcresult
           if-no-files-found: ignore
+      # T-977: scripts/real-tree-sweep-manifest.sh selftest -- the proof that a stale manifest
+      # still regenerates a non-empty body (T-873) -- had no caller anywhere: not this workflow,
+      # not xcb.sh's own preflight, and not CadenceTests itself, which cannot run it (that host's
+      # App Sandbox cannot spawn `xcodebuild`, ps or pgrep at all -- T-959, T-782). A hosted runner
+      # is not sandboxed the same way, so this is the one place that CAN actually run it. Reuses
+      # the derived data and signing overrides the Test step above already built, so this is
+      # close to free rather than a second full compile.
+      - name: Real-tree sweep manifest selftest
+        run: |
+          export TMPDIR="$RUNNER_TEMP/"
+          ./scripts/real-tree-sweep-manifest.sh ci-sweep-selftest selftest \
+            -derivedDataPath "$RUNNER_TEMP/dd-tests" \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sweep-manifest-selftest-log
+          path: ${{ runner.temp }}/cadence-xcb-ci-sweep-selftest.log
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
   # T-535: nothing in the release gate ever compiles the iOS surface, and

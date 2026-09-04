@@ -96,6 +96,20 @@ struct CadenceRowSubjectAccessibilityTests {
         #expect(body.contains("CadenceTitleNormalization.defaultProjectName"))
     }
 
+    /// **T-792.** T-673 fixed what the row *announces* and left what it *draws* untouched: the
+    /// visible `Text` above the detach button still interpolated `link.title` raw, so a list with
+    /// a blank name showed a blank line while VoiceOver correctly said "Missing List"/"Missing
+    /// Project" beside it. Same instrument shape as the tests above — the visible row's own
+    /// `Text(...)` call must read the same `normalizedTitle` the accessibility value already does,
+    /// not a second, independent interpolation of `link.title`.
+    @Test func goalLinkedListVisibleTitleMatchesTheAnnouncedNormalisedTitle() throws {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.goalsSupportPath))
+        let body = try #require(CadenceSourceScan.declarationBody("struct GoalLinkedListRow: View", in: source))
+
+        #expect(body.contains("Text(normalizedTitle)"))
+        #expect(!body.contains("Text(link.title)"))
+    }
+
     @Test func goalTaskContributorDetachButtonNamesTheTaskItDetaches() throws {
         let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.goalsSupportPath))
         let body = try #require(CadenceSourceScan.declarationBody("struct GoalTaskContributorRow: View", in: source))
@@ -104,6 +118,20 @@ struct CadenceRowSubjectAccessibilityTests {
         #expect(body.contains(
             ".accessibilityValue(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultDisplayTitle))"
         ))
+    }
+
+    /// **T-792, second half.** Same gap, `GoalTaskContributorRow`'s own visible title this time:
+    /// the accessibility value already reads `TaskTitleSupport.displayTitle(task.title, ...)`, but
+    /// the `Text` above it still drew `task.title` raw, so an untitled contributor task showed a
+    /// blank line while its own detach button correctly announced "Untitled Task".
+    @Test func goalTaskContributorVisibleTitleMatchesTheAnnouncedDisplayTitle() throws {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.goalsSupportPath))
+        let body = try #require(CadenceSourceScan.declarationBody("struct GoalTaskContributorRow: View", in: source))
+
+        #expect(body.contains(
+            "Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultDisplayTitle))"
+        ))
+        #expect(!body.contains("Text(task.title)"))
     }
 
     // MARK: - Sites 6 and 7: a saved subtask's own row

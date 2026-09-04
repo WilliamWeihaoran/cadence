@@ -469,9 +469,26 @@ def classify_run(exit_code, log, suite=None, tests=(), labels=None, suite_labels
     the bareword type name, so `SUITE-ABSENT`'s check had the identical blind spot. Maps type name
     to display label (or the type name itself, unlabeled), from `scripts/test-suite-index.sh
     --labels`.
+
+    T-964: `labels` maps FUNCTION -> label, and resolving a quoted failure line back to a function
+    name needs the reverse of that. A plain `{label: func for func, label in labels.items()}`
+    silently keeps whichever function iteration happens to visit last if two ever share a label,
+    and a mutation against the shadowed one would then misreport under the survivor's name with no
+    diagnostic at all. Measured 2026-09-05: no such collision exists in this repository's 52
+    display-named tests today, so this is a guard against the next one, not a fix for a live bug --
+    and the guard is a refusal, built once per call, not a silent pick.
     """
     labels = labels or {}
-    label_to_func = {label: func for func, label in labels.items() if label}
+    label_to_func = {}
+    for func, label in labels.items():
+        if not label:
+            continue
+        if label in label_to_func and label_to_func[label] != func:
+            return RunVerdict("INVALID", "LABEL-MAP-COLLISION",
+                              "display label %r is shared by %s and %s -- the reverse map can "
+                              "only keep one, so a mutation against the shadowed function would "
+                              "misreport under the other's name" % (label, label_to_func[label], func))
+        label_to_func[label] = func
     lowered = log.lower()
     tests_ran = len(TEST_RESULT.findall(log))
     warnings = len(COMPILE_WARNING.findall(log))
@@ -1202,6 +1219,27 @@ def selftest():
               classify_run(0, survivor_log, "HabitFrequencyLabelTests", ["theFullLabelIsUnchanged"],
                           {}, {"HabitFrequencyLabelTests": "HabitFrequencyLabelTests"}).verdict
               == SURVIVED)
+
+        say("")
+        say(" T-964 -- two functions sharing one display label refuse rather than silently pick one")
+        COLLIDING_LABELS = {"theFirstFunction": DISPLAY_LABEL, "theSecondFunction": DISPLAY_LABEL}
+        collision = classify_run(0, named_pass_log, "HabitFrequencyLabelTests",
+                                 ["theFirstFunction"], COLLIDING_LABELS)
+        check("a shared display label is INVALID/LABEL-MAP-COLLISION, not a silent pick",
+              collision.verdict == "INVALID" and collision.reason == "LABEL-MAP-COLLISION",
+              collision.reason)
+        check("the collision names both functions and the shared label",
+              "theFirstFunction" in collision.detail and "theSecondFunction" in collision.detail
+              and DISPLAY_LABEL in collision.detail, collision.detail)
+        # Two DIFFERENT functions logging under two DIFFERENT labels is the ordinary case and must
+        # stay untouched -- this failing-first proves the check keys on a real collision, not on
+        # "more than one entry".
+        no_collision = classify_run(0, named_pass_log, "HabitFrequencyLabelTests",
+                                    ["theFullLabelIsUnchanged"],
+                                    {"theFullLabelIsUnchanged": DISPLAY_LABEL,
+                                     "someOtherFunction": "a completely different label"})
+        check("two functions with two DIFFERENT labels do not collide",
+              no_collision.verdict == SURVIVED, no_collision.reason)
 
         say("")
         say(" a run scoped to somebody else's suite is not evidence about yours")
