@@ -286,7 +286,7 @@ struct iOSNoteDeleteConfirmationSheet: View {
         }
     }
 
-    /// The one-sided doubt, said out loud (T-298).
+    /// The doubt about the counts, said out loud (T-298).
     ///
     /// **Not a second failure notice, and the distinction is the point.** `failureNotice` — the
     /// red line this card already draws, in the spelling `CadenceInlineFailureNotice` documents
@@ -316,7 +316,7 @@ struct iOSNoteDeleteConfirmationSheet: View {
     }
 }
 
-/// The "the counts below may be a floor" row, shared by both delete confirmations.
+/// The "the counts below may not be exact" row, shared by both delete confirmations.
 ///
 /// **One row because there is one sentence.** `CadenceNoteDeletionSummary.unknownImpactNotice` is
 /// the copy, and `CadenceListDeletionSummary.unknownImpactLine` reads it too (T-433) — a second

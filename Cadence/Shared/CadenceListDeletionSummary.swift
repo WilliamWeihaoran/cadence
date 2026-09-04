@@ -121,10 +121,12 @@ struct CadenceListDeletionSummary: Equatable, Sendable {
     /// True when a store read behind `images` failed, so that count is not a total.
     ///
     /// **Ported from `CadenceNoteDeletionSummary`, not re-argued** — see the long note there. The
-    /// short version: a failed fetch is not an empty store, and every count a failed fetch can move
-    /// here moves the *loss* upward, never the survival. `images` is the only field that reads the
-    /// store at all; the other seven are walked off the model objects and stay exact, which is why
-    /// this is a flag beside the counts rather than eight optional `Int`s.
+    /// short version: a failed fetch is not an empty store, and the two fetches behind `images`
+    /// move it in opposite directions — a missing survivor set moves the *loss* upward, a missing
+    /// asset table moves it to zero and over-promises survival instead (see `applyImageSweep`
+    /// below). `images` is the only field that reads the store at all; the other seven are walked
+    /// off the model objects and stay exact, which is why this is a flag beside the counts rather
+    /// than eight optional `Int`s.
     var hasUnknownImpact = false
 
     /// The unknown-impact sentence, or `nil` when the counts are complete.

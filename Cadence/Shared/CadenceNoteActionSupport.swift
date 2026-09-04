@@ -88,11 +88,17 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
 
     /// Shown **before** the delete, when a store read behind the counts failed (T-298).
     ///
-    /// It names the direction of the doubt rather than just admitting one, because the doubt is
-    /// one-sided: every count a failed fetch can move, it moves *down*. There is no wording of
-    /// "something went wrong" that stops a user reading "0 embedded images" as "no images".
+    /// **The doubt is not one-sided, so the sentence does not name a direction.** It used to read
+    /// "It may remove more than the counts below show" — true when the asset table fails to read,
+    /// because that collapses `images` to zero. False when the survivor-set read fails instead:
+    /// `forNote`'s arithmetic then counts an image as reclaimed even when a surviving note or task
+    /// still holds it, which *inflates* the count, not deflates it (see the two failure branches in
+    /// `forNote(_:allNotes:survivingMarkdownTexts:existingImageAssetIDs:)`). A sentence that is
+    /// right for one failure and wrong for the other is worse than one that admits it does not
+    /// know which way the counts are off — but "something went wrong" is still too weak on its
+    /// own, or a user reads "0 embedded images" as "no images" regardless.
     static let unknownImpactNotice =
-        "Couldn't check everything this delete touches. It may remove more than the counts below show."
+        "Couldn't check everything this delete touches. The counts below may not match what it actually removes."
 
     /// Whitespace-separated tokens in the note's body — the typed content that is actually
     /// unrecoverable.
@@ -122,15 +128,20 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     /// user never made.
     var folder: String?
 
-    /// True when a store read behind `images` or `backlinks` failed, so those two counts are
-    /// floors rather than totals.
+    /// True when a store read behind `images` or `backlinks` failed, so those two counts are not
+    /// trustworthy as exact — one may undercount, the other may overcount, and neither failure
+    /// says which.
     ///
     /// **A failed fetch is not an empty store, and this summary used to say it was.** Both reads
     /// in `forNote(_:in:)` were `(try? …) ?? []`, so a store hiccup produced a confirmation
     /// reading "0 embedded images" and no broken-link line — the smallest possible account of the
-    /// delete, presented as fact, on the screen where the user says yes. That is the one direction
-    /// a wrong number must not go: `CadenceNoteDeletionSummary`'s standing rule is that it may not
-    /// *over*-promise what survives, and collapsing a failure to zero does exactly that.
+    /// delete, presented as fact, on the screen where the user says yes. Collapsing a failure to
+    /// zero over-promises what survives, which `CadenceNoteDeletionSummary`'s standing rule
+    /// forbids — but the fix is this flag, not a claim that every failure under-counts. A missing
+    /// survivor-set read moves `images` the other way, counting an asset as reclaimed that a
+    /// surviving note still holds (see the arithmetic in
+    /// `forNote(_:allNotes:survivingMarkdownTexts:existingImageAssetIDs:)`), which over-counts the
+    /// loss instead. Both are wrong; only the first is the forbidden direction.
     ///
     /// The rule is already settled twice in this codebase and is followed rather than re-argued.
     /// `HabitNotificationReconcileSupport.reconcileInput` returns `nil` when either fetch failed
@@ -243,11 +254,12 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
 
         var summary = Self()
         // Any failure taints both derived counts, not one each. A missing note table drops the
-        // backlink count; a missing markdown read leaves `stillReferenced` empty, which moves
-        // `images` in the other direction; a missing asset table empties the intersection. Naming
-        // which fetch failed would be a distinction the confirmation has no way to act on. Note
-        // that both wrong directions here over-state the *loss*, never the survival — which is the
-        // one direction this summary's standing rule forbids.
+        // backlink count; a missing markdown read leaves `stillReferenced` empty, which *inflates*
+        // `images` (an asset still held by a surviving note counts as reclaimed anyway); a missing
+        // asset table empties the intersection and *collapses* `images` to zero instead. Naming
+        // which fetch failed would be a distinction the confirmation has no way to act on, and the
+        // two remaining directions disagree — one over-states the loss, the other over-promises
+        // survival — which is why `unknownImpactNotice` does not commit to either.
         summary.hasUnknownImpact =
             allNotes == nil || survivingMarkdownTexts == nil || existingImageAssetIDs == nil
         summary.words = wordCount(note.content)

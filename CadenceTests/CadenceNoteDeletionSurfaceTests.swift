@@ -499,8 +499,10 @@ struct CadenceNoteDeletionSurfaceTests {
         #expect(known.images == 1)
         #expect(known.backlinks == 1)
 
-        // The note table could not be read. The backlink count collapses to zero and the image
-        // count loses its survivor set — the summary has to say so rather than print the floor.
+        // The note table could not be read, and with it the survivor set: the backlink count
+        // collapses to zero (a floor) while the image count loses what would have been subtracted
+        // from it, which pushes the opposite way. Different directions, same flag — the summary
+        // has to say the counts are unreliable rather than print either one as fact.
         let noNotes = CadenceNoteDeletionSummary.forNote(
             doomed,
             allNotes: nil,
@@ -592,11 +594,16 @@ struct CadenceNoteDeletionSurfaceTests {
         #expect(unknown.unknownImpactLine != nil)
     }
 
-    /// The notice names the direction of the doubt, because the doubt is one-sided: every count a
-    /// failed fetch can move, it moves down. "Something went wrong" would leave "0 embedded
-    /// images" on screen still reading as "no images".
-    @Test func theUnknownImpactNoticeSaysTheDeleteMayBeLargerNotJustUncertain() {
-        #expect(CadenceNoteDeletionSummary.unknownImpactNotice.contains("may remove more"))
+    /// The notice says the counts might not match reality without naming which way they are
+    /// wrong, because the doubt is not one-sided: `aFailedStoreReadReportsUnknownImpactRatherThanZero`
+    /// above shows a missing asset-table read undercounts `images` (down to zero) while a missing
+    /// survivor-set read overcounts it instead. A sentence committing to one direction would be
+    /// right for one of those failures and false for the other — but "something went wrong" alone
+    /// is too weak on its own, or "0 embedded images" would still read as "no images".
+    @Test func theUnknownImpactNoticeDoesNotCommitToADirection() {
+        #expect(CadenceNoteDeletionSummary.unknownImpactNotice.contains("may not match"))
+        #expect(!CadenceNoteDeletionSummary.unknownImpactNotice.localizedCaseInsensitiveContains("more"))
+        #expect(!CadenceNoteDeletionSummary.unknownImpactNotice.localizedCaseInsensitiveContains("less"))
         #expect(CadenceNoteDeletionSummary.unknownImpactNotice
                 != CadenceNoteDeletionSummary.deleteFailureNotice)
     }
