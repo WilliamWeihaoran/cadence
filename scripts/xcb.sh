@@ -173,12 +173,28 @@ else
   DD="${TMP_BASE}cadence-dd-$ID"
   args+=(-derivedDataPath "$DD")
 fi
-LOG="${TMP_BASE}cadence-xcb-$ID.log"
+# --- the per-invocation log (T-747) ------------------------------------------
+# One id, several runs: the runbook shape is "one script, one lock, several runs"
+# -- acquire once, then call `xcb.sh <id> test ...` two or three times in a row.
+# A log path keyed on `$ID` alone is overwritten by the second call, so a runner
+# doing exactly that ends holding only the LAST run's evidence; the postflight
+# counters above survive because they go to stdout, but they are aggregates, and
+# an aggregate cannot be attributed back to the log that produced it once that log
+# is gone. Each invocation gets its own file -- a timestamp is not enough on its
+# own to be collision-proof (two calls in the same second), so `$$` (this
+# process's own pid, unique among concurrent invocations) is appended too -- and
+# `$LOG_LATEST` keeps the documented, unsuffixed path alive as a symlink to
+# whichever run is newest, so a caller that only knows the old path still finds
+# something, and finds the RIGHT something.
+LOG_LATEST="${TMP_BASE}cadence-xcb-$ID.log"
+LOG="${TMP_BASE}cadence-xcb-$ID.$(date +%Y%m%d-%H%M%S)-$$.log"
+ln -sf "${LOG:t}" "$LOG_LATEST" 2>/dev/null
 
 # --- preflight ---------------------------------------------------------------
 say "== xcb preflight ($ID) =="
 say "  derivedDataPath: $DD"
 say "  log:             $LOG"
+say "  log (latest):    $LOG_LATEST -> ${LOG:t}"
 # Anchored, and matching the binary path: an unanchored `pgrep -f xcodebuild` counts this script
 # and every wait loop whose own command text spells the word.
 others=$(pgrep -f '^/Applications/.*/xcodebuild' 2>/dev/null | grep -vx "$$" | wc -l | tr -d ' ')

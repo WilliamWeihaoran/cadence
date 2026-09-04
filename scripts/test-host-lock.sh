@@ -25,6 +25,16 @@
 # at the head of the queue is allowed to call `mkdir`. Everyone else stands
 # aside, so "next" means "waiting longest", not "luckiest phase".
 #
+# Why the head also checks $PPID (T-748). Waiting its turn is not the same as
+# having somewhere to go: a waiter whose caller was killed keeps its ticket, keeps
+# waiting, and eventually reaches the head anyway -- `pkill -f 'run-batch-<tag>.sh'`
+# does not match this script's own `acquire` child, so the orphan survives the kill
+# that was meant to remove it. With nobody checking, it took the lock, recorded its
+# own already-dead $PPID as owner, and stranded it for the full LEASE. So the head
+# checks, at the moment it would `mkdir`, that its caller is still alive; an orphan
+# declines and drops its ticket instead, which is what a caller with nothing left
+# to run under should do.
+#
 #   ./scripts/test-host-lock.sh acquire [timeout_seconds] [id]  # blocks, exits 0 when held
 #   ./scripts/test-host-lock.sh release [id]
 #   ./scripts/test-host-lock.sh status                          # holder + the queue behind it
@@ -191,6 +201,19 @@ case "$CMD" in
       first=""
       [[ -n "$TICKET" ]] && first="$(queue_names | head -1)"
       if [[ -z "$first" || "$first" == "${TICKET:t}" ]]; then
+        # T-748: a waiter whose caller is dead has nothing to hold the lock FOR.
+        # $PPID is the shell that invoked `acquire` and is blocking on it; if that
+        # shell is gone, this process is an orphan (T-650's queue made it wait its
+        # turn rather than jump it, which surfaced the failure mode rather than
+        # fixing it: the orphan reaches the head anyway, `mkdir`s, records its own
+        # already-dead $PPID as owner, and strands the lock for the full LEASE with
+        # nobody left to release it). Checked at the moment of taking the lock, not
+        # once at the top: the caller can die at any point during the wait.
+        if ! kill -0 "$PPID" 2>/dev/null; then
+          print -r -- "declining: caller (pid $PPID) is dead; nothing to hold the lock for"
+          [[ -n "$TICKET" ]] && rm -f "$TICKET" 2>/dev/null
+          exit 1
+        fi
         if mkdir "$LOCK" 2>/dev/null; then
           # $PPID, never $$: $$ is THIS script, which exits the instant acquire
           # returns, so a liveness check on it would find every lock stale and
@@ -378,6 +401,45 @@ case "$CMD" in
     for _ in {1..40}; do [[ -s "$survivor" ]] && break; sleep 1; done
     if [[ -s "$survivor" ]]; then print -r -- "PASS killed-waiter: the waiter behind a SIGKILLed one still got the lock"
     else print -r -- "FAIL killed-waiter: queue stalled behind the dead ticket"; (( fails++ )); fi
+
+    cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+
+    # 4. AN ORPHANED WAITER DECLINES RATHER THAN TAKING THE LOCK (T-748). The
+    #    orphan has to be a REAL orphan, not merely a killed process: a wrapper is
+    #    spawned as the acquire's actual parent, and only the WRAPPER is killed --
+    #    `; :` (same trick as `waiter()` above) stops zsh exec'ing the acquire in
+    #    the wrapper's place, so the acquire survives as a distinct, still-running
+    #    child reparented off the dead wrapper, exactly the shape `pkill -f
+    #    'run-batch-<tag>.sh'` produces against a real runner. Its own $PPID, fixed
+    #    at start, still names the now-dead wrapper -- which is the fact this fix
+    #    reads.
+    "$SELF" acquire 30 holder3 >/dev/null || { print -r -- "selftest: could not retake the lock (dead-parent)"; exit 2; }
+    ( "$SELF" acquire 90 orphan >/dev/null 2>&1; : ) &
+    wrap_pid=$!
+    for _ in {1..20}; do (( $(queue_names | wc -l) > 0 )) && break; sleep 0.5; done
+    kill -9 $wrap_pid 2>/dev/null; wait $wrap_pid 2>/dev/null
+    "$SELF" release holder3 >/dev/null   # frees the lock: the orphan is now free to reach the head
+    owner=""; qn=1
+    for _ in {1..20}; do
+      owner=$(cat "$CADENCE_LOCK_DIR/id" 2>/dev/null)
+      qn=$(queue_names | wc -l | tr -d ' ')
+      [[ "$owner" == "orphan" ]] && break
+      (( qn == 0 )) && break
+      sleep 0.5
+    done
+    if [[ "$owner" != "orphan" ]] && (( qn == 0 )); then
+      print -r -- "PASS dead-parent-declines: an orphaned waiter (dead PPID) did not take the lock and left the queue"
+    else
+      print -r -- "FAIL dead-parent-declines: lock owner='$owner', queue has ${qn} entries"; (( fails++ ))
+    fi
+    out="$("$SELF" acquire 20 afterward 2>&1)"; rc=$?
+    if (( rc == 0 )); then
+      print -r -- "PASS dead-parent-recovers: a live waiter still got the lock after the orphan declined"
+      "$SELF" release afterward >/dev/null
+    else
+      print -r -- "FAIL dead-parent-recovers: queue stuck behind the declined orphan; rc=$rc out='$out'"; (( fails++ ))
+    fi
+    cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
     cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"
     print -r -- "selftest: $fails failure(s)"
