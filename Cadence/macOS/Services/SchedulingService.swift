@@ -9,21 +9,6 @@ enum SchedulingActions {
     private static let dayEndMin = TimelineDayRange.endMin
     private static let minimumBundleDuration = TimelineDayRange.minimumDuration
 
-    /// Create and insert a new task scheduled to a specific date/time slot.
-    static func createTask(title: String, dateKey: String, startMin: Int, endMin: Int, in context: ModelContext) {
-        var priority: TaskPriority = .none
-        let cleanedTitle = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
-        guard !cleanedTitle.isEmpty else { return }
-
-        let task = AppTask(title: cleanedTitle)
-        task.priority = priority
-        task.scheduledDate = dateKey
-        task.scheduledStartMin = startMin
-        task.estimatedMinutes = max(5, endMin - startMin)
-        context.insert(task)
-        // No calendar sync here — task has no area/project container yet when created from timeline drag
-    }
-
     /// Create and insert a new scheduled task bundle.
     @discardableResult
     static func createBundle(title: String, dateKey: String, startMin: Int, endMin: Int, in context: ModelContext) -> TaskBundle {
@@ -131,44 +116,13 @@ enum SchedulingActions {
         }
     }
 
-    /// Create and insert a new scheduled task in a specific list/section.
-    static func createTask(
-        title: String,
-        dateKey: String,
-        startMin: Int,
-        endMin: Int,
-        containerSelection: TaskContainerSelection,
-        sectionName: String,
-        notes: String = "",
-        subtaskTitles: [String] = [],
-        areas: [Area],
-        projects: [Project],
-        in context: ModelContext
-    ) {
-        let draft = TaskCreationDraft(
-            title: title,
-            notes: notes,
-            priority: .none,
-            container: containerSelection,
-            sectionName: sectionName,
-            dueDateKey: "",
-            scheduledDateKey: dateKey,
-            subtaskTitles: subtaskTitles,
-            tags: [],
-            scheduledStartMin: startMin,
-            estimatedMinutes: max(5, endMin - startMin)
-        )
-        TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: context)
-    }
-
     /// Creates a scheduled task in a list or section from a drag on a calendar day column, and
     /// **commits it** ([[T-655]]).
     ///
-    /// A differently-named sibling of `createTask(title:…containerSelection:…)` above rather than a
-    /// commit added to it, for the reason [[T-636]](e) gave when it added `insertBundle` beside
-    /// `createBundle`: the commit index resolves a call by *name*, so it vouches for a name only
-    /// once **every** overload of it on that type commits. `SchedulingActions` declares two
-    /// `createTask`, so committing in one of them would have silenced nothing.
+    /// T-759 deleted the un-committing `createTask(title:…containerSelection:…)` sibling this
+    /// replaced: it had zero production callers left (every real drag-into-a-list path already
+    /// called this committing one instead), and its only caller was a test exercising a path the
+    /// app no longer has.
     ///
     /// The undo is `TaskCreationService.createTask`'s, which is the whole insertion — the task and
     /// the subtasks the quick-create popover typed alongside it. `AppTask.subtasks` declares no

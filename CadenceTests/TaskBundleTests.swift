@@ -343,21 +343,7 @@ struct TaskBundleTests {
         let area = Area(name: "Ops")
         context.insert(area)
 
-        // 1. Drag-to-create on the timeline, with no container.
-        SchedulingActions.createTask(title: "Dragged out", dateKey: "2026-05-01", startMin: 600, endMin: 660, in: context)
-        // 2. Drag-to-create routed into a list/section through the quick popover.
-        SchedulingActions.createTask(
-            title: "Dragged into a list",
-            dateKey: "2026-05-01",
-            startMin: 700,
-            endMin: 760,
-            containerSelection: .area(area.id),
-            sectionName: TaskSectionDefaults.defaultName,
-            areas: [area],
-            projects: [],
-            in: context
-        )
-        // 3. The shared creation sheet / quick capture path.
+        // 1. The shared creation sheet / quick capture path.
         TaskCreationService(areas: [area], projects: []).insertTask(
             from: TaskCreationDraft(
                 title: "From the sheet",
@@ -373,7 +359,7 @@ struct TaskBundleTests {
             ),
             into: context
         )
-        // 4. The generic scheduled-insert helper the shared surfaces use.
+        // 2. The generic scheduled-insert helper the shared surfaces use.
         _ = try CadenceTaskMutationSupport.insertScheduledTask(
             title: "Inserted",
             allTasks: try context.fetch(FetchDescriptor<AppTask>()),
@@ -384,7 +370,7 @@ struct TaskBundleTests {
         )
 
         let created = try context.fetch(FetchDescriptor<AppTask>())
-        #expect(created.count == 4)
+        #expect(created.count == 2)
         #expect(created.allSatisfy { $0.calendarEventID.isEmpty })
 
         // And every path that *moves* a task must clear an identifier an older build left behind,
