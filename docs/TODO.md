@@ -1352,6 +1352,30 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   working a release after every device has it. The cost being carried meanwhile is recoverable rows
   in Inbox after a delete that raced a peer. Re-open when the model graph is being changed for some
   other reason and this can ride along. Residue: [[T-751]], [[T-752]].
+  **RE-VERIFIED 2026-09-05 against HEAD, park upheld, and one inherited sub-claim corrected.**
+  The mechanism is unchanged and the ranges above are still exact: `deleteContext` `:39-105`,
+  `deleteProject` `:107-130`, `deleteArea` `:132-159` in
+  `Cadence/Services/CadenceListDeleteHelpers.swift`, each building its whole tree out of local
+  to-many arrays with no gate on sync state. The five import-gate greps
+  (`NSPersistentCloudKitContainer`, `eventChangedNotification`, `hasCompletedInitialImport`,
+  `initialImport`, `didFinishImport`) still return **zero** hits across `.swift` and `.plist`.
+  **Corrected: the reason given above for [[T-752]] being unsayable is stale.**
+  `CadenceNoteDeletionSummary.unknownImpactNotice` no longer reads *"may remove **more** than the
+  counts below show"*. It now reads *"Couldn't check everything this delete touches. The counts
+  below may not match what it actually removes."* — reworded deliberately to name **no** direction,
+  because the two failure branches behind `images` move the count opposite ways, and its own doc
+  comment says exactly that. So the sentence is now a perfectly good vehicle for the completeness
+  caveat. **The substantive blocker stands and is a different one:** `hasUnknownImpact` is raised at
+  exactly one place, `CadenceListDeletionSummary.swift:293`
+  (`existingImageAssetIDs == nil || survivingMarkdownTexts == nil`), so only a failed image read can
+  raise it. Nothing can tell the summary that the replica is incomplete — the same missing signal
+  the import gate wanted. A vehicle with nothing to trigger it.
+  **CloudKit Production was deployed 2026-09-05** (`docs/apple-release-readiness.md`), and it does
+  **not** newly block the durable fix: a new `@Model` for the tombstone and new optional attributes
+  are additive, which is what a deployed Production schema still permits. What it does do is start
+  the multi-release rollout clock from a *shipped* build rather than a hypothetical one, and
+  permanently foreclose any variant that *replaces* an existing stored property instead of adding
+  beside it. The park is unchanged.
 
 - [T-624] **A device-local EventKit calendar identifier is stored in CloudKit.** VERIFIED 2026-09-01
   from CXT-020 — mechanism confirmed; **the ping-pong premise is the one unmeasured link in the set.**
@@ -1415,6 +1439,29 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   on a `SchemaMigrationPlan`. Neither half of the fix depends on that measurement: under one shared
   identifier space `.unverified` is unreachable and every surface says exactly what it said before.
   Residue: [[T-899]].
+  **RE-VERIFIED 2026-09-05 against HEAD. Both landed halves are intact, the two blockers stand, and
+  there is one new permanent constraint.**
+  `CadenceCalendarLinkHealth.missingLink` still gates on `observedCalendarIDs.contains(...)`
+  (`:191-193`), and `CadenceCalendarLinkRowState.forLink` still answers `.unverified` rather than
+  `.missing` when the evidence does not vouch (`:136-137`). `dormantLinks` still asks EventKit
+  nothing, so it still cannot weaken the gate.
+  **The gate has no hole at today's population.** Re-swept every production reader and writer of
+  `linkedCalendarID`: the macOS list editor records its pick (`EditListSheet.swift:149`, `:404`);
+  both settings surfaces route every link write — connect toggle, re-pick, Remove Link — through
+  `saveCalendarLinks()`, which ends in `refreshCalendarObservations()`; `CadenceListEditSnapshot`'s
+  undo restore records nothing and self-heals through `observing(...)`'s
+  `.intersection(linkedCalendarIDs)`; and iOS still has no list-editor calendar row. The exposure is
+  the third-*reader* one, [[T-899]], and — newly filed alongside it — the third-*writer* one,
+  [[T-1043]].
+  **CloudKit Production was deployed 2026-09-05** (`docs/apple-release-readiness.md`). It moves
+  neither blocker, but it makes one option permanent: `linkedCalendarID` is now a `String` field in
+  the Production schema, and a deployed field can be deprecated but never removed or re-typed. So
+  T-390's companion-metadata branch, if it ever happens, can only ever be **additive alongside**
+  `linkedCalendarID` — replacing the property with a structured, portable link is off the table for
+  good. Worth knowing before someone re-opens this expecting a clean rewrite.
+  **Unchanged, and the reason this stays open:** nobody has measured whether the identifiers really
+  differ across this user's devices, and nobody here can — it needs an EventKit call on the user's
+  own Mac, which raises a TCC prompt. That measurement is a user action, not an agent one.
 
 - [T-626] **iOS omits the background mode CloudKit silent-sync needs — latent, and BLOCKED ON iOS
   DISTRIBUTION. Do not implement this until that changes.** VERIFIED 2026-09-01 from CXT-016;
@@ -2070,6 +2117,55 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Cadence/iOS/` as **text**: that tree is inside `#if os(iOS)` and the macOS test target has no
   symbol for it. iOS has no list-editor calendar row today, which is the only reason it is not
   already a second synced caller — so the sweep is worth having before one is added, not after.
+
+- [T-752] **A list-delete confirmation promises completeness it cannot have.** Filed 2026-09-05.
+  Named as residue by [[T-623]] on 2026-09-03 and **never actually filed** — the two `[[T-752]]`
+  references in this ledger pointed at nothing until now.
+  [[T-623]] is parked because a list cascade walks only the local replica: a child row that has not
+  imported is not in `area.tasks ?? []`, is not deleted, and arrives later with its owner gone. The
+  counts on the confirmation are computed from those same local arrays, so they are exactly
+  consistent with what the cascade *does* — [[T-623]] establishes they never over-report loss, which
+  is the direction [[T-433]]'s rule cares about. What they over-promise is **completeness**:
+  `CadenceListDeletionKind.cascadeSentence` says *"This permanently deletes the area and its tasks,
+  projects, documents, and links"*, and `iOSListDeletionSupport.swift:243` says *"Nothing else is
+  filed under this <kind> — no tasks, notes or saved links will be lost."* That second one is the
+  strongest claim on the screen and it is the one that can be false.
+  **What is *not* the blocker, as of 2026-09-05.** [[T-623]] recorded that the app's one uncertainty
+  sentence could not carry this because it was worded in the opposite direction — *"may remove more
+  than the counts below show"*. That is stale: `CadenceNoteDeletionSummary.unknownImpactNotice` was
+  reworded to name no direction at all, precisely because the doubt is two-sided.
+  **What *is* the blocker.** `hasUnknownImpact` is raised at one place only
+  (`CadenceListDeletionSummary.swift:293`) and only by a failed image read. There is no signal
+  anywhere in the app for "this replica may be incomplete" — the same signal [[T-623]]'s import gate
+  wanted and could not find — so this cannot be closed by wiring an existing flag to an existing
+  sentence.
+  **So what is left is a wording decision, not a bug fix, and it is the user's.** The only
+  implementable move is to soften the iOS empty-state sentence *unconditionally*, trading a claim
+  that is true almost always for one that is never false, on every delete, for a race that needs a
+  second device. Do not land that on a guess.
+
+- [T-1043] **Nothing pins that a link write records the evidence [[T-624]]'s gate needs.** Filed
+  2026-09-05 while re-verifying [[T-624]]. Not a bug today; a guard that does not exist. Sibling of
+  [[T-899]] on the other side of the same gate — T-899 guards a third *reader* of a synced
+  `linkedCalendarID`, this guards a third *writer*.
+  Since [[T-624]], a broken link is reported only for an identifier this device has itself seen alive
+  (`CadenceCalendarLinkObservations`). Every path that writes a `linkedCalendarID` therefore has to
+  record the pick, or the link it just made can never be reported broken on the device that made it.
+  Today every path does, and each for a different local reason: `EditListSheet.swift:149` and `:404`
+  call `CadenceCalendarLinkObservations.recordPick` explicitly; both settings surfaces
+  (`SettingsListManagementSections.swift`, `iOSCalendarSettingsSection.swift`) funnel every write
+  through `saveCalendarLinks()`, which ends in `refreshCalendarObservations()`; and
+  `CadenceListEditSnapshot`'s undo restore correctly records nothing, because `observing(...)`'s
+  `.intersection(linkedCalendarIDs)` forgets an identifier no list points at any more. **Three
+  unrelated reasons, no invariant.** A new link-writing surface, or a settings write that skips
+  `saveCalendarLinks()`, silently produces a link this device cannot vouch for, and nothing goes red.
+  The failure is quiet in the worst way: the link works, and only the *report* of its eventual
+  breakage is missing.
+  **What it wants:** the same source-text shape [[T-899]] asks for — every assignment to
+  `.linkedCalendarID` under `Cadence/` is either an unlink (`= ""`), or reaches `recordPick`, or
+  reaches `saveCalendarLinks()`. It has to read `Cadence/iOS/` as **text** for T-899's reason: that
+  tree is inside `#if os(iOS)` and the macOS test target has no symbol for it. Worth folding into
+  T-899's sweep if that lands first — the two want the same file.
 
 ## Done
 - [T-873] **CLOSED 2026-09-05 (`f15143ce`).** `run_scan_once` captures and prints the regenerated
