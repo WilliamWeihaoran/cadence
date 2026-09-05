@@ -731,6 +731,19 @@ enum MarkdownStylist {
             textContainerInsetWidth: textView.textContainerInset.width
         )
         let imageSize = image.fittedSize(maxWidth: contentWidth)
+
+        storage.addAttribute(
+            .paragraphStyle,
+            value: imageParagraphStyle(for: imageSize),
+            range: lineRange
+        )
+        storage.addAttribute(.cadenceMarkdownHidden, value: true, range: lineRange)
+        storage.addAttribute(.cadenceMarkdownImage, value: image, range: lineRange)
+    }
+
+    /// The paragraph style an image line carries, built in one place because two callers write it:
+    /// `applyImageBlock` on a restyle, and `refreshImageBlockLayout` when only the width moved.
+    private static func imageParagraphStyle(for imageSize: CGSize) -> NSParagraphStyle {
         let lineHeight = MarkdownDecorationGeometry.imageLineHeight(for: imageSize)
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = lineHeight
@@ -738,10 +751,71 @@ enum MarkdownStylist {
         paragraph.lineBreakMode = .byClipping
         paragraph.paragraphSpacingBefore = 8
         paragraph.paragraphSpacing = 2
+        return paragraph
+    }
 
-        storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        storage.addAttribute(.cadenceMarkdownHidden, value: true, range: lineRange)
-        storage.addAttribute(.cadenceMarkdownImage, value: image, range: lineRange)
+    /// Re-derives every standalone image line's reserved height for the width the text view has
+    /// **now**, and reports whether any of them moved.
+    ///
+    /// `applyImageBlock` measures the reserved height from `textView.bounds.width` at styling time
+    /// and `drawMarkdownImages` measures the drawn picture from `bounds.width` at painting time.
+    /// Those agree only while the editor keeps the width it was styled at, and it routinely does
+    /// not:
+    ///
+    /// - SwiftUI runs `updateNSView` — which is where the first `apply(to:)` happens — *before* it
+    ///   gives the representable a frame, so a fresh editor is styled at the ~1pt content width
+    ///   `makeNSView` derived from a zero `contentSize`. Measured on the fixture in
+    ///   `MarkdownEditorImageRelayoutTests`: a 640 × 360 asset reserved **28.6pt** and was then
+    ///   drawn 292.5pt tall, i.e. the following four lines of prose were painted over the picture.
+    /// - Dragging the sidebar divider, showing a panel or resizing the window re-lays the document
+    ///   out at the new width without restyling it, so every image line keeps the old reservation.
+    ///
+    /// The first keystroke restyles through `textDidChange` and puts it right, which is exactly the
+    /// "it fixes itself as soon as I type" the defect was reported as.
+    ///
+    /// This is deliberately not a restyle. A width change touches nothing else in the document —
+    /// the task-embed card's height comes from its subtask count and the rendered table's from its
+    /// row count, both width-independent — so re-running the whole stylist from a layout pass would
+    /// be both wasteful and a much larger re-entrancy surface. It only rewrites paragraph styles
+    /// that actually disagree, so the pass converges: the second call over the same width finds
+    /// nothing and returns `false`.
+    @discardableResult
+    static func refreshImageBlockLayout(in textView: NSTextView) -> Bool {
+        guard let storage = textView.textStorage, storage.length > 0 else { return false }
+        let contentWidth = MarkdownDecorationGeometry.imageContentWidth(
+            viewWidth: textView.bounds.width,
+            textContainerInsetWidth: textView.textContainerInset.width
+        )
+
+        var pending: [(range: NSRange, style: NSParagraphStyle)] = []
+        storage.enumerateAttribute(
+            .cadenceMarkdownImage,
+            in: NSRange(location: 0, length: storage.length)
+        ) { value, range, _ in
+            guard let info = value as? MarkdownImageLayoutInfo, range.length > 0 else { return }
+            let target = MarkdownDecorationGeometry
+                .imageLineHeight(for: info.fittedSize(maxWidth: contentWidth))
+            let current = storage.attribute(
+                .paragraphStyle,
+                at: range.location,
+                effectiveRange: nil
+            ) as? NSParagraphStyle
+            // Sub-point differences are below anything the layout manager will render
+            // differently, and rewriting on them would keep invalidating layout for nothing.
+            if let current, abs(current.minimumLineHeight - target) < 0.5,
+               abs(current.maximumLineHeight - target) < 0.5 {
+                return
+            }
+            pending.append((range, imageParagraphStyle(for: info.fittedSize(maxWidth: contentWidth))))
+        }
+
+        guard !pending.isEmpty else { return false }
+        storage.beginEditing()
+        for update in pending {
+            storage.addAttribute(.paragraphStyle, value: update.style, range: update.range)
+        }
+        storage.endEditing()
+        return true
     }
 
     private static func blockquoteMatch(in line: String) -> (indentation: String, prefix: String, depth: Int)? {

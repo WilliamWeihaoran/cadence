@@ -650,7 +650,14 @@ struct MarkdownEditorView: NSViewRepresentable {
     }
 }
 
-private final class MarkdownEditorScrollView: NSScrollView {
+/// The editor's scroll view, which resyncs the text view on every layout pass.
+///
+/// Not `private`, because that pass is load-bearing rather than incidental: it is the only thing
+/// that re-derives a standalone image's reserved line height after the editor's width changes, and
+/// `MarkdownEditorImageRelayoutTests` drives the real class through a real window to measure that
+/// AppKit calls it. A test that reached for a local `NSScrollView` subclass instead would be
+/// measuring its own stand-in.
+final class MarkdownEditorScrollView: NSScrollView {
     override func layout() {
         super.layout()
         MarkdownEditorScrollSupport.refreshLayout(in: self)
@@ -694,6 +701,13 @@ enum MarkdownEditorScrollSupport {
         if abs(currentSize.width - targetWidth) > 0.5 {
             textView.setFrameSize(NSSize(width: targetWidth, height: max(currentSize.height, contentSize.height)))
         }
+
+        // The text view now has the width the draw pass will measure a standalone image against,
+        // so the height its line fragment reserves has to be re-derived from that same width
+        // before anything is laid out. Every other block's reserved height is width-independent,
+        // so this is the whole of the width-dependent restyle. See
+        // `MarkdownStylist.refreshImageBlockLayout`.
+        MarkdownStylist.refreshImageBlockLayout(in: textView)
 
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)

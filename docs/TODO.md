@@ -43,6 +43,63 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1043] **CLOSED 2026-09-05 — text sat on top of an image in a macOS note until you typed.**
+  Reported by the user: *"for some reason some texts are sitting on an image in the notes, but as
+  soon as i start typing, the text goes back to where it should be"*.
+  **Measured, not inferred.** A standalone image's reserved line height came from
+  `textView.bounds.width` **at styling time** (`MarkdownStylist.applyImageBlock`) while the picture
+  itself was fitted to `bounds.width` **at painting time** (`CadenceTextView.drawMarkdownImages`).
+  Those are one number only while the editor keeps the width it was styled at, and it never does:
+  SwiftUI runs `updateNSView` — where the first `MarkdownStylist.apply` happens — *before* it gives
+  the representable a frame, so a fresh editor styles at the ~1pt content width `makeNSView` derived
+  from a zero `contentSize`. On the fixture in `MarkdownEditorImageRelayoutTests`, a 640 × 360 asset
+  reserved **28.6pt** and was then drawn **292.5pt** tall: four lines of prose painted over the
+  picture, on the fresh launch the user described. Every later width change reproduces it — widening
+  320 → 760 left a 174.25pt fragment holding a 292.5pt image. The first keystroke restyles through
+  `textDidChange`, which is exactly the "it fixes itself as soon as I type".
+  `MarkdownStylist.refreshImageBlockLayout` now re-derives those heights, from
+  `MarkdownEditorScrollView.layout()`'s own pass — `theScrollViewsOwnLayoutPassReflowsTheImage`
+  drives the real scroll view in a real window so that link is measured rather than assumed, which
+  is why that class is no longer `private`. It is deliberately **not** a restyle: every other
+  block's reserved height is width-independent (a task embed's comes from its subtask count, a
+  rendered table's from its row count), it rewrites only paragraph styles that actually disagree so
+  it converges inside a layout pass, and it writes attributes directly rather than through
+  `didChangeText` so a window resize is still not an edit — `aWidthChangeIsNotReportedAsATextEdit`
+  pins that the note's `updatedAt` does not move. 7 tests, 4/4 mutations killed.
+  **iOS already had this gate and macOS never did:** `MarkdownStyleSignature.current` takes
+  `contentWidth`, and `Cadence/iOS/iOSMarkdownEditor.swift` is its only reader. See [[T-1045]].
+  **Not the same defect as the blue sidebar line ([[T-1037]]/[[T-1039]]), and the measurement says
+  so.** The fresh-launch error makes a fragment too *short*, never too tall, so a caret sitting in
+  one is too short too — a too-tall blue caret cannot be reached from this bug, and the drawn image
+  starts at `lineRect.minX + 8`, nowhere near the sidebar divider. The two reports are two defects.
+
+- [T-1045] **macOS has no styling signature, so any width-dependent block silently goes stale.**
+  [[T-1043]] fixed the one that exists — the standalone image — with a targeted
+  `refreshImageBlockLayout` off the scroll view's layout pass. What macOS still lacks is iOS's
+  gate: `MarkdownStyleSignature.current(revealedBlockRange:imageAssets:taskEmbeds:contentWidth:
+  tableSourceAnchors:)` is read only by `Cadence/iOS/iOSMarkdownEditor.swift`
+  (`refreshStylingIfNeeded`), and `Cadence/macOS/Editor/AGENTS.md` states the asymmetry as a fact
+  without noting that it is also the hole. The next reserved height someone derives from a width
+  will reintroduce the same class of bug with no test to catch it. Either give macOS the same
+  signature gate, or make `applyImageBlock`'s width the *only* place a width may enter a paragraph
+  style and say so where a reader will hit it.
+
+- [T-1044] **`scripts/mutate.sh` reported a tree clean with a mutation still in it.**
+  Observed 2026-09-05 in the z2 batch. Run 1 of a 4-mutation plan finished with
+  `== tree check ==  OK Cadence/macOS/Editor/MarkdownEditorSupport.swift`, and that file still
+  contained Z2M1's inserted `if storage.length > 0 { return false }` — `diff` against the source it
+  had been copied from showed the line. Its companion report was inverted too: it flagged
+  `MarkdownEditorView.swift` DIRTY, and that file was byte-identical. The next run over the same
+  tree therefore refused its own baseline, which is the guard working — but "the baseline is red"
+  is a much weaker signal than "your restore did not happen", and a plan whose baseline happened to
+  stay green would have earned every verdict after it over a doubly-mutated tree.
+  **Confounder, stated plainly:** an earlier runner over the same `--tree` had been SIGKILLed by the
+  harness mid-batch (it died just after `-- baseline (unmutated) --`), so a leftover backup from it
+  may be what the tree check compared against. That is itself worth handling: a scratch directory
+  from a dead runner is exactly the state the tree check exists to notice. A clean re-run from a
+  fresh `git archive` tree and a fresh scratch killed 4/4 with a green baseline and an accurate tree
+  check, so the finding is about the reporting, not about the verdicts.
+
 - [T-1042] **CLOSED 2026-09-05 — Today groups by list, and stops saying "Today" on the Today page.**
   Reported by the user from the shipped app, with the design decided by them: *"there shouldn't be
   an overdue/overdo section but all tasks should be grouped by lists"*, *"no tasks appearing here
