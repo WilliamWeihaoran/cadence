@@ -175,28 +175,27 @@ struct ListTasksView: View {
     /// because there was no swallowed commit in the frame for half 2 to hang the rule on and no
     /// insert or delete for half 3 to see.
     ///
-    /// **It renumbers the *displayed* order, not the stored one**, which is why it does not call
-    /// `TasksPanelSupport.reorderTask`: `activeTasks` is sorted by the tab's active sort and its
-    /// hover freeze, and writing that arrangement back is what makes a drag under a non-`order`
-    /// sort mean anything here. The two surfaces disagree about which sequence a drag rewrites;
-    /// they now agree about committing it, which is the part this ticket is about.
+    /// **It renumbered the *displayed* order until T-884**, which is why it did not call
+    /// `TasksPanelSupport.reorderTask`: `activeTasks` is the tab's active sort plus its hover
+    /// freeze, and the two surfaces therefore meant different things by the same gesture. That is
+    /// settled now, in favour of the sequence Today and All Tasks renumber — see
+    /// `TasksPanelSupport.reorderTask` for the whole argument, which is about what a drag under a
+    /// date sort may cost, not about which spelling was shorter.
+    ///
+    /// **`tasks`, not `activeTasks`**, so neither the freeze nor the sort reaches `order`. The
+    /// freeze half is not even a judgement call: `TaskListKanbanColumn.moveTask` already recorded
+    /// that "the hover freeze is a display-only concern and must never be what gets written back
+    /// into `order`", and this site was writing exactly that back.
     ///
     /// - Returns: Whether the new order is in the store, so the row springs back on a refusal
     ///   rather than sitting in a place nothing holds.
     private func reorderTask(droppedID: UUID, targetID: UUID) -> Bool {
-        var sorted = activeTasks
-        guard let fromIndex = sorted.firstIndex(where: { $0.id == droppedID }),
-              let toIndex = sorted.firstIndex(where: { $0.id == targetID }) else { return false }
-        let element = sorted.remove(at: fromIndex)
-        sorted.insert(element, at: toIndex > fromIndex ? toIndex - 1 : toIndex)
-        let reordered = withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            CadenceOrderCommit.commit(
-                sorted,
-                readOrder: { $0.order },
-                writeOrder: { $0.order = $1 },
-                in: modelContext
-            )
-        }
+        let reordered = TasksPanelSupport.reorderTask(
+            droppedID: droppedID,
+            targetID: targetID,
+            scopeTasks: CadenceTaskQuerySupport.openTasks(from: tasks),
+            modelContext: modelContext
+        )
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
         return reordered
     }

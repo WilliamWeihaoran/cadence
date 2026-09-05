@@ -1,6 +1,42 @@
 #if os(macOS)
 import SwiftUI
 
+/// **Why a column rename did not reach the store, when the *editor* refused it rather than the
+/// store (T-914).**
+///
+/// These are not the failure `saveFailureNotice` is for, and conflating them is the defect this
+/// type exists to end. `CadenceInPlaceEditFlush.failureNotice` says "the store would not take your
+/// change, it is still here, try again" — an invitation to press the same key again, which is
+/// exactly the wrong advice for a name another column already holds. Pressing Return again will
+/// refuse it again, forever.
+///
+/// Before this existed, `applySectionEdits` returned without writing and without saying anything,
+/// and `commitSectionEdits` then flushed a context with nothing pending in it, succeeded, and
+/// **cleared** the notice. So a refused rename was reported as a rename that landed: the user
+/// pressed Return over a duplicate and the column simply kept its old title, with no red line
+/// anywhere and nothing to read.
+enum KanbanColumnRenameRefusal: Equatable {
+    /// The field is empty, or holds only whitespace.
+    case emptyName
+    /// Another column in this list already holds the name.
+    case nameAlreadyTaken
+
+    /// What the popover — or the column header, once the popover has gone — says.
+    ///
+    /// "A column with this name already exists." is deliberately the sentence the tag editors
+    /// already use for the same refusal (`SettingsTagsSection`, `TagPickerPopoverViews`,
+    /// `iOSSettingsTagsSection`), because it *is* the same refusal one noun along, and a user who
+    /// has met it once should not have to learn a second phrasing for it.
+    var notice: String {
+        switch self {
+        case .emptyName:
+            return "A column needs a name."
+        case .nameAlreadyTaken:
+            return "A column with this name already exists."
+        }
+    }
+}
+
 /// The macOS column's section writes. Every one of them goes through
 /// `CadenceSectionConfigMerge` rather than reading the whole array, changing one entry and writing
 /// the whole array back — see that type for what the merge keeps and what it still loses
@@ -127,6 +163,45 @@ enum KanbanSectionStateSupport {
               let stored = container.sectionConfigs.first(where: { $0.uuid == columnUUID })
         else { return false }
         return stored.name.caseInsensitiveCompare(trimmed) != .orderedSame
+    }
+
+    /// **Whether the editor may store `typedName` on this column, and why not when it may not
+    /// (T-914).**
+    ///
+    /// Split out of `ListSectionKanbanColumn.applySectionEdits` so the decision has a seam a test
+    /// can drive: the apply is a `private` member of a SwiftUI `View`, and "the rename was refused
+    /// and reported as saved" is a behavioural claim, not a source-text one.
+    ///
+    /// **Both comparisons are against the *stored* column, not against the snapshot the popover
+    /// opened with**, which is the same correction `hasUncommittedRename` above carries. A rename
+    /// that already landed — by Return, or by a colour press — is in the store, and a rename that
+    /// arrived from another device is too; asking the opening snapshot would refuse a name the
+    /// column has since given up, or accept one it has since taken.
+    ///
+    /// **The collision check excludes the column itself by `uuid`.** The old inline form excluded
+    /// it by first testing that the typed name differed from `base.name`, which answers a slightly
+    /// different question and gets it wrong the moment `base` is stale.
+    ///
+    /// - Returns: `nil` when the name may be stored — including when it is the name the column
+    ///   already has, and when the column is no longer in the list at all, which is not a refusal
+    ///   the user can act on and is left to the apply's own guard.
+    static func renameRefusal(
+        typedName: String,
+        columnUUID: UUID,
+        area: Area?,
+        project: Project?
+    ) -> KanbanColumnRenameRefusal? {
+        let trimmed = typedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .emptyName }
+        guard let container = CadenceSectionConfigMerge.container(area: area, project: project),
+              let stored = container.sectionConfigs.first(where: { $0.uuid == columnUUID })
+        else { return nil }
+        guard stored.name.caseInsensitiveCompare(trimmed) != .orderedSame else { return nil }
+
+        let taken = container.sectionConfigs.contains {
+            $0.uuid != columnUUID && $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+        }
+        return taken ? .nameAlreadyTaken : nil
     }
 
     static func removeSection(sectionID: UUID, area: Area?, project: Project?) {

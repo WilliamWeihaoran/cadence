@@ -62,6 +62,13 @@ struct ListSectionKanbanColumn: View {
     /// Set when a column write was refused by the store, and drawn inside the editor popover. The
     /// popover staying open *is* the report of failure here — see `toggleSectionArchive()`.
     @State private var saveFailureNotice: String?
+    /// Set when the **editor itself** refused the name in the rename field (T-914) — empty, or one
+    /// another column already holds. Deliberately not `saveFailureNotice`: that one says the store
+    /// would not take the change and it is still here to try again, which is the opposite of the
+    /// advice a duplicate name needs. Both reach the popover through `editorFailureNotice` and the
+    /// header through `columnFailureNotice`, and both are cleared by `openSectionEditor()` because
+    /// a notice belongs to the attempt that produced it.
+    @State private var nameRefusalNotice: String?
     /// Set when the store refused a **card** drop (T-869). Separate from `saveFailureNotice`, which
     /// belongs to the editor popover and gates `toggleCompletionFromEditor` — a refused drag must
     /// not hold that popover shut. Both reach the header through `columnFailureNotice`.
@@ -368,6 +375,7 @@ struct ListSectionKanbanColumn: View {
         // still be showing its red line the next time the popover opened — and `toggleCompletionFromEditor`
         // reads the same flag to decide whether it may close, so a stale one would hold the popover shut.
         saveFailureNotice = nil
+        nameRefusalNotice = nil
         editorBase = section
         editorFiledCardName = section.name
         editorName = section.name
@@ -419,7 +427,7 @@ struct ListSectionKanbanColumn: View {
             editorColorHex: $editorColorHex,
             editorDueDate: $editorDueDate,
             editorHasDueDate: $editorHasDueDate,
-            failureNotice: saveFailureNotice,
+            failureNotice: editorFailureNotice,
             // **Nothing per keystroke; one commit at the end of the edit (T-645, T-736).** The
             // rename used to apply the draft to the container's blob per character — that is the
             // callback that is gone. `commitSectionEdits` is the point: the name field submitting
@@ -510,27 +518,48 @@ struct ListSectionKanbanColumn: View {
     /// `Doingx`, then looked for cards still called `Doing`, found none, and left them there, filed
     /// under a name no column had. The cards move once, at the commit point, in
     /// `moveCardsToStoredColumnName()`. An intermediate name never touches a card.
-    private func applySectionEdits() {
+    ///
+    /// **It answers *why* it declined a name, and the colour and date go in anyway (T-914).** The
+    /// two names this refuses — empty, and one another column in the list already holds — used to
+    /// end the whole function, so a colour pressed while the field held a duplicate lost the colour
+    /// too, and `commitSectionEdits` then flushed an empty context, succeeded, and cleared
+    /// `saveFailureNotice`. A rename the editor refused was reported as a rename that landed. The
+    /// refusal is the *editor's*, not the store's, and it comes back to the caller as
+    /// `KanbanColumnRenameRefusal` rather than as a save failure, because "try again" is the wrong
+    /// advice for a name that will be refused every time.
+    ///
+    /// - Returns: `nil` when the name in the field was written, or when there was no rename in it
+    ///   to write.
+    private func applySectionEdits() -> KanbanColumnRenameRefusal? {
         let base = editorBase ?? section
-        let trimmed = base.isDefault ? base.name : editorName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return }
+        guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return nil }
 
         let current = container.sectionConfigs
-        guard current.contains(where: { $0.uuid == base.uuid }) else { return }
-        if trimmed.caseInsensitiveCompare(base.name) != .orderedSame,
-           current.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-            return
-        }
+        // The column was deleted, on this device or another one, while the popover was open. Not a
+        // refusal the user can act on: the column is not on the board to be renamed.
+        guard current.contains(where: { $0.uuid == base.uuid }) else { return nil }
+
+        let refusal = base.isDefault ? nil : KanbanSectionStateSupport.renameRefusal(
+            typedName: editorName,
+            columnUUID: base.uuid,
+            area: area,
+            project: project
+        )
 
         var edited = base
-        edited.name = trimmed
+        // Left as `base.name` when the name is refused, so the merge — which writes only the fields
+        // that differ from `base` — leaves the stored name alone rather than writing a stale one
+        // back over a rename that arrived from another device.
+        if refusal == nil, !base.isDefault {
+            edited.name = editorName.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         edited.colorHex = editorColorHex
         edited.dueDate = editorHasDueDate ? DateFormatters.dateKey(from: editorDueDate) : ""
         container.applySectionConfigEdits(
             base: current.map { $0.uuid == base.uuid ? base : $0 },
             edited: current.map { $0.uuid == base.uuid ? edited : $0 }
         )
+        return refusal
     }
 
     /// Where the column's cards are filed right now: the editor's own record while the popover is
@@ -577,15 +606,23 @@ struct ListSectionKanbanColumn: View {
     /// **It is also where the column's cards move (T-713)**, after the apply and before the flush,
     /// so the rename and the cards it re-points reach the store as one commit and a refusal leaves
     /// them agreeing with each other rather than stranded apart.
+    ///
+    /// **It reports the editor's own refusal separately from the store's (T-914).** A flush of a
+    /// context with nothing pending in it succeeds, so a rename `applySectionEdits` declined used
+    /// to arrive here, succeed, and *clear* `saveFailureNotice` on the way out — reporting the
+    /// refused rename as landed. The refusal is named and cleared in one expression, above the
+    /// flush, so it survives a commit that then fails for a different reason and the popover can
+    /// say both things at once if both are true.
     private func commitSectionEdits() -> Bool {
-        applySectionEdits()
+        let refusal = applySectionEdits()
+        nameRefusalNotice = refusal?.notice
         moveCardsToStoredColumnName()
         guard CadenceInPlaceEditFlush.flush(in: modelContext) else {
             saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
             return false
         }
         saveFailureNotice = nil
-        return true
+        return refusal == nil
     }
 
     /// The editor's "Clear date", committed (T-645). It wrote the container's blob and committed
@@ -707,7 +744,18 @@ struct ListSectionKanbanColumn: View {
     /// way out. Until then it stays up, which is correct — the column really did not save.
     private var columnFailureNotice: String? {
         if let reorderFailureNotice { return reorderFailureNotice }
-        return showEditor ? nil : saveFailureNotice
+        return showEditor ? nil : editorFailureNotice
+    }
+
+    /// The one line the editor popover shows, and the same one the header takes over once the
+    /// popover has gone.
+    ///
+    /// **A refused *commit* leads a refused *name* (T-914).** Both can be true at once — a rename
+    /// declined for a duplicate, and then the colour that went in anyway refused by the store — and
+    /// of the two, the store's refusal is the one with work still pending behind it. The name is
+    /// still in the field either way, and the next commit point re-answers both.
+    private var editorFailureNotice: String? {
+        saveFailureNotice ?? nameRefusalNotice
     }
 
     private func currentSection() -> TaskSectionConfig? {

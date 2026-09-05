@@ -255,11 +255,58 @@ enum CadenceSectionConfigMerge {
     }
 }
 
+/// What became of an attempt to create a kanban column (T-885).
+///
+/// Three answers rather than a `Bool` because the two ways a creation does not happen need
+/// different things said about them. `.declined` is the merge's own rule — another column already
+/// holds the name, or the container's normaliser threw the column away outright — and nothing was
+/// written, so there is nothing pending, nothing to put back, and nothing for the store to have
+/// refused. `.refused` is the store saying no to a write that *did* happen locally; the columns are
+/// back as they were found by the time the caller sees it, and the caller must say so.
+enum CadenceSectionConfigAddOutcome: Equatable {
+    /// The column is in the store.
+    case added
+    /// Nothing was written. Another column already holds this name, or the container's normaliser
+    /// discarded the column (an empty or whitespace-only name).
+    case declined
+    /// The store refused the write, and every column is back as it was found.
+    case refused
+
+    /// The one sentence a refused column creation shows.
+    ///
+    /// Distinct from `CadenceOrderCommit.failureNotice` ("Nothing was moved") because nothing was
+    /// moved here — a column the user just named is not on the board any more, and "nothing was
+    /// added" is the fact they need. Distinct from
+    /// `CadencePendingChangePersistence.editFailureNotice` ("Couldn't save these changes") because
+    /// this is not an edit to something that already existed.
+    static let refusalNotice = "Couldn't add this column. Nothing was added."
+}
+
 /// A list that owns kanban columns. `Area` and `Project` carry the same `sectionConfigsRaw` blob
 /// and the same normalisation, and every section writer in the app has had to spell both branches
 /// by hand; this is the one they share.
 protocol CadenceSectionConfigContainer: AnyObject {
     var sectionConfigs: [TaskSectionConfig] { get set }
+
+    /// **What the setter will actually store, given `configs` (T-915).**
+    ///
+    /// A requirement rather than a detail of `Area`/`Project` because the two write guards below
+    /// are questions about the *stored* array, and there is no other way to ask one without
+    /// writing first. Both guards compared the array they were about to hand the setter against
+    /// the array the getter returns — and the getter's array has already been through this
+    /// function while the setter's argument has not. `Area`/`Project` force `isCompleted` and
+    /// `isArchived` false on the Default column here, so a merge that differed from the store only
+    /// in one of those passed both guards, re-serialised `sectionConfigsRaw` to a byte-identical
+    /// string, dirtied the object and pushed a CloudKit record, every time it was attempted.
+    ///
+    /// **It must be idempotent**, which is what makes the guards' comparison sound: the getter
+    /// returns a normalised array, so `normalizedSectionConfigs(current) == current` has to hold or
+    /// a guard would answer "this write changes something" for every write.
+    ///
+    /// **No default implementation**, on purpose. An identity default would be silently correct for
+    /// a container that does not normalise and silently *wrong* for one that does — including for
+    /// `Area` and `Project` themselves, if this function were ever made `private` again.
+    func normalizedSectionConfigs(_ configs: [TaskSectionConfig]) -> [TaskSectionConfig]
 }
 
 extension Area: CadenceSectionConfigContainer {}
@@ -277,6 +324,11 @@ extension CadenceSectionConfigContainer {
     /// caller here is an editor closing or committing, and an editor that changed nothing is the
     /// ordinary case — a popover opened and shut, a colour pressed that was already selected, a
     /// commit point reached twice in one session.
+    ///
+    /// **The guard asks what the setter would store, not what it is being handed (T-915).** It
+    /// compared `merged` against `current` — and `current` came out of the getter already
+    /// normalised while `merged` had not been through `normalizedSectionConfigs` yet, so a merge
+    /// that differed only in a field the normaliser discards passed the guard and wrote anyway.
     @discardableResult
     func applySectionConfigEdits(
         base: [TaskSectionConfig],
@@ -288,7 +340,7 @@ extension CadenceSectionConfigContainer {
             edited: edited,
             current: current
         )
-        guard merged != current else { return current }
+        guard normalizedSectionConfigs(merged) != current else { return current }
         sectionConfigs = merged
         return sectionConfigs
     }
@@ -307,7 +359,13 @@ extension CadenceSectionConfigContainer {
         // A transform that declined — no such column, or a name already taken — used to `return`
         // without writing. Keep that: an identical write still dirties the object and still pushes
         // a CloudKit record.
-        guard merged != current else { return }
+        //
+        // **Through `normalizedSectionConfigs`, since T-915.** "Identical" has to mean identical to
+        // what the setter would *store*: this compared `merged` against a `current` that had come
+        // out of the getter already normalised, so a transform whose only effect the normaliser
+        // discards — `isCompleted` on Default, a name that trims to empty, a Default column moved
+        // off index 0 — passed the guard and paid the whole cost of a write for nothing.
+        guard normalizedSectionConfigs(merged) != current else { return }
         sectionConfigs = merged
     }
 
@@ -335,6 +393,47 @@ extension CadenceSectionConfigContainer {
             return configs + [config]
         }
         return added
+    }
+
+    /// **Creating a column, committed (T-885).**
+    ///
+    /// The same relationship `reorderSectionConfigs` has to `mutateSectionConfigs`, one ticket
+    /// further along the same family and on the worse half of it. T-870 found the column *reorder*
+    /// rewriting `sectionConfigsRaw` and reaching no commit; this is the *creation*, which was in
+    /// the identical state — `ListSectionsKanbanView.addSection` called the uncommitted form above
+    /// and `KanbanListSectionSupportViews.swift` held no `save()` anywhere. A reorder that reverts
+    /// at next launch still leaves every column the user made. A creation that reverts takes one
+    /// away, after they named it and watched it appear.
+    ///
+    /// The undo is the previous blob put back — not `modelContext.rollback()`, which would discard
+    /// the app's other pending work on its single context. Same reason as everywhere else; see
+    /// `CadencePendingChangePersistence.commitEdit`.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container, and an
+    ///   undo path no test can reach is an undo path no test can prove.
+    /// - Returns: See `CadenceSectionConfigAddOutcome` for why a declined creation and a refused
+    ///   one are not the same answer.
+    @discardableResult
+    func addSectionConfig(
+        _ config: TaskSectionConfig,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> CadenceSectionConfigAddOutcome {
+        let previous = sectionConfigs
+        // Both halves are needed: the merge declines a name another column holds, and the
+        // container's normaliser silently discards a column whose name is empty once trimmed. Only
+        // the read-back can see the second one.
+        guard addSectionConfig(config), sectionConfigs != previous else { return .declined }
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                sectionConfigs = previous
+            }
+        } catch {
+            return .refused
+        }
+        return .added
     }
 
     func removeSectionConfig(uuid: UUID) {

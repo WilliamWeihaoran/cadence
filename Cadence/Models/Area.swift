@@ -139,7 +139,13 @@ import Foundation
         }
     }
 
-    private func normalizedSectionConfigs(_ configs: [TaskSectionConfig]) -> [TaskSectionConfig] {
+    /// The container's own normalisation, and **not `private`, deliberately (T-915).** It is a
+    /// requirement of `CadenceSectionConfigContainer` so that the two write guards can ask what a
+    /// write would *become* rather than what they were about to hand the setter. Both compared the
+    /// pre-normalisation array against the stored one, so a write differing only in a field this
+    /// function discards — `isCompleted` and `isArchived` on Default — passed the guard and
+    /// re-serialised `sectionConfigsRaw` to a byte-identical string every time it was attempted.
+    func normalizedSectionConfigs(_ configs: [TaskSectionConfig]) -> [TaskSectionConfig] {
         var seen = Set<String>()
         var cleaned: [TaskSectionConfig] = []
         for config in configs {

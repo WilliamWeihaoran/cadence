@@ -319,13 +319,21 @@ struct CadenceReorderCommitSurfaceTests {
         #expect(body.contains("CadenceOrderCommit.commit("))
     }
 
-    /// **T-869(a).** A list's own Tasks tab, which reached no commit at all.
+    /// **T-869(a), and T-884.** A list's own Tasks tab, which reached no commit at all — and which
+    /// then kept its own renumbering rule until T-884 sent it through the shared one.
     @Test func thelistDetailRowDropReachesACommit() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/ListDetailComponents.swift")
         let body = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: source)
 
-        #expect(body.contains("sorted.insert(element"), "non-vacuity: not the rearranging body")
-        #expect(body.contains("CadenceOrderCommit.commit("), "the list's Tasks tab still reaches no commit")
+        #expect(body.contains("droppedID: droppedID"), "non-vacuity: not the rearranging body")
+        #expect(
+            body.contains("TasksPanelSupport.reorderTask("),
+            "the list's Tasks tab renumbers its own sequence again instead of the shared one"
+        )
+        #expect(
+            !body.contains("activeTasks"),
+            "the list's Tasks tab writes its display order — sort plus hover freeze — back into `order`"
+        )
         #expect(!body.contains("try? modelContext.save()"))
     }
 
@@ -398,9 +406,15 @@ struct CadenceReorderCommitSurfaceTests {
                 source.contains("reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice"),
                 "\(path) does not name and clear a refused reorder in one expression"
             )
+            // The third arm is T-885's: the section board grew a second notice of its own (a
+            // refused column *creation*), so its draw reads a funnel rather than this flag
+            // directly. The funnel is pinned to be one that actually reads this flag, so a board
+            // that renamed its way out of drawing a refused drag still fails here.
             #expect(
                 source.contains("CadenceInlineFailureNotice(text: reorderFailureNotice)")
-                    || source.contains("failureNotice: columnFailureNotice"),
+                    || source.contains("failureNotice: columnFailureNotice")
+                    || (source.contains("CadenceInlineFailureNotice(text: boardFailureNotice)")
+                        && source.contains("reorderFailureNotice ?? addFailureNotice")),
                 "\(path) sets a notice nothing draws"
             )
             reporting += 1

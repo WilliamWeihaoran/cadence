@@ -258,6 +258,44 @@ enum TasksPanelSupport {
     /// claims more than a sheet that closed, and a refused drop reverts at next launch with nothing
     /// to retry — so this left that list along with `SettingsView.moveContext`.
     ///
+    /// **What a drag under a non-`order` sort rewrites, decided (T-884).**
+    ///
+    /// This sorts `scopeTasks` by `order` and renumbers *that*. `ListTasksView.reorderTask` used to
+    /// renumber the **displayed** order instead — the tab's active sort plus its hover freeze — so
+    /// one gesture meant two different things depending on which screen it was made on. Both
+    /// spellings were preserved exactly as found when T-869 gave them commits; T-884 is the ticket
+    /// that had to choose. Four sites now agree on this one, and here is why it is this one:
+    ///
+    /// - **`order` is the *custom* arrangement, and it is the only sequence in this app a user
+    ///   authors.** `TaskOrdering.precedes` sorts by it outright under `.custom` and uses it only
+    ///   as a tie-break under `.date` and `.priority`. So a drag made while the screen is sorted by
+    ///   date is not a statement about the sequence on screen: that sequence comes from dates,
+    ///   which the drag does not touch.
+    /// - **Renumbering the display writes a derived sequence over an authored one.** One drag under
+    ///   a date sort would replace the user's whole hand-made arrangement with the date order —
+    ///   silently, and invisibly, because the screen is not showing `order` at the time. They find
+    ///   out the next time they switch back to Custom, with nothing to undo. That is the same class
+    ///   of defect as T-870 and T-885, not a smaller one.
+    /// - **The cost of choosing this way is real and is smaller.** Under a date sort the dragged
+    ///   row lands somewhere the user cannot see, so the gesture looks like it did nothing. But the
+    ///   row springs back on screen under *either* rule — the list re-sorts by date the moment the
+    ///   drop lands — so the visible outcome is identical, and only the other rule also destroys
+    ///   something. And this one is exactly recoverable: drag again under Custom.
+    /// - **The repo had already decided the freeze half.** `TaskListKanbanColumn.moveTask` states
+    ///   that "the hover freeze is a display-only concern and must never be what gets written back
+    ///   into `order`". The active sort is the same kind of thing — a view over the tasks, not an
+    ///   arrangement anybody made.
+    ///
+    /// **What is deliberately *not* decided here.** Whether a row drag should be *offered* at all
+    /// under a non-custom sort is a product question, not this one: refusing the drop would make
+    /// the gesture honest, and it would also change what four surfaces accept, including drops that
+    /// currently do useful assignment work on the way past. Filed as [[T-1054]].
+    ///
+    /// **`scopeTasks` is still a slice**, and `CadenceOrderCommit.commit` says a renumber should
+    /// span the whole sequence. Every row surface in the app hands it a group or a tab rather than
+    /// a container, and on Today `order` is not even container-wide. Untouched here and filed as
+    /// [[T-1055]]; this ticket is about which *sequence* is rewritten, not about how much of it.
+    ///
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
     ///   because a `save()` that throws cannot be provoked out of an in-memory container.
     /// - Returns: Whether the new order is in the store. `false` means every row is back where it

@@ -178,10 +178,17 @@ enum KanbanBoardSupport {
 
     /// Reassigns `order` across a column after a card was dropped into it, **and commits it**.
     ///
-    /// `columnTasks` is the column's current ordering *as the caller presents it* (section
-    /// columns sort by `order`, list columns by the board's active sort), `task` is the card
-    /// that was dropped, and `target` is the card it was dropped in front of — `nil` means
-    /// "append to the end", which is what a drop on empty column space produces.
+    /// `columnTasks` is the column's tasks **in `order`**, `task` is the card that was dropped, and
+    /// `target` is the card it was dropped in front of — `nil` means "append to the end", which is
+    /// what a drop on empty column space produces.
+    ///
+    /// **Both callers sort by `order`; the list columns used to pass the board's active sort
+    /// (T-884).** A drag renumbers `order`, which is the *custom* arrangement and the only sequence
+    /// in this app a user authors; renumbering a date- or priority-derived display would overwrite
+    /// that arrangement wholesale the first time anybody dragged a card while sorted by date, and
+    /// would do it invisibly, because the screen is not showing `order` at the time.
+    /// `TasksPanelSupport.reorderTask` carries the full argument and the two things it deliberately
+    /// leaves open.
     ///
     /// **It reached no commit at all until T-869**, and both column views answered `true` over it.
     /// A rearrangement the user can see is a success report (T-614), so a card that sits where it

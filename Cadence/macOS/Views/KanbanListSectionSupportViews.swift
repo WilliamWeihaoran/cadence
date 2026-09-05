@@ -18,6 +18,11 @@ struct ListSectionsKanbanView: View {
     /// Set when the store refused a column drag (T-870). The columns are already back in their old
     /// order by then, so the board and this sentence agree.
     @State private var reorderFailureNotice: String?
+    /// Set when the store refused a column *creation* (T-885). Separate from the drag's notice
+    /// because they are different sentences about different gestures — "nothing was moved" is a
+    /// lie about a column that was never added — and because a stale one of either would otherwise
+    /// be cleared by the other's success. Both reach the board through `boardFailureNotice`.
+    @State private var addFailureNotice: String?
 
     @Environment(\.modelContext) private var modelContext
 
@@ -38,13 +43,21 @@ struct ListSectionsKanbanView: View {
         showArchived ?? $localShowArchived
     }
 
+    /// The board's one report line. A refused *drag* leads, because it is the more recent gesture
+    /// whenever both are set: the notices are each cleared by their own next attempt, so the only
+    /// way to hold two at once is to have a refused creation still up when a drag is refused too,
+    /// and the drag is then what the user just did.
+    private var boardFailureNotice: String? {
+        reorderFailureNotice ?? addFailureNotice
+    }
+
     var body: some View {
         ZStack {
             Theme.bg
 
             VStack(alignment: .leading, spacing: 0) {
-                if let reorderFailureNotice {
-                    CadenceInlineFailureNotice(text: reorderFailureNotice)
+                if let boardFailureNotice {
+                    CadenceInlineFailureNotice(text: boardFailureNotice)
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
                 }
@@ -154,11 +167,26 @@ struct ListSectionsKanbanView: View {
         .buttonStyle(.cadencePlain)
     }
 
+    /// **The new column reaches the store, and says so when it does not (T-885).**
+    ///
+    /// This rewrote the list's `sectionConfigsRaw` blob and committed nothing at all: the column
+    /// appeared on the board, the user renamed it, and next launch had never heard of it. The same
+    /// defect as T-870 one door along — and worse, because a reorder that reverts still leaves
+    /// every column the user made.
+    ///
+    /// `.declined` is unreachable from here and is not treated as a failure: the name comes from
+    /// `KanbanBoardSupport.nextSectionName`, which is chosen precisely so that no existing column
+    /// holds it. It is answered rather than ignored so that a future caller passing a user-typed
+    /// name gets told which of the two things happened.
     private func addSection() {
         guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return }
         let trimmed = KanbanBoardSupport.nextSectionName(from: baseSectionConfigs)
         let tint = area?.colorHex ?? project?.colorHex ?? TaskSectionDefaults.defaultColorHex
-        container.addSectionConfig(TaskSectionConfig(name: trimmed, colorHex: tint))
+        let outcome = container.addSectionConfig(
+            TaskSectionConfig(name: trimmed, colorHex: tint),
+            in: modelContext
+        )
+        addFailureNotice = outcome == .refused ? CadenceSectionConfigAddOutcome.refusalNotice : nil
     }
 
     /// Column order is one array with no per-column position field, so two devices reordering the

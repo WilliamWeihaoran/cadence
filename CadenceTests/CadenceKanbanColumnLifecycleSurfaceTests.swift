@@ -190,34 +190,42 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
     }
 
     /// **Exactly what `ListSectionKanbanColumn.applySectionEdits` writes**, and nothing else: the
-    /// container's blob, merged against the frozen `editorBase`, with every one of that function's
-    /// four declines spelled the same way. It is a transcription because the original is a private
-    /// member of a SwiftUI `View`; the source assertions in
+    /// container's blob, merged against the frozen `editorBase`, declining a name through the same
+    /// `KanbanSectionStateSupport.renameRefusal` the original consults. It is a transcription
+    /// because the original is a private member of a SwiftUI `View`; the source assertions in
     /// `theRenameMovesItsCardsOnceAtTheCommitPointRatherThanPerKeystroke` are what keep the two
     /// from drifting, and the one line this transcription deliberately does **not** have is the
     /// per-keystroke `moveTasks` that T-713 removed. The due-date branch is the one field left as
     /// the base's: no test here edits a date, and `clearSectionDueDate` owns that write anyway.
+    ///
+    /// **The refusal is returned rather than swallowed (T-914).** The two declines used to end the
+    /// function, taking the colour press with them and telling the caller nothing; now the colour
+    /// and the date go in and the name is left at `base`'s, so the merge writes no name at all.
+    @discardableResult
     private func applyColumnEditsTheWayThePopoverDoes(
         base: TaskSectionConfig,
         typedName: String,
         colorHex: String? = nil,
         area: Area
-    ) {
-        let trimmed = base.isDefault ? base.name : typedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+    ) -> KanbanColumnRenameRefusal? {
         let current = area.sectionConfigs
-        guard current.contains(where: { $0.uuid == base.uuid }) else { return }
-        if trimmed.caseInsensitiveCompare(base.name) != .orderedSame,
-           current.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-            return
-        }
+        guard current.contains(where: { $0.uuid == base.uuid }) else { return nil }
+        let refusal = base.isDefault ? nil : KanbanSectionStateSupport.renameRefusal(
+            typedName: typedName,
+            columnUUID: base.uuid,
+            area: area,
+            project: nil
+        )
         var edited = base
-        edited.name = trimmed
+        if refusal == nil, !base.isDefault {
+            edited.name = typedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         edited.colorHex = colorHex ?? base.colorHex
         area.applySectionConfigEdits(
             base: current.map { $0.uuid == base.uuid ? base : $0 },
             edited: current.map { $0.uuid == base.uuid ? edited : $0 }
         )
+        return refusal
     }
 
     // MARK: - The three routes, gated
@@ -729,13 +737,17 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         #expect(matches(#"moveTasks\("#, in: apply) == 0,
                 "applySectionEdits moves cards again, so an intermediate name reaches them")
 
-        // `applyColumnEditsTheWayThePopoverDoes` above transcribes this function's four declines.
+        // `applyColumnEditsTheWayThePopoverDoes` above transcribes this function's declines.
         // Asserting each one here is what stops the transcription and the original drifting apart.
+        // The two *name* declines moved into `KanbanSectionStateSupport.renameRefusal` under T-914,
+        // where a test can drive them; what stays here is that the apply consults it, that a
+        // refused name is left at the base's so the merge writes no name, and that a column no
+        // longer in the list is still declined outright.
         for decline in [
-            "let trimmed = base.isDefault ? base.name : editorName.trimmingCharacters(in: .whitespacesAndNewlines)",
-            "guard !trimmed.isEmpty else { return }",
-            "guard current.contains(where: { $0.uuid == base.uuid }) else { return }",
-            "current.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame })"
+            "guard current.contains(where: { $0.uuid == base.uuid }) else { return nil }",
+            "KanbanSectionStateSupport.renameRefusal(",
+            "if refusal == nil, !base.isDefault {",
+            "edited.name = editorName.trimmingCharacters(in: .whitespacesAndNewlines)"
         ] {
             #expect(apply.contains(decline), "applySectionEdits no longer spells: \(decline)")
         }
@@ -1243,6 +1255,15 @@ private final class SectionConfigWriteCounter: CadenceSectionConfigContainer {
             writes += 1
             storage = newValue
         }
+    }
+
+    /// Identity, which is what "deliberately does not normalise" means as a witness (T-915). This
+    /// spy stores what it is handed, so what the setter would store *is* the argument, and the two
+    /// write guards degenerate here to the `merged != current` they used to be — which is what
+    /// keeps this file's counts measuring the merge rather than the Default-column invariant.
+    /// `CadenceSectionConfigNormalizationGuardTests` asks the other question, on real containers.
+    func normalizedSectionConfigs(_ configs: [TaskSectionConfig]) -> [TaskSectionConfig] {
+        configs
     }
 }
 

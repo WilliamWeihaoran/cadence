@@ -150,8 +150,15 @@ struct TaskListKanbanColumn: View {
     private func moveTask(_ task: AppTask, before target: AppTask?) -> Bool {
         // Deliberately the *unfrozen* ordering: the hover freeze is a display-only concern and
         // must never be what gets written back into `order`.
+        //
+        // **And deliberately by `order` rather than by the board's active sort (T-884).** The
+        // active sort is a display-only concern by the same argument — it is derived from dates or
+        // priorities, not authored — and renumbering it would overwrite the user's custom
+        // arrangement with the date order the first time anyone dragged a card while sorted by
+        // date. `TasksPanelSupport.reorderTask` carries the whole reasoning; this column and the
+        // section board's `ListSectionKanbanColumn.moveTask` are the two card drops it covers.
         let reordered = KanbanBoardSupport.reorder(
-            unfrozenSortedTasks,
+            unfrozenSortedTasks.sorted { $0.order < $1.order },
             moving: task,
             before: target,
             in: modelContext,
