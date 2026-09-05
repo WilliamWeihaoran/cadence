@@ -43,6 +43,115 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1068] **The first test in this repository that looks at the composed main window.**
+  Codex's inventory, 2026-09-05: **4 of 4,431 `@Test` declarations exercise a running surface, and
+  all four are opt-in.** No test entered full screen, populated Today with rollover tasks, loaded an
+  image note, resized its editor, or compared successive hover frames — which is, item for item, the
+  four defects the user found that week by opening the app ([[T-1043]] text over an image, [[T-1065]]
+  a divider drawn as focused, [[T-1041]] a mis-spaced header, and the flickering rollover section).
+  4,400 tests, and not one of them could have caught any of the four.
+
+  **Two premises that inventory corrected, so they are not re-litigated:** `CadenceTests` is
+  app-hosted (`BUNDLE_LOADER`/`TEST_HOST`, `project.pbxproj:920,938,945,963`) — those tests could not
+  execute without the app at all; and it is *not* "no rendering coverage" —
+  `MarkdownEditorDrawOrderTests`, `MarkdownImageSizingTests`, `MarkdownTableHostedEditingTests` and
+  `MarkdownListSupportTests` draw into bitmaps and build an `NSWindow` offscreen. They are
+  **component** tests. What was missing is the SwiftUI **composition**.
+
+  **Shipped:** `CadenceUITests/CadenceTodayCompositionUITests.swift` — one scenario, opt-in, reusing
+  the existing test-host lock and the existing private-store launch environment; **no second app
+  runner**. `CadenceUITestScenarioSeed` (selected by `CADENCE_UI_TEST_SCENARIO=today-geometry`, and
+  additive to the stock seed, so every existing UI test keeps the store it had) puts three past-do
+  tasks, two overdue and two due-today on Today, plus a daily note holding a flat-colour picture it
+  builds at launch. The test visits Today, enters full screen with `cmd-ctrl-f`, and compares what it
+  finds **before and after that resize and before and after a hover is released**.
+
+  **Four labelled assertion groups, because they are four different strengths of evidence and
+  conflating them is how "green" came to mean less than it seemed:** *process start* (the app reached
+  the foreground — a precondition, not a finding); *surface existence* (an identifier resolved
+  against a live tree); *geometry* (where the accessibility tree says the boxes are — good evidence
+  about layout and **none at all about drawing**: a divider lit as focused has exactly the geometry
+  of one that is not); *pixel* (what was painted, read back from a window screenshot — the only group
+  that can see a drawing defect, and the weakest, since a display profile or a stray system window
+  can fail it). The pixel group asserts only invariants of the fixture the test planted — a
+  single-colour picture, every pixel inside its box that colour, so anything drawn *over* it is a
+  arithmetic failure and nothing else is. **There is no golden image in this target and there should
+  not be one.**
+
+  **Measured on the composed window, 2026-09-06**, from a full accessibility dump: window 1280×800,
+  Today's task pane 686.5pt wide (a **two**-pane layout at that width — the notes column needs 1092pt
+  of pane and is simply absent below it, which is why the picture assertions are conditional outside
+  full screen and unconditional inside it); the group heading's box is `{{309.5, 392}, {686.5, 64}}`
+  and the first row's is `{{309.5, 456}, {686.5, 36}}`, so heading and rows share both edges and the
+  gap between their boxes is **0** — the heading's frame already contains
+  `TasksPanelMetrics.sectionHeaderBottomInset`. The four seeded rows sit at exactly 36pt intervals.
+  The rollover banner ends at y=392 where the heading begins, and the three past-do tasks appear
+  **inside the banner and not as rows**, which is `CadenceTodayRolloverSupport.groupedTasks`
+  withholding them — now asserted rather than assumed.
+
+  **What has actually executed, and what has not.** Groups 1, 2, 3a and 4a are **green on a real
+  run** (2026-09-06, screen unlocked, under the test-host lock): the app launched, Today came up, the
+  banner and all four rows resolved by identifier, the past-do rows were confirmed absent from the
+  group, every layout invariant held, and the conditional picture check correctly recorded "no notes
+  column at this width". **Groups 3b, 4b, 3c, 4c, 3d and 4d have never executed.** The run that would
+  have exercised them was the one where the Mac's screen locked — `xcb.sh` refused it and every test
+  in the target skipped itself, which is [[T-563]] and not a verdict on anything. The full-screen
+  route those groups depend on was **changed** after the last green run (see below), so the first
+  unlocked run of this test may need one more iteration. It is opt-in, so it cannot redden anybody's
+  ordinary run while that is true.
+
+  **Found on the way, and worth having on its own:**
+
+  - **`cmd-ctrl-f` does not put this app into full screen.** Measured 2026-09-06:
+    `app.typeKey("f", modifierFlags: [.command, .control])` left the window at `(60, 90, 1280, 800)`
+    twenty seconds later, and the accessibility dump taken at that moment still showed the menu item
+    reading *"Enter Full Screen"* — so the key was delivered and the app did not act on it. The test
+    drives `View ▸ Enter Full Screen` (`toggleFullScreen:`) instead, which is also the route that
+    survives the state it toggles: in full screen the window's traffic-light buttons are hidden, so
+    `XCUIIdentifierFullScreenWindow` can take you in and cannot bring you back.
+  - **A window can be absent from the accessibility tree mid-transition.** Reading `.frame` through
+    `app.windows.firstMatch` during a full-screen change failed the test outright with *"No matches
+    found for first query match sequence: `Descendants matching type Window`"*. Any wait for a
+    full-screen transition has to treat "no window right now" as *keep waiting*, not as an answer.
+
+  - **`TodayView`'s `accessibilityIdentifier("screen.today")` produces no element.** Nothing in the
+    app's accessibility tree answers to it; it sits on a `GeometryReader` that is not itself an
+    accessibility element, so the identifier names nothing. An identifier without
+    `.accessibilityElement(children: .contain)` is decoration. `screen.settings` is likely the same
+    shape and was not checked.
+  - **The macOS UI-test runner is sandboxed**, which is why `CADENCE_RUN_INTERACTIVE_UI_TESTS=1` has
+    never had a working way to be set. Measured from inside a live run by printing its own
+    environment: `HOME` and `TMPDIR` are redirected into
+    `~/Library/Containers/com.haoranwei.Cadence.CadenceUITests.xctrunner/Data/`. Neither an exported
+    shell variable nor `TEST_RUNNER_CADENCE_RUN_INTERACTIVE_UI_TESTS=1` as a build-setting override
+    reaches it — `xcodebuild` echoes the latter under *Build settings from command line* and the test
+    still skips. So the two interactive tests that have carried that gate since it was written have,
+    as far as any record here shows, **never run.**
+    `CadenceUITestEnvironment.requireInteractiveUITests` adds a channel that does work — a marker file
+    inside that container, `…/Data/tmp/cadence-run-interactive-ui-tests`, so `touch` is the whole
+    interface — and still honours the environment variable first. The skip message prints the
+    resolved path.
+
+  **NOT PINNED, and this is the honest half of the ticket:**
+
+  1. **The flicker itself is not caught.** A flickering section is a frame that differs from the
+     frames either side of it; `XCUIScreenshot` samples on demand, not per frame, so this compares
+     *settled* states. The hover comparison catches hover-state **residue** — a fill or a ring that
+     survived the mouse leaving — which is a neighbour of the defect, not the defect. Catching the
+     flicker needs a frame recorder that this repository does not have.
+  2. **Midnight.** Every seeded date is derived from `todayKey` at launch, so the scenario means the
+     same thing on any day — but a run that crosses midnight between the seed and the assertions sees
+     the past-do tasks become two days old and the due-today ones become overdue. Not defended
+     against; it would need a fixed clock inside the app.
+  3. **Two small unifications deliberately deferred**, both because they would rewrite files other
+     agents were editing at the time and `agent-commit.sh` answers a line removal with `--removes N`,
+     a flag this batch is forbidden to type: the two older interactive tests still carry their own
+     copy of the (unsettable) gate rather than calling
+     `CadenceUITestEnvironment.requireInteractiveUITests`; and
+     `CadenceAccessibilityIdentifiers.slug` restates `SidebarSupportViews`' private
+     `accessibilitySlug` rather than replacing it. The slug pair is not unpinned while it waits — one
+     UI run asserts an identifier built by each copy.
+
 - [T-1053] **Renaming a kanban column to whitespace deletes it.**
   `Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` drop any config whose name
   trims to empty, and the setter runs on every write — so `updateSectionConfig(uuid:) { $0.name =

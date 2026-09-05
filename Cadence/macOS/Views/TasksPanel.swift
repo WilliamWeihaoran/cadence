@@ -221,6 +221,11 @@ struct TasksPanel: View {
             ) {
                 rollOverPastDoTasks()
             }
+            // At the call site, not inside the banner: `CadenceTodayRolloverBanner` is shared with
+            // iOS, and an identifier named `today.…` on the shared view would claim to identify a
+            // surface on a platform whose test target cannot see it.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(CadenceAccessibilityIdentifiers.todayRolloverBanner)
         }
         // `PAST DUE LISTS` and `PAST DUE SECTIONS` were two bands of cards here. They are gone with
         // the Overdue group, as one decision rather than two: *"remove these past due list displays

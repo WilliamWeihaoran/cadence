@@ -178,6 +178,14 @@ struct TasksPanelIntentSectionView: View {
                         taskDragPayload: taskDragPayload,
                         onDropOnTaskPayload: onDropOnTaskPayload
                     )
+                    // **`.contain`, so the row becomes one element without swallowing its
+                    // children.** A UI test asking where a row *is* needs a single element whose
+                    // frame is the row's box; without this the row is four unrelated static texts
+                    // and its leading edge — the thing a mis-indented header is measured against —
+                    // is not represented at all. `.contain` keeps the title, the pills and the
+                    // checkbox individually reachable, which `.combine` would not.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier(CadenceAccessibilityIdentifiers.todayTaskRow(title: task.title))
                 }
             }
         }
@@ -202,6 +210,10 @@ struct TasksPanelIntentSectionView: View {
             accent: accent,
             onToggle: onToggle
         )
+        // On the header itself rather than on the padded result: the identifier has to name the
+        // *button's* box, because what a composed-window test measures is the gap between that box
+        // and the first row's, and padding applied outside would be counted twice.
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.todayTaskSectionHeader(title: title))
     }
 }
 

@@ -15,6 +15,9 @@ enum CadenceUITestSupport {
         }
 
         seedDataIfNeeded(modelContext: modelContext)
+        // After the stock seed, never instead of it: a scenario adds Today's state on top of the
+        // three sidebar lists every UI test already expects. See `CadenceUITestScenarioSeed`.
+        CadenceUITestScenarioSeed.seedIfRequested(modelContext: modelContext)
     }
 
     @MainActor

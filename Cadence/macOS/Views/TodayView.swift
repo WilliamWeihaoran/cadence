@@ -24,6 +24,17 @@ struct TodayView: View {
                 NotePanel(useStandardHeaderHeight: true)
                     .frame(minWidth: CadenceDesktopSplitLayout.todayNotesPaneMinWidth, idealWidth: 588)
                     .layoutPriority(0.34)
+                    // Named so a test can tell "the note's picture is missing" from "this window is
+                    // too narrow for the notes column to be drawn at all". They are different
+                    // findings and only one of them is a defect.
+                    //
+                    // **`.contain` is load-bearing, not decoration.** An identifier on a view that
+                    // is not itself an accessibility element produces no element to find: measured
+                    // 2026-09-06, `screen.today` a few lines below has been on this file since it
+                    // was written and does not appear in the app's accessibility tree at all. The
+                    // grouping is what creates the element the identifier then names.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier(CadenceAccessibilityIdentifiers.todayNotesPane)
             }
 
             TasksPanel(enableControls: true, useStandardHeaderHeight: true)

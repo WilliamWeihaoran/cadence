@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import XCTest
 
 /// The one environmental condition under which nothing in this target can pass, and the reason it
@@ -35,6 +36,62 @@ enum CadenceUITestEnvironment {
     static var screenIsLocked: Bool {
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
         return session["CGSSessionScreenIsLocked"] as? Bool ?? false
+    }
+
+    // MARK: - The interactive opt-in, and why it needed a second channel
+
+    /// Where a caller says *yes, run the tests that click and drag*.
+    ///
+    /// **`CADENCE_RUN_INTERACTIVE_UI_TESTS=1` alone had no working way to be set.** Measured
+    /// 2026-09-05 against this repository: neither exporting it in the shell nor passing
+    /// `TEST_RUNNER_CADENCE_RUN_INTERACTIVE_UI_TESTS=1` as a build-setting override puts it in the
+    /// environment of the macOS UI-test process — `xcodebuild` echoes the setting under "Build
+    /// settings from command line" and the runner still does not see it. Both were tried; both
+    /// skipped. As far as any record here shows, the two tests that have carried that gate since it
+    /// was written had **never run**, which is a gate and a silence rather than a gate.
+    ///
+    /// **Why it does not reach it: the macOS UI-test runner is sandboxed.** Measured 2026-09-06
+    /// from inside a live run, printing its own environment: `HOME` and `TMPDIR` are both redirected
+    /// into `~/Library/Containers/com.haoranwei.Cadence.CadenceUITests.xctrunner/Data/`. So a
+    /// caller's environment does not survive, and neither does a marker file in the *caller's*
+    /// `$TMPDIR` — the runner's `$TMPDIR` is a different directory entirely.
+    ///
+    /// That container path is stable and knowable, so the second channel is a marker file **inside
+    /// it**:
+    ///
+    ///     touch ~/Library/Containers/com.haoranwei.Cadence.CadenceUITests.xctrunner/Data/tmp/cadence-run-interactive-ui-tests
+    ///
+    /// `touch` is the whole interface; nothing writes it from here, and the skip below prints the
+    /// resolved path so a reader of a skipped run never has to reconstruct it from this comment.
+    ///
+    /// The environment variable is still honoured first, so a scheme or test plan that manages to
+    /// set it keeps working and no existing invocation changes meaning.
+    static var interactiveOptInMarkerPath: String {
+        (NSTemporaryDirectory() as NSString).appendingPathComponent("cadence-run-interactive-ui-tests")
+    }
+
+    static var interactiveTestsAreEnabled: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        if environment["CADENCE_RUN_INTERACTIVE_UI_TESTS"] == "1" { return true }
+        // Read unprefixed as well: `TEST_RUNNER_`-prefixed settings are delivered with the prefix
+        // stripped on the platforms where they are delivered at all, and reading both costs a
+        // dictionary lookup.
+        if environment["TEST_RUNNER_CADENCE_RUN_INTERACTIVE_UI_TESTS"] == "1" { return true }
+        return FileManager.default.fileExists(atPath: interactiveOptInMarkerPath)
+    }
+
+    /// The skip that tells the reader **how to turn it on**, which the old per-test copies of this
+    /// message did not — they named an environment variable that could not be set.
+    static func requireInteractiveUITests() throws {
+        guard !interactiveTestsAreEnabled else { return }
+        throw XCTSkip(
+            """
+            Interactive UI tests are opt-in: they take over the pointer and the keyboard of whatever \
+            Mac they run on. Turn them on with `touch \(interactiveOptInMarkerPath)` before the run \
+            (CADENCE_RUN_INTERACTIVE_UI_TESTS=1 is also honoured, but does not reach the macOS \
+            UI-test process from a shell or from a TEST_RUNNER_ build setting — measured 2026-09-05).
+            """
+        )
     }
 
     /// The skip message names the fix, because the reader of a skipped UI run is an agent who has
