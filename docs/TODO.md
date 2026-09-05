@@ -43,6 +43,27 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1073] **`main` is red: [[T-885]]'s rename left one [[T-646]] needle behind.** Found 2026-09-06
+  by a full `CadenceTests` run while landing [[T-642]]; **not caused by that change, which touches
+  no Kanban file.** `5aac94d` renamed `saveFailureNotice` to `editorFailureNotice` in
+  `KanbanSectionColumnView` and updated 55 lines of
+  `CadenceKanbanColumnLifecycleSurfaceTests.swift` — but
+  `aRefusedColumnCompletionIsReportedOnTheColumnOnceThePopoverIsGone` still asserts
+  `matches(#"...return showEditor \? nil : saveFailureNotice\s*\}"#, in: column) == 1`, and the file
+  now reads `return showEditor ? nil : editorFailureNotice`. The other three assertions in that test
+  match 1, 1 and 4 as intended, so exactly **one** token is stale.
+  Confirmed against `git show HEAD:` rather than inferred from a failing run: the four patterns
+  evaluate to **0**, 1, 1, 4 at HEAD, so this is red on `main` independently of any working tree.
+  **Left unfixed deliberately**, and this is the whole reason it is a ticket: it belongs to the
+  Kanban family whose author landed it minutes earlier and may already be on it, and a second agent
+  editing a freshly-landed test is how two fixes collide. It is a one-token change —
+  `saveFailureNotice` → `editorFailureNotice` in that one regex — and the test's own prose still
+  describes the intended behaviour correctly, so nothing but the needle is wrong.
+  **The general lesson is [[T-530]]'s, one level up.** A rename that updates a test file is not the
+  same as a rename that updates every *string* in it; a regex needle survives compilation, so the
+  build stays green and only a run says otherwise. The same class as `mutate.sh`'s STALE NEEDLE
+  guard, which exists because a needle that no longer occurs reads exactly like success.
+
 - [T-1068] **The first test in this repository that looks at the composed main window.**
   Codex's inventory, 2026-09-05: **4 of 4,431 `@Test` declarations exercise a running surface, and
   all four are opt-in.** No test entered full screen, populated Today with rollover tasks, loaded an
@@ -188,7 +209,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   come first. Noted by z4 under [[T-884]] and left alone under that ticket's scope.
 - [T-1067] **RESERVED 2026-09-06 (agent `gapmodel`) — the sidebar gap model measures the wrong two numbers.** Placeholder written at the moment the id was handed out, not when the work lands. Codex R36 found that `4c091c1`'s new relationship test composes its gaps without the outer padding, so it asserts on a number no user sees.
 - [T-1070] **RESERVED 2026-09-06 (agent `savefail2`, RENUMBERED from a collided T-1068) — `iOSTaskTagPickerPopover.toggle` writes a collection `@Binding` then calls `onCommit()`.** The call site supplies `{ try? modelContext.save() }`. [[T-631]] fixed the insert half and left the selection half; `iOSTaskTagsRow.remove` is the same defect in plain spelling. The save-commit detector cannot see any of them: the report is one frame down through a **closure property**, which a same-file name index does not reach.
+  **Found 2026-09-06 while measuring [[T-657]]'s arm**, and it is one of the two sites in that
+  measurement that are real. `iOSTaskDetailComponents.iOSTaskTagPickerPopover.toggle(_:)` writes
+  `selectedTags = TagSupport.sorted(selectedTags + [tag])`, whose binding setter is
+  `{ task.tags = TagSupport.sorted($0) }`, and then calls `onCommit()` — supplied at the inspector's
+  call site as **`onCommit: { try? modelContext.save() }`**. The row's checkmark appears, the chip
+  appears on the task, and the store may have refused. [[T-664]]'s shape exactly: the surface stays
+  open and fills itself in.
+  **[[T-631]] fixed the insert half and left this one.** `addTag()` guards minting a new tag through
+  `TagSupport.committedTag(named:in:commit:)` now — but still ends in the same `onCommit()`, so even
+  the fixed function commits its *selection* through the swallowed save. `iOSTaskTagsRow.remove(_:)`
+  is the same defect in the plain spelling: `task.tags = (task.tags ?? []).filter { ... }` followed
+  by `try? modelContext.save()`, with the chip visibly gone.
+  Fix all three together — one door, three handles — through
+  `CadencePendingChangePersistence.commitEdit(in:undo:)` over the previous `tags` array, with the
+  `tagFailureNotice` T-631 already added.
+
 - [T-1071] **RESERVED 2026-09-06 (agent `savefail2`, RENUMBERED from a collided T-1067) — the notepad `+` fails silently with no notice.** The same shape already fixed twice in neighbouring files.
+  **Found 2026-09-06 while measuring [[T-657]]'s arm** — one of the sites it flagged, and the read
+  that cleared it of *that* defect found this one instead. `iOSNotesView.createNotepadNote` opens
+  `guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }`,
+  and that helper does `context.insert(note)` then `try context.save()`. The `try?` is **guarded**,
+  which is why it is not T-657's "told it worked" shape: on a refused save the `else` fires and
+  neither `presentedNote` nor `selectedNoteID` is written, so the user is never shown a note the
+  store did not take. What they get instead is a `+` that does **absolutely nothing**, with no
+  notice — the shape `iOSListNotesView.addNote` was given `createFailureNotice` for under [[T-497]],
+  and `iOSTaskDetailComponents.addTag` was given `tagFailureNotice` for under [[T-631]]. Third door,
+  same fix.
+  Same file, probably the same change: `iOSListNotesView.iOSNoteFolderSheet.save()` calls
+  `onSave(normalized)` and `dismiss()`, and the write underneath —
+  `CadenceListNoteFiling.move(note, toFolder:)` — sets `note.folderPath` and **commits nothing at
+  all**: no `save()`, no `try?`, no persistence helper. The sheet closes and the row visibly changes
+  folder on the strength of autosave, which is what [[T-327]] measured the cost of. No half of the
+  save-commit rule sees it, because there is no commit in any frame to hang a swallow on.
+
 - [T-1072] **Ids were handed out in agent briefs without being written to the ledger, and collided twice in one night.** The ledger IS the allocator; a reservation that lives only in a brief is invisible to the next agent computing "next free id". [[T-1043]] is defined twice (an image fix and a calendar-link ticket), and T-1067/T-1068 were each claimed by two agents for unrelated work. Ids are meant to be stable and never reused, so every reference to a collided id is ambiguous. **Fix the allocator, not the three collisions:** write the stub at the moment the id is handed out, as this block does.
 - [T-1066] **`run-macos-app.sh stop` prints "private store removed" over a store it did not remove.**
   Measured 2026-09-05 (fixdiv2). `stop fixdiv2` printed `private store removed; remaining agent app
@@ -1775,54 +1829,66 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-642] **NARROWED 2026-09-03 by measurement. The alert is *not* invisible — the sheet is
-  dismissed to make room for it and does not return.** Both halves of the original ticket are
-  disproved, and both disproofs are the point of keeping this open.
-  **Driven**, on a booted iPhone 17 Pro simulator (iOS 26.5), against a build of this tree whose
-  `CadenceTaskStatusEditing.toggleCompletion` refuses every commit, so every circle tap records a
-  refusal on `CadenceTaskSettleFailureCenter`:
-  - *Positive control.* Ticking a task row's circle on Today shows `iOSRootView`'s alert —
-    *"Couldn't Update Task / Couldn't save these changes. Nothing was changed."*
-  - *The claim under test.* Ticking the circle **inside `iOSTaskDetailSheet`** shows the **same
-    alert**. The premise — "a view that is already presenting cannot present again", therefore the
-    alert never reaches those two surfaces — is **wrong** for `.alert` on iOS 26. What actually
-    happens is that SwiftUI **dismisses the presented sheet in order to present the root's alert**,
-    and the sheet does not come back when the alert is dismissed. The user is told; the user loses
-    the sheet they were working in.
-  **The fix this ticket recommended is disproved, not merely unchosen.** The nearer-host pattern —
-  a second `.alert` inside the sheet, bound to the same `CadenceTaskSettleFailureCenter.settleFailed`
-  — was built in a minimal SwiftUI app with the identical modifier order (alert on the root, then
-  the host that presents the sheet) and driven on the same simulator. It is **strictly worse**: the
-  sheet is still dismissed **and** neither alert renders, so the message is lost entirely. Do not
-  mount a second alert on that flag.
-  **`iOSCalendarBundleDetailSheet` was not driven** — reaching it needs a bundle to exist, and the
-  seeded store has none. It is presented only by `iOSBundleInspectorHost`, from the same root, in
-  the same modifier order, which is a reason to *expect* the same behaviour and is not evidence of
-  it. Drive it before claiming it.
-  **So what is left to decide** is the real symptom above, with two options already eliminated. A
-  third shape is needed: an inline notice inside the sheet, the way `TaskEmbedFieldEditorPopover`
-  shows `CadenceInlineFailureNotice`; or a centre that records *which* surface should own the
-  sentence, so the shell stays quiet while a sheet is up. The store is correct under all of these —
-  `commitSettle` puts the status, the timestamp and the successor back before anything is recorded,
-  so the circle re-draws open on its own — which is why this is a "where was I" defect and not a
-  data one. **Nothing in `Cadence/iOS/` was changed for this reading.**
-
-- [T-657] **The save-commit detector cannot see a success report handed *sideways* one frame down.**
-  Found while landing [[T-636]](b), and it is the reason three of [[T-648]]'s four sites are not in
-  the ledger. Half 2 already follows the **swallow** one frame down (`indirectReportOffenders`,
-  [[T-566]]); it does not follow the **report**. `NotePanel.toggleEmbeddedSubtask` /
-  `renameEmbeddedTask` and the `ListNotesSupportViews` and `NoteEditorPane` copies of both answer
-  `Void`, swallow the commit, and then call `refreshEmbeddedTask(task)` — whose whole body is
+- [T-657] **MEASURED 2026-09-06 (savefail2), and the measurement is why it is still open.** The
+  ticket made shipping conditional on measuring the arm's false-positive cost first. An
+  implementation now exists, the measurement has been taken against it, and the cost is **not
+  zero**: the arm turns **three sweep tests red** and adds **7 declarations across 7 files**, of
+  which a read says **roughly half are false positives**. It is not landed. Nothing in
+  `CadenceTests/` or `Cadence/` carries it today.
+  **The implementation it was measured against**, recorded so nobody re-derives it — what was
+  missing was never the regex:
+  - The base spelling, `(?<![=!<>])=(?!=)\s*MarkdownTaskEmbedRenderInfo\s*\.\s*task\(` — the type
+    **and** the constructor, because `.task(_:)` is *"here is the task, freshly read"* while
+    `.missing(reference:)` is *"this task is gone"*, which cannot be a success report. Keying on the
+    bare type is measurably wrong (`editor.placeholderString =
+    MarkdownTaskEmbedRenderInfo.untitledTaskTitle` is a constant), and the lookaround is required
+    because `task.title == MarkdownTaskEmbedRenderInfo.untitledTaskTitle` is a **comparison** in the
+    same file.
+  - The index: same-file `func`s that report under the plain screen vocabulary, are not `body`,
+    answer nothing a caller could guard on, and touch the store in no way at all — no insert, no
+    delete, no commit and no swallowed commit. About 20+ helpers app-wide.
+  **The measurement, and the part the instrument could not see.** The arm was wired into **two**
+  readers — `reportOffenders` **and** `indirectReportOffenders` — but the `followingHandedOnReports`
+  seam, and therefore the cost test, exists on the **first only**. So the test written to satisfy
+  this ticket's precondition measured one of the two wirings. Taken separately:
+  - `reportOffenders` + arm: **1** addition, `iOSCalendarSettingsSection.saveCalendarLinks`. It runs
+    `try? modelContext.save()` over an in-place `linkedCalendarID` edit, then calls
+    `refreshCalendarObservations()`, whose body writes the `@AppStorage` `observedCalendarIDsRaw`.
+    An `@AppStorage` write is already half 2's vocabulary, so this one is **real on the rule as
+    written**: a durable *"we are observing calendar X"* record written on the strength of a link
+    the store may have refused.
+  - `indirectReportOffenders` + arm: **6 more files**, unmeasured because nothing covers that
+    wiring. Read individually, **four are false positives**, and each fails for its own reason —
+    which is the useful part, because it says the arm is not one adjustment away from free:
+    - `iOSCalendarBoardView.handleDrop` — the `-> Bool` is `dropDestination`'s *"I consumed this
+      drag"*, not a claim to the user. Proof rather than assertion: one `return true` is on the
+      deliberately-suppressed path where nothing is written at all.
+    - `iOSListNotesView.apply(_:to:)` and the `iOSNotesView` copies — `isEditorFocused = false`
+      matches the `isShowingX = false` spelling textually but is a **precondition** set *before* the
+      mutation, so the editing surface will accept an external write.
+    - `iOSNotesView.createNotepadNote` — the `try?` is **guarded**: `guard let note = try? ... else
+      { return }`, so on a refusal the presentation never happens. (It is still a real *silent
+      failure* — see [[T-1067]] — but it is not this defect.)
+    - `SettingsView.archiveContext` / `restoreContext` — no dismissal, no `nil`, no `Bool`; the only
+      report is a `@Query` re-filtering, which that file already argues about at length. The
+      weakest of the four, and it sits uneasily beside [[T-614]] — but "uneasily" is not a finding.
+    The remaining two are real and already ledgered elsewhere: the `NotePanel` repaint family that
+    `existenceExemptions` holds under [[T-636]](a), and [[T-1068]]'s tag popover.
+  **So shipping it needs three things this ticket did not know it needed**: a seam and a cost test
+  over `indirectReportOffenders` too; a triage of every addition into fixed-or-ledgered; and, for
+  any that are held, the standard of prose the `toggleEmbeddedTask` entries carry. An arm that lands
+  three sweeps red is not a smaller ticket than it looked — it is the same size with the cost
+  finally visible, which is exactly what this ticket asked to find out.
+  **The original finding, unchanged.** **The save-commit detector cannot see a success report handed
+  *sideways* one frame down.** Found while landing [[T-636]](b), and it is the reason three of
+  [[T-648]]'s four sites are not in the ledger. Half 2 already follows the **swallow** one frame down
+  (`indirectReportOffenders`, [[T-566]]); it does not follow the **report**.
+  `NotePanel.toggleEmbeddedSubtask` / `renameEmbeddedTask` and the `ListNotesSupportViews` and
+  `NoteEditorPane` copies of both answer `Void`, swallow the commit, and then call
+  `refreshEmbeddedTask(task)` — whose whole body is
   `editorTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(task)` plus a redraw.
   That is the identical claim `iOSMarkdownEditingSurface` makes by *returning* the same value, and
   the detector sees the iOS one and not the macOS three.
-  Two pieces are needed and neither is free, which is why this is a ticket rather than part of
-  T-636(b): a base spelling for "assign freshly built render info into something the view draws"
-  (the app's only name for it today is the `MarkdownTaskEmbedRenderInfo` type itself, which is one
-  ticket's worth of vocabulary), and a **report**-one-frame-down index over same-file callees whose
-  bodies are nothing but a report. Measure the false-positive cost of the second before shipping
-  it: the block window is what keeps half 2 honest, and following calls out of it widens that
-  window. Until then the three macOS sites are recorded in T-648's prose only.
 
 - [T-654] **The block focus timer banks its minutes over a swallowed save, then clears the clock.**
   Found while landing [[T-636]](c), which fixed the single-task door beside it.
@@ -2461,6 +2527,72 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   T-899's sweep if that lands first — the two want the same file.
 
 ## Done
+- [T-642] **CLOSED 2026-09-06 (savefail2).** A presented surface may now **claim** the refused-settle
+  sentence for as long as it is on screen, and the shell stays quiet while anything holds a claim.
+  `CadenceTaskSettleFailureCenter` grows a claim *stack* — a stack, not a flag, because these
+  surfaces nest (`iOSCalendarBundleDetailSheet` presents `iOSTaskInspectorSheet` over itself and a
+  circle can be tapped in both), so the **innermost** claim is the surface the user is looking at.
+  The claimant draws `CadencePendingChangePersistence.editFailureNotice` inline through
+  `cadenceSaysItsOwnTaskSettleFailure()` — a `safeAreaInset`, so it cannot cover the field the user
+  is about to correct — and `iOSRootView`'s alert reads `shellOwnsTheSentence` rather than
+  duplicating the decision. Dropping a claim takes an *unsaid* sentence with it **when this was the
+  surface saying it**, so closing the sheet does not hand the same refusal back to the shell to be
+  raised a second time over whatever page the user went to next.
+  Applied at `iOSTaskInspectorSheet`, which is the only place in the app that builds
+  `iOSTaskDetailSheet(task:)` — pinned, so one modifier covers all five routes into that sheet by
+  construction rather than by each presenter remembering — and at `iOSCalendarBundleDetailSheet`,
+  whose `taskSection` grows a completion circle per member.
+  **Re-driven end to end** on the same booted iPhone 17 Pro (iOS 26.5), against builds of HEAD and
+  of the fix whose `CadenceTaskStatusEditing.toggleCompletion` refuses every commit:
+  - *Before.* Row circle on Today → the alert (positive control). Circle **inside the task sheet** →
+    the same alert, **on Today, with the sheet gone**. The narrowed defect, reproduced independently.
+  - *After.* Row circle on Today → the alert, unchanged. Circle inside the sheet → the sheet **stays
+    open**, the circle re-draws open, and the sentence appears inline at the foot of the sheet with a
+    dismiss ✕. Pressing Done then leaves Today **quiet** — the refusal is not replayed.
+  `iOSCalendarBundleDetailSheet` is **still not driven**: reaching it needs a bundle to exist and the
+  seeded simulator store has none. It gets the modifier on the argument the ticket already recorded —
+  same root, same modifier order — which is a reason to expect the behaviour and not evidence of it.
+  **It also widened [[T-708]]'s dismissal rule, and the needle was the load-bearing half.** That
+  rule read *"only a markdown editing surface may pass `onDismiss`"*; the reason it gave was never
+  about markdown, it was that nothing the user does next takes the sentence away. This notice has
+  that property for a sharper reason than the editors do — a **successful** settle writes nothing to
+  the centre at all, since `toggleCompletion` only `record()`s on the failure path, so there is no
+  clearing write to wait for and the next clean tick would leave the sentence sitting under it. The
+  rule is now stated as that property. **And the policy test could not have caught the violation it
+  exists for**: its needle was `text: [A-Za-z]+`, which matches a bare identifier and not a dotted
+  one, so this call site — passing `CadencePendingChangePersistence.editFailureNotice` — offered a
+  dismissal while counting as one of the 45 that do not. Widened to `[A-Za-z][A-Za-z.]*`; measured
+  over the tree as 7 dismissable sites in 6 files, nothing spurious swept in. The test is renamed
+  `onlyNoticesNoLaterAttemptClearsOfferToDismissThemselves` and names all seven.
+  Sibling lesson to [[T-1069]] and to `mutate.sh`'s STALE NEEDLE guard: a check that no longer
+  matches reads exactly like a check that passes. Renaming the test also orphaned it from
+  `CadenceRealTreeSweepManifest.txt`, which is updated here along with the new sweep this change
+  adds.
+  Pinned by `theInnermostPresentedSurfaceOwnsTheRefusedSettleSentence`,
+  `closingTheSurfaceThatNamedARefusalDoesNotHandItBackToTheShell` and
+  `theTaskSheetClaimsTheSentenceAndTheShellReadsTheClaim` in
+  `CadenceTaskStatusLifecycleSurfaceTests`.
+  **Filed as:** **NARROWED 2026-09-03 by measurement. The alert is *not* invisible — the sheet is
+  dismissed to make room for it and does not return.** Both halves of the original ticket are
+  disproved, and both disproofs are the point of keeping this open.
+  **Driven**, on a booted iPhone 17 Pro simulator (iOS 26.5), against a build of this tree whose
+  `CadenceTaskStatusEditing.toggleCompletion` refuses every commit, so every circle tap records a
+  refusal on `CadenceTaskSettleFailureCenter`:
+  - *Positive control.* Ticking a task row's circle on Today shows `iOSRootView`'s alert —
+    *"Couldn't Update Task / Couldn't save these changes. Nothing was changed."*
+  - *The claim under test.* Ticking the circle **inside `iOSTaskDetailSheet`** shows the **same
+    alert**. The premise — "a view that is already presenting cannot present again", therefore the
+    alert never reaches those two surfaces — is **wrong** for `.alert` on iOS 26. What actually
+    happens is that SwiftUI **dismisses the presented sheet in order to present the root's alert**,
+    and the sheet does not come back when the alert is dismissed. The user is told; the user loses
+    the sheet they were working in.
+  **The fix this ticket recommended is disproved, not merely unchosen.** The nearer-host pattern —
+  a second `.alert` inside the sheet, bound to the same `CadenceTaskSettleFailureCenter.settleFailed`
+  — was built in a minimal SwiftUI app with the identical modifier order (alert on the root, then
+  the host that presents the sheet) and driven on the same simulator. It is **strictly worse**: the
+  sheet is still dismissed **and** neither alert renders, so the message is lost entirely. Do not
+  mount a second alert on that flag.
+
 - [T-873] **CLOSED 2026-09-05 (`f15143ce`).** `run_scan_once` captures and prints the regenerated
   manifest before the equality assertion, so a stale manifest regenerates; a `selftest` subcommand
   drives the script against a deliberately stale manifest and fails on an empty body.

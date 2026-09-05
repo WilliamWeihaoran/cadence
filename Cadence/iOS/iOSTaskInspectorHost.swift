@@ -97,7 +97,11 @@ struct iOSTaskInspectorSheet: View {
             hasNoModelContext: task.modelContext == nil
         ) {
         case .stay:
+            // [[T-642]]. Every route into the task sheet is this one expression, so the sheet owns
+            // the refused-settle sentence from all five of them by construction rather than by
+            // each presenter remembering.
             iOSTaskDetailSheet(task: task)
+                .cadenceSaysItsOwnTaskSettleFailure()
         case .close:
             // Nothing to draw and nothing to bind to. `onAppear` rather than a synchronous clear:
             // the selection cannot be written during the body evaluation that reads it.

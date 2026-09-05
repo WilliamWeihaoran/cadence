@@ -322,15 +322,32 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         #expect(code.contains("@ViewBuilder"), "a two-branch body needs it")
     }
 
-    /// Exactly six call sites take a dismissal, and every one of them is a markdown editing
-    /// surface. Named individually rather than counted, because a count that still totals six
-    /// cannot tell you the six are the six that need it.
-    @Test func onlyTheMarkdownEditingSurfacesOfferToDismissTheirFailureNotice() throws {
+    /// Exactly seven call sites take a dismissal, and every one of them is a notice **no later
+    /// attempt clears**. Named individually rather than counted, because a count that still totals
+    /// seven cannot tell you the seven are the seven that need it.
+    ///
+    /// **[[T-642]] widened the category from "markdown editing surface" to the property that was
+    /// always doing the work.** T-708 wrote the rule as a place, because the six sites it had were
+    /// all in one; the *reason* it gave was never about markdown — it was that "the failing act is
+    /// not what the user does next", so nothing the user goes on to do takes the sentence away.
+    /// `CadenceTaskSettleFailureNoticeModifier` is the first site outside a text editor with that
+    /// property, and it has it for a sharper reason than the editors do: a **successful** settle
+    /// writes nothing to `CadenceTaskSettleFailureCenter` at all — `toggleCompletion` only
+    /// `record()`s on the failure path — so the very next tick landing cleanly would leave the
+    /// sentence sitting under it. Not "no convenient control to clear it": no clearing write exists.
+    ///
+    /// **The needle was widened in the same change, and that is the load-bearing half.** It read
+    /// `text: [A-Za-z]+`, which matches a bare identifier and *not* a dotted expression — so this
+    /// call site, which passes `CadencePendingChangePersistence.editFailureNotice`, offered a
+    /// dismissal while counting as one of the 45 that do not. The policy assertion would have stayed
+    /// green over a violation of itself. `total` would have caught the new call site either way;
+    /// `withDismissal` would not have, and `withDismissal` is the one this test is about.
+    @Test func onlyNoticesNoLaterAttemptClearsOfferToDismissThemselves() throws {
         let dismissable = try CadenceScanInstrument(
             "inline failure notice with a dismissal",
             fires: "CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }",
             andNotOn: "CadenceInlineFailureNotice(text: imageFailureNotice)",
-            by: { CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: [A-Za-z]+\) \{"#, in: $0) > 0 }
+            by: { CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: [A-Za-z][A-Za-z.]*\) \{"#, in: $0) > 0 }
         )
 
         let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
@@ -342,13 +359,14 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         )
         #expect(
             hits == [
+                "Cadence/Shared/Components/CadenceTaskSettleFailureNotice.swift",
                 "Cadence/iOS/iOSMarkdownEditingSurface.swift",
                 "Cadence/macOS/Editor/MarkdownEditorView.swift",
                 "Cadence/macOS/Views/ListNotesSupportViews.swift",
                 "Cadence/macOS/Views/NoteEditorPane.swift",
                 "Cadence/macOS/Views/NotePanel.swift"
             ],
-            "a dismissal appeared outside the markdown editing surfaces, or left one of them"
+            "a dismissal appeared on a notice a later attempt does clear, or left one that it does not"
         )
 
         // Five files, six notices: the iOS surface carries both of its own.
@@ -357,7 +375,7 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         for path in paths {
             let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
             total += CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: "#, in: code)
-            withDismissal += CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: [A-Za-z]+\) \{"#, in: code)
+            withDismissal += CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: [A-Za-z][A-Za-z.]*\) \{"#, in: code)
         }
         // T-813/T-817: 51, not 49 -- `CadenceTerminalRecoveryView` added two (neither dismissable;
         // there is nothing to dismiss back to on the one screen that shows when every store this
@@ -366,12 +384,15 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // so it is bare like the other 45. T-868/T-869/T-870 finished that sweep and made it 58 --
         // the other six drag-to-rearrange surfaces (Today, All Tasks/Inbox, the sidebar, a list's
         // Tasks tab, the All Tasks board's list column, and the section board's column rail), all
-        // bare for the same reason: the retry is the drag itself.
-        #expect(total == 60, "the inline notice has \(total) call sites, not the 60 this test was written over")
-        #expect(withDismissal == 6, "\(withDismissal) call sites offer a dismissal, not 6")
+        // bare for the same reason: the retry is the drag itself. T-642 made it 61: the task
+        // settle-failure notice a presented sheet draws for itself, and the seventh dismissable one.
+        #expect(total == 61, "the inline notice has \(total) call sites, not the 61 this test was written over")
+        #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.
         for (path, notices) in [
+            ("Cadence/Shared/Components/CadenceTaskSettleFailureNotice.swift",
+             ["CadenceInlineFailureNotice(text: CadencePendingChangePersistence.editFailureNotice) {"]),
             (Self.macEditor, ["CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }"]),
             (Self.iosSurface, [
                 "CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }",

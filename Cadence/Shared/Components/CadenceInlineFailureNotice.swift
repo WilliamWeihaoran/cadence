@@ -16,11 +16,22 @@ import SwiftUI
 /// **Dismissal is a parameter, not a policy (T-708).** Almost every caller sits beside the control
 /// that failed — Save, Create, Restore, Delete — and its notice is cleared by the *next press of
 /// that control*, which is the only dismissal those surfaces need: an ✕ next to a Save button the
-/// user is about to press again is chrome that says nothing. The exception is a notice in a
-/// **markdown editing surface**, where the failing act (paste an image, tick an embedded task) is
-/// not what the user does next — they go back to typing, and nothing they type touches the door
-/// that set the notice. Those notices had no way to go away at all and sat under the toolbar for
-/// the rest of the session. They pass `onDismiss`; nobody else should.
+/// user is about to press again is chrome that says nothing. The exception is a notice **no later
+/// attempt clears**, and it has to be spelled that way rather than as a place ([[T-642]]).
+///
+/// T-708 wrote the rule as "a **markdown editing surface**" because all six sites it had were in
+/// one: the failing act there (paste an image, tick an embedded task) is not what the user does
+/// next — they go back to typing, and nothing they type touches the door that set the notice. Those
+/// notices had no way to go away at all and sat under the toolbar for the rest of the session.
+///
+/// The seventh site, `CadenceTaskSettleFailureNoticeModifier`, is not a text editor and has the
+/// property for a sharper reason: a **successful** settle writes nothing to
+/// `CadenceTaskSettleFailureCenter` — `CadenceTaskStatusEditing.toggleCompletion` only `record()`s
+/// on the failure path — so there is no clearing write to wait for at all, and the next tick landing
+/// cleanly would leave the sentence sitting underneath it.
+///
+/// So: pass `onDismiss` when nothing the user can do next takes the sentence away, and not
+/// otherwise. `onlyNoticesNoLaterAttemptClearsOfferToDismissThemselves` names all seven.
 struct CadenceInlineFailureNotice: View {
     let text: String
 

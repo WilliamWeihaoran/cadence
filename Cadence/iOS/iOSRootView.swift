@@ -95,10 +95,21 @@ struct iOSRootView: View {
         // the completion control is reached from six surfaces here and owned by none of them, so
         // a refused settle is named once at the shell rather than six times badly. Both shells,
         // one call — the rule the banner above records.
+        //
+        // **`shellOwnsTheSentence` is why it does not fire while a sheet is up (T-642).** Raising
+        // this alert over a presented sheet does not layer over it on iOS 26: SwiftUI dismisses the
+        // sheet to present the alert and never brings it back, so the user was told and lost the
+        // editor they were told about. A sheet that can settle a task claims the sentence for as
+        // long as it is on screen and draws it inline; this reads that claim rather than duplicating
+        // the decision. Nothing is swallowed — the claim is dropped when the sheet goes, and the
+        // flag with it.
         .alert(
             CadenceTaskMutationSupport.settleFailureAlertTitle,
             isPresented: Binding(
-                get: { CadenceTaskSettleFailureCenter.shared.settleFailed },
+                get: {
+                    CadenceTaskSettleFailureCenter.shared.shellOwnsTheSentence
+                        && CadenceTaskSettleFailureCenter.shared.settleFailed
+                },
                 set: { if !$0 { CadenceTaskSettleFailureCenter.shared.clear() } }
             )
         ) {

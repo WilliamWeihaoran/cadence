@@ -185,6 +185,25 @@ enum CadenceTaskStatusEditing {
 /// circle the user is looking at has re-drawn open on its own and the only thing left to add is the
 /// sentence `CadencePendingChangePersistence.editFailureNotice` already spells, under the title
 /// `CadenceTaskMutationSupport.settleFailureAlertTitle` macOS already shows.
+///
+/// **It also records *where* the sentence should be said (T-642), and that is a second question
+/// rather than a second answer to the first.** The flag was read in exactly one place — the shell's
+/// `.alert` — and on iOS 26 a root alert raised while a sheet is up does not layer over the sheet:
+/// SwiftUI **dismisses the sheet to present the alert**, and the sheet does not come back. Driven on
+/// an iPhone 17 Pro against a build whose `toggleCompletion` refuses every commit: ticking the
+/// circle inside `iOSTaskDetailSheet` showed the alert on Today, with the sheet gone and the user's
+/// editing context with it. The user is told, and loses the place they were told about.
+///
+/// So a surface nearer the user than the shell may **claim** the sentence for as long as it is on
+/// screen. While anything holds a claim the shell stays quiet, and the innermost claimant draws
+/// `CadencePendingChangePersistence.editFailureNotice` itself — see
+/// `cadenceSaysItsOwnTaskSettleFailure()`. The claim stack is the whole mechanism; the flag is
+/// untouched, so nothing about *what* is said or *who may write it* changes.
+///
+/// **Do not answer this with a second `.alert` bound to the same flag.** That was the fix this
+/// ticket originally recommended and it is disproved rather than unchosen: built in a minimal app
+/// with the identical modifier order and driven on the same simulator, the sheet is *still*
+/// dismissed **and** neither alert renders, so the message is lost outright.
 @MainActor
 @Observable
 final class CadenceTaskSettleFailureCenter {
@@ -192,9 +211,41 @@ final class CadenceTaskSettleFailureCenter {
 
     private(set) var settleFailed = false
 
+    /// The surfaces standing between the shell and the user that have offered to say the sentence,
+    /// outermost first (T-642).
+    ///
+    /// A stack rather than a flag because these surfaces nest: `iOSCalendarBundleDetailSheet`
+    /// presents `iOSTaskInspectorSheet` over itself, and both are places a completion circle can be
+    /// tapped. The **innermost** one is the surface the user is looking at, so it is the one that
+    /// owes them the sentence.
+    private(set) var sentenceClaims: [UUID] = []
+
     private init() {}
 
     func record() { settleFailed = true }
 
     func clear() { settleFailed = false }
+
+    /// Whether the shell is still the right place for the sentence, i.e. nothing nearer has offered.
+    var shellOwnsTheSentence: Bool { sentenceClaims.isEmpty }
+
+    /// Whether this claim is the innermost one, and so the one surface that draws the sentence.
+    func ownsTheSentence(_ claim: UUID) -> Bool { sentenceClaims.last == claim }
+
+    func claimSentence(_ claim: UUID) {
+        guard !sentenceClaims.contains(claim) else { return }
+        sentenceClaims.append(claim)
+    }
+
+    /// Dropping a claim takes an unsaid sentence with it **when this was the surface saying it**.
+    ///
+    /// Otherwise closing a sheet that had just named a refusal would hand the same refusal straight
+    /// back to the shell, which would raise the alert a second time for a tap the user has already
+    /// been told about — over whatever page they went to next.
+    func relinquishSentence(_ claim: UUID) {
+        guard let index = sentenceClaims.lastIndex(of: claim) else { return }
+        let wasOwner = index == sentenceClaims.count - 1
+        sentenceClaims.remove(at: index)
+        if wasOwner { settleFailed = false }
+    }
 }

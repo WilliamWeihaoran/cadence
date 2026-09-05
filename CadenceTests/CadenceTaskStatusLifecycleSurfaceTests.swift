@@ -239,6 +239,113 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         #expect(!centre.settleFailed)
     }
 
+
+    // MARK: - T-642: which surface says it, when the shell saying it costs the sheet
+
+    /// **The claim stack, driven rather than asserted.** Reproduced on a booted iPhone 17 Pro
+    /// (iOS 26.5) against a build whose `CadenceTaskStatusEditing.toggleCompletion` refuses every
+    /// commit: ticking a row circle on Today raises `iOSRootView`'s alert, which is correct and is
+    /// the positive control; ticking the circle **inside `iOSTaskDetailSheet`** raised the *same*
+    /// alert **on Today, with the sheet gone**. SwiftUI dismisses a presented sheet in order to
+    /// present the root's alert and does not bring it back, so the user is told and loses the
+    /// editor they were told about. Re-driven after the fix: the sheet stays, the sentence is drawn
+    /// inside it, and the page tap still raises the alert.
+    ///
+    /// A stack rather than a flag because these surfaces nest — `iOSCalendarBundleDetailSheet`
+    /// presents `iOSTaskInspectorSheet` over itself and a circle can be tapped in both — so the
+    /// **innermost** claim is the surface the user is actually looking at.
+    @Test func theInnermostPresentedSurfaceOwnsTheRefusedSettleSentence() throws {
+        let centre = CadenceTaskSettleFailureCenter.shared
+        centre.clear()
+
+        // With nothing presented, the shell is the right place and nothing has changed.
+        #expect(centre.shellOwnsTheSentence)
+
+        let outer = UUID()
+        let inner = UUID()
+        centre.claimSentence(outer)
+        #expect(!centre.shellOwnsTheSentence, "a presented surface is up; the alert would dismiss it")
+        #expect(centre.ownsTheSentence(outer))
+
+        centre.claimSentence(inner)
+        #expect(centre.ownsTheSentence(inner), "the sheet on top is the one the user is looking at")
+        #expect(!centre.ownsTheSentence(outer), "and the sheet underneath must not draw it twice")
+
+        // Re-claiming is idempotent: `onAppear` runs again when a sheet returns from the background,
+        // and a second entry would make the outer surface the owner on the way back out.
+        centre.claimSentence(inner)
+        centre.relinquishSentence(inner)
+        #expect(centre.ownsTheSentence(outer), "the sentence falls back to the surface underneath")
+
+        centre.relinquishSentence(outer)
+        #expect(centre.shellOwnsTheSentence)
+        centre.clear()
+    }
+
+    /// **Dropping a claim takes an unsaid sentence with it — but only the owner's.**
+    ///
+    /// Without the first half, closing a sheet that had just named a refusal hands the same refusal
+    /// straight back to the shell, which raises the alert a second time over whatever page the user
+    /// went to next, for a tap they have already been told about. That is the sequence driven on
+    /// the simulator: tick inside the sheet, read the inline notice, press Done — and Today must be
+    /// quiet. Without the second half, a *nested* sheet closing would silently eat a refusal the
+    /// surface underneath is still showing.
+    @Test func closingTheSurfaceThatNamedARefusalDoesNotHandItBackToTheShell() throws {
+        let centre = CadenceTaskSettleFailureCenter.shared
+        centre.clear()
+
+        let sheet = UUID()
+        centre.claimSentence(sheet)
+        centre.record()
+        #expect(centre.settleFailed && centre.ownsTheSentence(sheet))
+
+        centre.relinquishSentence(sheet)
+        #expect(centre.shellOwnsTheSentence)
+        #expect(!centre.settleFailed, "the shell would re-raise a refusal the sheet already named")
+
+        // The other half. An inner surface leaving must not clear a sentence the outer one owns.
+        let outer = UUID()
+        let inner = UUID()
+        centre.claimSentence(outer)
+        centre.claimSentence(inner)
+        centre.record()
+        centre.relinquishSentence(outer)
+        #expect(centre.settleFailed, "the surface still on screen was showing this sentence")
+        #expect(centre.ownsTheSentence(inner))
+        centre.relinquishSentence(inner)
+        centre.clear()
+    }
+
+    /// The wiring, because the claim stack above is inert unless something claims and the shell
+    /// reads it.
+    ///
+    /// `iOSTaskDetailSheet(` appears in exactly one place in the app — `iOSTaskInspectorSheet` —
+    /// which is what makes one modifier cover all five routes into the task sheet by construction
+    /// rather than by each presenter remembering.
+    @Test func theTaskSheetClaimsTheSentenceAndTheShellReadsTheClaim() throws {
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSTaskInspectorHost.swift"))
+        #expect(host.contains("cadenceSaysItsOwnTaskSettleFailure()"))
+
+        let shell = try strippingComments(sourceFile("Cadence/iOS/iOSRootView.swift"))
+        #expect(
+            shell.contains("CadenceTaskSettleFailureCenter.shared.shellOwnsTheSentence"),
+            "the shell alert would still dismiss the sheet it fires over"
+        )
+
+        // Non-vacuity: `iOSTaskDetailSheet(` is still built in exactly one place, so covering that
+        // place is still covering every route.
+        var sheetConstructions: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            if code.contains("iOSTaskDetailSheet(task:") { sheetConstructions.append(path) }
+        }
+        sheetConstructions.sort()
+        #expect(
+            sheetConstructions == ["Cadence/iOS/iOSTaskInspectorHost.swift"],
+            "the task sheet is built in \(sheetConstructions) — one modifier no longer covers it"
+        )
+    }
+
     // MARK: - T-643: the spine's other half, reached by an explicit status
 
     /// **`setStatus` is `toggleCompletion`'s other door onto the same insert.** T-636(a) gave the

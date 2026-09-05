@@ -126,6 +126,13 @@ struct iOSCalendarBundleDetailSheet: View {
                 Text(CadencePendingChangePersistence.editFailureNotice)
             }
         }
+        // [[T-642]]. `taskSection` grows a completion circle per member, and this sheet is
+        // presented by `iOSBundleInspectorHost` from the same root and in the same modifier order
+        // as the task sheet — so a refused tick here would raise the shell's alert and take this
+        // sheet down with it. It says the sentence itself instead. **Not driven**: reaching this
+        // surface needs a block to exist, which the seeded simulator store has none of; the two
+        // alerts above are the fix for the same shape on this sheet's own Save and Delete.
+        .cadenceSaysItsOwnTaskSettleFailure()
     }
 
     // The one section here whose children are *not* separated by an `iOSEditorDivider`, so it is the
