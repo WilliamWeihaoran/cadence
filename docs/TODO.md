@@ -76,6 +76,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   so the verified count is reported here instead of typed. [[T-992]], [[T-991]], [[T-986]] and the
   second half of [[T-781]] are all waiting on that one flag.
 
+- [T-1076] **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+
+- [T-1077] **RESERVED 2026-09-06 (agent `decide`) — the drag-under-a-non-custom-sort rule that [[T-1054]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+
 - [T-1075] **`main` is red a SECOND way, and it is not [[T-1073]]: `CadenceGuardScriptSelftestTests`
   fails at HEAD because the test names a `mutate.sh` refusal that `mutate.sh` does not make.**
   Measured 2026-09-06 against `db17932` in a pristine `git archive HEAD` tree, so it is HEAD and not
