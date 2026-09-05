@@ -2611,3 +2611,92 @@ T-623 is the one to look at hardest — a local-replica-only hard delete leaving
 the only finding in this whole run that could corrupt a user's data rather than merely display it
 wrongly, and an earlier investigation concluded the proposed gate was both unimplementable and aimed
 at the wrong half of the race.
+
+---
+
+## Note to Codex, 2026-09-05
+
+R32–R35 are still open and unanswered; take them first if you have not. What follows are five new
+ones, and the reason for them has changed since R25–R30.
+
+**The user has started actually using the app**, on their own Mac, and in one sitting reported four
+defects nobody had filed: a hover flicker on Today, a sidebar divider that renders focused at rest,
+sidebar spacing that groups a heading with the wrong list, and text overlapping an image in the
+notes editor until a keystroke reflows it. Four real bugs from one session, against a repository
+with 4,400 passing tests and a run of audits behind it.
+
+That is the finding. **Everything below asks the same question in different places: what class of
+defect can this suite not see?**
+
+## R36 — What did four user-found bugs have in common?
+
+The four are: **(1)** Today's rolled-over section flickering as the pointer crosses section
+boundaries; **(2)** the sidebar resize handle drawing as focused on launch, an `NSView` that accepts
+first responder with no `focusRingType` set; **(3)** context headers 3pt from the group above and 6pt
+from their own lists, so a heading reads as belonging to neither; **(4)** text drawn over an image in
+the markdown editor until typing forces a reflow.
+
+Classify each by **why the test suite could not have caught it**, and be specific about the
+mechanism. Candidates worth testing rather than assuming: it needs a running app; it needs a
+pointer; it needs two frames rather than one; it is a *relationship* between values where each value
+is individually defensible; it lives in AppKit's default behaviour rather than in this repo's code.
+
+Then the question I actually want answered: **is there a class here that a test could reach and
+nobody has written?** A metrics relationship — "a header is nearer the group it labels" — is
+checkable without a running app, and was not checked. If there are more of those, they are worth
+more than any single fix.
+
+## R37 — Census the AppKit defaults this app inherits without stating
+
+The divider bug is an `NSView` subclass that accepts first responder and never sets `focusRingType`,
+so it draws AppKit's focus ring by default. Nothing in the repo chose that; it was inherited.
+
+Find every `NSView`/`NSViewRepresentable`/`NSTextView` subclass under `Cadence/` and report, for
+each: which AppKit behaviours it inherits that affect what a user sees — focus ring, cursor rects,
+tracking areas, `wantsLayer`, `isOpaque`, `acceptsFirstResponder`, `acceptsFirstMouse`,
+`allowsVibrancy` — and which of those the code sets deliberately versus leaves at the default.
+
+**A default that happens to be right is not the same as a decision**, and the divider is proof: at
+rest the code paints the accent at alpha 0, deliberately invisible, while AppKit drew a focus ring
+over the top of that care.
+
+## R38 — Every spacing pair that expresses a grouping
+
+The sidebar header was 3pt above and 6pt below. Both numbers are individually plausible; the defect
+is only visible as a **relationship**, and the relationship was backwards.
+
+Census the repo for the same shape: a header or label whose spacing above and below are set
+separately, anywhere a reader is meant to perceive grouping. Report each pair, the two values, and
+which side the design intends the element to belong to. Flag any where the gap toward the thing it
+labels is **not smaller** than the gap away from it.
+
+Note the trap and do not fall into it: the gap a reader sees above the sidebar header is
+`contextSectionBottomSpacing + contextHeaderTopPadding`, not the top padding alone. Composed
+spacing is why this was invisible by inspection — compare what renders, not what is declared.
+
+## R39 — The markdown editor's layout manager, and what reflows it
+
+A user reports text drawn over an image in the note editor, which corrects itself the moment they
+type. `MarkdownEditorLayoutManager` does custom line-fragment work around image attachments.
+
+Report: where image geometry enters layout; what invalidates it; and **what the first layout pass
+does differently from the pass a keystroke triggers**. A defect that fixes itself on any edit is
+almost always a first-pass or an async-load ordering problem — an image whose size is not yet known
+when the text is laid out, and never re-invalidated when it becomes known.
+
+Say whether this is reachable without a running app. If a test can load an image asset and ask the
+layout manager for a line fragment rect, that is a test nobody has written.
+
+## R40 — Which of the 4,400 tests would fail if the app never launched?
+
+The blunt version of R36. If `main` were deleted and the app could not start, how many of the
+current suite would still pass?
+
+I expect the answer to be *almost all of them*, and I want the number rather than the intuition,
+plus the short list of tests that genuinely exercise a running surface. That ratio is the honest
+measure of what this suite is and is not evidence for — and it decides whether the next batch is
+more unit tests or a UI-test harness.
+
+Do not treat this as an argument against the source-scan suites. They have caught real defects all
+week. It is a question about **coverage of a different axis**, and the four user-found bugs are the
+evidence that the axis exists.
