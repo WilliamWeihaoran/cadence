@@ -4,6 +4,10 @@ Candidate screenshots for the macOS App Store listing live in this directory, to
 scripts that make them reproducible. Nothing here is uploaded automatically; the user picks the
 final set and uploads it in App Store Connect.
 
+The five candidates in this directory were captured on 2026-09-05 (T-798) from
+`52edd7c`, at **2560 x 1600**, RGB, no alpha. Regenerating them takes about twenty minutes and
+needs an unlocked screen.
+
 ## What App Store Connect accepts
 
 - 1 to 10 screenshots per macOS localisation.
