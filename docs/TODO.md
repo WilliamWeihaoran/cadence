@@ -78,6 +78,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1076] **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
 
+- [T-1078] **RESERVED 2026-09-06 (agent `sweeps`) — `main` is red a THIRD way: half 3 of the save-commit rule reads ownership off a signature, so a nested `func` that captures its parent's `ModelContext` is misread as owning the unit of work.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+
 - [T-1077] **RESERVED 2026-09-06 (agent `decide`) — the drag-under-a-non-custom-sort rule that [[T-1054]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
 
 - [T-1075] **`main` is red a SECOND way, and it is not [[T-1073]]: `CadenceGuardScriptSelftestTests`
