@@ -67,30 +67,41 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the top padding alone — composed spacing, which is why inspection never caught it.
   `aContextHeaderSitsNearerTheListsItLabelsThanTheGroupAboveIt` pins the **relationship**, not the
   three literals, so a legitimate retune does not fail it. Reported by the user.
-- [T-1038] **The macOS window restores to a disconnected display and opens off-screen.** Measured
-  2026-09-05: launching a debug build against the user's own `UserDefaults` restored the main window
-  at `X = -2899`, entirely off every connected display — invisible, though still composited and
-  capturable. Clamp the restored frame to `NSScreen.screens` on launch. Found while reproducing
-  [[T-1036]]; unrelated to it, and a user who moves between a docked and undocked Mac would meet it.
-- [T-1037] **The sidebar resize handle takes keyboard focus and does nothing with it.**
-  `macOSRootShellViews.swift:166-239`. `acceptsFirstResponder` is `true`, but there is no `keyDown`,
-  no `performKeyEquivalent`, no accessibility role/label/value and no focus indicator — **measured:
-  `focusRingMaskBounds` is empty, so AppKit draws nothing, with or without Full Keyboard Access.** A
-  keyboard-only user can Tab onto it and get no feedback and no action. Add arrow-key resizing, a
-  role and label, and a focus state distinct from hover and drag — or drop `acceptsFirstResponder`
-  and say so. **Do not "fix" this by setting `focusRingType = .none`; measured, that changes nothing.**
-- [T-1036] **The sidebar resize handle latches its accent tint and never lets go.** Its tint comes
-  from two booleans only event callbacks ever write. `isDragging` clears only in `mouseUp`;
-  `isHovered` clears only in `mouseExited` — and `updateTrackingAreas()` rebuilds the tracking area
-  on every geometry change, continuously during a resize drag, while AppKit suppresses enter/exit.
-  End a drag with the pointer outside the handle's clamped new frame and **no `mouseExited` ever
-  arrives**, leaving a permanent accent band. Over `Theme.surface` the hover alpha computes to
-  ≈`#102640` and the drag alpha to ≈`#14315C` — a distinctly blue 10pt band, which matches the
-  user's report. **Reasoned, not reproduced, and it does not explain "on launch, at rest"** — a fresh
-  view is constructed with both flags false. Re-derive hover from
-  `window.mouseLocationOutsideOfEventStream` when tracking areas are rebuilt, clear drag on window
-  resign as well as `mouseUp`, and extract the alpha decision into a testable value type first —
-  there is no seam today.
+- [T-1038] **CLOSED 2026-09-05 (z3) — the restored frame is clamped onto a connected screen at
+  launch.** Measured 2026-09-05: launching a debug build against the user's own `UserDefaults`
+  restored the main window at `X = -2899`, entirely off every connected display — invisible, though
+  still composited and capturable. `CadenceWindowRestorationSupport.clampedFrame(_:toFit:)` is the
+  pure half (plain `CGRect`s, no `NSScreen`): unchanged when the frame already overlaps a screen,
+  otherwise centered on the first screen with its size clamped down to fit. The one AppKit-facing
+  call, `clampWindowsOntoConnectedScreens`, runs from `CadenceAppDelegate.applicationDidFinishLaunching`
+  over `NSApplication.shared.windows` / `NSScreen.screens`. `CadenceWindowRestorationTests` covers
+  six geometry cases (already-reachable, straddling an edge, off every screen, oversized, empty
+  screen list, several screens) behaviourally and pins the one wiring call site by source scan,
+  since neither `NSScreen` nor `NSWindow` has a seam a unit test can drive directly. Found while
+  reproducing [[T-1036]]; unrelated to it, and a user who moves between a docked and undocked Mac
+  would meet it.
+- [T-1037] **CLOSED 2026-09-05 (z3) — arrow-key resizing, an accessibility role/label/value, and a
+  fourth appearance state now answer for a keyboard-only user.** `SidebarResizeHandleView` gained
+  `keyDown` arrow-key resizing (±8pt through the new `Coordinator.adjustWidth(by:)`),
+  `accessibilityRole() -> .slider`, `accessibilityLabel() -> "Sidebar width"`, `accessibilityValue()`,
+  and `accessibilityPerformIncrement()`/`accessibilityPerformDecrement()` driving the same method.
+  The focus indicator is a new `.focused` case in `SidebarResizeHandleAppearance` (alpha `0.12`,
+  distinct from rest/hover/drag), driven by `becomeFirstResponder`/`resignFirstResponder`, since
+  `focusRingMaskBounds` really is empty and `focusRingType = .none` would have been the forbidden
+  no-op. `acceptsFirstResponder` stays `true`; nothing is dropped. See [[T-1036]] for the tint's
+  other half — both live in the same extracted `SidebarResizeHandleAppearance` value type.
+- [T-1036] **CLOSED 2026-09-05 (z3) — the latch is fixed, and the alpha decision has a seam.**
+  `SidebarResizeHandleAppearance` (non-private, `nonisolated enum … : Equatable`) is the extracted
+  value type `.resolve(isDragging:isHovered:isFocused:)` now picks from, asserted on directly by
+  `CadenceSidebarResizeHandleAppearanceTests` with no `NSView` involved. `updateTrackingAreas()`
+  calls `refreshHoverFromCurrentMouseLocation()` on every rebuild — re-deriving `isHovered` from
+  `window.mouseLocationOutsideOfEventStream` rather than waiting on a `mouseExited` AppKit may never
+  send while the tracking area is mid teardown-and-rebuild. `isDragging` also clears on
+  `NSWindow.didResignKeyNotification`, not just `mouseUp`, for the drag-in-progress-when-the-window-
+  loses-key case. **Reasoned, not reproduced by an actual click-drag in a running app** — same
+  caveat the finding itself carried: the fix is pinned by source scan (the two AppKit-only code
+  paths have no direct test seam) and by a 12-mutation plan against both fixed files
+  (`scripts/mutate.sh`, 12/12 killed), not by driving real `NSEvent`s through a live window.
 
 - [T-1011] **The two surviving `priorityRank` forwarders exist only because a test can reach them.**
   After [[T-670]] the declaring set is exactly two, both `{ priority.rank }`:
