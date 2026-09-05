@@ -111,6 +111,41 @@ struct RemindersConnectionStateTests {
         #expect(RemindersConnectionState.resolve(isAuthorized: true, isDenied: false) == .connected)
     }
 
+    // MARK: - T-858: the access card's glyph is not a warning before anyone has been asked
+
+    /// **The whole ticket, on the type all four access-card call sites read.** `.notDetermined`
+    /// used to draw the same amber warning triangle as `.denied` and `.restricted`, telling a
+    /// fresh install it had done something wrong before anyone had been asked anything. Only the
+    /// two real faults keep the triangle now; the not-yet-asked offer reads as an invitation.
+    @Test func notDeterminedGetsANeutralOfferGlyphRatherThanTheWarningTriangle() {
+        let state = RemindersConnectionState.notDetermined
+
+        #expect(state.isDenied == false)
+        #expect(state.accessIconName == "list.bullet.badge.plus")
+        #expect(state.accessIconName != "exclamationmark.triangle.fill")
+        #expect(state.accessIconTint == Theme.blue)
+        #expect(state.accessIconTint != Theme.amber)
+    }
+
+    /// `.denied` and `.restricted` both fold into `isDenied` (mirroring
+    /// `RemindersManager.isDenied` and `CalendarManager.isDenied`) and both keep the triangle:
+    /// neither offers a request button that could do anything, so both are a real fault.
+    @Test func deniedAndRestrictedBothKeepTheWarningTriangle() {
+        for state: RemindersConnectionState in [.denied, .restricted] {
+            #expect(state.isDenied)
+            #expect(state.accessIconName == "exclamationmark.triangle.fill")
+            #expect(state.accessIconTint == Theme.amber)
+        }
+    }
+
+    @Test func connectedKeepsItsOwnGlyphUntouchedByTheSplit() {
+        let state = RemindersConnectionState.connected
+
+        #expect(state.isDenied == false)
+        #expect(state.accessIconName == "checklist")
+        #expect(state.accessIconTint == Theme.purple)
+    }
+
     // MARK: - EventKit status mapping
 
     /// **`.restricted` cannot be produced with `simctl privacy` or any other host-side toggle** —

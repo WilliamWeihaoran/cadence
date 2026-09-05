@@ -49,8 +49,8 @@ struct iOSRemindersSettingsSection: View {
         iOSSettingsCard {
             HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
                 iOSIconTile(
-                    systemImage: state.isConnected ? "checklist" : "exclamationmark.triangle.fill",
-                    color: state.isConnected ? Theme.purple : Theme.amber,
+                    systemImage: state.accessIconName,
+                    color: state.accessIconTint,
                     size: 34,
                     iconSize: 16
                 )

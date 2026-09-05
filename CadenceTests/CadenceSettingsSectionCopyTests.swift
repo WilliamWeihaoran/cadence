@@ -120,6 +120,16 @@ struct CadenceSettingsSectionCopyTests {
         "Cadence/iOS/iOSNotificationsSettingsSection.swift",
     ]
 
+    /// **T-858.** All four places that draw the Reminders pre-prompt access card, not two: Settings
+    /// has one file per platform like `calendarSurfaces` above, but Reminders also draws the same
+    /// card inline in each platform's Inbox, in a fourth file each with its own shape.
+    private static let remindersAccessCardSurfaces = [
+        "Cadence/macOS/Views/SettingsRemindersSection.swift",
+        "Cadence/iOS/iOSRemindersSettingsSection.swift",
+        "Cadence/macOS/Views/InboxSupportViews.swift",
+        "Cadence/iOS/iOSInboxRemindersSection.swift",
+    ]
+
     /// The work-hours row is a third file pair, not a third file in the pair above: iOS keeps it
     /// inside `iOSCalendarSettingsSection` and macOS gives it a file of its own.
     private static let workHoursSurfaces = [
@@ -326,6 +336,38 @@ struct CadenceSettingsSectionCopyTests {
             #expect(
                 code.contains("calendarManager.isDenied ? Theme.amber : Theme.blue"),
                 "\(path) tints the not-yet-asked glyph as a warning"
+            )
+        }
+    }
+
+    /// **T-858: Reminders' four access-card call sites read the shared glyph split too.**
+    ///
+    /// Mirrors `theCalendarAccessCardDrawsOneGlyphPerStateOnBothSurfaces`, one type over: Reminders
+    /// keyed this glyph on `isConnected` alone (amber triangle for every not-connected state,
+    /// `.notDetermined` included) in two files and hardcoded the triangle outright in a third — the
+    /// fourth hardcoded a fixed `checklist` that never wore the triangle even when access really was
+    /// denied. `RemindersConnectionState.accessIconName` / `.accessIconTint` is the one place that
+    /// decision is made now (T-543's card never shows a connected state, so its split stayed a local
+    /// ternary; Reminders' Settings cards do show one, which is why this is a shared property
+    /// instead of four copies of a three-way ternary). Asserted as "reads the shared property and
+    /// spells neither raw glyph", because `contains("exclamationmark.triangle.fill")` alone would
+    /// stay green over a file that both reads the property *and* still hardcodes the old literal
+    /// beside it.
+    @Test func theRemindersAccessCardReadsTheSharedGlyphSplitOnAllFourSurfaces() throws {
+        for path in Self.remindersAccessCardSurfaces {
+            let code = try Self.strippedSource(at: path)
+
+            #expect(
+                CadenceSourceScan.matchCount("state.accessIconName", in: code) == 1,
+                "\(path) does not read the shared icon exactly once"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("state.accessIconTint", in: code) == 1,
+                "\(path) does not read the shared tint exactly once"
+            )
+            #expect(
+                code.contains("\"exclamationmark.triangle.fill\"") == false,
+                "\(path) still hardcodes the warning triangle beside the shared property"
             )
         }
     }

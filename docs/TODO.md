@@ -43,6 +43,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1053] **Renaming a kanban column to whitespace deletes it.**
+  `Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` drop any config whose name
+  trims to empty, and the setter runs on every write — so `updateSectionConfig(uuid:) { $0.name =
+  "   " }` does not no-op, it removes the column from the blob, and `AppTask.sectionName` still
+  points at the old name for every card in it. Found by z4 while landing [[T-915]] (the test that
+  wanted a normaliser-discarded *no-op* write had to move to a padded name for exactly this
+  reason). **Not reachable from the macOS editor today:** `KanbanColumnRenameRefusal.emptyName`
+  refuses a blank field before the write, since [[T-914]]. Unverified whether the iOS list editor
+  (`iOSListEditorViews.applySectionConfigEdits`) or the MCP write surface has the same gate; that is
+  the first thing to check. If either does not, a user clearing a column's name loses the column and
+  strands its cards, and nothing says so.
+- [T-1054] **Should a row drag be offered at all under a non-custom sort?**
+  Left open deliberately by [[T-884]], which settled *which* sequence a drag rewrites and not
+  whether the gesture should exist. Under `.date` or `.priority` the dragged row visibly springs
+  back — the list re-sorts the moment the drop lands — so the app accepts a drop, answers `true`,
+  and shows the user nothing moving. That is [[T-614]]'s rule inverted, and the honest fix is to
+  refuse the reorder half of the drop when the active sort is not `.custom`. **It is a product
+  decision, not a mechanical one**, and it is not small: `TasksPanelDropCoordinator.handleTaskDrop`
+  also *assigns* on the way past (a row dropped into a Today list group is filed into that list),
+  so a refused reorder must not be reported as a refused drop — the answer would have to become
+  `assigned || reordered`, across four surfaces. Ask before implementing.
+- [T-1055] **Every row renumber writes 0…n over a visible slice, not over the sequence it spans.**
+  `CadenceOrderCommit.commit`'s own doc says the array "must be the *whole* collection the `order`
+  sequence spans rather than the visible slice — renumbering only the visible rows hands them
+  indices the hidden rows already hold". No caller obeys it. `TasksPanelSupport.reorderTask` is
+  handed one group's tasks (`group.tasks` / `section.tasks`); `ListTasksView.reorderTask` passes the
+  tab's *open* tasks, so every completed and cancelled task in the list keeps a colliding `order`;
+  both kanban card drops pass one column. The tie-break in `TaskOrdering.fallbackPrecedes` hides it
+  — `createdAt` then `title` then `id` still gives a total order — so the symptom is rows quietly
+  interleaving between hidden ones rather than anything visibly broken. Confirmed by reading, not
+  observed in use. **Today makes it genuinely hard rather than merely tedious:** `order` is
+  allocated per container (`nextTaskOrder(in:)` maxes over one list), so on a cross-list surface
+  there is no "whole sequence" to renumber. Deciding what `order` means across containers has to
+  come first. Noted by z4 under [[T-884]] and left alone under that ticket's scope.
 - [T-1043] **CLOSED 2026-09-05 — text sat on top of an image in a macOS note until you typed.**
   Reported by the user: *"for some reason some texts are sitting on an image in the notes, but as
   soon as i start typing, the text goes back to where it should be"*.
@@ -341,7 +375,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   actually exercises one of the 19 in a way that reaches two concurrent agents; filed because the
   gap is real and undocumented as a live risk, not because it has been observed to fire.
 
-- [T-914] **A kanban column rename the editor refuses says nothing.**
+- [T-914] **CLOSED 2026-09-05 (z4).** Fixed, as the third editor state the ticket asked for rather than as a refused-commit notice. The decision moved into `KanbanSectionStateSupport.renameRefusal(typedName:columnUUID:area:project:)` so it has a seam a test can drive, and it now asks both questions of the **stored** column rather than of the popover's opening snapshot — the same correction `hasUncommittedRename` already carried. `applySectionEdits` returns the refusal instead of swallowing it, and **the colour and the date go in anyway**: they used to be lost with the name, so pressing a swatch while the field held a duplicate dropped the swatch too. Two sentences, and neither invites a retry: "A column with this name already exists." (the tag editors' sentence, one noun along) and "A column needs a name." **The measurement the fix rests on** is `arefusedRenameFlushesCleanlyWhichIsWhyTheCommitCannotReportIt`: a declined rename leaves nothing pending, so the flush *succeeds* — the store cannot report a refusal it was never asked about. **Filed as:** **A kanban column rename the editor refuses says nothing.**
   `ListSectionKanbanColumn.applySectionEdits` declines two names outright — empty or whitespace,
   and one another column in the list already has — by returning without writing and *without*
   setting `saveFailureNotice`. `commitSectionEdits()` then flushes a context with nothing pending
@@ -352,7 +386,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   alone there on purpose — the fix is a *third* editor state ("that name is already taken"), not a
   refused commit, and the popover's `failureNotice` slot says "the store refused", which is a
   different sentence to the user.
-- [T-915] **The two section-blob write guards are blind to what the container's setter normalises.**
+- [T-915] **CLOSED 2026-09-05 (z4).** Fixed. `normalizedSectionConfigs(_:)` is now a requirement of `CadenceSectionConfigContainer` (`Area`/`Project` stop declaring it `private`), and both guards ask it what the setter *would* store instead of comparing what they were about to hand it. **Red before, measured, on a real `Area` in a real store:** `modelContext.hasChanges` after a write the normaliser discards — three of the four behavioural tests were red at HEAD. Deliberately no default implementation: an identity default would be silently right for a container that does not normalise and silently wrong for one that does. **Found while there and filed as [[T-1053]]:** renaming a column to whitespace does not no-op, it *deletes the column*, because the normaliser drops an empty name along with its entry. **Filed as:** **The two section-blob write guards are blind to what the container's setter normalises.**
   `applySectionConfigEdits` guards on `merged != sectionConfigs` since [[T-738]], and
   `mutateSectionConfigs` has guarded the same way for longer — but both compare the *pre*-setter
   array against the stored one, and `Area.normalizedSectionConfigs` /
@@ -364,13 +398,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   only field the normaliser touches. Filed because the guards read as "an identical write costs
   nothing" and that is true only while that gate holds.
 
-- [T-885] **A kanban column can be created, drawn, and gone at next launch.**
+- [T-885] **CLOSED 2026-09-05 (z4).** Fixed. `CadenceSectionConfigContainer.addSectionConfig(_:in:commit:)` is the committing form, built the way `reorderSectionConfigs` was built for [[T-870]] and with the same snapshot undo. It answers three things rather than a `Bool`, because a creation the *merge* declined (a name another column holds, or one the normaliser discards) has nothing pending and nothing to put back, while a creation the *store* refused has both. **Red before, measured:** the call-site scan `theboardsAddColumnRailReachesACommit`. The board reports a refusal on the board, in a sentence of its own — "Nothing was moved" is a lie about a column that was never added. **Filed as:** **A kanban column can be created, drawn, and gone at next launch.**
   `ListSectionsKanbanView.addSection` calls `container.addSectionConfig(...)` at
   `KanbanListSectionSupportViews.swift:157` and **no `save()` exists anywhere in that file**. Same
   family as [[T-870]] — a `mutateSectionConfigs` blob write reaching no commit — but on a *creation*
   rather than a reorder, which is worse: the user names a column, sees it appear, and loses it. Found
   by r3 while fixing the reorder paths and deliberately left alone under that ticket's scope rule.
-- [T-884] **The two row-drop surfaces disagree about which sequence a drag rewrites.**
+- [T-884] **CLOSED 2026-09-05 (z4).** **Decided in favour of the `order` sequence**, and all four renumbering sites now agree on it — the two the ticket names plus both kanban card drops, which had the same 2-2 split. Reasoning, written out in full in `TasksPanelSupport.reorderTask` and in `CadenceRowReorderSequenceTests`: `order` is the *custom* arrangement and the only sequence in this app a user authors, so renumbering the **displayed** sequence writes a derived order over an authored one — one drag under a date sort replaces the user's whole hand-made arrangement with the date order, silently, because the screen is not showing `order` at the time. `theRejectedRuleWouldOverwriteTheCustomArrangementWithTheDateOrder` measures that loss rather than arguing it. The chosen rule's own cost — the dragged row lands where the user cannot see it — is smaller and recoverable, and the row springs back on screen under **either** rule, so the visible outcome is identical. **The hover-freeze half was not a judgement call at all:** `TaskListKanbanColumn.moveTask` had already recorded that the freeze "must never be what gets written back into `order`", and `ListTasksView.reorderTask` was writing exactly that back. **Two things deliberately left open and filed:** whether a row drag should be *offered* under a non-custom sort at all ([[T-1054]]), and the fact that every site renumbers a slice rather than the whole sequence its numbering spans ([[T-1055]]). **Filed as:** **The two row-drop surfaces disagree about which sequence a drag rewrites.**
   `TasksPanelSupport.reorderTask` sorts `scopeTasks` by `order` and renumbers that;
   `ListTasksView.reorderTask` renumbers the *displayed* order — the tab's active sort plus its hover
   freeze. Under a non-`order` sort the same gesture means different things on Today/All Tasks than on
@@ -2130,7 +2164,20 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   rather than a request: adding container writes is a real decision (they cascade into task
   ownership and section normalisation), and the screenshot work only needs it once.
 
-- [T-858] **Reminders' pre-prompt access card still wears the denied state's warning triangle.**
+- [T-858] **CLOSED 2026-09-05 (z5).** `RemindersConnectionState` gained `isDenied` (folds
+  `.restricted` in, mirroring `CalendarManager.isDenied` / `RemindersManager.isDenied`) plus
+  `accessIconName` / `accessIconTint`; all four call sites now read them instead of keying the
+  glyph on `isConnected` alone or hardcoding a fixed one. `.notDetermined` draws
+  `list.bullet.badge.plus` / `Theme.blue`; `.denied` and `.restricted` keep
+  `exclamationmark.triangle.fill` / `Theme.amber`, the same split T-543 drew for Calendar;
+  `.connected` is unchanged. **Measured:** `RemindersConnectionStateTests` pins all three arms
+  directly; `CadenceSettingsSectionCopyTests.theRemindersAccessCardReadsTheSharedGlyphSplitOnAllFourSurfaces`
+  scans all four files as text (two are `#if os(iOS)`, invisible to this target) for the shared
+  read and the absence of the old hardcoded triangle. Suite green — 90 tests, 3 suites, over a
+  `git archive HEAD` tree carrying these 7 files — macOS zero warnings; a `generic/platform=iOS
+  Simulator` build of the two iOS files also came back zero errors/warnings. 5 mutations across
+  the enum and two call sites run through `scripts/mutate.sh`: all 5 killed. **Filed as:**
+  **Reminders' pre-prompt access card still wears the denied state's warning triangle.**
   [[T-846]] fixed `RemindersConnectionState.accessTitle`'s `.notDetermined` wording — "Connect Apple
   Reminders" rather than "Reminders access required" — but all four consumers
   (`SettingsRemindersSection`, `iOSRemindersSettingsSection`, `InboxSupportViews.AppleRemindersAccessRow`

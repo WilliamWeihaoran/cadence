@@ -91,8 +91,8 @@ struct iOSInboxRemindersSection: View {
     private var accessRow: some View {
         HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
             iOSIconTile(
-                systemImage: "exclamationmark.triangle.fill",
-                color: Theme.amber,
+                systemImage: state.accessIconName,
+                color: state.accessIconTint,
                 size: 34,
                 iconSize: 16
             )

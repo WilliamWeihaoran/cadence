@@ -250,12 +250,13 @@ private struct AppleRemindersAccessRow: View {
     let onAction: (RemindersAccessAction) -> Void
 
     var body: some View {
+        let tint = state.accessIconTint
         HStack(spacing: 12) {
-            Image(systemName: "checklist")
+            Image(systemName: state.accessIconName)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.purple)
+                .foregroundStyle(tint)
                 .frame(width: 32, height: 32)
-                .background(Theme.purple.opacity(0.12))
+                .background(tint.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 2) {

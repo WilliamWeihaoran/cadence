@@ -37,8 +37,8 @@ struct SettingsRemindersSection: View {
     private var accessCard: some View {
         CadenceFieldSection(title: nil) {
             CadenceSettingsNoticeRow(
-                systemImage: state.isConnected ? "checklist" : "exclamationmark.triangle.fill",
-                tint: state.isConnected ? Theme.purple : Theme.amber,
+                systemImage: state.accessIconName,
+                tint: state.accessIconTint,
                 title: state.accessTitle,
                 detail: state.accessMessage
             ) {

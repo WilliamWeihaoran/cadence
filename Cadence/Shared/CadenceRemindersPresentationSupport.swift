@@ -79,6 +79,32 @@ enum RemindersConnectionState: Equatable {
 
     var isConnected: Bool { self == .connected }
 
+    /// **T-858.** Folds `.restricted` into `.denied` for the icon/tint decision below, the same
+    /// fold `CalendarManager.isDenied` and `RemindersManager.isDenied` already make: neither state
+    /// offers a request button that could do anything, so both are the fault the warning glyph is
+    /// for. `.notDetermined` is the only state left, and it is not a fault — see `accessIconName`.
+    var isDenied: Bool { self == .denied || self == .restricted }
+
+    /// **T-858.** All four access-card call sites (`SettingsRemindersSection`,
+    /// `iOSRemindersSettingsSection`, `iOSInboxRemindersSection.accessRow`,
+    /// `InboxSupportViews.AppleRemindersAccessRow`) used to key this glyph on `isConnected` alone —
+    /// which draws the amber warning triangle for every not-connected state, `.notDetermined`
+    /// included — or hardcode the triangle outright. `.notDetermined` is nobody's fault: the same
+    /// split T-543 already drew for Calendar's equivalent card (`calendar.badge.plus` beside the
+    /// triangle) gets a neutral offer glyph here too, and the triangle is reserved for `.denied`
+    /// and `.restricted`, which genuinely are.
+    var accessIconName: String {
+        if isConnected { return "checklist" }
+        return isDenied ? "exclamationmark.triangle.fill" : "list.bullet.badge.plus"
+    }
+
+    /// **T-858.** Mirrors `accessIconName`'s split: the not-yet-asked offer reads as a neutral
+    /// invitation, not a warning.
+    var accessIconTint: Color {
+        if isConnected { return Theme.purple }
+        return isDenied ? Theme.amber : Theme.blue
+    }
+
     var badgeTitle: String {
         switch self {
         case .connected: return "Connected"
