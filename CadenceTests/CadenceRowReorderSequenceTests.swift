@@ -200,4 +200,104 @@ struct CadenceRowReorderSequenceTests {
             "the list kanban column renumbers the board's active sort again"
         )
     }
+    // MARK: - T-1054: is the drag actually invisible under a non-custom sort?
+
+    /// **Behavioural, and it contradicts the premise of [[T-1054]].** A drag between two rows that
+    /// **tie on the active sort key** lands exactly where it was dropped and stays there. Nothing
+    /// springs back.
+    ///
+    /// `TaskOrdering.precedes` falls through to `fallbackPrecedes` on a tie under both `.date` and
+    /// `.priority`, and `fallbackPrecedes`'s **first** key is `order`. So the displayed sequence
+    /// inside a tie band *is* the `order` sequence, exactly as it is under `.custom`.
+    @Test func adragBetweenTwoUndatedRowsIsFullyVisibleUnderADateSort() throws {
+        let modelContext = ModelContext(try container())
+        let tasks = ["Alpha", "Bravo", "Charlie"].enumerated().map { index, title -> AppTask in
+            let task = AppTask(title: title)
+            task.order = index
+            modelContext.insert(task)   // no scheduledDate: all three tie on `noDateSortKey`
+            return task
+        }
+        try modelContext.save()
+
+        let displayed = tasks.taskSorted(by: .date, direction: .ascending)
+        #expect(displayed.map(\.title) == ["Alpha", "Bravo", "Charlie"])
+
+        let dropped = try #require(tasks.first { $0.title == "Charlie" })
+        let target = try #require(tasks.first { $0.title == "Alpha" })
+        #expect(
+            TasksPanelSupport.reorderTask(
+                droppedID: dropped.id,
+                targetID: target.id,
+                scopeTasks: displayed,
+                modelContext: modelContext
+            )
+        )
+
+        // The screen is still sorted by date, and the row is where it was dropped.
+        #expect(
+            tasks.taskSorted(by: .date, direction: .ascending).map(\.title) == ["Charlie", "Alpha", "Bravo"],
+            "the drag under a date sort did nothing the user can see"
+        )
+    }
+
+    /// **Behavioural.** The same under `.priority`, where ties are the common case rather than the
+    /// edge one: there are four ranks, so every list longer than four rows has a band.
+    @Test func adragInsideOnePriorityBandIsFullyVisibleUnderAPrioritySort() throws {
+        let modelContext = ModelContext(try container())
+        let tasks = ["Alpha", "Bravo", "Charlie"].enumerated().map { index, title -> AppTask in
+            let task = AppTask(title: title)
+            task.order = index
+            task.priority = .high
+            modelContext.insert(task)
+            return task
+        }
+        try modelContext.save()
+
+        let displayed = tasks.taskSorted(by: .priority, direction: .descending)
+        #expect(displayed.map(\.title) == ["Alpha", "Bravo", "Charlie"])
+
+        let dropped = try #require(tasks.first { $0.title == "Charlie" })
+        let target = try #require(tasks.first { $0.title == "Bravo" })
+        #expect(
+            TasksPanelSupport.reorderTask(
+                droppedID: dropped.id,
+                targetID: target.id,
+                scopeTasks: displayed,
+                modelContext: modelContext
+            )
+        )
+
+        #expect(
+            tasks.taskSorted(by: .priority, direction: .descending).map(\.title) == ["Alpha", "Charlie", "Bravo"],
+            "reordering inside one priority band is invisible"
+        )
+    }
+
+    /// **Behavioural, the other half.** Across a sort-key boundary the row genuinely does spring
+    /// back — this is the case [[T-1054]] describes, and it is a *subset* of the gesture rather
+    /// than all of it.
+    @Test func adragAcrossADateBoundaryIsTheOneThatSpringsBack() throws {
+        let modelContext = ModelContext(try container())
+        let tasks = try board(in: modelContext)
+        let displayed = tasks.taskSorted(by: .date, direction: .ascending)
+        #expect(displayed.map(\.title) == ["Delta", "Charlie", "Bravo", "Alpha"])
+
+        let dropped = try #require(tasks.first { $0.title == "Alpha" })
+        let target = try #require(tasks.first { $0.title == "Delta" })
+        #expect(
+            TasksPanelSupport.reorderTask(
+                droppedID: dropped.id,
+                targetID: target.id,
+                scopeTasks: displayed,
+                modelContext: modelContext
+            )
+        )
+
+        #expect(
+            tasks.taskSorted(by: .date, direction: .ascending).map(\.title) == ["Delta", "Charlie", "Bravo", "Alpha"],
+            "the dragged row did not spring back, so the premise of T-1054 holds nowhere"
+        )
+        #expect(customOrder(tasks) != ["Alpha", "Bravo", "Charlie", "Delta"], "and `order` did change")
+    }
+
 }
