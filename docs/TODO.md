@@ -43,6 +43,55 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1074] **A second bare `local x` in one zsh function PRINTS the parameter instead of
+  redeclaring it, and in a loop it does so on every iteration.** Found 2026-09-06 by writing one,
+  then found three more already shipped. It is `typeset`'s listing behaviour, reached by a
+  declaration that looks like C: `f() { local i; for i in 1 2 3; do local kind; kind="v$i"; done }`
+  prints `kind=v1` and `kind=v2`. `local -a x` does **not** do it -- any flag suppresses the
+  listing -- which is part of why the shape hides.
+  **Why it matters more here than in ordinary shell code:** these scripts' STDOUT *is* how they
+  report refusals and readings, so the corruption arrives looking like a diagnostic. Both shipped
+  instances were reachable and neither is exotic:
+  * `agent-commit.sh`, the stale-path loop: two stale paths in one commit put `spec2=<second path>`
+    on the line **above** a `REBUILD-BEHIND-HEAD` refusal. Measured.
+  * `worktree-drift.sh` `print_reading`: two behind paths put `gone=` into the middle of the drift
+    report a reader is using to decide what drifted -- and **seventeen** paths drifted in one night
+    on 2026-09-05, so "two or more" is the ordinary case there, not the exotic one. Measured.
+  Two further latent ones hoisted with them (`gone`, `reopened` in `cmd_commit`), unreachable only
+  because one `TODO.md` can be named per commit. Fixed in the checkout, with a pinning check in each
+  script's selftest and a mutation control for each -- and the first version of the `agent-commit.sh`
+  check **passed against the unfixed script**, because `[[ "$out" != *[a-z_]##=* ]]` needs
+  `EXTENDED_GLOB` and matched literally without it. The mutation control is what caught the hollow
+  check; both are `grep -E` now.
+  **Not swept for:** `scripts/mutate.sh`, `test-host-lock.sh`, `simulator-claim.sh`,
+  `codex-inbox.sh` and the rest were not checked. A grep is not enough on its own -- `local x` in a
+  function that never re-enters is harmless -- so the sweep has to ask whether the declaration is
+  reachable a second time, which is what the loop-depth scan used here does.
+  **The commit that carries all of this is blocked, and that is worth recording too.** It removes
+  45 lines HEAD has, across `scripts/agent-commit.sh` (31), `scripts/worktree-drift.sh` (13) and
+  `docs/SUBAGENT_RUNBOOK.md` (1). All 45 were read individually and every one is a line this agent
+  rewrote -- header paragraphs whose claims the change falsifies, the `local` declarations being
+  hoisted, and the loop body being restructured -- with no sibling hunk among them; the shared index
+  was clean and none of the three paths reads `behind`. `--removes 45` is user-gated in this batch,
+  so the verified count is reported here instead of typed. [[T-992]], [[T-991]], [[T-986]] and the
+  second half of [[T-781]] are all waiting on that one flag.
+
+- [T-1075] **`main` is red a SECOND way, and it is not [[T-1073]]: `CadenceGuardScriptSelftestTests`
+  fails at HEAD because the test names a `mutate.sh` refusal that `mutate.sh` does not make.**
+  Measured 2026-09-06 against `db17932` in a pristine `git archive HEAD` tree, so it is HEAD and not
+  a drifted checkout. `mutationRunnerRefusals` in
+  `CadenceTests/CadenceGuardScriptSelftestTests.swift` lists `STRANDED`, and `git show
+  HEAD:scripts/mutate.sh` contains that string **zero** times, so both
+  `everyRefusalTheScriptsMakeIsStillInducedByTheirOwnSelftest` (2 issues, body and selftest) and
+  `theMutationRunnersOwnGuardsStillFire` ("exercises no mode named: STRANDED") fail.
+  **Somebody is already on it, half-landed, which is the point:** the shared checkout's
+  `scripts/mutate.sh` *does* contain `STRANDED` (9 occurrences) as an uncommitted edit. The Swift
+  half of one change landed and the shell half did not -- the [[T-679]] family exactly, one commit
+  short. Not fixed here: committing it would commit a sibling's in-flight work. Whoever owns that
+  edit should land it; if it was abandoned, the list entry is what has to go. Unrelated to
+  [[T-1073]] (a Kanban needle) and to this batch's own changes, which touch neither `mutate.sh` nor
+  `mutationRunnerRefusals`.
+
 - [T-1073] **`main` is red: [[T-885]]'s rename left one [[T-646]] needle behind.** Found 2026-09-06
   by a full `CadenceTests` run while landing [[T-642]]; **not caused by that change, which touches
   no Kanban file.** `5aac94d` renamed `saveFailureNotice` to `editorFailureNotice` in
@@ -487,6 +536,43 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and reads `inflight`; a rebuild that also deletes lines reads `cannot-tell` and is not refused
   either. The only shape refused would be "old revision plus edits", which is the bug. **Needs a
   decision before code** — it is the one form the ticket said to leave alone.
+
+  **RESOLVED IN THE CHECKOUT 2026-09-06, NOT YET IN HEAD** -- the code is written and verified and
+  is one user-gated `--removes` short of landing; see the note at the end of [[T-1074]]. Flip this
+  first line to `**CLOSED <date> (`sha`).**` when it lands.
+  **The decision the ticket asked for is: yes, ask the `=` form too.** The old exemption was right
+  about the wrong comparison. Refusing a reconstruction because it differs from the WORKTREE would
+  refuse the cure; this reading is against HISTORY, where a genuine rebuild on `git show
+  HEAD:<path>` contains every line HEAD has and settles as `inflight` at the first comparison,
+  before any revision walk. So the cure is not refused and the mistake is: `REBUILD-BEHIND-HEAD`
+  names the sha the content file was built on and how many commits have landed on that path since.
+  **Reproduced first, in a throwaway repository:** a content file built two commits back was refused
+  as `REMOVES-HEAD-LINES: removes 2 line(s) ... --removes 2`. A count, and an invitation to type the
+  number that drops the two lines the siblings landed -- the same wrong-diagnosis shape [[T-982]]
+  found on the bare form. Nothing asked which revision the file came from.
+  **The naive reading does not survive contact, and that is the substance of this ticket.** Applied
+  as written it refused **13 of `agent-commit.sh`'s own selftest commits** and **1 of this
+  repository's last 80 real `docs/TODO.md` commits** (`eab61a0d`, checked by hand: no id dropped, no
+  closure reverted; its 24 "missing" lines are its own T-1036/T-1038 entries rewritten from open
+  text to closures -- a false accusation). The cause: "some older revision R is wholly contained and
+  a line HEAD has is missing" is also what an ordinary rewrite of the NEWEST lines looks like,
+  because deleting what HEAD added leaves R behind. Containment of R is necessary and not
+  sufficient. So a **corroboration** was added: a line HEAD has that R does not, still present in
+  the content, proves the content was built on something newer than R, and the `behind` reading is
+  withdrawn. An agent working from R cannot hold such a line -- it did not exist in anything it read.
+  **Measured after:** 0 of those 80 real commits refused; 0 of the selftest's 105 checks refused;
+  and the positive control on real repository content -- each commit's blob replayed onto the HEAD
+  two commits later, which is exactly the failure this ticket is about -- **caught 13 of 13,
+  missing none**. Two narrowings are recorded in the scripts: the corroboration also narrows the
+  bare-form reading ([[T-982]]), correctly, without weakening any measured [[T-975]] instance (a
+  stale copy is R's blob byte for byte and a stale base is R plus local edits; neither holds a
+  post-R line); and for the `=` form only a **stale base** refuses, because a content file whose
+  bytes ARE an older revision carries none of the agent's own work and so cannot be a mistaken
+  rebuild -- that is a deliberate revert, and `REMOVES-HEAD-LINES` already names every line it
+  drops. Pinned by `agent-commit.sh` modes 4b3/4b4 and `worktree-drift.sh` mode 5c. Four mutations
+  KILLED: delete the corroboration (10 legitimate selftest commits false-refused), stop asking the
+  `=` form (the pre-fix `--removes 2` reproduction returns verbatim), refuse a stale copy too (mode
+  4b breaks), drop the trailer (mode 4b4 breaks).
 - [T-991] **`--commits-stale` lands a stale copy on purpose and leaves no trace.** Every other
   deliberate override in `agent-commit.sh` that discards something leaves a record somebody has to
   clear — a declined hunk writes to `$TMPDIR/cadence-declined-hunks` and `check` fails while it is
@@ -494,6 +580,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   commit a copy behind HEAD, and on which path*, after the fact — which is the exact question all
   four measured instances of [[T-975]] were found by asking. A record in the same ledger, or at
   minimum the path and base sha in the commit trailer.
+
+  **RESOLVED IN THE CHECKOUT 2026-09-06, NOT YET IN HEAD** -- same gate as [[T-992]].
+  Each overridden path now writes a `Commits-Stale: <path> built-on <sha>` trailer into the commit
+  message, immediately above the `Co-Authored-By:` line, so `git log --grep='^Commits-Stale:'`
+  answers *did anyone knowingly commit a copy behind HEAD, and on which path* from any clone,
+  forever, and the base sha makes what was skipped diffable rather than abstract.
+  **The commit message and not the $TMPDIR ledger, deliberately.** A declined-hunk record means
+  somebody still has to act, and `check` fails while one exists; a `--commits-stale` is a settled
+  decision, and filing it as outstanding work would make `check` fail over something already
+  decided. The ledger is also per-checkout and per-boot, and this question gets asked days later.
+  **The user-gating of the flag makes this more valuable, not less:** the flag is now rare and
+  deliberate, so every trailer in the history is a decision somebody made on purpose.
+  One bug found while writing it, worth more than the feature: `awk -v extra=...` **cannot carry a
+  literal newline** ("awk: newline in string"), so the first implementation produced an EMPTY commit
+  message -- taking the `Co-Authored-By:` line with it -- the moment two paths were overridden at
+  once. Spliced in zsh instead. Pinned by mode 4b4, including the control that an ordinary commit
+  acquires no trailer (or `--grep` answers everything and therefore nothing).
 
 - [T-981] **CLOSED 2026-09-05 (`0fbe7ecc`) — a closure could revert inside an intact id set.**
   `LEDGER-IDS-LOST` compares ids, not content, so an entry whose text changed from a closure back to
@@ -534,6 +637,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   this repository — it is a prompt the coordinator sets up per batch. **Landed 2026-09-05 by putting
   the call in the heartbeat prompt itself, as step 2, ahead of batch work.** What remains is the
   runbook line so the next coordinator does the same; until then it is reachable only by memory.
+
+  **RESOLVED IN THE CHECKOUT 2026-09-06, NOT YET IN HEAD** -- same gate as [[T-992]].
+  The remaining half was the runbook line, and it is now in `docs/SUBAGENT_RUNBOOK.md` under
+  "Committing out of a shared checkout": `check` is **step 2 of the coordinator heartbeat**, ahead
+  of batch work, with the reasoning for why it cannot be a file in this repository beside it, so
+  the next coordinator does not have to re-derive it.
+  **And the gap it left is now covered by something nobody has to remember.** The argument against
+  `xcb.sh` was about *gating* -- every intra-batch run would see a sibling's freshly declined,
+  perfectly normal in-flight hunk, the exact case `DECLINED-HUNK-STALE`'s grace exists not to
+  block, and `mutate.sh` alone runs it dozens of times per needle. That argument does not reach
+  *reporting*. `scripts/xcb.sh` now lists outstanding records at the end of **every** run with each
+  record's age and how many minutes until it walls off the checkout, and never touches `$STATUS`.
+  See [[T-781]].
 
 - [T-977] **CLOSED 2026-09-05 (`452c8037`).** Wired into `ci.yml`'s `macos-tests` job rather than into `CadenceGuardScriptSelftestTests` -- **checked first, and the established pattern would not have worked**: the sandboxed host cannot spawn what that selftest needs ([[T-959]]), so the in-target version would have been permanently red or permanently skipped. Reasoned, not measured: no hosted run was triggered. **Filed as:** **`scripts/real-tree-sweep-manifest.sh selftest` is a check nothing runs.** [[T-873]] fixed the
   regenerator and pinned the fix with a `selftest` subcommand that drives the script against a
@@ -3008,6 +3124,15 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   passed thirty-seven checks while proving nothing. The interception is a `.zshenv` shell function
   instead — reading a file is not executing one.
 
+  **Re-verified 2026-09-06 at `db17932`:** the fix is intact -- `headsha` is read once before every
+  check and `update-ref` carries the expected old value -- and selftest modes 5 and 5b still pass,
+  including their interception-fired controls. **One piece of residue, not a defect in the fix:**
+  [[T-965]]'s verbatim block still carries an unindented `- [T-974]` opening line holding this
+  ticket's ORIGINAL open text, so the ledger holds both a CLOSED and an open-looking entry for this
+  id (and for [[T-781]]). `ledger_ids` and `ledger_closed_ids` both `sort -u`, so no guard misreads
+  it; a human reading the file can. It is [[T-965]]'s to fold back in, and folding it means deleting
+  lines from a contested file, which is a `--removes` this agent may not type.
+
 - [T-781] **CLOSED 2026-09-04 (`c1cc8c27`).** Two things, because the gap has two halves.
   `./scripts/agent-commit.sh check` **exits 3** while any declined record is outstanding — that is
   the batch-completion gate, and it *fails* rather than reports, which is the whole difference from
@@ -3024,6 +3149,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `rm -f`, deleting the stale refusal, and making `check` see an empty ledger are each KILLED, and
   so is backdating the fixture's record by one minute instead of ninety — so it is the age doing the
   refusing and not something else.
+
+  **SECOND HALF, resolved in the checkout 2026-09-06 (not yet in HEAD): the backstop needed a
+  backstop, and the batch of 2026-09-05 proved it.** An agent died mid-commit and left a stranded
+  declined record on `docs/TODO.md`. Nothing surfaced it. A coordinator found it by running `check`
+  by hand during a routine sweep, and half an hour later `DECLINED-HUNK-STALE` would have refused
+  **every** commit in the repository -- the automatic instrument works, and its first observable is
+  the whole batch stopping, which is a poor way to learn. So `scripts/xcb.sh` now ends every run by
+  listing outstanding records with the declining agent, the age, the lines themselves, and how many
+  minutes remain before this refuses everyone. It **reports and never gates**: `$STATUS` is
+  untouched, which is the distinction [[T-986]] settled. The listing lands in front of whoever is
+  already reading a build log, which is the one thing every agent in a batch does. Exercised
+  against a fixture ledger in both states (fresh: "in 30m this refuses EVERY agent-commit.sh
+  commit"; aged: "this is ALREADY refusing"), and silent when the ledger is empty or absent.
 
 - [T-965] **Carried forward verbatim below, unindented and untouched: content v3batchV declined at `c1efab09` on `docs/TODO.md`, not yet folded back in.** v2 hit `DECLINED-HUNK-LOST` committing an unrelated edit to this file and is not the right agent to reconstruct where each of these fragments belongs (they span T-974/T-781 detail, an `agent-commit.sh` pre-commit-hook candidate, T-517's closing discriminators, a DerivedData entry investigation, and a T-535 CI-YAML gap) -- so preserving the text losslessly here beats guessing at placement or discarding it with `--accept-declined`. v3batchV (or whoever next edits this file) should fold each fragment into its proper entry above and delete this ticket. The declined text follows,
   character-for-character as recorded, starting on the next line:
