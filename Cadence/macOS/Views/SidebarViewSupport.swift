@@ -239,8 +239,16 @@ enum SidebarMetrics {
     /// already chains off this pair.
     static let contextHeaderFontSize: CGFloat = SectionEyebrowLabel.Size.standard.fontSize
     static let contextHeaderKerning: CGFloat = SectionEyebrowLabel.Size.standard.kerning
-    static let contextHeaderTopPadding: CGFloat = 3
-    static let contextHeaderBottomSpacing: CGFloat = 6
+    /// **Asymmetric on purpose, and the asymmetry is the point (T-1041).** A context header belongs
+    /// to the lists *under* it, so it must sit far from the group above and close to its own. These
+    /// were 3 and 6 -- the header nearly equidistant between two groups, and marginally nearer the
+    /// one it does not label. The gap a reader actually sees above a header is
+    /// `contextSectionBottomSpacing + contextHeaderTopPadding`; below it is
+    /// `contextHeaderBottomSpacing` alone, which is why the two numbers are not comparable directly
+    /// and why the pinned relationship is written as a test rather than trusted to look right.
+    /// Below is now near `rowSpacing` (2), so the header reads as the first line of its own group.
+    static let contextHeaderTopPadding: CGFloat = 14
+    static let contextHeaderBottomSpacing: CGFloat = 3
     static let contextSectionBottomSpacing: CGFloat = 8
     static let contextAddButtonSize: CGFloat = 16
     static let contextAddIconSize: CGFloat = 9

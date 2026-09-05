@@ -318,6 +318,25 @@ struct SidebarStaticDestinationBridgeTests {
         #expect(CadenceFeatureDestination.lists.macSidebarItem == nil)
         #expect(CadenceFeatureDestination.search.macSidebarItem == nil)
     }
+
+    /// **A context header belongs to the lists under it (T-1041).**
+    ///
+    /// Pins the *relationship*, not the three numbers -- a test asserting `== 14` keeps passing
+    /// long after the reason for 14 stops being true, and fails the moment somebody legitimately
+    /// retunes the sidebar. What must stay true is that a reader sees the header grouped with the
+    /// lists it labels rather than floating between two groups.
+    ///
+    /// The gap above a header is what the previous section left plus the header's own top padding;
+    /// the gap below it is the header stack's spacing alone. They are not the same quantity, which
+    /// is exactly why this was wrong by inspection for so long: the raw numbers were 3 and 6, and 6
+    /// looks like the larger one.
+    @Test func aContextHeaderSitsNearerTheListsItLabelsThanTheGroupAboveIt() {
+        let above = SidebarMetrics.contextSectionBottomSpacing + SidebarMetrics.contextHeaderTopPadding
+        let below = SidebarMetrics.contextHeaderBottomSpacing
+
+        #expect(above > below * 2, "a header \(above)pt below the last group and \(below)pt above its own reads as belonging to neither")
+        #expect(below <= SidebarMetrics.rowSpacing + 2, "\(below)pt under a header, against \(SidebarMetrics.rowSpacing)pt between its rows, detaches the header from its own list")
+    }
 }
 
 #endif

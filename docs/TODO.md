@@ -43,6 +43,39 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1041] **CLOSED 2026-09-05 (coordinator).** The sidebar's context headers sat **3pt below the
+  group above and 6pt above their own lists** — nearer the lists they do not label. Now 14 and 3,
+  against a `rowSpacing` of 2, so a header reads as the first line of its own group. **The defect was
+  only ever visible as a relationship:** both numbers are individually plausible, and the gap a
+  reader sees above a header is `contextSectionBottomSpacing + contextHeaderTopPadding` rather than
+  the top padding alone — composed spacing, which is why inspection never caught it.
+  `aContextHeaderSitsNearerTheListsItLabelsThanTheGroupAboveIt` pins the **relationship**, not the
+  three literals, so a legitimate retune does not fail it. Reported by the user.
+- [T-1038] **The macOS window restores to a disconnected display and opens off-screen.** Measured
+  2026-09-05: launching a debug build against the user's own `UserDefaults` restored the main window
+  at `X = -2899`, entirely off every connected display — invisible, though still composited and
+  capturable. Clamp the restored frame to `NSScreen.screens` on launch. Found while reproducing
+  [[T-1036]]; unrelated to it, and a user who moves between a docked and undocked Mac would meet it.
+- [T-1037] **The sidebar resize handle takes keyboard focus and does nothing with it.**
+  `macOSRootShellViews.swift:166-239`. `acceptsFirstResponder` is `true`, but there is no `keyDown`,
+  no `performKeyEquivalent`, no accessibility role/label/value and no focus indicator — **measured:
+  `focusRingMaskBounds` is empty, so AppKit draws nothing, with or without Full Keyboard Access.** A
+  keyboard-only user can Tab onto it and get no feedback and no action. Add arrow-key resizing, a
+  role and label, and a focus state distinct from hover and drag — or drop `acceptsFirstResponder`
+  and say so. **Do not "fix" this by setting `focusRingType = .none`; measured, that changes nothing.**
+- [T-1036] **The sidebar resize handle latches its accent tint and never lets go.** Its tint comes
+  from two booleans only event callbacks ever write. `isDragging` clears only in `mouseUp`;
+  `isHovered` clears only in `mouseExited` — and `updateTrackingAreas()` rebuilds the tracking area
+  on every geometry change, continuously during a resize drag, while AppKit suppresses enter/exit.
+  End a drag with the pointer outside the handle's clamped new frame and **no `mouseExited` ever
+  arrives**, leaving a permanent accent band. Over `Theme.surface` the hover alpha computes to
+  ≈`#102640` and the drag alpha to ≈`#14315C` — a distinctly blue 10pt band, which matches the
+  user's report. **Reasoned, not reproduced, and it does not explain "on launch, at rest"** — a fresh
+  view is constructed with both flags false. Re-derive hover from
+  `window.mouseLocationOutsideOfEventStream` when tracking areas are rebuilt, clear drag on window
+  resign as well as `mouseUp`, and extract the alpha decision into a testable value type first —
+  there is no seam today.
+
 - [T-1011] **The two surviving `priorityRank` forwarders exist only because a test can reach them.**
   After [[T-670]] the declaring set is exactly two, both `{ priority.rank }`:
   `CadenceTaskQuerySupport.priorityRank` now has **one** caller (`CadenceFocusPlanningSupport.swift:346`,
