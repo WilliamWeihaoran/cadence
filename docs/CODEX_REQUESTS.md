@@ -2646,6 +2646,58 @@ nobody has written?** A metrics relationship — "a header is nearer the group i
 checkable without a running app, and was not checked. If there are more of those, they are worth
 more than any single fix.
 
+ANSWER 2026-09-05 (R36):
+
+```text
+Tree read: 4c091c1
+Dirty files: 27 before this document edit
+Mode: working-tree source audit; no app/simulator launch, build, or test run
+```
+
+**Two premises need correction before classification.** This is not evidence that all four
+defects require a running-app test.
+
+- **MEASURED source/history; previously reported runtime measurement, not rerun here:** the
+  focus-ring explanation was rejected in `4c091c1` and `docs/TODO.md:59-76`. T-1037 records an
+  empty focus-ring mask; setting `.none` is not the proposed repair. T-1036's remaining hover/drag
+  latch explanation is explicitly REASONED and does not explain a fresh launch at rest. Do not
+  promote it to a reproduced cause in another brief.
+- **MEASURED source/history:** the sidebar's old gap was not simply 3 above versus 6 below.
+  The previous section contributes 8pt bottom padding (`SidebarComponents.swift:205`), each
+  section contributes 2pt outer vertical padding (`SidebarView.swift:200`), and the next header
+  formerly contributed 3pt. Between populated section content boxes that is **8+2+2+3=15pt**,
+  versus 6pt between the header stack and its list. At HEAD it is **26 versus 3**. These are
+  layout-box padding sums, not measured distances between painted glyphs. The user's visual
+  complaint is valid input; the claim that the old composed gaps were reversed is not.
+  `CadenceSidebarLayoutTests.swift:333-339` still omits the two outer pads from `above`.
+  **Extends T-1041: P3 documentation/test-model correction, not a request to undo the visual fix.**
+
+| Report | Missing evidence axis | Cheapest useful guard | Current disposition |
+| --- | --- | --- | --- |
+| Today rollover flicker | Equality of the rendered population and the population captured on hover, across capture/release | Run both derivations through freeze/release; pin the actual caller to that derivation | Working tree already adds this at `TaskSurfaceFreezeSupportTests.swift:306,340` and `TasksPanel.swift:378-387`. Those files are dirty: do not credit HEAD with this repair. No live pointer is necessary to catch the population mismatch. |
+| Sidebar handle accent | Event-state transitions across tracking-area replacement, drag end, and window deactivation | Pure hover/drag state transitions plus an AppKit integration check that the relevant callbacks reconcile pointer position | T-1036/T-1037 own this. `macOSRootShellViews.swift:166-239` changes the flags only on enter/exit/down/up; geometry rebuild does not reconcile them. Actual event delivery and launch appearance still need runtime evidence. |
+| Sidebar grouping | A relationship between composed gaps, not isolated constants | One composition model used by layout and test, accounting for outer pads; preserve the approved visual tuning | T-1041 added a relationship test, but its gap accounting and historical explanation need the correction above. |
+| Image/prose overlap | Geometry after a width transition without a text edit | Offscreen real text-view fixture: style narrow, resize wide, refresh through production path, then compare the image bottom with following prose | R39 below identifies the unpinned transition. Existing bitmap tests are useful but start and finish at one width. |
+
+**Suggested work order:** R39's width-transition regression first; correct the T-1041 explanation
+and gap model; let the in-flight hover fix land before judging its coverage; investigate the
+remaining handle event sequence under T-1036 rather than adding a focus-ring patch. Keep one
+full-screen integration scenario for final verification, but do not require it for every value test.
+
+30-second confirming commands (repository root):
+
+```sh
+git show 4c091c1 -- Cadence/macOS/Views/SidebarViewSupport.swift CadenceTests/CadenceSidebarLayoutTests.swift
+rg -n 'padding\(.vertical, 2\)|contextSectionBottomSpacing|contextHeaderTopPadding|contextHeaderBottomSpacing' Cadence/macOS/Views/Sidebar{View,Components,ViewSupport}.swift
+git diff -- Cadence/macOS/Views/TasksPanel.swift CadenceTests/TaskSurfaceFreezeSupportTests.swift
+sed -n '166,239p' Cadence/macOS/Views/macOSRootShellViews.swift
+```
+
+**Looks solid:** the hover guard deliberately preserves rows that stop matching while hovered;
+its wider-array behavior is not itself a bug. The new shared `naturalTodayRows` caller pairing is
+the right fix shape. The spacing test's relationship-based intent is also sound; repair its input
+model, not its purpose. No tests or event sequences were executed for this answer.
+
 ## R37 — Census the AppKit defaults this app inherits without stating
 
 The divider bug is an `NSView` subclass that accepts first responder and never sets `focusRingType`,
@@ -2687,6 +2739,81 @@ when the text is laid out, and never re-invalidated when it becomes known.
 Say whether this is reachable without a running app. If a test can load an image asset and ask the
 layout manager for a line fragment rect, that is a test nobody has written.
 
+ANSWER 2026-09-05 (R39):
+
+```text
+Tree read: 4c091c1
+Dirty files: 27 before this document edit
+Mode: working-tree source audit and arithmetic probe; no build/test/app launch
+Editor files cited here were clean at inspection
+```
+
+**P2 candidate: resizing the editor can separate reserved image height from drawn image height.**
+The source mechanism is MEASURED; its connection to the user's particular first-paint overlap is
+INFERRED, not reproduced. This is more specific than an assumed asynchronous image-load problem.
+
+**Reachable today:** load a note containing a standalone image, then widen its editor (including
+entering full screen or moving a split divider) without changing the text. The critical case is an
+image wider than the original content area. Initial zero/narrow-to-final layout can take the same
+path, but whether SwiftUI happens to restyle after the final sizing is not established here.
+
+**Where geometry enters and changes:**
+
+1. `Cadence/Services/MarkdownImageAssetService.swift:419-440` resolves `NSImage(data:)` and pixel
+   size synchronously. `MarkdownEditorView.swift:606-624` replaces render assets when the referenced
+   `(id, updatedAt)` map changes. This triggers restyling via `updateNSView:576-596`. There is no
+   asynchronous image-size callback in this path; a later asset-version update already has a
+   restyling route.
+2. `MarkdownEditorSupport.swift:720-745` computes fitted image height from the text view's width
+   **at styling time**, then stores it as both minimum and maximum paragraph line height.
+   Images are custom paragraph attributes/drawings here, not `NSTextAttachment` sizing callbacks.
+3. `MarkdownEditorView.swift:654-656,674-708` handles layout/width changes by resizing the text
+   container/view and calling `ensureLayout`. It does not recompute that stored paragraph height.
+   `updateNSView:582` also returns early for unchanged text and render assets, regardless of width.
+4. `MarkdownEditorTextViewDecorations.swift:191-199` recomputes the image's painted size using the
+   **current** bounds width. The sizing helper is shared, but its input can be from a different
+   layout pass. `CadenceLayoutManager` mainly draws decorations; the stale height is installed by
+   the stylist, not a custom line-fragment override in the layout-manager subclass.
+5. Typing calls `MarkdownEditorCoordinator.textDidChange:36-55`, then `applyStyling:411-425`.
+   That rewrites the paragraph height at the current width before refreshing layout. This explains
+   why any edit can repair the mismatch, without proving it caused the reported instance.
+
+**MEASURED arithmetic only:** with 18pt insets, the extra 24pt image allowance, a stored width of
+520, and a 640x360 image, a 320pt view reserves **164.25pt**; a 560pt view requires **299.25pt**.
+The 135pt difference is not corrected just by reusing the old fixed paragraph style. This probe
+does not exercise AppKit or establish exact overlap pixels:
+
+```sh
+ruby -e 'h=->(w){[520.0,[1.0,w-36.0-24.0].max].min*360.0/640.0+18}; p [h.call(320),h.call(560)]'
+sed -n '573,596p;650,708p' Cadence/macOS/Editor/MarkdownEditorView.swift
+sed -n '720,745p' Cadence/macOS/Editor/MarkdownEditorSupport.swift
+sed -n '191,199p' Cadence/macOS/Editor/MarkdownEditorTextViewDecorations.swift
+```
+
+**Existing tests and exact gap:** `MarkdownImageSizingTests.swift:386,405` already draws a real
+text view offscreen and compares the image/paragraph sizes. Its fixture at `:432-473` fixes the
+view at 560pt and styles after assigning that size. `MarkdownEditorDrawOrderTests.swift:53-83`
+does likewise. So the premise "nobody has written an image/layout-manager test" is false. What is
+missing is **style at width A, layout/draw at width B, with no intervening style/text edit**.
+
+**Suggested fix:** track the content width used to style image paragraphs. When it changes,
+recompute their reserved heights after setting the new width and before `ensureLayout`. Prefer
+a narrow image-paragraph refresh; a guarded restyle can be an initial repair. Prevent recursive
+layout, preserve selection/scroll, and do not synthesize `didChangeText`, an undo step, or a save
+for a geometry-only update. Preserve the asset-version invalidation route.
+
+**Acceptance checks for the implementing agent:** extend the existing offscreen fixture, not a
+new simulator harness. Resize narrow-to-wide and wide-to-narrow through
+`MarkdownEditorScrollSupport.refreshLayout`; verify the actual image rectangle fits its fragment
+and that the next prose fragment starts below it. Assert this before any keystroke, then after
+a normal restyle. Also cover zero/narrow initial size to final size, and asset arrival at a fixed
+width. Image width must exceed the initial available width so the test is not vacuous.
+
+**Dedup/looks solid:** searched `docs/TODO.md`, `docs/TODO_DONE.md` and this request's existing
+image coverage; R39 owns the report, so no second ticket was created. Keep the shared aspect
+helper and existing bitmap tests. The problem is temporal input drift, not differing aspect
+formulas. Confirmation of the user's exact first-paint sequence remains outstanding.
+
 ## R40 — Which of the 4,400 tests would fail if the app never launched?
 
 The blunt version of R36. If `main` were deleted and the app could not start, how many of the
@@ -2700,3 +2827,70 @@ more unit tests or a UI-test harness.
 Do not treat this as an argument against the source-scan suites. They have caught real defects all
 week. It is a question about **coverage of a different axis**, and the four user-found bugs are the
 evidence that the axis exists.
+
+ANSWER 2026-09-05 (R40):
+
+```text
+Tree read: 4c091c1
+Dirty files: 27 before this document edit
+Mode: source inventory only; no test execution, build, or app launch
+```
+
+**The literal premise is false: these unit tests are app-hosted.** MEASURED in both HEAD and the
+working tree, `Cadence.xcodeproj/project.pbxproj:920,938,945,963` sets `BUNDLE_LOADER=$(TEST_HOST)`
+and `TEST_HOST` to `Cadence.app/.../Cadence`. If the host cannot start, its tests cannot execute;
+there is no defensible claim that 4,400 of them would still *pass*. Deleting `@main` can fail the
+build before a test is reached. That is distinct from **a running process with no usable window**.
+
+**MEASURED declaration inventory, not runtime case counts:**
+
+- `scripts/test-suite-index.sh` reports **4,427 `@Test` declarations**, 52 with display names.
+  It strips comments/strings, but is not a compiler/runtime enumeration: conditional compilation,
+  parameterized cases, enabled/disabled traits, and current dirty files prevent treating this as
+  the exact count in a past 4,400-test run.
+- `CadenceUITests` has **4 XCTest test methods**. Two run without the interactive opt-in; two call
+  `requireInteractiveUITestsEnabled` and otherwise skip (`CadenceUITests.swift:29,40,94-98`).
+  All four are gated on an unlocked screen before launch.
+- The usual `-only-testing:CadenceTests` run selects **0 of these 4 UI methods**. The scheme itself
+  includes both targets (`Cadence.xcscheme:33-53`); the command's target restriction is material.
+
+**The complete app-UI launch list:**
+
+| Test | What it asserts |
+| --- | --- |
+| `CadenceUITests.swift:20 testLaunchesToTodayWithSeededSidebarLists` | Today button appears and three seeded sidebar lists exist. |
+| `CadenceUITestsLaunchTests.swift:22 testLaunch` | Foreground process, Today button, and a saved screenshot attachment. No image-baseline or layout comparison. |
+| `CadenceUITests.swift:29 testRightClickingSidebarListOpensEditPanel` | Opt-in: right-click list and find Edit Area. |
+| `CadenceUITests.swift:40 testSidebarListReorderPersistsAcrossRelaunch` | Opt-in: compare list frame Y positions, drag, relaunch, compare again. |
+
+None of these methods enters full screen, populates Today with rollover tasks, loads an image
+note, resizes its editor, or compares successive hover frames. These are measured omissions from
+the four bodies, not a claim about whether a future mutation would pass the entire suite.
+
+**Do not call the rest "no rendering coverage."** The unit target already has real AppKit work:
+`MarkdownEditorDrawOrderTests.swift:138,161,179,199` draws into bitmaps and tests selection/partial
+redraw; `MarkdownImageSizingTests.swift:386,405` checks drawn image geometry;
+`MarkdownTableHostedEditingTests.swift:115,126,296,332` calls its offscreen render helper.
+`MarkdownListSupportTests.swift:425-448` constructs an `NSWindow` for undo behavior. These are
+component tests, not exercises of the actual SwiftUI main-window composition.
+
+**Conclusion (REASONED):** the suite is strong evidence about many source, model and component
+contracts, but a green unit run is not evidence that the full-screen app is usable. An exact
+"would still pass with a blank root" count requires a controlled mutation run and is deliberately
+not invented here. Even the 4/4,431 declaration fraction is not a visual-coverage percentage.
+
+30-second confirming commands:
+
+```sh
+scripts/test-suite-index.sh | tail -n 2
+git show HEAD:Cadence.xcodeproj/project.pbxproj | rg -n 'TEST_HOST|BUNDLE_LOADER'
+rg -n '^\s*func test\w+|requireInteractiveUITestsEnabled|app\.launch\(' CadenceUITests
+rg -n 'cacheDisplay\(|NSWindow\(' CadenceTests
+```
+
+**Suggested next work:** add the deterministic width/state-transition guards from R39/R36 first.
+Then extend the existing opt-in UI harness with one isolated-store, **full-screen** scenario that
+seeds overdue/rollover tasks and an image note, visits Today, and compares geometry before/after
+resize and hover release. Reuse the test-host lock and private-store setup; do not add another
+parallel app runner. Keep process-start, surface-existence, geometry, and pixel assertions labeled
+separately. No production patch follows merely from this coverage inventory.

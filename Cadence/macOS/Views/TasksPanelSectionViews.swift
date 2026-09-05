@@ -64,15 +64,15 @@ enum TasksPanelMetrics {
 /// rows flush to the divider.
 private let todayRowLeadingInset: CGFloat = TasksPanelMetrics.horizontalInset
 
-/// One of Today's intent groups — Overdue / Past Do / Due Today / Planned Today — and the day's
-/// Completed group under them.
+/// One of Today's **list** groups — an area, a project, or the Inbox — and the day's Completed
+/// group under them.
 ///
-/// **The sections say why a task is in front of you, not where it lives.** macOS's Today grouped by
-/// list (one flat tier of area/project groups in sidebar order) while both iOS Todays grouped by
-/// intent, so the same day read as an inventory on one platform and as a plan on the other. The
-/// intent vocabulary wins, and it wins from `CadenceTaskQuerySupport.todayGroups` — the function
-/// iOS already called — rather than from a second macOS copy of the same four predicates, which is
-/// what `todayDateSections` was: the same buckets under the names "Past Due" and "Do Today".
+/// **The sections say where the work lives, and that is the only axis left.** The type is still
+/// called `…IntentSectionView` from when it drew four date buckets; those went to
+/// `CadenceTaskQuerySupport.todayListGroups`, and the last date-shaped group with them — see
+/// `TasksPanel.todayGroupSections` for the user's words. What replaced the intent axis is the sort:
+/// `compareTasksForCurrentSort` leads with `todayTaskSortRank`, so a list still reads past-do, then
+/// due-today, then do-today, with no heading spent saying so.
 ///
 /// **The heading is `TaskListGroupHeader` — macOS's, not the shared eyebrow (T-605).** Today drew
 /// `CadenceTaskGroupHeading`: a 10pt uppercase eyebrow with one count capsule and no accent bar,
@@ -113,8 +113,10 @@ struct TasksPanelIntentSectionView: View {
     /// Today's own `yyyy-MM-dd`, handed down rather than recomputed per section, so every group on
     /// the page splits its counts against one day.
     let todayKey: String
-    /// The panel's surface answer, narrowed by the group's own — see `TasksPanel.options` and
-    /// `CadenceTodayTaskGroup.showsContainerChip`.
+    /// **`false` at the one call site**, and the header above these rows is why: it prints the
+    /// list's name, so a chip under it is that name twice. It stays a parameter rather than becoming
+    /// a constant because this view is the panel's section, not Today's only possible section — see
+    /// `TasksPanel.todayGroupSections`, which says what it passes and why.
     let showsContainer: Bool
     let contexts: [Context]
     let areas: [Area]
@@ -123,8 +125,9 @@ struct TasksPanelIntentSectionView: View {
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     let taskDragPayload: (AppTask) -> String
-    /// `nil` for a group defined by a day that has already gone by — there is nothing a drop could
-    /// mean for "Overdue". `CadenceTaskDropSupport.dropKey(forGroup:)` decides, for both platforms.
+    /// Non-`nil` for every group Today draws now — they are all lists, and a list on today is a
+    /// real destination. Still optional because `CadenceTaskDropSupport.dropKey(forGroup:)` is what
+    /// decides, for both platforms, and it still answers `nil` for identities that name no place.
     let onDropOnSectionPayload: ((String) -> Bool)?
     let onDropOnTaskPayload: (String, AppTask) -> Bool
 
@@ -147,14 +150,15 @@ struct TasksPanelIntentSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    // `.standard`, not `.todayGrouped`: that style suppresses the do-date pill as
-                    // well as the list chip, and the do date is a thing Today's rows still have to
-                    // say — a list group holds work due today and work merely planned for it, and
-                    // the row is the only thing that tells them apart. The **list** chip is
-                    // withheld by `showsContainer` instead (`CadenceTodayTaskGroup`
-                    // .showsContainerChip), which is off inside a list group and on inside Overdue,
-                    // so the one duplication `.todayGrouped` existed to avoid is still avoided
-                    // without losing the date.
+                    // `.standard`, not `.todayGrouped`: that style drops the do-date pill for the
+                    // whole section, and the do date is a thing Today's rows still have to say — a
+                    // list group holds work due today, work merely planned for it, and work planned
+                    // for a day already gone, and the pill is the only thing that tells them apart.
+                    //
+                    // What Today withholds instead is **the one day it has already named**:
+                    // `dayAlreadyStatedBySurface: todayKey` drops a pill that would read "Today" on
+                    // the page called Today, and leaves every other reading — including a red "3
+                    // days ago" — exactly where it was. See `MacTaskRow.dayAlreadyStatedBySurface`.
                     //
                     // Both insets are named rather than left to default. `TaskListInteractiveRow`
                     // defaults to the **list detail's** 52, which clears leading furniture Today's
@@ -164,6 +168,7 @@ struct TasksPanelIntentSectionView: View {
                         task: task,
                         style: .standard,
                         showsContainer: showsContainer,
+                        dayAlreadyStatedBySurface: todayKey,
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
@@ -178,20 +183,22 @@ struct TasksPanelIntentSectionView: View {
         }
     }
 
-    /// The split the other three macOS task surfaces already show, from the same two functions
-    /// they call — `TasksPanelSupport.overdueCount` / `.regularCount`, which exclude completed
-    /// tasks so a ticked-off row with a past due date stops inflating the flag.
+    /// The two figures the other three macOS task surfaces already show, from the same two
+    /// functions they call — `TasksPanelSupport.overdueCount` / `.openCount`, which exclude
+    /// completed tasks so a ticked-off row with a past due date stops inflating either.
     ///
-    /// Inside "Overdue" the split degenerates — every open row is late, so the flag holds the whole
-    /// group and the neutral capsule reads `0`. That is not a new state: a list group on All Tasks
-    /// whose open work is all overdue has read exactly that since the header existed. Special-casing
-    /// it here would put a fifth rule in the one place this ticket is removing a rule from.
+    /// **They are independent questions now.** `openCount` used to be `regularCount` and subtracted
+    /// the flag's figure, so a group whose open work was all late read `0 tasks` over its own rows —
+    /// which the old "Overdue" section hit on every render, and which a *list* group hits the moment
+    /// every task it has left is past its date. That comment used to sit here calling the state
+    /// acceptable because All Tasks reached it too; All Tasks reaching a wrong number is not a
+    /// reason for Today to.
     private var header: some View {
         TaskListGroupHeader(
             title: title,
             isCollapsed: isCollapsed,
             overdueCount: TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey),
-            regularCount: TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey),
+            taskCount: TasksPanelSupport.openCount(in: tasks),
             accent: accent,
             onToggle: onToggle
         )
@@ -200,8 +207,14 @@ struct TasksPanelIntentSectionView: View {
 
 struct TasksPanelCompletedSectionView: View {
     let tasks: [AppTask]
-    /// The panel's surface answer — see `TasksPanel.options`.
+    /// The panel's surface answer — see `TasksPanel.options`. **True here and false in the groups
+    /// above**, which is not an inconsistency: this section is flat, so its rows are the only thing
+    /// that can say which list a finished task came from.
     let showsContainer: Bool
+    /// Today's own `yyyy-MM-dd`, for the same reason the groups above take it — see
+    /// `MacTaskRow.dayAlreadyStatedBySurface`. A task finished today and planned for today does not
+    /// get to say "Today" on the Today page just because it is in the Completed section.
+    let todayKey: String
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -243,6 +256,7 @@ struct TasksPanelCompletedSectionView: View {
                         task: task,
                         style: .standard,
                         showsContainer: showsContainer,
+                        dayAlreadyStatedBySurface: todayKey,
                         contexts: contexts,
                         areas: areas,
                         projects: projects,

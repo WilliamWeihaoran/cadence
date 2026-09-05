@@ -90,7 +90,7 @@ struct iOSTodayTaskSections: View {
         )
     }
 
-    /// `CadenceTaskQuerySupport.todayGroups` drops its empty groups, so an empty list of groups is
+    /// `CadenceTaskQuerySupport.todayListGroups` drops its empty groups, so an empty list of groups is
     /// an empty day — the two hosts each re-derived this from their own `todayTasks` array instead,
     /// which is one more chance for them to disagree about when Today is empty.
     ///
@@ -208,23 +208,27 @@ struct iOSTodayTaskSections: View {
     @ViewBuilder
     private var groupStack: some View {
         // Asked of the surface rather than decided here, so the phone's Today and the iPad's cannot
-        // answer "does a row name its list" differently — the same reason Inbox asks.
+        // answer "does a row name its list" differently — the same reason Inbox asks. Read by the
+        // Completed group below, which is flat; the list groups above it answer `false` outright.
         let showsContainer = CadenceTaskSurfaceOptions.showsContainerChip(on: .today)
 
         let stack = VStack(alignment: .leading, spacing: metrics.groupSpacing) {
             ForEach(taskGroups) { group in
-                // A list group accepts a dropped `+` and inherits its list; Overdue is defined by a
-                // day that has gone by, so it does not light up.
-                // `CadenceTaskDropSupport.dropKey(forGroup:)` decides, once, for both layouts.
+                // Every group here is a list, so every group accepts a dropped `+` and inherits
+                // its list. `CadenceTaskDropSupport.dropKey(forGroup:)` decides, once, for both
+                // layouts.
                 //
-                // `showsContainer` is `&&`-ed with the group's own answer rather than replaced by
-                // it: the surface still decides whether Today names lists at all, and the group
-                // then withholds the chip inside a header that already prints the list's name.
+                // **`showsContainer: false`, flatly.** This was `showsContainer &&
+                // group.showsContainerChip`, and the group's half was exactly "am I Overdue" — the
+                // one group on Today drawn from every list at once, where the chip was the only
+                // thing saying where the work lived. With Overdue gone every header prints its own
+                // list's name, so a chip under it is that name twice. The surface option is still
+                // read, by the Completed group, which is flat and does need it.
                 iOSTaskGroupSection(
                     title: group.title,
                     color: group.accent,
                     tasks: group.tasks,
-                    showsContainer: showsContainer && group.showsContainerChip,
+                    showsContainer: false,
                     dropIdentity: group.dropIdentity
                 )
             }

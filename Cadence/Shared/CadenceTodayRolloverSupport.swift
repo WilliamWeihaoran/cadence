@@ -31,9 +31,9 @@ enum CadenceTodayRolloverSupport {
     /// The over-do bucket: open work planned for a day that has gone by, on which no *due* date has
     /// a prior claim.
     ///
-    /// A due date outranks a do date everywhere on Today — `CadenceTaskQuerySupport.todayGroups`
+    /// A due date outranks a do date everywhere on Today — `CadenceTaskQuerySupport.todayRank`
     /// hands overdue and due-today their tasks before `.pastDo` sees what is left — so a task that
-    /// is both due yesterday and planned for yesterday belongs to Overdue and is not something the
+    /// is both due yesterday and planned for yesterday reads as overdue and is not something the
     /// banner offers to reschedule.
     ///
     /// Safe to call with either the whole store or an already-Today-filtered array: the extra

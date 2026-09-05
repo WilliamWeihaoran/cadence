@@ -453,7 +453,7 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     /// settled work — is `isTodayWork(todayKey:)`.
     ///
     /// **A due date outranks a do date**, so `.dueToday` is decided before `.pastDo` and a task
-    /// due today and planned for yesterday reads as due-today. That is the order `todayGroups` and
+    /// due today and planned for yesterday reads as due-today. That is the order `todayRank` and
     /// `dateBuckets` already had, and the one macOS's deleted local rank got backwards.
     nonisolated func todayStanding(todayKey: String) -> CadenceTodayStanding? {
         if !dueDate.isEmpty && dueDate < todayKey { return .pastDue }

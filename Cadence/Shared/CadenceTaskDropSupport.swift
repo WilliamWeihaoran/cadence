@@ -110,10 +110,9 @@ enum CadenceTaskDropSupport {
             switch kind {
             // Both of these are defined by a day in the past. See `dateValue`.
             case .overdue, .pastDo: return nil
-            // On the Today screen these two buckets are exact: `todayGroups` hands `dueToday`
-            // every task whose `dueDate` is today, and — because the overdue and due-today buckets
-            // have already claimed everything holding a due date — `plannedToday` only ever holds
-            // tasks whose `scheduledDate` is today.
+            // These four named Today's date sections while it had them. Today groups by list only
+            // now, so nothing in the app builds a `.todayDate`; the keys stay because this table is
+            // the vocabulary a drop speaks, not a list of live headers.
             case .dueToday: return "due:today"
             case .plannedToday: return "date:today"
             }

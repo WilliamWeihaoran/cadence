@@ -7,7 +7,6 @@ import SwiftData
 struct TasksPanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(TaskCreationManager.self) private var taskCreationManager
-    @Environment(ListNavigationManager.self) private var listNavigationManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
@@ -102,12 +101,7 @@ struct TasksPanel: View {
     /// the value down (`body` does exactly that) — the eleven forwarding computed properties
     /// this replaced each rebuilt the whole thing on every access.
     private var derivedState: TasksPanelDerivedState {
-        TasksPanelDerivedState(
-            allTasks: allTasks,
-            areas: areas,
-            projects: projects,
-            todayKey: todayKey
-        )
+        TasksPanelDerivedState(allTasks: allTasks, todayKey: todayKey)
     }
 
     /// `CadenceTodayRolloverSupport.isNoticeVisible`, the same predicate iOS's Today asks. This
@@ -154,15 +148,19 @@ struct TasksPanel: View {
 
     var body: some View {
         let derived = derivedState
+        // **Asked once per body pass, and handed to both halves.** The rows and the hover freeze
+        // must agree about whether the rollover banner is up, because the banner withholds rows —
+        // see `naturalTodayRows`.
+        let showsRollover = shouldShowRolloverNotice(derived)
 
         // Split into two statements purely to keep the type checker inside its time budget —
         // one chain off a `let`-bound `derived` was enough to blow it.
-        let shell = panelShell(derived: derived)
+        let shell = panelShell(derived: derived, showsRollover: showsRollover)
             .background(
                 Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
             )
             .background(Theme.surface)
-            .background { hoverFreezeObserver(derived: derived) }
+            .background { hoverFreezeObserver(derived: derived, showsRollover: showsRollover) }
 
         return shell
             .onAppear {
@@ -173,7 +171,7 @@ struct TasksPanel: View {
             }
     }
 
-    private func panelShell(derived: TasksPanelDerivedState) -> some View {
+    private func panelShell(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
                 headerSection(derived: derived)
@@ -181,7 +179,7 @@ struct TasksPanel: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-                    todayOverviewSections(derived: derived)
+                    todayOverviewSections(derived: derived, showsRollover: showsRollover)
                     completedSection(derived: derived)
                     emptyStateSection(derived: derived)
                 }
@@ -209,9 +207,7 @@ struct TasksPanel: View {
     /// forwarder used to sit above this holding `switch mode { case .todayOverview: }`, and it went
     /// with `TasksPanelMode` itself (T-564(a)).
     @ViewBuilder
-    private func todayOverviewSections(derived: TasksPanelDerivedState) -> some View {
-        let showsRollover = shouldShowRolloverNotice(derived)
-
+    private func todayOverviewSections(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {
         if let reorderFailureNotice {
             CadenceInlineFailureNotice(text: reorderFailureNotice)
                 .padding(.horizontal, TasksPanelMetrics.horizontalInset)
@@ -226,42 +222,43 @@ struct TasksPanel: View {
                 rollOverPastDoTasks()
             }
         }
-        if !derived.overdueListSummaries.isEmpty {
-            overdueListsSection(summaries: derived.overdueListSummaries)
-        }
-        if !derived.overdueSectionSummaries.isEmpty {
-            overdueSectionsSection(summaries: derived.overdueSectionSummaries)
-        }
+        // `PAST DUE LISTS` and `PAST DUE SECTIONS` were two bands of cards here. They are gone with
+        // the Overdue group, as one decision rather than two: *"remove these past due list displays
+        // from today's view"*. Today was stating overdue-ness three ways — a per-task section, these
+        // per-list and per-column summaries, and the red flag on the row itself — and only the last
+        // says it where you can act on it. The cards also navigated *away* from the day, which is
+        // the opposite of what a triage page is for.
+        //
+        // `CadenceTodayOverdueSummarySupport` and its two cards are untouched: **iOS's Today still
+        // draws both bands**, so this is a macOS call-site removal, not a component deletion.
 
         todayGroupSections(derived: derived, showsRollover: showsRollover)
     }
 
-    /// Today's groups, and the whole of them: **Overdue, then the day's work by list** (T-305).
+    /// Today's groups, and the whole of them: **the day's work, by list** — one axis, no others.
     ///
-    /// They come from `CadenceTaskQuerySupport.todayGroups`, the shared function both iOS Todays
-    /// already called, so the page's shape is decided once for both platforms. It used to be four
-    /// date buckets — Overdue, Past Do, Due Today, Planned Today; the last of those restated the
-    /// page, and Today was the app's only task surface not grouped by list. What the date axis is
-    /// still worth is inside each group: `compareTasksForCurrentSort` leads with
-    /// `todayTaskSortRank`, so a list reads past-do, then due-today, then do-today without four
-    /// headings to say so.
+    /// They come from `CadenceTaskQuerySupport.todayListGroups`, the shared function both iOS
+    /// Todays call, so the page's shape is decided once for both platforms. It was four date
+    /// buckets (Overdue, Past Do, Due Today, Planned Today), then one date bucket over the list
+    /// groups (Overdue), and is now none: *"there shouldn't be an overdue/overdo section but all
+    /// tasks should be grouped by lists"*.
     ///
-    /// One section component for both kinds of group, because a group is a group: what changes is
-    /// the tint (the list's own colour, or Overdue's red), whether the rows still name their list
-    /// (`showsContainerChip` — off under a header that already prints the name), and whether the
-    /// header accepts a dropped `+`.
+    /// **Nothing is lost with the red section.** A missed deadline is stated by the row's own flag,
+    /// which goes red on both platforms and is where every other surface in the app states it; the
+    /// section said the same thing a second time, and paid for it by splitting a list's work across
+    /// two headings, so a list could be represented twice on one page. What the date axis is still
+    /// worth is *inside* a group: `compareTasksForCurrentSort` leads with `todayTaskSortRank`, so a
+    /// list reads past-do, then due-today, then do-today without a heading to say so.
     ///
     /// The rollover banner still withholds the over-do tasks it is offering to roll. Those rows are
-    /// now missing from *their lists'* groups rather than from a "Past Do" section, which is what
-    /// makes confirming the roll do something visible.
+    /// missing from *their lists'* groups, which is what makes confirming the roll do something
+    /// visible — and the hover freeze is fed the same withheld array, which is the other half of
+    /// this change. See `naturalTodayRows`.
     @ViewBuilder
     private func todayGroupSections(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {
-        let tasks = applyFreeze(
-            derived.todayGroupedTaskItems(showRolloverNotice: showsRollover)
-                .sorted(by: compareTasksForCurrentSort)
-        )
+        let tasks = applyFreeze(naturalTodayRows(derived: derived, showsRollover: showsRollover))
 
-        ForEach(CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey, contexts: contexts)) { group in
+        ForEach(CadenceTaskQuerySupport.todayListGroups(from: tasks, contexts: contexts)) { group in
             let dropKey = CadenceTaskDropSupport.dropKey(forGroup: group.dropIdentity)
 
             TasksPanelIntentSectionView(
@@ -269,7 +266,13 @@ struct TasksPanel: View {
                 accent: group.accent,
                 tasks: group.tasks,
                 todayKey: todayKey,
-                showsContainer: options.showsContainerChip && group.showsContainerChip,
+                // **`false`, flatly.** This was `options.showsContainerChip &&
+                // group.showsContainerChip`, and the group's half was exactly "am I Overdue".
+                // Overdue was the one group drawn from every list at once, so there the chip was
+                // the only thing saying where the work lived; every group left is a list, and its
+                // header prints that list's name. `options.showsContainerChip` is still read — by
+                // `completedSection`, which is flat and does need it.
+                showsContainer: false,
                 contexts: contexts,
                 areas: areas,
                 projects: projects,
@@ -318,6 +321,7 @@ struct TasksPanel: View {
                 // rather than a shorter list.
                 tasks: CadenceTaskSurfaceOptions.completedRows(from: derived.doneTasks, tier: .desktop),
                 showsContainer: options.showsContainerChip,
+                todayKey: todayKey,
                 contexts: contexts,
                 areas: areas,
                 projects: projects,
@@ -351,10 +355,35 @@ struct TasksPanel: View {
         }
     }
 
-    private func hoverFreezeObserver(derived: TasksPanelDerivedState) -> some View {
+    /// **The rows Today draws, in natural order — and therefore the only list the hover freeze may
+    /// snapshot.**
+    ///
+    /// One function because there were two, and the disagreement between them was the flicker the
+    /// user reported: "while i hover over different sections of tasks, some sections just glitch in
+    /// and out … i think it's the tasks that are being rolled over that are appearing and
+    /// disappearing".
+    ///
+    /// `todayGroupSections` drew `todayGroupedTaskItems`, which **withholds** the tasks the rollover
+    /// banner is offering to roll. `hoverFreezeObserver` was handed `todayEligibleTasks`, which
+    /// **includes** them. `applyFrozenTaskOrder` deliberately does not intersect the frozen order
+    /// with the live list — a row that stops matching while you hover stays put instead of vanishing
+    /// under the pointer (T-342) — so a frozen order built from the wider array put every withheld
+    /// row back at the head of the page for as long as the freeze held, and took them away again
+    /// when it released. `HoveredTaskManager` nils its hovered task 80ms after the pointer leaves a
+    /// row, which a move between two sections comfortably exceeds, so the pair captured and released
+    /// once per section boundary: rows appearing and disappearing as the pointer crossed.
+    ///
+    /// The freeze mechanism is fine and is unchanged. What was wrong was feeding it a different
+    /// array from the one it freezes.
+    private func naturalTodayRows(derived: TasksPanelDerivedState, showsRollover: Bool) -> [AppTask] {
+        derived.todayGroupedTaskItems(showRolloverNotice: showsRollover)
+            .sorted(by: compareTasksForCurrentSort)
+    }
+
+    private func hoverFreezeObserver(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {
         HoverFreezeObserver(
             frozenOrder: $frozenTaskOrder,
-            naturalTasks: derived.todayEligibleTasks.sorted(by: compareTasksForCurrentSort)
+            naturalTasks: naturalTodayRows(derived: derived, showsRollover: showsRollover)
         )
     }
 
@@ -391,45 +420,6 @@ struct TasksPanel: View {
         .padding(.horizontal, TasksPanelMetrics.horizontalInset)
         .padding(.bottom, 10)
         .background(Theme.surface)
-    }
-
-    private func overdueListsSection(summaries: [CadenceTodayOverdueListSummary]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            overdueSectionHeading(CadenceTodayOverdueSummarySupport.listsHeading, count: summaries.count)
-
-            VStack(spacing: 8) {
-                ForEach(summaries) { summary in
-                    CadenceTodayOverdueListCard(summary: summary) {
-                        openOverdueListSummary(summary)
-                    }
-                }
-            }
-            .padding(.horizontal, TasksPanelMetrics.horizontalInset)
-            .padding(.bottom, 10)
-        }
-    }
-
-    private func overdueSectionsSection(summaries: [CadenceTodayOverdueSectionSummary]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            overdueSectionHeading(CadenceTodayOverdueSummarySupport.sectionsHeading, count: summaries.count)
-
-            VStack(spacing: 8) {
-                ForEach(summaries) { summary in
-                    CadenceTodayOverdueSectionCard(summary: summary) {
-                        openOverdueSectionSummary(summary)
-                    }
-                }
-            }
-            .padding(.horizontal, TasksPanelMetrics.horizontalInset)
-            .padding(.bottom, 10)
-        }
-    }
-
-    /// The shared heading, with this column's own gutter. Neutral rather than `Theme.red` — see
-    /// `CadenceTodayOverdueSummaryHeading`, which iOS's Today draws too.
-    private func overdueSectionHeading(_ title: String, count: Int) -> some View {
-        CadenceTodayOverdueSummaryHeading(title: title, count: count)
-            .padding(.horizontal, TasksPanelMetrics.horizontalInset)
     }
 
     /// **Today ranks by urgency first, then by whatever the Sort chip says** — and the `!enableControls`
@@ -476,15 +466,6 @@ struct TasksPanel: View {
             collapsedGroupIDs.insert(id)
         }
     }
-
-    private func openOverdueListSummary(_ summary: CadenceTodayOverdueListSummary) {
-        TasksPanelSupport.openOverdueListSummary(summary, listNavigationManager: listNavigationManager)
-    }
-
-    private func openOverdueSectionSummary(_ summary: CadenceTodayOverdueSectionSummary) {
-        TasksPanelSupport.openOverdueSectionSummary(summary, listNavigationManager: listNavigationManager)
-    }
-
 
     private func taskDragPayload(for task: AppTask) -> String {
         TasksPanelSupport.taskDragPayload(for: task)

@@ -48,7 +48,7 @@ struct InboxAppleRemindersSectionView: View {
                 isCollapsed: false,
                 // **T-264.** `nil`, not `0`, whenever Cadence has not been allowed to look —
                 // the same `state.isConnected` gate `iOSInboxRemindersSection` reads.
-                regularCount: state.isConnected ? reminders.count : nil,
+                taskCount: state.isConnected ? reminders.count : nil,
                 accent: Theme.purple,
                 isToggleEnabled: false,
                 onToggle: { }

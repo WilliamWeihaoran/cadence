@@ -642,9 +642,11 @@ enum CadenceCommentSymbolClaim {
         "Cadence/iOS/iOSCalendarMetrics.swift `CadencePageHeaderMetrics.iconSize`",
         "Cadence/iOS/iOSListNotesView.swift `CadenceListNoteSupport.firstOrCreateNote`",
         "Cadence/iOS/iOSSchedulePanelCopy.swift `CadenceTodayPresentationSupport.emptyScheduleHint`",
+        "Cadence/iOS/iOSTaskRowActionViews.swift `CadenceTaskMutationSupport.setEstimatedMinutes`",
         "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift `SchedulingActions.createTask`",
         "Cadence/macOS/Views/SettingsSupportViews.swift `SidebarTabEditorSheet.settingsPanelRow`",
         "Cadence/macOS/Views/SettingsTemplatesSection.swift `SettingsAISection.settingsField`",
+        "Cadence/macOS/Views/TasksPanelComponents.swift `CadenceTaskMutationSupport.setEstimatedMinutes`",
         "Cadence/macOS/Views/TasksPanelSupport.swift `TasksPanel.taskSections`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.subGoalCount`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.taskCount`",
@@ -653,6 +655,8 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `CadenceListNoteSupport.firstOrCreateNote`",
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `ListNotesView.normalizedFolderPath`",
         "CadenceTests/CadenceNoteTitleSyncSurfaceTests.swift `NoteEditorPane.syncTitleFromH1IfNeeded`",
+        "CadenceTests/CadenceTasksPanelMetricsTests.swift `TasksPanelCompletedSectionView.allTasks`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `CadenceTodayPresentationSupport.overdueSectionTitle`",
         "CadenceTests/CadenceTodayUnificationTests.swift `TasksPanel.taskSections`",
         "CadenceTests/MarkdownLineBreakSupportTests.swift `MarkdownQuoteSupport.continuation`",
         "CadenceTests/MarkdownListSupportTests.swift `MarkdownListSupport.continuation`",
@@ -738,7 +742,7 @@ enum CadenceCommentSymbolClaim {
         #expect(Set(tombstones).isDisjoint(with: Set(stale)))
         #expect(tombstones == tombstones.sorted())
         #expect(stale == stale.sorted())
-        #expect(tombstones.count == 32)
+        #expect(tombstones.count == 36)
         #expect(stale.count == 0)
     }
 

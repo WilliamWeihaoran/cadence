@@ -66,8 +66,6 @@ struct TodayScopeParityTests {
 
         let derived = TasksPanelDerivedState(
             allTasks: tasks,
-            areas: [],
-            projects: [],
             todayKey: todayKey
         )
 
@@ -85,18 +83,21 @@ struct TodayScopeParityTests {
             sortMode: .listOrder
         )
 
-        let groups = CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey, contexts: [])
+        let groups = CadenceTaskQuerySupport.todayListGroups(from: tasks, contexts: [])
 
-        #expect(groups.map(\.title) == ["Overdue", "Inbox"])
+        // One group, because every one of these tasks is unfiled. The past-due row used to be lifted
+        // into an `Overdue` group ahead of Inbox; it is in Inbox with the rest of the day now, and
+        // the rank still puts it first inside it.
+        #expect(groups.map(\.title) == ["Inbox"])
         #expect(groups.map { $0.tasks.map(\.title) } == [
-            ["Past due"],
-            ["Past do", "Due today", "Do today"],
+            ["Past due", "Past do", "Due today", "Do today"],
         ])
     }
 
     /// A due date outranks a do date in both implementations, so a task that is both past due and
-    /// past do is counted once, under the due bucket.
-    @Test func aTaskThatIsBothPastDueAndPastDoIsGroupedOnceUnderOverdue() {
+    /// past do appears once. With Today grouped by list only, "once" is a claim about the *groups*
+    /// rather than about which date bucket claimed it.
+    @Test func aTaskThatIsBothPastDueAndPastDoIsGroupedOnce() {
         let both = makeTask("Both", due: "2026-08-09", scheduled: "2026-08-10")
         let tasks = CadenceTaskQuerySupport.activeTodayTasks(
             from: [both],
@@ -106,8 +107,9 @@ struct TodayScopeParityTests {
 
         #expect(tasks.count == 1)
 
-        let groups = CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey, contexts: [])
-        #expect(groups.map(\.identity) == [.overdue])
+        let groups = CadenceTaskQuerySupport.todayListGroups(from: tasks, contexts: [])
+        #expect(groups.map(\.listKey) == ["inbox"])
+        #expect(groups.flatMap { $0.tasks.map(\.id) } == [both.id])
     }
 
     /// The flat sort still ranks the day past due → past do → due today → do today. Since T-305 it

@@ -288,6 +288,82 @@ struct TaskSurfaceFreezeSupportTests {
         #expect(state.primarySnapshot == nil)
     }
 
+    // MARK: - The freeze source must be the rendered list (Today's rollover flicker)
+
+    /// **The reported flicker, as a value.** *"while i hover over different sections of tasks, some
+    /// sections just glitch in and out … i think it's the tasks that are being rolled over that are
+    /// appearing and disappearing."*
+    ///
+    /// macOS Today draws `todayGroupedTaskItems`, which **withholds** the tasks the rollover banner
+    /// is offering to roll; the hover-freeze observer was handed `todayEligibleTasks`, which
+    /// **includes** them. This is what that pairing does, and it is not a fault in the freeze:
+    /// `applyFrozenTaskOrder` holds a frozen row that has left the live list on purpose (T-342), so
+    /// a snapshot of the wider array is an instruction to put every withheld row back.
+    ///
+    /// Asserted over the two named derivations rather than over the panel, because it is a claim
+    /// about *them*: `todayEligibleTasks` is not a safe freeze source for this page and cannot
+    /// become one. `todaysHoverFreezeIsHandedTheRowsThePageDraws` below pins which one the panel
+    /// actually passes.
+    @Test func freezingTodaysWiderArrayPutsTheWithheldRolloverRowsBackOnThePage() {
+        let todayKey = "2026-09-05"
+        let pastDo = task(title: "yesterday's plan", order: 0)
+        pastDo.scheduledDate = "2026-09-04"
+        let dueToday = task(title: "due today", order: 1)
+        dueToday.dueDate = todayKey
+
+        let derived = TasksPanelDerivedState(allTasks: [pastDo, dueToday], todayKey: todayKey)
+
+        // The banner is up, so the page is deliberately one row short.
+        #expect(derived.overdoTasks.map(\.id) == [pastDo.id])
+        let drawn = derived.todayGroupedTaskItems(showRolloverNotice: true)
+        #expect(drawn.map(\.id) == [dueToday.id])
+        // ...and the wider array the observer used to be handed is not.
+        #expect(Set(derived.todayEligibleTasks.map(\.id)) == Set([pastDo.id, dueToday.id]))
+
+        let whileHovering = applyFrozenTaskOrder(drawn, frozen: derived.todayEligibleTasks)
+        #expect(
+            whileHovering.map(\.id) == [pastDo.id, dueToday.id],
+            "a freeze taken from `todayEligibleTasks` reinstates the withheld row — this is the flicker"
+        )
+
+        // Freezing what the page draws is inert, which is what a freeze is supposed to be.
+        let frozenOnTheDrawnRows = applyFrozenTaskOrder(drawn, frozen: drawn)
+        #expect(frozenOnTheDrawnRows.map(\.id) == drawn.map(\.id))
+    }
+
+    /// The call site, pinned: `hoverFreezeObserver` must be handed the same expression
+    /// `todayGroupSections` draws, and both now read it from `naturalTodayRows`.
+    ///
+    /// A source scan because the panel is a SwiftUI view and the wiring is a private method — the
+    /// bug was never in a function a test could call, it was in *which* function was called. Scoped
+    /// to the two declaration bodies rather than the file, so an unrelated `todayEligibleTasks`
+    /// elsewhere in `TasksPanel` cannot answer it.
+    @Test func todaysHoverFreezeIsHandedTheRowsThePageDraws() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanel.swift")
+        let code = CadenceSourceScan.strippingComments(source)
+        #expect(code != source, "self-check: the comment stripper ran")
+
+        let observer = try #require(
+            CadenceSourceScan.declarationBody("private func hoverFreezeObserver(", in: code)
+        )
+        let sections = try #require(
+            CadenceSourceScan.declarationBody("private func todayGroupSections(", in: code)
+        )
+        let rows = try #require(
+            CadenceSourceScan.declarationBody("private func naturalTodayRows(", in: code)
+        )
+
+        #expect(observer.contains("naturalTodayRows("), "the freeze must snapshot the rendered rows")
+        #expect(sections.contains("naturalTodayRows("), "and the rows must come from the same call")
+        #expect(
+            !observer.contains("todayEligibleTasks"),
+            "`todayEligibleTasks` includes the rows the rollover banner withholds"
+        )
+        // Non-vacuity, and the other half of the pairing: the one derivation both halves share is
+        // the withholding one.
+        #expect(rows.contains("todayGroupedTaskItems(showRolloverNotice:"))
+    }
+
     // MARK: - Helpers
 
     private func task(title: String, order: Int) -> AppTask {

@@ -37,15 +37,10 @@ enum CadenceTodayPresentationSupport {
         )
     }
 
-    /// The one heading on Today that is not a list's name, and the only date-shaped group left on
-    /// the page (T-305). It stays at the top because a missed deadline outranks where the work
-    /// lives; everything under it is grouped by list.
-    static let overdueSectionTitle = "Overdue"
-
-    /// And its tint. Computed, not stored: `Theme.red` is selectable (T-15) and a `static let`
-    /// would freeze on the palette active at first access — the same rule
-    /// `completedSectionAccent` below follows.
-    static var overdueSectionAccent: Color { Theme.red }
+    // `overdueSectionTitle` and `overdueSectionAccent` were here — the title and tint of the one
+    // heading on Today that was not a list's name. The user removed the section, and neither
+    // constant had a second reader, so both went with it rather than staying as a palette entry for
+    // a heading that no longer exists. A task's lateness is stated by its row's own red flag.
 
     /// The heading over the day's finished work, on every Today. macOS said "Completed" and iOS
     /// said "Completed Today" for the same section over the same predicate — `completedAt` inside

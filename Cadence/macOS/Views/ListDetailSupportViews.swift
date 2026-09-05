@@ -18,7 +18,7 @@ struct ListTasksGroupSectionView: View {
     let group: ListTasksGroup
     let isCollapsed: Bool
     let overdueCount: Int?
-    let regularCount: Int
+    let taskCount: Int
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     /// Answers whether the new order is in the store (T-869). `Void` until then, over a renumber
@@ -31,7 +31,7 @@ struct ListTasksGroupSectionView: View {
                 title: group.title,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
-                regularCount: regularCount,
+                taskCount: taskCount,
                 accent: group.accent,
                 onToggle: onToggle
             )
@@ -99,12 +99,16 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
     let title: String
     let isCollapsed: Bool
     let overdueCount: Int?
-    /// `nil` suppresses the "N task(s)" capsule entirely, through the same function
-    /// `CadenceTaskGroupHeading` asks — `CadenceTaskGroupHeadingMetrics.showsCapsule` (T-264). A
-    /// group standing for reminders Cadence has not been allowed to look at does not know its own
-    /// count, and `0` states a fact it does not have. Every group that always knows its size keeps
-    /// passing a plain `Int`.
-    let regularCount: Int?
+    /// **The group's size**, and it was `regularCount` — the not-done total *minus* `overdueCount`.
+    /// See `TasksPanelSupport.openCount`: the capsule labelled itself "tasks" while holding the
+    /// remainder after the flag, so a group whose open work was all late read `0 tasks` over its
+    /// own visible rows.
+    ///
+    /// `nil` suppresses the capsule entirely, through the same function `CadenceTaskGroupHeading`
+    /// asks — `CadenceTaskGroupHeadingMetrics.showsCapsule` (T-264). A group standing for reminders
+    /// Cadence has not been allowed to look at does not know its own count, and `0` states a fact it
+    /// does not have. Every group that always knows its size keeps passing a plain `Int`.
+    let taskCount: Int?
     var accent: Color = Theme.dim
     var isToggleEnabled: Bool = true
     let onToggle: () -> Void
@@ -114,7 +118,7 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         title: String,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
-        regularCount: Int?,
+        taskCount: Int?,
         accent: Color = Theme.dim,
         isToggleEnabled: Bool = true,
         onToggle: @escaping () -> Void,
@@ -123,7 +127,7 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         self.title = title
         self.isCollapsed = isCollapsed
         self.overdueCount = overdueCount
-        self.regularCount = regularCount
+        self.taskCount = taskCount
         self.accent = accent
         self.isToggleEnabled = isToggleEnabled
         self.onToggle = onToggle
@@ -143,7 +147,7 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
             title: title,
             isCollapsed: isCollapsed,
             overdueCount: nil,
-            regularCount: count,
+            taskCount: count,
             accent: accent,
             isToggleEnabled: isToggleEnabled,
             onToggle: onToggle,
@@ -192,14 +196,14 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
 
                 // Same rule as the shared heading's, asked of the same function — see
                 // `CadenceTaskGroupHeadingMetrics.showsCapsule`. The `let` after it is only the
-                // unwrap; do not collapse the two back into a bare `if let regularCount`.
+                // unwrap; do not collapse the two back into a bare `if let taskCount`.
                 // (`overdueCount` above is a *different* rule on purpose: a group that knows it is
                 // zero days late is stating a fact, so it hides a flag it has no reason to raise.)
-                if CadenceTaskGroupHeadingMetrics.showsCapsule(for: regularCount), let regularCount {
+                if CadenceTaskGroupHeadingMetrics.showsCapsule(for: taskCount), let taskCount {
                     HStack(spacing: 4) {
-                        Text("\(regularCount)")
+                        Text("\(taskCount)")
                             .font(.system(size: 11, weight: .bold))
-                        Text(regularCount == 1 ? "task" : "tasks")
+                        Text(taskCount == 1 ? "task" : "tasks")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Theme.dim)
                     }
@@ -238,7 +242,7 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
         title: String,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
-        regularCount: Int?,
+        taskCount: Int?,
         accent: Color = Theme.dim,
         isToggleEnabled: Bool = true,
         onToggle: @escaping () -> Void
@@ -247,7 +251,7 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
             title: title,
             isCollapsed: isCollapsed,
             overdueCount: overdueCount,
-            regularCount: regularCount,
+            taskCount: taskCount,
             accent: accent,
             isToggleEnabled: isToggleEnabled,
             onToggle: onToggle,
@@ -281,6 +285,8 @@ struct TaskListDisplayRow: View {
     /// Forwarded to `MacTaskRow.showsContainer`. See there: the host asks
     /// `CadenceTaskSurfaceOptions.showsContainerChip(on:)` and this carries the answer down.
     var showsContainer: Bool = true
+    /// Forwarded to `MacTaskRow.dayAlreadyStatedBySurface`. See there.
+    var dayAlreadyStatedBySurface: String? = nil
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
@@ -288,7 +294,15 @@ struct TaskListDisplayRow: View {
     var trailingInset: CGFloat = TaskListDisplayMetrics.taskTrailingInset
 
     var body: some View {
-        MacTaskRow(task: task, style: style, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
+        MacTaskRow(
+            task: task,
+            style: style,
+            showsContainer: showsContainer,
+            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
+            contexts: contexts,
+            areas: areas,
+            projects: projects
+        )
             .padding(.leading, leadingInset)
             .padding(.trailing, trailingInset)
             .listRowInsets(.init())
@@ -320,6 +334,8 @@ struct TaskListInteractiveRow: View {
     var style: MacTaskRowStyle = .standard
     /// See `TaskListDisplayRow.showsContainer`.
     var showsContainer: Bool = true
+    /// See `MacTaskRow.dayAlreadyStatedBySurface`.
+    var dayAlreadyStatedBySurface: String? = nil
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
@@ -334,6 +350,7 @@ struct TaskListInteractiveRow: View {
             task: task,
             style: style,
             showsContainer: showsContainer,
+            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
             contexts: contexts,
             areas: areas,
             projects: projects,

@@ -372,8 +372,6 @@ struct CadenceTodayRolloverSurfaceTests {
 
         let derived = TasksPanelDerivedState(
             allTasks: tasks,
-            areas: [],
-            projects: [],
             todayKey: today
         )
 

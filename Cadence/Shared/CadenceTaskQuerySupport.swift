@@ -81,65 +81,17 @@ enum CadenceTaskQuerySupport {
         return dayStart..<calendar.startOfDay(for: nextDay)
     }
 
-    /// Today's groups, on both platforms: **Overdue, and then the day's work by list** (T-305).
+    /// **Today has one grouping axis: the list.** `todayGroups` used to sit here, wrapping this
+    /// function to pull a date-shaped `Overdue` group out in front of the list groups. The user
+    /// removed it: "there shouldn't be an overdue/overdo section but all tasks should be grouped by
+    /// lists". A missed deadline is still stated — by the row's own red flag, which is where every
+    /// other surface in the app states it — so the section was the same fact a second time, in the
+    /// one place it also split a list's work across two headings.
     ///
-    /// This replaced a four-way split by date intent — Overdue, Past Do, Due Today, Planned Today.
-    /// Three things were wrong with it, and the user named all three:
+    /// With Overdue gone, `todayGroups(from:todayKey:contexts:)` and this function computed the
+    /// same array, so there is one of them rather than a forwarder and a name. `todayKey` went with
+    /// the split: nothing about grouping by list asks what day it is.
     ///
-    /// 1. "Planned Today" restates the page. On the Today view everything is today, so the heading
-    ///    carried no information — the standing rule that a page header does not describe the page
-    ///    you are already on, applied one level down.
-    /// 2. Today was the only task surface grouped by *when*; every other one groups by list, and
-    ///    the `PAST DUE LISTS` cards directly above these groups are list-shaped too. One page,
-    ///    two grouping axes.
-    /// 3. A rolled-over task moved from one date bucket to another, which looked like nothing had
-    ///    happened. It now leaves the red section and joins its list, which is what makes the roll
-    ///    visible.
-    ///
-    /// **Overdue stays at the top and stays date-shaped**, deliberately: a missed deadline is a
-    /// fact about the day that outranks where the work lives, and it is the one thing on Today
-    /// worth pulling out of its list. Everything else — due today, do today, and yesterday's plans
-    /// once they have been rolled — falls into its list's group.
-    ///
-    /// **The order inside a group is the caller's sort, untouched.** This partitions and never
-    /// re-sorts: both hosts hand in an array already ordered by `activeTodayTasks` (iOS) or
-    /// `compareTasksForCurrentSort` (macOS), and both of those lead with a today-rank, so a list
-    /// group reads due-today before merely-do-today without needing a heading to say so. That rank
-    /// is where the deleted axis went; it is a sort now instead of four headings.
-    ///
-    /// `contexts` is only for the order of the list groups — see `listGroupOrder(contexts:)`.
-    static func todayGroups(
-        from tasks: [AppTask],
-        todayKey: String,
-        contexts: [Context]
-    ) -> [CadenceTodayTaskGroup] {
-        let overdue = tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }
-        let overdueIDs = Set(overdue.map(\.id))
-
-        var groups: [CadenceTodayTaskGroup] = []
-        if !overdue.isEmpty {
-            groups.append(
-                CadenceTodayTaskGroup(
-                    identity: .overdue,
-                    title: CadenceTodayPresentationSupport.overdueSectionTitle,
-                    accent: CadenceTodayPresentationSupport.overdueSectionAccent,
-                    listIcon: nil,
-                    contextIcon: nil,
-                    contextColor: nil,
-                    tasks: overdue
-                )
-            )
-        }
-
-        groups.append(
-            contentsOf: todayListGroups(
-                from: tasks.filter { !overdueIDs.contains($0.id) },
-                contexts: contexts
-            )
-        )
-        return groups
-    }
-
     /// The day's remaining work, one group per list, in the sidebar's order.
     ///
     /// **A task with no list gets the Inbox group, and the Inbox group sits first.** That is not a
@@ -183,7 +135,7 @@ enum CadenceTaskQuerySupport {
         return (ordered + leftovers).compactMap { key in
             guard let shell = shells[key], let groupTasks = tasksByKey[key] else { return nil }
             return CadenceTodayTaskGroup(
-                identity: shell.identity,
+                listKey: key,
                 title: shell.title,
                 accent: shell.accent,
                 listIcon: shell.listIcon,
@@ -229,7 +181,7 @@ enum CadenceTaskQuerySupport {
     private static func listGroupShell(for task: AppTask) -> CadenceTodayTaskGroup {
         if let project = task.project {
             return CadenceTodayTaskGroup(
-                identity: .list(key: CadenceTaskDropSupport.containerKey(for: .project(project.id))),
+                listKey: CadenceTaskDropSupport.containerKey(for: .project(project.id)),
                 title: project.name,
                 accent: Color(hex: project.colorHex),
                 listIcon: project.icon,
@@ -240,7 +192,7 @@ enum CadenceTaskQuerySupport {
         }
         if let area = task.area {
             return CadenceTodayTaskGroup(
-                identity: .list(key: CadenceTaskDropSupport.containerKey(for: .area(area.id))),
+                listKey: CadenceTaskDropSupport.containerKey(for: .area(area.id)),
                 title: area.name,
                 accent: Color(hex: area.colorHex),
                 listIcon: area.icon,
@@ -250,7 +202,7 @@ enum CadenceTaskQuerySupport {
             )
         }
         return CadenceTodayTaskGroup(
-            identity: .list(key: CadenceTaskDropSupport.containerKey(for: .inbox)),
+            listKey: CadenceTaskDropSupport.containerKey(for: .inbox),
             title: CadenceBoardCardMetadata.inboxLabel,
             accent: Theme.dim,
             listIcon: "tray.fill",

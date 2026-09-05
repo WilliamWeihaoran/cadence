@@ -109,6 +109,12 @@ struct TaskOverdueSupportTests {
     /// the same number. `ListDetailComponents` used to carry its own bodies for both of these, and
     /// neither excluded completed tasks — so the same list reported two different overdue counts
     /// depending on which screen you opened it from.
+    ///
+    /// **And the second figure is the group's size, not the remainder.** `openCount` was
+    /// `regularCount` and subtracted `overdueCount`, so this fixture — three tasks, one finished,
+    /// one open and late, one open and on time — reported `1`. The user hit the degenerate case:
+    /// a header reading `0 tasks` over three visible rows, because every open row under it was late.
+    /// Two independent questions about the same rows, and each true on its own.
     @Test func groupHeaderCountsIgnoreCompletedTasks() {
         let openLate = task(due: "2026-08-01")
         let doneLate = task(due: "2026-08-01", status: .done)
@@ -116,7 +122,7 @@ struct TaskOverdueSupportTests {
         let tasks = [openLate, doneLate, openLater]
 
         #expect(TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey) == 1)
-        #expect(TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey) == 1)
+        #expect(TasksPanelSupport.openCount(in: tasks) == 2)
         #expect(TasksPanelSupport.overdueCount(in: [doneLate], todayKey: todayKey) == nil)
     }
     #endif

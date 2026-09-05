@@ -255,8 +255,6 @@ struct CadenceCancelledTaskReachabilityTests {
 
         let state = TasksPanelDerivedState(
             allTasks: [subject],
-            areas: [],
-            projects: [],
             todayKey: todayKey
         )
         #expect(state.doneTasks.map(\.title) == ["abandoned"])
@@ -448,8 +446,6 @@ struct CadenceCancelledTaskReachabilityTests {
     private func macOSTodayCompletedTitles(_ tasks: [AppTask]) -> [String] {
         TasksPanelDerivedState(
             allTasks: tasks,
-            areas: [],
-            projects: [],
             todayKey: todayKey
         )
         .doneTasks
@@ -643,8 +639,6 @@ struct CadenceCancelledTaskReachabilityTests {
 
         let derived = TasksPanelDerivedState(
             allTasks: tasks,
-            areas: [],
-            projects: [],
             todayKey: todayKey
         )
         let legacy = legacyDoneTasks()
@@ -720,8 +714,6 @@ struct CadenceCancelledTaskReachabilityTests {
         #expect(subject.isCancelled)
         let state = TasksPanelDerivedState(
             allTasks: [subject],
-            areas: [area],
-            projects: [],
             todayKey: DateFormatters.todayKey()
         )
         #expect(state.doneTasks.map(\.title) == ["in the archived column"])

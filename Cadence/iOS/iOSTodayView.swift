@@ -95,13 +95,12 @@ struct iOSTodayView: View {
     /// out of their own lists' groups, so confirming the roll does not shuffle rows between two
     /// date buckets — a list group appears, or grows, with the work that was yesterday's.
     private var todayTaskGroups: [CadenceTodayTaskGroup] {
-        CadenceTaskQuerySupport.todayGroups(
+        CadenceTaskQuerySupport.todayListGroups(
             from: CadenceTodayRolloverSupport.groupedTasks(
                 from: todayTasks,
                 withholding: pastDoTasks,
                 isNoticeVisible: isRolloverNoticeVisible
             ),
-            todayKey: todayKey,
             contexts: contexts
         )
     }

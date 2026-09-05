@@ -38,15 +38,16 @@ struct CadenceSearchFieldClearButtonTests {
     private static let callSites: [String: Int] = [
         "Cadence/macOS/CadenceCalendarPicker.swift": 12,
         "Cadence/macOS/Views/CadenceContextPicker.swift": 12,
-        "Cadence/macOS/Views/ContainerPickerSupportViews.swift": 11,
         "Cadence/macOS/Views/FocusPickerSupportViews.swift": 12,
         "Cadence/macOS/Views/GlobalSearchSupportViews.swift": 16,
         "Cadence/macOS/Views/GoalPickerViews.swift": 12,
         "Cadence/macOS/Views/GoalTimelineSupportViews.swift": 12,
         "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 11,
-        "Cadence/macOS/Views/TaskTitleInlineTagPicker.swift": 11,
-        "Cadence/macOS/Views/TasksPanelSupportViews.swift": 11,
-        "Cadence/macOS/Views/TildeContainerPicker.swift": 11,
+        // T-790's shared row: the four pickers that used to spell this button themselves --
+        // ContainerPickerSupportViews, TaskTitleInlineTagPicker, TasksPanelSupportViews and
+        // TildeContainerPicker -- now hand their field to `CadenceSearchFieldRow`, which draws the
+        // chrome once. They are no longer call sites; this is.
+        "Cadence/Shared/Components/CadenceSearchFieldRow.swift": 11,
     ]
 
     // MARK: - The rule, over every file the app compiles
@@ -90,10 +91,13 @@ struct CadenceSearchFieldClearButtonTests {
             actual == Self.callSites.mapValues { _ in 1 },
             "measured: \(actual.sorted { $0.key < $1.key })"
         )
-        // The headline, so this suite and the ticket cannot disagree: ten from T-672's ledger plus
-        // the eleventh copy no naming rule could see.
-        #expect(actual.values.reduce(0, +) == 11)
-        #expect(actual.count == 11)
+        // The headline, so this suite and the ticket cannot disagree. It was 11 -- ten from
+        // T-672's ledger plus the eleventh copy no naming rule could see. T-790 then folded four of
+        // those into one shared row, so eight files spell the button and one of them is the shared
+        // row itself. **A falling count here is the shared component doing its job**; a rising one
+        // is a new hand-spelled copy.
+        #expect(actual.values.reduce(0, +) == 8)
+        #expect(actual.count == 8)
     }
 
     /// The size each call site states, which is the decision the ledger's comment explains. Stated

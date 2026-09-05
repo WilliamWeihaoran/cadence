@@ -43,6 +43,22 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1042] **CLOSED 2026-09-05 — Today groups by list, and stops saying "Today" on the Today page.**
+  Reported by the user from the shipped app, with the design decided by them: *"there shouldn't be
+  an overdue/overdo section but all tasks should be grouped by lists"*, *"no tasks appearing here
+  need the 'Today' chip in the front"*, *"remove these past due list displays"*, and — the question
+  the regroup raised — *"tasks with no list should go under Inbox"*.
+  The Overdue section and the PAST DUE LISTS band are gone; overdue-ness is carried by the red
+  "N days ago" flag on the row, which is the one that says it **in context**. Today was previously
+  stating it three ways. `CadenceTodayPresentationSupport.overdueSectionTitle` and
+  `.overdueSectionAccent` had no other reader and went with the heading.
+  **Ten merged-HEAD failures came out of this**, none a defect in the change, and they are the
+  finding worth keeping: four tests encoded a previous *structure*, three encoded *formatting*
+  (`MacTaskRow(task: task` broke on a line reflow — the [[T-784]] adjacency trap again), two were
+  census counts that a legitimate change moved, and one was the coordinator's own over-loose repair
+  matching a declaration as well as its call. `thePanelStatesItsGutterOnce` had its count corrected
+  three times in two days and is now a rule — *nothing retypes the gutter* — rather than a number.
+
 - [T-1041] **CLOSED 2026-09-05 (coordinator).** The sidebar's context headers sat **3pt below the
   group above and 6pt above their own lists** — nearer the lists they do not label. Now 14 and 3,
   against a `rowSpacing` of 2, so a header reads as the first line of its own group. **The defect was

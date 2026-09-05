@@ -180,16 +180,32 @@ enum TasksPanelSupport {
         )
     }
 
-    /// Counts through `AppTask.isOverdue(todayKey:)` rather than re-deriving the comparison, so a
-    /// finished task with a past due date stops inflating a group header. `regularCount` subtracts
-    /// this from the not-done total, so the two only add up when both exclude completed tasks.
+    /// How many of a group's rows are **late**, through `AppTask.isOverdue(todayKey:)` rather than
+    /// a re-derived comparison, so a finished task with a past due date stops inflating a group
+    /// header. `nil` — not `0` — when none are: a group with nothing late raises no flag.
     static func overdueCount(in tasks: [AppTask], todayKey: String) -> Int? {
         let count = tasks.filter { $0.isOverdue(todayKey: todayKey) }.count
         return count > 0 ? count : nil
     }
 
-    static func regularCount(in tasks: [AppTask], todayKey: String) -> Int {
-        tasks.filter { !$0.isDone }.count - (overdueCount(in: tasks, todayKey: todayKey) ?? 0)
+    /// **How many rows the group has**, which is what its capsule says: "N tasks".
+    ///
+    /// This was `regularCount`, and it **subtracted** `overdueCount` from the not-done total. The
+    /// user caught what that reads like on screen: a header saying `0 tasks` over three visible
+    /// rows. The subtraction made the neutral capsule the *remainder* after the red flag, while its
+    /// own label — "tasks" — claimed to be the total, so the two numbers had to be added to learn
+    /// the group's size and a group whose open work was entirely late reported none.
+    ///
+    /// The flag and the capsule now answer two independent questions about the same rows — "how
+    /// many, and how many of those are late" — so both are true on their own and neither has to be
+    /// read through the other. `todayKey` went with the subtraction: a group's size does not depend
+    /// on what day it is.
+    ///
+    /// **This is read by all four macOS group headers** — Today, All Tasks, the Inbox panel and a
+    /// list's own detail — so the same `0 tasks` was reachable on every one of them, not just on
+    /// the section the user was looking at.
+    static func openCount(in tasks: [AppTask]) -> Int {
+        tasks.filter { !$0.isDone }.count
     }
 
     static func taskDragPayload(for task: AppTask) -> String {

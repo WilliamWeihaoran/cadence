@@ -6,16 +6,13 @@ struct TasksPanelDerivedState {
     let dueTodayTasks: [AppTask]
     let doTodayTasks: [AppTask]
     let overdoTasks: [AppTask]
-    let overdueListSummaries: [CadenceTodayOverdueListSummary]
-    let overdueSectionSummaries: [CadenceTodayOverdueSectionSummary]
     let doneTasks: [AppTask]
 
-    init(
-        allTasks: [AppTask],
-        areas: [Area],
-        projects: [Project],
-        todayKey: String
-    ) {
+    /// `areas` and `projects` were parameters here, read by nothing but the two past-due summary
+    /// bands — a *column*'s due date lives in `sectionConfigsRaw` on the list, so no query over
+    /// `AppTask` can find one. The bands are gone from macOS Today with the Overdue section, and
+    /// the parameters went with them rather than being left to be threaded in by the next caller.
+    init(allTasks: [AppTask], todayKey: String) {
         overdue = allTasks.filter { !$0.isDone && !$0.isCancelled && !$0.dueDate.isEmpty && $0.dueDate < todayKey }
         dueTodayTasks = allTasks.filter { !$0.isDone && !$0.isCancelled && $0.dueDate == todayKey }
 
@@ -28,22 +25,6 @@ struct TasksPanelDerivedState {
         // its contents disagreed about would show a notice over a list that did not match it.
         // Same set as before — the exclusion set it derives is `scheduledExclusions`.
         overdoTasks = CadenceTodayRolloverSupport.pastDoTasks(from: allTasks, todayKey: todayKey)
-
-        // The two past-due summaries, and the `sectionConfigs` walk behind them, are
-        // `CadenceTodayOverdueSummarySupport` rather than re-spelled here (T-195, second half):
-        // both were declared and derived under `macOS/Views/` with zero readers under
-        // `Cadence/iOS/`, and neither the project due-date filter nor the column walk touches
-        // AppKit. `CadenceTodayOverdueSummarySurfaceTests` recomputes both with the old inline
-        // expressions and asserts they are identical, member for member and in order.
-        overdueListSummaries = CadenceTodayOverdueSummarySupport.listSummaries(
-            projects: projects,
-            todayKey: todayKey
-        )
-        overdueSectionSummaries = CadenceTodayOverdueSummarySupport.sectionSummaries(
-            areas: areas,
-            projects: projects,
-            todayKey: todayKey
-        )
 
         // `byDoDateBaseTasks` and `byDoDateBaseSortedTasks` were derived here, unconditionally —
         // a filter over every task and a full sort of the result on **every Today render**, for a
@@ -74,17 +55,18 @@ struct TasksPanelDerivedState {
         )
     }
 
-    /// **The past-due summaries count as content.** They are the one thing on this page not drawn
-    /// from the task buckets: `CadenceTodayOverdueSummarySupport` filters *projects* and *columns*
-    /// by their own `dueDate` and never looks at a task. So a day with nothing planned but three
-    /// lists whose deadlines have gone by read "Nothing planned for today" directly under three
-    /// cards saying otherwise (T-592).
+    /// **Two clauses fewer than T-592 left here, and the reason is that the thing they guarded is
+    /// gone.** They counted the past-due list and column summaries as content, because those were
+    /// the one thing on this page not drawn from the task buckets — so a day with nothing planned
+    /// but three lists whose deadlines had gone by read "Nothing planned for today" directly under
+    /// three cards saying otherwise. macOS Today no longer draws those cards, so the day is empty
+    /// exactly when its task buckets are. **iOS still draws them and still guards on them** —
+    /// `iOSTodayTaskSections.isEmpty` keeps its clause, and the two Todays disagree here until that
+    /// band is decided for the phone too.
     ///
-    /// The rollover banner needs no clause of its own here, unlike iOS's: while it is up the
-    /// grouped list is deliberately missing the rows it is offering, but those rows are
-    /// `overdoTasks` and this already counts them.
-    ///
-    /// iOS guards the same way and says the same thing — `iOSTodayTaskSections.isEmpty`.
+    /// The rollover banner needs no clause of its own, unlike iOS's: while it is up the grouped
+    /// list is deliberately missing the rows it is offering, but those rows are `overdoTasks` and
+    /// this already counts them.
     ///
     /// A property rather than `isEmptyState(for:)`: the `TasksPanelMode` it switched over had one
     /// case and is gone (T-564(a)).
@@ -93,9 +75,7 @@ struct TasksPanelDerivedState {
         overdoTasks.isEmpty &&
         dueTodayTasks.isEmpty &&
         doTodayTasks.isEmpty &&
-        doneTasks.isEmpty &&
-        overdueListSummaries.isEmpty &&
-        overdueSectionSummaries.isEmpty
+        doneTasks.isEmpty
     }
 
     private func uniqueTasks(from tasks: [AppTask]) -> [AppTask] {

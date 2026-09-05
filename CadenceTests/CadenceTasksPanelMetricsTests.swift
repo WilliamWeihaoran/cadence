@@ -190,12 +190,15 @@ struct CadenceTasksPanelMetricsTests {
 
         let panel = try Self.panelSource()
         #expect(panel.contains("struct TasksPanel"))
-        // Five since [[T-869]] gave the panel a reorder-failure notice, which draws in the same
-        // gutter as everything else here. This count is a weak pin -- it moves whenever a legitimate
-        // new site reads the constant, which is the behaviour we want. The assertion below is the
-        // one that actually enforces the rule: nothing may retype the number.
+        // **This was a count, and the count was wrong three times in two days** -- 4, then 5 when
+        // [[T-869]] added a reorder-failure notice, then 2 when [[T-1042]]'s regroup removed the
+        // sections that read it. Each move was a legitimate change failing a test that pinned a
+        // number instead of a rule. What the rule actually says is *nothing retypes the gutter*, and
+        // that is the assertion below; the panel merely has to read the constant at least once, so
+        // the sweep is not vacuous.
         #expect(
-            CadenceSourceScan.matchCount("TasksPanelMetrics\\.horizontalInset", in: panel) == 5
+            CadenceSourceScan.matchCount("TasksPanelMetrics\\.horizontalInset", in: panel) >= 1,
+            "the panel no longer reads its own gutter constant, so the literal check below proves nothing"
         )
         #expect(!panel.contains(".padding(.horizontal, 16)"))
 

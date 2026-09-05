@@ -34,8 +34,14 @@ struct CadenceTodayUnificationTests {
         // The self-check the two above need: a scan that finds nothing passes every absence
         // assertion ever written. "Overdue" is a string this app definitely still ships.
         #expect(try liveTextOccurrences(of: "Overdue") > 0)
-        // The one date-shaped heading that stays, and stays at the top.
-        #expect(CadenceTodayPresentationSupport.overdueSectionTitle == "Overdue")
+        // **And the last date-shaped heading has gone too**, which is the whole of the user's
+        // *"there shouldn't be an overdue/overdo section but all tasks should be grouped by lists"*.
+        // `CadenceTodayPresentationSupport.overdueSectionTitle` and `.overdueSectionAccent` were
+        // that heading's title and tint and had no other reader, so both went with it. The bare
+        // string survives above only inside `isOverdue`-family identifiers, which is what the
+        // non-vacuity check is reading.
+        #expect(try liveTextOccurrences(of: "overdueSectionTitle") == 0)
+        #expect(try liveTextOccurrences(of: "overdueSectionAccent") == 0)
     }
 
     /// **The T-161 test for the sections.** Both platforms' Today must derive its groups from the
@@ -51,8 +57,11 @@ struct CadenceTodayUnificationTests {
     /// and the count is 1. The count stays **exact** rather than "contains": that is what would
     /// catch a second, local list of the same predicates growing back beside the shared call.
     @Test func everyTodaySurfaceGroupsThroughTheSharedQuery() throws {
+        // `todayListGroups`, not `todayGroups`: with the Overdue group removed the wrapper computed
+        // exactly what the list grouping already did, so there is one function rather than a
+        // forwarder and a name.
         try expectCallSites(
-            of: "CadenceTaskQuerySupport.todayGroups",
+            of: "CadenceTaskQuerySupport.todayListGroups",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 1,
                 "Cadence/iOS/iOSTodayView.swift": 1,
@@ -60,12 +69,7 @@ struct CadenceTodayUnificationTests {
         )
         // And both hand it the contexts the sidebar order is derived from. A host that passed `[]`
         // would fall back to alphabetical list groups on one platform while the other used sidebar
-        // order — the same day, two orders. macOS's needle is the two-argument tail because
-        // `contexts: contexts` alone is seven other section views on that file.
-        try expectCallSites(
-            of: "todayKey: todayKey, contexts: contexts",
-            at: ["Cadence/macOS/Views/TasksPanel.swift": 1]
-        )
+        // order — the same day, two orders.
         try expectCallSites(
             of: "contexts: contexts",
             at: ["Cadence/iOS/iOSTodayView.swift": 1]
@@ -84,22 +88,29 @@ struct CadenceTodayUnificationTests {
                 "Cadence/iOS/iOSTodayTaskSections.swift": 1,
             ]
         )
-        // Overdue's red is decided once, where the group is built.
-        try expectCallSites(
-            of: "CadenceTodayPresentationSupport.overdueSectionAccent",
-            at: ["Cadence/Shared/CadenceTaskQuerySupport.swift": 1]
-        )
     }
 
     /// And a row under a header that already prints its list's name does not repeat it in a chip.
-    /// Both hosts `&&` the surface's answer with the group's own.
+    ///
+    /// This used to pin `group.showsContainerChip` at both hosts — the group's half of
+    /// `showsContainer && group.showsContainerChip`, which was exactly "am I the Overdue group".
+    /// Overdue was the only group drawn from more than one list, so with it gone the answer is
+    /// `false` for every group Today can build and both hosts say so outright. The member went with
+    /// it (see `CadenceTodayTaskGroup`), which is why this reads the literal.
     @Test func neitherHostRepeatsTheListNameOnEveryRowOfAListGroup() throws {
+        try expectNoLiveMention(of: "showsContainerChip: showsContainer &&")
         try expectCallSites(
-            of: "group.showsContainerChip",
+            of: "showsContainer: false",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 1,
                 "Cadence/iOS/iOSTodayTaskSections.swift": 1,
             ]
+        )
+        // Non-vacuity in the direction that matters: the *surface* option is still live, because
+        // Today's Completed section is flat and its rows are the only thing that can name a list.
+        try expectCallSites(
+            of: "CadenceTaskSurfaceOptions.showsContainerChip(on: .today)",
+            at: ["Cadence/iOS/iOSTodayTaskSections.swift": 1]
         )
     }
 
@@ -227,23 +238,23 @@ struct CadenceTodayUnificationTests {
         )
     }
 
-    /// **Today gains the split counts, from the same two functions the other three surfaces call.**
+    /// **Today takes its two counts from the same two functions the other three surfaces call.**
     ///
     /// Not a fifth copy of "how many of these are late": `TasksPanelSupport.overdueCount` and
-    /// `.regularCount` both exclude completed tasks, which is the drift `ListDetailComponents` was
+    /// `.openCount` both exclude completed tasks, which is the drift `ListDetailComponents` was
     /// caught in once already — a ticked-off task with a past due date counted as overdue on one
     /// screen and not on the other two.
     @Test func todaysGroupsSplitTheirCountsThroughTheSharedPair() throws {
         let overdue = TasksPanelSupport.overdueCount(in: [], todayKey: "2026-08-31")
         #expect(overdue == nil, "an empty group must not claim to be zero days late")
-        #expect(TasksPanelSupport.regularCount(in: [], todayKey: "2026-08-31") == 0)
+        #expect(TasksPanelSupport.openCount(in: []) == 0)
 
         let sections = try strippingComments(
             sourceFile("Cadence/macOS/Views/TasksPanelSectionViews.swift")
         )
         #expect(sections.contains("struct TasksPanelIntentSectionView: View"), "non-vacuity")
         #expect(sections.contains("TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)"))
-        #expect(sections.contains("TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey)"))
+        #expect(sections.contains("TasksPanelSupport.openCount(in: tasks)"))
 
         // The Completed group deliberately does **not** take the split: it counts open work, so on
         // a group where every row is done it would report "0 tasks" over a list of finished ones.
@@ -436,7 +447,11 @@ struct CadenceTodayUnificationTests {
         // MARK: the shared row still does all of it — otherwise "converged" only means "deleted"
         let display = try declarationBody(of: "TaskListDisplayRow", in: listDetail)
         let interactive = try declarationBody(of: "TaskListInteractiveRow", in: listDetail)
-        #expect(display.contains("MacTaskRow(task: task"), "non-vacuity: empty declaration slice")
+        // `MacTaskRow(task: task` required the first argument to sit on the constructor's own
+        // line. [[T-1042]] reflowed the call across lines and the needle stopped matching a call
+        // that is still there -- the same adjacency trap as [[T-784]]. The non-vacuity claim is
+        // that the shared row is constructed at all.
+        #expect(display.contains("MacTaskRow("), "non-vacuity: empty declaration slice")
         #expect(occurrences(of: ".padding(.leading, leadingInset)", in: display) == 1)
         #expect(occurrences(of: ".padding(.trailing, trailingInset)", in: display) == 1)
         #expect(display.contains(".transition(.asymmetric("))
@@ -742,7 +757,11 @@ struct CadenceTodayUnificationTests {
         #expect(panel.contains("var body: some View"), "non-vacuity: empty declaration slice")
         #expect(occurrences(of: "switch mode", in: panel) == 0)
         #expect(occurrences(of: "func taskSections(", in: panel) == 0, "the one-case forwarder is still here")
-        #expect(occurrences(of: "todayOverviewSections(derived: derived)", in: panel) == 1)
+        // Matched on the call and not its full argument list: [[T-1042]]'s regroup added
+        // `showsRollover:` and the old needle froze the previous signature. `derived: derived` is
+        // the call; the declaration one line down reads `derived: TasksPanelDerivedState`, so a
+        // bare `(derived:` prefix counts both -- which it did, at the first attempt to fix this.
+        #expect(occurrences(of: "todayOverviewSections(derived: derived", in: panel) == 1)
         #expect(occurrences(of: "derived.isEmptyState", in: panel) == 1)
         #expect(occurrences(of: "isEmptyState(for:", in: panel) == 0)
     }
@@ -883,38 +902,42 @@ struct CadenceTodayListGroupingTests {
     }
 
     private func groups(for day: Day) -> [CadenceTodayTaskGroup] {
-        CadenceTaskQuerySupport.todayGroups(
+        CadenceTaskQuerySupport.todayListGroups(
             from: CadenceTaskQuerySupport.activeTodayTasks(
                 from: day.tasks,
                 todayKey: todayKey,
                 sortMode: .listOrder
             ),
-            todayKey: todayKey,
             contexts: day.contexts
         )
     }
 
     // MARK: - The grouping
 
-    /// **The decision, by value.** Overdue first — the one date-shaped group left, because a missed
-    /// deadline outranks where the work lives — and then one group per list in sidebar order, with
-    /// the unfiled task's Inbox at the head of them.
+    /// **The decision, by value.** One group per list, in sidebar order, with the unfiled task's
+    /// Inbox at the head of them — and **nothing else**: *"there shouldn't be an overdue/overdo
+    /// section but all tasks should be grouped by lists"*.
+    ///
+    /// The two past-due tasks are the assertion that matters. "Ship the beta" (a project's) and "Pay
+    /// the invoice" (an area's) used to be lifted out of their lists into a red `Overdue` group at
+    /// the top, which is what let one list appear twice on one page; they are now under Launch and
+    /// Admin with the rest of that list's day, and their lateness is the row's own red flag.
     ///
     /// Membership is asserted as sets here so this test says nothing about the order *within* a
     /// group; that is the next test's job, and keeping them apart is what lets a broken sort and a
     /// broken grouping be told apart.
-    @Test func todayIsOverdueAndThenTheDaysListsInSidebarOrder() throws {
+    @Test func todayIsTheDaysListsInSidebarOrderAndNothingElse() throws {
         let day = try seedDay()
         let produced = groups(for: day)
 
-        #expect(produced.map(\.title) == ["Overdue", "Inbox", "Admin", "Launch", "Errands"])
+        #expect(produced.map(\.title) == ["Inbox", "Admin", "Launch", "Errands"])
+        #expect(!produced.contains { $0.title == "Overdue" })
 
         let membership = produced.map { Set($0.tasks.map(\.title)) }
         #expect(membership == [
-            ["Ship the beta", "Pay the invoice"],
             ["Call the plumber"],
-            ["File receipts"],
-            ["Review the spec", "Draft the notes"],
+            ["File receipts", "Pay the invoice"],
+            ["Review the spec", "Draft the notes", "Ship the beta"],
             ["Buy milk"],
         ])
 
@@ -929,12 +952,11 @@ struct CadenceTodayListGroupingTests {
         let day = try seedDay()
         let produced = groups(for: day)
 
-        #expect(produced.map(\.identity) == [
-            .overdue,
-            .list(key: "inbox"),
-            .list(key: "a_\(day.admin.id.uuidString)"),
-            .list(key: "p_\(day.launch.id.uuidString)"),
-            .list(key: "a_\(day.errands.id.uuidString)"),
+        #expect(produced.map(\.listKey) == [
+            "inbox",
+            "a_\(day.admin.id.uuidString)",
+            "p_\(day.launch.id.uuidString)",
+            "a_\(day.errands.id.uuidString)",
         ])
         #expect(Set(produced.map(\.id)).count == produced.count)
     }
@@ -950,32 +972,34 @@ struct CadenceTodayListGroupingTests {
         let day = try seedDay()
         let produced = groups(for: day)
 
-        let inbox = try #require(produced.first { $0.identity == .list(key: "inbox") })
+        let inbox = try #require(produced.first { $0.listKey == "inbox" })
         #expect(inbox.title == CadenceBoardCardMetadata.inboxLabel)
         #expect(inbox.tasks.map(\.title) == ["Call the plumber"])
-        // Directly under Overdue, and ahead of every real list.
-        #expect(produced.firstIndex { $0.id == inbox.id } == 1)
-        // The list *and* the day — see `aListGroupHeaderOffersItsListToADroppedPlusAndOverdueOffersNothing`.
+        // **First on the page**, with the Overdue group that used to sit above it gone.
+        #expect(produced.firstIndex { $0.id == inbox.id } == 0)
+        // The list *and* the day — see `everyListGroupHeaderOffersItsListAndTodayToADroppedPlus`.
         #expect(CadenceTaskDropSupport.dropKey(forGroup: inbox.dropIdentity) == "list:inbox|date:today")
     }
 
     // MARK: - The sort inside a group
 
-    /// **Where the deleted date axis went.** Nothing re-sorts inside `todayGroups`; the caller's
-    /// order survives, and the caller's order leads with `todayRank`. So Launch reads "Review the
-    /// spec" (due today) before "Draft the notes" (merely planned for today) without a heading
-    /// saying so, and Overdue keeps the flat day's order too.
+    /// **Where the deleted date axis went, and it is now carrying the whole of it.** Nothing
+    /// re-sorts inside `todayListGroups`; the caller's order survives, and the caller's order leads
+    /// with `todayRank`. So Launch reads "Ship the beta" (past due), then "Review the spec" (due
+    /// today), then "Draft the notes" (merely planned for today) — the three date states the page
+    /// used to spend three headings on, in one list group, in the right order, with no heading
+    /// saying so.
     ///
     /// Mutate the rank and this fails while the grouping test above stays green.
     @Test func theOrderInsideAGroupIsTheCallersTodayRankedSort() throws {
         let day = try seedDay()
         let produced = groups(for: day)
 
-        let launch = try #require(produced.first { $0.identity == .list(key: "p_\(day.launch.id.uuidString)") })
-        #expect(launch.tasks.map(\.title) == ["Review the spec", "Draft the notes"])
+        let launch = try #require(produced.first { $0.listKey == "p_\(day.launch.id.uuidString)" })
+        #expect(launch.tasks.map(\.title) == ["Ship the beta", "Review the spec", "Draft the notes"])
 
-        let overdue = try #require(produced.first { $0.identity == .overdue })
-        #expect(overdue.tasks.map(\.title) == ["Ship the beta", "Pay the invoice"])
+        let admin = try #require(produced.first { $0.listKey == "a_\(day.admin.id.uuidString)" })
+        #expect(admin.tasks.map(\.title) == ["Pay the invoice", "File receipts"])
 
         // And the grouping is a stable partition of exactly that array: every group's rows appear
         // in the same relative order they had in the flat day.
@@ -1061,7 +1085,7 @@ struct CadenceTodayListGroupingTests {
         #expect(pastDo.map(\.title) == ["Water the plants"])
 
         func todayGroups(noticeVisible: Bool) -> [CadenceTodayTaskGroup] {
-            CadenceTaskQuerySupport.todayGroups(
+            CadenceTaskQuerySupport.todayListGroups(
                 from: CadenceTodayRolloverSupport.groupedTasks(
                     from: CadenceTaskQuerySupport.activeTodayTasks(
                         from: all,
@@ -1071,7 +1095,6 @@ struct CadenceTodayListGroupingTests {
                     withholding: pastDo,
                     isNoticeVisible: noticeVisible
                 ),
-                todayKey: todayKey,
                 contexts: [home]
             )
         }
@@ -1087,18 +1110,22 @@ struct CadenceTodayListGroupingTests {
         #expect(after.map(\.title) == ["Errands"])
         let group = try #require(after.first)
         #expect(group.tasks.map(\.title) == ["Water the plants"])
-        #expect(group.identity == CadenceTodayGroupIdentity.list(key: "a_\(errands.id.uuidString)"))
+        #expect(group.listKey == "a_\(errands.id.uuidString)")
     }
 
     // MARK: - What a group offers, and what its rows say
 
-    /// Overdue is drawn from every list at once, so its rows are the only ones on Today that still
-    /// need a chip naming where the work lives. A list group's header already prints the name.
-    @Test func onlyOverdueRowsStillNameTheirList() throws {
+    /// **No row on Today names its list any more.** Every group is a list and every header prints
+    /// that list's name, so the chip would be the header read twice. `showsContainerChip` was the
+    /// per-group exception for Overdue and went with it; what is left is the absence, asserted
+    /// against the two hosts by
+    /// `neitherHostRepeatsTheListNameOnEveryRowOfAListGroup` and against the type here.
+    @Test func noTodayGroupAsksItsRowsToNameTheirList() throws {
         let day = try seedDay()
         let produced = groups(for: day)
 
-        #expect(produced.map(\.showsContainerChip) == [true, false, false, false, false])
+        #expect(!produced.isEmpty, "non-vacuity: the day seeded groups")
+        try expectNoLiveMention(of: "showsContainerChip: Bool { ")
     }
 
     /// Overdue is defined by a day that has gone by, so its header seeds nothing and does not light
@@ -1112,12 +1139,14 @@ struct CadenceTodayListGroupingTests {
     /// vanished from the page it was dropped on — so a Today list group is `.todayList`, which
     /// resolves to the joined key. The seed is what the assertion is really about: a key-shape
     /// check alone would pass against a resolver that read `date:today` and dropped it.
-    @Test func aListGroupHeaderOffersItsListAndTodayToADroppedPlusAndOverdueOffersNothing() throws {
+    @Test func everyListGroupHeaderOffersItsListAndTodayToADroppedPlus() throws {
         let day = try seedDay()
         let produced = groups(for: day)
 
-        let overdue = try #require(produced.first { $0.identity == .overdue })
-        #expect(CadenceTaskDropSupport.dropKey(forGroup: overdue.dropIdentity) == nil)
+        // **Every group on the page is a drop target now.** The one that was not — Overdue, defined
+        // by a day already gone — is gone itself, so there is no header left on Today that lights up
+        // and then seeds nothing.
+        #expect(produced.allSatisfy { CadenceTaskDropSupport.dropKey(forGroup: $0.dropIdentity) != nil })
 
         let launch = try #require(produced.first { $0.title == "Launch" })
         let key = try #require(CadenceTaskDropSupport.dropKey(forGroup: launch.dropIdentity))
@@ -1129,6 +1158,76 @@ struct CadenceTodayListGroupingTests {
         // A do date, not a due date: Today's list groups are what you have *planned*, and a due
         // date is a commitment the header never made.
         #expect(seed.dueDateKey.isEmpty)
+    }
+
+    /// **No row on the page called Today says "Today".**
+    ///
+    /// *"since this is in today's view, no tasks appearing here need the 'today' chip in the front"* —
+    /// the standing page-header rule one level down, applied to the leading sun pill.
+    ///
+    /// The suppression is an **equality** (`CadenceBoardCardMetadata.repeatsSurfaceDay`), not a
+    /// surface flag, and the four cases below are why that distinction is load-bearing rather than
+    /// stylistic: with the Overdue section gone, a task planned for a day already past has nothing
+    /// but its own red pill to say so, and `MacTaskRowStyle.todayGrouped` — the blunt "this section
+    /// drops the sun" alternative already in the file — would have taken it.
+    @Test func todaysRowsDropTheDoDateChipOnlyWhenItWouldSayToday() {
+        let todayKey = "2026-09-05"
+
+        // Planned today, no deadline: the pill would read "Today", so there is no chip at all.
+        #expect(
+            CadenceTaskPresentationSupport.rowDatePlan(
+                scheduledDate: suppressed(todayKey, on: todayKey),
+                dueDate: ""
+            ) == CadenceTaskRowDatePlan.none
+        )
+        // Planned yesterday: not the day the page named, so the pill stays — and it is the only
+        // thing left on Today that says this row is late.
+        #expect(
+            CadenceTaskPresentationSupport.rowDatePlan(
+                scheduledDate: suppressed("2026-09-04", on: todayKey),
+                dueDate: ""
+            ) == .doDateOnly
+        )
+        // Planned today, due tomorrow: the deadline is a different fact and keeps its flag.
+        #expect(
+            CadenceTaskPresentationSupport.rowDatePlan(
+                scheduledDate: suppressed(todayKey, on: todayKey),
+                dueDate: "2026-09-06"
+            ) == .dueDateOnly
+        )
+        // A surface that names no day suppresses nothing — the default every other macOS row takes.
+        #expect(
+            CadenceTaskPresentationSupport.rowDatePlan(
+                scheduledDate: suppressed(todayKey, on: nil),
+                dueDate: ""
+            ) == .doDateOnly
+        )
+    }
+
+    /// And the row is actually wired that way. `MacTaskRow` is a SwiftUI view whose date plan is a
+    /// private computed property, so the pin is on the two things a test can reach: the row asks the
+    /// shared predicate, and Today's two section views hand it `todayKey`.
+    @Test func todaysSectionsHandTheRowTheDayThePageHasAlreadyNamed() throws {
+        let row = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(row.contains("struct MacTaskRow: View"), "non-vacuity: wrong file read")
+        #expect(row.contains("CadenceBoardCardMetadata.repeatsSurfaceDay("))
+
+        let sections = try strippingComments(
+            sourceFile("Cadence/macOS/Views/TasksPanelSectionViews.swift")
+        )
+        try expectCallSites(
+            of: "dayAlreadyStatedBySurface: todayKey",
+            at: ["Cadence/macOS/Views/TasksPanelSectionViews.swift": 2]
+        )
+        #expect(sections.contains("struct TasksPanelCompletedSectionView: View"), "non-vacuity")
+    }
+
+    /// `repeatsSurfaceDay` is the shared predicate the calendar boards already use for the same
+    /// question, so the answer cannot differ between a day column and the Today page.
+    private func suppressed(_ scheduledDate: String, on day: String?) -> String {
+        CadenceBoardCardMetadata.repeatsSurfaceDay(scheduledDate, dayAlreadyStatedBySurface: day)
+            ? ""
+            : scheduledDate
     }
 
     /// The order of the list groups is the sidebar's, and `TasksPanelSupport.listGroups` — All

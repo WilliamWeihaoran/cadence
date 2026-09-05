@@ -264,12 +264,12 @@ struct CadenceInboxRemindersSurfaceTests {
     @Test func neitherInboxHeaderPassesTheRawReminderCountUnconditionally() throws {
         let macSource = try strippingComments(sourceFile("Cadence/macOS/Views/InboxSupportViews.swift"))
         #expect(
-            macSource.range(of: "regularCount:\\s*reminders\\.count\\s*,", options: .regularExpression) == nil,
+            macSource.range(of: "taskCount:\\s*reminders\\.count\\s*,", options: .regularExpression) == nil,
             "macOS's Inbox header passes the raw reminder count again, with no gate on authorization"
         )
         #expect(
             macSource.range(
-                of: "regularCount:\\s*state\\.isConnected\\s*\\?\\s*reminders\\.count\\s*:\\s*nil",
+                of: "taskCount:\\s*state\\.isConnected\\s*\\?\\s*reminders\\.count\\s*:\\s*nil",
                 options: .regularExpression
             ) != nil,
             "macOS's Inbox header stopped hiding the count while unauthorized"
@@ -307,7 +307,7 @@ struct CadenceInboxRemindersSurfaceTests {
         #expect(iosHeader.contains("let count: Int?"), "iOSTaskGroupHeader.count is no longer optional")
 
         let macHeader = try strippingComments(sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift"))
-        #expect(macHeader.contains("let regularCount: Int?"), "TaskListGroupHeader.regularCount is no longer optional")
+        #expect(macHeader.contains("let taskCount: Int?"), "TaskListGroupHeader.taskCount is no longer optional")
     }
 
     /// The rule itself, exercised directly. `nil` is "cannot say" and draws nothing; every real

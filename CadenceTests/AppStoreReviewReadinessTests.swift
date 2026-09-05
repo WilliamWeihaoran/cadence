@@ -49,8 +49,15 @@ struct AppStoreReviewReadinessTests {
     @Test func appInfoPlistContainsReviewReadyPrivacyKeys() throws {
         let info = try plistDictionary(at: "Cadence/Info.plist")
 
-        #expect(info["ITSAppUsesNonExemptEncryption"] as? Bool == false)
+        // **These three moved to build settings, and that was measured, not assumed (T-665).** The
+        // duplicates were removed from this file after inspecting built `.app` bundles on both
+        // platforms in both configurations: the `INFOPLIST_KEY_*` spelling wins for these, so the
+        // file's copies were dead weight. `CFBundleIconName` went the other way -- deleting it here
+        // left the key **missing entirely** from the built iOS plist -- so it stays in the file and
+        // is asserted below. Asserting the file for a key the build settings own is asserting the
+        // losing side.
         #expect(info["UIBackgroundModes"] == nil, "the macOS bundle now declares a background mode; see T-626")
+        #expect(info["CFBundleIconName"] as? String == "AppIcon")
 
         // **And the other half, because this file is not the shipped plist.**
         // `GENERATE_INFOPLIST_FILE = YES` on the app target, so the bundle's Info.plist is this
@@ -68,7 +75,18 @@ struct AppStoreReviewReadinessTests {
             !project.contains("INFOPLIST_KEY_UIBackgroundModes"),
             "a background mode is reaching the bundle through build settings; see T-626"
         )
-        #expect((info["NSCalendarsFullAccessUsageDescription"] as? String)?.contains("create, update, or delete") == true)
+        #expect(
+            project.contains("INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO"),
+            "the encryption declaration is not in the build settings that win"
+        )
+        #expect(
+            project.contains("create, update, or delete"),
+            "the Calendar usage description no longer says what the app does with a calendar"
+        )
+        #expect(
+            !project.contains("INFOPLIST_KEY_CFBundleIconName"),
+            "CFBundleIconName is back in build settings; on iOS that spelling loses and the key vanishes (T-665)"
+        )
     }
 
     @Test func appReviewLinksPointAtBundledGitHubPagesDocs() throws {

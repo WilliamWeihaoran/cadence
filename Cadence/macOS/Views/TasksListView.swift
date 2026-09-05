@@ -255,7 +255,7 @@ struct TasksListView: View {
                         showsContainer: options.showsContainerChip,
                         isCollapsed: collapsedSectionIDs.contains(section.id),
                         overdueCount: overdueCount(in: section.tasks),
-                        regularCount: regularCount(in: section.tasks),
+                        taskCount: openCount(in: section.tasks),
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
@@ -397,8 +397,8 @@ struct TasksListView: View {
         TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)
     }
 
-    private func regularCount(in tasks: [AppTask]) -> Int {
-        TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey)
+    private func openCount(in tasks: [AppTask]) -> Int {
+        TasksPanelSupport.openCount(in: tasks)
     }
 
     private func taskDragPayload(for task: AppTask) -> String {
@@ -457,7 +457,7 @@ private struct TasksListSectionView: View {
     let showsContainer: Bool
     let isCollapsed: Bool
     let overdueCount: Int?
-    let regularCount: Int
+    let taskCount: Int
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -476,7 +476,7 @@ private struct TasksListSectionView: View {
                 title: section.title,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
-                regularCount: regularCount,
+                taskCount: taskCount,
                 accent: section.accent,
                 onToggle: onToggle
             ) {

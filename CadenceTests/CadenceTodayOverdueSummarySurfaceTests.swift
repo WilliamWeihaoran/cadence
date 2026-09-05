@@ -349,12 +349,20 @@ struct CadenceTodayOverdueSummarySurfaceTests {
         let areas = [home, work, archivedArea]
         let projects = [launch, rewrite, future, doneProject]
 
-        let derived = TasksPanelDerivedState(
-            allTasks: tasks + [settled],
+        // **Read from the shared support directly, not through `TasksPanelDerivedState`.** macOS
+        // Today no longer draws either band — the user removed them — so the panel's derived state
+        // no longer carries the two arrays. iOS's Today still draws both, from these two functions,
+        // which is what this test is about.
+        let derivedListSummaries = CadenceTodayOverdueSummarySupport.listSummaries(
+            projects: projects,
+            todayKey: today
+        )
+        let derivedSectionSummaries = CadenceTodayOverdueSummarySupport.sectionSummaries(
             areas: areas,
             projects: projects,
             todayKey: today
         )
+        _ = tasks + [settled]
 
         // The expressions that used to be inline in `TasksPanelDerivedState.init`, verbatim apart
         // from the `Color` that is now a hex string and the type names.
@@ -375,13 +383,13 @@ struct CadenceTodayOverdueSummarySurfaceTests {
                 )
             }
 
-        #expect(derived.overdueListSummaries.map(\.id) == legacyLists.map(\.id))
-        #expect(derived.overdueListSummaries.map(\.title) == legacyLists.map(\.title))
-        #expect(derived.overdueListSummaries.map(\.icon) == legacyLists.map(\.icon))
-        #expect(derived.overdueListSummaries.map(\.colorHex) == legacyLists.map(\.colorHex))
-        #expect(derived.overdueListSummaries.map(\.dueDateKey) == legacyLists.map(\.dueDateKey))
-        #expect(derived.overdueListSummaries.map(\.activeTaskCount) == legacyLists.map(\.activeTaskCount))
-        #expect(derived.overdueListSummaries.map(\.title) == ["Rewrite", "Q3 Launch"])
+        #expect(derivedListSummaries.map(\.id) == legacyLists.map(\.id))
+        #expect(derivedListSummaries.map(\.title) == legacyLists.map(\.title))
+        #expect(derivedListSummaries.map(\.icon) == legacyLists.map(\.icon))
+        #expect(derivedListSummaries.map(\.colorHex) == legacyLists.map(\.colorHex))
+        #expect(derivedListSummaries.map(\.dueDateKey) == legacyLists.map(\.dueDateKey))
+        #expect(derivedListSummaries.map(\.activeTaskCount) == legacyLists.map(\.activeTaskCount))
+        #expect(derivedListSummaries.map(\.title) == ["Rewrite", "Q3 Launch"])
 
         typealias LegacySection = (
             id: String,
@@ -438,23 +446,23 @@ struct CadenceTodayOverdueSummarySurfaceTests {
             return lhs.sectionName.localizedCaseInsensitiveCompare(rhs.sectionName) == .orderedAscending
         }
 
-        #expect(derived.overdueSectionSummaries.map(\.id) == legacySections.map(\.id))
-        #expect(derived.overdueSectionSummaries.map(\.sectionName) == legacySections.map(\.sectionName))
-        #expect(derived.overdueSectionSummaries.map(\.parentName) == legacySections.map(\.parentName))
-        #expect(derived.overdueSectionSummaries.map(\.parentIcon) == legacySections.map(\.parentIcon))
-        #expect(derived.overdueSectionSummaries.map(\.parentColorHex) == legacySections.map(\.parentColorHex))
-        #expect(derived.overdueSectionSummaries.map(\.dueDateKey) == legacySections.map(\.dueDateKey))
-        #expect(derived.overdueSectionSummaries.map(\.openTaskCount) == legacySections.map(\.openTaskCount))
-        #expect(derived.overdueSectionSummaries.map(\.completedTaskCount) == legacySections.map(\.completedTaskCount))
+        #expect(derivedSectionSummaries.map(\.id) == legacySections.map(\.id))
+        #expect(derivedSectionSummaries.map(\.sectionName) == legacySections.map(\.sectionName))
+        #expect(derivedSectionSummaries.map(\.parentName) == legacySections.map(\.parentName))
+        #expect(derivedSectionSummaries.map(\.parentIcon) == legacySections.map(\.parentIcon))
+        #expect(derivedSectionSummaries.map(\.parentColorHex) == legacySections.map(\.parentColorHex))
+        #expect(derivedSectionSummaries.map(\.dueDateKey) == legacySections.map(\.dueDateKey))
+        #expect(derivedSectionSummaries.map(\.openTaskCount) == legacySections.map(\.openTaskCount))
+        #expect(derivedSectionSummaries.map(\.completedTaskCount) == legacySections.map(\.completedTaskCount))
 
         // Non-vacuity: the fixture really exercises both arrays, both list kinds, both skip rules
         // and the counts. Without this the eight comparisons above pass on two empty arrays.
-        #expect(derived.overdueListSummaries.count == 2)
-        #expect(derived.overdueSectionSummaries.map(\.sectionName) == ["Reviews", "Repairs", "Copy"])
-        #expect(derived.overdueSectionSummaries.first(where: { $0.sectionName == "Repairs" })?.openTaskCount == 2)
-        #expect(derived.overdueSectionSummaries.first(where: { $0.sectionName == "Repairs" })?.completedTaskCount == 1)
-        #expect(!derived.overdueSectionSummaries.contains { $0.parentName == "Filed away" })
-        #expect(!derived.overdueListSummaries.contains { $0.title == "Shipped" })
+        #expect(derivedListSummaries.count == 2)
+        #expect(derivedSectionSummaries.map(\.sectionName) == ["Reviews", "Repairs", "Copy"])
+        #expect(derivedSectionSummaries.first(where: { $0.sectionName == "Repairs" })?.openTaskCount == 2)
+        #expect(derivedSectionSummaries.first(where: { $0.sectionName == "Repairs" })?.completedTaskCount == 1)
+        #expect(!derivedSectionSummaries.contains { $0.parentName == "Filed away" })
+        #expect(!derivedListSummaries.contains { $0.title == "Shipped" })
     }
 
     // MARK: - Call-site wiring
@@ -534,14 +542,11 @@ struct CadenceTodayOverdueSummarySurfaceTests {
         #expect(!source.contains("if let projectID = summary.projectID"))
     }
 
-    @Test func theMacPanelDrawsTheSharedCardsAndHeadings() throws {
-        let panel = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
-        #expect(panel.contains("CadenceTodayOverdueListCard(summary: summary)"))
-        #expect(panel.contains("CadenceTodayOverdueSectionCard(summary: summary)"))
-        #expect(panel.contains("CadenceTodayOverdueSummaryHeading(title: title, count: count)"))
-        #expect(panel.contains("CadenceTodayOverdueSummarySupport.listsHeading"))
-        #expect(panel.contains("CadenceTodayOverdueSummarySupport.sectionsHeading"))
-
+    /// **The Mac no longer draws them at all** — see
+    /// `theMacTodayHasNoPastDueCardsLeftToGuardAgainst`, which is where that absence is pinned. What
+    /// survives here is the other half of T-195's claim: the cards macOS *did* draw were the shared
+    /// ones, so its own near-copies must still be gone rather than having come back to fill the gap.
+    @Test func theMacPanelHasNoPrivateCopiesOfTheSharedCards() throws {
         let views = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelSupportViews.swift"))
         #expect(!views.contains("struct TodayOverdueListCard"))
         #expect(!views.contains("struct TodayOverdueSectionCard"))
@@ -631,51 +636,47 @@ struct CadenceTodayOverdueSummarySurfaceTests {
         #expect(stripped.contains("let b = 2"))
     }
 
-    /// **"Nothing planned for today" must not print under a card saying three of your lists are
-    /// past due.** `isEmptyState` tested the four task buckets plus Completed, and the past-due
-    /// cards are the one thing on Today derived from *projects* and *columns* rather than tasks —
-    /// so a day with no work on it and an overdue list drew both at once (T-592). iOS had guarded
-    /// this since it got the cards; macOS never did.
-    @Test func theMacTodayIsNotEmptyWhileAPastDueCardIsOnScreen() throws {
+    /// **T-592 inverted, by the user.** This test used to guard "Nothing planned for today" against
+    /// printing under a card saying three of your lists were past due: `isEmptyState` tested the four
+    /// task buckets plus Completed, and the past-due cards were the one thing on macOS Today derived
+    /// from *projects* and *columns* rather than tasks, so a day with no work on it drew both at once.
+    ///
+    /// **macOS Today draws no such card now** — *"remove these past due list displays from today's
+    /// view"* — so the two clauses are gone and the page is empty exactly when its task buckets are.
+    /// The guard has not been *dropped*; the thing it guarded against has. What has to hold instead
+    /// is that nothing can put those arrays back into the panel's derived state without this failing.
+    ///
+    /// **iOS still draws both bands and still guards on them.** That divergence is deliberate and
+    /// unresolved: the user has seen macOS's Today, not the phone's.
+    @Test func theMacTodayHasNoPastDueCardsLeftToGuardAgainst() throws {
         let today = "2026-08-20"
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
 
-        let launch = project(name: "Q3 Launch", due: "2026-08-18")
-        context.insert(launch)
+        let derived = TasksPanelDerivedState(allTasks: [], todayKey: today)
+        #expect(derived.isEmptyState, "a day with no tasks is empty, whatever the lists are doing")
 
-        let area = Area(name: "Home")
-        context.insert(area)
-        area.sectionConfigs = [TaskSectionConfig(name: "Repairs", dueDate: "2026-08-01")]
+        let panel = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
+        #expect(panel.contains("struct TasksPanel: View"), "non-vacuity: wrong file read")
+        for banned in [
+            "overdueListSummaries",
+            "overdueSectionSummaries",
+            "CadenceTodayOverdueListCard",
+            "CadenceTodayOverdueSectionCard",
+            "CadenceTodayOverdueSummaryHeading",
+        ] {
+            #expect(!panel.contains(banned), "macOS Today still draws \(banned)")
+        }
 
-        // No tasks at all: every bucket `isEmptyState` used to consult is empty by construction.
-        let listCardOnly = TasksPanelDerivedState(
-            allTasks: [],
-            areas: [],
-            projects: [launch],
-            todayKey: today
+        let derivedState = try strippingComments(
+            sourceFile("Cadence/macOS/Views/TasksPanelDerivedState.swift")
         )
-        #expect(!listCardOnly.overdueListSummaries.isEmpty)
-        #expect(!listCardOnly.isEmptyState)
+        #expect(derivedState.contains("struct TasksPanelDerivedState"), "non-vacuity: wrong file read")
+        #expect(!derivedState.contains("OverdueSummary"))
 
-        let sectionCardOnly = TasksPanelDerivedState(
-            allTasks: [],
-            areas: [area],
-            projects: [],
-            todayKey: today
-        )
-        #expect(!sectionCardOnly.overdueSectionSummaries.isEmpty)
-        #expect(!sectionCardOnly.isEmptyState)
-
-        // And a day with neither cards nor tasks is still empty, so the guard cannot be satisfied
-        // by never reporting empty at all.
-        let nothing = TasksPanelDerivedState(
-            allTasks: [],
-            areas: [],
-            projects: [],
-            todayKey: today
-        )
-        #expect(nothing.isEmptyState)
+        // The component itself is untouched, because iOS's Today is still its caller. Deleting it
+        // here would have taken the phone's band with it.
+        let iOSSections = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
+        #expect(iOSSections.contains("CadenceTodayOverdueListCard"))
+        #expect(iOSSections.contains("CadenceTodayOverdueSectionCard"))
     }
 
     // MARK: - Fixtures

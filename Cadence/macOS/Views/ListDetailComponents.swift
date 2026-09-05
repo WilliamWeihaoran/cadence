@@ -94,7 +94,7 @@ struct ListTasksView: View {
                     group: group,
                     isCollapsed: collapsedGroupIDs.contains(group.id),
                     overdueCount: overdueCount(in: group.tasks),
-                    regularCount: regularCount(in: group.tasks),
+                    taskCount: openCount(in: group.tasks),
                     dragOverTaskID: $dragOverTaskID,
                     onToggle: { toggleGroup(group.id) },
                     onReorderTask: reorderTask
@@ -219,8 +219,8 @@ struct ListTasksView: View {
         TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)
     }
 
-    private func regularCount(in tasks: [AppTask]) -> Int {
-        TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey)
+    private func openCount(in tasks: [AppTask]) -> Int {
+        TasksPanelSupport.openCount(in: tasks)
     }
 }
 #endif
