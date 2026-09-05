@@ -77,6 +77,71 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   allocated per container (`nextTaskOrder(in:)` maxes over one list), so on a cross-list surface
   there is no "whole sequence" to renumber. Deciding what `order` means across containers has to
   come first. Noted by z4 under [[T-884]] and left alone under that ticket's scope.
+- [T-1066] **`run-macos-app.sh stop` prints "private store removed" over a store it did not remove.**
+  Measured 2026-09-05 (fixdiv2). `stop fixdiv2` printed `private store removed; remaining agent app
+  processes: 0`, and
+  `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores/fixdiv2` was still on disk
+  afterwards, holding a 327680-byte `default.store` plus `-shm`/`-wal`. A later manual `rm -rf` of the
+  same path from the same shell succeeded immediately, so it is not a permissions or TCC refusal.
+  **This is [[T-1064]]'s symptom after [[T-1064]]'s fix.** The `stop` branch does now `rm -rf
+  "$APP_STORE_ROOT/$ID"` — the app's real container path — and the id resolves correctly for
+  `stop <id>`, so the fix is present and the leak continues anyway. The count is the evidence that it
+  is ongoing rather than historical: T-1064 recorded 76 leaked stores on 2026-09-05 and there were
+  **80** by that evening, two of them mine.
+  **Mechanism not established, and the entry says so rather than guessing.** The most likely shape is
+  a race — `stop` sends `TERM`, sleeps 2, then removes the directory, so an app still shutting down
+  can flush Core Data back into the path after the `rm`. Against that reading: the surviving directory's
+  own mtime was the *creation* time, not a later one, which a re-created directory would not have.
+  Whatever the cause, the print is unconditional — it is emitted whether or not the removal happened,
+  which is why 80 stores accumulated with every agent believing it had cleaned up.
+  **The fix is the same shape either way:** verify the path is gone after the `rm` and say so honestly
+  when it is not, rather than printing a success line the script never checked. `stop` is also the
+  only cleanup an agent is told to run, so a silent failure here is uncatchable by the agent that
+  caused it. Each store is ~350-400KB; the backlog is 31MB and grows by one per agent run.
+- [T-1065] **CLOSED 2026-09-05 (fixdiv2) — the fix for the blue divider was causing the blue divider.**
+  `eab61a0` ([[T-1036]]/[[T-1037]]/[[T-1038]]) shipped the user's own report back to them: *"you see
+  this blue vertical line here that the user can drag to resize the side bar? it always starts to be
+  blue like this as if it was selected"*. **Measured on a real running build at `eab61a0` and again
+  at `84d3ae7`**, window bitmap at mid-height: `x=473-480 #171F31 · x=481-482 #283043 ·
+  x=483-492 #171F31` — a 10pt accent band, on a fresh launch, nothing touched. `#171F31` is
+  `controlAccentColor` at alpha `0.12` over `#131316`, which is `SidebarResizeHandleAppearance
+  .focused.accentAlpha` to the digit. `AXFocusedUIElement` at launch was the `AXSlider` "Sidebar
+  width", 10 × 800 — the drag handle held first-responder status before the user did anything.
+  **The root cause is older than the tint and was wrong on its own.** `SidebarResizeHandleView`
+  has answered `acceptsFirstResponder = true` since well before [[T-1037]] (it is there at
+  `52edd7c`), and nothing in this app sets `NSWindow.initialFirstResponder`, so AppKit has always
+  picked the handle by walking the key view loop at launch. [[T-1037]]'s `.focused` case did not
+  create that; it made it visible. Tab order beginning on a drag handle is the defect.
+  Fixed on both sides, and neither side gives up what [[T-1037]] won — arrow-key resizing and the
+  `.slider` role/label/value are untouched, which matters days before App Store review:
+  `canBecomeKeyView` now answers `NSApp.isFullKeyboardAccessEnabled`, which is what `NSControl` does
+  for every non-text control, so the handle leaves the launch pick *and* Tab order unless the user
+  asked for full keyboard access; and `resolve` takes `isFullKeyboardAccessEnabled` alongside
+  `isFocused`, gating the indicator the way macOS gates its own focus rings.
+  `acceptsFirstResponder` deliberately stays unconditional — `mouseDown`'s `makeFirstResponder(self)`
+  consults *that*, not `canBecomeKeyView`, so click-then-arrow-key resizing still works.
+  **The durable half is how this was caught.** [[T-1036]] and [[T-1037]] were green on 16 unit tests
+  and a 12/12 mutation plan, and shipped the bug anyway: every test asserted what `.focused` should
+  *look like*, none asked *when the handle is focused*. Verified here the way it was found rather
+  than the way it was written — built, launched through `scripts/run-macos-app.sh`, captured by
+  `CGWindowID` and sampled: `x=440-480 #131316 · x=481-482 #26262B · x=483-520 #131316`, the same
+  neutral hairline `52edd7c` had.
+  **The two halves were built separately, so the pixels say which one does the work.** A build
+  carrying *only* the `canBecomeKeyView` change — `.focused` left completely ungated, exactly as z3
+  shipped it — already comes up neutral: `x=481-482 #26262B`. `.focused` is reachable only through
+  `becomeFirstResponder`, so a resting divider under an ungated tint *is* the measurement that the
+  handle is no longer the window's first responder at launch. The tint gate then sits on top of that
+  for the user who does turn Full Keyboard Access on. 24 tests, 8/8 mutations killed (including
+  "delete the gate", "invert the gate", "hard-code the flag at the call site", "gate
+  `acceptsFirstResponder` too", and "zero the `.focused` alpha instead of gating it"), 0 warnings
+  from a build that recompiled the file.
+  **Method note for whoever measures this next.** `AXFocusedUIElement` could not be re-read here:
+  an app launched by `scripts/run-macos-app.sh` never becomes frontmost, and both System Events and
+  `NSRunningApplication.activate()` reported `active=false`, at which point macOS answers the
+  app element for that attribute and an AX tree walk (6300 elements) finds no `AXSlider` at all.
+  The tint is the better probe anyway — it is the thing the user can see.
+  **Left open:** `docs/TODO.md:105` links `[[T-1039]]` as "the blue sidebar line" and no T-1039
+  exists anywhere in `docs/` — a dangling id from this same batch.
 - [T-1043] **CLOSED 2026-09-05 — text sat on top of an image in a macOS note until you typed.**
   Reported by the user: *"for some reason some texts are sitting on an image in the notes, but as
   soon as i start typing, the text goes back to where it should be"*.
@@ -171,8 +236,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   since neither `NSScreen` nor `NSWindow` has a seam a unit test can drive directly. Found while
   reproducing [[T-1036]]; unrelated to it, and a user who moves between a docked and undocked Mac
   would meet it.
-- [T-1037] **CLOSED 2026-09-05 (z3) — arrow-key resizing, an accessibility role/label/value, and a
-  fourth appearance state now answer for a keyboard-only user.** `SidebarResizeHandleView` gained
+- [T-1037] **CLOSED 2026-09-05 (z3), then PARTLY REVERSED the same day by [[T-1065]] — the `.focused`
+  tint as shipped painted the divider accent-blue on every fresh launch, which is the user's own bug
+  report.** Read the rest of this entry with that at the front: the keyboard and accessibility half
+  stands and is untouched, the indicator half did not. `SidebarResizeHandleView` gained
   `keyDown` arrow-key resizing (±8pt through the new `Coordinator.adjustWidth(by:)`),
   `accessibilityRole() -> .slider`, `accessibilityLabel() -> "Sidebar width"`, `accessibilityValue()`,
   and `accessibilityPerformIncrement()`/`accessibilityPerformDecrement()` driving the same method.
@@ -181,7 +248,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `focusRingMaskBounds` really is empty and `focusRingType = .none` would have been the forbidden
   no-op. `acceptsFirstResponder` stays `true`; nothing is dropped. See [[T-1036]] for the tint's
   other half — both live in the same extracted `SidebarResizeHandleAppearance` value type.
-- [T-1036] **CLOSED 2026-09-05 (z3) — the latch is fixed, and the alpha decision has a seam.**
+  **What that last sentence missed.** `acceptsFirstResponder = true` is exactly why AppKit was
+  already parking a fresh window's first responder on the handle, so adding a state that paints
+  when focused was enough to make every launch show the band. `.focused` now also requires
+  `NSApp.isFullKeyboardAccessEnabled`, and `canBecomeKeyView` answers the same flag so the handle is
+  not in the launch pick or in Tab order by default. Details and the sampled pixels: [[T-1065]].
+- [T-1036] **CLOSED 2026-09-05 (z3) — the latch is fixed, and the alpha decision has a seam. The
+  same commit then re-created the reported symptom on every launch; see [[T-1065]].** The latch fix
+  and the extracted seam below are both sound and both survive. What did not is the claim the entry
+  ends on: the caveat that this was *reasoned, not reproduced in a running app* is precisely what
+  failed, and it failed on the half nobody thought was at risk — the resting appearance.
   `SidebarResizeHandleAppearance` (non-private, `nonisolated enum … : Equatable`) is the extracted
   value type `.resolve(isDragging:isHovered:isFocused:)` now picks from, asserted on directly by
   `CadenceSidebarResizeHandleAppearanceTests` with no `NSView` involved. `updateTrackingAreas()`

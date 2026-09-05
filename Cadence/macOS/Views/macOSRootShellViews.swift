@@ -193,12 +193,26 @@ nonisolated enum SidebarResizeHandleAppearance: Equatable {
 
     /// Drag always wins over hover, matching the pre-existing behavior — `mouseDown` also makes
     /// the view first responder, so without this order a drag would show the dimmer focus tint
-    /// instead of its own. Focus is the new, lowest-priority state: it only shows once neither a
+    /// instead of its own. Focus is the lowest-priority state: it only shows once neither a
     /// drag nor a hover is already saying something.
-    static func resolve(isDragging: Bool, isHovered: Bool, isFocused: Bool) -> Self {
+    ///
+    /// **T-1065.** `isFocused` alone is not enough. `SidebarResizeHandleView` has answered
+    /// `acceptsFirstResponder = true` since long before T-1037, so AppKit has always been free to
+    /// park the window's first responder on the handle at launch — harmless while `.rest` was the
+    /// only thing a resting handle could paint, and the reason T-1037's new `.focused` tint made a
+    /// freshly launched window show a 10pt accent band down the divider with the user having
+    /// touched nothing. That is the user's own bug report, re-created by the code meant to fix it.
+    /// So the indicator is gated the way macOS gates its own focus rings: it appears only for a
+    /// user who turned Full Keyboard Access on. With it off, a focused handle simply rests.
+    static func resolve(
+        isDragging: Bool,
+        isHovered: Bool,
+        isFocused: Bool,
+        isFullKeyboardAccessEnabled: Bool
+    ) -> Self {
         if isDragging { return .dragging }
         if isHovered { return .hovered }
-        if isFocused { return .focused }
+        if isFocused && isFullKeyboardAccessEnabled { return .focused }
         return .rest
     }
 }
@@ -228,7 +242,18 @@ private final class SidebarResizeHandleView: NSView {
         NotificationCenter.default.removeObserver(self)
     }
 
+    /// Kept unconditionally `true` so `mouseDown`'s `makeFirstResponder(self)` still lands and a
+    /// click-then-arrow-key resize keeps working. Reachability by *keyboard* is `canBecomeKeyView`'s
+    /// job, below — the two are separate questions and AppKit asks them separately.
     override var acceptsFirstResponder: Bool { true }
+
+    /// **T-1065.** The key view loop is what AppKit walks to choose a window's first responder when
+    /// no `initialFirstResponder` is set — and nothing in this app sets one. Answering `true`
+    /// unconditionally is why a resize handle, of all things, was where the keyboard started on a
+    /// fresh launch. `NSControl` gates exactly this on Full Keyboard Access for every non-text
+    /// control; matching it takes the handle out of the launch pick *and* out of Tab order for the
+    /// default configuration, while leaving both intact for the keyboard user T-1037 was written for.
+    override var canBecomeKeyView: Bool { NSApp.isFullKeyboardAccessEnabled }
 
     override var mouseDownCanMoveWindow: Bool { false }
 
@@ -375,7 +400,8 @@ private final class SidebarResizeHandleView: NSView {
         let appearance = SidebarResizeHandleAppearance.resolve(
             isDragging: isDragging,
             isHovered: isHovered,
-            isFocused: isFocused
+            isFocused: isFocused,
+            isFullKeyboardAccessEnabled: NSApp.isFullKeyboardAccessEnabled
         )
         layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(appearance.accentAlpha).cgColor
     }
