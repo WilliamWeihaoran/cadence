@@ -103,13 +103,16 @@ struct CadenceChoicePickerDismissalTests {
     /// picker anywhere lands here in the same change — which is the point, because the question
     /// "does this one's selection setter commit?" has to be asked at that moment and not later.
     ///
-    /// Four of thirty-seven commit. Three are task-row chips; the fourth is
+    /// Four of thirty-nine commit. The two archive-import mode pickers do not: the mode is a
+    /// view-state choice read at the moment Import is pressed, so its setter writes nothing to the
+    /// store and a committing setter there would be wrong, not missing. Three are task-row chips; the fourth is
     /// `iOSTaskDetailSheetSections`' time picker, the same defect closing over a swallowed
     /// `try? modelContext.save()` two calls down its old `Binding<Int>` setter — fixed by routing it
     /// through `iOSTaskDetailSheet.selectScheduledTime` and the committing initialiser [[T-761]].
     @Test func everyChoicePopoverCallSiteIsCountedAndOnlyTheCommittingOnesAnswer() throws {
         let expected: [String: (calls: Int, committing: Int)] = [
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
+            "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSCalendarEventEditSheet.swift": (2, 0),
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": (3, 0),
             "Cadence/iOS/iOSCalendarSettingsSection.swift": (1, 0),
@@ -122,6 +125,7 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/iOS/iOSTaskViews.swift": (1, 0),
             "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),
             "Cadence/iOS/iOSTrackingEditorSheets.swift": (5, 0),
+            "Cadence/macOS/Views/SettingsArchiveImportCard.swift": (1, 0),
             "Cadence/macOS/Views/SettingsCalendarWorkHoursSection.swift": (1, 0),
             "Cadence/macOS/Views/SettingsSectionViews.swift": (1, 0),
         ]
