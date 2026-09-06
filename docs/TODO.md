@@ -333,7 +333,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceKanbanColumnLifecycleSurfaceTests` pins with an exact regex. Not a defect found in use;
   read off the source while wiring the row half.
 
-- [T-1075] **`main` is red a SECOND way, and it is not [[T-1073]]: `CadenceGuardScriptSelftestTests`
+- [T-1075] **CLOSED 2026-09-06 — the premise is false at HEAD: `STRANDED` is in neither `HEAD:scripts/mutate.sh` nor HEAD's copy of the test, and both copies carrying it are uncommitted working-tree edits that agree with each other.** Originally: **`main` is red a SECOND way, and it is not [[T-1073]]: `CadenceGuardScriptSelftestTests`
   fails at HEAD because the test names a `mutate.sh` refusal that `mutate.sh` does not make.**
   Measured 2026-09-06 against `db17932` in a pristine `git archive HEAD` tree, so it is HEAD and not
   a drifted checkout. `mutationRunnerRefusals` in
