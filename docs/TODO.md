@@ -334,7 +334,49 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   full `CadenceTests` 4,589 tests in 392 suites, 0 failures, 0 warnings on both the macOS and the iOS-simulator
   destination.
 
-- [T-1087] **The native-picker sweep stops at the macOS Settings folder, and the phone has the same
+- [T-1087] **CLOSED 2026-09-07 (agent `movesweep`) — the rule applies on the phone, the corpus is
+  now iOS *and* `Cadence/Shared/`, and both sweeps read one needle and one witness.**
+
+  **The judgement the ticket asked for, argued rather than assumed.** T-20's reason is AppKit's: a
+  `Picker` on the Mac draws AppKit's bezel and AppKit's accent and takes no palette colour. UIKit's
+  segmented control is not that object, so the reason does not transfer by itself — but the app had
+  already decided the same thing on its own terms, and said so in `CadenceChoicePicker`'s doc
+  comment: `CadenceChoiceRow` and its siblings are "shared custom replacements for native SwiftUI
+  `Picker`/`.pickerStyle(.segmented)` controls **on iOS**". The vocabulary was the phone's first and
+  macOS adopted it, which is what T-20 *was*. So the rule is iOS's rule and the Mac's sweep is the
+  one that arrived second. It applies; it is widened.
+
+  **Measured before widening, which is what "scope is the judgement" meant.** Stripped of comments,
+  `Cadence/iOS/` (106 files) and `Cadence/Shared/` (160) hold **zero** `.pickerStyle(` and **zero**
+  live `Picker(` between them. The whole app holds exactly one of each, in
+  `Cadence/macOS/Sheets/CreateGoalSheet.swift` — which is outside every corpus and is therefore
+  usable as the shared witness. There was **no `.wheel` picker to exempt**: the app's date entry is
+  `CadenceDatePicker`, which styles a `DatePicker` through `.datePickerStyle(`, a different needle.
+  So the bare ban costs nothing today, and the day a deliberate `.wheel` picker is wanted the test
+  is where to argue for it.
+
+  **What it newly catches, measured by mutation rather than claimed.** A `Picker("Mode", …)` with
+  `.pickerStyle(.segmented)` added to `iOSListNotesView` — T-1082's defect, in the same shape —
+  **builds clean**: 0 errors and 0 warnings on `generic/platform=iOS Simulator`, and 0 failures in
+  every suite that existed before this ticket. `noMobileOrSharedSurfaceDrawsANativePicker` is the
+  only thing that fails on it. `Cadence/Shared/` is in the corpus as the second hole of the same
+  shape: a `Picker` added to a shared component draws on both platforms and was covered by neither
+  sweep.
+
+  **Two needles, because one was not enough.** The corpus is full of `CadenceDatePicker(`,
+  `iOSSearchScopePicker(` and `.photosPicker(`, none of which is the control under the rule, so the
+  `Picker(` half is `(?<![A-Za-z0-9_.])Picker\s*\(` and the test shows it discriminating on those
+  five spellings — a needle that matched them would make the zeros unreachable rather than true.
+  Both sweeps now read one `t20NativePickerNeedle` constant and call one shared witness helper, so
+  blinding the needle fails **both** sweeps instead of silently emptying them (measured: blinding
+  both to `…ZZZ(` turns `noSettingsPaneStillDrawsAMenuPicker` and
+  `noMobileOrSharedSurfaceDrawsANativePicker` red, 6 issues). Registered in
+  `CadenceRealTreeSweepManifest.txt` per [[T-1092]].
+  `CadenceArchiveImportEntryPointTests.neitherArchiveImportSurfaceDrawsANativePicker` is left where
+  it is: it is now redundant on its iOS half and still carries its own non-vacuity assertion that
+  each file kept the shared chooser.
+
+  **Filed as:** **The native-picker sweep stops at the macOS Settings folder, and the phone has the same
   screens.** Found while closing [[T-1082]].
   `SettingsSharedVocabularyTests.noSettingsPaneStillDrawsAMenuPicker` walks `Cadence/macOS/Views`
   filtered to paths containing `/Settings` and refuses `.pickerStyle(` in each — the rule [[T-20]]
@@ -774,7 +816,47 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   folder on the strength of autosave, which is what [[T-327]] measured the cost of. No half of the
   save-commit rule sees it, because there is no commit in any frame to hang a swallow on.
 
-- [T-1093] **RESERVED 2026-09-07 (agent `swallow`, split out of [[T-1071]]) — filing a note into a folder commits nothing at all, on either platform.** `CadenceListNoteFiling.move(_:toFolder:)` sets `note.folderPath` and stops: no `save()`, no `try?`, no persistence helper. `iOSListNotesView.iOSNoteFolderSheet.save()` calls `onSave(normalized)` and `dismiss()`, and the row visibly changes folder on the strength of autosave — the cost [[T-327]] measured. **No half of the `try? save()` rule sees it, because there is no commit in any frame to hang a swallow on.**
+- [T-1093] **CLOSED 2026-09-07 (agent `movesweep`) — filing a note into a folder commits, and a
+  refused filing is named in the column instead of vanishing.**
+
+  **Two doors, named apart, because one caller must not commit.**
+  `CadenceListNoteFiling.move(_:toFolder:in:commit:)` throws and commits through
+  `CadencePendingChangePersistence.commitEdit`; `fileWithoutCommitting(_:toFolder:)` is the archive
+  importer's and only the importer's. The shape is a `commit:` parameter rather than a third
+  invention because that is what the neighbours use — `createNote` in the same enum takes one, and
+  `NoteActionSupport.move(_:toArea:modelContext:commit:)` is the same sentence about the same model,
+  down to the field-snapshot undo. The importer keeps **exactly one** `modelContext.save()` for the
+  whole document, and the non-committing spelling is safe to keep only because
+  `noNoteFolderMoveSkipsTheCommitOutsideTheImporter` pins it to that one call site: a door that does
+  not commit is fine for an importer and a trap for a view, so it now says so at the call site.
+
+  **The undo restores the raw previous path, not a re-normalized one.** A `folderPath` can arrive
+  un-normalized from a merge, from CloudKit or from a build older than the convention — the case
+  this file's own header records — so an undo written as
+  `fileWithoutCommitting(note, toFolder: previous)` would quietly tidy `"/Planning//Research/"` to
+  `"Planning/Research"` while the notice claimed nothing changed. Mutation-tested: that spelling
+  compiles and turns `arefusedFolderMovePutsTheRawPreviousPathBackAndThrows` red.
+
+  **Four interactive call sites became two, one per platform.** Both handles on each column — the
+  row's "Move to Folder" menu and the folder sheet's answer — route through a private `moveNote`,
+  so there is one commit and one notice per platform instead of two of each. (The ledger entry said
+  "drag-to-folder and the folder sheet" for macOS; there is no drag-to-folder call site, it is the
+  row menu.) The notice is `moveFailureNotice`, drawn above the note column on both platforms: the
+  sheet is dismissed before the answer is applied and at compact width the context menu is gone
+  too, so the column is the only surface still standing — and it is where the row that did *not*
+  move is still sitting under its old heading, which is the retry.
+
+  **Pinned by `CadenceNoteFolderMoveCommitTests`, 8 tests**, behaviour first: the committed move is
+  read back through a **second** `ModelContext`, which is the assertion the old code failed while
+  passing every in-memory reading of "the note moved". 7 mutations, 7 killed, each confirmed to
+  compile (0 compile errors): dropping the commit (4 red), the re-normalizing undo, `rollback()` in
+  place of the field undo, clearing the notice above the `catch`, and a second
+  `fileWithoutCommitting` call site in a view. Counts moved with it and say why:
+  `onlyTheSharedFilingHelperWritesAFolderPath` reads 3 assignments in the one file rather than 2 —
+  the third is the undo — and `onlyNoticesNoLaterAttemptClearsOfferToDismissThemselves` reads 65
+  inline notices rather than 63.
+
+  **Filed as:** **filing a note into a folder commits nothing at all, on either platform.** `CadenceListNoteFiling.move(_:toFolder:)` sets `note.folderPath` and stops: no `save()`, no `try?`, no persistence helper. `iOSListNotesView.iOSNoteFolderSheet.save()` calls `onSave(normalized)` and `dismiss()`, and the row visibly changes folder on the strength of autosave — the cost [[T-327]] measured. **No half of the `try? save()` rule sees it, because there is no commit in any frame to hang a swallow on.**
   Not fixed with T-1071 because the fix is not local to the door that reports it. `move` has four production call sites — `ListNotesView` twice (drag-to-folder and the folder sheet), `iOSListNotesView` twice — plus `CadenceArchiveImportService`, which files hundreds of restored notes off the main actor (T-1086) and must **not** commit per note. So the commit belongs at the three interactive call sites, each with a `commitEdit(in:undo:)` restoring the previous `folderPath` and each with a notice on the surface the user is left looking at, which is the column rather than the dismissed sheet.
 - [T-1072] **Ids were handed out in agent briefs without being written to the ledger, and collided twice in one night.** The ledger IS the allocator; a reservation that lives only in a brief is invisible to the next agent computing "next free id". [[T-1043]] is defined twice (an image fix and a calendar-link ticket), and T-1067/T-1068 were each claimed by two agents for unrelated work. Ids are meant to be stable and never reused, so every reference to a collided id is ambiguous. **Fix the allocator, not the three collisions:** write the stub at the moment the id is handed out, as this block does.
 - [T-1066] **CLOSED 2026-09-06 (tooltruth; landed by `requeue`) — the mechanism was not a race, and the print now reports from the filesystem.** **Filed as:** **`run-macos-app.sh stop` prints "private store removed" over a store it did not remove.**

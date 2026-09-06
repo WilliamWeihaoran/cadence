@@ -213,7 +213,7 @@ struct CadenceNoteFolderSurfaceTests {
 
         #expect(CadenceNoteFolderGrouping.groups(for: [only]).map(\.folderPath) == ["Planning"])
 
-        CadenceListNoteFiling.move(only, toFolder: CadenceNoteFolderPath.root)
+        try CadenceListNoteFiling.move(only, toFolder: CadenceNoteFolderPath.root, in: context)
 
         #expect(CadenceNoteFolderGrouping.groups(for: [only]).map(\.folderPath) == [""])
         #expect(CadenceNoteFolderGrouping.folderNames(in: [only]).isEmpty)
@@ -273,11 +273,14 @@ struct CadenceNoteFolderSurfaceTests {
         context.insert(project)
         let moved = note("Note", folder: "", project: project, in: context)
 
-        CadenceListNoteFiling.move(moved, toFolder: "/Planning//Research/")
+        try CadenceListNoteFiling.move(moved, toFolder: "/Planning//Research/", in: context)
         #expect(moved.folderPath == "Planning/Research")
 
-        CadenceListNoteFiling.move(moved, toFolder: "")
+        try CadenceListNoteFiling.move(moved, toFolder: "", in: context)
         #expect(moved.folderPath == CadenceNoteFolderPath.root)
+
+        // The move commits (T-1093). Nothing is left pending for some other screen's save to take.
+        #expect(!context.hasChanges)
     }
 
     /// **The blank case seeds an empty heading since T-733**, not the word. It used to substitute
@@ -365,8 +368,10 @@ struct CadenceNoteFolderSurfaceTests {
         #expect(offenders.sorted() == [
             // `self.folderPath = folderPath` in the initializer.
             "Cadence/Models/Note.swift:1",
-            // `createNote` and `move`, and nothing else anywhere.
-            "Cadence/Shared/CadenceNoteFolderSupport.swift:2"
+            // Three since T-1093: `createNote`, `fileWithoutCommitting`, and the undo inside
+            // `move(_:toFolder:in:commit:)` that puts the raw previous path back when the store
+            // refuses the commit. Still one file, which is the whole claim.
+            "Cadence/Shared/CadenceNoteFolderSupport.swift:3"
         ])
     }
 
@@ -416,8 +421,15 @@ struct CadenceNoteFolderSurfaceTests {
             "Cadence/iOS/iOSListNotesView.swift": 1,
             "Cadence/macOS/Views/ListNotesView.swift": 1
         ])
-        // Twice each: the row's "Move to Folder" menu, and the folder sheet's answer.
+        // Once each since T-1093: the two handles — the row's "Move to Folder" menu and the
+        // folder sheet's answer — both route through the view's own `moveNote`, which is where the
+        // commit and the refusal notice are. Two call sites of the helper would be two commits and
+        // two notices.
         try expectFolderOccurrences(of: "CadenceListNoteFiling.move(", at: [
+            "Cadence/iOS/iOSListNotesView.swift": 1,
+            "Cadence/macOS/Views/ListNotesView.swift": 1
+        ])
+        try expectFolderOccurrences(of: "moveNote(note, toFolder:", at: [
             "Cadence/iOS/iOSListNotesView.swift": 2,
             "Cadence/macOS/Views/ListNotesView.swift": 2
         ])

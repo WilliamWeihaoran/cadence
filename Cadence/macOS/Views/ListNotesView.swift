@@ -31,6 +31,10 @@ struct ListNotesView: View {
     @State private var isTaskNotesCollapsed = false
     /// T-497: the one thing `addNote` can fail at, said where the new row would have appeared.
     @State private var createFailureNotice: String?
+    /// T-1093: a refused folder move, said in the column. Its own notice rather than
+    /// `createFailureNotice`'s, because the two failures are reachable from different controls and
+    /// one clearing the other would blank a sentence the user has not answered yet.
+    @State private var moveFailureNotice: String?
     @Query(sort: \Note.order) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Tag.order) private var allTags: [Tag]
@@ -220,6 +224,12 @@ struct ListNotesView: View {
                     .padding(.bottom, 8)
             }
 
+            if let moveFailureNotice {
+                CadenceInlineFailureNotice(text: moveFailureNotice)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+            }
+
             Divider().background(Theme.borderSubtle)
 
             notesScroll
@@ -253,7 +263,7 @@ struct ListNotesView: View {
                         folderNames: listNoteFolderNames,
                         onSelect: openListNote,
                         onCopyLink: { NoteActionSupport.copyMarkdownLink(to: $0) },
-                        onMoveToFolder: { CadenceListNoteFiling.move(note, toFolder: $0) },
+                        onMoveToFolder: { moveNote(note, toFolder: $0) },
                         onNewFolder: { folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id)) },
                         onDelete: deleteNote
                     )
@@ -363,8 +373,26 @@ struct ListNotesView: View {
             addNote(folderPath: folderPath)
         case .moveNote(let noteID):
             guard let note = listNotes.first(where: { $0.id == noteID }) else { return }
-            CadenceListNoteFiling.move(note, toFolder: folderPath)
+            moveNote(note, toFolder: folderPath)
         }
+    }
+
+    /// **T-1093: the move is committed, and a refused one says so in the column.**
+    ///
+    /// Both handles route here — the row's "Move to Folder" menu and the folder sheet's answer —
+    /// so there is one commit and one notice rather than two of each. The notice belongs to the
+    /// column and not to the sheet for the reason T-630 gives about the Move popover: the sheet is
+    /// already dismissed by the time `applyFolderRequest` runs, so a sentence written onto it would
+    /// be a sentence on a surface nobody is looking at. The column is what the user is left with,
+    /// and it is also where the row that did *not* move is still sitting under its old heading.
+    private func moveNote(_ note: Note, toFolder folderPath: String) {
+        do {
+            try CadenceListNoteFiling.move(note, toFolder: folderPath, in: modelContext)
+        } catch {
+            moveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        moveFailureNotice = nil
     }
 
     private func filteredNotes(_ notes: [Note]) -> [Note] {

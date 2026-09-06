@@ -221,15 +221,51 @@ enum CadenceListNoteFiling {
         return note
     }
 
-    /// Moves a note into a folder, or out of every folder when handed anything that normalizes to
-    /// the root.
+    /// Files a note under a folder **without committing**, for the one caller that must not commit
+    /// per note: `CadenceArchiveImportService`, which restores hundreds of notes and saves once for
+    /// the whole import (T-1086).
     ///
-    /// `nonisolated` because the archive importer files restored notes through it (T-1086) and runs
-    /// off the main actor. It is a pure write to one plain `String` property, so there was never
-    /// anything main-actor about it — the annotation is the target's `SWIFT_DEFAULT_ACTOR_ISOLATION
-    /// = MainActor` default being opted out of, not a concurrency claim being made.
-    nonisolated static func move(_ note: Note, toFolder rawPath: String) {
+    /// **The name is the contract (T-1093).** This used to be called `move`, and every interactive
+    /// call site on both platforms reached for it and got a write the store never took — no
+    /// `save()`, no `try?`, no persistence helper, so not one half of the `try? save()` rule could
+    /// see it: there was no commit in any frame to hang a swallow on, and the row visibly changed
+    /// folder on the strength of the next unrelated autosave. A door that does not commit is a fine
+    /// thing for an importer to have and a trap for a view, so it says so at the call site.
+    /// `noNoteFolderMoveSkipsTheCommitOutsideTheImporter` pins it to that one caller.
+    ///
+    /// `nonisolated` because the importer runs off the main actor. It is a pure write to one plain
+    /// `String` property, so there was never anything main-actor about it — the annotation is the
+    /// target's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` default being opted out of, not a
+    /// concurrency claim being made.
+    nonisolated static func fileWithoutCommitting(_ note: Note, toFolder rawPath: String) {
         note.folderPath = CadenceNoteFolderPath.normalized(rawPath)
+    }
+
+    /// Moves a note into a folder, or out of every folder when handed anything that normalizes to
+    /// the root — **and commits it** (T-1093).
+    ///
+    /// The shape is `NoteActionSupport.move(_:toArea:modelContext:commit:)`'s, which is the same
+    /// sentence about the same model: capture the field, write it, and put it back when the store
+    /// refuses the commit. `commitEdit` rather than `rollback()` for the reason
+    /// `CadencePendingChangePersistence.commitEdit` gives — one `ModelContext` app-wide, so a
+    /// refused filing must not take the note somebody is typing in the pane beside the column.
+    ///
+    /// The undo restores the **raw** previous string rather than re-normalizing it. A path can
+    /// arrive un-normalized from a merge or from CloudKit (see this file's header), and "nothing
+    /// was changed" has to mean the bytes the note had, not a tidied version of them.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    static func move(
+        _ note: Note,
+        toFolder rawPath: String,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let previousFolderPath = note.folderPath
+        fileWithoutCommitting(note, toFolder: rawPath)
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            note.folderPath = previousFolderPath
+        }
     }
 
     /// A new note opens onto its own title as an H1, which is what the markdown editor keeps in

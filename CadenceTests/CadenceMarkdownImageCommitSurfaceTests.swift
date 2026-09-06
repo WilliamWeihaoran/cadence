@@ -404,7 +404,11 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // T-1070/T-1071 made it 63, both bare: the iOS tag strip (a refused chip removal, the
         // popover already had its own for a refused selection) and the Notepad `+` (a refused
         // note). Each sits beside the control that failed and is cleared by the next press of it.
-        #expect(total == 63, "the inline notice has \(total) call sites, not the 63 this test was written over")
+        // T-1093 made it 65, one per platform and both bare: filing a note into a folder commits
+        // now, and a refused filing is named above the note column — which is the surface the user
+        // is left looking at, since the folder sheet is dismissed before the answer is applied.
+        // The retry is the "Move to Folder" menu the row still carries under its old heading.
+        #expect(total == 65, "the inline notice has \(total) call sites, not the 65 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

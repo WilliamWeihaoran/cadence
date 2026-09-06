@@ -582,7 +582,13 @@ nonisolated enum CadenceArchiveImportService {
                 // Idempotent on anything Cadence wrote, so a real round trip is unchanged; a
                 // hand-edited `"/Planning/"` is filed under `Planning` rather than becoming a
                 // third group no surface can merge with the other two.
-                CadenceListNoteFiling.move(model, toFolder: record.folderPath)
+                //
+                // The non-committing door, and the only caller of it (T-1093). Every interactive
+                // filing goes through `CadenceListNoteFiling.move(_:toFolder:in:commit:)`, which
+                // commits; an import commits once for the whole archive, in `apply` below, so a
+                // per-note `save()` here would be hundreds of commits and a half-written store on
+                // the first refusal.
+                CadenceListNoteFiling.fileWithoutCommitting(model, toFolder: record.folderPath)
             }
         )
 

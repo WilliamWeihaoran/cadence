@@ -49,6 +49,10 @@ struct iOSListNotesView: View {
     /// T-497: the one thing `addNote` can fail at, said above the column the row would have
     /// appeared in — macOS's `ListNotesView` puts it in the same place.
     @State private var createFailureNotice: String?
+    /// T-1093: a refused folder move, in the same place and for the same reason. Its own notice
+    /// rather than `createFailureNotice`'s, because the two failures are reachable from different
+    /// controls and one clearing the other would blank a sentence the user has not answered yet.
+    @State private var moveFailureNotice: String?
 
     /// The size class only. Every *layout* question goes through `layout`.
     private var isCompactWidth: Bool {
@@ -193,6 +197,12 @@ struct iOSListNotesView: View {
                     .padding(.vertical, metrics.columnVerticalPadding)
             }
 
+            if let moveFailureNotice {
+                CadenceInlineFailureNotice(text: moveFailureNotice)
+                    .padding(.horizontal, metrics.columnHorizontalPadding)
+                    .padding(.vertical, metrics.columnVerticalPadding)
+            }
+
             notesColumnContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -240,7 +250,7 @@ struct iOSListNotesView: View {
             iOSNoteCopyLinkButton(note: note)
             NoteFolderMoveMenu(
                 folderNames: folderNames,
-                move: { CadenceListNoteFiling.move(note, toFolder: $0) },
+                move: { moveNote(note, toFolder: $0) },
                 newFolder: { folderRequest = iOSNoteFolderRequest(mode: .moveNote(note.id)) }
             )
             iOSNoteDeleteMenuButton(note: note) { noteToDelete = $0 }
@@ -318,8 +328,23 @@ struct iOSListNotesView: View {
             addNote(folderPath: folderPath)
         case .moveNote(let noteID):
             guard let note = listNotes.first(where: { $0.id == noteID }) else { return }
-            CadenceListNoteFiling.move(note, toFolder: folderPath)
+            moveNote(note, toFolder: folderPath)
         }
+    }
+
+    /// **T-1093: the move is committed, and a refused one says so in the column** — macOS's
+    /// `ListNotesView.moveNote` line for line, because it is the same two handles (the row's
+    /// "Move to Folder" menu and the folder sheet's answer) and the same argument about where the
+    /// sentence goes. The sheet is dismissed before `apply(_:folderPath:)` runs, and at compact
+    /// width the context menu is gone too, so the column is the only surface left standing.
+    private func moveNote(_ note: Note, toFolder folderPath: String) {
+        do {
+            try CadenceListNoteFiling.move(note, toFolder: folderPath, in: modelContext)
+        } catch {
+            moveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        moveFailureNotice = nil
     }
 
     /// Same focus-drop rule as `iOSNotesView.apply(_:to:)`: the editing surface ignores external

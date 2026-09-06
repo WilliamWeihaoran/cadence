@@ -237,29 +237,82 @@ struct SettingsSharedVocabularyTests {
     /// green. The needle is now one constant read by both the sweep and a positive witness outside
     /// the corpus, so a typo in it fails the witness instead of silently emptying the sweep.
     @Test func noSettingsPaneStillDrawsAMenuPicker() throws {
-        let needle = ".pickerStyle("
-
         var scanned = 0
         for path in try t20SwiftFiles(under: "Cadence/macOS/Views") where path.contains("/Settings") {
             scanned += 1
             let code = try t20StrippingComments(t20SourceFile(path))
             #expect(
-                !code.contains(needle),
+                !code.contains(t20NativePickerNeedle),
                 "\(path) still styles a native Picker"
             )
         }
         #expect(scanned >= 15, "scanned only \(scanned) settings panes")
 
-        // `CreateGoalSheet` holds the app's one remaining styled `Picker`, and it is outside
-        // Settings — which is what makes it usable as the witness. If it goes, re-anchor this on
-        // whatever replaced it or delete the rule; do not leave a needle nothing can match.
-        let styledPickerElsewhere = try t20StrippingComments(
-            t20SourceFile("Cadence/macOS/Sheets/CreateGoalSheet.swift")
-        )
-        #expect(
-            styledPickerElsewhere.contains(needle),
-            "the needle no longer matches a live Picker anywhere; re-anchor it or drop the rule"
-        )
+        try t20ExpectTheNativePickerNeedleStillMatchesSomething()
+    }
+
+    /// **T-1087: the same rule, on the platform that had no sweep at all.**
+    ///
+    /// The macOS corpus above is one platform, and [[T-1082]] landed its preview sheet twice —
+    /// macOS and iOS — with the mode choice drawn as `Picker(.segmented)` in both. Only the Mac's
+    /// was caught. The phone's was found by reading, and
+    /// `CadenceArchiveImportEntryPointTests.neitherArchiveImportSurfaceDrawsANativePicker` is the
+    /// two-file plug that went in with it; this is the rule the plug stands in for.
+    ///
+    /// **Does the rule apply on iOS at all?** T-20's argument is AppKit's: a `Picker` on the Mac
+    /// draws AppKit's bezel and AppKit's accent and takes no palette colour. UIKit's segmented
+    /// control is not that object, so the argument does not transfer by itself — but the app has
+    /// already made the same decision on its own terms, in `CadenceChoicePicker`'s doc comment:
+    /// `CadenceChoiceRow` and its siblings were written as "shared custom replacements for native
+    /// SwiftUI `Picker`/`.pickerStyle(.segmented)` controls **on iOS**". The vocabulary was iOS's
+    /// first and macOS adopted it, which is what T-20 was. So the rule is the phone's rule, and the
+    /// Mac's sweep is the one that arrived second.
+    ///
+    /// **Measured before widening, which is the judgement the ticket asked for:** stripped of
+    /// comments, `Cadence/iOS/` and `Cadence/Shared/` hold **zero** `.pickerStyle(` and **zero**
+    /// `Picker(` between them. There is no `.wheel` picker to exempt — the app's date entry is
+    /// `CadenceDatePicker`, which styles a `DatePicker` through `.datePickerStyle(` and is a
+    /// different needle. So a bare ban costs nothing today and pins a surface that is already
+    /// clean; the day a deliberate `.wheel` picker is wanted, this is where to argue for it.
+    ///
+    /// **`Cadence/Shared/` is in the corpus and macOS's sweep does not cover it**, which is the
+    /// second hole the same shape: a `Picker` added to a shared component draws on both platforms
+    /// and would have been caught by neither sweep.
+    @Test func noMobileOrSharedSurfaceDrawsANativePicker() throws {
+        var scanned = 0
+        for directory in ["Cadence/iOS", "Cadence/Shared"] {
+            for path in try t20SwiftFiles(under: directory) {
+                scanned += 1
+                let code = try t20StrippingComments(t20SourceFile(path))
+                #expect(
+                    !code.contains(t20NativePickerNeedle),
+                    "\(path) styles a native Picker; iOS's own vocabulary is CadenceChoicePicker"
+                )
+                #expect(
+                    t20LiveNativePickerCount(in: code) == 0,
+                    "\(path) draws a native Picker; iOS's own vocabulary is CadenceChoicePicker"
+                )
+            }
+        }
+        #expect(scanned >= 250, "scanned only \(scanned) mobile and shared files")
+
+        try t20ExpectTheNativePickerNeedleStillMatchesSomething()
+
+        // The second needle needs its own witness, and it needs to *discriminate*: the corpus is
+        // full of `CadenceDatePicker(`, `iOSSearchScopePicker(` and `.photosPicker(`, none of which
+        // is a native `Picker`, and a needle that matched those would make the zeros above
+        // unreachable rather than true.
+        #expect(t20LiveNativePickerCount(in: "Picker(selection: $mode) { }") == 1)
+        #expect(t20LiveNativePickerCount(in: "Picker (\"Mode\", selection: $mode)") == 1)
+        for read in [
+            "CadenceDatePicker(selection: $startDate)",
+            "iOSSearchScopePicker(scope: $scope)",
+            "CadenceAccentPalettePicker(selectedHex: $hex)",
+            ".photosPicker(isPresented: $isPicking)",
+            "SwiftUI.Picker(selection: $mode) { }"
+        ] {
+            #expect(t20LiveNativePickerCount(in: read) == 0, "over-matched \(read)")
+        }
     }
 
     /// Both work-hours halves present the same control. macOS reads the shared type by name; iOS
@@ -402,6 +455,49 @@ private func t20RepositoryRoot() -> URL {
     URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
+}
+
+/// The one needle both native-picker sweeps read (T-20, T-1087).
+///
+/// It is a shared constant rather than a literal in each test because an absence sweep whose corpus
+/// is required *not* to contain the needle cannot tell "no offenders" from "no matches ever" — the
+/// exact failure T-20 measured, where blinding the needle to `.pickerStyleZZZ(` left the whole suite
+/// green. One constant means one typo fails the shared witness below instead of silently emptying
+/// two sweeps.
+private let t20NativePickerNeedle = ".pickerStyle("
+
+/// Live uses of SwiftUI's own `Picker`, and not of the app's controls whose names end in `Picker`.
+///
+/// The `(?<![A-Za-z0-9_.])` guard is the whole job: `CadenceDatePicker(`, `iOSSearchScopePicker(`
+/// and `.photosPicker(` are all substring matches for `Picker(` and none of them is the control
+/// under the rule. A sweep that counted those would be asserting a zero that can never be reached.
+private func t20LiveNativePickerCount(in code: String) -> Int {
+    let pattern = "(?<![A-Za-z0-9_.])Picker\\s*\\("
+    let range = NSRange(code.startIndex..., in: code)
+    guard let expression = try? NSRegularExpression(pattern: pattern) else { return -1 }
+    return expression.numberOfMatches(in: code, range: range)
+}
+
+/// `CreateGoalSheet` holds the app's one remaining styled `Picker`, and it is outside every corpus
+/// above — macOS Settings, `Cadence/iOS` and `Cadence/Shared` — which is what makes it usable as
+/// the witness for all of them. If it goes, re-anchor this on whatever replaced it or delete the
+/// rule; do not leave a needle nothing can match.
+private func t20ExpectTheNativePickerNeedleStillMatchesSomething(
+    sourceLocation: SourceLocation = #_sourceLocation
+) throws {
+    let styledPickerElsewhere = try t20StrippingComments(
+        t20SourceFile("Cadence/macOS/Sheets/CreateGoalSheet.swift")
+    )
+    #expect(
+        styledPickerElsewhere.contains(t20NativePickerNeedle),
+        "the needle no longer matches a live Picker anywhere; re-anchor it or drop the rule",
+        sourceLocation: sourceLocation
+    )
+    #expect(
+        t20LiveNativePickerCount(in: styledPickerElsewhere) >= 1,
+        "the Picker needle no longer matches a live Picker anywhere; re-anchor it or drop the rule",
+        sourceLocation: sourceLocation
+    )
 }
 
 private func t20SwiftFiles(under relativeDirectory: String) throws -> [String] {
