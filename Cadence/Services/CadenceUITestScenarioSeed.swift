@@ -92,7 +92,11 @@ enum CadenceUITestScenarioSeed {
         let hostContext = host?.context
 
         var order = 0
-        func insertTask(_ name: String, dueDate: String, scheduledDate: String) {
+        // The context is a parameter rather than a capture (T-1078). `CadenceSaveCommitRule`
+        // reads ownership off a signature, and a nested `func` that captures its parent's
+        // `ModelContext` reads as owning the unit of work while its parent's `save()` is not
+        // credited to it. Naming it says the same thing to the rule and to a reader.
+        func insertTask(_ name: String, dueDate: String, scheduledDate: String, in modelContext: ModelContext) {
             let task = AppTask(title: name)
             task.dueDate = dueDate
             task.scheduledDate = scheduledDate
@@ -106,15 +110,15 @@ enum CadenceUITestScenarioSeed {
         // `pastDo` — planned for yesterday, no due date, so `CadenceTodayRolloverSupport` offers
         // them and the rollover notice is on screen.
         for name in Fixture.pastDoTaskNames {
-            insertTask(name, dueDate: "", scheduledDate: yesterdayKey)
+            insertTask(name, dueDate: "", scheduledDate: yesterdayKey, in: modelContext)
         }
         // `pastDue` — a deadline already missed. Deliberately separate: a due date outranks a do
         // date on Today, so these must *not* appear in the rollover offer.
         for name in Fixture.overdueTaskNames {
-            insertTask(name, dueDate: yesterdayKey, scheduledDate: "")
+            insertTask(name, dueDate: yesterdayKey, scheduledDate: "", in: modelContext)
         }
         for name in Fixture.todayTaskNames {
-            insertTask(name, dueDate: "", scheduledDate: todayKey)
+            insertTask(name, dueDate: "", scheduledDate: todayKey, in: modelContext)
         }
 
         seedDailyNoteWithImage(todayKey: todayKey, modelContext: modelContext)
