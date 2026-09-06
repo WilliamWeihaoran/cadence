@@ -616,6 +616,11 @@ struct CadenceTestTargetHygieneTests {
     /// two witnesses are literal fixtures a line apart — the same suite with and without the
     /// annotation — so a rule that stopped reading the annotation fails the constructor rather than
     /// sweeping green.
+    ///
+    /// **The reach is built over the app tree first ([[T-1083]])**, so a suite that calls a service
+    /// which runs the migration is asked for the trait too. The index is non-vacuity-checked below
+    /// for the reason its own doc gives: an index that read nothing makes this half permanently
+    /// green and a leaking target looks exactly like a clean one.
     @Test func everyTestSuiteReachingALaunchReportWriterPreservesTheStoredReports() throws {
         let unguarded = """
         @MainActor
@@ -625,11 +630,18 @@ struct CadenceTestTargetHygieneTests {
             }
         }
         """
+        let reach = try StoredLaunchReportSuiteRule.writerReach(
+            over: cadenceRepoSwiftFiles(under: "Cadence")
+        ) { CadenceSourceScan.codeOnly(try cadenceTestSource($0)) }
+        #expect(
+            reach.namesRead >= 2,
+            "the writer-reach index read \(reach.namesRead) names, so the one-frame-down half is blind"
+        )
         let instrument = try CadenceScanInstrument(
             "a suite reaches a launch-report writer without the preserving trait",
             fires: unguarded,
             andNotOn: "@Suite(.preservesTheStoredLaunchReports)\n" + unguarded,
-            by: { !StoredLaunchReportSuiteRule.unguardedSuites(in: $0).isEmpty }
+            by: { !StoredLaunchReportSuiteRule.unguardedSuites(in: $0, reaching: reach).isEmpty }
         )
 
         let offenders = try instrument.sweep(
@@ -858,6 +870,116 @@ struct CadenceTestTargetHygieneTests {
                 }
             }
             """) == ["TheRealOne"]
+        )
+    }
+
+    // MARK: - The writer one frame down (T-1083)
+
+    /// A suite that reaches a writer **through a service** spells neither writer's name, and the
+    /// rule used to pass it in silence.
+    ///
+    /// The app fixture below is the real chain in miniature: `CadenceArchiveImportService.apply`
+    /// runs `NoteMigrationService.migrateIfNeeded` over the imported rows, so a test that imports
+    /// an archive rewrites the report the app reads on its next launch without ever writing the
+    /// word `migrateIfNeeded`.
+    ///
+    /// The last two expectations are the ones that make this a rule rather than a wider needle: an
+    /// `apply` on a **different type** is not the one that writes — which is why the index is keyed
+    /// by name *and* declaring type — and a doc comment quoting the call is not the call.
+    @Test func theLaunchReportSuiteRuleFollowsAWriterReachedThroughAService() throws {
+        let app = [
+            "NoteMigrationService.swift": """
+            nonisolated enum NoteMigrationService {
+                static func migrateIfNeeded(in context: ModelContext, source: String) throws -> Report {
+                    record(report)
+                    return report
+                }
+            }
+            """,
+            "CadenceArchiveImportService.swift": """
+            nonisolated enum CadenceArchiveImportService {
+                static func apply(_ archive: Archive, in context: ModelContext) throws -> Outcome {
+                    let migration = try NoteMigrationService.migrateIfNeeded(in: context, source: "import")
+                    return Outcome(migration: migration)
+                }
+            }
+            """,
+            "CadenceTagService.swift": """
+            nonisolated enum CadenceTagService {
+                static func apply(_ tags: [Tag]) -> [Tag] { tags }
+            }
+            """,
+        ]
+        let reach = StoredLaunchReportSuiteRule.writerReach(over: app.keys.sorted()) { app[$0] ?? "" }
+        #expect(reach.namesRead == 2, "the index should hold migrateIfNeeded and apply, and nothing else")
+
+        let suite = """
+        struct CadenceArchiveImportSurfaceTests {
+            @Test func theWholeGraphComesBackIntoAnEmptyStore() throws {
+                _ = try CadenceArchiveImportService.apply(archive, in: destination)
+            }
+        }
+        """
+        #expect(
+            StoredLaunchReportSuiteRule.unguardedSuites(in: suite, reaching: reach)
+                == ["CadenceArchiveImportSurfaceTests"]
+        )
+        #expect(
+            StoredLaunchReportSuiteRule.unguardedSuites(
+                in: "@Suite(.preservesTheStoredLaunchReports)\n" + suite,
+                reaching: reach
+            ).isEmpty
+        )
+
+        // The rule as it was, on the same suite: silent. This is the finding, spelled as a test.
+        #expect(StoredLaunchReportSuiteRule.unguardedSuites(in: suite).isEmpty)
+
+        let anotherApply = """
+        struct TagTests {
+            @Test func applyingTagsKeepsThem() throws {
+                _ = CadenceTagService.apply(tags)
+            }
+        }
+        """
+        #expect(StoredLaunchReportSuiteRule.unguardedSuites(in: anotherApply, reaching: reach).isEmpty)
+
+        let prose = """
+        /// Notes that CadenceArchiveImportService.apply(_:in:) runs the migration over the rows.
+        struct TheProseOne {
+            @Test func three() throws {
+                #expect(spelling == "CadenceArchiveImportService.apply(")
+            }
+        }
+        """
+        #expect(StoredLaunchReportSuiteRule.unguardedSuites(in: prose, reaching: reach).isEmpty)
+    }
+
+    /// The same claim against the real tree, on the suite [[T-1083]] was found on.
+    ///
+    /// `CadenceArchiveImportSurfaceTests` carries `.preservesTheStoredLaunchReports` because its
+    /// author checked what `CadenceArchiveImportService.apply` does. Strip the trait from a copy of
+    /// its source and the rule now asks for it back — which is the difference between a guard and a
+    /// convention. A fixture cannot make this claim: the chain has to be the app's real one.
+    @Test func theArchiveImportSuiteIsAskedForTheTraitByTheRuleRatherThanByItsAuthor() throws {
+        let reach = try StoredLaunchReportSuiteRule.writerReach(
+            over: cadenceRepoSwiftFiles(under: "Cadence")
+        ) { CadenceSourceScan.codeOnly(try cadenceTestSource($0)) }
+        let path = "CadenceTests/CadenceArchiveImportSurfaceTests.swift"
+        let source = try cadenceTestSource(path)
+        #expect(
+            source.contains("@Suite(\(StoredLaunchReportSuiteRule.traitSpelling))"),
+            "\(path) no longer carries the trait this test is about"
+        )
+        #expect(StoredLaunchReportSuiteRule.unguardedSuites(in: source, reaching: reach).isEmpty)
+
+        let stripped = source.replacingOccurrences(
+            of: "@Suite(\(StoredLaunchReportSuiteRule.traitSpelling))",
+            with: ""
+        )
+        #expect(
+            StoredLaunchReportSuiteRule.unguardedSuites(in: stripped, reaching: reach)
+                == ["CadenceArchiveImportSurfaceTests"],
+            "the reach no longer follows CadenceArchiveImportService.apply to the migration"
         )
     }
 

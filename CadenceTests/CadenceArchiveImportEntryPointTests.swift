@@ -15,8 +15,11 @@ import Testing
 /// `CadenceArchiveImportFlow.confirm()` calls `CadenceArchiveImportService.importArchive`, which
 /// runs `NoteMigrationService` over the imported rows and writes `noteMigration.lastReport.v1` to
 /// `UserDefaults.standard`. The trait puts the app's real report back. `StoredLaunchReportSuiteRule`
-/// would not have asked for it here — the writer is two frames down, which is exactly the gap
-/// [[T-1083]] records — so it is here because the author checked, not because a test demanded it.
+/// still does not ask for it here, and [[T-1083]]'s fix does not change that: the reach it follows
+/// is spelled `Type.name(`, and this suite calls `flow.confirm()` on an **instance**, so there is no
+/// type for the index to resolve — the same limit `CadenceSaveCommitRule.SwallowingIndex` documents
+/// for the same reason. So this trait is here because the author checked, not because a test
+/// demanded it.
 @Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceArchiveImportEntryPointTests {

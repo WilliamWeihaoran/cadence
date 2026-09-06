@@ -200,6 +200,14 @@ nonisolated extension Trait where Self == PreservedLaunchReportsTrait {
 /// halves are load-bearing here: this very file names both writers in prose above and spells both
 /// of them as literals below, and a scan that read either would report the guard's own definition
 /// as the thing that needs guarding.
+///
+/// **One frame down, since [[T-1083]].** The two names are the *writers*, not the surface a test
+/// calls: a suite that reaches one through a service spells neither of them, and the rule used to
+/// pass it in silence. `writerReach(over:read:)` below answers "which app declarations end up
+/// writing the report" over the app tree, and a suite calling one of those is asked for the trait
+/// exactly as a suite calling `migrateIfNeeded` directly is. The reach is `Type.name(`, so a
+/// **file-scope helper** in the test target that wraps the call is still invisible — a helper
+/// declared *inside* the suite is not, because its text is inside the suite's extent.
 nonisolated enum StoredLaunchReportSuiteRule {
     /// The two calls that write `StoredLaunchReports.keys` as a side effect of doing their job.
     /// Neither takes an injectable store, which is the whole reason the trait exists.
@@ -209,11 +217,134 @@ nonisolated enum StoredLaunchReportSuiteRule {
     /// rather than as the type name: the type name also appears in this file's own declarations.
     static let traitSpelling = ".preservesTheStoredLaunchReports"
 
-    static func unguardedSuites(in source: String) -> [String] {
+    /// Which app declarations reach a writer, so a suite that calls one **through a service** is
+    /// visible to the rule ([[T-1083]]).
+    ///
+    /// The gap this closes, and it was found by the guard being *right* for the wrong reason:
+    /// `CadenceArchiveImportSurfaceTests` calls `CadenceArchiveImportService.apply`, which runs
+    /// `NoteMigrationService.migrateIfNeeded` over the imported rows and writes the report. The
+    /// suite carries the trait because its author knew; the rule could not have asked for it,
+    /// because it read the suite's own body for two literal names.
+    ///
+    /// Keyed by callee name **and the top-level type that declares it**, the same pairing
+    /// `CadenceSaveCommitRule`'s indexes use and for the same measured reason: a bare name is
+    /// declared several times over a tree this size, and resolving on the name alone would let one
+    /// `apply` vouch for every other.
+    struct WriterReach {
+        fileprivate var typesByName: [String: Set<String>] = [:]
+
+        /// Spelled out because the memberwise initializer a `fileprivate` stored property gives you
+        /// is `fileprivate` too, and `unguardedSuites(in:reaching:)`'s default argument is evaluated
+        /// at the *call site* — in another file.
+        init() {}
+
+        /// How many distinct callee names the index holds — the non-vacuity handle for a builder
+        /// that silently read nothing. An empty index makes this half of the rule permanently
+        /// green, which is indistinguishable from a target that never leaks.
+        var namesRead: Int { typesByName.count }
+
+        fileprivate func holds(_ callee: String, on type: String) -> Bool {
+            typesByName[callee]?.contains(type) ?? false
+        }
+
+        /// Every pair in the index as a caller would spell it, `Type.name(`.
+        fileprivate var qualifiedCalls: [String] {
+            typesByName.flatMap { name, types in types.map { "\($0).\(name)(" } }
+        }
+    }
+
+    /// The reach over the app tree, to a fixed point.
+    ///
+    /// Seeded by **name**: a declaration called `migrateIfNeeded` or `repairIfNeeded` *is* the
+    /// writer, so its own type is what a caller has to spell. Grown by qualified call only —
+    /// `Type.callee(` for a pair already in the index — plus bare calls resolved inside the file
+    /// that declares them, which is what carries the two services' own overload forwards.
+    ///
+    /// `read` must hand back source with comments and literals already blanked. Every needle here
+    /// is a name this repository writes about constantly, and the doc comment above is itself two
+    /// of them.
+    static func writerReach(
+        over files: [String],
+        read: (String) throws -> String
+    ) rethrows -> WriterReach {
+        let parsed = try files.map { declarationsByType(inCodeOnly: try read($0)) }
+        var reach = WriterReach()
+        for declarations in parsed {
+            for declaration in declarations where writers.contains(declaration.name + "(") {
+                reach.typesByName[declaration.name, default: []].insert(declaration.type)
+            }
+        }
+
+        var changed = true
+        while changed {
+            changed = false
+            for declarations in parsed {
+                let localNames = Set(
+                    declarations
+                        .filter { reach.holds($0.name, on: $0.type) }
+                        .map(\.name)
+                )
+                let qualified = reach.qualifiedCalls
+                for declaration in declarations where !reach.holds(declaration.name, on: declaration.type) {
+                    let reaches = qualified.contains { declaration.body.contains($0) }
+                        || localNames.contains { callsBareName($0, in: declaration.body) }
+                    if reaches {
+                        reach.typesByName[declaration.name, default: []].insert(declaration.type)
+                        changed = true
+                    }
+                }
+            }
+        }
+        return reach
+    }
+
+    /// Whether `body` calls `name` with **no receiver**.
+    ///
+    /// `body.contains(name + "(")` is the spelling that looks equivalent and is not: it also matches
+    /// `transform.apply(`, so one same-named method anywhere in a file would pull every unrelated
+    /// call in it into the index. The look-behind is the whole difference.
+    private static func callsBareName(_ name: String, in body: String) -> Bool {
+        let pattern = "(?<![.\\w])\(NSRegularExpression.escapedPattern(for: name))\\s*\\("
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        return regex.firstMatch(in: body, range: NSRange(body.startIndex..., in: body)) != nil
+    }
+
+    /// Every declaration in a file paired with the **top-level type** it is written inside.
+    ///
+    /// The split comes from `CadenceSaveCommitRule.declarations(in:)` rather than a second copy of
+    /// it, and the attribution from `cadenceTopLevelTypeExtents(inCodeOnly:)` — containment, not
+    /// "the last type declared above it". The difference is not academic: `NoteMigrationService`
+    /// declares a private `MigrationTracking` struct ten lines above `migrateIfNeeded`, so the
+    /// last-declared reading puts the app's own migration entry point on a type no caller can
+    /// spell. That reading is still live in the save-commit rule and is filed as [[T-1091]].
+    static func declarationsByType(inCodeOnly code: String) -> [(name: String, type: String, body: String)] {
+        let extents = cadenceTopLevelTypeExtents(inCodeOnly: code)
+        // UTF-16 throughout: `CadenceTopLevelTypeExtent`'s offsets are the unit `NSString` counts
+        // in, and a `String.distance` would drift against them on the first character outside the
+        // BMP.
+        let text = code as NSString
+        var cursor = 0
+        var found: [(name: String, type: String, body: String)] = []
+        for declaration in CadenceSaveCommitRule.declarations(in: code) {
+            let searched = text.range(
+                of: declaration.signature,
+                options: [],
+                range: NSRange(location: cursor, length: text.length - cursor)
+            )
+            let start = searched.location == NSNotFound ? cursor : searched.location
+            let type = extents.last { $0.declaration < start && start < $0.close }?.name ?? ""
+            found.append((declaration.name, type, declaration.body))
+            cursor = start
+        }
+        return found
+    }
+
+    static func unguardedSuites(in source: String, reaching reach: WriterReach = WriterReach()) -> [String] {
         let code = CadenceSourceScan.codeOnly(source)
         let text = code as NSString
         var offenders: [String] = []
         var previousClose = 0
+        let indirect = reach.qualifiedCalls
 
         for extent in cadenceTopLevelTypeExtents(inCodeOnly: code) {
             defer { previousClose = min(extent.close + 1, text.length) }
@@ -222,7 +353,9 @@ nonisolated enum StoredLaunchReportSuiteRule {
             let body = text.substring(
                 with: NSRange(location: extent.open, length: extent.close - extent.open)
             )
-            guard writers.contains(where: { body.contains($0) }) else { continue }
+            guard writers.contains(where: { body.contains($0) })
+                || indirect.contains(where: { body.contains($0) })
+            else { continue }
 
             // The attributes belong to this declaration only when they sit between it and the end
             // of whatever came before it. Taking "the lines above" instead would let one annotated

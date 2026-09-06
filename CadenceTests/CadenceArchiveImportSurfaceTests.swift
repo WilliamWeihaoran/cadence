@@ -17,8 +17,10 @@ import Testing
 /// `CadenceArchiveImportService.apply` runs `NoteMigrationService` over the imported rows, which
 /// writes `noteMigration.lastReport.v1` to `UserDefaults.standard` — so every test in this suite
 /// leaves the app a fabricated launch report unless the trait puts the real one back. It is worth
-/// noting that `StoredLaunchReportSuiteRule` would *not* have caught this suite: it looks for the
-/// literal `migrateIfNeeded(` in a suite's own body, and here the call is one frame down.
+/// It is here because the author checked; the rule could not have asked for it until [[T-1083]],
+/// which taught `StoredLaunchReportSuiteRule` to follow the writer one frame down. It asks now, and
+/// `theArchiveImportSuiteIsAskedForTheTraitByTheRuleRatherThanByItsAuthor` is that claim measured
+/// against this file: strip the trait and the sweep names this suite.
 @Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceArchiveImportSurfaceTests {

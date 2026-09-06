@@ -3,6 +3,15 @@ import SwiftData
 import Testing
 @testable import Cadence
 
+/// **`.preservesTheStoredLaunchReports` is not decoration, and no author put it here** — the rule
+/// asked for it, which is the whole point of [[T-1083]].
+/// `servicesSkipStartupWorkTheContainerFactoryAlreadyDid` calls
+/// `CadenceMCPStorePreparation.prepare`, which runs `NoteMigrationService.migrateAndRecordFailure`
+/// and `DataIntegrityRepairService.repairAndRecordFailure`; both write `UserDefaults.standard`, so
+/// without the trait every run of this suite left the app a fabricated launch report to read on its
+/// next launch. Neither writer's name appears in this file, which is exactly why the rule could not
+/// see it until it learned to follow the writer one frame down.
+@Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceReadServiceTests {
     @Test func coreNotesDoesNotCreateMissingNotes() throws {

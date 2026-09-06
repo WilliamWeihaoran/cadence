@@ -1072,6 +1072,157 @@ struct CadenceSaveCommitDisciplineTests {
         #expect(CadenceSaveCommitRule.commitReachOffenders(in: acrossFiles, changing: .init()) == ["createTask"])
     }
 
+    // MARK: - Lexical scope (T-1078)
+
+    /// A nested `func` that **captures** its parent's `ModelContext` is not a unit of work, and the
+    /// rule used to report it as one.
+    ///
+    /// This is `CadenceUITestScenarioSeed.seedTodayGeometry` as it was written when it turned `main`
+    /// red: the enclosing frame is handed the context and commits it, and `insertTask` is a
+    /// three-line loop body lifted into a `func`. Its own signature says nothing about a
+    /// `ModelContext` — there is nothing for the exemption to read — so half 3 reported it, and the
+    /// only repair available was to change the *code* until the rule agreed with it.
+    ///
+    /// The instance was closed that way at `19d2136`. This is the rule half, and the fixture below
+    /// is the shape that was invisible: it must be clean **as written**.
+    @Test func halfThreeDoesNotReportAFuncNestedInsideTheFrameThatOwnsTheContext() throws {
+        let captured = """
+        private static func seedTodayGeometry(modelContext: ModelContext) {
+            var order = 0
+            func insertTask(_ name: String) {
+                let task = AppTask(title: name)
+                task.order = order
+                order += 1
+                modelContext.insert(task)
+            }
+            for name in Fixture.todayTaskNames {
+                insertTask(name)
+            }
+            do {
+                try modelContext.save()
+            } catch {
+                print("could not seed")
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: captured, changing: .init()).isEmpty)
+
+        // Non-vacuity, and it is the whole reason this is a fix rather than an exemption: the
+        // offence is not *dropped*, it is attributed to the frame that owns the context. Take the
+        // commit out of the same fixture and the finding comes back — under the enclosing name,
+        // which is the name whoever fixes it has to open.
+        let capturedWithNoCommit = """
+        private static func seedTodayGeometry() {
+            var order = 0
+            func insertTask(_ name: String) {
+                let task = AppTask(title: name)
+                task.order = order
+                order += 1
+                modelContext.insert(task)
+            }
+            for name in Fixture.todayTaskNames {
+                insertTask(name)
+            }
+        }
+        """
+        #expect(
+            CadenceSaveCommitRule.commitReachOffenders(in: capturedWithNoCommit, changing: .init())
+                == ["seedTodayGeometry"]
+        )
+
+        // And a nested renumber is read the same way by half 2b, which asks the same ownership
+        // question off the same signature.
+        let nestedRenumber = """
+        private func reorder(in modelContext: ModelContext) {
+            func renumber(_ rows: [AppTask]) {
+                for (index, task) in rows.enumerated() {
+                    task.order = index
+                }
+            }
+            renumber(ordered)
+            try? modelContext.save()
+        }
+        """
+        #expect(CadenceSaveCommitRule.rearrangementOffenders(in: nestedRenumber, changing: .init()).isEmpty)
+
+        let nestedRenumberOwningTheContext = """
+        private func reorder() {
+            func renumber(_ rows: [AppTask]) {
+                for (index, task) in rows.enumerated() {
+                    task.order = index
+                }
+            }
+            renumber(ordered)
+            try? modelContext.save()
+        }
+        """
+        let owning = nestedRenumberOwningTheContext
+        #expect(CadenceSaveCommitRule.rearrangementOffenders(in: owning, changing: .init()) == ["reorder"])
+    }
+
+    /// The nesting reader has to answer **no** for the two shapes that look like nesting and are
+    /// not, because a reader that said "nested" for everything would switch halves 3 and 2b off over
+    /// the whole tree and leave every sweep green — the failure this family keeps producing.
+    ///
+    /// A method inside a `struct` is not nested: `declarationHead` matches `func` and `var` only, so
+    /// a *type* body is not an extent and cannot contain anything. A sibling declared after another
+    /// one is not nested either, which is the claim a naive "anything after the first `func`"
+    /// containment test would get wrong.
+    @Test func theNestingReaderSeparatesANestedFuncFromASiblingAndFromAMethod() throws {
+        let nested = """
+        func outer(modelContext: ModelContext) {
+            func inner() { modelContext.insert(AppTask(title: "x")) }
+            inner()
+        }
+        """
+        #expect(CadenceSaveCommitRule.nestedDeclarationNames(in: nested) == ["inner"])
+
+        let siblings = """
+        func first() { work() }
+        func second() { work() }
+        var third: Int { 3 }
+        """
+        #expect(CadenceSaveCommitRule.nestedDeclarationNames(in: siblings).isEmpty)
+
+        let methods = """
+        struct Sheet: View {
+            var body: some View { Button("Save") { save() } }
+            private func save() { try? modelContext.save() }
+        }
+        """
+        #expect(CadenceSaveCommitRule.nestedDeclarationNames(in: methods).isEmpty)
+    }
+
+    /// The same reader over the **app**, because a fixture cannot tell you what a parser does to
+    /// 7,361 real declarations, and the mode of failure that matters is silent: an extent that
+    /// over-runs its body swallows every declaration after it as "nested", and half 3 goes quiet for
+    /// that file with nothing to see.
+    ///
+    /// Measured at `7e823e5`: **41** nested declarations of 7,361, 0.6%. The bound below is two
+    /// orders of magnitude of headroom rather than a count to keep updating — it is a runaway
+    /// detector, not an inventory.
+    @Test func nestingStaysARoundingErrorAcrossTheApp() throws {
+        var declarations = 0
+        var nested = 0
+        var sampled = 0
+        for path in try saveCommitSwiftFiles() {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            declarations += CadenceSaveCommitRule.declarations(in: source).count
+            nested += CadenceSaveCommitRule.nestedDeclarationNames(in: source).count
+            sampled += 1
+        }
+        #expect(sampled >= 300, "the nesting measurement walked \(sampled) files, not the app")
+        #expect(declarations >= 5_000, "non-vacuity: the parser read \(declarations) declarations")
+        #expect(
+            nested * 10 < declarations,
+            """
+            \(nested) of \(declarations) declarations read as nested. At `7e823e5` it was 41 of \
+            7,361; a tenth of the tree reading as nested means an extent is over-running its body, \
+            and halves 3 and 2b are silent wherever it does.
+            """
+        )
+    }
+
     /// The `presented… =` spelling half 2 gained with T-503, and the reason it is `=(?!=)`: these
     /// sheets are *bound* with `presentedEventNote == nil`, so a needle that read a comparison as
     /// an assignment would report every one of them.
@@ -1532,14 +1683,32 @@ enum CadenceSaveCommitRule {
     /// commit reached through a closure argument or another file is invisible to it. That is the
     /// usual honest limit of a text scan; it errs toward reporting, which is the safe direction for
     /// a rule whose exemption list is meant to stay empty.
+    ///
+    /// **A nested declaration is judged one frame up, and that is [[T-1078]].** The exemption above
+    /// is read off a *signature*, and a nested `func` that captures its parent's `ModelContext` has
+    /// nothing to read: its own signature carries no `: ModelContext` so it cannot disclaim
+    /// ownership, and its parent's `save()` is not credited to it. That is not a helper reaching for
+    /// an ambient context — it is not a unit of work at all, because nothing outside the frame that
+    /// declares it can call it. `CadenceUITestScenarioSeed.insertTask` was reported for exactly this
+    /// and sat red on `main` for hours; the fix landed at the call site (naming the parameter
+    /// instead of capturing it) and left the rule believing the same wrong thing.
+    ///
+    /// Skipping it loses **nothing**, which is the property that makes this a fix rather than an
+    /// exemption: `declarations(in:)` flattens, so the enclosing declaration's body text already
+    /// contains every `insert(`, `delete(` and commit the nested one wrote. If the frame that owns
+    /// the context does not commit, that frame is reported — under its own name, which is the name
+    /// whoever fixes it has to open. Measured over `Cadence/` at `7e823e5`: 41 of 7,361
+    /// declarations are nested, exactly one of them touches this rule's vocabulary at all, and no
+    /// half named any of them, so this changes no live finding today. It changes the next one.
     static func commitReachOffenders(in source: String, changing index: ExistenceIndex) -> [String] {
         let parsed = parsedDeclarations(in: source)
         let committing = committingNames(in: parsed, index: index)
         let local = pendingExistenceNames(in: parsed, committing: committing, index: index)
         return parsed
             .filter { declaration in
-                (declaration.changesExistenceDirectly
-                    || changesExistenceOneFrameDown(declaration, local: local, index: index))
+                !declaration.isNested
+                    && (declaration.changesExistenceDirectly
+                        || changesExistenceOneFrameDown(declaration, local: local, index: index))
                     && !declaration.disclaimsOwnership
                     && !commitsItself(declaration, committing: committing, index: index)
             }
@@ -1681,12 +1850,18 @@ enum CadenceSaveCommitRule {
     /// Measured over `Cadence/` at `f75c2ba`: **six** declarations renumber `\.order` inside a loop,
     /// and after T-868/T-869/T-870 every one of them commits. The exemption list is empty and is
     /// meant to stay that way.
+    ///
+    /// **Nested declarations are skipped for the same reason half 3 skips them** ([[T-1078]]): this
+    /// half reads ownership off a signature too, and a `func` written inside another one has no
+    /// signature to read it from. The enclosing declaration's body contains the loop, so a renumber
+    /// nested inside a frame that owns its context is still reported — as that frame.
     static func rearrangementOffenders(in source: String, changing index: ExistenceIndex) -> [String] {
         let parsed = parsedDeclarations(in: source)
         let committing = committingNames(in: parsed, index: index)
         return parsed
             .filter { declaration in
-                renumbersInALoop(declaration.body)
+                !declaration.isNested
+                    && renumbersInALoop(declaration.body)
                     && !declaration.disclaimsOwnership
                     && (declaration.swallowsDirectly
                         || !commitsItself(declaration, committing: committing, index: index))
@@ -1714,6 +1889,15 @@ enum CadenceSaveCommitRule {
     /// `something.order = …`, and not `==`. Anchored on the member so a local named `order` — a
     /// `for (index, order) in …` binding, of which this repo has several — is not read as a field.
     private static let orderWrite = "\\w\\.order\\s*=(?!=)"
+
+    /// Which declarations in `source` are written inside another declaration's body.
+    ///
+    /// Exposed for `theNestingReaderSeparatesANestedFuncFromASiblingAndFromAMethod`, which pins both
+    /// polarities: a reader that answered "nested" for everything would switch halves 3 and 2b off
+    /// over the whole tree and every sweep would still be green.
+    static func nestedDeclarationNames(in source: String) -> [String] {
+        parsedDeclarations(in: source).filter(\.isNested).map(\.name).uniqued()
+    }
 
     /// The reader `theRearrangementHalfStillReadsTheAppsHandWrittenRenumbers` uses to prove the
     /// loop matcher still matches, without exposing it to anything else.
@@ -2224,6 +2408,14 @@ enum CadenceSaveCommitRule {
         /// "My caller owns the unit of work", read off the signature — half 3's exemption rule,
         /// which is also what makes a pending existence change propagate past this frame.
         let disclaimsOwnership: Bool
+        /// Whether this declaration is written **inside another declaration's body** ([[T-1078]]).
+        ///
+        /// A nested `func` is not a unit of work. It cannot be called from outside the frame that
+        /// declares it, and the `ModelContext` it touches is whatever that frame had — captured or
+        /// handed — so the question "who commits this?" is always answered one frame up. The halves
+        /// that ask it therefore judge the *enclosing* declaration, whose body text already contains
+        /// every insert, delete, swallow and renumber the nested one wrote.
+        let isNested: Bool
         let text: String
         let body: [Character]
         /// Every call in the body, as its qualifier (`nil` for a bare call), its callee, and the
@@ -2236,9 +2428,16 @@ enum CadenceSaveCommitRule {
     /// Once, because the index is a fixed point over every file: recomputing the regex work each
     /// round would run it six times over the whole tree.
     fileprivate static func parsedDeclarations(in source: String) -> [ParsedDeclaration] {
-        let found = declarations(in: source)
-        return zip(found, enclosingTypeNames(in: source, for: found)).map { declaration, type in
-            ParsedDeclaration(
+        let extents = declarationExtents(in: source)
+        let found = extents.map { (name: $0.name, signature: $0.signature, body: $0.body) }
+        let nested = extents.map { inner in
+            extents.contains { outer in
+                outer.start < inner.start && inner.start < outer.end
+            }
+        }
+        return zip(zip(found, enclosingTypeNames(in: source, for: found)), nested).map { pair, isNested in
+            let (declaration, type) = pair
+            return ParsedDeclaration(
                 name: declaration.name,
                 type: type,
                 signature: declaration.signature,
@@ -2247,6 +2446,7 @@ enum CadenceSaveCommitRule {
                 changesExistenceDirectly: CadenceSourceScan.matchCount(existenceCall, in: declaration.body) > 0,
                 reachesACommitDirectly: CadenceSourceScan.matchCount(commitCall, in: declaration.body) > 0,
                 disclaimsOwnership: CadenceSourceScan.matchCount(handedAModelContext, in: declaration.signature) > 0,
+                isNested: isNested,
                 text: declaration.body,
                 body: Array(declaration.body),
                 calls: callSites(in: declaration.body)
@@ -2568,11 +2768,24 @@ enum CadenceSaveCommitRule {
     /// only reader of it, and it is the whole of that half's exemption mechanism: a declaration
     /// **handed** a `ModelContext` is one whose caller owns the unit of work.
     static func declarations(in source: String) -> [(name: String, signature: String, body: String)] {
+        declarationExtents(in: source).map { ($0.name, $0.signature, $0.body) }
+    }
+
+    /// `declarations(in:)`, plus where each one *is* — which is the one question a flat list cannot
+    /// answer: **is this declaration nested inside another one** ([[T-1078]]).
+    ///
+    /// `start` is the offset of the `func`/`var` keyword and `end` the offset of the brace that
+    /// closes the body, so declaration *i* is nested in *j* exactly when `start[j] < start[i] <
+    /// end[j]`. Nothing else in this rule needs the offsets, which is why `declarations(in:)` keeps
+    /// its three-field shape and this is the private reader underneath it.
+    fileprivate static func declarationExtents(
+        in source: String
+    ) -> [(name: String, signature: String, body: String, start: Int, end: Int)] {
         let characters = Array(source)
         guard let regex = try? NSRegularExpression(pattern: declarationHead) else { return [] }
 
         let matches = regex.matches(in: source, range: NSRange(source.startIndex..., in: source))
-        var found: [(name: String, signature: String, body: String)] = []
+        var found: [(name: String, signature: String, body: String, start: Int, end: Int)] = []
         for (position, match) in matches.enumerated() {
             guard let whole = Range(match.range, in: source) else { continue }
             let isProperty = Range(match.range(at: 1), in: source) == nil
@@ -2610,10 +2823,13 @@ enum CadenceSaveCommitRule {
                 index += 1
             }
             guard let open else { continue }
+            let close = blockEnd(in: characters, from: open + 1)
             found.append((
                 name,
                 String(characters[start..<open]),
-                String(characters[(open + 1)..<blockEnd(in: characters, from: open + 1)])
+                String(characters[(open + 1)..<close]),
+                start,
+                close
             ))
         }
         return found

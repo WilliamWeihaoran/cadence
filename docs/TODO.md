@@ -255,7 +255,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   where the xcrun shim refuses ([[T-719]]), so the selftest degrades to a printed `skip` there and
   shelling out would assert less while appearing to assert more.
 
-- [T-1078] **RESERVED 2026-09-06 (agent `sweeps`) — `main` is red a THIRD way: half 3 of the save-commit rule reads ownership off a signature, so a nested `func` that captures its parent's `ModelContext` is misread as owning the unit of work.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+- [T-1078] **CLOSED 2026-09-06 (agent `rulescope`) — the save-commit rule models lexical scope now: a declaration written inside another one is judged one frame up, at the frame that owns the context.** Originally: **`main` is red a THIRD way: half 3 of the save-commit rule reads ownership off a signature, so a nested `func` that captures its parent's `ModelContext` is misread as owning the unit of work.** Placeholder written at the moment the id was handed out, not when the work lands.
   **Confirmed independently 2026-09-06 (coordinator), and two rival readings refuted by measurement.**
   The offender is the nested `func insertTask(_:dueDate:scheduledDate:)` at
   `Cadence/Services/CadenceUITestScenarioSeed.swift:95`, not `seedDailyNoteWithImage`. It calls
@@ -274,6 +274,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   rather than capturing it — so `noInsertIsLeftPendingWithNoCommitAnywhereInItsDeclaration` passes and
   that red is gone from `main`. `parsedDeclarations` still flattens nested declarations and still models
   no lexical scope, so the next nested `func` that captures its parent's context is misread the same way.
+  **The open half landed 2026-09-06 (agent `rulescope`).** `declarationExtents(in:)` now returns each
+  declaration's character range, `ParsedDeclaration` carries `isNested`, and the two halves that read
+  ownership off a signature — half 3 (commit reach) and half 2b (rearrangement) — skip a nested
+  declaration outright. It is a **fix rather than an exemption** because `declarations(in:)` flattens:
+  the enclosing declaration's body text already contains every `insert(`, `delete(`, swallowed commit
+  and `\.order` loop the nested one wrote, so an uncommitted insert is still reported — under the name
+  of the frame that owns the context, which is the name whoever fixes it has to open. Measured over
+  `Cadence/`: **41 of 7,361 declarations are nested (0.6%)**, exactly one of them (the seed's
+  `insertTask`) touches this rule's vocabulary at all, and **no half named any of them**, so no live
+  finding changed — the next one does. Two mutations killed, one in each direction: forcing "nothing is
+  nested" (the pre-fix rule) fails 5 expectations, including the seed shape reported again by name;
+  forcing "everything is nested" reads 6,409 of 7,361 declarations as nested, stops the commit-reach
+  and rearrangement **instruments** firing, and fails 16 expectations across 9 tests. That second
+  direction is the one that mattered — a rule that goes quiet is exactly this week's shape — and
+  `nestingStaysARoundingErrorAcrossTheApp` is the standing detector for it.
 
 - [T-1077] **RESERVED 2026-09-06 (agent `decide`) — the drag-under-a-non-custom-sort rule that [[T-1054]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Body, 2026-09-06 (agent `dropnotice`). Built and green — 4,536 tests, zero new failures, zero
@@ -499,6 +514,32 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   empty**, so the 84 above is a measurement of a backlog somebody has since cleared by hand, not a
   current count. The defect is unchanged — nothing in `CadenceUITests` deletes the store it makes —
   so the next UI-test run starts the backlog again.
+
+- [T-1091] **`CadenceSaveCommitRule` files a declaration under the last type *declared* above it, not
+  the type that *contains* it — so the app's own migration entry point is indexed under a private
+  nested struct no caller can spell.** Found 2026-09-06 (agent `rulescope`) while building [[T-1083]]'s
+  one-frame-down reach, which needs the same attribution and could not reuse this one.
+  `enclosingTypeNames(in:for:)` takes `types.last { $0.range.lowerBound < start }` and its doc claims
+  *"the last type opened before a `func` is the answer in every file in this repository"*. **That is
+  false, measured**: `NoteMigrationService` declares `private struct MigrationTracking` at line 129 and
+  `migrateIfNeeded` at line 139, so `migrateIfNeeded` is filed under `MigrationTracking`;
+  `DataIntegrityRepairService.repairIfNeeded` is filed under `RepairStore` the same way. Both were
+  measured directly — the first version of T-1083's index inherited this reading and its fixed point
+  never grew past the seed, because `CadenceArchiveImportService.apply` calls
+  `NoteMigrationService.migrateIfNeeded(` and the index was holding `MigrationTracking.migrateIfNeeded`.
+  Measured over the whole tree in the same run: **755 of 7,361 declarations (10.3%)** are filed under
+  a type that does not contain them — `AISettingsManager`'s seven methods under its `Key` enum,
+  `CadenceUITestScenarioSeed`'s six under `Fixture`, `CadenceDeepLinkManager.handle` under `Route`,
+  and so on down a list that is one nested helper type per file.
+  Why it matters beyond tidiness: `ExistenceIndex` and `SwallowingIndex` are keyed by name **and** this
+  type, and they are how a pending insert or a swallowed commit travels across files. A declaration
+  written after a nested type in its own file cannot be resolved by any qualified call, so the chain
+  stops there — a silent false **negative** in halves 1, 2b and 3, which is the direction that costs a
+  finding rather than a triage. The fix is `cadenceTopLevelTypeExtents(inCodeOnly:)`, containment
+  rather than proximity, which `StoredLaunchReportSuiteRule.declarationsByType(inCodeOnly:)` already
+  uses. Not taken in the batch that found it: correcting the attribution changes what both indexes
+  resolve, so it has to land with a measured offender diff over `Cadence/` and whatever real findings
+  it uncovers, and that is its own ticket rather than a rider on two others.
 
 - [T-1075] **CLOSED 2026-09-06 — the premise is false at HEAD: `STRANDED` is in neither `HEAD:scripts/mutate.sh` nor HEAD's copy of the test, and both copies carrying it are uncommitted working-tree edits that agree with each other.** Originally: **`main` is red a SECOND way, and it is not [[T-1073]]: `CadenceGuardScriptSelftestTests`
   fails at HEAD because the test names a `mutate.sh` refusal that `mutate.sh` does not make.**
@@ -2166,7 +2207,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and the preview is the one place a user reads before choosing. Decide whether it earns a line
   there, or whether inert-and-documented is still the right answer now that the restore exists.
 
-- [T-1083] **`StoredLaunchReportSuiteRule` cannot see a launch-report writer one frame down.**
+- [T-1083] **CLOSED 2026-09-06 (agent `rulescope`) — the rule follows the writer through a service now, so the archive-import suite is asked for its trait by the rule rather than by its author.** Originally: **`StoredLaunchReportSuiteRule` cannot see a launch-report writer one frame down.**
   Found while closing the engine half of [[T-274]]. The rule greps a suite's own body for the
   literal `migrateIfNeeded(` or `repairIfNeeded(`, so a suite that reaches either *through a
   service* is invisible to it. `CadenceArchiveImportSurfaceTests` is exactly that shape — it calls
@@ -2175,6 +2216,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   one-frame-down reader `CadenceSaveCommitDisciplineTests` already has for its commit halves is the
   obvious fix; whether it is worth the false-positive surface is the decision. Until then, a suite
   that reaches a writer indirectly leaks the app's stored launch report and nothing says so.
+  **Taken, and the false-positive surface turned out to be nil.** `writerReach(over:read:)` walks
+  `Cadence/` to a fixed point from the two writer *declarations*, keyed by callee name **and the
+  top-level type that declares it** — the pairing `CadenceSaveCommitRule`'s indexes use, and what
+  keeps one `apply` from vouching for every other. **It found a real leak on its first run**, which
+  settles the false-positive question the paragraph above was asking: `CadenceReadServiceTests` calls
+  `CadenceMCPStorePreparation.prepare`, which runs `migrateAndRecordFailure` *and*
+  `repairAndRecordFailure`, so every run of that suite has been leaving the app a fabricated launch
+  report — and neither writer's name appears anywhere in the file. It carries the trait now because
+  the rule asked, not because anybody noticed. Over all 312 test files that is the **only** new
+  offender, and it is a true positive; the two archive suites were already annotated by hand. The proof that it is a guard rather than a convention is measured
+  against the real file: `theArchiveImportSuiteIsAskedForTheTraitByTheRuleRatherThanByItsAuthor`
+  strips `@Suite(.preservesTheStoredLaunchReports)` from a copy of `CadenceArchiveImportSurfaceTests`
+  and the rule names the suite. **The honest limit, and it is why `CadenceArchiveImportEntryPointTests`
+  is still unasked:** the reach is spelled `Type.name(`, so a call through an **instance**
+  (`flow.confirm()`) has no type to resolve — the same limit `SwallowingIndex` documents for the same
+  reason, and widening it to a bare `.name(` would flag every call to any method sharing the name.
+  A file-scope helper in the test target that wraps the call is invisible for the same reason; a
+  helper declared *inside* the suite is not, since its text is inside the suite's extent.
 
 - [T-1082] **CLOSED 2026-09-06 (`c6cbef3`, `e344266`, `d126178`) — both Data Safety screens mount the importer, and the sentence saying they could not is retired.** Originally: **The archive importer has no user-facing entry point.** Taken while landing the engine
   half of [[T-274]] (`CadenceArchiveImportService` + `CadenceArchiveImportPresentation`). The
