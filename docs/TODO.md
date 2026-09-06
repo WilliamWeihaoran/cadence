@@ -660,7 +660,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   one is too short too — a too-tall blue caret cannot be reached from this bug, and the drawn image
   starts at `lineRect.minX + 8`, nowhere near the sidebar divider. The two reports are two defects.
 
-- [T-1045] **macOS has no styling signature, so any width-dependent block silently goes stale.**
+- [T-1045] **CLOSED 2026-09-06 (stylesig; landed by `requeue`) — macOS now records what its styling was computed against, and one reader acts on that record.** **Filed as:** **macOS has no styling signature, so any width-dependent block silently goes stale.**
+  [[T-1043]] fixed the one width-dependent block that exists — the standalone image — with a
+  targeted `refreshImageBlockLayout` off the scroll view's layout pass. Nothing recorded the width
+  that pass was correcting *from*, so the next reserved height someone derived from a width would
+  have reintroduced the class untested.
+  **The type was already shared, so no second one was written.** `MarkdownStyleSignature` has lived
+  in `Cadence/Services/` since it stopped being `iOSMarkdownStyleSignature`, and its own header
+  already said nothing in it is platform-specific; what was iOS-only was the *reader*, not the type.
+  macOS holds a note's pictures as `MarkdownImageRenderAsset` rather than the `MarkdownImageAsset`
+  model iOS passes, so the only new thing in the shared file is a second `current(…)` feed taking
+  the render struct, plus `bucket(for:)` (the width rounding, previously spelled inline) and
+  `advancingContentWidth(to:)`. iOS behaviour is untouched and the iOS-simulator build is clean.
+  Nothing was added under `Cadence/Shared/`, so `CadenceRealTreeSweepManifest.txt` needed no entry.
+  **The two platforms ask the signature opposite questions, which is why macOS did not simply gain
+  iOS's gate.** iOS asks it *forwards*: `refreshStylingIfNeeded` skips a styling when the value has
+  not moved. macOS asks it *backwards* — `MarkdownStylist.apply` runs unconditionally from
+  `textDidChange` and has nothing to skip, so the value is a *record* of what the last styling was
+  computed against, held on `CadenceTextView.markdownLayoutSignature`, and
+  `MarkdownStylist.refreshWidthDependentLayout(in:)` — the one reader, with
+  `MarkdownEditorScrollView.layout()` its one call site — asks whether the editor has changed width
+  since.
+  **It is a gate, not a wrapper.** At an unchanged width it re-derives nothing, which is what makes
+  the record load-bearing rather than decorative; a `nil` record reads as *stale*, so a plain
+  `NSTextView` behaves exactly as it did before. The refresh advances the record's width **alone**,
+  because it is not a restyle: stamping the whole current signature would have the record claim the
+  styling had also caught up with, say, an image resized in between, and a future reader gating a
+  full restyle on it would then skip the one it needed. `applyImageBlock` and
+  `refreshImageBlockLayout` now both take their width from `MarkdownStylist.layoutContentWidth(of:)`,
+  so a width enters a paragraph style in exactly one place — the second half of what this ticket
+  asked for, kept alongside the signature rather than instead of it.
+  7 tests in `MarkdownStylingWidthSignatureTests`, 4/4 mutations killed and each confirmed to
+  compile: gate removed → 2 tests; never refresh → that suite *and* 7 of
+  `MarkdownEditorImageRelayoutTests`, which is what measures the call-site swap rather than assuming
+  it; whole-signature stamp → 1; `apply` records nothing → 4. Re-verified on the rebuild that
+  landed it: full `CadenceTests` 4,589 tests in 392 suites, 0 failures, 0 warnings on both the macOS and the
+  iOS-simulator destination. (stylesig's own run read 4507 tests / 2 failures; both were
+  reds at HEAD then and both have since been fixed.)
+  `Cadence/macOS/Editor/AGENTS.md` stated the asymmetry as a fact without noting it was also the
+  hole; it now says both. Three other comments calling the signature "iOS-only" were narrowed to
+  "the only reader that *skips* is iOS's" — the table render gate genuinely is iOS-only, and that
+  claim survives.
+  **Found while doing it:** the same defect is live in PDF export — [[T-1081]].
   [[T-1043]] fixed the one that exists — the standalone image — with a targeted
   `refreshImageBlockLayout` off the scroll view's layout pass. What macOS still lacks is iOS's
   gate: `MarkdownStyleSignature.current(revealedBlockRange:imageAssets:taskEmbeds:contentWidth:

@@ -97,8 +97,19 @@ Three of the four things a hosted view usually breaks therefore need no mechanis
 - **Undo** works because a committed cell is an ordinary text-view edit on the view's own stack —
   which is why `applyMarkdownTableEdit` is the single write path and must never be replaced by a
   bare `replaceCharacters` or by assigning `string`.
-- **Invalidation** is the ordinary `textDidChange` restyle. There is no signature gate on this
-  platform: `MarkdownStyleSignature` is read only by `Cadence/iOS/iOSMarkdownEditor.swift`.
+- **Invalidation** is the ordinary `textDidChange` restyle. No signature *gates* a restyle on this
+  platform — only iOS skips styling, in `iOSMarkdownEditor.Coordinator.refreshStylingIfNeeded`.
+
+macOS **does** record a signature. It did not until T-1045, and this guide stated that absence as a
+difference worth knowing without noting it was also the hole: a reserved height derived from the
+editor's width is stale the moment the width moves, and nothing held the old number to compare
+against. `MarkdownStylist.apply` now writes `CadenceTextView.markdownLayoutSignature` —
+what that styling was computed against — and `MarkdownStylist.refreshWidthDependentLayout(in:)`,
+called from `MarkdownEditorScrollView.layout()`, is its only reader: it re-derives the reserved
+heights that were measured from the editor's old width. Anything whose reserved height depends on
+the width goes on that hook. Today the standalone image is the only member; a task-embed card's
+height comes from its subtask count and a rendered table's from its row count, both
+width-independent.
 
 Two consequences worth knowing before you touch this:
 

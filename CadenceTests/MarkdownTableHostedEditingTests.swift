@@ -276,8 +276,9 @@ struct MarkdownTableHostedEditingTests {
     // MARK: - Boundary 4: invalidation
 
     /// The macOS render gate is the ordinary `textDidChange` restyle — `MarkdownStyleSignature` is
-    /// iOS-only and has no reader on this platform — so a committed cell must post the notification
-    /// the coordinator restyles from. Without it the grid silently keeps its old value.
+    /// recorded on this platform (T-1045) but gates nothing, and its one reader asks only about the
+    /// editor's width — so a committed cell must post the notification the coordinator restyles
+    /// from. Without it the grid silently keeps its old value.
     @Test func committingACellPostsTheNotificationTheEditorRestylesFrom() throws {
         let textView = makeTextView()
         let counter = ChangeCounter()

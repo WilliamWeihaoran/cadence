@@ -336,6 +336,51 @@ enum MarkdownStylist {
         applyFrontmatter(storage, text: text)
 
         storage.endEditing()
+
+        // The record of what all of the above was measured against, for
+        // `refreshWidthDependentLayout(in:)` to compare a later layout pass with (T-1045).
+        (textView as? CadenceTextView)?.markdownLayoutSignature = styleSignature(
+            for: textView,
+            imageAssets: imageAssets,
+            taskEmbeds: taskEmbeds
+        )
+    }
+
+    /// The width every width-dependent block on this platform is measured against.
+    ///
+    /// One spelling, read by three callers that must agree or the picture overflows the fragment it
+    /// was given: `applyImageBlock` reserves the height from it, `refreshImageBlockLayout`
+    /// re-derives that height from it, and `styleSignature(for:imageAssets:taskEmbeds:)` records it.
+    static func layoutContentWidth(of textView: NSTextView) -> CGFloat {
+        MarkdownDecorationGeometry.imageContentWidth(
+            viewWidth: textView.bounds.width,
+            textContainerInsetWidth: textView.textContainerInset.width
+        )
+    }
+
+    /// What a styling of this text view, with these assets, is computed against.
+    ///
+    /// The single place the macOS feed of `MarkdownStyleSignature` is spelled. Takes the assets and
+    /// embeds as arguments rather than reading `CadenceTextView`'s caches, because `apply` accepts
+    /// them as arguments too and the PDF export path passes a set the view does not hold — a record
+    /// built from the caches would then describe a styling that never happened.
+    ///
+    /// `revealedBlockRange` is `nil` because macOS has no caret-based reveal: its one raw-source
+    /// escape is `CadenceTextView.revealedTableAnchor`, a *command* issued from the table's context
+    /// menu, which is what `tableSourceAnchors` carries.
+    static func styleSignature(
+        for textView: NSTextView,
+        imageAssets: [UUID: MarkdownImageRenderAsset],
+        taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo]
+    ) -> MarkdownStyleSignature {
+        let anchor = (textView as? CadenceTextView)?.revealedTableAnchor
+        return MarkdownStyleSignature.current(
+            revealedBlockRange: nil,
+            renderAssets: imageAssets,
+            taskEmbeds: taskEmbeds,
+            contentWidth: layoutContentWidth(of: textView),
+            tableSourceAnchors: anchor.map { Set([$0]) } ?? []
+        )
     }
 
     /// Renders a note's YAML frontmatter at zero height.
@@ -726,10 +771,7 @@ enum MarkdownStylist {
         // Same width the draw pass measures with, from the same helper: the reserved line height
         // below is derived from it, so if the two ever disagreed the image would overflow the
         // fragment it was given and a partial redraw could clip it.
-        let contentWidth = MarkdownDecorationGeometry.imageContentWidth(
-            viewWidth: textView.bounds.width,
-            textContainerInsetWidth: textView.textContainerInset.width
-        )
+        let contentWidth = layoutContentWidth(of: textView)
         let imageSize = image.fittedSize(maxWidth: contentWidth)
 
         storage.addAttribute(
@@ -752,6 +794,55 @@ enum MarkdownStylist {
         paragraph.paragraphSpacingBefore = 8
         paragraph.paragraphSpacing = 2
         return paragraph
+    }
+
+    /// **Re-derives everything whose reserved height was measured against the editor's width, if
+    /// that width has moved since the styling that measured it** (T-1045).
+    ///
+    /// The one reader of `CadenceTextView.markdownLayoutSignature`, and the one hook a new
+    /// width-dependent block has to be added to. `MarkdownEditorScrollView.layout()` is its only
+    /// call site.
+    ///
+    /// The class of defect it exists to close has a real population, not a hypothetical one. A
+    /// standalone image's line height is derived from the text view's width at *styling* time and
+    /// the picture is fitted to that width again at *painting* time; those agree only while the
+    /// editor keeps the width it was styled at, and it routinely does not. Measured on the fixture
+    /// in `MarkdownEditorImageRelayoutTests`, a fresh launch is the worst case rather than a corner:
+    /// SwiftUI runs `updateNSView` — where the first `apply(to:)` happens — *before* it gives the
+    /// representable a frame, so a 640 × 360 asset reserved **28.6pt** and was then drawn **292.5pt**
+    /// tall, i.e. four lines of prose were painted over the picture. Dragging the sidebar divider or
+    /// resizing the window does the same thing more gently.
+    ///
+    /// **It is a gate, not a wrapper.** Before this, `layout()` called `refreshImageBlockLayout`
+    /// unconditionally and nothing anywhere recorded the width the styling had used, so the only
+    /// thing standing between the app and the next stale block was that one call being remembered by
+    /// hand. Now the recorded width is the thing that answers, which is also what makes the answer
+    /// testable — at an unchanged width this returns `false` having touched no storage, and
+    /// `MarkdownStylingWidthSignatureTests` fails if it does the work anyway.
+    ///
+    /// A text view the stylist never recorded a signature for — a plain `NSTextView`, or a
+    /// `CadenceTextView` before its first styling — reads as stale and is refreshed, so nothing
+    /// this gate is unsure about is skipped.
+    ///
+    /// Deliberately **not** a restyle: a width change touches nothing else in the document, since a
+    /// task-embed card's height comes from its subtask count and a rendered table's from its row
+    /// count. Re-running the whole stylist from a layout pass would be both wasteful and a much
+    /// larger re-entrancy surface. That is why the record is advanced on its width alone
+    /// (`MarkdownStyleSignature.advancingContentWidth(to:)`) rather than replaced wholesale.
+    @discardableResult
+    static func refreshWidthDependentLayout(in textView: NSTextView) -> Bool {
+        let contentWidth = layoutContentWidth(of: textView)
+        let cadenceTextView = textView as? CadenceTextView
+        if let recorded = cadenceTextView?.markdownLayoutSignature,
+           recorded.contentWidthBucket == MarkdownStyleSignature.bucket(for: contentWidth) {
+            return false
+        }
+
+        let didChange = refreshImageBlockLayout(in: textView)
+        if let recorded = cadenceTextView?.markdownLayoutSignature {
+            cadenceTextView?.markdownLayoutSignature = recorded.advancingContentWidth(to: contentWidth)
+        }
+        return didChange
     }
 
     /// Re-derives every standalone image line's reserved height for the width the text view has
@@ -782,10 +873,7 @@ enum MarkdownStylist {
     @discardableResult
     static func refreshImageBlockLayout(in textView: NSTextView) -> Bool {
         guard let storage = textView.textStorage, storage.length > 0 else { return false }
-        let contentWidth = MarkdownDecorationGeometry.imageContentWidth(
-            viewWidth: textView.bounds.width,
-            textContainerInsetWidth: textView.textContainerInset.width
-        )
+        let contentWidth = layoutContentWidth(of: textView)
 
         var pending: [(range: NSRange, style: NSParagraphStyle)] = []
         storage.enumerateAttribute(

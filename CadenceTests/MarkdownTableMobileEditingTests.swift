@@ -41,11 +41,12 @@ struct MarkdownTableMobileEditingTests {
 
     // MARK: - Concern 4: the render gate
 
-    /// **The concern that does not exist on macOS.** `MarkdownStyleSignature` has exactly one reader
-    /// and it is `Cadence/iOS/iOSMarkdownEditor.swift`; the Mac re-runs its styler from
-    /// `textDidChange`. "Show Table Source" changes what the styler draws with **no text edit behind
-    /// it**, so without an entry of its own the gate compares equal, skips, and the command does
-    /// nothing at all.
+    /// **The concern that does not exist on macOS.** `Cadence/iOS/iOSMarkdownEditor.swift` is the
+    /// only reader that lets `MarkdownStyleSignature` skip a styling; the Mac re-runs its styler from
+    /// `textDidChange`, and reads its own record of the signature only to notice a width change
+    /// (T-1045). "Show Table Source" changes what the styler draws with **no text edit behind it**,
+    /// so without an entry of its own the gate compares equal, skips, and the command does nothing
+    /// at all.
     @Test("Revealing a table's source moves the style signature")
     func tableSourceAnchorsMoveTheStyleSignature() {
         let hidden = MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [])

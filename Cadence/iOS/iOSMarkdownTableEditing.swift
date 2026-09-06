@@ -22,9 +22,10 @@ import UIKit
 ///   registers **no** edit at all (`MarkdownTableEditor.commit` returns nil), so tabbing across five
 ///   cells does not cost five undos.
 ///
-/// - **The render gate — the one concern that has no macOS counterpart.** `MarkdownStyleSignature`
-///   has exactly one reader in the repo and it is this editor; the Mac re-runs its styler from
-///   `textDidChange` and never needed one. The signature carries **no digest of the note's text**,
+/// - **The render gate — the one concern that has no macOS counterpart.** This editor is the only
+///   thing in the repo that lets `MarkdownStyleSignature` *skip* a styling; the Mac re-runs its
+///   styler from `textDidChange` and never needed that, and the record it keeps since T-1045 is read
+///   only to notice a width change. The signature carries **no digest of the note's text**,
 ///   so a committed cell leaves it untouched and `refreshStylingIfNeeded` would compare equal and
 ///   skip — the grid would keep showing the old value with the new one already in the storage.
 ///   Two things follow, and both are deliberate: every table mutation restyles *synchronously*

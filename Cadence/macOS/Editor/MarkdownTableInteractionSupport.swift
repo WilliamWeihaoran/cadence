@@ -23,8 +23,11 @@ import AppKit
 ///   starts outside the table runs through it. A drag that *starts* on the grid opens a cell
 ///   instead, which is what clicking a task embed or an image already does.
 /// - **Invalidation.** `didChangeText()` posts the notification the coordinator restyles from, so a
-///   committed cell re-renders through the ordinary path. There is no second render gate on macOS
-///   to keep in step — `MarkdownStyleSignature` is iOS-only and has no reader here.
+///   committed cell re-renders through the ordinary path. There is no second render *gate* on macOS
+///   to keep in step: `MarkdownStyleSignature` is recorded here (T-1045) but never skips a restyle,
+///   and its one reader — `MarkdownStylist.refreshWidthDependentLayout(in:)` — asks only whether the
+///   editor changed width. A revealed table is a command, not a width, so nothing on this path has
+///   to keep it in step.
 ///
 /// Everything this file decides about *markdown* is in `MarkdownTableEditSupport`; everything it
 /// decides about *rects* is in `MarkdownTableLayoutSupport`. What is left here is AppKit lifecycle.

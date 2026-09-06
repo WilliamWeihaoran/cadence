@@ -32,6 +32,18 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     /// `markdownImageDropOperation(for:)` and by `registerMarkdownDraggedTypes()`.
     var allowsMarkdownImageInsertion = true
 
+    /// **What the last styling of this note was computed against** (T-1045).
+    ///
+    /// Written whole by `MarkdownStylist.apply(to:imageAssets:taskEmbeds:)`, and advanced on its
+    /// width alone by `MarkdownStylist.refreshWidthDependentLayout(in:)`. Nothing else writes it and
+    /// nothing reads it but that refresh, which is the point: a reserved height derived from the
+    /// editor's width at styling time is stale the moment the width moves, and until this existed
+    /// nothing on macOS held the number to compare against.
+    ///
+    /// `nil` until the first styling — and a `nil` record reads as *stale*, so a text view the
+    /// stylist has never touched behaves exactly as it did before this property existed.
+    var markdownLayoutSignature: MarkdownStyleSignature?
+
     private var resizingImageID: UUID?
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0

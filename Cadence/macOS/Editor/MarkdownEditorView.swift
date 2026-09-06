@@ -703,11 +703,13 @@ enum MarkdownEditorScrollSupport {
         }
 
         // The text view now has the width the draw pass will measure a standalone image against,
-        // so the height its line fragment reserves has to be re-derived from that same width
-        // before anything is laid out. Every other block's reserved height is width-independent,
-        // so this is the whole of the width-dependent restyle. See
-        // `MarkdownStylist.refreshImageBlockLayout`.
-        MarkdownStylist.refreshImageBlockLayout(in: textView)
+        // so every height derived from a width has to be re-derived from *this* one before anything
+        // is laid out. The call is gated on the width the styling was actually computed against
+        // (`CadenceTextView.markdownLayoutSignature`) rather than made every pass, and it is the one
+        // hook a new width-dependent block belongs on — today the standalone image is the only
+        // member, because a task-embed card's height comes from its subtask count and a rendered
+        // table's from its row count. See `MarkdownStylist.refreshWidthDependentLayout`.
+        MarkdownStylist.refreshWidthDependentLayout(in: textView)
 
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
