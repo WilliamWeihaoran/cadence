@@ -149,11 +149,85 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   line 295, **inside** the per-behind-path loop of the drift report — the measured instance above — and
   `HEAD:scripts/xcb.sh` contains no `UNKNOWN-SUITE` refusal at all, so [[T-1076]]'s branch and the two
   declarations the sweep found in it are uncommitted working-tree edits. Nothing here has landed.
+  **CLOSED 2026-09-06 (zshlocal; landed by `requeue`).** The blocked commit above is this one. The
+  four hoists, the three behavioural pins and the structural sweep
+  (`noZshScriptReachesABareLocalDeclarationTwice`, every `.sh` in `scripts/`, which closes the "not
+  swept for" list) landed together with [[T-992]], [[T-991]], [[T-986]], the second half of
+  [[T-781]], [[T-1044]], [[T-1066]] and [[T-1076]] — one commit, because all four agents' work
+  meets in `CadenceTests/CadenceGuardScriptSelftestTests.swift` and could not be separated without
+  attributing one agent's lines to another's message.
 
 - [T-1076] **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Still a stub at HEAD, verified 2026-09-06 (`reconcile`).** No body was ever written under it and no
   code landed: `UNKNOWN-SUITE` occurs 0 times in `git show HEAD:scripts/xcb.sh` and 4 times in the
   working copy, so both the verdict and the instrument that would carry it are uncommitted.
+  **Body, 2026-09-06 (agent `suitecheck`), landed by `requeue`.** **`-only-testing:` suite names are now resolved against the source *before* the build:
+  an unknown name is refused, and a known name that leaves siblings behind is printed.** The
+  accepted alternative to [[T-481]], which proposed one top-level suite per file and was declined:
+  that rule would have imposed a new authoring convention on files that already break it, whereas
+  this moves the check to the one place that already knows the answer -- the runner -- and costs
+  the authors nothing.
+  **The measurement, taken 2026-09-06 in a clean `git archive HEAD` tree.** 302 files under
+  `CadenceTests/`, 386 suites, 4,499 tests.
+
+  - **14 files** declare no suite named after the file (279 tests). Scoping one by *filename* runs
+    nothing at all, and `xcb.sh`'s zero-test guard ([[T-552]], exit 4) covers this population
+    **completely**.
+  - **26 files** declare a suite named after the file **and** siblings beside it. Scoping one by
+    filename runs a real suite, exits 0, and **silently skips 311 of the 688 tests in those files
+    -- 45%**. The zero-test guard covers this population **not at all**: it only fires at zero, and
+    this run is green, non-zero and short.
+
+  That second population is the whole ticket. It is the half nothing was watching, and it is the
+  trap agents actually fall into, because **a short green run is indistinguishable from a fast
+  one**. The surface is also growing while the question sits open: **39** files now declare more
+  than one top-level suite, against 33 when T-552 measured it and 32 when T-481 raised it.
+
+  **Proven by counterexample before the fix, not argued.** `CadenceDeepLinkTests.swift` declares
+  `CadenceDeepLinkTests` (10 tests) and `CadenceDeepLinkGrammarAndRevealTests` (14). A real run of
+  `xcb.sh <id> test -only-testing:CadenceTests/CadenceDeepLinkTests` against HEAD's runner reported
+  `XCODEBUILD_EXIT=0`, `compile errors: 0`, `test result lines: 10` -- and the string
+  `CadenceDeepLinkGrammarAndRevealTests` appears in that log **zero** times. Fourteen tests, 58% of
+  the file, did not run, and every instrument in the runner called it a pass.
+
+  **What landed.** `scripts/test-suite-index.sh` grew `--suite-files` (`Suite<TAB>file<TAB>count`),
+  so the resolver reuses this repository's one parser of Swift test source -- [[T-465]]'s brace and
+  raw-string handling included -- instead of a second, weaker guess written in zsh. `scripts/xcb.sh`
+  reads it in a new pre-flight and takes one of two deliberately asymmetric outcomes:
+
+  - `UNKNOWN-SUITE` -- **refused, exit 8.** A name matching no suite can only be a mistake. When the
+    name is really a *filename* (the 14-file population) the refusal says so and prints the suites
+    that file does declare, with counts, ready to paste.
+  - `PARTIAL-SCOPE` -- **printed, run continues.** A file holding several suites is a normal way to
+    organise them and scoping to one on purpose is an ordinary thing to do, so this must not fail:
+    a guard that refuses the ordinary case is switched off inside a week. It names the skipped
+    suites and their exact test counts, which is what makes it checkable at a glance instead of
+    noise to scroll past. A file scoped in *full* prints nothing.
+
+  **Placement is half the value.** It runs **before the build and before the test-host lock**, not
+  after. Exit 4 arrives at the end of a full compile, and a `test` action queues behind a lock that
+  has been reaching forty minutes on a busy day. Measured end to end: the refusal now lands in
+  **1.7 seconds** with no lock taken and nothing built.
+
+  A guard that cannot answer says so and gets out of the way, the same rule the drift check
+  follows: a non-`CadenceTests` target is unanswerable rather than wrong and passes through
+  untouched, and an empty index (no `python3`, no test tree) proceeds with a note instead of
+  refusing every run on the machine.
+
+  Scoping to a single test (`CadenceTests/Suite/testName`) prints nothing: there the rest of the
+  file not running **is the request, not a finding**. The suite name is still validated at that
+  granularity, because a typo is a mistake however narrowly you scope.
+
+  **`scripts/xcb.sh selftest` is new** -- it had none, which is the [[T-719]] hollow-instrument
+  shape this repository keeps finding one layer up. 15 checks, no build, about a second: both
+  outcomes induced against a fixture index so the assertions do not move when somebody adds a
+  suite, then both induced again against the **live** index so a fixture that has drifted from the
+  real parser cannot pass for one that matches it. It also pins the *silences* -- a lone suite, a
+  fully scoped file, a whole target -- because the failure mode of the printing half is becoming
+  noise. `CadenceGuardScriptSelftestTests` pins both tags at source level; it deliberately does
+  **not** shell out, because the live half needs `python3` and that test host is App-Sandboxed
+  where the xcrun shim refuses ([[T-719]]), so the selftest degrades to a printed `skip` there and
+  shelling out would assert less while appearing to assert more.
 
 - [T-1078] **RESERVED 2026-09-06 (agent `sweeps`) — `main` is red a THIRD way: half 3 of the save-commit rule reads ownership off a signature, so a nested `func` that captures its parent's `ModelContext` is misread as owning the unit of work.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Confirmed independently 2026-09-06 (coordinator), and two rival readings refuted by measurement.**
@@ -341,6 +415,26 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   funnels every notice through `columnFailureNotice`, whose shape
   `CadenceKanbanColumnLifecycleSurfaceTests` pins with an exact regex. Not a defect found in use;
   read off the source while wiring the row half.
+
+- [T-1090] **`CadenceUITests` leaks one private SwiftData store per app launch, and owns 71 of the 84 on disk.**
+  Filed 2026-09-06 (tooltruth) out of [[T-1066]], which assumed the backlog was `run-macos-app.sh`'s.
+  It is not. Counted under `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores/`:
+  84 directories, ~34 MB, of which **36** are `ui--[CadenceUITests testLaunchesToTodayWithSeededSidebarLists]-<UUID>`
+  and **35** are `launch-<UUID>`. Those ids come from `CadenceUITests/CadenceUITests.swift:67`,
+  `CadenceUITestsLaunchTests.swift:26` and `CadenceTodayCompositionUITests.swift:466`, each of which
+  sets `app.launchEnvironment["CADENCE_UI_TEST_STORE_ID"]` to a **fresh UUID per launch** and never
+  removes the directory the app then creates. Only 13 of the 84 came from `run-macos-app.sh`.
+  The isolation itself is right and must stay — the point of the per-launch id is that no UI test
+  can touch the user's real store. What is missing is the other half: nothing deletes it afterwards.
+  A UI test cannot remove the path itself (the app writes it inside its own sandboxed container,
+  which the test process cannot reach), so the fix is either a teardown that removes it through the
+  app, or a sweeper the UI target runs at class setup over ids older than the current run. Whichever
+  it is, decide it deliberately: a sweeper that deletes an id a **concurrent** run is using would
+  corrupt a live test's store, which is worse than the leak.
+  **Re-checked 2026-09-06 evening while landing this (agent `requeue`): the directory is now
+  empty**, so the 84 above is a measurement of a backlog somebody has since cleared by hand, not a
+  current count. The defect is unchanged — nothing in `CadenceUITests` deletes the store it makes —
+  so the next UI-test run starts the backlog again.
 
 - [T-1075] **CLOSED 2026-09-06 — the premise is false at HEAD: `STRANDED` is in neither `HEAD:scripts/mutate.sh` nor HEAD's copy of the test, and both copies carrying it are uncommitted working-tree edits that agree with each other.** Originally: **`main` is red a SECOND way, and it is not [[T-1073]]: `CadenceGuardScriptSelftestTests`
   fails at HEAD because the test names a `mutate.sh` refusal that `mutate.sh` does not make.**
@@ -574,7 +668,32 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   save-commit rule sees it, because there is no commit in any frame to hang a swallow on.
 
 - [T-1072] **Ids were handed out in agent briefs without being written to the ledger, and collided twice in one night.** The ledger IS the allocator; a reservation that lives only in a brief is invisible to the next agent computing "next free id". [[T-1043]] is defined twice (an image fix and a calendar-link ticket), and T-1067/T-1068 were each claimed by two agents for unrelated work. Ids are meant to be stable and never reused, so every reference to a collided id is ambiguous. **Fix the allocator, not the three collisions:** write the stub at the moment the id is handed out, as this block does.
-- [T-1066] **`run-macos-app.sh stop` prints "private store removed" over a store it did not remove.**
+- [T-1066] **CLOSED 2026-09-06 (tooltruth; landed by `requeue`) — the mechanism was not a race, and the print now reports from the filesystem.** **Filed as:** **`run-macos-app.sh stop` prints "private store removed" over a store it did not remove.**
+  Both halves reproduced first, in one command each.
+  **The mechanism, measured:** [[T-1064]]'s fix was **never committed**. `git log -- scripts/run-macos-app.sh`
+  has exactly one commit, `50429a6` from 2026-08-22, and `APP_STORE_ROOT` lived only in the working
+  tree. Every agent follows `AGENTS.md` and works from a `git archive HEAD` copy, so every agent was
+  running the **pre-fix** script — the one that removes `${TMPDIR}/CadenceUITestStores/<id>`, a path
+  the sandboxed app never writes — and then printed success. Reproduced 2026-09-06: HEAD's `stop`
+  over a planted 327680-byte `default.store` printed `private store removed`, exited 0, and left the
+  directory on disk. That closes the ambiguity the ticket refused to guess past: the surviving
+  directory's mtime equalled its birth time **because nothing ever deleted or re-created it**. No
+  race, no flush-after-`rm`.
+  **A second, independent way the print lied**, also reproduced: `stop` with the id omitted resolves
+  `ID=agent-$$`, a path no `start <id>` ever wrote, and printed the same success line over the store
+  it had not looked at.
+  **Fixed as the ticket asked — the reporting, not a guess about the cause.** The `stop` branch now
+  probes each root, removes what is there, and re-`stat`s: `private store removed: <paths>` only
+  over paths that were there and are now gone; `!! PRIVATE STORE NOT REMOVED` with exit 1 if one
+  survives the `rm`; `!! NOTHING REMOVED: no store at <paths>` with exit 1 when there was nothing to
+  remove, naming the id-omitted case by name. A `stop` that found nothing is not a `stop` that
+  cleaned up, and it no longer says it is. Landing this commit also lands T-1064's fix, which is the
+  half that stops the leak.
+  **The backlog was not what the ticket assumed, and the residue is filed as [[T-1074]]:** of the 84
+  stores present on 2026-09-06, only 13 came from `run-macos-app.sh`. 71 are `launch-<UUID>` and
+  `ui--[CadenceUITests …]-<UUID>` — one per `XCUIApplication` launch in `CadenceUITests`, which sets
+  `CADENCE_UI_TEST_STORE_ID` itself and deletes nothing. That is a different leak in a different
+  file, and fixing `stop` does not touch it.
   Measured 2026-09-05 (fixdiv2). `stop fixdiv2` printed `private store removed; remaining agent app
   processes: 0`, and
   `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores/fixdiv2` was still on disk
@@ -721,7 +840,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   signature gate, or make `applyImageBlock`'s width the *only* place a width may enter a paragraph
   style and say so where a reader will hit it.
 
-- [T-1044] **`scripts/mutate.sh` reported a tree clean with a mutation still in it.**
+- [T-1044] **CLOSED 2026-09-06 (tooltruth; landed by `requeue`) — reproduced in one command, and the tree check now has a reference older than itself.** **Filed as:** **`scripts/mutate.sh` reported a tree clean with a mutation still in it.**
+  **Reproduced, exactly as reported.** `Runner.scratch` is `/private/tmp/cadence-mut-<ident>` — one
+  directory per ident, reused by every run of that ident and deleted by nobody — and each run fills
+  `backups/` by copying the tree *as it finds it*. So: strand a mutation in a file (what a SIGKILLed
+  runner leaves), run a plan touching a different site in that same file, and the run prints
+  `OK   Cadence/Models/ModelEnums.swift` and `every mutated file is back at its baseline` while the
+  file still reads `STRANDED-MUTATION`. Worse, its own `backups/` — the directory the failure
+  message tells you to restore by hand from — had by then been overwritten with the mutated bytes,
+  so the pristine copy was gone. **The confounder in the original report was the cause, not noise.**
+  **Why `OK` was wrong rather than merely weak:** `baseline` is the file as *this run* found it, so
+  `OK` means *unchanged since I started*. That is not *clean*, and the two are only the same claim
+  when the tree was pristine at start — which is precisely what a dead predecessor breaks.
+  **Fixed:** `adopt_prior_scratch` reads `<scratch>/runner.pid` before the new run claims it. That
+  marker is now **removed on the way out of a run whose own tree check came back clean**, so finding
+  one means the previous run under this ident did not finish over a clean tree. In that case the
+  leftover `backups/` are *moved aside* to `backups.prior[-N]` instead of being overwritten, and
+  handed to the tree check as the only bytes in reach older than this run. `tree_verdicts` then has
+  three states: `DIRTY` (this run changed it and did not restore it), **`STRANDED`** (matches this
+  run's baseline but not the earlier backup — nothing this run did, and nothing it could have
+  restored), and `OK`. `<scratch>/runner.tree` records which tree those backups belong to, and a
+  reference for a different tree is declined out loud rather than compared.
+  **And when there is nothing older to compare against, it says so** instead of claiming the tree is
+  clean: *"every mutated file is back at the bytes THIS RUN FOUND. That is all this check can prove
+  — there was no earlier backup of this tree to compare against, so a mutation stranded before this
+  run started would read as OK here."* A print that cannot be false is worth more than one that is
+  usually true.
+  **Third defect found while there, not in the report:** two runs under one ident share one
+  `backups/`, so each copies the other's mutated file over the only pristine copy of it and *both*
+  tree checks then call a mutated file clean. A second run on an ident a live runner holds is now
+  refused, exit 2, without touching that runner's backups.
+  **Guarded:** `mutate.sh selftest` mode 7, 11 new checks (59 → 70), and `STRANDED` is pinned in
+  `CadenceGuardScriptSelftestTests.mutationRunnerRefusals`, which requires it in both the script body
+  and the selftest. Mutation-tested by hand: deleting the `STRANDED` branch, copying the prior
+  backups instead of moving them, and treating a live sibling as dead each turn the selftest red on
+  exactly the check that names them.
+  **Left open, and stated rather than papered over:** the report's *second* inversion — `DIRTY` over a
+  byte-identical file — was **not** reproduced. Every path in the runner that leaves a file differing
+  from its baseline is reported loudly (`RESTORE FAILED`, exit 3), and a single dead predecessor
+  cannot produce it. The shared-`backups/` collision above is the only shape that can, and it now
+  refuses. If it is ever seen again on a fresh ident, it is a different defect.
   Observed 2026-09-05 in the z2 batch. Run 1 of a 4-mutation plan finished with
   `== tree check ==  OK Cadence/macOS/Editor/MarkdownEditorSupport.swift`, and that file still
   contained Z2M1's inserted `if storage.length > 0 { return false }` — `diff` against the source it
@@ -895,6 +1053,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   KILLED: delete the corroboration (10 legitimate selftest commits false-refused), stop asking the
   `=` form (the pre-fix `--removes 2` reproduction returns verbatim), refuse a stale copy too (mode
   4b breaks), drop the trailer (mode 4b4 breaks).
+  **CLOSED 2026-09-06 (commitres; landed by `requeue`).**
+  **The decision the ticket asked for is: yes, ask the `=` form too.** The old exemption was right
+  about the wrong comparison. Refusing a reconstruction because it differs from the WORKTREE would
+  refuse the cure; this reading is against HISTORY, where a genuine rebuild on `git show
+  HEAD:<path>` contains every line HEAD has and settles as `inflight` at the first comparison,
+  before any revision walk. So the cure is not refused and the mistake is: `REBUILD-BEHIND-HEAD`
+  names the sha the content file was built on and how many commits have landed on that path since.
+  **Reproduced first, in a throwaway repository:** a content file built two commits back was refused
+  as `REMOVES-HEAD-LINES: removes 2 line(s) ... --removes 2`. A count, and an invitation to type the
+  number that drops the two lines the siblings landed -- the same wrong-diagnosis shape [[T-982]]
+  found on the bare form. Nothing asked which revision the file came from.
+  **The naive reading does not survive contact, and that is the substance of this ticket.** Applied
+  as written it refused **13 of `agent-commit.sh`'s own selftest commits** and **1 of this
+  repository's last 80 real `docs/TODO.md` commits** (`eab61a0d`, checked by hand: no id dropped, no
+  closure reverted; its 24 "missing" lines are its own T-1036/T-1038 entries rewritten from open
+  text to closures -- a false accusation). The cause: "some older revision R is wholly contained and
+  a line HEAD has is missing" is also what an ordinary rewrite of the NEWEST lines looks like,
+  because deleting what HEAD added leaves R behind. Containment of R is necessary and not
+  sufficient. So a **corroboration** was added: a line HEAD has that R does not, still present in
+  the content, proves the content was built on something newer than R, and the `behind` reading is
+  withdrawn. An agent working from R cannot hold such a line -- it did not exist in anything it read.
+  **Measured after:** 0 of those 80 real commits refused; 0 of the selftest's 105 checks refused;
+  and the positive control on real repository content -- each commit's blob replayed onto the HEAD
+  two commits later, which is exactly the failure this ticket is about -- **caught 13 of 13,
+  missing none**. Two narrowings are recorded in the scripts: the corroboration also narrows the
+  bare-form reading ([[T-982]]), correctly, without weakening any measured [[T-975]] instance (a
+  stale copy is R's blob byte for byte and a stale base is R plus local edits; neither holds a
+  post-R line); and for the `=` form only a **stale base** refuses, because a content file whose
+  bytes ARE an older revision carries none of the agent's own work and so cannot be a mistaken
+  rebuild -- that is a deliberate revert, and `REMOVES-HEAD-LINES` already names every line it
+  drops. Pinned by `agent-commit.sh` modes 4b3/4b4 and `worktree-drift.sh` mode 5c. Four mutations
+  KILLED: delete the corroboration (10 legitimate selftest commits false-refused), stop asking the
+  `=` form (the pre-fix `--removes 2` reproduction returns verbatim), refuse a stale copy too (mode
+  4b breaks), drop the trailer (mode 4b4 breaks).
 - [T-991] **`--commits-stale` lands a stale copy on purpose and leaves no trace.** Every other
   deliberate override in `agent-commit.sh` that discards something leaves a record somebody has to
   clear — a declined hunk writes to `$TMPDIR/cadence-declined-hunks` and `check` fails while it is
@@ -904,6 +1096,22 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   minimum the path and base sha in the commit trailer.
 
   **RESOLVED IN THE CHECKOUT 2026-09-06, NOT YET IN HEAD** -- same gate as [[T-992]].
+  Each overridden path now writes a `Commits-Stale: <path> built-on <sha>` trailer into the commit
+  message, immediately above the `Co-Authored-By:` line, so `git log --grep='^Commits-Stale:'`
+  answers *did anyone knowingly commit a copy behind HEAD, and on which path* from any clone,
+  forever, and the base sha makes what was skipped diffable rather than abstract.
+  **The commit message and not the $TMPDIR ledger, deliberately.** A declined-hunk record means
+  somebody still has to act, and `check` fails while one exists; a `--commits-stale` is a settled
+  decision, and filing it as outstanding work would make `check` fail over something already
+  decided. The ledger is also per-checkout and per-boot, and this question gets asked days later.
+  **The user-gating of the flag makes this more valuable, not less:** the flag is now rare and
+  deliberate, so every trailer in the history is a decision somebody made on purpose.
+  One bug found while writing it, worth more than the feature: `awk -v extra=...` **cannot carry a
+  literal newline** ("awk: newline in string"), so the first implementation produced an EMPTY commit
+  message -- taking the `Co-Authored-By:` line with it -- the moment two paths were overridden at
+  once. Spliced in zsh instead. Pinned by mode 4b4, including the control that an ordinary commit
+  acquires no trailer (or `--grep` answers everything and therefore nothing).
+  **CLOSED 2026-09-06 (commitres; landed by `requeue`)** -- same commit as [[T-992]].
   Each overridden path now writes a `Commits-Stale: <path> built-on <sha>` trailer into the commit
   message, immediately above the `Co-Authored-By:` line, so `git log --grep='^Commits-Stale:'`
   answers *did anyone knowingly commit a copy behind HEAD, and on which path* from any clone,
@@ -961,6 +1169,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   runbook line so the next coordinator does the same; until then it is reachable only by memory.
 
   **RESOLVED IN THE CHECKOUT 2026-09-06, NOT YET IN HEAD** -- same gate as [[T-992]].
+  The remaining half was the runbook line, and it is now in `docs/SUBAGENT_RUNBOOK.md` under
+  "Committing out of a shared checkout": `check` is **step 2 of the coordinator heartbeat**, ahead
+  of batch work, with the reasoning for why it cannot be a file in this repository beside it, so
+  the next coordinator does not have to re-derive it.
+  **And the gap it left is now covered by something nobody has to remember.** The argument against
+  `xcb.sh` was about *gating* -- every intra-batch run would see a sibling's freshly declined,
+  perfectly normal in-flight hunk, the exact case `DECLINED-HUNK-STALE`'s grace exists not to
+  block, and `mutate.sh` alone runs it dozens of times per needle. That argument does not reach
+  *reporting*. `scripts/xcb.sh` now lists outstanding records at the end of **every** run with each
+  record's age and how many minutes until it walls off the checkout, and never touches `$STATUS`.
+  See [[T-781]].
+  **CLOSED 2026-09-06 (commitres; landed by `requeue`)** -- same commit as [[T-992]].
   The remaining half was the runbook line, and it is now in `docs/SUBAGENT_RUNBOOK.md` under
   "Committing out of a shared checkout": `check` is **step 2 of the coordinator heartbeat**, ahead
   of batch work, with the reasoning for why it cannot be a file in this repository beside it, so
@@ -3723,6 +3943,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   refusing and not something else.
 
   **SECOND HALF, resolved in the checkout 2026-09-06 (not yet in HEAD): the backstop needed a
+  backstop, and the batch of 2026-09-05 proved it.** An agent died mid-commit and left a stranded
+  declined record on `docs/TODO.md`. Nothing surfaced it. A coordinator found it by running `check`
+  by hand during a routine sweep, and half an hour later `DECLINED-HUNK-STALE` would have refused
+  **every** commit in the repository -- the automatic instrument works, and its first observable is
+  the whole batch stopping, which is a poor way to learn. So `scripts/xcb.sh` now ends every run by
+  listing outstanding records with the declining agent, the age, the lines themselves, and how many
+  minutes remain before this refuses everyone. It **reports and never gates**: `$STATUS` is
+  untouched, which is the distinction [[T-986]] settled. The listing lands in front of whoever is
+  already reading a build log, which is the one thing every agent in a batch does. Exercised
+  against a fixture ledger in both states (fresh: "in 30m this refuses EVERY agent-commit.sh
+  commit"; aged: "this is ALREADY refusing"), and silent when the ledger is empty or absent.
+  **SECOND HALF, CLOSED 2026-09-06 (commitres; landed by `requeue`): the backstop needed a
   backstop, and the batch of 2026-09-05 proved it.** An agent died mid-commit and left a stranded
   declined record on `docs/TODO.md`. Nothing surfaced it. A coordinator found it by running `check`
   by hand during a routine sweep, and half an hour later `DECLINED-HUNK-STALE` would have refused

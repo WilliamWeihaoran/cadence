@@ -33,6 +33,19 @@
 #      (it must be KILLED), and its partner introduces the same violation PLUS the loosening (it
 #      survives, and that survival is the evidence). This runner will not print SURVIVED over an
 #      unpaired weakening.
+#   6. A CLEAN TREE THE RUNNER NEVER VERIFIED (T-1044, added 2026-09-06). The closing tree check
+#      compared each file against the BASELINE THIS RUN TOOK, and then printed `OK` and
+#      `every mutated file is back at its baseline` -- wording an agent reads as "the tree is
+#      clean". It is not the same claim. `<scratch>` is per-ident and never deleted, so a runner
+#      SIGKILLed mid-mutation leaves its mutation in the tree; the next run under that ident reads
+#      those mutated bytes as its baseline, copies them over the dead runner's pristine backups,
+#      and then calls the file OK with the mutation still in it. Reproduced 2026-09-06 in one
+#      command. The runner now keeps an earlier run's backups instead of overwriting them
+#      (`adopt_prior_scratch`), reports a file that differs from them as STRANDED rather than OK,
+#      refuses a second run under an ident a live runner already holds, and -- when it has no
+#      older bytes to compare against -- says so instead of claiming the tree is clean.
+#      A surviving mutant and a stranded mutation look identical in a report, which is how a
+#      mutation run stops being evidence.
 #
 # So a verdict of SURVIVED is issued only when all of these are true, each measured rather than
 # assumed: the needle occurred exactly as many times as the plan said; the file's bytes differ
@@ -92,7 +105,9 @@
 # RUN IT IN THE BACKGROUND. A plan of any size outlives the 10-minute foreground tool cap, and a
 # runner cut off mid-mutation is the hazard this whole script is about. `nohup ./scripts/mutate.sh
 # ... > log 2>&1 &`, then poll the log. The runner writes its pid to <scratch>/runner.pid; kill
-# THAT, not a `pkill -f` pattern, and never with -9.
+# THAT, not a `pkill -f` pattern, and never with -9. That file is REMOVED on the way out of a run
+# whose own tree check came back clean, so finding one means the previous run under this ident
+# did not finish over a clean tree -- which is exactly what the next run needs to know (T-1044).
 set -uo pipefail
 ROOT_DIR="${0:A:h:h}"
 # zsh writes here-document temp files to $TMPPREFIX, and zsh SETS that itself at startup, to
@@ -121,6 +136,7 @@ fi
 # exec, so the pid you see IS the python process: a signal sent to this script has to reach the
 # handler that restores the tree, and a zsh parent waiting on a child does not forward it.
 exec "$PYTHON_BIN" - "$ROOT_DIR" "$@" <<'PY'
+import errno
 import os
 import re
 import shutil
@@ -425,6 +441,92 @@ def restore(path, backup_path, baseline):
     shutil.copyfile(backup_path, path)
     after = read_bytes(path)
     return after == baseline and after == read_bytes(backup_path)
+
+
+def pid_is_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError as problem:
+        # EPERM means it exists and is not ours. Only ESRCH means gone.
+        return problem.errno == errno.EPERM
+    return True
+
+
+def read_marker(path):
+    try:
+        with open(path, "r") as handle:
+            return handle.read().strip()
+    except (IOError, OSError):
+        return ""
+
+
+def adopt_prior_scratch(scratch):
+    """Answer what an earlier run under this ident left behind -- without destroying it.
+
+    T-1044, reproduced 2026-09-06. `Runner.scratch` is `/private/tmp/cadence-mut-<ident>`: one
+    directory per ident, reused by every run of that ident and deleted by nobody. `backups/`
+    inside it is the only pristine copy of a file a run is mutating, and each run fills it by
+    copying the tree AS IT FINDS IT. So a runner that was SIGKILLed mid-mutation leaves a mutated
+    tree next to pristine backups, and the next run under the same ident used to copy the mutated
+    bytes straight over those backups. Two things then went wrong at once: the pristine copy was
+    gone, so `Restore it by hand from <scratch>/backups` pointed at the mutation; and the mutated
+    bytes became this run's `baseline`, so the closing tree check -- which asks only *does this
+    file still equal my baseline?* -- printed `OK` over a file with the dead runner's mutation
+    still in it. Measured: `OK Cadence/Models/ModelEnums.swift` and
+    `every mutated file is back at its baseline` over a tree that still read `STRANDED-MUTATION`.
+
+    So: move the leftovers aside rather than overwrite them, and hand them back as an external
+    reference -- the only bytes in this run's reach that are older than this run.
+
+    Returns (reference, prior_pid, prior_tree). `reference` maps backup basename -> a path holding
+    the bytes some earlier run found; empty when the scratch is fresh or recorded a clean exit.
+    """
+    marker = os.path.join(scratch, "runner.pid")
+    prior_pid = read_marker(marker)
+    prior_tree = read_marker(os.path.join(scratch, "runner.tree"))
+    backup_dir = os.path.join(scratch, "backups")
+    names = sorted(os.listdir(backup_dir)) if os.path.isdir(backup_dir) else []
+    # A run that reached its own tree check and found the tree clean deletes `runner.pid` on the
+    # way out. Its presence therefore means the previous run under this ident did NOT finish over
+    # a clean tree -- SIGKILL, a failed restore, or a run still in flight.
+    if not prior_pid or not names:
+        return {}, prior_pid, prior_tree
+    if prior_pid.isdigit() and pid_is_alive(int(prior_pid)):
+        # A live sibling under the same ident. Touch nothing -- moving its backups would break the
+        # restore it is counting on. The caller refuses the run.
+        return {"": ""}, prior_pid, prior_tree
+    kept = os.path.join(scratch, "backups.prior")
+    serial = 1
+    while os.path.exists(kept):
+        serial += 1
+        kept = os.path.join(scratch, "backups.prior-%d" % serial)
+    shutil.move(backup_dir, kept)
+    return dict((name, os.path.join(kept, name)) for name in names), prior_pid, prior_tree
+
+
+def tree_verdicts(tree, baselines, prior_refs):
+    """Classify every mutated file at the end of a run. THREE states, not two (T-1044).
+
+    `baseline` is the file as this run found it. `OK` against it means *unchanged since I
+    started*, which is not the same claim as *clean*: a runner SIGKILLed mid-mutation leaves its
+    mutation in the tree, and the next run reads exactly those bytes as its baseline. `prior_refs`
+    is the only thing in reach that is older than this run -- the backups that earlier runner took
+    before it died -- so a file that matches this run's baseline and NOT that reference is
+    STRANDED: nothing this run did, and nothing this run could have restored.
+    """
+    verdicts = []
+    for path, baseline in baselines.items():
+        name = os.path.relpath(path, tree)
+        same = os.path.exists(path) and read_bytes(path) == baseline
+        reference = prior_refs.get(name.replace("/", "__"))
+        if not same:
+            mark = "DIRTY"
+        elif reference is not None and read_bytes(path) != read_bytes(reference):
+            mark = "STRANDED"
+        else:
+            mark = "OK"
+        verdicts.append((mark, name))
+    return verdicts
 
 
 def restore_mutation(tree, backups, baselines, mutation):
@@ -821,8 +923,9 @@ def main():
     os.makedirs(runner.scratch, exist_ok=True)
     log_dir = os.path.join(runner.scratch, "logs")
     os.makedirs(log_dir, exist_ok=True)
-    with open(os.path.join(runner.scratch, "runner.pid"), "w") as handle:
-        handle.write("%d\n" % os.getpid())
+    # T-1044. Read and preserve the previous run's leftovers BEFORE this run writes its own pid
+    # marker or its own backups over them. See `adopt_prior_scratch`.
+    prior_refs, prior_pid, prior_tree = adopt_prior_scratch(runner.scratch)
 
     # Report before you probe: everything the run depends on, printed before the first thing that
     # can fail. A diagnostic that dies before its own header turns a known problem into a mystery.
@@ -830,6 +933,24 @@ def main():
     say("  plan:        %s  (%d mutations)" % (plan_path, len(mutations)))
     say("  scratch:     %s" % runner.scratch)
     say("  pid:         %d   (kill THAT, and never with -9: -9 skips the restore)" % os.getpid())
+    if prior_refs == {"": ""}:
+        say("")
+        say("!! REFUSING: another runner (pid %s) is already using this ident's scratch, %s."
+            % (prior_pid, runner.scratch))
+        say("   Two runs under one ident share one `backups/` directory, so each would copy the")
+        say("   other's mutated file over the only pristine copy of it, and both tree checks")
+        say("   would then call a mutated file clean. Use a different ident.")
+        return 2
+    # Only now: claiming the marker before the refusal above would overwrite the live sibling's
+    # own pid, and the next run would then test OUR pid for liveness instead of theirs.
+    with open(os.path.join(runner.scratch, "runner.pid"), "w") as handle:
+        handle.write("%d\n" % os.getpid())
+    if prior_refs:
+        kept_dir = os.path.dirname(list(prior_refs.values())[0])
+        say("  prior run:   pid %s left %d backup(s) and never recorded a clean exit."
+            % (prior_pid, len(prior_refs)))
+        say("               kept at %s; the tree check below compares against those too," % kept_dir)
+        say("               because this run's own baseline would inherit any stranded mutation.")
 
     if options["tree"]:
         tree = os.path.abspath(options["tree"])
@@ -848,7 +969,15 @@ def main():
     else:
         tree = prepare_tree(runner.scratch, ident)
     runner.tree = tree
+    with open(os.path.join(runner.scratch, "runner.tree"), "w") as handle:
+        handle.write("%s\n" % tree)
     say("  tree:        %s%s" % (tree, "" if options["tree"] or options["in_place"] else "  (git archive HEAD)"))
+    if prior_refs and prior_tree and os.path.realpath(prior_tree) != os.path.realpath(tree):
+        say("               the prior run's backups are for %s, a different tree, so they are NOT"
+            % prior_tree)
+        say("               a reference for this one. Nothing here can see a mutation stranded")
+        say("               in this tree before this run started.")
+        prior_refs = {}
     say("  scheme:      %s   destination: %s" % (options["scheme"], options["destination"]))
     say("  builds:      %s" % ("yes" if options["build"] else "NO (--no-build: apply/restore only)"))
 
@@ -977,13 +1106,42 @@ def main():
         # The last word is always about the tree, verified rather than assumed.
         say("")
         say("== tree check ==")
-        clean = True
-        for path, baseline in runner.baselines.items():
-            same = os.path.exists(path) and read_bytes(path) == baseline
-            clean = clean and same
-            say("  %s %s" % ("OK  " if same else "DIRTY", os.path.relpath(path, tree)))
-        say("  %s" % ("every mutated file is back at its baseline." if clean
-                      else "!! A MUTATION IS STILL IN THE TREE. Restore it by hand from %s." % os.path.join(runner.scratch, "backups")))
+        # T-1044. `baseline` is the file as THIS run found it, which is the only thing this run
+        # can restore to -- but it is not the same claim as "clean". A runner that was SIGKILLed
+        # leaves its mutation in the tree, the next run reads that mutation as its baseline, and
+        # `OK` then means *unchanged since I started*, over a file with a mutation in it. So the
+        # verdicts are separated, and the closing line states the reach of the evidence rather
+        # than the conclusion an agent would like to draw from it.
+        prior_dir = os.path.dirname(list(prior_refs.values())[0]) if prior_refs else ""
+        verdicts = tree_verdicts(tree, runner.baselines, prior_refs)
+        for mark, name in verdicts:
+            say("  %-8s %s" % (mark, name))
+        dirty = [name for mark, name in verdicts if mark == "DIRTY"]
+        stranded = [name for mark, name in verdicts if mark == "STRANDED"]
+        clean = not dirty and not stranded
+        if dirty:
+            say("  !! A MUTATION THIS RUN APPLIED IS STILL IN THE TREE: %s" % ", ".join(dirty))
+            say("     Restore it by hand from %s." % os.path.join(runner.scratch, "backups"))
+        if stranded:
+            say("  !! A MUTATION FROM AN EARLIER RUN IS STILL IN THE TREE: %s" % ", ".join(stranded))
+            say("     This run did not put it there and could not have restored it: it read those")
+            say("     bytes as its own baseline, so every verdict above was earned over a doubly")
+            say("     mutated file. Restore by hand from %s and re-run the plan." % prior_dir)
+        if clean and prior_refs:
+            say("  every mutated file is back at its baseline, and matches the backup an earlier")
+            say("  run took of the same tree.")
+        elif clean:
+            say("  every mutated file is back at the bytes THIS RUN FOUND. That is all this check")
+            say("  can prove -- there was no earlier backup of this tree to compare against, so a")
+            say("  mutation stranded before this run started would read as OK here.")
+        # The marker is this run's answer to the next one: removed only over a tree this run can
+        # say is clean, so its presence means "the previous run under this ident did not finish
+        # over a clean tree" and `adopt_prior_scratch` can be believed.
+        if clean:
+            try:
+                os.remove(os.path.join(runner.scratch, "runner.pid"))
+            except OSError:
+                pass
 
     # --- the summary --------------------------------------------------------
     settle_weakenings(results)
@@ -1467,6 +1625,79 @@ def selftest():
                   % (lockdir, child_out))
     finally:
         shutil.rmtree(signal_workspace, ignore_errors=True)
+
+    say("")
+    say(" mode 7 (T-1044) -- a tree check whose only reference is its own baseline cannot tell")
+    say("     a clean tree from one a dead runner left a mutation in")
+    stranded_workspace = tempfile.mkdtemp(prefix="cadence-mutate-selftest-stranded-")
+    try:
+        scratch = os.path.join(stranded_workspace, "cadence-mut-fixture")
+        tree = os.path.join(stranded_workspace, "tree")
+        os.makedirs(os.path.join(tree, "Cadence", "Models"))
+        target = os.path.join(tree, "Cadence", "Models", "Fixture.swift")
+        pristine = b'case .daily: return "Daily"\n'
+        write_bytes(target, pristine)
+
+        # A fresh scratch has nothing to say, and must not invent a reference.
+        refs, pid, prior_tree = adopt_prior_scratch(scratch)
+        check("a fresh scratch offers no reference", refs == {} and pid == "" and prior_tree == "")
+
+        # The state T-1044 is about: a runner took backups, was SIGKILLed (so its pid marker is
+        # still there and its pid is gone), and its mutation is still in the tree.
+        os.makedirs(os.path.join(scratch, "backups"))
+        write_bytes(os.path.join(scratch, "backups", "Cadence__Models__Fixture.swift"), pristine)
+        with open(os.path.join(scratch, "runner.pid"), "w") as handle:
+            handle.write("999999\n")
+        with open(os.path.join(scratch, "runner.tree"), "w") as handle:
+            handle.write("%s\n" % tree)
+        stranded_bytes = b'case .daily: return "STRANDED"\n'
+        write_bytes(target, stranded_bytes)
+
+        refs, pid, prior_tree = adopt_prior_scratch(scratch)
+        check("a dead runner's backups are handed back as a reference",
+              list(refs) == ["Cadence__Models__Fixture.swift"] and pid == "999999")
+        check("and they are moved aside, not left where this run would overwrite them",
+              not os.path.exists(os.path.join(scratch, "backups")))
+        check("the preserved bytes are the pristine ones",
+              read_bytes(refs["Cadence__Models__Fixture.swift"]) == pristine)
+
+        # This run's baseline IS the stranded mutation -- that is the whole defect.
+        baselines = {target: read_bytes(target)}
+        check("without the reference, the stranded mutation reads as OK",
+              tree_verdicts(tree, baselines, {}) == [("OK", "Cadence/Models/Fixture.swift")],
+              "this is the bug being fixed; if this check fails the defect is gone by other means")
+        check("with it, the same file reads as STRANDED",
+              tree_verdicts(tree, baselines, refs) == [("STRANDED", "Cadence/Models/Fixture.swift")])
+        write_bytes(target, pristine)
+        check("a file restored to the reference reads as OK again",
+              tree_verdicts(tree, {target: pristine}, refs) == [("OK", "Cadence/Models/Fixture.swift")])
+        write_bytes(target, b'something else entirely\n')
+        check("a file this run changed and did not restore is still DIRTY, not STRANDED",
+              tree_verdicts(tree, {target: pristine}, refs) == [("DIRTY", "Cadence/Models/Fixture.swift")])
+
+        # A run that recorded a clean exit removed its marker; its backups are not evidence of a
+        # strand and must not be moved or reported as one.
+        clean_scratch = os.path.join(stranded_workspace, "cadence-mut-clean")
+        os.makedirs(os.path.join(clean_scratch, "backups"))
+        write_bytes(os.path.join(clean_scratch, "backups", "x"), b"x")
+        refs, _, _ = adopt_prior_scratch(clean_scratch)
+        check("a run that exited clean leaves no strand to adopt",
+              refs == {} and os.path.isdir(os.path.join(clean_scratch, "backups")))
+
+        # A LIVE sibling under one ident shares one backups/ directory. Refuse, and touch nothing:
+        # moving its backups would break the restore it is counting on.
+        live_scratch = os.path.join(stranded_workspace, "cadence-mut-live")
+        os.makedirs(os.path.join(live_scratch, "backups"))
+        write_bytes(os.path.join(live_scratch, "backups", "x"), b"x")
+        with open(os.path.join(live_scratch, "runner.pid"), "w") as handle:
+            handle.write("%d\n" % os.getpid())
+        refs, _, _ = adopt_prior_scratch(live_scratch)
+        check("a live runner on the same ident is reported, and its backups left alone",
+              refs == {"": ""} and os.path.isdir(os.path.join(live_scratch, "backups")))
+        check("pid_is_alive answers from the process table",
+              pid_is_alive(os.getpid()) and not pid_is_alive(999999))
+    finally:
+        shutil.rmtree(stranded_workspace, ignore_errors=True)
 
     say("")
     # A machine-readable tally, derived from the checks that actually ran. A selftest gutted to

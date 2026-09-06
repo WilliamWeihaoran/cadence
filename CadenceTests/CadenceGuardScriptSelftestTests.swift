@@ -27,6 +27,14 @@ struct CadenceGuardScriptSelftestTests {
 
     /// Every refusal `scripts/mutate.sh` makes, by the name it prints. Exact, and each occurrence
     /// named: a floor like "at least four modes" would pass a runner that had lost three of them.
+    ///
+    /// `STRANDED` is T-1044, and it is the one that is about the runner's own report rather than a
+    /// mutation's verdict. The closing tree check compared each file against the baseline *this
+    /// run* took, then printed `OK` — wording an agent reads as "the tree is clean". A runner
+    /// SIGKILLed mid-mutation leaves its mutation in the tree, and the next run under that ident
+    /// reads exactly those bytes as its baseline, so `OK` was printed over a file that still held
+    /// the dead runner's edit. Reproduced 2026-09-06. A surviving mutant and a stranded mutation
+    /// look identical in a report, so losing this verdict turns the whole runner into theatre.
     static let mutationRunnerRefusals = [
         "NEEDLE-ABSENT",
         "NOT-PRISTINE",
@@ -36,6 +44,7 @@ struct CadenceGuardScriptSelftestTests {
         "NO-TESTS-RAN",
         "RED-WITHOUT-A-FAILING-TEST",
         "INCONCLUSIVE",
+        "STRANDED",
     ]
 
     /// Every refusal `scripts/agent-commit.sh` makes. `SHARED-INDEX-DIRTY` is the post-commit repair
@@ -61,10 +70,19 @@ struct CadenceGuardScriptSelftestTests {
     /// landed line left HEAD. `DRIFT-CHECK-MISSING` and `DRIFT-CHECK-FAILED` are the other half:
     /// a check that cannot run must refuse rather than pass, or the guard is decoration that
     /// nobody had to edit to disable.
+    /// `REBUILD-BEHIND-HEAD` is T-992, and it is the same question asked of the *cure*: the `=`
+    /// reconstruction form is what a `WORKTREE-BEHIND-HEAD` refusal tells the agent to reach for,
+    /// and for a long time nothing asked which revision that content file had been rebuilt on — so
+    /// repairing one stale commit by rebuilding on a sha read twenty minutes earlier put the
+    /// staleness straight back, and arrived as a `REMOVES-HEAD-LINES` count with an invitation to
+    /// type it. Measured 2026-09-05 in a throwaway repository, and again over this repository's own
+    /// history: content built two commits back is caught 13 times out of 13, while the reading
+    /// false-refuses none of the last 80 real `docs/TODO.md` commits replayed through it.
     static let commitHelperRefusals = [
         "FOREIGN-STAGED",
         "HEAD-MOVED",
         "WORKTREE-BEHIND-HEAD",
+        "REBUILD-BEHIND-HEAD",
         "DRIFT-CHECK-MISSING",
         "DRIFT-CHECK-FAILED",
         "SHARED-INDEX-DIRTY",
@@ -146,6 +164,29 @@ struct CadenceGuardScriptSelftestTests {
     /// way test-host-lock.sh's does (this script's queue is a direct port of that one). Proven by
     /// terminal instead -- docs/TODO.md's T-749 entry (`w4 w1 w2 w3` before, `w1 w2 w3 w4` after).
     static let simulatorClaimPropertiesUnverifiableInThisSandbox: Set<String> = ["ordering"]
+
+    /// T-1076. `scripts/xcb.sh`'s two `-only-testing:` outcomes, and they are deliberately
+    /// asymmetric. `UNKNOWN-SUITE` REFUSES (exit 8, before the build and before the test-host
+    /// lock): a name matching no suite selects nothing, and xcodebuild calls that a success.
+    /// `PARTIAL-SCOPE` only PRINTS: scoping to one suite of a file that holds several is usually
+    /// deliberate, and a guard that failed the ordinary case would be switched off inside a week.
+    ///
+    /// Pinning the pair matters more than pinning either alone. The whole finding behind the
+    /// ticket is that the quiet case must be *visible without being fatal* — 26 files declare a
+    /// suite named after the file plus siblings, and scoping one by filename skips 311 of the 688
+    /// tests in them while exiting 0 — so a later "tightening" that made `PARTIAL-SCOPE` fail the
+    /// run would read as an improvement and would in fact be the thing that removes it.
+    ///
+    /// Source-level only, no shell-out: `xcb.sh selftest`'s live half asks `test-suite-index.sh`
+    /// for the real index, which runs `python3` — and this test host is App-Sandboxed, where the
+    /// `/usr/bin/python3` xcrun shim refuses outright (T-719). The selftest degrades to a printed
+    /// `skip` there rather than a failure, so shelling out would assert progressively less while
+    /// looking like it asserted more. Reading the source proves the refusals still exist and are
+    /// still induced, and it cannot be defeated by the environment.
+    static let buildRunnerRefusals = [
+        "UNKNOWN-SUITE",
+        "PARTIAL-SCOPE",
+    ]
 
     @Test func theMutationRunnersOwnGuardsStillFire() throws {
         let run = try CadenceSelftestRun.of("scripts/mutate.sh")
@@ -308,6 +349,7 @@ struct CadenceGuardScriptSelftestTests {
             ("scripts/mutate.sh", Self.mutationRunnerRefusals),
             ("scripts/agent-commit.sh", Self.commitHelperRefusals),
             ("scripts/worktree-drift.sh", Self.worktreeDriftRefusals),
+            ("scripts/xcb.sh", Self.buildRunnerRefusals),
         ] {
             let source = try String(
                 contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent(script),
@@ -326,7 +368,7 @@ struct CadenceGuardScriptSelftestTests {
         }
     }
 
-    /// And all five scripts have to be there to be run. A renamed script would otherwise make the
+    /// And all six scripts have to be there to be run. A renamed script would otherwise make the
     /// tests above fail for a reason that reads nothing like "the guard is gone".
     @Test func allGuardScriptsExistAndAreExecutable() throws {
         for script in [
@@ -335,10 +377,247 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/test-host-lock.sh",
             "scripts/simulator-claim.sh",
             "scripts/worktree-drift.sh",
+            "scripts/xcb.sh",
         ] {
             let path = CadenceSelftestRun.repositoryRoot().appendingPathComponent(script).path
             #expect(FileManager.default.isExecutableFile(atPath: path), "\(script) is missing or not executable")
         }
+    }
+
+    /// T-1074, and it is a property of the *shell*, not of any one refusal: a second bare
+    /// `local x` in one zsh function does not redeclare the parameter, it PRINTS it —
+    /// `x=<value>` on stdout — because that is `typeset`'s listing behaviour reached by a
+    /// declaration that looks like C. Inside a loop the declaration is reached again on every
+    /// iteration, so the leak starts on the second pass and never stops. Any flag suppresses the
+    /// listing (`local -a x` twice is silent), which is most of why the shape hides.
+    ///
+    /// These scripts' stdout **is** how they report refusals and readings, so the corruption
+    /// arrives dressed as a diagnostic in the middle of a message an agent is reading to decide
+    /// whether its work is safe to commit. Three shipped instances were found this way; the two
+    /// live ones sat inside `xcb.sh`'s `UNKNOWN-SUITE` refusal, one of them between
+    /// *"Did you mean:"* and the answer.
+    ///
+    /// `agent-commit.sh`, `worktree-drift.sh` and `xcb.sh` each pin their own instance
+    /// *behaviourally*, by inducing a refusal twice and grepping the output. This is the other
+    /// half: a structural sweep of every script in `scripts/`, so a bare declaration added to a
+    /// loop nobody thought to induce is still caught — including in `mutate.sh`,
+    /// `test-host-lock.sh` and `simulator-claim.sh`, which had never been swept at all.
+    @Test func noZshScriptReachesABareLocalDeclarationTwice() throws {
+        // Every script in `scripts/`, not just the six with selftests: the shape is a property of
+        // the shell, so naming a list would leave the next script written here unswept. The floor
+        // below is what stops a broken enumeration from sweeping nothing and reading as a pass.
+        let scripts = CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts")
+        let names = try FileManager.default.contentsOfDirectory(atPath: scripts.path)
+            .filter { $0.hasSuffix(".sh") }
+            .sorted()
+        var findings: [String] = []
+        var declarationsRead = 0
+        for name in names {
+            let scan = try CadenceShellLocalScan.of(path: scripts.appendingPathComponent(name).path, label: "scripts/\(name)")
+            findings.append(contentsOf: scan.findings.map(\.description))
+            declarationsRead += scan.declarationsRead
+        }
+        // The floor, because a clean sweep and a sweep that stopped reading print the same nothing.
+        // 12 scripts declared 228 names when this was written; a reading that has fallen under 100
+        // has lost a parse, not a script.
+        #expect(names.count >= 6, "scripts/ holds \(names.count) .sh files, so this sweep is reading less than it claims")
+        #expect(declarationsRead >= 100, "the sweep read only \(declarationsRead) declarations, so its silence means nothing")
+        #expect(
+            findings.isEmpty,
+            """
+            a bare `local x` reached twice in one zsh function prints `x=<value>` instead of \
+            redeclaring it (T-1074). Hoist the declaration out of the loop, or give it a flag:
+            \(findings.joined(separator: "\n"))
+            """
+        )
+    }
+
+    /// The sweep above says nothing on a healthy tree, which is exactly the shape this repository
+    /// keeps catching as hollow — a reading that would also be silent if it had stopped reading.
+    /// So the scanner is run against source it must complain about, and against the near-misses it
+    /// must stay quiet on. The near-misses are the load-bearing half: a scanner that flagged every
+    /// `local` in a loop would have flagged the two `local -a` declarations sitting beside the real
+    /// findings in `xcb.sh`, and would have been turned off rather than fixed.
+    @Test func theBareLocalScanCanTellTheShapeFromItsNearMisses() throws {
+        let cases: [(name: String, source: String, leaks: Bool)] = [
+            ("a bare local reached twice in one scope", "f() {\n  local x=1\n  local x\n}\n", true),
+            ("a bare local inside a loop", "f() {\n  for i in 1 2; do\n    local g\n    g=\"v$i\"\n  done\n}\n", true),
+            ("a bare local in a loop nested two deep", "f() {\n  for j in 1 2; do\n    for i in 1 2; do\n      local g\n    done\n  done\n}\n", true),
+            ("one bare local, declared once", "f() {\n  local x\n  x=1\n}\n", false),
+            ("the second declaration assigns", "f() {\n  local x=1\n  local x=2\n}\n", false),
+            ("the declaration in the loop carries a flag", "f() {\n  for i in 1 2; do\n    local -a g\n    g=(1)\n  done\n}\n", false),
+            ("the same name in two different functions", "f() {\n  local x\n}\ng() {\n  local x\n}\n", false),
+            ("a bare local after the loop that used the name has closed", "f() {\n  for i in 1 2; do\n    : $i\n  done\n  local x\n}\n", false),
+            ("`local` inside a comment or a string", "f() {\n  # local x\n  say \"local x\"\n  local x\n}\n", false),
+        ]
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cadence-local-scan-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        for probe in cases {
+            let path = dir.appendingPathComponent("probe.sh")
+            try probe.source.write(to: path, atomically: true, encoding: .utf8)
+            let scan = try CadenceShellLocalScan.of(path: path.path, label: probe.name)
+            #expect(
+                scan.findings.isEmpty != probe.leaks,
+                probe.leaks
+                    ? "the scan missed: \(probe.name)"
+                    : "the scan flagged \(probe.name), which does not leak: \(scan.findings.map(\.description))"
+            )
+        }
+    }
+
+}
+
+/// Reads a zsh script for the T-1074 shape: a bare `local`/`typeset`/`declare` declaration that one
+/// run of a function can reach twice.
+///
+/// **It does not grep.** A needle that matches itself in a comment or a doc string is how two
+/// checks in this family were hollowed out this week, and `local` appears in the prose of these
+/// scripts more often than in their code. `CadenceSourceScan.strippedSourceReader()` is the answer
+/// on the Swift side; the shell equivalent is better than stripping, because zsh will hand over its
+/// own parse: `functions f` prints a function's body **re-serialised from the parse tree** — no
+/// comments, one statement per line, `do`/`done` on lines of their own, and tab indentation that is
+/// real block nesting rather than whatever the author typed. Wrapping the whole file in one
+/// function definition and asking for it back gets that reading for a script, and `eval` of a
+/// function *definition* parses the body without running a line of it.
+struct CadenceShellLocalScan {
+    struct Finding: CustomStringConvertible {
+        let label: String
+        let scope: String
+        let name: String
+        let reason: String
+
+        var description: String { "  \(label): `local \(name)` in \(scope)() — \(reason)" }
+    }
+
+    let findings: [Finding]
+    /// How many names the reading actually looked at. A scan that has quietly stopped parsing
+    /// reports no findings, exactly like a clean one; this is what tells the two apart.
+    let declarationsRead: Int
+
+    static func of(path: String, label: String) throws -> CadenceShellLocalScan {
+        let run = try CadenceSelftestRun.run("/bin/zsh", [
+            "-f", "-c",
+            """
+            eval "__cadence_scan_wrap() {
+            $(cat -- "$1")
+            }"
+            functions __cadence_scan_wrap
+            """,
+            "zsh", path,
+        ])
+        guard run.status == 0 else {
+            throw CocoaError(
+                .fileReadCorruptFile,
+                userInfo: [NSLocalizedDescriptionKey: "zsh could not parse \(label): \(run.output)"]
+            )
+        }
+        let read = reading(inNormalised: run.output, label: label)
+        return CadenceShellLocalScan(findings: read.findings, declarationsRead: read.declarationsRead)
+    }
+
+    /// One scope per function definition, plus the outermost wrapper, which stands for the script's
+    /// own top level. `local` is function-scoped in zsh, not block-scoped, so a name declared
+    /// anywhere in a function counts against every later declaration in it.
+    static func reading(inNormalised text: String, label: String) -> (findings: [Finding], declarationsRead: Int) {
+        struct Scope {
+            let indent: Int
+            let name: String
+            var seen: Set<String> = []
+            var openLoops = 0
+        }
+        var scopes: [Scope] = []
+        var found: [Finding] = []
+        var read = 0
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let indent = rawLine.prefix(while: { $0 == "\t" }).count
+            let line = rawLine.drop(while: { $0 == "\t" })
+            if line.isEmpty { continue }
+
+            if let name = functionHeaderName(line) {
+                scopes.append(Scope(indent: indent, name: scopes.isEmpty ? "<top level>" : name))
+                continue
+            }
+            if line == "}", let current = scopes.last, current.indent == indent {
+                scopes.removeLast()
+                continue
+            }
+            guard !scopes.isEmpty else { continue }
+            if line == "do" {
+                scopes[scopes.count - 1].openLoops += 1
+                continue
+            }
+            if line == "done" || line.hasPrefix("done ") {
+                scopes[scopes.count - 1].openLoops = max(0, scopes[scopes.count - 1].openLoops - 1)
+                continue
+            }
+            guard let (hasFlag, names) = declaration(line) else { continue }
+            for (name, assigns) in names {
+                if !assigns && !hasFlag {
+                    if scopes[scopes.count - 1].seen.contains(name) {
+                        found.append(Finding(label: label, scope: scopes[scopes.count - 1].name, name: name,
+                                             reason: "the scope already declares it, so this prints it"))
+                    } else if scopes[scopes.count - 1].openLoops > 0 {
+                        found.append(Finding(label: label, scope: scopes[scopes.count - 1].name, name: name,
+                                             reason: "it is inside a loop, so every pass after the first prints it"))
+                    }
+                }
+                scopes[scopes.count - 1].seen.insert(name)
+                read += 1
+            }
+        }
+        return (found, read)
+    }
+
+    private static func functionHeaderName(_ line: Substring) -> String? {
+        guard line.hasSuffix("{") else { return nil }
+        var head = Substring(line.dropLast())
+        while head.hasSuffix(" ") { head = head.dropLast() }
+        guard head.hasSuffix(")") else { return nil }
+        head = head.dropLast()
+        guard head.hasSuffix("(") else { return nil }
+        head = head.dropLast()
+        while head.hasSuffix(" ") { head = head.dropLast() }
+        guard let first = head.first, first.isLetter || first == "_" else { return nil }
+        guard head.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == ":" || $0 == "." || $0 == "-" }) else { return nil }
+        return String(head)
+    }
+
+    /// `(hasFlag, [(name, assigns)])` for a declaration line, or nil if the line is not one.
+    ///
+    /// Any flag at all — `local -a`, `typeset -A`, `local -i` — suppresses zsh's listing, so a
+    /// flagged declaration can never leak and is recorded only so a later *bare* one is caught.
+    /// Name parsing stops at the first value that could contain whitespace, because zsh serialises
+    /// `local a=1 b=2` as three tokens but `local M='some words'` as several: under-reading there
+    /// costs a missed finding, over-reading would invent a declaration out of a quoted word.
+    private static func declaration(_ line: Substring) -> (Bool, [(String, Bool)])? {
+        var tokens = line.split(separator: " ", omittingEmptySubsequences: true)
+        guard let keyword = tokens.first, ["local", "typeset", "declare"].contains(String(keyword)) else { return nil }
+        tokens.removeFirst()
+
+        var hasFlag = false
+        while let token = tokens.first, token.hasPrefix("-") || token.hasPrefix("+") {
+            hasFlag = true
+            tokens.removeFirst()
+        }
+
+        var names: [(String, Bool)] = []
+        for token in tokens {
+            guard let first = token.first, first.isLetter || first == "_" else { break }
+            let name = token.prefix(while: { $0.isLetter || $0.isNumber || $0 == "_" })
+            let rest = token.dropFirst(name.count)
+            if rest.isEmpty {
+                names.append((String(name), false))
+                continue
+            }
+            guard rest.hasPrefix("=") else { break }
+            names.append((String(name), true))
+            if rest.contains("'") || rest.contains("\"") { break }
+        }
+        return names.isEmpty ? nil : (hasFlag, names)
     }
 }
 

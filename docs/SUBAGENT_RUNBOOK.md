@@ -437,7 +437,11 @@ Which path form to use:
 
 - **A file you own alone:** `<path>`. Stages the worktree content.
 - **A file a sibling is also editing:** `<path>=<content-file>`. Rebuild it as `git show HEAD:<path>`
-  plus only your edits and pass that file. Never `git commit -- <path>` for a shared file: that
+  plus only your edits and pass that file. **Read `HEAD` again when you build it, not from memory:**
+  the content file is now asked which revision it was reconstructed from, and one built on an older
+  sha is refused as `REBUILD-BEHIND-HEAD` naming that sha (T-992). This is the commonest way
+  staleness survives its own cure — the `=` form is what a `WORKTREE-BEHIND-HEAD` refusal *tells*
+  you to reach for, and rebuilding on the sha you read twenty minutes ago puts it straight back. Never `git commit -- <path>` for a shared file: that
   commits *worktree* content, taking the sibling's in-flight hunks with yours, and it silently
   defeats a `git hash-object` reconstruction because that lives in the index the pathspec ignores.
 - **Marker-based hunk filtering breaks when two agents edit within three lines.** `-U3` merges the
@@ -454,6 +458,12 @@ Which path form to use:
   instead: a commit whose staged content drops lines `HEAD` has is refused as `REMOVES-HEAD-LINES`
   until `--removes <exact count>` names how many. Re-read `git show HEAD:<path>` rather than raising
   the number. Measured twice in one hour on 2026-09-03, both on `docs/TODO.md` (`169d594`, `820aa98`).
+- **`--commits-stale <path>` now writes a `Commits-Stale: <path> built-on <sha>` trailer into the
+  commit message** (T-991), above the `Co-Authored-By:` line. It is the one deliberate override here
+  that used to discard something and leave nothing to find, so *did anyone knowingly commit a copy
+  behind HEAD, and on which path* had no answer after the fact — the exact question all four
+  measured instances of T-975 were found by asking. `git log --grep='^Commits-Stale:'` answers it
+  now, from any clone, and the base sha makes what was skipped diffable.
 
 - **Every check above is about ONE `HEAD`, and it used to commit onto another** (T-974). The script
   re-read `HEAD` at each step and captured the parent sha only just before `commit-tree`, so a
@@ -480,6 +490,27 @@ prose-shaped protection T-679 was filed about. So, since T-781:
 
 A **refused** commit no longer spends the record it was going to clear, which matters now that
 `HEAD-MOVED` is a refusal an agent hits and then retries.
+
+**Coordinators: `check` is step 2 of the heartbeat, ahead of batch work** (T-986). The gate has no
+in-repo caller and cannot have one, and that is a finding rather than an omission. `xcb.sh` is the
+wrong cadence — every intra-batch run would see a sibling's freshly declined, perfectly normal
+in-flight hunk, which is the exact case `DECLINED-HUNK-STALE`'s grace period exists *not* to block,
+and `mutate.sh` alone runs it dozens of times per needle. A Swift test cannot reach the ledger at
+all: it lives under `$TMPDIR` and the App-Sandboxed test host's `$TMPDIR` is its own container. So
+the caller is the 15-minute heartbeat, which is a prompt you write per batch and not a file anyone
+can commit. Put it there, every batch:
+
+```sh
+./scripts/agent-commit.sh check   # exit 3 => a hunk is in no commit; deal with it before more work
+```
+
+Measured 2026-09-05, which is why it is written down rather than remembered: an agent died
+mid-commit and left a stranded declined hunk on `docs/TODO.md`. Nothing surfaced it; a coordinator
+found it by running `check` by hand during a routine sweep, and thirty minutes later it would have
+refused *every* commit in the repository. Since then `scripts/xcb.sh` also lists outstanding
+records at the end of **every** run, with each record's age and how long until it walls off the
+checkout (T-781) — that is the thing you will actually see, because you are already reading a build
+log. It reports and never changes the run's exit status; `check` is still the gate.
 
 `./scripts/agent-commit.sh selftest` induces every refusal above against a throwaway repository and
 asserts it. `CadenceGuardScriptSelftestTests` runs it, and `scripts/mutate.sh selftest`, on every

@@ -6,6 +6,7 @@
 #   ./scripts/worktree-drift.sh repair     # restore the stale COPIES from HEAD (never the edits)
 #   ./scripts/worktree-drift.sh ids <path> # the comm -23 on `- [T-n]` id sets, on its own
 #   ./scripts/worktree-drift.sh base <path> [<rev>]   # the reading for ONE path, machine-readable
+#   ./scripts/worktree-drift.sh base-content <path> <content-file> [<rev>]   # ... for loose bytes
 #   ./scripts/worktree-drift.sh selftest
 #
 # WHY THIS EXISTS
@@ -56,9 +57,14 @@
 #                         gate for reading, but drift is CREATED one step earlier: a bare `<path>`
 #                         whose copy is behind HEAD puts the stale bytes in a commit, and every
 #                         later reader inherits them from HEAD itself, where no drift check looks.
-#                         The `<path>=<content-file>` form is deliberately NOT checked there --
-#                         rebuilding on `git show HEAD:<path>` is the prescribed repair for this
-#                         very drift, and refusing the repair would be the worst outcome available.
+#                         It asks `base-content <path> <content-file> <sha>` about each
+#                         `<path>=<content-file>` reconstruction too (T-992). That form is the
+#                         prescribed repair for this very drift, so for a long time it was left
+#                         unchecked in case checking it refused the cure -- but the reading is
+#                         against HISTORY, not against the worktree, and a genuine rebuild on
+#                         `git show HEAD:<path>` contains every line HEAD has and reads `inflight`
+#                         at the first comparison. The only shape `behind` can name here is
+#                         "an older revision plus edits", which is the bug the repair exists for.
 #
 # THE BLIND SPOT, AND WHY IT STAYS (T-984)
 #
@@ -141,6 +147,7 @@ usage() {
     say "usage: ./scripts/worktree-drift.sh check|report|repair|selftest"
     say "       ./scripts/worktree-drift.sh ids <path>"
     say "       ./scripts/worktree-drift.sh base <path> [<rev>]   # one path, machine-readable"
+    say "       ./scripts/worktree-drift.sh base-content <path> <content-file> [<rev>]"
 }
 
 # A line that is blank, or nothing but punctuation and braces, carries no meaning on its own: it
@@ -177,7 +184,15 @@ cmd_ids() {
 # about ONE path that is about to be WRITTEN into history -- which is where drift is *created*,
 # one step before the gate that detects it. Both must be the same reading, so it is one function.
 #
-# Sets, for $1 at revision $2, using $3 as scratch:
+# THE FOURTH ARGUMENT (T-992). The bytes being asked about and the repository path they will be
+# written to are two different things, and only for the worktree form are they the same file.
+# `agent-commit.sh`'s `<path>=<content-file>` form -- the prescribed repair for a
+# WORKTREE-BEHIND-HEAD refusal, and the form an agent reaches for most often -- hands over bytes
+# that live nowhere in the tree. So `$4` overrides where the CONTENT is read from while `$1` stays
+# the path whose HISTORY is walked. Without the split this function cannot be asked the question
+# at all: `git show "$rev:$p"` needs the repo path and `significant < "$p"` needs the file.
+#
+# Sets, for $1 at revision $2, using $3 as scratch (reading $4's bytes as $1's content if given):
 #
 #   state_verdict  matches | inflight | cannot-tell | behind | skip
 #   state_kind     "stale copy" | "stale base"           (behind only)
@@ -192,21 +207,29 @@ cmd_ids() {
 typeset -g state_verdict state_kind state_base state_detail
 
 read_path_state() {
-    local p=$1 headref=$2 scratch=$3
+    local p=$1 headref=$2 scratch=$3 content=${4:-}
     state_verdict=""; state_kind=""; state_base=""; state_detail=""
     local headlabel="${headref[1,8]}"
+    # `bytes` is what gets read; `p` stays what gets asked about. They differ only for T-992's
+    # content-file form, and every line below that touches the filesystem must use `bytes`.
+    local bytes="${content:-$p}"
 
     git cat-file -e "$headref:$p" 2>/dev/null \
         || { state_verdict=skip; state_detail="not in $headlabel -- nothing to be behind"; return 0 }
-    [[ -f "$p" ]] \
+    [[ -f "$bytes" ]] \
         || { state_verdict=skip; state_detail="absent from the worktree -- a deletion in flight looks like this"; return 0 }
-    # `-` in either numstat column is git's own word for "binary".
-    if [[ "$(git diff --numstat "$headref" -- "$p" 2>/dev/null | awk '{print $1}')" == "-" ]]; then
+    # `-` in either numstat column is git's own word for "binary". A content file is not in the
+    # tree, so `git diff` cannot be asked about it; `grep -I` answers the same question directly.
+    if [[ -n "$content" ]]; then
+        if ! grep -Iq . -- "$bytes" 2>/dev/null; then
+            state_verdict=skip; state_detail="binary"; return 0
+        fi
+    elif [[ "$(git diff --numstat "$headref" -- "$p" 2>/dev/null | awk '{print $1}')" == "-" ]]; then
         state_verdict=skip; state_detail="binary"; return 0
     fi
 
     local wt_lines="$scratch/wt" head_lines="$scratch/head" rev_lines="$scratch/rev"
-    significant < "$p" > "$wt_lines"
+    significant < "$bytes" > "$wt_lines"
     git show "$headref:$p" | significant > "$head_lines"
 
     # The cheap question first, and the one that answers almost every path: does this copy already
@@ -234,8 +257,43 @@ read_path_state() {
         state_verdict=inflight; state_detail="built on ${newest[1,8]}, the newest revision of this path"; return 0
     fi
 
+    # THE CORROBORATION, and without it this reading false-refuses ordinary work (T-992).
+    #
+    # "Some older revision R is wholly contained, and a line HEAD has is missing" has TWO causes and
+    # only one of them is drift:
+    #
+    #   built on R      the agent never saw what landed after R. Content = R + their own new lines.
+    #   built on HEAD   the agent deleted the lines HEAD introduced -- rewriting the newest ticket
+    #                   entry in `docs/TODO.md` does exactly this -- and what is left is R again.
+    #
+    # Measured: applying the uncorroborated reading to `agent-commit.sh`'s `=` form refused 13 of
+    # this repository's own selftest commits, every one of them a legitimate rewrite of the most
+    # recently added lines. So the containment of R is necessary evidence and not sufficient.
+    #
+    # What separates them is a line HEAD has that R does not, still present in the content. An
+    # agent working from R cannot have one: those lines did not exist in anything it read. An agent
+    # working from HEAD who deleted only SOME of the newest lines keeps the rest, and that is the
+    # ordinary rewrite. So a single surviving post-R line is proof the content was built on
+    # something newer than R, and the `behind` reading is withdrawn.
+    #
+    # The residue -- an agent on HEAD who deletes EVERY line HEAD introduced -- is byte-identical to
+    # R plus edits, which is T-984's construction one level up: no function of the content and the
+    # history separates them, so it goes to `cannot-tell` and is not refused. Safe direction.
+    #
+    # This narrows the bare-path reading (T-982) as well, and it should: the same false refusal was
+    # latent there. It does not weaken it on any measured T-975 instance -- a stale copy is R's
+    # blob byte for byte and a stale base is R plus local edits, and neither has a post-R line in
+    # it, so both still read `behind`. Selftest mode 5c pins exactly that.
+    local post_base_kept
+    post_base_kept=$(comm -12 <(comm -23 "$head_lines" "$rev_lines") "$wt_lines")
+    if [[ -n "$post_base_kept" ]]; then
+        state_verdict=cannot-tell
+        state_detail="built on ${base[1,8]} by containment, but it still holds $(print -r -- "$post_base_kept" | grep -c .) line(s) that $headlabel has and ${base[1,8]} does not -- so it was built on something newer and has deletions in it, which is T-984's bucket, not drift"
+        return 0
+    fi
+
     state_verdict=behind; state_base="$base"
-    if [[ "$(git hash-object -- "$p")" == "$(git rev-parse "$base:$p" 2>/dev/null)" ]]; then
+    if [[ "$(git hash-object -- "$bytes")" == "$(git rev-parse "$base:$p" 2>/dev/null)" ]]; then
         state_kind="stale copy"
     else
         state_kind="stale base"
@@ -281,7 +339,9 @@ read_tree_state() {
 }
 
 print_reading() {
-    local i p
+    local i p gone                    # `gone` hoisted: bare `local` in the loop below prints it
+                                      # on every path after the first, straight into this report
+                                      # (T-1074). Two behind paths is the ordinary case.
     if (( ${#behind_paths} == 0 )); then
         say "worktree matches HEAD: ${#inflight} path(s) changed and every one is built on HEAD."
     else
@@ -292,7 +352,6 @@ print_reading() {
             say "      ${behind_detail[i]}"
             # Ids, not just a line count. `docs/TODO.md` loses whole tickets inside a number large
             # enough to skim past, and an id is the thing somebody can act on.
-            local gone
             gone=$(comm -23 <(git show "HEAD:$p" | ledger_ids) <(ledger_ids < "$p" 2>/dev/null))
             [[ -n "$gone" ]] && say "      ticket ids HEAD has and this copy does not: $(print -r -- "$gone" | tr '\n' ' ')"
         done
@@ -318,12 +377,28 @@ print_reading() {
 cmd_base() {
     (( $# )) || refuse BAD-OPTION "base needs a path"
     local target=$1 headref=${2:-HEAD}
+    _base_reading "$target" "$headref" ""
+}
+
+# T-992. Same reading, asked about bytes that are not in the tree: `<repo-path> <content-file>`.
+# `agent-commit.sh`'s reconstruction form builds a file somewhere under $TMPDIR and stages it as a
+# repo path, so the question "which revision is this built on" has a repo path for its history and
+# a loose file for its content. This is the only way to ask it about that pair.
+cmd_base_content() {
+    (( $# >= 2 )) || refuse BAD-OPTION "base-content needs <repo-path> <content-file>"
+    local target=$1 content=$2 headref=${3:-HEAD}
+    [[ -f "$content" ]] || refuse BAD-OPTION "no such content file: $content"
+    _base_reading "$target" "$headref" "$content"
+}
+
+_base_reading() {
+    local target=$1 headref=$2 content=$3
     local root
     root=$(git rev-parse --show-toplevel 2>/dev/null) || refuse NOT-REPO-ROOT "not inside a git checkout"
     [[ "${PWD:A}" == "${root:A}" ]] || refuse NOT-REPO-ROOT "run from $root, not $PWD (paths are repo-relative)"
     git rev-parse --verify "$headref" >/dev/null 2>&1 || refuse NO-HEAD "no such revision: $headref"
     local scratch; scratch=$(mktemp -d "${TMP_BASE}cadence-drift-XXXXXX") || refuse SCRATCH "cannot make a scratch directory"
-    read_path_state "$target" "$headref" "$scratch"
+    read_path_state "$target" "$headref" "$scratch" "$content"
     rm -rf "$scratch"
     # `printf`, not `print -r`: `print -r` does not interpret escapes, so `"a\tb"` emits the two
     # characters `\` and `t` and every `cut -f2` downstream silently reads the whole line as
@@ -455,6 +530,17 @@ cmd_selftest() {
     out=$( cd "$ws" && zsh "$here" report 2>&1 ); rc=$?
     check "report exits 0 on the same tree" $(( rc == 0 )) "exit $rc: $out"
     check "and still names the drift" $( [[ "$out" == *"WORKTREE BEHIND HEAD"* && "$out" == *code.swift* ]] && print 1 || print 0 ) "$out"
+    # T-1074, and the drifted-tree case is where it bites: this loop runs once per behind path, and
+    # a bare `local gone` inside it PRINTS `gone=...` on every path after the first, into the middle
+    # of the very report a reader is using to decide what drifted. Seventeen paths drifted in one
+    # night on 2026-09-05, so "two or more" is the ordinary case here, not the exotic one.
+    ( cd "$ws" && git show HEAD^:TODO.md > TODO.md )
+    out=$( cd "$ws" && zsh "$here" report 2>&1 ); rc=$?
+    check "two behind paths are both reported" \
+        $( [[ "$out" == *code.swift* && "$out" == *TODO.md* ]] && print 1 || print 0 ) "$out"
+    check "and the report carries no stray zsh assignment line (T-1074)" \
+        $( print -r -- "$out" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$out"
+    ( cd "$ws" && git checkout -q HEAD -- TODO.md )
 
     say ""
     say " mode 1c -- CADENCE_ALLOW_DRIFTED_TREE=1 downgrades the refusal deliberately"
@@ -584,6 +670,56 @@ cmd_selftest() {
     ( cd "$ws" && git checkout -q HEAD -- code.swift )
 
     say ""
+    say " mode 5c (T-992) -- \`base-content\` asks about bytes that are in no tree, and the"
+    say "         corroboration keeps an ordinary rewrite of the newest lines out of \`behind\`"
+    # `agent-commit.sh`'s `<path>=<content-file>` form builds a file under $TMPDIR and stages it as
+    # a repo path, so the history to walk and the bytes to read are two different things. Without
+    # the split this reading cannot be asked about that pair at all.
+    local head_now; head_now=$( cd "$ws" && git rev-parse HEAD )
+    ( cd "$ws" && git show "HEAD^:code.swift" > "$ws/recon-stale.swift" \
+      && print -r -- "    // this agent's own rebuilt line" >> "$ws/recon-stale.swift" )
+    out=$( cd "$ws" && zsh "$here" base-content code.swift "$ws/recon-stale.swift" "$head_now" 2>&1 ); rc=$?
+    check "a content file built on an older revision reads behind, and exits 3" \
+        $( [[ $rc == 3 && "$out" == behind* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "it is a stale BASE -- the agent's own edits are sitting on an old revision" \
+        $( [[ "$(print -r -- "$out" | cut -f2)" == "stale base" ]] && print 1 || print 0 ) "$out"
+    check "and it names the revision, which is the fact nothing else here can supply" \
+        $( [[ "$(print -r -- "$out" | cut -f3)" == "$( cd "$ws" && git rev-parse HEAD^ )" ]] && print 1 || print 0 ) "$out"
+    # It must answer about the CONTENT FILE and not quietly fall back to the worktree copy, which
+    # is clean here -- if it did, this would read `inflight` and the whole subcommand would be a
+    # decoration. That is the control on the split itself.
+    check "the worktree copy of that path is clean, so only the content file can be behind" \
+        $( [[ "$( cd "$ws" && git status --porcelain -- code.swift )" == "" ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git status --porcelain -- code.swift )"
+    # THE CORROBORATION, and the reason this reading can be attached to the commit path at all.
+    # Rebuilt on HEAD, then the newest lines rewritten: an older revision is wholly contained, so
+    # the uncorroborated reading called this `behind` -- and it is the ordinary shape of every
+    # `docs/TODO.md` ticket rewrite. Measured: uncorroborated, it refused 13 of agent-commit.sh's
+    # own selftest commits and 1 of this repository's last 80 real ledger commits; corroborated,
+    # none of either, while still catching 13 of 13 real reconstructions built two commits stale.
+    ( cd "$ws"
+      git show "HEAD:code.swift" > "$ws/recon-rewrite.swift"
+      # drop the line HEAD introduced, keep everything else HEAD has, and add work of my own
+      git show "HEAD^:code.swift" > "$ws/prev.swift"
+      comm -13 <(sort -u "$ws/prev.swift") <(sort -u "$ws/code.swift") > "$ws/headonly.txt" ) >/dev/null 2>&1
+    check "the fixture's HEAD did introduce more than one line to rewrite" \
+        $( [[ $(grep -c . "$ws/headonly.txt") -ge 2 ]] && print 1 || print 0 ) "$(cat "$ws/headonly.txt")"
+    ( cd "$ws" && grep -F -x -v -f <(head -1 "$ws/headonly.txt") "$ws/recon-rewrite.swift" > "$ws/recon-rw2.swift"
+      print -r -- "    // the rewritten replacement for it" >> "$ws/recon-rw2.swift" )
+    out=$( cd "$ws" && zsh "$here" base-content code.swift "$ws/recon-rw2.swift" "$head_now" 2>&1 ); rc=$?
+    check "a rebuild ON HEAD that rewrites one of the newest lines is NOT called behind" \
+        $( [[ $rc == 0 && "$out" != behind* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it says WHY it withdrew the reading, rather than going quiet" \
+        $( [[ "$out" == cannot-tell* || "$out" == inflight* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" base-content code.swift 2>&1 ); rc=$?
+    check "base-content with no content file is refused rather than answering about nothing" \
+        $( [[ $rc == 3 && "$out" == *BAD-OPTION* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" base-content code.swift "$ws/no-such-file" 2>&1 ); rc=$?
+    check "and a content file that is not there is refused, not read as empty" \
+        $( [[ $rc == 3 && "$out" == *BAD-OPTION* ]] && print 1 || print 0 ) "exit $rc: $out"
+    ( cd "$ws" && rm -f recon-stale.swift recon-rewrite.swift recon-rw2.swift prev.swift headonly.txt )
+
+    say ""
     say " mode 6 (NOT-REPO-ROOT) -- paths are repo-relative, so anywhere else is a wrong answer"
     out=$( cd "$ws/.." && zsh "$here" check 2>&1 ); rc=$?
     check "running from outside the checkout root is refused" \
@@ -607,6 +743,7 @@ cmd_selftest() {
 case "${1:-}" in
     check)    shift; cmd_check "$@"; exit $? ;;
     base)     shift; cmd_base "$@"; exit $? ;;
+    base-content) shift; cmd_base_content "$@"; exit $? ;;
     report)   shift; cmd_report "$@"; exit $? ;;
     repair)   shift; cmd_repair "$@"; exit $? ;;
     ids)      shift; cmd_ids "$@"; exit $? ;;

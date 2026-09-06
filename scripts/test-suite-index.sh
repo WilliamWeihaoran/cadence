@@ -7,6 +7,7 @@
 #   ./scripts/test-suite-index.sh --label SomeSuite      # the string swift-testing prints for it
 #   ./scripts/test-suite-index.sh --labels               # TypeName<TAB>label, every suite
 #   ./scripts/test-suite-index.sh --test-labels          # funcName<TAB>label ("" if unnamed), every @Test
+#   ./scripts/test-suite-index.sh --suite-files          # Suite<TAB>file<TAB>testCount, every suite
 #
 # This exists for two of the five ways a test has looked like a guard while guaranteeing nothing
 # (docs/TODO.md T-161):
@@ -63,6 +64,7 @@ if [[ "${1:-}" == "--scope" ]]; then MODE=scope; shift
 elif [[ "${1:-}" == "--label" ]]; then MODE=label; shift
 elif [[ "${1:-}" == "--labels" ]]; then MODE=labels; shift
 elif [[ "${1:-}" == "--test-labels" ]]; then MODE=test_labels; shift
+elif [[ "${1:-}" == "--suite-files" ]]; then MODE=suite_files; shift
 fi
 NEEDLE="${1:-}"
 
@@ -187,6 +189,23 @@ for dirpath, _, filenames in os.walk(os.path.join(root, 'CadenceTests')):
             test_label = leading_string(raw, m.start(), '@Test')
             rows.append((suite or '<file scope>', m.group(1), filename, test_label))
             suite_label.setdefault(suite or '<file scope>', None)
+
+if mode == 'suite_files':
+    # Suite<TAB>declaring file<TAB>test count, one line per suite. The caller that needs this is
+    # `xcb.sh`'s pre-build resolver (T-1076): to answer "is this `-only-testing:` name real, and
+    # what ELSE lives in the file that declares it" it needs the file and the count, which no
+    # existing mode carries -- `--labels` has neither, and `list` has the file but only per test,
+    # 4,499 lines to be re-aggregated by the caller. Emitting it here keeps ONE parser of Swift
+    # source in this repository rather than a second, weaker one written in zsh.
+    per_suite = {}
+    for suite, name, filename, _label in rows:
+        if suite not in per_suite:
+            per_suite[suite] = [filename, 0]
+        per_suite[suite][1] += 1
+    for suite in sorted(per_suite):
+        filename, count = per_suite[suite]
+        print(f'{suite}\t{filename}\t{count}')
+    sys.exit(0)
 
 if mode in ('label', 'labels', 'test_labels'):
     if mode == 'label':

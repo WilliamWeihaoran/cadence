@@ -6,6 +6,8 @@
 #   ./scripts/xcb.sh <id> raw   <every arg, including the action>
 #   ./scripts/xcb.sh audit                                     # report shared-DerivedData leaks
 #   ./scripts/xcb.sh check-test-log <log>                      # the zero-test guard, on its own
+#   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
+#   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
 #
 # `-project Cadence.xcodeproj` is supplied for you; pass `-scheme` and `-destination` yourself.
 #
@@ -48,11 +50,34 @@
 #    reports real in-flight work with. A `test` action runs `scripts/worktree-drift.sh check`
 #    first and exits 7 without taking the test-host lock if any tracked file is behind HEAD.
 #
+# 5. A DECLINED HUNK NOBODY IS COMING BACK FOR (T-781). `agent-commit.sh` records the lines a
+#    reconstruction declined, and the record is checked only when somebody next commits THAT path.
+#    If nobody does, the first thing that happens is DECLINED-HUNK-STALE refusing every commit in
+#    the checkout, half an hour later, to whoever happens to commit next. Measured 2026-09-05: an
+#    agent died mid-commit leaving a stranded record, and it was found by a coordinator running
+#    `check` by hand. So every run of this script ends by listing outstanding records with their
+#    age and how long until they wall off the checkout. It REPORTS: `$STATUS` is never touched
+#    here, because a fresh record is ordinary in-flight work and gating on it would refuse the
+#    normal case dozens of times per `mutate.sh` needle (T-986). The gate stays in the heartbeat.
+#
+# 6. A SCOPED RUN THAT SILENTLY SKIPS HALF ITS FILE (T-1076). Hazard 3 catches a filter that
+#    selects NOTHING. It is blind to a filter that selects SOME of what the caller meant, which is
+#    the larger population: 26 files declare a suite named after the file AND siblings beside it,
+#    and scoping one by filename runs a real suite, exits 0, and skips 311 of the 688 tests in
+#    those files -- 45%, measured 2026-09-06. A short green run looks exactly like a fast one. So
+#    `-only-testing:` names are now resolved against the source BEFORE the build and before the
+#    lock: an unknown name is refused (exit 8), and a known name leaving siblings behind is
+#    PRINTED with their test counts and the run continues, because a multi-suite file is usually
+#    organised that way on purpose and a guard that fails the normal case gets switched off.
+#
 # It never kills anything. The user's Cadence, the user's Xcode and other agents' builds are all
 # off limits; a stall is reported, and the decision to wait or abandon stays with the caller.
 
 set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Captured at top level: inside a function zsh rebinds $0 to the function's own name, so
+# `${0:A}` there resolves to `selftest_only_testing` rather than to this file.
+SCRIPT_PATH="${0:A}"
 XCODEBUILD="${XCODEBUILD:-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild}"
 SHARED_DD="$HOME/Library/Developer/Xcode/DerivedData"
 # How long the log may stand still, with the process idle, before we call it a stall and sample.
@@ -124,6 +149,295 @@ empty_run_diagnostic() {
   fi
 }
 
+
+# --- the -only-testing: resolver (T-1076) ------------------------------------
+# The zero-test guard above is the SECOND half of this problem, and it only ever sees the loud
+# half. Measured 2026-09-06 over 302 files / 386 suites / 4,499 tests in `CadenceTests/`:
+#
+#   - 14 files declare no suite named after the file (279 tests). Scoping by filename there runs
+#     NOTHING, and the zero-test guard covers it completely: exit 4, after the build.
+#   - 26 files declare a suite named after the file AND others beside it. Scoping by filename
+#     there runs a real suite, exits 0, and silently skips 311 of the 688 tests in those files
+#     -- 45%. The zero-test guard covers this NOT AT ALL: the run is green, non-zero and short,
+#     and a short green run is indistinguishable from a fast one.
+#
+# 39 files now declare more than one top-level suite, up from 32 when the question was first
+# raised and 33 when T-552 measured it, so the quiet half grows while nothing watches it.
+#
+# So the names are resolved against the source BEFORE the build, which is also the only placement
+# that pays: exit 4 arrives after a full compile, and a `test` action queues behind the test-host
+# lock, which has been reaching forty minutes on a busy day. This runs pre-lock and pre-build.
+#
+# TWO OUTCOMES, DELIBERATELY ASYMMETRIC. An unknown name selects nothing and can only be a
+# mistake, so it is REFUSED (exit 8). A known name with siblings is frequently correct -- a file
+# holding four suites is a normal way to organise them, and scoping to one of them on purpose is
+# an ordinary thing to do -- so it is PRINTED and the run continues. Making the second case fail
+# would refuse the normal case daily and be switched off within a week; the message therefore
+# names the skipped suites and their exact test counts, which is what makes it checkable at a
+# glance rather than noise to be scrolled past.
+#
+# It reads `test-suite-index.sh --suite-files`, this repository's one parser of Swift test source
+# (T-465's brace/raw-string handling included), rather than a second grep-shaped guess about
+# where a suite begins. CADENCE_SUITE_FILES is a testing seam: `selftest` points it at a fixture
+# so the checks below assert against a known 3-file target instead of a live one that changes
+# under them.
+# "1 test" / "4 tests". The counts are the part of these messages a reader checks, so they should
+# not be the part that reads like a template that was never finished.
+n_tests() { (( $1 == 1 )) && print -rn -- "1 test" || print -rn -- "$1 tests"; }
+
+suite_files_source() {
+  if [[ -n "${CADENCE_SUITE_FILES:-}" ]]; then
+    cat -- "$CADENCE_SUITE_FILES" 2>/dev/null
+  else
+    "$ROOT_DIR/scripts/test-suite-index.sh" --suite-files 2>/dev/null
+  fi
+}
+
+# Exit 8 on an unknown suite, 0 otherwise. Prints the partial-scope notice as a side effect.
+resolve_only_testing() {
+  local -a filters; filters=("$@")
+  (( ${#filters} )) || return 0
+
+  typeset -A suite_file suite_count
+  local s f c
+  while IFS=$'\t' read -r s f c; do
+    [[ -z "$s" ]] && continue
+    suite_file[$s]="$f"; suite_count[$s]="$c"
+  done < <(suite_files_source)
+
+  # A guard that cannot answer says so and gets out of the way -- the same rule the drift check
+  # follows. An empty index means python3 or the test tree is missing, NOT that every name in the
+  # request is bogus, and refusing on that would refuse every run on a machine without python3.
+  if (( ${#suite_file} == 0 )); then
+    say "  -only-testing: not resolved (test-suite-index.sh returned no suites) -- proceeding"
+    return 0
+  fi
+
+  # Which suites this run actually asks for, so a file scoped in FULL reports nothing below.
+  local -a requested_suites whole_suites unknown
+  requested_suites=(); whole_suites=(); unknown=()
+  local spec target rest suite
+  for spec in "${filters[@]}"; do
+    target="${spec%%/*}"; rest=""
+    [[ "$spec" == */* ]] && rest="${spec#*/}"
+    # Only CadenceTests is indexed here. CadenceUITests and any other target are unanswerable,
+    # not wrong, so they pass through untouched.
+    [[ "$target" != "CadenceTests" ]] && continue
+    [[ -z "$rest" ]] && continue          # the whole target: nothing to resolve
+    suite="${rest%%/*}"
+    requested_suites+=("$suite")
+    [[ -z "${suite_file[$suite]:-}" ]] && unknown+=("$suite")
+    # `Suite/testName` names ONE test on purpose, so "the rest of the file did not run" is not a
+    # finding there, it is the request. Only a suite scoped WHOLE can be a partial scope; the name
+    # is still validated above, because a typo in it is a mistake at any granularity.
+    [[ "$rest" == */* ]] || whole_suites+=("$suite")
+  done
+  (( ${#requested_suites} )) || return 0
+
+  if (( ${#unknown} )); then
+    say ""
+    say "!! REFUSING (UNKNOWN-SUITE): ${#unknown} -only-testing: name(s) match no suite in CadenceTests (T-1076)."
+    say "   Nothing was built and no lock was taken. xcodebuild would have accepted this, run"
+    say "   zero tests and exited 0 -- which is what a surviving mutation looks like."
+    # `sf` and `n` are hoisted HERE, not declared in the loop below: a bare `local x` in a zsh
+    # function whose parameter is already local PRINTS `x=<value>` instead of redeclaring it, so
+    # the second unknown name would emit `sf=SomeSuiteTests` into the middle of its own refusal
+    # (T-1074). `local -a in_file` / `local -a near` below are safe -- any flag suppresses the
+    # listing -- which is exactly why the shape hides. Two unknown names is the ordinary case.
+    local u stem_file sf n
+    for u in "${unknown[@]}"; do
+      say ""
+      say "   '$u' is not a suite."
+      # The single most common way to produce one: a FILE name. 14 files in this target declare
+      # no suite named after themselves, so this is the population the zero-test guard catches
+      # 20 minutes later -- named here, with the answer attached.
+      stem_file=$(print -rl -- "$ROOT_DIR"/CadenceTests/**/"$u".swift(N) | head -1)
+      if [[ -n "$stem_file" ]]; then
+        say "     It is a FILE (${stem_file:t}), and \`-only-testing:\` takes a SUITE name."
+        say "     That file declares:"
+        local -a in_file; in_file=()
+        for sf in ${(k)suite_file}; do
+          [[ "${suite_file[$sf]}" == "${stem_file:t}" ]] && in_file+=("$sf")
+        done
+        for sf in ${(o)in_file}; do
+          say "       -only-testing:CadenceTests/$sf   ($(n_tests ${suite_count[$sf]}))"
+        done
+      else
+        local -a near
+        near=(${(f)"$(print -rl -- ${(k)suite_file} | grep -i -- "$u" | head -5)"})
+        if (( ${#near} )) && [[ -n "${near[1]}" ]]; then
+          say "     Did you mean:"
+          for n in "${near[@]}"; do say "       -only-testing:CadenceTests/$n   ($(n_tests ${suite_count[$n]}))"; done
+        else
+          say "     Ask the source which suite declares your test:"
+          say "       ./scripts/test-suite-index.sh $u"
+        fi
+      fi
+    done
+    return 8
+  fi
+
+  # --- the quiet half: a real suite that leaves siblings behind ---------------
+  # Reported per FILE, not per suite, so scoping to three of a file's four suites prints one
+  # notice about the fourth rather than three overlapping ones.
+  typeset -A is_requested
+  local r
+  for r in "${requested_suites[@]}"; do is_requested[$r]=1; done
+  local -a reported; reported=()
+  local file sib total
+  for r in "${whole_suites[@]}"; do
+    file="${suite_file[$r]}"
+    [[ " ${reported[*]} " == *" $file "* ]] && continue
+    local -a skipped; skipped=()
+    total=0
+    for sib in ${(k)suite_file}; do
+      [[ "${suite_file[$sib]}" != "$file" ]] && continue
+      [[ -n "${is_requested[$sib]:-}" ]] && continue
+      skipped+=("$sib")
+      (( total += suite_count[$sib] ))
+    done
+    (( ${#skipped} )) || continue
+    reported+=("$file")
+    say ""
+    say "!! PARTIAL-SCOPE (T-1076): $file declares suites this run will NOT execute."
+    say "   $(n_tests $total) in that file $( (( total == 1 )) && print -n "is" || print -n "are") being skipped, in ${#skipped} suite(s):"
+    for sib in ${(o)skipped}; do
+      say "     -only-testing:CadenceTests/$sib   ($(n_tests ${suite_count[$sib]}))"
+    done
+    say "   This is NOT a failure and the run continues -- a file holding several suites is"
+    say "   normal. It matters if you scoped by FILENAME meaning the file: then the run goes"
+    say "   green over a fraction of it, and the zero-test guard cannot see that (it only fires"
+    say "   at zero). Add the lines above if you meant the whole file."
+  done
+  return 0
+}
+
+
+# --- selftest ----------------------------------------------------------------
+# `agent-commit.sh selftest` and `mutate.sh selftest` are the precedent: a guard nobody exercises
+# is the hollow instrument this repository keeps finding one layer up, and this one is easy to
+# hollow out by accident, because its whole job is to say nothing on the normal path. Both new
+# behaviours are induced -- against a fixture index, so the assertions do not move when somebody
+# adds a suite, and then against the LIVE index, so a fixture that has drifted away from the real
+# parser cannot pass for one that matches it. It builds nothing and takes about a second.
+selftest_only_testing() {
+  local -a failures performed
+  failures=(); performed=()
+  check() {
+    local name=$1 ok=$2 detail=${3:-}
+    performed+=("$name")
+    say "  $( (( ok )) && print -n "ok  " || print -n "FAIL")  $name$( (( ok )) || print -n "  <- $detail")"
+    (( ok )) || failures+=("$name")
+  }
+
+  say "== xcb.sh selftest (T-1076 -only-testing: resolver) =="
+  local here="$SCRIPT_PATH"
+  local ws; ws=$(mktemp -d "${TMP_BASE}cadence-xcb-selftest-XXXXXX")
+  # AlphaTests.swift holds two suites; SoloTests.swift holds exactly one.
+  print -rl -- $'AlphaTests\tAlphaTests.swift\t3' \
+               $'AlphaHelperTests\tAlphaTests.swift\t7' \
+               $'SoloTests\tSoloTests.swift\t4' > "$ws/index.tsv"
+  : > "$ws/empty.tsv"
+  local out rc
+
+  run_fixture() {
+    out=$(CADENCE_SUITE_FILES="$1" zsh "$here" check-only-testing "${@:2}" 2>&1); rc=$?
+  }
+
+  say ""
+  say " 1. an unknown suite name is REFUSED before any build"
+  run_fixture "$ws/index.tsv" CadenceTests/NoSuchSuiteAnywhere
+  check "unknown name exits 8" $( [[ $rc == 8 ]] && print 1 || print 0 ) "exit $rc: $out"
+  check "and says what it refused" \
+    $( [[ "$out" == *UNKNOWN-SUITE* && "$out" == *"'NoSuchSuiteAnywhere' is not a suite"* ]] && print 1 || print 0 ) "$out"
+  # T-1074. ONE unknown name can never show this: a bare `local x` in a zsh function whose
+  # parameter is already local PRINTS `x=<value>` rather than redeclaring it, so the leak starts on
+  # the SECOND pass through the loop. Naming the same unknown twice is the cheapest way to buy a
+  # second pass without also depending on a second name existing. Refusals are this script's whole
+  # output, so a stray `n=AlphaTests` lands between "Did you mean:" and the answer.
+  run_fixture "$ws/index.tsv" CadenceTests/Alpha CadenceTests/Alpha
+  check "a second unknown name really does take a second pass" \
+    $( [[ $rc == 8 && $(print -r -- "$out" | grep -c "is not a suite") == 2 ]] && print 1 || print 0 ) "exit $rc: $out"
+  # `grep -E`, not a `[[ ]]` glob: `[a-z_]##=` needs EXTENDED_GLOB, and without it the glob form
+  # matches literally and passes against an unfixed script. That happened once already (T-1074).
+  check "and the refusal carries no stray zsh assignment line (T-1074)" \
+    $( print -r -- "$out" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$out"
+
+  say ""
+  say " 2. a KNOWN name with siblings is printed, and does NOT fail the run"
+  run_fixture "$ws/index.tsv" CadenceTests/AlphaTests
+  check "partial scope exits 0" $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $out"
+  check "names the file" $( [[ "$out" == *PARTIAL-SCOPE*AlphaTests.swift* ]] && print 1 || print 0 ) "$out"
+  check "names the skipped sibling and its count" \
+    $( [[ "$out" == *AlphaHelperTests* && "$out" == *"(7 tests)"* ]] && print 1 || print 0 ) "$out"
+  check "states the total skipped" $( [[ "$out" == *"7 tests in that file are being skipped"* ]] && print 1 || print 0 ) "$out"
+
+  say ""
+  say " 3. the notice does not become noise"
+  run_fixture "$ws/index.tsv" CadenceTests/SoloTests
+  check "a suite alone in its file is silent" \
+    $( [[ $rc == 0 && "$out" != *PARTIAL-SCOPE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  run_fixture "$ws/index.tsv" CadenceTests/AlphaTests CadenceTests/AlphaHelperTests
+  check "a file scoped in FULL is silent" \
+    $( [[ $rc == 0 && "$out" != *PARTIAL-SCOPE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  run_fixture "$ws/index.tsv" CadenceTests/AlphaTests/oneSingleTest
+  check "scoping to ONE test is silent (the rest of the file is the request, not a finding)" \
+    $( [[ $rc == 0 && "$out" != *PARTIAL-SCOPE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  run_fixture "$ws/index.tsv" CadenceTests/NotASuite/oneSingleTest
+  check "but a typo'd suite is still refused at test granularity" \
+    $( [[ $rc == 8 && "$out" == *UNKNOWN-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  run_fixture "$ws/index.tsv" CadenceTests
+  check "the whole target is silent" \
+    $( [[ $rc == 0 && "$out" != *PARTIAL-SCOPE* && "$out" != *REFUSING* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+  say ""
+  say " 4. a guard that cannot answer gets out of the way"
+  run_fixture "$ws/index.tsv" CadenceUITests/AnythingAtAll
+  check "an unindexed target is not refused" $( [[ $rc == 0 && "$out" != *UNKNOWN-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  run_fixture "$ws/empty.tsv" CadenceTests/NoSuchSuiteAnywhere
+  check "an empty index proceeds instead of refusing everything" \
+    $( [[ $rc == 0 && "$out" == *"not resolved"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+  # The fixture above is a claim about the format; these are the claims about the repository. If
+  # `--suite-files` ever stops answering, or answers in another shape, section 4 would let this
+  # selftest pass in silence -- so the live half asserts a positive finding, not an absence.
+  say ""
+  say " 5. the same two behaviours against the LIVE CadenceTests index"
+  # Skipped, loudly, rather than failed where the index cannot be built at all: the test host is
+  # App-Sandboxed and its `/usr/bin/python3` xcrun shim refuses with "cannot be used within an App
+  # Sandbox" (T-719), which is a fact about the environment and not about this guard. A skip is not
+  # in `performed`, so the tally stays a count of checks that really ran.
+  if (( $(suite_files_source | grep -c . ) == 0 )); then
+    say "  skip  live checks: test-suite-index.sh returned no suites here (python3 unavailable?)"
+    say "        the fixture checks above still pin the behaviour; run this outside a sandbox for the rest."
+  else
+  out=$(zsh "$here" check-only-testing CadenceTests/CadenceDeepLinkTests 2>&1); rc=$?
+  check "live: CadenceDeepLinkTests warns about its sibling" \
+    $( [[ $rc == 0 && "$out" == *PARTIAL-SCOPE* && "$out" == *CadenceDeepLinkGrammarAndRevealTests* ]] && print 1 || print 0 ) "exit $rc: $out"
+  # AITests.swift is one of the 14 files that declare no suite named after themselves: scoping by
+  # its filename is the case the zero-test guard only catches after a full build.
+  # Named TWICE, for the T-1074 reason given in section 1 -- and here because the file branch is a
+  # different loop body than the "Did you mean" branch above, with its own bare declaration in it.
+  out=$(zsh "$here" check-only-testing CadenceTests/AITests CadenceTests/AITests 2>&1); rc=$?
+  check "live: a FILE name is refused, and identified as a file" \
+    $( [[ $rc == 8 && "$out" == *"It is a FILE"* && "$out" == *AIActionServiceTests* ]] && print 1 || print 0 ) "exit $rc: $out"
+  check "live: and the file branch carries no stray zsh assignment line (T-1074)" \
+    $( print -r -- "$out" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$out"
+  fi
+
+  rm -rf "$ws"
+  say ""
+  # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
+  # 0, but it cannot print a non-zero passed count.
+  say "checks: $(( ${#performed} - ${#failures} )) passed, ${#failures} failed"
+  if (( ${#failures} )); then
+    say "SELFTEST FAILED: ${(j:, :)failures}"
+    return 1
+  fi
+  say "SELFTEST PASSED"
+  return 0
+}
+
 if [[ "${1:-}" == "check-test-log" ]]; then
   CHECK_LOG="${2:-}"
   if [[ ! -f "$CHECK_LOG" ]]; then
@@ -136,6 +450,23 @@ if [[ "${1:-}" == "check-test-log" ]]; then
   fi
   say "$CHECK_RAN test result(s) in $CHECK_LOG"
   exit 0
+fi
+
+# The resolver on its own, the way `check-test-log` exposes the zero-test guard: it is what
+# `selftest` drives, and what a caller can point at a filter it is unsure of without paying for a
+# build. Accepts the value with or without the `-only-testing:` prefix.
+if [[ "${1:-}" == "check-only-testing" ]]; then
+  shift
+  if (( $# == 0 )); then
+    say "usage: ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>..."; exit 2
+  fi
+  resolve_only_testing "${@#-only-testing:}"
+  exit $?
+fi
+
+if [[ "${1:-}" == "selftest" ]]; then
+  selftest_only_testing
+  exit $?
 fi
 
 if [[ "${1:-}" == "audit" ]]; then
@@ -243,6 +574,21 @@ if screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]] \
   say "   loginwindow holds the foreground, so the launched app never leaves Running Background"
   say "   and app.launch() fails after ~60s per test. Unlock the screen and re-run (T-563)."
   exit 5
+fi
+
+# --- resolve -only-testing: before anything expensive (T-1076) ---------------
+# Ahead of the drift check and the test-host lock on purpose. A name that selects nothing costs
+# a full build to discover through the zero-test guard, and a `test` action queues behind a lock
+# that has been reaching forty minutes; neither is worth paying to learn that a suite is misspelt.
+only_testing=()
+for (( i = 1; i <= ${#args}; i++ )); do
+  case "${args[i]}" in
+    -only-testing:*) only_testing+=("${args[i]#-only-testing:}") ;;
+    -only-testing)   only_testing+=("${args[i+1]:-}") ;;
+  esac
+done
+if (( ${#only_testing} )); then
+  resolve_only_testing "${only_testing[@]}" || exit 8
 fi
 
 # --- the drifted-worktree guard (T-975) --------------------------------------
@@ -408,5 +754,49 @@ if [[ "$(shared_cadence_entries)" != "$before_entries" ]]; then
   say "!! LEAK: a shared DerivedData entry appeared during this run, despite the private path."
   say "   Something in the build reached the default location. ./scripts/xcb.sh audit lists them."
 fi
+# --- the declined-hunk backstop (T-781) --------------------------------------
+# `agent-commit.sh` records the lines a `<path>=<content-file>` reconstruction declined and refuses
+# the NEXT commit of that path unless it carries them. If nobody ever commits that path again, no
+# commit-time check fires at all, and the only instruments are `status` (a habit) and
+# DECLINED-HUNK-STALE, which does nothing for 30 minutes and then refuses EVERY commit in the
+# checkout at once. Measured 2026-09-05: an agent died mid-commit and left a stranded record on
+# `docs/TODO.md`; nothing surfaced it, and it was found by a coordinator running `check` by hand
+# during a sweep. Another half hour and it would have walled off the whole batch.
+#
+# So the listing goes where somebody is already looking -- the end of a build log -- with the age
+# and the deadline on it, which is what turns "there is a record" into something anyone can act on.
+#
+# IT REPORTS AND IT DOES NOT GATE, deliberately. That is the distinction T-986 settled: `check`
+# EXITS 3 while any record is outstanding, and every intra-batch run would then see a sibling's
+# freshly declined, perfectly normal in-flight hunk -- the exact case DECLINED-HUNK-STALE's grace
+# period exists NOT to block. `mutate.sh` alone runs this dozens of times per needle. So `$STATUS`
+# is never touched here; the gate stays in the coordinator heartbeat, where the cadence fits.
+declined_backstop() {
+  local base="${TMPDIR:-/private/tmp/}"; [[ "$base" != */ ]] && base="$base/"
+  local ledger="${CADENCE_DECLINED_LEDGER:-${base}cadence-declined-hunks}"
+  [[ -d "$ledger" ]] || return 0
+  local -a records; records=("$ledger"/*.declined(N))
+  (( ${#records} )) || return 0
+  local stale_after="${CADENCE_DECLINED_STALE_MINUTES:-30}"
+  say ""
+  say "!! DECLINED HUNKS OUTSTANDING (T-781): ${#records} record(s) hold lines that are in no commit."
+  local r age left
+  for r in "${records[@]}"; do
+    age=$(( ( $(date +%s) - $(stat -f %m -- "$r" 2>/dev/null || date +%s) ) / 60 ))
+    left=$(( stale_after - age ))
+    say "   $(sed -n 's/^# path: //p' "$r" | head -1)  (declined by $(sed -n 's/^# by: //p' "$r" | head -1) at $(sed -n 's/^# commit: //p' "$r" | head -1), ${age}m ago)"
+    grep -v '^# ' "$r" | head -4 | sed 's/^/     | /'
+    if (( left > 0 )); then
+      say "     in ${left}m this refuses EVERY agent-commit.sh commit in this checkout (DECLINED-HUNK-STALE)."
+    else
+      say "     this is ALREADY refusing every agent-commit.sh commit in this checkout."
+    fi
+  done
+  say "   Fold them into a commit of that path, or -- if abandoned on purpose --"
+  say "   ./scripts/agent-commit.sh accept <path>"
+  return 0
+}
+declined_backstop
+
 say "  (delete $DD when you are done; a full one is ~1.7 GB)"
 exit $STATUS

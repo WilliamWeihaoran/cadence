@@ -56,6 +56,10 @@
 #                        HEAD's. Committing it writes the stale bytes into history, where no drift
 #                        check looks. Rebuild on `git show HEAD:<path>` and pass the `=` form, or
 #                        `--commits-stale <path>` if the old content really is what you mean.
+#   REBUILD-BEHIND-HEAD  the same finding about a `<path>=<content-file>` reconstruction: the
+#                        content file itself was built on an older revision. Same escape hatch.
+#                        This is the diagnosis for the count REMOVES-HEAD-LINES would otherwise
+#                        give you one step later, and it names the sha to rebuild on.
 #   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
 #                        `--removes <exact count>` acknowledges them. A reconstruction built on a
 #                        stale HEAD reverts a sibling's landed work in exactly this shape.
@@ -80,7 +84,7 @@
 # difference is recorded in the declined-hunk ledger under $TMPDIR and reported at the end of every
 # run until some commit of that path accounts for it.
 #
-# WHERE THE BARE FORM GOES WRONG, AND WHY ONLY IT IS DRIFT-CHECKED (T-982)
+# BOTH FORMS ARE ASKED WHERE THEY WERE BUILT (T-982 for the bare one, T-992 for the `=` one)
 #
 # `worktree-drift.sh` gates `xcb.sh test`, so an integration run cannot start against a checkout
 # behind HEAD. That is the right gate for READING. Drift is CREATED one step earlier, here: a bare
@@ -95,9 +99,37 @@
 # sibling's landed line left HEAD. The count is the symptom; "this file is built on an older
 # revision, and here is which one" is the diagnosis, and it is the one an agent can act on.
 #
-# The `=` form is deliberately NOT checked. Rebuilding the file as `git show HEAD:<path>` plus your
-# own edits IS the prescribed repair for this drift, and its content is by definition not the
-# worktree's, so a check that refused it would refuse the fix and leave only the broken path open.
+# The `=` form was deliberately not checked at first, for a reason that turned out to be about the
+# wrong comparison (T-992). Rebuilding the file as `git show HEAD:<path>` plus your own edits IS
+# the prescribed repair for this drift, and its content is by definition not the WORKTREE's -- so a
+# check against the worktree would have refused the fix and left only the broken path open. But the
+# reading is against HISTORY, and there it separates cleanly:
+#
+#   rebuilt on HEAD                 contains every line HEAD has -> `inflight`, settled by the first
+#                                   comparison, before any revision walk happens.
+#   rebuilt on HEAD, lines deleted  no revision is wholly contained -> `cannot-tell`, never refused;
+#                                   T-984's blind spot, unchanged and still the safe direction.
+#   built on an OLDER revision      -> `behind`, which is the only shape it can name, and the bug.
+#
+# So the cure is not refused and the mistake is. This matters because the `=` form is what an agent
+# is TOLD to reach for by the bare form's own refusal -- the commonest single way a stale file gets
+# reconstructed here is an agent repairing one refusal and rebuilding on the wrong sha while doing
+# it. Measured 2026-09-05 against a throwaway repository: a content file built two commits back was
+# refused as `REMOVES-HEAD-LINES ... --removes 2` and nothing asked, or said, which revision it had
+# been built from.
+#
+# THE DELIBERATE OVERRIDE LEAVES A TRACE (T-991)
+#
+# `--commits-stale <path>` says "the older content really is what I mean". It used to say it to
+# nobody: unlike a declined hunk, which writes a record under $TMPDIR that `check` fails over, it
+# wrote nothing at all, so a batch could not afterwards answer *did anyone knowingly commit a copy
+# behind HEAD, and on which path*. That question is how all four measured instances of T-975 were
+# found. Each overridden path now adds a `Commits-Stale: <path> built-on <sha>` trailer to the
+# commit message, immediately above the Co-Authored-By line: `git log --grep=Commits-Stale` answers
+# it from any clone, forever, and the base sha makes it answerable in detail rather than in the
+# abstract. It is not a declined-hunk record -- those mean somebody still has to act, and `check`
+# fails while one exists; this is a settled decision, and recording it as outstanding work would
+# make `check` fail over something already decided.
 #
 # THE BACKSTOP, AND WHY IT IS NOT `status` (T-781)
 #
@@ -403,43 +435,113 @@ cmd_commit() {
   Another agent staged them. Ask them to commit, or \`git reset -- <path>\` only what you are sure is yours."
     fi
 
-    # 1b. T-982. Every guard below this line asks a question about the CONTENT being staged. None
-    #     of them asks where that content came from, and for a bare `<path>` it comes from a shared
-    #     checkout that drifts behind HEAD by design. Ask before the content questions, because
-    #     "built on an older revision" is the diagnosis and REMOVES-HEAD-LINES -- which fires on
-    #     this shape too, one step later -- is the symptom plus a cure that makes it worse.
+    # 1b. T-982 (bare form) and T-992 (the `=` form). Every guard below this line asks a question
+    #     about the CONTENT being staged. None of them asks WHERE THAT CONTENT WAS BUILT, and both
+    #     path forms can be built somewhere stale. Ask before the content questions, because "built
+    #     on an older revision, and here is which one" is the diagnosis, and REMOVES-HEAD-LINES --
+    #     which fires on this shape too, one step later -- is the symptom plus a cure that makes it
+    #     worse (it prints `--removes 2`, and typing it drops the two lines a sibling landed).
     #
-    #     One implementation, not a near-copy: `worktree-drift.sh base` is the same reading the
-    #     tree gate uses, asked about one path. It is handed `$headsha` rather than resolving HEAD
-    #     itself, so it answers about the same commit as every check either side of it (T-974).
+    #     One implementation, not a near-copy: `worktree-drift.sh` is the same reading the tree gate
+    #     uses, asked about one path. It is handed `$headsha` rather than resolving HEAD itself, so
+    #     it answers about the same commit as every check either side of it (T-974).
+    #
+    #     WHY THE `=` FORM IS ASKED TOO, HAVING BEEN EXEMPT (T-992). It was exempt because it is the
+    #     prescribed repair for the bare form's refusal, and a check that refused the cure would
+    #     leave only the broken path open. That reasoning was about comparing against the WORKTREE,
+    #     which a reconstruction differs from by construction. This reading is against HISTORY:
+    #
+    #       a genuine rebuild on `git show HEAD:<path>`  contains every line HEAD has -> `inflight`,
+    #                                                    settled by the first comparison, no walk.
+    #       a rebuild that also deletes lines            no revision is contained -> `cannot-tell`,
+    #                                                    never refused (T-984's blind spot, intact).
+    #       an OLD revision plus edits                   -> `behind`. That is the bug, and it is the
+    #                                                    only shape this can name.
+    #
+    #     Measured 2026-09-05 in a throwaway repository, on the shape the `=` form actually fails
+    #     in: a content file built on `git show <HEAD~2>:shared.txt` plus one new line was refused
+    #     as `REMOVES-HEAD-LINES: removes 2 line(s) ... --removes 2` -- a count, and an invitation
+    #     to type the number that drops a sibling's work. Nothing anywhere asked which revision the
+    #     file had been reconstructed from, which is the one fact that names the mistake.
     local drift_script="${SCRIPT_PATH:h}/worktree-drift.sh"
-    [[ -f "$drift_script" ]] || refuse DRIFT-CHECK-MISSING "$drift_script is not there, so the bare-path drift check cannot run.
-  Skipping it silently is how a guard becomes decoration; restore the script, or pass the paths as
-  \`<path>=<content-file>\` rebuilt on \`git show HEAD:<path>\`, which needs no check."
-    local -a stale_found stale_report
-    stale_found=(); stale_report=()
-    local reading drc
+    [[ -f "$drift_script" ]] || refuse DRIFT-CHECK-MISSING "$drift_script is not there, so the drift check cannot run.
+  Skipping it silently is how a guard becomes decoration; restore the script. There is no path form
+  that skips this check any more: both \`<path>\` and \`<path>=<content-file>\` are asked (T-992)."
+    local -a stale_found stale_report stale_recon stale_audit
+    stale_found=(); stale_report=(); stale_recon=(); stale_audit=()
+    # NOT `subject`: this function already declares one further down for the commit subject, and a
+    # second bare `local subject` in the same scope makes zsh PRINT the parameter rather than
+    # redeclare it -- `subject='worktree-drift.sh base-content ...'` on stdout, mid-commit.
+    local reading drc drift_call kind
     for name in "${names[@]}"; do
-        [[ -z "${source_of[$name]}" ]] || continue      # the `=` form is the repair; never refuse it
-        [[ -f "$name" ]] || continue
-        git cat-file -e "$headsha:$name" 2>/dev/null || continue
-        reading=$(zsh "$drift_script" base "$name" "$headsha" 2>/dev/null); drc=$?
+        git cat-file -e "$headsha:$name" 2>/dev/null || continue   # not in HEAD: nothing to be behind
+        src="${source_of[$name]}"
+        if [[ -n "$src" ]]; then
+            drift_call="worktree-drift.sh base-content $name $src"
+            reading=$(zsh "$drift_script" base-content "$name" "$src" "$headsha" 2>/dev/null); drc=$?
+        else
+            [[ -f "$name" ]] || continue                            # a deletion in flight
+            drift_call="worktree-drift.sh base $name"
+            reading=$(zsh "$drift_script" base "$name" "$headsha" 2>/dev/null); drc=$?
+        fi
         # 0 and 3 are readings. Anything else is the check failing to run, and a guard that reads
         # a crash as "fine" is the hollow instrument this whole file exists to avoid.
-        (( drc == 0 || drc == 3 )) || refuse DRIFT-CHECK-FAILED "\`worktree-drift.sh base $name\` exited $drc and said: ${reading:-(nothing)}
+        (( drc == 0 || drc == 3 )) || refuse DRIFT-CHECK-FAILED "\`$drift_call\` exited $drc and said: ${reading:-(nothing)}
   Nothing was committed, because the question of whether $name is behind HEAD went unanswered."
         [[ "$(print -r -- "$reading" | cut -f1)" == behind ]] || continue
+        kind=$(print -r -- "$reading" | cut -f2)
+        # WHICH KIND THE `=` FORM IS REFUSED FOR, AND WHY ONLY ONE (T-992).
+        #
+        #   stale base  an older revision with the agent's OWN edits on top. That is the measured
+        #               failure: a rebuild aimed at HEAD that was aimed at the wrong sha, with the
+        #               work it was made for sitting on it, so the revert hides inside real work.
+        #               Refused.
+        #   stale copy  the content file's bytes ARE an older revision, with nothing of the agent's
+        #               in it. A mistaken rebuild cannot look like this -- it always carries the
+        #               edits it was made for -- so through the `=` form this is somebody reverting
+        #               a path on purpose, and REMOVES-HEAD-LINES already names every line it drops.
+        #               Reported, not refused. Selftest mode 4b (`cut.txt`) is exactly this shape.
+        #
+        # The bare form keeps both: a stale COPY in the worktree is T-975's commonest shape, has no
+        # local work to lose, and `worktree-drift.sh repair` is a cure the `=` form has no use for.
+        if [[ -n "$src" && "$kind" != "stale base" ]]; then
+            say "note: $name=$src holds an older revision's bytes exactly [$kind] -- $(print -r -- "$reading" | cut -f4)"
+            say "      Not refused: nothing of yours is on top of it, so this reads as a deliberate revert."
+            continue
+        fi
         stale_found+=("$name")
-        stale_report+=("$name  [$(print -r -- "$reading" | cut -f2)]  $(print -r -- "$reading" | cut -f4)")
+        stale_report+=("$name  [$kind]  $(print -r -- "$reading" | cut -f4)")
+        # The base sha, for T-991's trailer. Field 3 of the machine-readable reading.
+        stale_audit+=("$name built-on $(print -r -- "$reading" | cut -f3)")
+        [[ -n "$src" ]] && stale_recon+=("$name")
     done
     if (( ${#stale_found} )); then
-        local -a undeclared
-        undeclared=()
+        local -a undeclared undeclared_recon
+        undeclared=(); undeclared_recon=()
+        # `spec2` is declared HERE and not in the loop: see T-1074. A bare `local x` whose
+        # parameter is already local prints `x=<value>` instead of redeclaring it, so with two
+        # stale paths in one commit this put `spec2=<the second path>` on stdout above the
+        # refusal. Measured 2026-09-06, in this exact loop.
+        local declaredp reconp spec2
         for name in "${stale_found[@]}"; do
-            local declaredp=0 spec2
+            declaredp=0; reconp=0
             for spec2 in "${stale_declared[@]}"; do [[ "$spec2" == "$name" ]] && declaredp=1; done
-            (( declaredp )) || undeclared+=("$name")
+            (( declaredp )) && continue
+            for spec2 in "${stale_recon[@]}"; do [[ "$spec2" == "$name" ]] && reconp=1; done
+            if (( reconp )); then undeclared_recon+=("$name"); else undeclared+=("$name"); fi
         done
+        if (( ${#undeclared_recon} )); then
+            refuse REBUILD-BEHIND-HEAD "these reconstructions were built on a revision older than HEAD: ${(j:, :)undeclared_recon}
+$(print -rl -- "${stale_report[@]}" | sed 's/^/    /')
+  The \`<path>=<content-file>\` form is the repair for a stale worktree copy, and this one was
+  itself rebuilt on stale bytes -- \`git show <an older sha>:<path>\` rather than
+  \`git show ${headsha[1,8]}:<path>\`. Committing it reverts every line that landed in between.
+  This is the diagnosis for the count you would otherwise be given one step later: a copy behind
+  HEAD is missing lines HEAD has by construction, so REMOVES-HEAD-LINES fires on this shape too,
+  names a number, and invites you to type it. The number is the symptom.
+  Rebuild the content file on \`git show ${headsha[1,8]}:<path>\` plus only your own edits.
+  If the older content really is what you mean to commit: --commits-stale <path>"
+        fi
         if (( ${#undeclared} )); then
             refuse WORKTREE-BEHIND-HEAD "these bare paths hold content HEAD has moved past: ${(j:, :)undeclared}
 $(print -rl -- "${stale_report[@]}" | sed 's/^/    /')
@@ -447,11 +549,52 @@ $(print -rl -- "${stale_report[@]}" | sed 's/^/    /')
   commit lands through a private index and never writes the checkout (T-975). Committing this copy
   puts the stale bytes in HEAD, where no drift check looks, and every later reader inherits them.
   A [stale copy] has nothing local in it:  ./scripts/worktree-drift.sh repair
-  A [stale base] has your edits on an old one -- rebuild them on \`git show HEAD:<path>\` and pass
-  that file as \`<path>=<content-file>\`, which is the form this check deliberately leaves alone.
+  A [stale base] has your edits on an old one -- rebuild them on \`git show ${headsha[1,8]}:<path>\`
+  and pass that file as \`<path>=<content-file>\`. That form is checked the same way (T-992), so
+  rebuilding on the wrong sha is refused rather than accepted.
   If the older content really is what you mean to commit: --commits-stale <path>"
         fi
         say "note: committing a path that is behind HEAD at your request (--commits-stale): ${(j:, :)stale_found}"
+    fi
+
+    # 1c. T-991. `--commits-stale` is the one deliberate override in this script that discarded
+    #     something and left NOTHING to find afterwards. Every other one leaves a trace somebody has
+    #     to clear: a declined hunk writes a record under $TMPDIR and `check` fails while it is
+    #     outstanding; `--drops-ids` and `--reopens-ids` name their ids in the argv of a command
+    #     somebody typed and nowhere else. So a batch could not answer, after the fact, *did anyone
+    #     knowingly commit a copy behind HEAD, on which path, and how far behind* -- which is the
+    #     exact question all four measured instances of T-975 were found by asking.
+    #
+    #     The trace goes in the COMMIT MESSAGE, not in the $TMPDIR ledger, and that is the whole
+    #     point. The ledger is per-checkout, per-boot and cleared; the question is asked days later
+    #     and from a clone. `git log --grep=Commits-Stale` answers it forever, and the base sha
+    #     makes it answerable in detail: you can diff what was skipped.
+    #
+    #     It is NOT a declined-hunk record. Those mean "somebody still has to do something" and
+    #     `check` fails while one exists; this means "somebody deliberately did this and here is
+    #     what". Filing it as outstanding work would make `check` fail over a settled decision.
+    #
+    #     Inserted BEFORE the Co-Authored-By line, never after: that line has to stay last, because
+    #     NO-COAUTHOR-TRAILER is checked against the last non-blank line and every commit in this
+    #     repository ends with it.
+    if (( ${#stale_audit} )); then
+        local -a audit_lines msg_lines out_lines
+        audit_lines=()
+        for reading in "${stale_audit[@]}"; do audit_lines+=("Commits-Stale: $reading") done
+        # In zsh, not awk: `awk -v extra=...` cannot carry a literal newline in an assignment
+        # ("awk: newline in string"), so a two-path override silently produced an EMPTY message and
+        # the Co-Authored-By line with it. Measured while writing this. Splice the array instead.
+        msg_lines=("${(@f)message}"); out_lines=()
+        local last=0 li
+        for (( li = 1; li <= ${#msg_lines}; li++ )); do
+            [[ "${msg_lines[li]}" == *[^[:space:]]* ]] && last=$li
+        done
+        for (( li = 1; li <= ${#msg_lines}; li++ )); do
+            (( li == last )) && out_lines+=("${audit_lines[@]}")
+            out_lines+=("${msg_lines[li]}")
+        done
+        message="${(F)out_lines}"
+        say "note: recorded the override in the commit message: ${(j:; :)audit_lines}"
     fi
 
     local scratch
@@ -520,8 +663,9 @@ $(print -r -- "$lost" | sed 's/^/    /')
     #     it. Fresh ones block nothing; this is not a serialisation.
     local -a stale
     stale=()
+    local skip c                      # hoisted: bare `local c` in a loop prints it (T-1074)
     for record in "$LEDGER"/*.declined(N); do
-        local skip=0 c
+        skip=0
         for c in "${clear_on_success[@]}"; do [[ "$c" == "$record" ]] && skip=1; done
         (( skip )) && continue
         (( $(record_age_minutes "$record") >= STALE_MINUTES )) || continue
@@ -544,13 +688,17 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #     inside any line count large enough to be worth reading past. Name the ids, not the lines.
     local -a lost_ids
     lost_ids=()
+    # Hoisted out of the loop below on purpose: a bare `local x` whose parameter is already local
+    # PRINTS it (`gone=...` on stdout) instead of redeclaring it -- same zsh trap as `drift_call`
+    # above. Unreachable while only one TODO.md can be named per commit; wrong the moment that
+    # changes, and it would surface as noise in a commit's own output, where nobody would read it.
+    local gone reopened
     for name in "${names[@]}"; do
         is_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
         git cat-file -e "$headsha:$name" 2>/dev/null || continue
         local ledger_head="$scratch/$(ledger_key "$name").ledgerhead"
         git cat-file -p "$headsha:$name" > "$ledger_head"
-        local gone
         gone=$(comm -23 <(ledger_ids "$ledger_head") <(ledger_ids "${staged_content[$name]}"))
         [[ -n "$gone" ]] || continue
         lost_ids+=(${(f)gone})
@@ -581,7 +729,6 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         git cat-file -e "$headsha:$name" 2>/dev/null || continue
         local closure_head="$scratch/$(ledger_key "$name").closurehead"
         git cat-file -p "$headsha:$name" > "$closure_head"
-        local reopened
         reopened=$(comm -12 \
             <(comm -23 <(ledger_closed_ids "$closure_head") <(ledger_closed_ids "${staged_content[$name]}")) \
             <(ledger_ids "${staged_content[$name]}"))
@@ -953,6 +1100,100 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "and nothing was committed by that one either" \
         $( [[ $( cd "$ws" && git show HEAD:code.txt ) != *"no drift check nearby"* ]] && print 1 || print 0 )
     ( cd "$ws" && rm -rf lonely && git checkout -q HEAD -- code.txt 2>/dev/null; git reset -q ) >/dev/null 2>&1
+
+    say ""
+    say " mode 4b3 (REBUILD-BEHIND-HEAD) -- the = reconstruction must be asked where IT was built"
+    # T-992. The `=` form is what the refusal in 4b2 TELLS the agent to reach for, so a rebuild on
+    # the wrong sha is not an exotic case -- it is the commonest way staleness survives the cure.
+    # Measured 2026-09-05: content built two commits back was refused as REMOVES-HEAD-LINES with
+    # `--removes 2`, and nothing asked which revision it came from.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    # TWO paths, both with history, because one path can never show the T-1074 leak below.
+    ( cd "$ws"
+      print -rl -- "rebuild one" "rebuild two" "rebuild three" > rebuild.txt
+      print -rl -- "second one" "second two" "second three" > rebuild2.txt
+      zsh "$here" g0 -m "$M" rebuild.txt rebuild2.txt
+      # Two siblings land on these paths. Ordinary commits: the `=` form reads the CONTENT FILE, so
+      # whether the checkout is stale is beside the point here -- which is itself the finding.
+      print -r -- "sibling landed four" >> rebuild.txt
+      print -r -- "second sibling four" >> rebuild2.txt
+      git add rebuild.txt rebuild2.txt && git commit -qm "s1
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+      print -r -- "sibling landed five" >> rebuild.txt
+      print -r -- "second sibling five" >> rebuild2.txt
+      git add rebuild.txt rebuild2.txt && git commit -qm "s2
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+      git reset -q ) >/dev/null 2>&1
+    local stale_base_sha; stale_base_sha=$( cd "$ws" && git rev-parse --short HEAD~2 )
+    check "the checkout itself is NOT behind -- only the reconstruction will be" \
+        $( [[ "$( cd "$ws" && git status --porcelain -- rebuild.txt )" == "" ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git status --porcelain -- rebuild.txt )"
+    ( cd "$ws" && git show HEAD~2:rebuild.txt > recon-stale.txt \
+      && print -r -- "this agent's own rebuilt line" >> recon-stale.txt )
+    out=$( cd "$ws" && zsh "$here" g1 -m "$M" rebuild.txt=recon-stale.txt 2>&1 ); rc=$?
+    check "a content file built on an older revision is refused" \
+        $( [[ $rc == 3 && "$out" == *REBUILD-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it names the revision it was built on, and how far behind that is" \
+        $( [[ "$out" == *"built on ${stale_base_sha}"* && "$out" == *"2 commit(s) to this path since"* ]] && print 1 || print 0 ) "$out"
+    # The whole point of asking BEFORE the content guards: the old answer was a number, plus an
+    # invitation to type it, and typing it drops the two lines the siblings landed.
+    check "the staleness is the complaint, not the removed-line count" \
+        $( [[ "$out" != *"REFUSED (REMOVES-HEAD-LINES)"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git show HEAD:rebuild.txt ) != *"own rebuilt line"* ]] && print 1 || print 0 )
+    # T-1074, and it regressed here twice while this mode was being written. A bare `local x` in a
+    # zsh function whose parameter is already local PRINTS `x=<value>` rather than redeclaring it,
+    # so the second path through any loop above emits a stray assignment line into the refusal --
+    # in a script whose output IS how it reports refusals. One path never shows it; two always do.
+    ( cd "$ws" && git show HEAD~2:rebuild2.txt > recon-stale2.txt \
+      && print -r -- "a second path's own rebuilt line" >> recon-stale2.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" g1b -m "$M" rebuild.txt=recon-stale.txt rebuild2.txt=recon-stale2.txt 2>&1 )
+    check "both stale paths are named, so the loop really did run twice" \
+        $( [[ "$out" == *rebuild.txt* && "$out" == *rebuild2.txt* ]] && print 1 || print 0 ) "$out"
+    # `grep -E`, not a `[[ ]]` glob: `[a-z_]##=` needs EXTENDED_GLOB, which is not set here, so
+    # the glob form matched literally and the check passed against the un-fixed script. Caught by
+    # the mutation control -- which is the entire reason that control exists.
+    check "two paths in one commit emit no stray zsh assignment line (T-1074)" \
+        $( print -r -- "$out" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$out"
+    # THE FALSE-REFUSAL CONTROL, and the reason this can live in the commit path at all. A rebuild
+    # on HEAD that also DELETES a line contains no whole revision, so it reads `cannot-tell` and is
+    # not refused here -- T-984's blind spot, deliberately intact. It still meets REMOVES-HEAD-LINES.
+    ( cd "$ws" && git show HEAD:rebuild.txt | grep -v "rebuild two" > recon-del.txt )
+    out=$( cd "$ws" && zsh "$here" g2 -m "$M" rebuild.txt=recon-del.txt 2>&1 ); rc=$?
+    check "a rebuild ON HEAD that deletes a line is NOT called stale (T-984's bucket is unchanged)" \
+        $( [[ "$out" != *REBUILD-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "it reaches the removed-line count instead, exactly as before" \
+        $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4b4 (T-991) -- --commits-stale must leave something findable afterwards"
+    # Every other deliberate override here leaves a trace somebody has to clear. This one wrote
+    # nothing, so `did anyone knowingly commit a copy behind HEAD, and on which path` -- the
+    # question all four measured instances of T-975 were found by asking -- had no answer at all.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    out=$( cd "$ws" && zsh "$here" g3 -m "$M" --commits-stale rebuild.txt --removes 2 rebuild.txt=recon-stale.txt 2>&1 ); rc=$?
+    check "naming the path in --commits-stale lets the stale rebuild through deliberately" $(( rc == 0 )) "exit $rc: $out"
+    local stale_msg; stale_msg=$( cd "$ws" && git log -1 --format=%B )
+    check "and the commit message carries a Commits-Stale trailer naming the path" \
+        $( [[ "$stale_msg" == *"Commits-Stale: rebuild.txt built-on "* ]] && print 1 || print 0 ) "$stale_msg"
+    check "the trailer carries the BASE sha, so what was skipped can be diffed later" \
+        $( [[ "$stale_msg" == *"built-on $( cd "$ws" && git rev-parse HEAD~3 )"* ]] && print 1 || print 0 ) \
+        "want $( cd "$ws" && git rev-parse HEAD~3 ), message was: $stale_msg"
+    # The trailer must go ABOVE the Co-Authored-By line: that one has to stay last or the script's
+    # own NO-COAUTHOR-TRAILER check would refuse the next commit built from this message.
+    check "the Co-Authored-By line is still the last non-blank line" \
+        $( [[ "$(print -r -- "$stale_msg" | grep -v '^[[:space:]]*$' | tail -1)" == Co-Authored-By:* ]] && print 1 || print 0 ) "$stale_msg"
+    check "git log --grep finds it, which is the question the ticket was about" \
+        $( [[ -n "$( cd "$ws" && git log --grep='^Commits-Stale:' --format=%h )" ]] && print 1 || print 0 )
+    # The control: an ordinary commit must not acquire the trailer, or `--grep` answers everything
+    # and therefore nothing.
+    ( cd "$ws" && print -r -- "an ordinary line" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" g4 -m "$M" mine.txt 2>&1 ); rc=$?
+    check "an ordinary commit carries no Commits-Stale trailer" \
+        $( [[ $rc == 0 && "$( cd "$ws" && git log -1 --format=%B )" != *Commits-Stale* ]] && print 1 || print 0 ) "exit $rc: $out"
+    ( cd "$ws" && git reset -q ) >/dev/null 2>&1
 
     say ""
     say " mode 4c (LEDGER-IDS-LOST) -- a ledger entry HEAD has cannot vanish inside a line count"
