@@ -1475,6 +1475,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   archive into a container and asserts the graph came back — every foreign key resolved, counts
   equal, and a second import of the same file changing nothing.
 
+- [T-1082] **The archive importer has no user-facing entry point.** Taken while landing the engine
+  half of [[T-274]] (`CadenceArchiveImportService` + `CadenceArchiveImportPresentation`). The
+  service validates, plans and applies an archive, and `CadenceArchiveImportSurfaceTests` pins the
+  round trip — but **nothing in either Settings screen calls it**, so a user still cannot restore.
+  What is left is the wiring, and it is deliberately a separate ticket because it is an edit to
+  existing files rather than new ones: a `.fileImporter` beside the exporter in
+  `Cadence/macOS/Views/SettingsDataSafetySection.swift` and `Cadence/iOS/iOSDataExportSettingsSection.swift`,
+  a preview step that shows `CadenceArchiveImportPlan`'s insert/update counts *before* writing,
+  the mode choice (merge vs. restore), and the last sentence of
+  `CadenceDataExportPresentation.description` — "Cadence cannot read an archive back in yet" —
+  which stops being true the moment the wiring lands and must be replaced in the same commit.
+
 - [T-481] **DECIDE: one top-level suite per test file?** Raised and deliberately *not* landed while
   closing [[T-465]]. It would provably stop the sibling-suite risk surface from growing and has zero
   false positives — but it imposes a new authoring rule that **32 existing files already break**, so it
