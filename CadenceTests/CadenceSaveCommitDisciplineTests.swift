@@ -1223,6 +1223,95 @@ struct CadenceSaveCommitDisciplineTests {
         )
     }
 
+    // MARK: - Which type a declaration is filed under (T-1091)
+
+    /// A declaration is filed under the type that **contains** it, and the consequence is
+    /// reachability: a qualified call resolves only when the qualifier is the type the index holds.
+    ///
+    /// Both fixtures are the app's own shape, reduced. `NoteMigrationService` declares a private
+    /// `MigrationTracking` helper above `migrateIfNeeded`, and the reading this replaced —
+    /// *"the last type opened before a `func`"* — filed the entry point under the helper. The
+    /// index then held `MigrationTracking.migrateIfNeeded`, `CadenceArchiveImportService.apply`
+    /// spelled `NoteMigrationService.migrateIfNeeded(`, nothing resolved, and half 3 answered
+    /// "nothing here" over a pending insert it was built to find.
+    ///
+    /// The second `#expect` is the half of the claim that keeps this from being "file it under any
+    /// type in the file": spelling the same call on the nested helper resolves nothing, because
+    /// the helper does not contain the callee either.
+    @Test func aQualifiedCallResolvesToTheTypeThatContainsTheCalleeNotTheOneDeclaredAboveIt() throws {
+        let service = """
+        enum NoteMigrationService {
+            private struct MigrationTracking {
+                var migratedSources: Set<String>
+            }
+
+            static func migrateIfNeeded(in context: ModelContext) {
+                context.insert(Note(title: "migrated"))
+            }
+        }
+        """
+        let caller = """
+        enum CadenceArchiveImportService {
+            static func apply(_ archive: NoteArchive) {
+                NoteMigrationService.migrateIfNeeded(in: modelContext)
+            }
+        }
+        """
+        let onTheHelper = caller.replacingOccurrences(
+            of: "NoteMigrationService.migrateIfNeeded",
+            with: "MigrationTracking.migrateIfNeeded"
+        )
+        let index = existence(over: ["Service.swift": service, "Caller.swift": caller])
+
+        #expect(CadenceSaveCommitRule.declarationTypes(in: service).contains { $0 == ("migrateIfNeeded", "NoteMigrationService") })
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: caller, changing: index) == ["apply"])
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: onTheHelper, changing: index).isEmpty)
+    }
+
+    /// Containment, not proximity, over the **app** — the six nested helper types the mis-filing
+    /// was measured on, and one file that proves the unbalanced-source fallback still works.
+    ///
+    /// A fixture cannot show this. The reading this replaced is wrong only where a file declares a
+    /// nested type *before* a member of its enclosing one, which is a shape you have to go and
+    /// find: 754 of 7,363 declarations across `Cadence/`, one nested helper per file. Named sites
+    /// rather than that count, because the count moves whenever anybody adds a helper struct.
+    ///
+    /// `MarkdownMetadataParser.parseFrontmatter` is the fallback's witness and the reason it is not
+    /// dead code: `MarkdownMetadataSupport.swift` is the one file in 587 whose braces do not
+    /// balance after `codeOnly`, so containment cannot be answered there and the old proximity
+    /// reading is used instead. Delete `bracesBalance(in:)` and this line files eight of that
+    /// parser's methods under nothing.
+    @Test func theAppsNestedHelperTypesNoLongerSwallowTheDeclarationsBelowThem() throws {
+        for (path, name, type) in [
+            ("Cadence/Services/NoteMigrationService.swift", "migrateIfNeeded", "NoteMigrationService"),
+            ("Cadence/Services/DataIntegrityRepairService.swift", "repairIfNeeded", "DataIntegrityRepairService"),
+            ("Cadence/Services/AI/AISettingsManager.swift", "loadAPIKey", "AISettingsManager"),
+            ("Cadence/Services/CadenceDeepLink.swift", "handle", "CadenceDeepLinkManager"),
+            ("Cadence/Services/CadenceUITestScenarioSeed.swift", "seedIfRequested", "CadenceUITestScenarioSeed"),
+            ("Cadence/Services/MarkdownMetadataSupport.swift", "parseFrontmatter", "MarkdownMetadataParser"),
+        ] {
+            let filed = CadenceSaveCommitRule
+                .declarationTypes(in: CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path)))
+                .filter { $0.name == name }
+                .map(\.type)
+            #expect(filed == [type], "\(path):\(name) is filed under \(filed), not [\(type)]")
+        }
+
+        // Non-vacuity from the other side: these six nested helper types own **no** declaration at
+        // all, because every one they used to be credited with is a sibling written below them.
+        // A reader that went back to proximity re-files 50 of them here and this goes red.
+        var swallowed: [String] = []
+        for path in try saveCommitSwiftFiles() {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            for declaration in CadenceSaveCommitRule.declarationTypes(in: code)
+            where ["MigrationTracking", "Key", "Fixture", "RepairStore", "Route", "HabitCompletionState"]
+                .contains(declaration.type) {
+                swallowed.append("\(path):\(declaration.type).\(declaration.name)")
+            }
+        }
+        #expect(swallowed.isEmpty, "\(swallowed) are filed under a nested helper type that does not contain them")
+    }
+
     /// The `presented… =` spelling half 2 gained with T-503, and the reason it is `=(?!=)`: these
     /// sheets are *bound* with `presentedEventNote == nil`, so a needle that read a comparison as
     /// an assignment would report every one of them.
@@ -2435,7 +2524,8 @@ enum CadenceSaveCommitRule {
                 outer.start < inner.start && inner.start < outer.end
             }
         }
-        return zip(zip(found, enclosingTypeNames(in: source, for: found)), nested).map { pair, isNested in
+        let types = enclosingTypeNames(in: source, for: extents.map(\.start))
+        return zip(zip(found, types), nested).map { pair, isNested in
             let (declaration, type) = pair
             return ParsedDeclaration(
                 name: declaration.name,
@@ -2454,6 +2544,16 @@ enum CadenceSaveCommitRule {
         }
     }
 
+    /// `declarations(in:)` paired with the type each one is **filed under** ([[T-1091]]).
+    ///
+    /// `ExistenceIndex` and `SwallowingIndex` are keyed by `(name, type)`, so the attribution is
+    /// not observable from an offender list — a declaration filed under the wrong type simply
+    /// stops being reachable by a qualified call, and the halves that ask go quiet. This is the
+    /// only handle that shows the key itself.
+    static func declarationTypes(in source: String) -> [(name: String, type: String)] {
+        parsedDeclarations(in: source).map { ($0.name, $0.type) }
+    }
+
     private static func callSites(in body: String) -> [(qualifier: String?, callee: String, end: Int)] {
         guard let regex = try? NSRegularExpression(pattern: callSite) else { return [] }
         return regex.matches(in: body, range: NSRange(body.startIndex..., in: body)).compactMap { match in
@@ -2467,25 +2567,100 @@ enum CadenceSaveCommitRule {
         }
     }
 
-    /// The type each declaration is declared in, in the same order.
+    /// The type each declaration is declared **inside**, in the same order — the innermost type
+    /// whose braces contain the declaration's own `func`/`var` keyword ([[T-1091]]).
     ///
-    /// Found by walking the file's type declarations alongside `declarations(in:)`'s own order
-    /// rather than by parsing scopes: a text scan cannot tell a nested type from a sibling, and
-    /// the last type opened before a `func` is the answer in every file in this repository.
-    private static func enclosingTypeNames(
-        in source: String,
-        for declarations: [(name: String, signature: String, body: String)]
-    ) -> [String] {
-        let types = CadenceSourceScan.captures(typeDeclaration, in: source)
-        var names: [String] = []
-        var cursor = source.startIndex
-        for declaration in declarations {
-            let found = source.range(of: declaration.signature, range: cursor..<source.endIndex)
-            let start = found?.lowerBound ?? cursor
-            names.append(types.last { $0.range.lowerBound < start }?.text ?? "")
-            if let found { cursor = found.lowerBound }
+    /// **This used to file a declaration under the last type *declared above* it, and that claim
+    /// — "the last type opened before a `func` is the answer in every file in this repository" —
+    /// was false in 755 of 7,361 declarations, 10.3%.** A nested type is the ordinary way it goes
+    /// wrong: `NoteMigrationService.migrateIfNeeded` was filed under the private
+    /// `struct MigrationTracking` declared ten lines above it inside the same service, and every
+    /// method of `AISettingsManager` sat under its nested `Key` enum.
+    ///
+    /// It is not a cosmetic mis-label, because `ExistenceIndex` and `SwallowingIndex` are keyed by
+    /// name **and** this type: a declaration filed under a type nobody calls it on is unreachable
+    /// by a qualified call, so every one of those 755 was a silent false *negative* in halves 1,
+    /// 2b and 3 — a check answering "nothing here" rather than failing loudly.
+    ///
+    /// Containment is answerable now because `declarationExtents(in:)` already carries character
+    /// offsets ([[T-1078]]); `typeExtents(in:)` gives the types the same shape, and the answer is
+    /// the containing type with the **latest** head — nesting means the innermost one wins.
+    private static func enclosingTypeNames(in source: String, for starts: [Int]) -> [String] {
+        let types = typeExtents(in: source)
+        let balanced = bracesBalance(in: source)
+        return starts.map { start in
+            if let containing = types.lazy
+                .filter({ $0.start < start && start < $0.end })
+                .max(by: { $0.start < $1.start }) {
+                return containing.name
+            }
+            // Nothing contains it. In a file whose braces balance that means **file scope** — a
+            // `fileprivate func` in `Theme.swift`, a top-level `computeUnifiedLayouts`, or a
+            // `protocol` requirement, none of which any qualified call can name. In a file whose
+            // braces do not balance it means the extents cannot be trusted, and the old
+            // proximity reading is the better guess; see `bracesBalance(in:)`.
+            return balanced ? "" : types.last { $0.start < start }?.name ?? ""
         }
-        return names
+    }
+
+    /// Whether every brace in the (already comment- and literal-blanked) source closes.
+    ///
+    /// **Measured, and it is one file in 587.** `CadenceSourceScan.codeOnly` does not understand
+    /// string *interpolation*: on
+    /// `MarkdownMetadataParser.content(_:replacingFrontmatterTags:)` it blanks from the opening
+    /// quote of `"tags: [\(… .map { "` through the quote **inside** the interpolated closure,
+    /// which takes that closure's `{` with it and leaves its `}` behind. The file then reads one
+    /// `}` heavy, `MarkdownMetadataParser` appears to close 140 lines early, and eight of its own
+    /// methods look like file scope.
+    ///
+    /// Containment cannot be answered from text that does not balance, so this half admits it and
+    /// falls back to what the reading before [[T-1091]] did — the nearest type declared above —
+    /// rather than filing eight methods under nothing. Widening `codeOnly` to parse interpolation
+    /// is the real fix and is somebody else's ticket: every sweep in this target reads through it.
+    private static func bracesBalance(in source: String) -> Bool {
+        var depth = 0
+        for character in source {
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth < 0 { return false }
+            }
+        }
+        return depth == 0
+    }
+
+    /// Every `enum`/`struct`/`class`/`actor`/`extension` head in the source, with the character
+    /// range its braces span — the same `(start, end)` shape `declarationExtents(in:)` reports, so
+    /// containment is one comparison.
+    ///
+    /// `start` is the offset of the type keyword and `end` the offset of the brace that closes the
+    /// body. The opening brace is the first `{` at **paren depth zero**, for the reason the
+    /// declaration reader gives: a macro or attribute argument can carry braces of its own. A head
+    /// that never opens a brace is dropped rather than allowed to reach forward for somebody
+    /// else's.
+    private static func typeExtents(in source: String) -> [(name: String, start: Int, end: Int)] {
+        let characters = Array(source)
+        return CadenceSourceScan.captures(typeDeclaration, in: source).compactMap { capture in
+            let head = source.distance(from: source.startIndex, to: capture.range.lowerBound)
+            var index = source.distance(from: source.startIndex, to: capture.range.upperBound)
+            var parenDepth = 0
+            var open: Int?
+            while index < characters.count {
+                let character = characters[index]
+                if character == "(" {
+                    parenDepth += 1
+                } else if character == ")" {
+                    parenDepth = max(0, parenDepth - 1)
+                } else if character == "{", parenDepth == 0 {
+                    open = index
+                    break
+                }
+                index += 1
+            }
+            guard let open else { return nil }
+            return (capture.text, head, blockEnd(in: characters, from: open + 1))
+        }
     }
 
     private static let callSite = "(?:\\b(\\w+)\\s*\\.\\s*)?\\b(\\w+)\\s*\\("

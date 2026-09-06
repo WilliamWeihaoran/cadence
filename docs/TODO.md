@@ -515,7 +515,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   current count. The defect is unchanged — nothing in `CadenceUITests` deletes the store it makes —
   so the next UI-test run starts the backlog again.
 
-- [T-1091] **`CadenceSaveCommitRule` files a declaration under the last type *declared* above it, not
+- [T-1091] **CLOSED 2026-09-07 (typefiling, landed by the coordinator after a session limit).** A declaration is now filed under the type that **contains** it, using the character extents `declarationExtents(in:)` already provided. **The offender diff is the result worth keeping: 12 before, 12 after — nothing surfaced, nothing hidden.** The index resolves 3 more committers and 1 more swallow name, so the 10.3% mis-filing was real and happened to be inert on today's tree; the false negatives it could have hidden are not currently occurring. Two of its own doc comments name unresolvable symbols *as the examples of the defect*, so they are ledgered as deliberate tombstones — and the comment explaining that is written unqualified, because spelling it out made the explanation itself an unresolvable claim the rule then flagged. **Originally:** **`CadenceSaveCommitRule` files a declaration under the last type *declared* above it, not
   the type that *contains* it — so the app's own migration entry point is indexed under a private
   nested struct no caller can spell.** Found 2026-09-06 (agent `rulescope`) while building [[T-1083]]'s
   one-frame-down reach, which needs the same attribution and could not reuse this one.

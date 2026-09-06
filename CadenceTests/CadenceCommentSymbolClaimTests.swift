@@ -655,6 +655,14 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `CadenceListNoteSupport.firstOrCreateNote`",
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `ListNotesView.normalizedFolderPath`",
         "CadenceTests/CadenceNoteTitleSyncSurfaceTests.swift `NoteEditorPane.syncTitleFromH1IfNeeded`",
+        // T-1091. Both are named as *examples of the defect being fixed* — declarations the old
+        // filing attributed to the last type declared above them rather than the type containing
+        // them. The second entry below is the measured case: that method belongs to the
+        // migration service, while the type it is credited to is a private struct declared ten
+        // lines above it. Written unqualified on purpose — spelling it as a qualified claim here
+        // would make this comment an unresolvable claim, which the rule would then flag.
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `MarkdownMetadataParser.parseFrontmatter`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `MigrationTracking.migrateIfNeeded`",
         "CadenceTests/CadenceTasksPanelMetricsTests.swift `TasksPanelCompletedSectionView.allTasks`",
         "CadenceTests/CadenceTodayUnificationTests.swift `CadenceTodayPresentationSupport.overdueSectionTitle`",
         "CadenceTests/CadenceTodayUnificationTests.swift `TasksPanel.taskSections`",
@@ -742,7 +750,7 @@ enum CadenceCommentSymbolClaim {
         #expect(Set(tombstones).isDisjoint(with: Set(stale)))
         #expect(tombstones == tombstones.sorted())
         #expect(stale == stale.sorted())
-        #expect(tombstones.count == 36)
+        #expect(tombstones.count == 38)   // 36 before T-1091 ledgered its two examples
         #expect(stale.count == 0)
     }
 
