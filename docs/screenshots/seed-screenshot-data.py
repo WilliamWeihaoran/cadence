@@ -156,7 +156,7 @@ BACKLOG_TASKS = [
     ("Read the CloudKit conflict-resolution notes", "low", ["research"]),
 ]
 
-DAILY_NOTE = """# Thursday
+DAILY_NOTE = """# {weekday}
 
 Shipping week. The build is green and the only thing between us and review is
 the metadata.
@@ -265,7 +265,11 @@ def main() -> int:
             client.call("create_task", {"title": title, "priority": priority, "tagNames": tags})
             created += 1
 
-        client.call("append_core_note", {"kind": "daily", "content": DAILY_NOTE})
+        # The heading has to be the day the note is dated, not a fixed weekday: the note
+        # page prints "Saturday, September 5" above it, and a hardcoded "# Thursday"
+        # underneath that is the first thing a reviewer notices in a screenshot.
+        daily = DAILY_NOTE.format(weekday=dt.date.today().strftime("%A"))
+        client.call("append_core_note", {"kind": "daily", "content": daily})
         client.call("append_core_note", {"kind": "weekly", "content": WEEKLY_NOTE})
         client.call("append_core_note", {"kind": "permanent", "content": PERMANENT_NOTE})
 
