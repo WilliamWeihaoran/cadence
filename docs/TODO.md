@@ -1552,6 +1552,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`run-ui` as arg 2 enables it) so batches are not blocked. Once authorised, turn it on and it becomes
   the third gate alongside the unit suite and the MCP build.
 
+  **Split into its two halves 2026-09-06 by iosci (see [[T-1080]]), because "no agent can grant it"
+  is now true of only one of them and the ticket reads as though it were true of both.**
+  *The agent half is done.* The one-time macOS automation authorisation this ticket was named for
+  **was granted on 2026-08-31** — `AGENTS.md` and `CLAUDE.md` both say so, and `CadenceUITests` has
+  run to completion locally ever since. What was still silently broken after that was a *second*
+  gate nobody had noticed: the macOS UI-test runner is sandboxed (`HOME` and `TMPDIR` redirected into
+  `…/CadenceUITests.xctrunner/Data/`), so `CADENCE_RUN_INTERACTIVE_UI_TESTS=1` had **no working way
+  to be set** — not by a shell export, not by a `TEST_RUNNER_` build-setting override — and the two
+  interactive tests behind it had, as far as any record shows, never run. That is closed by
+  `CadenceUITestEnvironment.requireInteractiveUITests`'s marker-file channel.
+  *The user half is not "not yet" — it is permanent, and `ci.yml` currently promises otherwise.*
+  That file says `CadenceUITests` "stays local-only **until T-531 is resolved**". Locally T-531 *is*
+  resolved and the job still cannot exist: automation permission lives in the per-machine TCC
+  database and is granted at a GUI password prompt, and a fresh GitHub-hosted runner has nobody to
+  answer it — on every run, for ever, not until someone fixes something. So the honest statement is
+  that `CadenceUITests` is **structurally local-only**, and the two interactive tests inside it need
+  a human to `touch` the marker file for the run they want. Left as a text correction for whoever
+  next edits that comment: it needs a line removal, which this agent's commit path could not take.
+  *Unrelated, noticed in passing and not touched:* the lines immediately below this entry
+  (`docs/TODO.md` 1554-1585 at `HEAD` when this was written) are an **orphaned fragment** — blank
+  lines, then prose starting mid-sentence with "without adding it to `componentNames`" about
+  [[T-533]]/[[T-540]] and `iOSFeatureViews.swift`, which has nothing to do with UI-test
+  authorisation. It sits inside T-531's block and any tool that reads an entry as "up to the next
+  `- [`" will attribute it here. Re-homing it needs a line removal.
+
 
 
 
@@ -2182,6 +2207,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   confirmed via both `ps aux` and `lsof`) — the ticket's own naming of `cadence-g2`/`g3`/`g4-scan` as
   live siblings is now stale; those three no longer exist on this machine.
 
+  **Verified moot 2026-09-06 by iosci, and re-measured.** The headline half is settled: on this
+  machine `/private/tmp/cadence-uitest-auth` **does not exist** — `ls` and `du` both return ENOENT,
+  and a machine-wide `lsof` names zero holders of that path. Nothing was left to reclaim; the 1.4 GB
+  was already taken on 2026-09-04 and the name never held an authorization, as this entry records.
+  The second half has grown rather than shrunk and is **not** something this agent removed. Measured
+  the same day: `/private/tmp` is now **1.6 GB across 585 top-level entries**, of which `cadence-*`
+  alone is **934.7 MB across 25 directories** with **zero `lsof` handles** anywhere in them. One
+  directory is most of it — `cadence-ui-audit-8e66d46` at **696 MB** — and the next eleven are
+  16-30 MB build trees from batches that finished days ago (`cadence-integ19/21/22`,
+  `cadence-r19-r24-*`, `cadence-r25-r30-*`, `cadence-r31-r35-*`, `cadence-r8.85ala5`,
+  `cadence-t739-check`, `cadence-audit-*`, `cadence-requests-*`). Four have today's mtimes
+  (`cadence-mut-mcpwrite` 09:03, `cadence-mut-ipadsurf` 08:50, `cadence-mut-selftest-signal-child`,
+  `cadence-mut-hook2m`) and may belong to live siblings. **Deliberately not deleted**: the standing
+  rule is that an agent cleans only its own scratch, and "zero `lsof` handles" is not the same claim
+  as "no sibling will look at it again". This is a one-line user or coordinator action, not an
+  agent judgement call, and the single 696 MB directory is 74% of the win.
+
 - [T-707] **The iOS build reaches CI only if a human ticks a box, and CI does not run.**
   From [[T-535]]. `.github/workflows/ci.yml` has an `ios-build` job filed under T-535's name, but it
   is gated on `github.event_name == 'workflow_dispatch' && inputs.run_ios`, and the file's own header
@@ -2193,12 +2235,64 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   paths-filter action and the supply-chain surface that brings. **Decide it rather than leaving it in
   a comment**, and note the cost the file records: ~6-10 billed runner-minutes per iOS run.
 
+  **Closed 2026-09-06 in `b86a275b` ([[T-1080]]) — and half the title was already false when it was
+  written.** *"CI does not run"* is stale: Actions is enabled (`gh api …/actions/permissions` →
+  `{"enabled":true}`) and the workflow has been running on push since 2026-08-31. `ci.yml`'s own
+  header says this and warns against re-deriving the old conclusion from the stale paragraph below
+  it; this ticket is a fourth reader who did exactly that. **What was true is the other half**: the
+  `ios-build` job was gated on `workflow_dispatch && inputs.run_ios`, default false, so no push has
+  ever compiled the iOS surface. It now runs on every push and pull request that survives
+  `paths-ignore`.
+  **The `changes`-job filter this ticket asked for was measured and refused, which is the decision it
+  wanted rather than another comment.** Three reasons, all in `ci.yml` at length: (1) it saves less
+  than it looks — of this repository's last 120 commits, 74 survive `paths-ignore` and **46 of those
+  74 (62%) touch a path the iOS build compiles**, so the filter skips 38% of runs; filtering on
+  `Cadence/iOS/` alone would cut that to 20 of 74 but is *wrong*, since 100 of the 105 files there
+  sit behind platform fences and what breaks them is usually an edit to `Cadence/Shared`,
+  `Cadence/Models` or `Cadence/Services` that macOS compiles happily — the exact hole [[T-535]]
+  exists for; (2) the thing being saved is far smaller than this file assumed — a **cold** iOS build
+  in a `git archive HEAD` tree with a private `derivedDataPath` on the user's M3 Pro took **53
+  seconds** (1410 Swift compile tasks, `** BUILD SUCCEEDED **`, 0 errors, 0 warnings), so the
+  "~6-10 billed runner-minutes" quoted above and in the `run_ios` input description was reasoned and
+  is wrong by roughly 3x; and (3) its failure mode is silent — a glob that stops matching does not go
+  red, it goes quiet, which is [[T-535]]'s shape and the unsettable-env-var shape in [[T-531]] all
+  over again. No third-party action was added and `paths-ignore` still makes the large cut.
+
 - [T-1080] **STUB — id taken 2026-09-06 by iosci, working T-707/T-706/T-531.** Reserved for the
   decision T-707 asks for: whether the `ios-build` job runs automatically, and on what. Findings so
   far, all measured: Actions **is** enabled and CI has been green on every push (`gh api
   .../actions/permissions` → `enabled: true`), so T-707's title clause "and CI does not run" is
   stale; and a cold iOS build in an isolated `git archive HEAD` tree takes **53 s**, not the
   ~6-10 min this repository's own `ci.yml` header assumes. Filled in below when the change lands.
+
+  **Filled in and closed 2026-09-06.** The decision landed in `b86a275b`: `ios-build` now also runs
+  on `push` and `pull_request`, the `changes`-job paths filter was refused with the arithmetic
+  written into `ci.yml`, and the reasoning is recorded on [[T-707]] rather than repeated here. Three
+  things are worth keeping separately from that ticket.
+  **The edit is a pure insertion — 45 lines added, 0 removed — and the gate was widened without
+  rewriting a line.** `ios-build`'s condition is a folded (`>-`) block scalar, so appending
+  `|| github.event_name == 'push'` and `|| github.event_name == 'pull_request'` as two new lines
+  folds into one expression (`&&` binds tighter than `||` in GitHub expressions). Confirmed by
+  parsing both revisions and diffing the trees: the **only** semantic difference between them is that
+  one `if:` string. That shape matters while `agent-commit.sh --removes` is user-gated, and it is
+  reusable — a widened `if:` on any folded condition is an append.
+  **`CadenceBuildInvocationHygieneTests` sweeps `ci.yml`** (T-709 taught it `.yml`, and it parses
+  `run:` blocks). Run against the modified file: green, exit 0. Anything editing that workflow should
+  run it; nothing else in `CadenceTests` reads the file.
+  **The two reds at HEAD are not masked, and were confirmed rather than assumed.** Scoped run of the
+  two suites: 54 tests, **52 passed, exactly 2 failed** —
+  `aRefusedColumnCompletionIsReportedOnTheColumnOnceThePopoverIsGone`
+  (`CadenceKanbanColumnLifecycleSurfaceTests.swift:1158`) and
+  `noInsertIsLeftPendingWithNoCommitAnywhereInItsDeclaration`
+  (`CadenceSaveCommitDisciplineTests.swift:216`, offender
+  `Cadence/Services/CadenceUITestScenarioSeed.swift`). `ios-build` compiles and runs no tests, so it
+  cannot go green over them; `macos-tests` is untouched and **will** go red on both as soon as the
+  unpushed commits reach origin. **No `-skip-testing:` was added for either, deliberately** — a named
+  exclusion is how a red becomes furniture.
+  **A consequence worth stating plainly: CI is green today because it has not seen the work.**
+  `origin/main` is at `f11f52c` and local `main` was **11 commits ahead** when this ran. Every green
+  badge in the run history describes a tree without those commits in it, and the first push will be
+  red for the two reasons above. That is the correct outcome, not a regression to chase.
 
 - [T-722] **Drag-to-create has never been observed, and the simulator can now do the gesture.**
   Was item 4 of `docs/device-checks.md`; it left that list in [[T-561]] because `control`'s
