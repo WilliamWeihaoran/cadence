@@ -20,6 +20,9 @@ struct ListTasksView: View {
     /// Set when the store refused a row drop (T-869). The rows are already back where they were by
     /// then, so this tab and this sentence agree.
     @State private var reorderFailureNotice: String? = nil
+    /// Set when a row drop **landed** and the tab's active sort does not show it where it was
+    /// dropped (T-1077). See `TasksListView` for why it is a second flag and not a second value.
+    @State private var reorderOffScreenNotice: String? = nil
 
     private var activeTasks: [AppTask] {
         let sorted = CadenceTaskQuerySupport.openTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
@@ -69,6 +72,14 @@ struct ListTasksView: View {
         List {
             if let reorderFailureNotice {
                 CadenceInlineFailureNotice(text: reorderFailureNotice)
+                    .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+                    .padding(.top, 12)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(.init())
+            }
+            if let reorderOffScreenNotice {
+                CadenceInlineNotice(text: reorderOffScreenNotice, tone: .informational)
                     .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
                     .padding(.top, 12)
                     .listRowBackground(Color.clear)
@@ -197,6 +208,12 @@ struct ListTasksView: View {
             modelContext: modelContext
         )
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        reorderOffScreenNotice = reordered ? CadenceReorderVisibility.notice(
+            droppedID: droppedID,
+            targetID: targetID,
+            in: tasks,
+            sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
+        ) : nil
         return reordered
     }
 

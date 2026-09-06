@@ -389,10 +389,31 @@ enum CadenceTaskQuerySupport {
         todayKey: String,
         sortMode: CadenceTaskSortMode
     ) -> Bool {
+        switch todaySortKeyOrder(lhs, rhs, todayKey: todayKey, sortMode: sortMode) {
+        case .before: return true
+        case .after: return false
+        case .tie: return TaskOrdering.fallbackPrecedes(lhs, rhs)
+        }
+    }
+
+    /// Today's primary sort key: the date-bucket rank, then the user's chosen mode — with the
+    /// `order`-first tie-break held back. See `TaskOrdering.sortKeyOrder` for what `.tie` buys.
+    ///
+    /// **The rank leads, so `.listOrder` is not automatically a tie here (T-1077).** Dragging a
+    /// due-today row past a do-today one crosses a boundary the user cannot switch off, on the one
+    /// page whose default mode is a date mode anyway. Today is therefore the surface where a drop
+    /// can be off screen under *every* mode the chip offers, and the notice has to be asked per
+    /// drop rather than per sort.
+    static func todaySortKeyOrder(
+        _ lhs: AppTask,
+        _ rhs: AppTask,
+        todayKey: String,
+        sortMode: CadenceTaskSortMode
+    ) -> TaskSortKeyOrder {
         let leftRank = todayRank(lhs, todayKey: todayKey)
         let rightRank = todayRank(rhs, todayKey: todayKey)
-        if leftRank != rightRank { return leftRank < rightRank }
-        return sortTasks(lhs, rhs, sortMode: sortMode)
+        if leftRank != rightRank { return .ordered(leftRank < rightRank) }
+        return sortKeyOrder(lhs, rhs, sortMode: sortMode)
     }
 
     /// Every branch ends in `TaskOrdering.fallbackPrecedes`, never in a bare `order` comparison —
@@ -421,32 +442,58 @@ enum CadenceTaskQuerySupport {
     /// and a different case set), but not in the tie-break. This comment used to end "iOS … never
     /// got that. This is the remaining half of that consolidation", directly above five branches
     /// that already called `fallbackPrecedes` — do not pick that up as outstanding work.
+    ///
+    /// **Those five branches are one branch now (T-1077).** The switch moved down into
+    /// `sortKeyOrder`, which answers `.tie` where each branch used to call `fallbackPrecedes`, and
+    /// this function makes that call once. So "every branch ends in the shared tie-break" stopped
+    /// being a property five texts have to keep agreeing about and became a property of the shape.
     static func sortTasks(
         _ lhs: AppTask,
         _ rhs: AppTask,
         sortMode: CadenceTaskSortMode,
         sectionNames: [String]? = nil
     ) -> Bool {
+        switch sortKeyOrder(lhs, rhs, sortMode: sortMode, sectionNames: sectionNames) {
+        case .before: return true
+        case .after: return false
+        case .tie: return TaskOrdering.fallbackPrecedes(lhs, rhs)
+        }
+    }
+
+    /// Where a pair lands on the **mode itself**, before `TaskOrdering.fallbackPrecedes` is
+    /// consulted — this vocabulary's half of `TaskOrdering.sortKeyOrder`, and split out for the
+    /// same reason (T-1077): `.tie` is precisely when the rows on screen are in `order`, so it is
+    /// precisely when a dragged row lands where it was dropped.
+    ///
+    /// The two modes `TaskOrdering` already spells delegate rather than restate, exactly as
+    /// `sortTasks` did before the split — the mapping is `migratedFromMacOSTodaySortField`'s and
+    /// `MobileTaskSortStabilityTests` measures it pair-by-pair.
+    static func sortKeyOrder(
+        _ lhs: AppTask,
+        _ rhs: AppTask,
+        sortMode: CadenceTaskSortMode,
+        sectionNames: [String]? = nil
+    ) -> TaskSortKeyOrder {
         switch sortMode {
         case .listOrder:
             if let sectionNames, lhs.resolvedSectionName != rhs.resolvedSectionName {
-                return sectionRank(lhs.resolvedSectionName, in: sectionNames) < sectionRank(rhs.resolvedSectionName, in: sectionNames)
+                return .ordered(sectionRank(lhs.resolvedSectionName, in: sectionNames) < sectionRank(rhs.resolvedSectionName, in: sectionNames))
             }
-            return TaskOrdering.fallbackPrecedes(lhs, rhs)
+            return .tie
         case .priority:
-            return TaskOrdering.precedes(lhs, rhs, field: .priority, direction: .descending)
+            return TaskOrdering.sortKeyOrder(lhs, rhs, field: .priority, direction: .descending)
         case .doDate:
-            return TaskOrdering.precedes(lhs, rhs, field: .date, direction: .ascending)
+            return TaskOrdering.sortKeyOrder(lhs, rhs, field: .date, direction: .ascending)
         case .dueDate:
             if lhs.dueDate != rhs.dueDate {
-                if lhs.dueDate.isEmpty { return false }
-                if rhs.dueDate.isEmpty { return true }
-                return lhs.dueDate < rhs.dueDate
+                if lhs.dueDate.isEmpty { return .after }
+                if rhs.dueDate.isEmpty { return .before }
+                return .ordered(lhs.dueDate < rhs.dueDate)
             }
-            return TaskOrdering.fallbackPrecedes(lhs, rhs)
+            return .tie
         case .newest:
-            if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
-            return TaskOrdering.fallbackPrecedes(lhs, rhs)
+            if lhs.createdAt != rhs.createdAt { return .ordered(lhs.createdAt > rhs.createdAt) }
+            return .tie
         }
     }
 

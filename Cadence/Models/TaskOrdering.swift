@@ -30,6 +30,26 @@ nonisolated enum TaskSortDirection: String, CaseIterable, Identifiable, Sendable
 
 // MARK: - The comparator
 
+/// Where a pair of tasks lands on a sort's **own** key, with the `order`-first tie-break held back.
+///
+/// The vocabulary the two task comparators — `TaskOrdering.sortKeyOrder` and
+/// `CadenceTaskQuerySupport.sortKeyOrder` — share. It lives here, beside `TaskSortField`, because
+/// `CadenceWidgets` and `CadenceMCPServer` compile `Models/` and not `Shared/`.
+///
+/// `.tie` is the interesting case and the reason the type exists: a tie means the pair is ordered
+/// by `TaskOrdering.fallbackPrecedes`, whose first key is `order`, so inside a tie band the screen
+/// is showing the custom arrangement whatever the sort chip says.
+nonisolated enum TaskSortKeyOrder: Sendable {
+    case before
+    case after
+    case tie
+
+    /// Reads a plain `lhs < rhs` answer as an order. The comparators below are written as a series
+    /// of "if these differ, answer" steps; this keeps each of those steps one line rather than
+    /// three.
+    static func ordered(_ isBefore: Bool) -> TaskSortKeyOrder { isBefore ? .before : .after }
+}
+
 /// The one task ordering. Every macOS task list, the Today widget's timeline, and any future
 /// consumer sort through this type.
 ///
@@ -75,20 +95,49 @@ nonisolated enum TaskOrdering {
     }
 
     /// Returns true if `lhs` should sort before `rhs` under the given field and direction.
+    ///
+    /// The body is `sortKeyOrder` plus one rule — a tie on the field falls through to
+    /// `fallbackPrecedes` — and it is spelled that way rather than inline so that the two questions
+    /// this app asks about a pair cannot drift apart. See `sortKeyOrder` for the second question.
     static func precedes(
         _ lhs: AppTask,
         _ rhs: AppTask,
         field: TaskSortField,
         direction: TaskSortDirection
     ) -> Bool {
+        switch sortKeyOrder(lhs, rhs, field: field, direction: direction) {
+        case .before: return true
+        case .after: return false
+        case .tie: return fallbackPrecedes(lhs, rhs)
+        }
+    }
+
+    /// Where a pair lands on the **field itself**, before `fallbackPrecedes` is consulted.
+    ///
+    /// **Why this is a separate answer (T-1077).** `.tie` is exactly the condition under which the
+    /// displayed sequence *is* the `order` sequence, because `fallbackPrecedes`'s first key is
+    /// `order`. So a row dragged between two rows that tie lands where it was dropped and stays
+    /// there — under `.date` and `.priority` just as much as under `.custom`. A row dragged **across
+    /// a boundary** is the only one that springs back, and it is the only drop the app has anything
+    /// to tell the user about. `CadenceReorderVisibility` is what asks.
+    ///
+    /// `.custom` is `.tie` for every pair by construction: its whole comparison *is* the fallback,
+    /// so nothing is ever off screen there. That is not a special case written in, it is what the
+    /// switch below says.
+    static func sortKeyOrder(
+        _ lhs: AppTask,
+        _ rhs: AppTask,
+        field: TaskSortField,
+        direction: TaskSortDirection
+    ) -> TaskSortKeyOrder {
         switch field {
         case .custom:
-            return fallbackPrecedes(lhs, rhs)
+            return .tie
         case .date:
             let leftDate = dateSortKey(lhs.scheduledDate)
             let rightDate = dateSortKey(rhs.scheduledDate)
             if leftDate != rightDate {
-                return direction == .ascending ? leftDate < rightDate : leftDate > rightDate
+                return .ordered(direction == .ascending ? leftDate < rightDate : leftDate > rightDate)
             }
 
             // Timed work leads untimed work on the same day in *both* directions. Reversing this
@@ -96,21 +145,23 @@ nonisolated enum TaskOrdering {
             // which reads as a bug rather than as a direction.
             let lhsTimed = lhs.scheduledStartMin >= 0
             let rhsTimed = rhs.scheduledStartMin >= 0
-            if lhsTimed != rhsTimed { return lhsTimed }
+            if lhsTimed != rhsTimed { return .ordered(lhsTimed) }
             if lhsTimed, lhs.scheduledStartMin != rhs.scheduledStartMin {
-                return direction == .ascending
-                    ? lhs.scheduledStartMin < rhs.scheduledStartMin
-                    : lhs.scheduledStartMin > rhs.scheduledStartMin
+                return .ordered(
+                    direction == .ascending
+                        ? lhs.scheduledStartMin < rhs.scheduledStartMin
+                        : lhs.scheduledStartMin > rhs.scheduledStartMin
+                )
             }
 
-            return fallbackPrecedes(lhs, rhs)
+            return .tie
         case .priority:
             let lhsRank = lhs.priority.rank
             let rhsRank = rhs.priority.rank
             if lhsRank != rhsRank {
-                return direction == .ascending ? lhsRank < rhsRank : lhsRank > rhsRank
+                return .ordered(direction == .ascending ? lhsRank < rhsRank : lhsRank > rhsRank)
             }
-            return fallbackPrecedes(lhs, rhs)
+            return .tie
         }
     }
 

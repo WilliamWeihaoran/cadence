@@ -36,35 +36,15 @@ struct CadenceInlineFailureNotice: View {
     let text: String
 
     /// Supplied only by a caller whose notice has no next attempt to clear it. `nil` draws the
-    /// bare sentence, which is what the other 43 of 49 call sites want.
+    /// bare sentence, which is what the other 54 of 61 call sites want.
     var onDismiss: (() -> Void)?
 
-    @ViewBuilder
+    /// **The layout moved to `CadenceInlineNotice` (T-1077) and the meaning stayed here.** A second
+    /// notice needed the same line in the same place and the opposite colour, and two structs each
+    /// spelling `Text` + `font` + `foregroundStyle` + `fixedSize` + the dismissal `HStack` is the
+    /// near-copy this component was created to prevent. What this type still owns is the claim that
+    /// the sentence is a *failure*, which is what its 61 call sites are asserting by naming it.
     var body: some View {
-        if let onDismiss {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                sentence
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Theme.red)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.cadencePlain)
-                .accessibilityLabel("Dismiss")
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            sentence
-        }
-    }
-
-    private var sentence: some View {
-        Text(text)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Theme.red)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        CadenceInlineNotice(text: text, tone: .failure, onDismiss: onDismiss)
     }
 }

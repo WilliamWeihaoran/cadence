@@ -24,6 +24,12 @@ struct TasksPanel: View {
     /// without it a refused drop is a row that springs back for no stated reason and comes back
     /// wrong at next launch.
     @State private var reorderFailureNotice: String?
+    /// Set when a row drop **landed** and Today does not show it where it was dropped (T-1077).
+    ///
+    /// Today is the surface where this can happen under *every* mode the Sort chip offers,
+    /// `List Order` included, because `compareTasksForCurrentSort` leads with the date-bucket rank
+    /// and the chip does not reach it — see `CadenceTaskQuerySupport.todaySortKeyOrder`.
+    @State private var reorderOffScreenNotice: String?
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
     @State private var localSortMode: CadenceTaskSortMode = .macOSTodayDefault
@@ -141,6 +147,14 @@ struct TasksPanel: View {
                     modelContext: modelContext
                 )
                 reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+                reorderOffScreenNotice = reordered ? CadenceReorderVisibility.notice(
+                    droppedID: droppedID,
+                    targetID: targetID,
+                    in: scopeTasks,
+                    sortKeyOrder: {
+                        CadenceTaskQuerySupport.todaySortKeyOrder($0, $1, todayKey: todayKey, sortMode: activeSortMode)
+                    }
+                ) : nil
                 return reordered
             }
         )
@@ -210,6 +224,11 @@ struct TasksPanel: View {
     private func todayOverviewSections(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {
         if let reorderFailureNotice {
             CadenceInlineFailureNotice(text: reorderFailureNotice)
+                .padding(.horizontal, TasksPanelMetrics.horizontalInset)
+                .padding(.bottom, 8)
+        }
+        if let reorderOffScreenNotice {
+            CadenceInlineNotice(text: reorderOffScreenNotice, tone: .informational)
                 .padding(.horizontal, TasksPanelMetrics.horizontalInset)
                 .padding(.bottom, 8)
         }

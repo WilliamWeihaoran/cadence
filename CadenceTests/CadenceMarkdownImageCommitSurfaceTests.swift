@@ -293,8 +293,23 @@ struct CadenceMarkdownImageCommitSurfaceTests {
     /// that failed and are cleared by the next press of it. The dismissable form exists for the
     /// six that are not: a notice inside a markdown editing surface, where the next thing the user
     /// does is type, and typing never reaches the door that set it.
+    ///
+    /// **The layout it reads moved to `CadenceInlineNotice` (T-1077)**, which is the same component
+    /// with the colour as a parameter — the reorder off-screen notice needs this exact line in this
+    /// exact place and means the opposite of a failure. `CadenceInlineFailureNotice` is its
+    /// `.failure` spelling and still owns the 61 call sites; every property below is a property of
+    /// the drawing, so it is asked where the drawing is, plus one assertion that the failure
+    /// spelling still hands its dismissal through rather than dropping it.
     @Test func theInlineFailureNoticeDrawsADismissControlOnlyWhenItIsGivenOne() throws {
-        let path = "Cadence/Shared/Components/CadenceInlineFailureNotice.swift"
+        let forwarding = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceInlineFailureNotice.swift")
+        )
+        #expect(
+            forwarding.contains("CadenceInlineNotice(text: text, tone: .failure, onDismiss: onDismiss)"),
+            "the failure spelling drops the caller's dismissal, or draws a second stack of its own"
+        )
+
+        let path = "Cadence/Shared/Components/CadenceInlineNotice.swift"
         let raw = try CadenceSourceScan.sourceFile(path)
         let code = CadenceSourceScan.codeOnly(raw)
         #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters")

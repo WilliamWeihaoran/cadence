@@ -193,24 +193,39 @@ struct MobileTaskSortStabilityTests {
     /// The equivalence above is what makes it safe to delete the copy; this is what keeps it
     /// deleted. A restated branch that happens to still agree would pass the pair sweep forever
     /// — the point of T-669 is that the ordering is spelled once.
+    ///
+    /// **The switch this reads moved down one frame (T-1077).** `sortTasks` is now the tie-break
+    /// half alone — one `case .tie:` calling `TaskOrdering.fallbackPrecedes` — and the five mode
+    /// branches live in `sortKeyOrder`, which answers `.tie` where each of them used to call the
+    /// fallback for itself. So this reads that declaration, and the two delegations it pins are
+    /// `TaskOrdering.sortKeyOrder` rather than `TaskOrdering.precedes`. Same property, same two
+    /// modes, one frame down; the negative assertions are unchanged and are what actually keeps
+    /// the restatement out.
     @Test
     func theDoDateAndPriorityBranchesDelegateRatherThanRestate() throws {
         let source = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskQuerySupport.swift")
         )
-        let body = try #require(CadenceSourceScan.functionBody(named: "sortTasks", in: source))
+        let body = try #require(CadenceSourceScan.functionBody(named: "sortKeyOrder", in: source))
 
         // Non-vacuity: this is the real switch, not a truncated read of it.
         #expect(body.contains("case .listOrder:"))
         #expect(body.contains("case .newest:"))
 
-        #expect(body.contains("TaskOrdering.precedes(lhs, rhs, field: .date, direction: .ascending)"))
-        #expect(body.contains("TaskOrdering.precedes(lhs, rhs, field: .priority, direction: .descending)"))
+        #expect(body.contains("TaskOrdering.sortKeyOrder(lhs, rhs, field: .date, direction: .ascending)"))
+        #expect(body.contains("TaskOrdering.sortKeyOrder(lhs, rhs, field: .priority, direction: .descending)"))
 
         // The restatement is gone rather than merely joined: no branch here reads a start minute
         // or spells a priority comparison of its own.
         #expect(!body.contains("scheduledStartMin"))
         #expect(!body.contains("priorityRank("))
         #expect(!body.contains(".priority !="))
+
+        // And the frame it moved out of really is the tie-break half now, so the delegation above
+        // is what production sorts through rather than a second unused spelling.
+        let sortTasks = try #require(CadenceSourceScan.functionBody(named: "sortTasks", in: source))
+        #expect(sortTasks.contains("sortKeyOrder(lhs, rhs, sortMode: sortMode, sectionNames: sectionNames)"))
+        #expect(sortTasks.contains("case .tie: return TaskOrdering.fallbackPrecedes(lhs, rhs)"))
+        #expect(!sortTasks.contains("case .listOrder:"), "the mode switch is spelled twice")
     }
 }

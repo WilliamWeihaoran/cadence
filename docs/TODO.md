@@ -209,6 +209,15 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Cadence/Shared/CadenceReorderVisibility.swift`, `CadenceTests/CadenceReorderOffScreenNoticeTests.swift`
   and the four edited surfaces are uncommitted working-tree edits. Do not read this entry as shipped —
   it is the exact shape [[T-1085]] and [[T-1054]] both now depend on.
+  **The code landed 2026-09-06 (agent `requeue`, on `dropnotice`'s behalf), which is what the
+  paragraph above was waiting for.** Rebuilt on the HEAD of the day rather than replayed; none of
+  the eight edited files had moved since, so the description above is exactly what landed. The
+  count was `--removes 50`, every line read: the comparator branches moving down a frame,
+  `CadenceInlineFailureNotice`'s layout being replaced by a call to the shared `CadenceInlineNotice`
+  it was factored into, and the two `MobileTaskSortStabilityTests` assertions that named
+  `TaskOrdering.precedes` where the delegation now names `TaskOrdering.sortKeyOrder`. Re-verified:
+  full `CadenceTests` 4,589 tests in 392 suites, 0 failures, 0 warnings on both the macOS and the iOS-simulator
+  destination.
 
 - [T-1087] **The native-picker sweep stops at the macOS Settings folder, and the phone has the same
   screens.** Found while closing [[T-1082]].

@@ -64,6 +64,11 @@ struct TasksListView: View {
     /// then, so the page and this sentence agree — and a row that springs back with nothing said is
     /// indistinguishable from a drop the user simply aimed badly.
     @State private var reorderFailureNotice: String?
+    /// Set when a row drop **landed** and the active sort does not show it where it was dropped
+    /// (T-1077). Deliberately a second flag rather than a second value in `reorderFailureNotice`:
+    /// the two sentences make opposite claims about the store, and the pair is mutually exclusive
+    /// by construction — a refused drop moved nothing, so it can never also be off screen.
+    @State private var reorderOffScreenNotice: String?
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -249,6 +254,11 @@ struct TasksListView: View {
                         .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
                         .padding(.top, 12)
                 }
+                if let reorderOffScreenNotice {
+                    CadenceInlineNotice(text: reorderOffScreenNotice, tone: .informational)
+                        .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+                        .padding(.top, 12)
+                }
                 ForEach(sections(from: visibleTasks)) { section in
                     TasksListSectionView(
                         section: section,
@@ -419,6 +429,12 @@ struct TasksListView: View {
             modelContext: modelContext
         )
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        reorderOffScreenNotice = reordered ? CadenceReorderVisibility.notice(
+            droppedID: droppedID,
+            targetID: targetID,
+            in: scopeTasks,
+            sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
+        ) : nil
         return reordered
     }
 
