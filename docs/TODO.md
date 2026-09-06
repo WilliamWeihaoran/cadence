@@ -163,6 +163,47 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   scope at all. **A duplicate of this was drafted as T-1079 with the wrong offender named; do not file it.**
 
 - [T-1077] **RESERVED 2026-09-06 (agent `decide`) — the drag-under-a-non-custom-sort rule that [[T-1054]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+  **Body, 2026-09-06 (agent `dropnotice`). Built and green — 4,536 tests, zero new failures, zero
+  warnings on both the macOS and the iOS-simulator destination — and the code commit needs
+  `--removes 50`, which is user-gated, so this entry may land ahead of it.** The rule is: show a
+  notice when, and only when, the dropped row and its target do **not** tie on the active sort key.
+  Not a refusal ([[T-1054]]'s proposal), because the gesture works and is visible in the common
+  case; not `CadenceOrderCommit.failureNotice`, because nothing failed — the store took the move and
+  `order` now says what the user asked it to say.
+  **`CadenceReorderVisibility.offScreenNotice` is the sentence:** *"Moved, but this sort doesn't show
+  it there."* It names no sort mode on purpose — the same arrangement is labelled `Custom`
+  (`TaskSortField`) on All Tasks and a list's Tasks tab, and `List Order` (`CadenceTaskSortMode`) on
+  Today since [[T-606]], so a sentence naming either would be wrong on the other screen.
+  **What made the predicate possible is a split, and it is the diff's whole weight.** The primary
+  key came out of both comparators into `TaskOrdering.sortKeyOrder` and
+  `CadenceTaskQuerySupport.sortKeyOrder`, each answering `.before` / `.after` / `.tie`, with
+  `precedes` and `sortTasks` rebuilt as *that plus one rule* — a tie falls through to
+  `fallbackPrecedes`. So `.tie` cannot drift away from "the display is showing the `order`
+  sequence"; it is the same switch, read once.
+  `CadenceReorderOffScreenNoticeTests.theSplitKeyRecomposesIntoTheComparatorExactly` measures the
+  recomposition over every ordered pair of a probe set — both vocabularies, every field, direction
+  and mode — rather than reading it off the shape. Four mutations, all killed: firing on a tie,
+  never firing, `.custom` ceasing to be a tie, and Today's bucket rank dropped from the key.
+  **Today is the case that proves the condition is per drop and not per sort.**
+  `TasksPanel.compareTasksForCurrentSort` leads with `CadenceTaskQuerySupport.todayRank`, which no
+  chip setting removes, so a drop there can be off screen under **every** mode Today offers —
+  `List Order` included. A per-sort rule would have been silent on the app's busiest drop surface.
+  **Deliberately not wired: the two kanban card drops** — [[T-1085]].
+  **Filed as:** **[[T-1054]]'s premise is false, and the honest fix is per drop.**
+
+- [T-1085] **The two kanban card drops have no off-screen notice.** [[T-1077]]'s change wires the
+  three row surfaces that renumber `AppTask.order` from a drop — Today, All Tasks/Inbox, and a
+  list's Tasks tab — and leaves the two card drops alone. Both can put a card where the board's sort
+  will not show it, for exactly the same reason and with the same fix
+  (`CadenceReorderVisibility.notice` plus a `CadenceInlineNotice` on the `.informational` tone), and
+  both need plumbing the row surfaces did not. `TaskListKanbanColumn` in
+  `Cadence/macOS/Views/KanbanListColumnView.swift` has `sortField` and `sortDirection` already but
+  draws its notice inside a narrow column. `ListSectionKanbanColumn` in
+  `Cadence/macOS/Views/KanbanSectionColumnView.swift` has no sort field at all — its host sorts for
+  it, in `sortedTasksForSection` in `Cadence/macOS/Views/KanbanListSectionSupportViews.swift` — and
+  funnels every notice through `columnFailureNotice`, whose shape
+  `CadenceKanbanColumnLifecycleSurfaceTests` pins with an exact regex. Not a defect found in use;
+  read off the source while wiring the row half.
 
 - [T-1075] **`main` is red a SECOND way, and it is not [[T-1073]]: `CadenceGuardScriptSelftestTests`
   fails at HEAD because the test names a `mutate.sh` refusal that `mutate.sh` does not make.**
