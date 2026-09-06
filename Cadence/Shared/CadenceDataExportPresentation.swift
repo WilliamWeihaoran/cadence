@@ -8,11 +8,12 @@ import UniformTypeIdentifiers
 /// `.fileExporter` is the one SwiftUI spelling that works on both, and this repo already avoids
 /// blocking `NSSavePanel.runModal()` in the note export flow for the same reason.
 ///
-/// `init(configuration:)` **decodes** rather than throwing. Nothing imports an archive yet, but the
-/// type is the only place a reader can be spelled once, and a document that can read what it writes
-/// is what makes the round trip assertable at the value level — which is the evidence a future
-/// import path has to start from. Reading a file is not restoring it; see
-/// `CadenceDataExportService`'s note and `docs/TODO.md` T-274.
+/// `init(configuration:)` **decodes** rather than throwing, which is what made the round trip
+/// assertable at the value level before there was an importer to assert it against. There is one
+/// now (T-274/T-1082) and it does *not* come through here: `CadenceArchiveImportFlow` reads the
+/// picked URL itself, because a `FileDocument` hands a view bytes and the import needs a plan
+/// first. This type is still the export's writer and still the shortest proof that what Cadence
+/// writes is what `CadenceDataExportService.decode` reads.
 nonisolated struct CadenceArchiveDocument: FileDocument {
     nonisolated static var readableContentTypes: [UTType] { [.json] }
 
@@ -41,16 +42,23 @@ nonisolated struct CadenceArchiveDocument: FileDocument {
 ///
 /// The reset already works this way (`PrivacyDataResetOutcome.accountAndDataStatusMessage`) and for the reason
 /// T-19 names: a data-safety control has to say plainly what it does, and copy written twice is
-/// copy that comes to say two things. In particular the last sentence of `description` — that an
-/// archive cannot be read back in yet — is not a caveat a view may drop.
+/// copy that comes to say two things. In particular the last sentence of `description` is not a
+/// caveat a view may drop — though **what it has to say changed in T-1082**, when the import
+/// shipped. It used to read "Cadence cannot read an archive back in yet", and that stopped being
+/// true; `CadenceRetiredCopyTests` now refuses the old sentence anywhere in the app. What replaced
+/// it is the fact that outlived it: `CadenceArchiveImportService` adds and never deletes, so the
+/// file is still not a rewind on its own. `CadenceArchiveImportPresentation.neverDeletesNote`
+/// carries the same fact in full, beside the button that acts on it; this is the one-clause
+/// version, read at the moment a user decides whether the file is a safety net.
 nonisolated enum CadenceDataExportPresentation {
     static let title = "Export an Archive"
 
     static let description = """
         One JSON file holding every task, list, note, goal, habit, tag, saved link and image \
         Cadence stores, readable in any text editor. Keep it somewhere outside Cadence: automatic \
-        backups live inside the app and are deleted when Cadence's data is. Cadence cannot read an \
-        archive back in yet, so this is a copy to keep, not a restore point.
+        backups live inside the app and are deleted when Cadence's data is. Import an Archive reads \
+        one back in — but an import adds and never deletes, so this file is a copy to keep rather \
+        than, on its own, a rewind to the day you exported it.
         """
 
     static let buttonTitle = "Export Archive"

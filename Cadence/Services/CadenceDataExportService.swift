@@ -17,12 +17,15 @@ import SwiftData
 /// `AppTask.calendarEventID`) that must not be dropped because there is no `SchemaMigrationPlan`.
 /// This exporter is currently their only reader.
 ///
-/// **Export only, deliberately.** The archive *decodes* — `CadenceArchive` is `Codable` in both
-/// directions and a round trip is pinned by `CadenceDataExportSurfaceTests` — but nothing applies a
-/// decoded archive to a live store, because a restore into a CloudKit-synced container is not a
-/// local operation: writing 4,000 rows back re-uploads them to every other device, and re-using the
-/// original `id`s means the merge policy, not the user, decides which copy of a row wins. See
-/// `docs/TODO.md` T-274 for what an import has to settle before it can be trusted.
+/// **Export only until T-274/T-1082; not any more.** This was "export only, deliberately", on the
+/// ground that a restore into a CloudKit-synced container is not a local operation: writing 4,000
+/// rows back re-uploads them to every other device, and re-using the original `id`s means the merge
+/// policy, not the user, decides which copy of a row wins. Both concerns were settled rather than
+/// waived. `CadenceArchiveImportService` keeps the ids *because* of the second one — a re-import is
+/// then a no-op instead of a second copy, which is the property a retried restore needs — and the
+/// re-upload is the honest cost of a cross-device restore rather than a defect. This file stays the
+/// writer; the reader is over there, and `CadenceArchiveImportSurfaceTests` pins the round trip
+/// through a live store rather than only through the encoder.
 ///
 /// **Relationships are stored as ids, not by nesting.** A task carries `areaID`; an area does not
 /// carry its tasks. That keeps the document a flat set of tables — every row appears exactly once,

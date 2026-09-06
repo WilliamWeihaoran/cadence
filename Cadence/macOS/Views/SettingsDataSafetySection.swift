@@ -36,6 +36,12 @@ struct SettingsDataSafetySection: View {
             // Keeping a copy comes before destroying one, on the screen as well as in the reading
             // order: this card is the only route to data that outlives the app.
             SettingsDataExportCard(onExport: prepareArchiveExport)
+            // …and reading one back comes directly after keeping it, because the two are halves of
+            // the same promise and a user who has just been told to keep a file elsewhere should
+            // see, in the same breath, what Cadence can do with it. Above the Backups card
+            // deliberately: those copies live inside the container and die with the app, so the
+            // archive is the route that answers "I lost the device", and it reads first.
+            SettingsArchiveImportCard()
             SettingsDataResetCard(
                 statusMessage: statusMessage,
                 onDeleteData: { isConfirmingDataDelete = true }

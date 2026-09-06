@@ -185,6 +185,7 @@ struct CadenceArchiveImportEntryPointTests {
             CadenceArchiveImportPresentation.confirmButtonTitle,
             CadenceArchiveImportPresentation.cancelButtonTitle,
             CadenceArchiveImportPresentation.neverDeletesNote,
+            CadenceArchiveImportPresentation.modeQuestion,
             CadenceArchiveImportPresentation.planSummary(plan),
             CadenceArchiveImportPresentation.successMessage(outcome),
             CadenceArchiveImportPresentation.failureMessage("disk full"),
@@ -194,7 +195,12 @@ struct CadenceArchiveImportEntryPointTests {
             shown.append(CadenceArchiveImportPresentation.modeExplanation(mode))
         }
 
-        #expect(shown.count >= 14, "the sweep only looked at \(shown.count) strings")
+        for row in CadenceArchiveImportPresentation.modeRows() {
+            shown.append(row.title)
+            if let subtitle = row.subtitle { shown.append(subtitle) }
+        }
+
+        #expect(shown.count >= 19, "the sweep only looked at \(shown.count) strings")
         for sentence in shown {
             #expect(
                 !sentence.lowercased().contains("restore"),
@@ -215,6 +221,39 @@ struct CadenceArchiveImportEntryPointTests {
         #expect(note.contains("cannot roll Cadence back"))
         #expect(note.contains("delete Cadence's data first"))
         #expect(note.contains("import into the empty store"))
+    }
+
+    /// The chooser puts **both** consequences on screen at once, which the segmented control it
+    /// replaced could not: that control had room for two titles and nothing else, so
+    /// `modeExplanation` could only ever describe the mode already chosen and the cost of the other
+    /// one was invisible until you had taken it. Each row now carries its own explanation.
+    @Test func theModeChooserShowsWhatEachChoiceCostsBeforeItIsMade() {
+        let rows = CadenceArchiveImportPresentation.modeRows()
+        #expect(rows.count == CadenceArchiveImportMode.allCases.count)
+        #expect(rows.map(\.value) == CadenceArchiveImportMode.allCases)
+
+        for row in rows {
+            #expect(row.title == CadenceArchiveImportPresentation.modeTitle(row.value))
+            #expect(row.subtitle == CadenceArchiveImportPresentation.modeExplanation(row.value))
+        }
+        // Distinct rows, not two spellings of one: identity is derived from `value`, so a chooser
+        // whose two options collapsed would draw one row.
+        #expect(Set(rows.map(\.id)).count == rows.count)
+    }
+
+    /// And it is not a `Picker`. `SettingsSharedVocabularyTests` sweeps macOS Settings for
+    /// `.pickerStyle(` — a segmented control on the Mac is AppKit's bezel and AppKit's accent — but
+    /// that sweep's corpus is `Cadence/macOS/Views/*Settings*` only, so the phone's identical copy
+    /// of this sheet was outside it. This is the half that watches iOS.
+    @Test func neitherArchiveImportSurfaceDrawsANativePicker() throws {
+        for path in [
+            "Cadence/macOS/Views/SettingsArchiveImportCard.swift",
+            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(!code.contains(".pickerStyle("), "\(path) draws a native Picker again")
+            #expect(code.contains("ChoicePopoverList("), "non-vacuity: \(path) lost the shared chooser")
+        }
     }
 
     /// Each mode says what happens to a row that already exists, in the words the counts use.
@@ -397,6 +436,61 @@ struct CadenceArchiveImportEntryPointTests {
         #expect(CadenceArchiveImportPresentation.entityTitle("Branch") == "Branches")
     }
 
+    // MARK: - Both platforms reach it, once each
+
+    /// The [[T-161]] test for this ticket, and the one that would have caught the state this
+    /// suite's first two thirds shipped in: `SettingsArchiveImportCard` and
+    /// `iOSArchiveImportSettingsSection` existed, compiled, and were mounted **nowhere**, so every
+    /// value assertion above passed over a control no user could see. Delete either mount and this
+    /// fails; nothing else in the target would, because a view is not a call and iOS's section is
+    /// invisible to a macOS-built test target.
+    @Test func bothPlatformsMountTheImportCardOnTheirDataSafetyScreen() throws {
+        try Self.expectMountSites(
+            of: "SettingsArchiveImportCard",
+            at: ["Cadence/macOS/Views/SettingsDataSafetySection.swift": 1]
+        )
+        try Self.expectMountSites(
+            of: "iOSArchiveImportSettingsSection",
+            at: ["Cadence/iOS/iOSSettingsView.swift": 1]
+        )
+    }
+
+    /// And each mount is beside the export it is the other half of, rather than filed under some
+    /// unrelated settings category. Ordering, not merely presence: keep-a-copy reads before
+    /// read-one-back, and both read before the control that deletes everything.
+    @Test func eachImportCardSitsBetweenTheExportAndTheDelete() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift")
+        )
+        let macExport = try #require(mac.range(of: "SettingsDataExportCard(")).lowerBound
+        let macImport = try #require(mac.range(of: "SettingsArchiveImportCard(")).lowerBound
+        let macReset = try #require(mac.range(of: "SettingsDataResetCard(")).lowerBound
+        #expect(macExport < macImport && macImport < macReset)
+
+        let phone = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift")
+        )
+        let phoneExport = try #require(phone.range(of: "iOSDataExportSettingsSection(")).lowerBound
+        let phoneImport = try #require(phone.range(of: "iOSArchiveImportSettingsSection(")).lowerBound
+        let phoneReset = try #require(phone.range(of: "iOSDataResetSettingsSection(")).lowerBound
+        #expect(phoneExport < phoneImport && phoneImport < phoneReset)
+    }
+
+    /// The scan is not vacuous. Without this, a wrong repository root makes every count above read
+    /// an empty string and pass by finding nothing at all.
+    @Test func theImportMountScanReadsTheRealFiles() throws {
+        let mac = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift")
+        #expect(mac.contains("struct SettingsDataSafetySection"), "non-vacuity: wrong file")
+        let phone = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift")
+        #expect(phone.contains("iOSDataResetSettingsSection()"), "non-vacuity: wrong file")
+
+        // Comments are stripped before counting, so a mount named only in prose — a tombstone
+        // paragraph, a "see also", a commented-out call — is not read as a mount.
+        let commentedOut = CadenceSourceScan.strippingComments("// SettingsArchiveImportCard()\nlet a = 1")
+        #expect(!commentedOut.contains("SettingsArchiveImportCard"))
+        #expect(commentedOut.contains("let a = 1"), "the stripper ate the code as well")
+    }
+
     // MARK: - Fixtures
 
     /// A plan with the shape the surface reads, without a store behind it. The counts are the
@@ -422,5 +516,26 @@ struct CadenceArchiveImportEntryPointTests {
             .appendingPathComponent("cadence-import-fixture-\(UUID().uuidString).json")
         try outcome.data.write(to: url)
         return url
+    }
+
+    // MARK: - Reading the app's own source
+
+    /// Through `CadenceSourceScan` rather than a fourth hand-rolled stripper in this target. Its
+    /// blanking-not-deleting rule is what `eachImportCardSitsBetweenTheExportAndTheDelete` needs:
+    /// the offsets it compares still mean what they mean in the file on disk.
+    fileprivate static func expectMountSites(
+        of name: String,
+        at mountSites: [String: Int],
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) throws {
+        for (path, expected) in mountSites {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            let actual = code.components(separatedBy: "\(name)(").count - 1
+            #expect(
+                actual == expected,
+                "\(path) mounts \(name) \(actual) times, expected \(expected)",
+                sourceLocation: sourceLocation
+            )
+        }
     }
 }

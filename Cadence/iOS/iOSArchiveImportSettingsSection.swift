@@ -101,19 +101,41 @@ private struct iOSArchiveImportPreviewSheet: View {
     let onCancel: () -> Void
     let onConfirm: () -> Void
 
+    @State private var isChoosingMode = false
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     iOSSettingsCard {
                         VStack(alignment: .leading, spacing: 10) {
-                            Picker("", selection: $mode) {
-                                ForEach(CadenceArchiveImportMode.allCases, id: \.self) { candidate in
-                                    Text(CadenceArchiveImportPresentation.modeTitle(candidate)).tag(candidate)
+                            HStack(spacing: 12) {
+                                Text(CadenceArchiveImportPresentation.modeQuestion)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Theme.text)
+
+                                Spacer(minLength: 12)
+
+                                // `iOSChoiceValueButton` is `CadenceChoiceValueButton`; the Mac's
+                                // half of this sheet spells it the other way and draws the same
+                                // control. Not `Picker(.segmented)`, which is what both had —
+                                // see `CadenceArchiveImportPresentation.modeRows()`.
+                                iOSChoiceValueButton(
+                                    title: CadenceArchiveImportPresentation.modeTitle(mode),
+                                    color: Theme.blue,
+                                    minHeight: CadenceSettingsRowMetrics.rowHeight
+                                ) {
+                                    isChoosingMode = true
+                                }
+                                .popover(isPresented: $isChoosingMode) {
+                                    iOSChoicePopoverList(
+                                        rows: CadenceArchiveImportPresentation.modeRows(),
+                                        selection: $mode,
+                                        isPresented: $isChoosingMode,
+                                        width: 300
+                                    )
                                 }
                             }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
 
                             Text(CadenceArchiveImportPresentation.modeExplanation(mode))
                                 .font(.system(size: 12))

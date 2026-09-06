@@ -121,6 +121,19 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         """,
         stillAllowedIn: ["Cadence/macOS/Views/SettingsDataSafetySection.swift"]
     ),
+    CadenceRetiredPhrase(
+        "cannot read an archive back in yet",
+        retiredBy: "T-1082",
+        why: """
+        True from T-19 until the moment the importer was wired to both Data Safety screens, and \
+        the export card said it on every launch in between. It is retired rather than merely \
+        edited because the shape of the mistake outlives the sentence: a promise about what \
+        Cadence *cannot* do ages the instant someone makes it possible, and this one was pinned by \
+        a test that would have kept it honest and current at the same time only by accident. The \
+        fact it carried is not retired — an import adds and never deletes — and \
+        `CadenceDataExportPresentation.description` says that instead.
+        """
+    ),
 ]
 
 // MARK: - The sweep

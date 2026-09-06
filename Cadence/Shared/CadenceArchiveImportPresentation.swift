@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftData
+import SwiftUI
 
 /// Every user-facing word the archive **import** shows, on both platforms, in one place — and the
 /// small state machine that drives it, for the same reason.
@@ -55,6 +56,37 @@ nonisolated enum CadenceArchiveImportPresentation {
         switch mode {
         case .mergeKeepingExistingRows: return "Add what's missing"
         case .restoreOverwritingExistingRows: return "Overwrite what matches"
+        }
+    }
+
+    /// The label beside the chooser. A question about the archive's collisions, because the two
+    /// answers only differ on a record the destination already has — a reader who has none is
+    /// choosing between two identical imports and should be able to see that from the label.
+    static let modeQuestion = "If a record is already here"
+
+    /// The chooser's rows, here rather than at the two call sites, for this file's whole reason:
+    /// a mode whose consequence is spelled twice is a mode that comes to mean two things.
+    ///
+    /// **Not `Picker(.segmented)`, which is what this was.** A segmented control is AppKit's on the
+    /// Mac — its own bezel, its own accent, no palette colour — and `SettingsSharedVocabularyTests`
+    /// sweeps macOS Settings for exactly that. The app already had the replacement:
+    /// `CadenceChoiceValueButton` over a `CadenceChoicePopoverList`, the same swap T-20 made for the
+    /// work-hours window. It is the better control here for a second reason — a segmented control
+    /// has room for a title and nothing else, so `modeExplanation` could only be shown for the mode
+    /// *already* chosen, and the cost of the other one was invisible until you picked it. As rows,
+    /// both consequences are on screen at the moment of choosing.
+    /// `@MainActor` because `CadenceChoiceRow` is: the rows are the only members of this
+    /// otherwise `nonisolated` enum that build a UI value rather than a `String`.
+    @MainActor
+    static func modeRows() -> [CadenceChoiceRow<CadenceArchiveImportMode>] {
+        CadenceArchiveImportMode.allCases.map { mode in
+            CadenceChoiceRow(
+                value: mode,
+                title: modeTitle(mode),
+                subtitle: modeExplanation(mode),
+                systemImage: mode == .mergeKeepingExistingRows ? "plus.circle" : "arrow.triangle.2.circlepath",
+                color: Theme.blue
+            )
         }
     }
 

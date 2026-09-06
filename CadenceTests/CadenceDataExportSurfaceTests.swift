@@ -433,9 +433,24 @@ struct CadenceDataExportSurfaceTests {
 
     /// The one sentence a user needs before treating the archive as a safety net. It is in the
     /// shared copy so a view cannot quietly drop it while keeping the rest.
-    @Test func theCopyAdmitsThereIsNoImportYet() {
-        #expect(CadenceDataExportPresentation.description.contains("cannot read an archive back in yet"))
-        #expect(CadenceDataExportPresentation.description.contains("outside Cadence"))
+    ///
+    /// **What it says changed in [[T-1082]].** It used to read "Cadence cannot read an archive back
+    /// in yet", and this test pinned that clause — correctly, right up to the commit that shipped
+    /// the importer and made it false. The fact underneath survived the sentence that carried it:
+    /// `CadenceArchiveImportService` adds and never deletes, so an archive is still a copy to keep
+    /// rather than a rewind, and *that* is what the last sentence now has to say. The retired
+    /// wording is refused app-wide by `CadenceRetiredCopyTests`, so it cannot come back here while
+    /// this test watches only the replacement.
+    @Test func theCopySaysWhatAnArchiveCanAndCannotDo() {
+        let description = CadenceDataExportPresentation.description
+        #expect(description.contains("outside Cadence"))
+        #expect(!description.contains("cannot read an archive back in yet"), "the importer shipped in T-1082")
+        // The importer is named, so the reader knows the file has a route back in…
+        #expect(description.contains("Import an Archive"))
+        // …and the correction is in the same breath, so "there is an import" is never read as
+        // "there is an undo".
+        #expect(description.contains("adds and never deletes"))
+        #expect(description.contains("rewind"))
         #expect(CadenceDataExportPresentation.localBackupLocationNote.contains("inside Cadence's own container"))
     }
 

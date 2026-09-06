@@ -13,9 +13,11 @@ import UniformTypeIdentifiers
 /// automatic copies do not answer "what if I lose the phone" for either platform.
 ///
 /// The archive it writes is `CadenceDataExportService`'s, the same bytes macOS writes, and every
-/// word on this card is `CadenceDataExportPresentation`'s — including the sentence saying Cadence
-/// cannot read an archive back in yet, which is the part a user has to know before treating this
-/// as a safety net.
+/// word on this card is `CadenceDataExportPresentation`'s — including the last sentence, which is
+/// the part a user has to know before treating this as a safety net. Until T-1082 that sentence
+/// said Cadence could not read an archive back in at all; `iOSArchiveImportSettingsSection` sits
+/// directly below this card now, and what the sentence says instead is that an import adds and
+/// never deletes, so the file is still not a rewind by itself.
 ///
 /// One view for both size classes: iPhone and iPad differ in the width this is handed, not in how
 /// a card or a button inside it looks.
