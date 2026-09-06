@@ -100,6 +100,20 @@ nonisolated enum CadenceArchiveImportService {
         return try makePlan(archive, mode: mode, against: destination)
     }
 
+    /// The same preview, from the bytes a file importer hands back.
+    ///
+    /// Exists so a surface can show a plan without owning a decoder: the entry point in Settings
+    /// has a `URL` and nothing else, and a view that reached for `CadenceDataExportService.decode`
+    /// itself would be a second place that knows the document format. Throws everything
+    /// `decode(_:)` and `plan(_:mode:in:)` throw, and writes nothing either way.
+    nonisolated static func plan(
+        _ data: Data,
+        mode: CadenceArchiveImportMode = .mergeKeepingExistingRows,
+        in modelContext: ModelContext
+    ) throws -> CadenceArchiveImportPlan {
+        try plan(CadenceDataExportService.decode(data), mode: mode, in: modelContext)
+    }
+
     /// Apply an archive to `modelContext` and commit once.
     ///
     /// The caller owns the unit of work and must be willing to have this context rolled back; see
