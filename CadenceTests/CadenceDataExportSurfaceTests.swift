@@ -479,6 +479,10 @@ struct CadenceDataExportSurfaceTests {
         let mentions = try exportFilesMentioning("CadenceDataExportService")
         #expect(
             mentions == [
+                // T-274: the importer reads what this writes, so it names the exporter for its
+                // decoder and its `formatVersion` — one document format, one reader, one writer.
+                // It is not a *second* export: `CadenceArchiveImportService` never encodes.
+                "Cadence/Services/CadenceArchiveImportService.swift",
                 "Cadence/Services/CadenceDataExportService.swift",
                 "Cadence/Shared/CadenceDataExportPresentation.swift",
                 // T-813/T-817: the terminal recovery screen is a *third* export caller, deliberately
