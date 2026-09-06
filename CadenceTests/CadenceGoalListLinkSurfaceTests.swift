@@ -458,6 +458,36 @@ struct CadenceGoalListLinkSurfaceTests {
             guard count > 0 else { continue }
             offenders.append("\(path):\(count)")
         }
+        // **The archive importer constructs one too, and it is an exception rather than a
+        // seventh hand-spelling of "attach a list".** What `GoalLinkTarget.makeLink(for:)` exists
+        // to make unspellable-wrong is the *choice* between `area` and `project`; the importer
+        // makes no choice. It restores rows, in two passes, because a link's goal and list may
+        // arrive later in the same archive than the link does: pass one builds every row bare and
+        // copies scalars, pass two resolves ids into relationships. `makeLink(for:)` needs a live
+        // `Goal` and an already-resolved target, so it is not available at construction time and
+        // would not be the right call if it were — a restore that re-derived which list a link
+        // pointed at would be authoring, not restoring.
+        //
+        // So the exemption is the *empty* construction, asserted as such. The importer may write
+        // `GoalListLink()` and nothing else; the day it writes `GoalListLink(goal:area:)` it has
+        // started spelling the invariant by hand and this goes red.
+        #expect(
+            offenders.contains("Cadence/Services/CadenceArchiveImportService.swift:1"),
+            "the importer no longer constructs a link — delete this exemption: \(offenders)"
+        )
+        offenders.removeAll { $0 == "Cadence/Services/CadenceArchiveImportService.swift:1" }
+        let importer = try strippingComments(sourceFile("Cadence/Services/CadenceArchiveImportService.swift"))
+        #expect(
+            importer.matchCount(ofPattern: "(?<![A-Za-z0-9_])GoalListLink\\(\\)") == 1,
+            "the importer's link construction is no longer the argument-less one"
+        )
+        // And the relationships really are set in pass two, which is the reason the construction
+        // can be empty: without this the assertion above would also pass on an importer that
+        // simply lost the goal and the list.
+        #expect(importer.contains("model.goal = record.goalID.flatMap { destination.goals[$0] }"))
+        #expect(importer.contains("model.area = record.areaID.flatMap { destination.areas[$0] }"))
+        #expect(importer.contains("model.project = record.projectID.flatMap { destination.projects[$0] }"))
+
         #expect(offenders == ["Cadence/Shared/GoalListLinkHelpers.swift:2"])
     }
 

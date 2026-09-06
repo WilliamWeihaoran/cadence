@@ -326,6 +326,39 @@ struct CadenceHabitCompletionDuplicateTests {
             #expect(scanned.contains(reached), "the scan never reached \(reached)")
         }
 
+        // **The archive importer constructs one too, and it is an exception because it is
+        // restoring a row rather than recording a check-in.** What the store owns is the *toggle*:
+        // one row per habit-day, every duplicate for that day taken when the day is cleared. That
+        // decision needs a live `Habit` and a store to query, and an import has neither at
+        // construction time — its rows carry ids and `createdAt` values that must survive, and the
+        // habit each one hangs off is resolved in the importer's second pass.
+        //
+        // A merge *can* still land a second row on a day the destination already has, which is not
+        // a hole this exemption opens: `DataIntegrityRepairService` collapses duplicate habit-days
+        // at every launch, and `aSyncedDuplicateIsCollapsedByTheStartupRepair` is that path. What
+        // the exemption must not become is a second toggle, so it is stated as the shape rather
+        // than the name — the importer may construct with `date:` alone, and the habit must arrive
+        // through the wiring pass. `HabitCompletion(date:habit:)` here would be red.
+        #expect(
+            constructing.remove("CadenceArchiveImportService.swift") != nil,
+            "the importer no longer constructs a completion — delete this exemption"
+        )
+        let importer = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceArchiveImportService.swift")
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"HabitCompletion\(date: record\.date\)"#, in: importer) == 1,
+            "the importer's construction is no longer the date-only one"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"HabitCompletion\([^)]*habit:"#, in: importer) == 0,
+            "the importer now sets the habit at construction instead of in the wiring pass"
+        )
+        #expect(
+            importer.contains("model.habit = record.habitID.flatMap { destination.habits[$0] }"),
+            "the importer stopped wiring the habit, so its rows belong to nobody"
+        )
+
         #expect(constructing == ["CadenceHabitCompletionStore.swift"])
     }
 
@@ -419,6 +452,38 @@ struct CadenceHabitCompletionDuplicateTests {
         for reached in ["Habit.swift", "HabitCompletion.swift", "CadenceHabitCompletionStore.swift", "DataIntegrityRepairService.swift"] {
             #expect(scanned.contains(reached), "the scan never reached \(reached)")
         }
+
+        // **The archive importer assigns one too, and it is the frontier this test's premise
+        // now has.** Everything above is still true of anything the *app* can write: the
+        // initializer takes no `count`, so every construction is `1`, and `collapseDuplicates`
+        // takes a `max` over rows that are all already `1`. What has changed is that a store can
+        // now be handed a quantity from outside — an archive exported from a device whose rows
+        // arrived by sync — and a restore has to put back what it was given rather than flattening
+        // it to `1`, which would silently lose a day the user did complete.
+        //
+        // Stated as the shape, so it cannot widen into a second author of quantities: the
+        // importer's one write is a verbatim copy of the archived value. A computed count here
+        // would be red.
+        //
+        // **This does not close [[T-391]] — it is the case T-391 predicted.** The advice in
+        // `aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent` below is that an import
+        // should *fold* a day's split rows into one row's `count` before inserting them, and the
+        // importer does not do that yet. Filed as [[T-1086]].
+        #expect(
+            assigning.remove("CadenceArchiveImportService.swift") != nil,
+            "the importer no longer assigns a row's count — delete this exemption"
+        )
+        let importer = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceArchiveImportService.swift")
+        )
+        #expect(
+            CadenceSourceScan.matchCount(Self.countAssignmentNeedle, in: importer) == 1,
+            "the importer gained a second write to a row's count"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"model\.count = record\.count"#, in: importer) == 1,
+            "the importer's count is no longer a verbatim copy of the archived value"
+        )
 
         #expect(assigning == ["CadenceHabitCompletionStore.swift"])
         let store = CadenceSourceScan.strippingComments(

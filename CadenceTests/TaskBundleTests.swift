@@ -631,6 +631,12 @@ struct TaskBundleTests {
             "Cadence/Services/CadenceDataExportService.swift": [
                 "\"TaskBundle\""
             ],
+            // The importer reads the same schema-entity key the exporter writes, in the
+            // per-table validation errors and the destination index. Technical, not vocabulary:
+            // it names a SwiftData entity in a diagnostic, and never reaches a surface.
+            "Cadence/Services/CadenceArchiveImportService.swift": [
+                "\"TaskBundle\""
+            ],
             "Cadence/iOS/iOSBundleInspectorHost.swift": [
                 "\"No iOSBundleInspectorHost above this view — the block panel cannot open\""
             ],

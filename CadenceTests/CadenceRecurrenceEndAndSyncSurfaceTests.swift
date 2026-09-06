@@ -72,6 +72,9 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(
             endCountReaders == [
                 "Cadence/Models/AppTask.swift",
+                // The exporter's mirror. Writes the field, and only as a verbatim restore of
+                // what the archive holds — the assertion for that is below the loop.
+                "Cadence/Services/CadenceArchiveImportService.swift",
                 // Reads the field to copy it into the archive, and only that — see above.
                 "Cadence/Services/CadenceDataExportService.swift",
                 "Cadence/Shared/CadenceTaskMutationSupport.swift",
@@ -100,6 +103,30 @@ struct CadenceRecurrenceEndSurfaceTests {
                 )
             }
         }
+
+        // **The importer is the exporter's mirror, and it buys the other half: write, and only as
+        // a verbatim copy.** The exception is granted on the same ground T-19's was — an archive is
+        // a complete copy of `CadenceSchema`, and a restore that skipped these three would hand
+        // back a store in which every recurring task repeats forever, which is this invariant's own
+        // defect arriving by the other door. `applyRecurrenceEnd` is not the call to make here and
+        // would be wrong if it were: it normalizes off-mode fields and propagates across the
+        // series, so restoring a hundred rows through it would overwrite each with the last one
+        // read, and an archived series whose members legitimately differ would come back uniform.
+        //
+        // So the capability is spelled out and asserted, not merely permitted: each of the three
+        // assignments must be `model.<field> = record.<field>`, and the importer must not reach for
+        // the workflow. A computed end date here — anything that is not a copy — is red.
+        let importer = try strippingComments(sourceFile("Cadence/Services/CadenceArchiveImportService.swift"))
+        for field in ["recurrenceEndModeRaw", "recurrenceEndDate", "recurrenceEndCount"] {
+            #expect(
+                importer.contains("model.\(field) = record.\(field)"),
+                "the importer's \(field) is no longer a verbatim restore of the archived value"
+            )
+        }
+        #expect(
+            !importer.contains("applyRecurrenceEnd"),
+            "the importer restores rows one at a time; the workflow would propagate across the series"
+        )
     }
 
     /// All three modes, reachable. The iOS picker is built from `allCases` rather than a typed-out

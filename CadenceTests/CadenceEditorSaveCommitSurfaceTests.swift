@@ -1032,6 +1032,44 @@ struct CadenceEditorSaveCommitSurfaceTests {
         // Non-vacuity: the walker really enumerated the app tree rather than returning nothing.
         #expect(filesRead > 400, "the walker read \(filesRead) Swift files under Cadence/")
 
+        // **The archive importer is the one other call site, and the exception is its
+        // *context*, not its name.** `commitEdit`'s doc says why `rollback()` is not offered to an
+        // editor: this is the app's single `ModelContext`, so a refused rename would discard the
+        // note someone is typing behind the popover. `importArchive(_:mode:into:)` hands `apply` a
+        // `ModelContext(container)` it built on the spot, so there is no unrelated pending work in
+        // reach — and an import is the one write with no smaller undo, having inserted rows across
+        // a dozen tables and, in `.restoreOverwritingExistingRows`, rewritten fields on rows that
+        // were already there. `commitInsert` cannot undo the second half; only `rollback()` can.
+        //
+        // Written as the reason rather than the name, so it retires itself: the three assertions
+        // below are that the context really is fresh, that there is exactly one rollback in
+        // `apply`, and that it rethrows. Point the importer at the shared context — or let it
+        // swallow the error — and this goes red instead of quietly staying excused.
+        #expect(
+            callSites.removeValue(forKey: "Cadence/Services/CadenceArchiveImportService.swift") == 1,
+            "the importer's rollback moved or multiplied: \(callSites)"
+        )
+        let importer = try scanned("Cadence/Services/CadenceArchiveImportService.swift")
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"apply\(archive, mode: mode, in: ModelContext\(container\)\)"#,
+                in: importer
+            ) == 1,
+            "the import no longer runs on a context of its own, so its rollback has a blast radius"
+        )
+        let applyBody = try #require(
+            CadenceSourceScan.functionBody(named: "apply", in: importer),
+            "could not find apply() in the archive importer"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: applyBody) == 1,
+            "the importer's rollback is no longer the one in apply()"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"modelContext\.rollback\(\)\s+throw error"#, in: applyBody) == 1,
+            "the importer rolls back and does not rethrow — a failed import would report success"
+        )
+
         #expect(
             callSites == ["Cadence/Shared/CadencePendingChangePersistence.swift": 2],
             "rollback() moved or gained a call site: \(callSites)"
