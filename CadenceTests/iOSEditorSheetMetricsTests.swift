@@ -283,4 +283,136 @@ struct iOSEditorSheetMetricsTests {
             "the block title still names its own size"
         )
     }
+
+    // MARK: - Where the regular arm can actually be reached (T-731)
+
+    /// **The `true` arm of `gutter(isRegularWidth:)` — the one figure on this enum that varies — is
+    /// not reached on either target device, and what this pins is the *reason*, not the reading.**
+    ///
+    /// T-731 measured three note/event editors rendering their compact branch at 834pt and stopped
+    /// there. The cause is not about those three: a plain `.sheet` on iPad is a form sheet, a form
+    /// sheet is ~577pt wide however wide the host is, and UIKit hands anything that narrow a
+    /// **compact** horizontal size class. So the arm is unreachable for every surface presented that
+    /// way — which, at the time of writing, is **all seventeen files below**: the task inspector,
+    /// both calendar sheets, both tracking editors, both AI review sheets, the shared note-editor
+    /// header and the three editors T-731 named. Not three surfaces, all of them.
+    ///
+    /// Two things would wake it up, and this test watches for exactly those two:
+    ///
+    /// 1. **`.presentationSizing` or `.presentationDetents`.** Neither appears anywhere under
+    ///    `Cadence/`, which is what makes "a plain `.sheet`" true rather than assumed.
+    /// 2. **A `.fullScreenCover`.** A cover on iPad *is* regular width. There are two in this chain,
+    ///    both named below, and both present `iOSNoteEditorCover` — the one note editor that reads
+    ///    no size class and none of this enum's ramps.
+    ///
+    /// It deliberately does **not** assert that the regular branches still exist. Deleting them is
+    /// one of the two resolutions T-731 leaves open, and a test that blocked it would be picking the
+    /// other one. Widening a presentation is the change that has to be noticed, because it turns a
+    /// branch nobody has ever seen into one every iPad draws.
+    @Test func everySurfaceThatReadsTheEditorSheetRampsIsPresentedAsAPlainSheet() throws {
+        /// Every file that reads a ramp on `iOSEditorSheetMetrics` with a live flag, plus every file
+        /// that presents one of the views that do.
+        let chain = [
+            "Cadence/iOS/iOSAINoteActionsViews.swift",
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
+            "Cadence/iOS/iOSCalendarInspectorView.swift",
+            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/iOS/iOSCalendarView.swift",
+            "Cadence/iOS/iOSCaptureRadialMenu.swift",
+            "Cadence/iOS/iOSEventNoteEditorSheet.swift",
+            "Cadence/iOS/iOSFeatureViews.swift",
+            "Cadence/iOS/iOSMarkdownReferenceSupport.swift",
+            "Cadence/iOS/iOSNoteEditorSheetHeader.swift",
+            "Cadence/iOS/iOSNotesView.swift",
+            "Cadence/iOS/iOSSearchView.swift",
+            "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/iOS/iOSTaskInspectorHost.swift",
+            "Cadence/iOS/iOSTrackingEditorComponents.swift",
+            "Cadence/iOS/iOSTrackingEditorSheets.swift"
+        ]
+
+        /// The two covers in the chain, and the single editor behind both of them.
+        let coversOfTheNoteEditor = [
+            "Cadence/iOS/iOSCaptureRadialMenu.swift",
+            "Cadence/iOS/iOSNotesView.swift"
+        ]
+
+        /// Non-vacuity, per file: the thing that put it on the list. A presenter names the editor it
+        /// presents; a declaration names the ramp it reads.
+        let needles = [
+            "Cadence/iOS/iOSAINoteActionsViews.swift": "iOSAISummaryReviewSheet(",
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift": "iOSEventNoteEditorSheet(",
+            "Cadence/iOS/iOSCalendarInspectorView.swift": "iOSCalendarEventEditSheet(",
+            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": "iOSCalendarEventEditSheet(",
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": "iOSEditorSheetMetrics.gutter(",
+            "Cadence/iOS/iOSCalendarView.swift": "iOSCalendarQuickCreateSheet(",
+            "Cadence/iOS/iOSCaptureRadialMenu.swift": "iOSCalendarQuickCreateSheet(",
+            "Cadence/iOS/iOSEventNoteEditorSheet.swift": "iOSNoteEditorSheetHeader(",
+            "Cadence/iOS/iOSFeatureViews.swift": "iOSHabitEditorSheet(",
+            "Cadence/iOS/iOSMarkdownReferenceSupport.swift": "iOSLinkedNoteEditorSheet(",
+            "Cadence/iOS/iOSNoteEditorSheetHeader.swift": "iOSEditorSheetMetrics.gutter(",
+            "Cadence/iOS/iOSNotesView.swift": "iOSEventNoteEditorSheet(",
+            "Cadence/iOS/iOSSearchView.swift": "iOSCalendarEventEditSheet(",
+            "Cadence/iOS/iOSTaskDetailSheet.swift": "iOSTaskInspectorMetrics.sheetGutter(",
+            "Cadence/iOS/iOSTaskInspectorHost.swift": "iOSTaskDetailSheet(",
+            "Cadence/iOS/iOSTrackingEditorComponents.swift": "iOSEditorSheetMetrics.gutter(",
+            "Cadence/iOS/iOSTrackingEditorSheets.swift": "iOSTrackingEditorShell("
+        ]
+
+        for path in chain {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+
+            let needle = try #require(needles[path], "no non-vacuity needle for \(path)")
+            #expect(code.contains(needle), "non-vacuity: \(path) no longer contains \(needle)")
+
+            #expect(
+                CadenceSourceScan.matchCount(#"presentationSizing"#, in: code) == 0,
+                "\(path) asks for a sheet size — the regular ramp may now be live on iPad, re-read T-731"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"presentationDetents"#, in: code) == 0,
+                "\(path) asks for sheet detents — re-measure the sheet's width before trusting T-731"
+            )
+
+            let covers = CadenceSourceScan.matchCount(#"\.fullScreenCover\("#, in: code)
+            if coversOfTheNoteEditor.contains(path) {
+                #expect(
+                    covers == 1,
+                    "\(path) presents \(covers) covers, not the one note-editor cover — re-read T-731"
+                )
+                #expect(
+                    code.contains("iOSNoteEditorCover("),
+                    "\(path)'s cover no longer presents the note editor"
+                )
+            } else {
+                #expect(
+                    covers == 0,
+                    "\(path) presents an editor full-screen, which on iPad is regular width — re-read T-731"
+                )
+            }
+        }
+
+        // The one editor presented full-screen reads none of the ramps this enum owns, which is why
+        // a cover in the chain is not a counterexample to the claim above.
+        let notes = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift")
+        )
+        #expect(notes.contains("struct iOSNoteEditorCover: View"))
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSEditorSheetMetrics\.gutter\("#, in: notes) == 0,
+            "the full-screen note editor's file now reads the editor-sheet gutter ramp"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSNoteEditorSheetHeader\("#, in: notes) == 0,
+            "the full-screen note editor's file now draws the ramped editor-sheet header"
+        )
+
+        // The detector is not blind: it tells the two presentations apart, and sees the modifiers
+        // whose absence the loop is asserting.
+        #expect(CadenceSourceScan.matchCount(#"\.fullScreenCover\("#, in: ".sheet(item: $x) { }") == 0)
+        #expect(CadenceSourceScan.matchCount(#"\.fullScreenCover\("#, in: ".fullScreenCover(item: $x) { }") == 1)
+        #expect(CadenceSourceScan.matchCount(#"presentationSizing"#, in: ".presentationSizing(.page)") == 1)
+        #expect(CadenceSourceScan.matchCount(#"presentationDetents"#, in: ".presentationDetents([.large])") == 1)
+    }
 }

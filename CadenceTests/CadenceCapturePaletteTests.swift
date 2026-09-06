@@ -920,6 +920,109 @@ struct CadenceCapturePaletteTests {
         #expect(CadenceCaptureSeedResolver.seed(for: .drop, dropKey: "", todayKey: todayKey) == tapped)
         #expect(tapped == CadenceTaskComposerSeed())
     }
+
+    // MARK: - T-491: how far the scrim reaches, and why that is a placement consequence
+
+    /// **The scrim under an open palette dims the container its host is mounted in, and on iPad
+    /// that container is the detail pane rather than the window.**
+    ///
+    /// `iPadMacStyleRootShell` hard-sizes `detail()` and `.clipped()`s it, deliberately: the split
+    /// guarantees `sidebar + detail == window`, and the clip is what stops a pane that insists on
+    /// more room than it was given from putting the app's navigation off screen. The iPad's capture
+    /// host is mounted **per page** — `iOSFloatingCreateTaskLayer` applies `.iOSCaptureHost(_:)`,
+    /// and pages live inside `detail()` — so the scrim's `.ignoresSafeArea()` reaches for the window
+    /// and gets the pane. An open palette dims the page and leaves the sidebar bright. On iPhone the
+    /// host is mounted on `iOSCompactRootShell`, above both the pages and the tab bar, and nothing
+    /// in that file clips anything, so the same scrim covers the whole screen including the bar.
+    ///
+    /// **Neither extent was chosen.** Both fall out of where the host had to be mounted to keep the
+    /// palette's arc unclipped: a 46pt tab-bar row cannot contain the arc, so the phone's host went
+    /// to the shell; a page's bottom-trailing corner can, which is what T-282's
+    /// `theCornerPalettesTilesFitInsideTheButtonsOwnCornerInset` measures. That is what makes T-491
+    /// a placement-versus-capability judgement rather than a bug.
+    ///
+    /// **T-491's decision is to keep the page-scoped scrim**, for two reasons that are about the
+    /// design rather than about effort. (1) The interaction is `@State` **per page** by an
+    /// explicitly reasoned decision — several pages are alive at once on iPad and only the one under
+    /// the finger may open a composer — so a window-wide scrim needs either window-wide interaction
+    /// state, which reverses that decision, or a second scrim driven through the environment, which
+    /// is a second thing that can disagree with the first. (2) The overlay `.allowsHitTesting(false)`
+    /// on both shells, so the extent is **visual only**: the sidebar is exactly as reachable during
+    /// an open palette as the phone's tab bar is. Nothing about capability differs between them.
+    ///
+    /// What this pins is the mechanism, not the pixels: move either host, drop the clip, or let the
+    /// overlay start taking touches, and this goes red so T-491 is re-read rather than silently
+    /// re-decided.
+    @Test func theIPadPalettesScrimIsClippedToTheDetailPaneItIsMountedIn() throws {
+        let shell = try strippingComments(sourceFile("Cadence/iOS/iOSRootSidebar.swift"))
+        let root = try cadenceFunctionBody("struct iPadMacStyleRootShell<Content: View>: View", in: shell)
+        let body = try cadenceFunctionBody("var body: some View", in: root)
+
+        // The detail pane's own modifier chain, from the content closure to the `zIndex` that ends
+        // it. Scoped rather than searched file-wide, because the sidebar beside it clips too.
+        let detailCall = try #require(body.range(of: "detail()"), "the shell no longer calls detail()")
+        let chainEnd = try #require(
+            body.range(of: ".zIndex(0)", range: detailCall.upperBound..<body.endIndex),
+            "the detail pane's chain no longer ends at .zIndex(0)"
+        )
+        let detailChain = String(body[detailCall.upperBound..<chainEnd.lowerBound])
+
+        #expect(
+            detailChain.contains(".frame(width: detailWidth"),
+            "non-vacuity: the detail pane is no longer hard-sized, so there may be nothing left to clip"
+        )
+        #expect(
+            detailChain.contains(".clipped()"),
+            "the detail pane no longer clips — an iPad palette's scrim may now reach the sidebar, re-read T-491"
+        )
+
+        // Non-vacuity for the scoping itself: the sidebar's chain clips as well, so a file-wide or
+        // body-wide `contains` would pass whatever happened to the detail pane's own chain.
+        let sidebarChain = String(body[body.startIndex..<detailCall.lowerBound])
+        #expect(
+            sidebarChain.contains(".clipped()"),
+            "non-vacuity: the second .clipped() this assertion is scoped away from is gone"
+        )
+
+        // And the shell owns no capture state, so there is nothing at window level for a
+        // window-wide scrim to read. This is the half a fix would have to change.
+        #expect(shell.contains("iOSCaptureInteraction") == false)
+        #expect(shell.contains(".iOSCaptureHost(") == false)
+
+        // The iPad's host is inside a page, and its interaction is per page on purpose.
+        let corner = try strippingComments(sourceFile("Cadence/iOS/iOSFloatingCreateTaskButton.swift"))
+        let layer = try cadenceFunctionBody(
+            "private struct iOSFloatingCreateTaskLayer: ViewModifier",
+            in: corner
+        )
+        #expect(layer.contains("@State private var interaction = iOSCaptureInteraction("))
+
+        // The phone's host is on the shell, and nothing in that file clips.
+        let compact = try strippingComments(sourceFile("Cadence/iOS/iOSCompactTabShell.swift"))
+        let compactRoot = try cadenceFunctionBody("struct iOSCompactRootShell: View", in: compact)
+        #expect(compactRoot.contains(".iOSCaptureHost("))
+        #expect(
+            compact.contains(".clipped()") == false,
+            "the compact shell now clips something above its capture host — re-read T-491"
+        )
+
+        // The scrim asks for the whole screen and the overlay takes no touches. Together those are
+        // what make the difference above visual only.
+        let menu = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
+        let overlay = try cadenceFunctionBody("struct iOSCaptureRadialMenuOverlay: View", in: menu)
+        let scrim = try cadenceFunctionBody("private var scrim: some View", in: overlay)
+        #expect(scrim.contains("Theme.scrim"))
+        #expect(
+            scrim.contains(".ignoresSafeArea()"),
+            "the scrim stopped reaching past its container's safe area — re-read T-491"
+        )
+
+        let overlayBody = try cadenceFunctionBody("var body: some View", in: overlay)
+        #expect(
+            overlayBody.contains(".allowsHitTesting(false)"),
+            "the palette overlay now takes touches, so its scrim's extent is a capability difference between the two shells, not a visual one — re-read T-491"
+        )
+    }
 }
 
 // MARK: - Source access

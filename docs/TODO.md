@@ -914,6 +914,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `iOSCalendarQuickCreateSheet.swift:342-357` should consume the shared Calendar authorization
   presentation. Real, but iOS is not the v1 distribution channel — **parked behind macOS work.**
 
+  **CLOSED 2026-09-06 as still parked**, which is the outcome rather than a deferral of one. The
+  parking condition was re-read against HEAD and it holds, on two documents that are not this
+  ticket: `docs/apple-release-readiness.md` still says iOS/iPadOS is "built, not distributed … no
+  iOS build is submitted to any channel today", and `docs/app-store-submission-packet.md` still
+  declares `Platforms: macOS` with a `cadence-macos` SKU and an explicit note that it says nothing
+  about iOS on purpose. The finding itself is unchanged and still true —
+  `iOSCalendarQuickCreateSheet.calendarSection` branches on `calendarManager.isAuthorized` alone, so
+  `.restricted` and `.writeOnly` both render the same "Calendar access is needed" prompt with an
+  "Allow Calendar Access" button that a restricted device can never satisfy. **Reopen the day iOS
+  becomes a channel**, which `apple-release-readiness.md` already instructs its reader to do.
+
 - [T-809] **Two sweeps outside [[T-808]]'s product-tree boundary are still unpinned.** The R19
   audit counted them; `CadenceRealTreeSweepManifest.txt` deliberately does not, because its rule is
   "walks Swift source under `Cadence`/`CadenceWidgets`/`CadenceMCPServer`" and neither does.
@@ -1603,6 +1614,37 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the page and leaves the sidebar bright**; on iPhone the shell-level host dims everything including the
   tab bar. The scrim's `.ignoresSafeArea()` is a no-op inside that clip. Placement-vs-capability
   judgement, so it needs a decision rather than a fix.
+
+  **CLOSED 2026-09-06 — decided: keep the page-scoped scrim. Mechanism verified and pinned.**
+  The clip is real at HEAD: `iPadMacStyleRootShell` renders `detail()` with
+  `.frame(width: detailWidth, height:)` then `.clipped()`, and the iPad's capture host is mounted
+  **per page** by `iOSFloatingCreateTaskLayer`, i.e. inside that clip. The phone's is mounted on
+  `iOSCompactRootShell`, and that file contains **no `.clipped()` at all**. So the scrim's
+  `.ignoresSafeArea()` reaches for the window on both shells and gets the window on one of them.
+  **Neither extent was ever chosen**, which is the thing this ticket was missing. Both fall out of
+  where the host had to be mounted to keep the palette's arc unclipped: a 46pt tab-bar row cannot
+  contain the arc, so the phone's host went to the shell and its scrim covers everything as a side
+  effect; a page's bottom-trailing corner can contain it, which is what [[T-282]]'s
+  `theCornerPalettesTilesFitInsideTheButtonsOwnCornerInset` measures, so the iPad's host stayed on
+  the page. The asymmetry is a consequence of the arc, not a decision about dimming.
+  **Kept, for two reasons that are about the design rather than the effort.** (1) The interaction is
+  `@State` **per page** by an explicitly reasoned decision — several pages are alive at once on iPad
+  and only the one under the finger may open a composer, which is what the old
+  `CadenceTaskDropCoordinator` routing existed to arrange. A window-wide scrim needs either
+  window-wide interaction state, reversing that, or a second scrim driven through the environment,
+  which is a second thing that can disagree with the first. (2) `iOSCaptureRadialMenuOverlay` is
+  `.allowsHitTesting(false)` on both shells, so the difference is **visual only**: the sidebar is
+  exactly as reachable during an open palette as the phone's tab bar is, and the palette is on
+  screen only while a finger is held down. Nothing about capability differs, which is what makes
+  this a placement judgement that can be answered rather than a gap that has to be filled.
+  Pinned by `CadenceCapturePaletteTests/theIPadPalettesScrimIsClippedToTheDetailPaneItIsMountedIn`,
+  which asserts the mechanism and not the pixels: the detail pane's **own** modifier chain clips
+  (scoped between `detail()` and its `.zIndex(0)`, because the sidebar beside it clips too — the
+  test says so and checks the sidebar's clip as its own non-vacuity), the shell owns no
+  `iOSCaptureInteraction` and applies no `.iOSCaptureHost(`, the corner layer owns the interaction,
+  the compact shell applies the host and clips nothing, the scrim still asks for `.ignoresSafeArea()`
+  and the overlay still takes no touches. Move either host, drop the clip, or let the overlay start
+  hit-testing, and it goes red so this decision is re-read rather than silently reversed.
 
 
 
@@ -2504,6 +2546,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   device-dependent outcome above. (3) Deleting the branches throws away [[T-281]] / [[T-283]] /
   [[T-492]] and buys nothing a wider presentation does not also buy.
   So: full-screen on iPad for these three, then re-measure — **not** `.page`, and **not** a deletion.
+
+  **CLOSED 2026-09-06 — pinned rather than deleted, and the claim narrowed to what is verified.**
+  Re-verified against HEAD from source, not inherited from the 2026-09-02/03 readings:
+  `presentationSizing` and `presentationDetents` appear **nowhere under `Cadence/`**, and the only
+  three `.fullScreenCover(`s under `Cadence/iOS/` — `iOSCaptureRadialMenu`, `iOSListNotesView`,
+  `iOSNotesView` — all present `iOSNoteEditorCover`, which reads none of this enum's ramps. So every
+  surface that reads a ramp on `iOSEditorSheetMetrics` **with a live flag** is presented as a plain
+  `.sheet`; a plain `.sheet` on iPad is a form sheet; UIKit hands a form sheet a **compact**
+  horizontal size class. That is **seventeen files**, not the three this ticket measured — the task
+  inspector, both calendar sheets, both tracking editors, both AI review sheets, the shared note
+  editor header and the three editors named above, plus the six files that present them.
+  **"Dead on the target devices" is the claim, and it is weaker than "dead".** The target list is
+  iPhone 15, iPad Pro 11" and MacBook Pro 14": the phone is compact at every orientation, the iPad
+  presents these editors only as form sheets, and the Mac never compiles `Cadence/iOS/` at all.
+  Landscape and a 13-inch iPad are **still unobserved** and the rotate tooling is still missing, so
+  nothing here settles the 768pt question this ticket raised. What is settled is narrower and
+  sufficient: **no presentation in the tree today can reach the branch on a device anyone has**, and
+  the trait override that makes that true was measured once, at 834pt, on three of the seventeen.
+  **No deletion, deliberately.** The recommendation above — widen the three editors' presentation
+  rather than delete their regular arms — is untouched and still open as a design call; a test that
+  asserted the regular branches still exist would be quietly picking the other resolution. So the
+  pin watches the **two changes that would wake the arm up** instead: a `.presentationSizing` or
+  `.presentationDetents` anywhere in the chain, and a `.fullScreenCover` anywhere but the one note
+  editor that is allowed to have one (a cover on iPad **is** regular width).
+  Pinned by `iOSEditorSheetMetricsTests/everySurfaceThatReadsTheEditorSheetRampsIsPresentedAsAPlainSheet`
+  — 17 files, each with a per-file non-vacuity needle so a renamed or emptied file fails rather than
+  passes, plus four detector checks that the scan tells `.sheet` from `.fullScreenCover` and sees the
+  two modifiers whose absence it is asserting.
+  **Mutation-tested 2026-09-06, four mutations, four killed**, each by the intended assertion and no
+  other: `.presentationSizing(.page)` on `iOSCalendarView`'s quick-create (line 369),
+  `.presentationDetents([.large])` on `iOSTaskInspectorHost` (373), `.sheet` → `.fullScreenCover` on
+  `iOSCalendarInspectorView`'s event editor (389), and a **second** cover in `iOSNotesView` (380) —
+  the last one proving the one-cover allowance is for the note editor specifically and not for any
+  cover in that file. Suite green at HEAD: 20 tests, 0.26s, 0 compile errors, 0 Swift warnings.
 
 - [T-732] **`docs/device-checks.md`'s keyboard-dismiss item rests on a premise that is false on this
   fleet.** It says the simulator suppresses the software keyboard while a Mac keyboard is attached.
