@@ -157,6 +157,103 @@ struct MarkdownImageDropAffordanceTests {
         #expect(textView.registeredDraggedTypes.contains(.fileURL))
     }
 
+    // MARK: - Whether Cadence's registration can take a drag type away (T-511)
+
+    /// The editor's text view, in a real `NSWindow`, because **the offscreen fixture above cannot
+    /// see the behaviour these three tests are about** and that is the whole reason [[T-511]] sat
+    /// open. With no window, `NSTextView` never runs its own `updateDragTypeRegistration`, so
+    /// every measurement taken there shows only what Cadence registered and nothing about what
+    /// AppKit would have.
+    ///
+    /// `defer: true` and never ordered on screen: nothing here needs the window drawn, and the
+    /// suite must not flash blank windows over whatever the person running it is doing.
+    private func makeWindowedTextView(allowsImages: Bool) -> (NSWindow, CadenceTextView) {
+        let textView = makeTextView(allowsImages: allowsImages)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: true
+        )
+        window.contentView = textView
+        return (window, textView)
+    }
+
+    /// **`registerForDraggedTypes` on an `NSTextView` unions into the list. It cannot remove a
+    /// type.** This is the fact [[T-511]] turned on, and it had never been measured either way.
+    ///
+    /// [[T-495]] asked whether `registerMarkdownDraggedTypes` clobbers the text types AppKit
+    /// would otherwise accept, which would mean a plain-text drag no longer reaches the note
+    /// editor at all. It disproved the *mechanism* offscreen — with registration never called the
+    /// list is empty at every step, so there was nothing to displace — but an empty list is also
+    /// what you would see if the fixture simply never ran AppKit's own registration, and
+    /// [[T-551]] found exactly that when its re-measurement of the "AppKit unions" clause gave 3
+    /// where the original said 22. That left the direction of the operation unknown, which is
+    /// what made T-511 a live question rather than a formality.
+    ///
+    /// Measured here, in a window: register a text type, then run the markdown registration over
+    /// it, three times, the way `updateNSView` does on every SwiftUI pass. The text type survives
+    /// all three. AppKit's `unregisterDraggedTypes` is the only thing measured to clear the list,
+    /// and nothing in this app reaches for it.
+    @Test func theMarkdownRegistrationCannotRemoveATextTypeAlreadyRegistered() {
+        let (window, textView) = makeWindowedTextView(allowsImages: true)
+        defer { window.contentView = nil }
+
+        textView.registerForDraggedTypes([.string])
+        #expect(textView.registeredDraggedTypes.contains(.string))
+
+        textView.registerMarkdownDraggedTypes()
+        textView.registerMarkdownDraggedTypes()
+        textView.registerMarkdownDraggedTypes()
+
+        #expect(textView.registeredDraggedTypes.contains(.string))
+        #expect(textView.registeredDraggedTypes.contains(.tiff))
+        #expect(textView.registeredDraggedTypes.contains(.fileURL))
+    }
+
+    /// The refusing host takes the same path, and it matters more there: its registration is the
+    /// *narrowest* one in the app (`.fileURL` alone), so if any call were going to replace a list
+    /// rather than add to it, this is the one that would.
+    @Test func theRefusingHostsNarrowRegistrationCannotRemoveATextTypeEither() {
+        let (window, textView) = makeWindowedTextView(allowsImages: false)
+        defer { window.contentView = nil }
+
+        textView.registerForDraggedTypes([.string])
+        textView.registerMarkdownDraggedTypes()
+
+        #expect(textView.registeredDraggedTypes.contains(.string))
+        #expect(textView.registeredDraggedTypes.contains(.fileURL))
+        // T-478 still holds for what *Cadence* advertises: the bitmap types are not added here.
+        #expect(textView.registeredDraggedTypes.contains(.tiff) == false)
+        #expect(textView.registeredDraggedTypes.contains(.png) == false)
+    }
+
+    /// And the union runs the other way too: whatever AppKit registers for itself survives the
+    /// markdown registration that follows it.
+    ///
+    /// `isEditable` is toggled because that is the documented trigger for
+    /// `updateDragTypeRegistration`, and — measured — it is the *only* thing that fires it here.
+    /// Adding the view to a window does not, ordering that window on screen does not, making the
+    /// view first responder does not, and neither does a run loop spun for a second and a half
+    /// with a `display()` in the middle. That last point is why this test asserts a *subset*
+    /// rather than a count: what AppKit registers, and when, is AppKit's business, and pinning its
+    /// list would be pinning stock `NSTextView` behaviour rather than Cadence's.
+    @Test func appKitsOwnDragTypesSurviveTheMarkdownRegistration() {
+        let (window, textView) = makeWindowedTextView(allowsImages: true)
+        defer { window.contentView = nil }
+
+        textView.isEditable = false
+        textView.isEditable = true
+        let afterAppKit = Set(textView.registeredDraggedTypes)
+        // Non-vacuity: the toggle really did make AppKit register something of its own, so the
+        // subset assertion below is not trivially true of an empty set.
+        #expect(afterAppKit.count > 3)
+
+        textView.registerMarkdownDraggedTypes()
+
+        #expect(afterAppKit.isSubset(of: Set(textView.registeredDraggedTypes)))
+    }
+
     // MARK: - The wire from the host down to the view
 
     /// `configure(_:context:)` is a `NSViewRepresentable` update pass; nothing headless can run it.

@@ -193,13 +193,21 @@ struct TrackingDeleteHelpersTests {
     }
 
     /// Every "sort by priority" in the app means one ordering. It existed as eight independent
-    /// switches; the enum owns it now, and the surviving free-function spellings delegate.
+    /// switches; the enum owns it now, and **nothing forwards to it any more** — every caller
+    /// reads `priority.rank`.
     ///
-    /// The point of the loop is that it names **every** spelling a test can reach, over **every**
-    /// case. The previous version asserted the enum's own constants and exactly one forwarder, so
-    /// swapping `.none` and `.low` inside any of the others left the suite green while a
-    /// low-priority task sorted below an unprioritised one. Anything that re-grows a hand-written
-    /// switch has to fail here.
+    /// This used to end in a loop over `TaskPriority.allCases` asserting each surviving
+    /// free-function spelling against the enum, because a forwarder that drifts is a sort that
+    /// silently disagrees with every other sort. T-1011 inlined the last four call sites and
+    /// deleted both forwarders, so there is nothing left for that loop to name — the empty
+    /// declaring set is asserted directly by
+    /// `everyPriorityRankSpellingInProductionSourceIsOneTheRankLoopReaches` below, which is now
+    /// the whole of the anti-drift guard.
+    ///
+    /// What stays here is the property the rest of the codebase cites this test by name for:
+    /// `TaskPriority.rank` is **ordered and injective**. `CadenceTaskQuerySupport.sortKeyOrder`
+    /// and `MobileTaskSortStabilityTests` both lean on the injectivity to treat
+    /// `lhs.priority != rhs.priority` and a rank comparison as the same question.
     ///
     /// A third spelling used to be asserted here: `taskPriorityRank` in
     /// `macOS/Views/TaskSortHelpers.swift`, described above as "the spelling that drives every
@@ -212,48 +220,56 @@ struct TrackingDeleteHelpersTests {
 
         // The ordering is total: no two priorities may share a rank.
         #expect(Set(TaskPriority.allCases.map(\.rank)).count == TaskPriority.allCases.count)
-
-        for priority in TaskPriority.allCases {
-            #expect(CadenceTaskQuerySupport.priorityRank(priority) == priority.rank)
-            #expect(CalendarBoardPlannerSupport.priorityRank(priority) == priority.rank)
-        }
     }
 
-    /// The loop above can only name a spelling a test can *reach*, and two were out of reach of
-    /// it: `CadenceTodayWidgetSupport` and `GoalContributionSummary` each carried a
-    /// `private static func priorityRank` forwarder. Both were correct, which is the state that
-    /// precedes drift — and the widget's was the dangerous one, because `CadenceWidgets` compiles
-    /// `Services/` and `Models/` but not `Shared/`, so a divergence there ships to the Home Screen
-    /// with this suite green.
+    /// **The declaring set is empty, and that is now the whole guard.**
     ///
-    /// They are gone: both call sites read `priority.rank`. This pins the declaring set to the two
-    /// the loop asserts, so a re-grown forwarder — private or not — fails here rather than waiting
-    /// to be found by the drift (T-670).
+    /// The history is a shrinking list. Eight hand-written priority switches became one enum
+    /// property plus forwarders; T-670 removed the two forwarders no test could *reach*
+    /// (`CadenceTodayWidgetSupport` and `GoalContributionSummary`, both `private static`, both
+    /// correct — the state that precedes drift, and the widget's was the dangerous one because
+    /// `CadenceWidgets` compiles `Services/` and `Models/` but not `Shared/`, so a divergence
+    /// there ships to the Home Screen with this suite green). T-1011 removed the last two, in
+    /// `CadenceTaskQuerySupport` and `CalendarBoardPlannerSupport`: between them they had four
+    /// call sites, all now spelling `priority.rank` directly.
+    ///
+    /// So there is no longer a set of "blessed" forwarders to keep honest against the enum, and
+    /// the loop that did that is gone with them. What remains is stronger and cheaper: **no**
+    /// `func priorityRank(` may exist in production source at all. A re-grown forwarder — private
+    /// or not, correct or not — fails here the day it is written, rather than the day it drifts.
     @Test func everyPriorityRankSpellingInProductionSourceIsOneTheRankLoopReaches() throws {
         let readStripped = CadenceSourceScan.strippedSourceReader()
         var declaringFiles: [String] = []
+        var scannedFiles = 0
 
         for root in ["Cadence", "CadenceWidgets", "CadenceMCPServer"] {
             for path in try CadenceSourceScan.swiftFiles(under: root) {
+                scannedFiles += 1
                 if try readStripped(path).contains("func priorityRank(") {
                     declaringFiles.append(path)
                 }
             }
         }
 
-        #expect(declaringFiles.sorted() == [
-            "Cadence/Shared/CadenceCalendarPlanningSupport.swift",
-            "Cadence/Shared/CadenceTaskQuerySupport.swift",
-        ])
+        #expect(declaringFiles.sorted() == [String]())
 
-        // Non-vacuity: the sweep opened the two files that lost a forwarder, and the needle it
-        // looked for is one that really does still occur somewhere in the tree it walked.
-        #expect(try readStripped("Cadence/Services/CadenceTodayWidgetSupport.swift")
-            .contains("static func todayTasks("))
-        #expect(try readStripped("Cadence/Models/GoalContributionSummary.swift")
-            .contains("static func summary("))
+        // Non-vacuity matters more for an empty expectation than for any other kind, because a
+        // walk that opened nothing produces exactly the same answer as a walk that found nothing.
+        // Three separate ways for this to have been a real sweep:
+        //
+        // 1. It really walked the tree, not an empty directory list.
+        #expect(scannedFiles > 400)
+        // 2. The two files that lost a forwarder are still readable and still hold their other
+        //    contents, so the paths did not silently stop resolving.
         #expect(try readStripped("Cadence/Shared/CadenceTaskQuerySupport.swift")
-            .contains("func priorityRank("))
+            .contains("static func sortKeyOrder("))
+        #expect(try readStripped("Cadence/Shared/CadenceCalendarPlanningSupport.swift")
+            .contains("static func railTaskSort("))
+        // 3. The needle itself still matches when a file really does declare a function that way,
+        //    which the stripped reader is what decides — so a stripper that started returning
+        //    empty strings cannot pass this test.
+        #expect(try readStripped("Cadence/Shared/CadenceCalendarPlanningSupport.swift")
+            .contains("func railAnchorKey("))
     }
 
     /// Asserting the rank forwarders is not enough on its own — the comparator could stop calling

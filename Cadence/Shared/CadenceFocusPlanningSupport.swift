@@ -343,7 +343,7 @@ enum CadenceFocusSupport {
         if task.scheduledDate == todayKey { score += 4 }
         if task.dueDate == todayKey { score += 3 }
         if !task.dueDate.isEmpty && task.dueDate < todayKey { score += 5 }
-        score += CadenceTaskQuerySupport.priorityRank(task.priority)
+        score += task.priority.rank
         if task.actualMinutes == 0 { score += 1 }
         return score
     }

@@ -353,10 +353,6 @@ enum CadenceTaskQuerySupport {
         return task
     }
 
-    /// Free-function spelling of `TaskPriority.rank`, kept because several sort comparators here
-    /// read better with it. The definition lives on the enum.
-    static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
-
     /// How urgent a task is *today*: past due, then past do, then due today, then do today.
     ///
     /// **Since T-305 this is the only thing that says so.** Today used to head those four states as

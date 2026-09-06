@@ -368,8 +368,8 @@ enum CalendarBoardPlannerSupport {
             return lhs.scheduledStartMin < rhs.scheduledStartMin
         }
 
-        let lhsPriority = priorityRank(lhs.priority)
-        let rhsPriority = priorityRank(rhs.priority)
+        let lhsPriority = lhs.priority.rank
+        let rhsPriority = rhs.priority.rank
         if lhsPriority != rhsPriority { return lhsPriority > rhsPriority }
 
         if lhs.order != rhs.order { return lhs.order < rhs.order }
@@ -395,7 +395,7 @@ enum CalendarBoardPlannerSupport {
             startMinute: task.scheduledStartMin >= 0 ? task.scheduledStartMin : untimedSortMinute,
             kindRank: kindRank,
             plannedRank: task.scheduledDate.isEmpty ? 1 : 0,
-            priorityRank: priorityRank(task.priority),
+            priorityRank: task.priority.rank,
             order: task.order,
             createdAt: task.createdAt,
             id: task.id.uuidString
@@ -430,13 +430,6 @@ enum CalendarBoardPlannerSupport {
             id: id
         )
     }
-
-    /// Free-function spelling of `TaskPriority.rank`. Deliberately *not* `private`: this was one
-    /// of eight hand-written copies of the same switch, and the only thing keeping the survivors
-    /// honest is a test that can name each one
-    /// (`TrackingDeleteHelpersTests.priorityRankIsOneOrderingSharedByEveryCaller`). A spelling the
-    /// test cannot reach is a spelling free to drift.
-    static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 }
 
 struct CalendarBoardSortKey: Equatable, Comparable {
