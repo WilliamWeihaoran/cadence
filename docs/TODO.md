@@ -191,6 +191,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Deliberately not wired: the two kanban card drops** — [[T-1085]].
   **Filed as:** **[[T-1054]]'s premise is false, and the honest fix is per drop.**
 
+- [T-1086] **STUB — id taken 2026-09-06 by sweepreds.** `CadenceArchiveImportService.swift` trips
+  seven source sweeps on `main`; deciding, per sweep, whether the importer is a new exception or a
+  duplication of a shared helper.
+
 - [T-1085] **The two kanban card drops have no off-screen notice.** [[T-1077]]'s change wires the
   three row surfaces that renumber `AppTask.order` from a drop — Today, All Tasks/Inbox, and a
   list's Tasks tab — and leaves the two card drops alone. Both can put a card where the board's sort
