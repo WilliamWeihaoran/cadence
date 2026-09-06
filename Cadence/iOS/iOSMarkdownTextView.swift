@@ -47,29 +47,31 @@ final class iOSMarkdownTextView: UITextView {
 
     override var keyCommands: [UIKeyCommand]? {
         [
-            command("b", [.command], "Bold", #selector(applyBoldCommand)),
-            command("i", [.command], "Italic", #selector(applyItalicCommand)),
-            command("e", [.command], "Inline Code", #selector(applyInlineCodeCommand)),
-            command("k", [.command], "Link", #selector(applyLinkCommand)),
-            command("x", [.command, .shift], "Strikethrough", #selector(applyStrikethroughCommand)),
-            command("h", [.command, .shift], "Highlight", #selector(applyHighlightCommand)),
-            command("0", [.command, .alternate], "Paragraph", #selector(applyParagraphCommand)),
-            command("1", [.command, .alternate], "Heading 1", #selector(applyHeading1Command)),
-            command("2", [.command, .alternate], "Heading 2", #selector(applyHeading2Command)),
-            command("3", [.command, .alternate], "Heading 3", #selector(applyHeading3Command)),
-            command("4", [.command, .alternate], "Heading 4", #selector(applyHeading4Command)),
-            command("5", [.command, .alternate], "Heading 5", #selector(applyHeading5Command)),
-            command("6", [.command, .alternate], "Heading 6", #selector(applyHeading6Command)),
-            command("7", [.command, .shift], "Ordered List", #selector(applyOrderedListCommand)),
-            command("8", [.command, .shift], "Bulleted List", #selector(applyUnorderedListCommand)),
-            command("9", [.command, .shift], "Quote", #selector(applyQuoteCommand)),
-            command("t", [.command, .shift], "Checklist", #selector(applyChecklistCommand)),
-            command("c", [.command, .alternate], "Code Block", #selector(applyCodeBlockCommand)),
-            command("d", [.command, .alternate], "Divider", #selector(applyDividerCommand)),
-            command("n", [.command, .alternate], "Note Link", #selector(applyNoteLinkCommand)),
-            command("r", [.command, .alternate], "Task Reference", #selector(applyTaskReferenceCommand)),
-            command("\t", [], "Indent List", #selector(indentListCommand)),
-            command("\t", [.shift], "Outdent List", #selector(outdentListCommand))
+            command("b", [.command], MarkdownFormatCommandTitle.sentenceCase(for: .bold), #selector(applyBoldCommand)),
+            command("i", [.command], MarkdownFormatCommandTitle.sentenceCase(for: .italic), #selector(applyItalicCommand)),
+            command("e", [.command], MarkdownFormatCommandTitle.sentenceCase(for: .inlineCode), #selector(applyInlineCodeCommand)),
+            command("k", [.command], MarkdownFormatCommandTitle.sentenceCase(for: .link), #selector(applyLinkCommand)),
+            command("x", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .strikethrough), #selector(applyStrikethroughCommand)),
+            command("h", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .highlight), #selector(applyHighlightCommand)),
+            command("0", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .paragraph), #selector(applyParagraphCommand)),
+            command("1", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .heading(1)), #selector(applyHeading1Command)),
+            command("2", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .heading(2)), #selector(applyHeading2Command)),
+            command("3", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .heading(3)), #selector(applyHeading3Command)),
+            command("4", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .heading(4)), #selector(applyHeading4Command)),
+            command("5", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .heading(5)), #selector(applyHeading5Command)),
+            command("6", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .heading(6)), #selector(applyHeading6Command)),
+            command("7", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .orderedList), #selector(applyOrderedListCommand)),
+            command("8", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .unorderedList), #selector(applyUnorderedListCommand)),
+            command("9", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .quote), #selector(applyQuoteCommand)),
+            command("t", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .todoList), #selector(applyChecklistCommand)),
+            command("c", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .codeBlock), #selector(applyCodeBlockCommand)),
+            command("d", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .divider), #selector(applyDividerCommand)),
+            command("n", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .noteLink), #selector(applyNoteLinkCommand)),
+            command("r", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .taskReference), #selector(applyTaskReferenceCommand)),
+            // No `MarkdownFormatCommand` case: these drive `indentationCommandHandler`, not
+            // `apply(_:)`, so there is nothing in the shared table to read. Sentence case by hand.
+            command("\t", [], "Indent list", #selector(indentListCommand)),
+            command("\t", [.shift], "Outdent list", #selector(outdentListCommand))
         ] + (super.keyCommands ?? [])
     }
 

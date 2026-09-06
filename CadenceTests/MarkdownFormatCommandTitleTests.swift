@@ -111,4 +111,49 @@ struct MarkdownFormatCommandTitleTests {
         // way, and the sweep above would be wrong to touch it.
         #expect(source.contains(#"accessibilityLabel: "Image""#))
     }
+
+    /// **T-976.** T-845 converged both format toolbars and left the key-command table in
+    /// `iOSMarkdownTextView.keyCommands` untouched — a third hand-typed case table for the same
+    /// vocabulary, and it still spelled the multi-word rows Title Case ("Bulleted List", "Ordered
+    /// List", "Inline Code", "Code Block", "Note Link", "Task Reference") while both toolbars said
+    /// "Bulleted list" etc. Every row whose action calls `apply(.command)` now reads its
+    /// discoverability title from the shared table instead of retyping it; "Indent List" / "Outdent
+    /// List" have no `MarkdownFormatCommand` case to read (they drive `indentationCommandHandler`,
+    /// not `apply(_:)`) and are hand-corrected to sentence case instead.
+    @Test func iOSKeyCommandTableReadsTheSharedTitleTable() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSMarkdownTextView.swift")
+
+        for command in [
+            "bold", "italic", "inlineCode", "link", "strikethrough", "highlight", "paragraph",
+            "heading(1)", "heading(2)", "heading(3)", "heading(4)", "heading(5)", "heading(6)",
+            "orderedList", "unorderedList", "quote", "todoList", "codeBlock", "divider", "noteLink",
+            "taskReference",
+        ] {
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"MarkdownFormatCommandTitle\.sentenceCase\(for: \."#
+                        + NSRegularExpression.escapedPattern(for: command)
+                        + #"\)"#,
+                    in: source
+                ) == 1,
+                "the key-command table no longer reads the shared title for .\(command)"
+            )
+        }
+
+        // The literals these replaced are gone, not just supplemented.
+        for retired in [
+            "\"Bulleted List\"", "\"Ordered List\"", "\"Inline Code\"", "\"Code Block\"",
+            "\"Note Link\"", "\"Task Reference\"", "\"Checklist\"", "\"Quote\"", "\"Link\"",
+            "\"Strikethrough\"", "\"Highlight\"", "\"Paragraph\"", "\"Bold\"", "\"Italic\"",
+        ] {
+            #expect(!source.contains(retired), "iOSMarkdownTextView.swift still types \(retired)")
+        }
+
+        // The two rows with no MarkdownFormatCommand case are hand-corrected to sentence case
+        // rather than left as the Title Case the rest of the table used to share.
+        #expect(source.contains(#""Indent list""#))
+        #expect(source.contains(#""Outdent list""#))
+        #expect(!source.contains(#""Indent List""#))
+        #expect(!source.contains(#""Outdent List""#))
+    }
 }
