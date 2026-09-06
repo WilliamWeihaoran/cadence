@@ -151,7 +151,10 @@ struct CadenceChoicePickerDismissalTests {
                 "\(path) has \(found[path]?.committing ?? -1) committing pickers"
             )
         }
-        #expect(found.values.map(\.calls).reduce(0, +) == 37)
+        // The total is stated, not derived from `expected` — deriving it would make it agree with
+        // the table by construction and stop being a second reading of the same population.
+        // 39 since the two archive-import mode pickers; 37 before them.
+        #expect(found.values.map(\.calls).reduce(0, +) == 39)
         #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 
