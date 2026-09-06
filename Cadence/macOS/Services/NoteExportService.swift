@@ -164,11 +164,34 @@ enum NoteExportService {
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.containerSize = NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)
         textView.string = renderedContent
+        // The page's width has to exist *before* the styling pass, not only after it.
+        //
+        // `MarkdownStylist.applyImageBlock` reserves a standalone image's line height from
+        // `textView.bounds.width`, and `CadenceTextView.drawMarkdownImages` fits the picture to
+        // that same `bounds.width` when it paints. This view was built `frame: .zero` and styled
+        // there, and only given `options.pageWidth` at the very end — so on the shipped 612pt page
+        // a 640 x 360 asset reserved **18.5625pt** (a 1pt-wide picture plus its padding) and was
+        // then painted **283.5pt** tall over the prose that followed it. That is the same defect
+        // the editor had (T-1043): prose on top of a picture, righted by the first keystroke.
+        //
+        // The editor's repair does not reach here. `MarkdownStylist.refreshImageBlockLayout` has
+        // exactly one caller, `MarkdownEditorScrollView.layout()`, and an export view is in no
+        // scroll view and no window — nothing ever lays it out, so nothing ever calls it.
+        //
+        // Setting the width here does not disturb the measurement below. `widthTracksTextView` is
+        // off and the container's width is pinned to `contentWidth`, so the frame decides what a
+        // rendered block is fitted to and never what the text wraps to; `usedRect` is read after
+        // this and therefore measures the picture's real reservation instead of missing it. The
+        // height is a placeholder and stays 0 — the real one is derived from the `usedRect` this
+        // line exists to make correct, and the floor on it belongs to `documentHeight(_:)`, which
+        // `NoteExportSurfaceTests.neitherRendererSpellsThePageGeometryItself` holds this file to.
+        textView.frame = NSRect(x: 0, y: 0, width: options.pageWidth, height: 0)
         MarkdownStylist.apply(to: textView)
 
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
         let documentHeight = options.documentHeight(forContentHeight: usedRect.height)
+        // Same width as above; only the measured height is new.
         textView.frame = NSRect(x: 0, y: 0, width: options.pageWidth, height: documentHeight)
 
         return textView.dataWithPDF(inside: textView.bounds)

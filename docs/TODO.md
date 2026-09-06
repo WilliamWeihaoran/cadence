@@ -43,6 +43,42 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1081] **CLOSED 2026-09-06 — PDF export painted a note's images on top of its text, and now
+  reserves the room for them.** The same defect as [[T-1043]], in the surface that still shipped it.
+  `NoteExportService.renderedPDFData` built its text view `frame: .zero`, styled it there, measured
+  it with `usedRect`, and only then gave it `options.pageWidth` — so `MarkdownStylist.applyImageBlock`
+  reserved the image's line height against a zero width and `CadenceTextView.drawMarkdownImages`
+  painted the picture against the page width. **Measured on the shipped 612pt page, a 640 × 360
+  asset: 18.5625pt reserved, 283.5pt painted.** The editor's repair cannot reach it —
+  `MarkdownStylist.refreshImageBlockLayout` has exactly one caller,
+  `MarkdownEditorScrollView.layout()`, and an export view is in no scroll view and no window, so it
+  never lays out and that reader never runs.
+  **The fix is one line and removes none.** `textView.frame` is set to the page width *before*
+  `MarkdownStylist.apply`, with a 0 placeholder height; the existing final assignment still supplies
+  the measured `documentHeight`. The frame does not disturb the measurement because
+  `widthTracksTextView` is off and the container's width is pinned to `contentWidth` — the frame
+  decides what a *rendered block* is fitted to, never what the text wraps to — and `usedRect` is
+  read after it, so it now measures the picture's real reservation instead of missing it.
+  **What the numbers were, all read back off the PDF the shipped entry point returned**, not off a
+  replica: the default-options note exported **240.0pt** tall (the `minimumHeight` floor, i.e. the
+  content did not even reach it) for a picture needing **385.5pt** of page; adding the image line to
+  a note grew the page by **50.0pt** for a **283.5pt** picture; and a 320pt page and a 612pt page
+  both came back at exactly **103.0pt**, which is what "the width never reached the styler" looks
+  like from outside. `CadenceTests/NotePDFExportImageWidthTests.swift`, 4 tests, 4/4 mutations
+  killed. `NotePDFRenderOptions.minimumHeight` being settable is what makes the page height a
+  usable proxy for the reserved height; without lowering the floor every measurement reads 240.
+  **A guard already in the repository caught the first attempt at this fix**, which is worth
+  knowing before touching the file: the placeholder height was `options.minimumHeight`, and
+  `NoteExportSurfaceTests.neitherRendererSpellsThePageGeometryItself` refuses either renderer
+  spelling `minimumHeight)` itself. The floor belongs to `documentHeight(forContentHeight:)`.
+  **iOS is not affected and does not need the same change.** `iOSNoteExportService.renderedPDFData`
+  hands `options.contentWidth` to `iOSMarkdownStyler.attributedString(…contentWidth:)` directly and
+  builds no view at all, so it has no `bounds.width` to be wrong about.
+  **Still open, and deliberately not done here:** `Cadence/macOS/Editor/AGENTS.md` documents the
+  width-dependent-layout hook as having exactly one member and one caller, and that is now the
+  thing a reader would be misled by — there is a second construction site that never lays out. It
+  was left alone because a sibling ([[T-1045]]) has that same section rewritten and uncommitted.
+
 - [T-1074] **A second bare `local x` in one zsh function PRINTS the parameter instead of
   redeclaring it, and in a loop it does so on every iteration.** Found 2026-09-06 by writing one,
   then found three more already shipped. It is `typeset`'s listing behaviour, reached by a
