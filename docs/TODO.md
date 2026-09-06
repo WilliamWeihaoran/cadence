@@ -79,6 +79,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 - [T-1076] **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
 
 - [T-1078] **RESERVED 2026-09-06 (agent `sweeps`) — `main` is red a THIRD way: half 3 of the save-commit rule reads ownership off a signature, so a nested `func` that captures its parent's `ModelContext` is misread as owning the unit of work.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+  **Confirmed independently 2026-09-06 (coordinator), and two rival readings refuted by measurement.**
+  The offender is the nested `func insertTask(_:dueDate:scheduledDate:)` at
+  `Cadence/Services/CadenceUITestScenarioSeed.swift:95`, not `seedDailyNoteWithImage`. It calls
+  `modelContext.insert(task)` on a context it captures lexically from `seedTodayGeometry(modelContext:)`,
+  so `changesExistenceDirectly` is true; its own signature carries no `: ModelContext`, so
+  `disclaimsOwnership` is false; and its enclosing frame's `try modelContext.save()` is not credited to
+  it. **Reading "the seed should commit like its sibling" is wrong** — `seedTodayGeometry` already
+  commits. **Reading "the exemption does not credit a function whose `ModelContext` is not its only
+  parameter" is also wrong** — `handedAModelContext` is `":\\s*ModelContext\\b"` matched as a plain
+  substring against the signature (`CadenceSaveCommitDisciplineTests.swift:1616,2249`), so parameter
+  count is irrelevant, and `seedDailyNoteWithImage(todayKey:modelContext:)` is correctly exempt by it.
+  The repair belongs in `parsedDeclarations`, which flattens nested declarations and models no lexical
+  scope at all. **A duplicate of this was drafted as T-1079 with the wrong offender named; do not file it.**
 
 - [T-1077] **RESERVED 2026-09-06 (agent `decide`) — the drag-under-a-non-custom-sort rule that [[T-1054]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
 
