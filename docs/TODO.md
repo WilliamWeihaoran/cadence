@@ -350,7 +350,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceArchiveImportEntryPointTests.neitherArchiveImportSurfaceDrawsANativePicker` covers the two
   files T-1082 touched and nothing else; it is a plug, not the rule.
 
-- [T-1088] **The archive importer does not fold a habit day's split rows, which is the exact case
+- [T-1088] **MEASURED 2026-09-07 (leakfold) in `45599d6`, deliberately not patched.** Folding an imported habit day's split rows means inventing a number, which is the same guess [[T-391]] refused to let the startup repair make. The tests now say so where a reader will find them. Stays open as a decision, not a defect. **Originally:** **The archive importer does not fold a habit day's split rows, which is the exact case
   [[T-391]] wrote its warning for.** Found while granting the importer's exemptions in [[T-1086]],
   not in use. `CadenceHabitCompletionDuplicateTests
   .aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent` closes T-391 by *documenting* rather
@@ -495,7 +495,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Filed as:** **a card drop asks the same question a row drop does, and a board answers it with
   the key its own display sorts by.**
 
-- [T-1090] **`CadenceUITests` leaks one private SwiftData store per app launch, and owns 71 of the 84 on disk.**
+- [T-1090] **CLOSED 2026-09-07 (leakfold, landed by the coordinator after a session limit) in `45599d6`.** 71 of the 84 leaked stores were one per `XCUIApplication` launch, not from `run-macos-app.sh`. `CadenceUITestStoreDirectory` claims the directory **after** the reset, never before — the reset removes the whole directory, lock file included, and a claim on a file that is then deleted owns nothing. That ordering is the ticket. **Originally:** **`CadenceUITests` leaks one private SwiftData store per app launch, and owns 71 of the 84 on disk.**
   Filed 2026-09-06 (tooltruth) out of [[T-1066]], which assumed the backlog was `run-macos-app.sh`'s.
   It is not. Counted under `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores/`:
   84 directories, ~34 MB, of which **36** are `ui--[CadenceUITests testLaunchesToTodayWithSeededSidebarLists]-<UUID>`
@@ -1071,7 +1071,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   paths have no direct test seam) and by a 12-mutation plan against both fixed files
   (`scripts/mutate.sh`, 12/12 killed), not by driving real `NSEvent`s through a live window.
 
-- [T-1011] **The two surviving `priorityRank` forwarders exist only because a test can reach them.**
+- [T-1011] **CLOSED 2026-09-07 (smallopen, landed by the coordinator after a session limit) in `3eb023d`.** Both forwarders deleted; every caller reads `priority.rank`. The loop in `TrackingDeleteHelpersTests` that existed to name every reachable spelling now asserts that nothing forwards at all. **Originally:** **The two surviving `priorityRank` forwarders exist only because a test can reach them.**
   After [[T-670]] the declaring set is exactly two, both `{ priority.rank }`:
   `CadenceTaskQuerySupport.priorityRank` now has **one** caller (`CadenceFocusPlanningSupport.swift:346`,
   since [[T-669]] took its other) and `CalendarBoardPlannerSupport.priorityRank` has **three**
@@ -2318,7 +2318,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-511] **Does a plain-text drag reach the macOS note editor at all?** Residue from [[T-495]], which
+- [T-511] **CLOSED 2026-09-07 (smallopen, landed by the coordinator) in `3eb023d` — driven, not inferred.** Three tests in a real `NSWindow`. The reason this sat unanswered is recorded in their own comment: the offscreen fixture cannot see the behaviour the ticket is about, so no amount of reading would have answered it. **Originally:** **Does a plain-text drag reach the macOS note editor at all?** Residue from [[T-495]], which
   disproved the clobbering mechanism. **Not answerable headless** — an offscreen `NSTextView` registers
   no drag types under any sequence tried, which is either the real behaviour or an artifact of a test
   host with no display server. **One manual drag settles it**: open a note on macOS, drag a text
@@ -2449,7 +2449,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   macOS call site kills **only** the new sweep while all four pinning tests stay green. **Recorded as a
   closed investigation so the abstraction is not proposed again without new evidence.**
 
-- [T-710] **The seeded sidebar rows are sometimes not there 5s after launch, and nobody has timed them.**
+- [T-710] **CLOSED 2026-09-07 (smallopen, landed by the coordinator) in `3eb023d` — measured rather than fixed, which is what it asked for.** `CadenceSeededSidebarTimingUITests` times the seeded rows, so the 5s figure stops being an assumption. **Originally:** **The seeded sidebar rows are sometimes not there 5s after launch, and nobody has timed them.**
   Found while measuring [[T-563]], and it is the *only* thing left in `CadenceUITests` that is
   genuinely intermittent. 2026-09-02, 20 runs with the screen unlocked and the app confirmed in the
   foreground: **4 failed at `CadenceUITests.swift:23`**, `sidebar.list.area.alpha-area` absent after
