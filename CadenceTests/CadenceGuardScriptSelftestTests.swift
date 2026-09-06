@@ -418,8 +418,9 @@ struct CadenceGuardScriptSelftestTests {
             declarationsRead += scan.declarationsRead
         }
         // The floor, because a clean sweep and a sweep that stopped reading print the same nothing.
-        // 12 scripts declared 228 names when this was written; a reading that has fallen under 100
-        // has lost a parse, not a script.
+        // 12 scripts declared 229 names when this was written; a reading that has fallen under 100
+        // has lost a parse, not a script. (228 before the `case`-arm read below was added — the
+        // 229th is `run-macos-app.sh`'s `(status) local -a pf`, which the reader used to skip.)
         #expect(names.count >= 6, "scripts/ holds \(names.count) .sh files, so this sweep is reading less than it claims")
         #expect(declarationsRead >= 100, "the sweep read only \(declarationsRead) declarations, so its silence means nothing")
         #expect(
@@ -443,6 +444,14 @@ struct CadenceGuardScriptSelftestTests {
             ("a bare local reached twice in one scope", "f() {\n  local x=1\n  local x\n}\n", true),
             ("a bare local inside a loop", "f() {\n  for i in 1 2; do\n    local g\n    g=\"v$i\"\n  done\n}\n", true),
             ("a bare local in a loop nested two deep", "f() {\n  for j in 1 2; do\n    for i in 1 2; do\n      local g\n    done\n  done\n}\n", true),
+            // The three shapes the sweep used to walk straight past. The first two are the C-style
+            // arithmetic `for`, whose `do` zsh serialises onto the header line — the loop form
+            // every one of this repo's own `for ((…))` loops uses, including the one T-1074 was
+            // filed about. The third is a declaration sharing a `case` arm's pattern line.
+            ("a bare local inside a C-style arithmetic for loop", "f() {\n  for ((i=1;i<=2;i++)); do\n    local g\n    g=$i\n  done\n}\n", true),
+            ("a bare local in a C-style for loop written with braces", "f() {\n  for ((i=1;i<=2;i++)) { local g; g=$i }\n}\n", true),
+            ("a declaration sharing a case arm's pattern line", "f() {\n  case $1 in\n    (a) local z=1;;\n  esac\n  local z\n}\n", true),
+            ("a case arm that declares nothing", "f() {\n  case $1 in\n    (a) say hi;;\n  esac\n  local x\n}\n", false),
             ("one bare local, declared once", "f() {\n  local x\n  x=1\n}\n", false),
             ("the second declaration assigns", "f() {\n  local x=1\n  local x=2\n}\n", false),
             ("the declaration in the loop carries a flag", "f() {\n  for i in 1 2; do\n    local -a g\n    g=(1)\n  done\n}\n", false),
@@ -546,7 +555,7 @@ struct CadenceShellLocalScan {
                 continue
             }
             guard !scopes.isEmpty else { continue }
-            if line == "do" {
+            if opensLoop(line) {
                 scopes[scopes.count - 1].openLoops += 1
                 continue
             }
@@ -554,7 +563,7 @@ struct CadenceShellLocalScan {
                 scopes[scopes.count - 1].openLoops = max(0, scopes[scopes.count - 1].openLoops - 1)
                 continue
             }
-            guard let (hasFlag, names) = declaration(line) else { continue }
+            guard let (hasFlag, names) = declaration(casePatternStripped(line)) else { continue }
             for (name, assigns) in names {
                 if !assigns && !hasFlag {
                     if scopes[scopes.count - 1].seen.contains(name) {
@@ -570,6 +579,42 @@ struct CadenceShellLocalScan {
             }
         }
         return (found, read)
+    }
+
+    /// Whether this line opens a loop body — `do` alone, **or** `do` closing a loop header.
+    ///
+    /// **This is what let the very shape T-1074 is about through the sweep (T-1085 batch).** zsh
+    /// re-serialises every loop it has a keyword for — `for x in …`, `while`, `until`, `repeat`,
+    /// `select` — with `do` on a line of its own, and exactly one form differently: the C-style
+    /// arithmetic `for ((…))`, which comes back as `for ((i = 1; i <= n; i++ )) do`. A reader that
+    /// only recognised a standalone `do` therefore never entered those bodies, `openLoops` stayed
+    /// 0, and a bare declaration inside one was invisible — while `done` still balanced away under
+    /// `max(0,)`, so nothing went wrong loudly.
+    ///
+    /// Measured rather than reasoned: un-hoisting `worktree-drift.sh`'s `gone` reproduces
+    /// `gone=T-3` in the middle of the drift report, and the sweep as it stood read all 46 of that
+    /// file's declarations and reported nothing. The three scripts that hold this repo's
+    /// `for ((…))` loops — `agent-commit.sh`, `worktree-drift.sh`, `xcb.sh` — are the same three
+    /// that held T-1074's shipped instances.
+    private static func opensLoop(_ line: Substring) -> Bool {
+        if line == "do" { return true }
+        guard line.hasSuffix(" do") else { return false }
+        return ["for ", "while ", "until ", "repeat ", "select "].contains { line.hasPrefix($0) }
+    }
+
+    /// A `case` arm's first statement shares the pattern's line — `(status) local -a pf` — so a
+    /// declaration there begins at the second token and a reader starting at the first sees a
+    /// command called `(status)`. Both halves matter: such a declaration is neither flagged nor
+    /// *recorded*, so a later bare `local` of the same name reads as the first one.
+    ///
+    /// A leading parenthesised token is unambiguously a case pattern in this text: zsh writes a
+    /// subshell as `(` … `)` across lines of its own, and an arithmetic `(( … ))` leaves a
+    /// remainder that is not a declaration.
+    private static func casePatternStripped(_ line: Substring) -> Substring {
+        guard line.hasPrefix("("), let close = line.firstIndex(of: ")") else { return line }
+        var rest = line[line.index(after: close)...]
+        while rest.hasPrefix(" ") { rest = rest.dropFirst() }
+        return rest.isEmpty ? line : rest
     }
 
     private static func functionHeaderName(_ line: Substring) -> String? {

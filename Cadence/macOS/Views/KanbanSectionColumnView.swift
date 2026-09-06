@@ -13,6 +13,14 @@ struct ListSectionKanbanColumn: View {
     let section: TaskSectionConfig
     let tasks: [AppTask]
     let universeTasks: [AppTask]
+    /// The board's active sort, handed down rather than read here (T-1085). This column does not
+    /// sort its own cards — `ListSectionsKanbanView.sortedTasksForSection` does, and hands the
+    /// result in as `tasks` — so until now the column had no way to answer the one question a card
+    /// drop raises: *will this sort show the card where it was dropped?* These two are that
+    /// answer's inputs, and they are the same values the host already sorted by, so the notice and
+    /// the sequence on screen cannot disagree about what the sort is.
+    let sortField: TaskSortField
+    let sortDirection: TaskSortDirection
     var area: Area?
     var project: Project?
     let isBeingDragged: Bool
@@ -73,6 +81,12 @@ struct ListSectionKanbanColumn: View {
     /// belongs to the editor popover and gates `toggleCompletionFromEditor` — a refused drag must
     /// not hold that popover shut. Both reach the header through `columnFailureNotice`.
     @State private var reorderFailureNotice: String?
+    /// Set when a card drop the store *took* landed where the board's sort will not show it
+    /// (T-1085). Deliberately **not** routed through `columnFailureNotice`: that slot is for the
+    /// store refusing a write, and this drop was not refused — the card moved, `order` says what
+    /// the user asked it to say, and only the sequence on screen disagrees. Reusing the failure
+    /// sentence would say something untrue in the app's own failure colour.
+    @State private var reorderOffScreenNotice: String?
     /// Both halves come from one call, so they cannot disagree about what "over" means. See
     /// `KanbanBoardSupport.columnHalves` for why this is not `isDone` (T-381 / T-399).
     private var columnHalves: (active: [AppTask], completed: [AppTask]) {
@@ -225,6 +239,7 @@ struct ListSectionKanbanColumn: View {
             isPendingCompletion: isPendingCompletion,
             completionProgress: completionProgress,
             failureNotice: columnFailureNotice,
+            offScreenNotice: reorderOffScreenNotice,
             showHeaderDueDatePicker: $showHeaderDueDatePicker,
             showEditor: $showEditor,
             onToggleCompletion: toggleSectionCompletion,
@@ -345,8 +360,9 @@ struct ListSectionKanbanColumn: View {
     /// the position it had in its old one. `KanbanBoardSupport.reorder` snapshots every field
     /// either half writes, including `sectionName` and all three relationships.
     private func moveTask(_ task: AppTask, before target: AppTask?) -> Bool {
+        let columnOrder = tasks.sorted { $0.order < $1.order }
         let reordered = KanbanBoardSupport.reorder(
-            tasks.sorted { $0.order < $1.order },
+            columnOrder,
             moving: task,
             before: target,
             in: modelContext,
@@ -367,6 +383,12 @@ struct ListSectionKanbanColumn: View {
             }
         )
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        reorderOffScreenNotice = reordered ? CadenceReorderVisibility.cardDropNotice(
+            dropped: task,
+            before: target,
+            inColumnOrder: columnOrder,
+            sortKeyOrder: { KanbanBoardSupport.cardSortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
+        ) : nil
         return reordered
     }
 

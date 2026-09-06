@@ -156,6 +156,32 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   [[T-781]], [[T-1044]], [[T-1066]] and [[T-1076]] — one commit, because all four agents' work
   meets in `CadenceTests/CadenceGuardScriptSelftestTests.swift` and could not be separated without
   attributing one agent's lines to another's message.
+  **The residue was already fixed, and the sweep would have missed it anyway (2026-09-06, agent
+  `residue`).** The surviving bare `local gone` at `worktree-drift.sh:295` is **false at HEAD** —
+  the `reconcile` paragraph above it was written before `requeue` landed, and it is that paragraph
+  the residue brief inherited. At HEAD line 342 reads `local i p gone` with the reason beside it and
+  line 295 is `state_verdict=behind`. Measured, not read off the source: a synthetic repo with
+  **two** paths behind HEAD prints the drift report clean, and re-breaking the declaration puts
+  `gone=T-3` back between the two paths, exactly as this entry describes.
+  **The interesting half is the guard.** Against that re-broken script `CadenceShellLocalScan` read
+  all 46 of the file's declarations and reported **nothing**. The hole is one line of the reader: it
+  opened a loop only on a `do` **alone on its line**, and zsh re-serialises exactly one loop form
+  with `do` on the header instead — the C-style arithmetic, which comes back as
+  `for ((i = 1; i <= n; i++ )) do`. `while`, `until`, `repeat`, `select` and `for x in …` all get a
+  standalone `do` and were read correctly, and `done` still balanced away under `max(0,)`, so the
+  miss was silent. **That is the loop form of the instances this ticket is about**: all six
+  `for ((…))` loops in `scripts/` sit in `agent-commit.sh`, `worktree-drift.sh` and `xcb.sh` — the
+  same three scripts that held the shipped bare declarations. The structural half of the instrument
+  was therefore blind to the whole of the population the behavioural half was built for.
+  A smaller hole went with it: a declaration sharing a `case` arm's pattern line —
+  `run-macos-app.sh`'s `(status) local -a pf` — was neither flagged **nor recorded**, so a later
+  bare `local pf` in that function would have read as the first one. Both fixed in the reader
+  (`opensLoop`, `casePatternStripped`); four fixture probes added — two C-style spellings, the
+  `case`-arm shape, and a `case` arm that declares nothing, each one's expected answer checked by
+  running it in zsh — and the declaration floor moves 228 → 229, the 229th being the `pf` the
+  reader used to skip. Mutation control: reverting `opensLoop` to `line == "do"` takes
+  `theBareLocalScanCanTellTheShapeFromItsNearMisses` red on both C-style probes. All twelve scripts
+  still read clean: 0 findings over 229 declarations.
 
 - [T-1076] **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Still a stub at HEAD, verified 2026-09-06 (`reconcile`).** No body was ever written under it and no
@@ -415,6 +441,44 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   funnels every notice through `columnFailureNotice`, whose shape
   `CadenceKanbanColumnLifecycleSurfaceTests` pins with an exact regex. Not a defect found in use;
   read off the source while wiring the row half.
+  **CLOSED 2026-09-06 (agent `residue`). Built and green — full `-only-testing:CadenceTests`,
+  4,597 tests in 392 suites, 0 failures, 0 new warnings.** Both card drops now ask the question the three row
+  drops ask, through `CadenceReorderVisibility.cardDropNotice`, and neither asks it through a
+  failure slot. [[T-1077]]'s two constraints held: it is a notice and not a refusal, and it is not
+  `CadenceOrderCommit.failureNotice`.
+  **Three things the row half never had to decide, because a row drop has neither shape:**
+  * **A card can be dropped on the column rather than on a card.** `KanbanBoardSupport` takes that
+    as `before: nil` and renumbers the card to the end of the column's `order`, so what the user is
+    being shown is *the bottom of this column* — and the row it has to tie with is whatever is
+    currently last. With nothing else in the column the answer is `nil`: a card alone in a sequence
+    is at the bottom of it under every sort, and a sentence about an empty column would be noise.
+  * **A card can arrive from another column**, refiled by the same commit, so it is not in the
+    destination column at all. That is why `cardDropNotice` takes the `AppTask` and not a `UUID`:
+    `notice(droppedID:targetID:in:)`'s id lookup would answer `nil` on **every** cross-column drop —
+    the half of the gesture most likely to land somewhere the sort will not show it.
+  * **The section board's key leads with the completed/active split, which is [[T-1077]]'s Today
+    argument arriving on a second surface.** `KanbanBoardSupport.columnHalves` draws active cards,
+    then the completed-tasks toggle, then completed ones, and **no sort chip removes that rank** —
+    so an active card dropped onto a completed one lands in the other stack under every sort the
+    board offers, `.custom` included, where `TaskOrdering.sortKeyOrder` answers `.tie` for every
+    pair by construction and would have been silent. `KanbanBoardSupport.cardSortKeyOrder` leads
+    with it. The **list** board deliberately does not use that function, and the difference is in
+    the displays rather than in taste: `activeTasks(from:)` filters finished work out before a list
+    column sees it and `TaskListKanbanColumn` draws one undivided stack, so its display key is
+    `TaskOrdering.sortKeyOrder` and nothing else. Each surface hands the notice the key its own
+    display actually uses, which is what that parameter has always been.
+  **The plumbing this needed, and it was less than the ticket feared.** `ListSectionKanbanColumn`
+  gains `sortField`/`sortDirection` as two `let`s from `ListSectionsKanbanView`, which was already
+  sorting for it — the sort was never absent, only unshared. `columnFailureNotice` is untouched:
+  its expression is pinned by an exact regex and the notice must not join it anyway, so
+  `KanbanColumnHeader` grew a **second** slot, `offScreenNotice`, drawn beside the red one on
+  `CadenceInlineNotice`'s `.informational` tone. The two can never both be set — they are the arms
+  of one `reordered` read.
+  **Mutations, all killed:** the `columnOrder.last` fallback removed, `last` weakened to `first`,
+  the tie test inverted, the finished lead key dropped from `cardSortKeyOrder`, and the dropped card
+  resolved by id against the destination column.
+  **Filed as:** **a card drop asks the same question a row drop does, and a board answers it with
+  the key its own display sorts by.**
 
 - [T-1090] **`CadenceUITests` leaks one private SwiftData store per app launch, and owns 71 of the 84 on disk.**
   Filed 2026-09-06 (tooltruth) out of [[T-1066]], which assumed the backlog was `run-macos-app.sh`'s.
@@ -1375,6 +1439,51 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   saved `#6366f1` as a thirteenth swatch beside its replacement, which is the [[T-245]] shape. The
   decision to make is whether a 0.7% shortfall on one swatch is worth that, or whether `offered` should
   learn to migrate a retired hex to its replacement.
+  **VERDICT 2026-09-06 (agent `residue`): leave the hue alone, keep the exemption by *name*, and
+  measure the band it stands in.** The numbers were recomputed rather than taken from this entry and
+  all of them hold: `L(#6366f1)` = 0.1850626, crossover 0.1854038, gap 0.00034, white 4.4669:1,
+  `bg` ink 4.4540:1, best 4.4669:1 — 0.736% under AA.
+  **What reframes it is that the shortfall is not the swatch's, it is the scheme's.**
+  `onColor(for:)` chooses between two inks, so a fill's best contrast is `max(white, bg)`, and that
+  maximum has a floor. White drops under 4.5:1 above `1.05/4.5 − 0.05` = **0.1833333**; `bg` is
+  still under 4.5:1 below `4.5·(L(bg)+0.05) − 0.05` = **0.1874926**. Between them **neither ink
+  clears AA at all** — a dead band **0.0041593** of luminance wide, about 2% of the value, which no
+  threshold, rounding or call-site change can close because the crossover is *solved* from `bg`
+  rather than tuned. `#6366f1` is not a swatch that failed; it is one swatch standing in a window
+  the scheme was always going to have, and it is the **only** one of the app's 30-odd offered fills
+  in it.
+  **What each option costs the user:**
+  * **Leave it (taken).** Anyone who picks that one indigo gets 4.467:1 instead of 4.5:1 on the
+    glyph over it — a filled focus button, a habit widget cell. 0.033 of a ratio, on one of twelve
+    swatches, above the 3:1 floor for UI components and large text throughout. Nobody's stored data
+    changes and nobody sees a second indigo.
+  * **Nudge the hex.** One step of green does it: `#6365f1` clears at 4.5043:1, a change no eye can
+    resolve. The *hue* cost is therefore nil and the whole cost is the stored value — every user who
+    ever picked indigo keeps `#6366f1` in `Area.colorHex`/`Project.colorHex`, and
+    `CadenceColorPalette.offered(_:from:)` then draws it as a **thirteenth swatch beside its own
+    twin**, on every synced device, for as long as they keep the list. That is the [[T-245]] shape,
+    and it is permanent where the shortfall is 0.7%. It is not even durable: 4.5043 is a 0.1%
+    margin and the band's upper edge **moves with `bg`**, so a future ramp change can put the
+    replacement back inside the band it was chosen to escape.
+  * **Teach `offered` to migrate a retired hex.** The third option this entry named, and it is the
+    most expensive of the three. `offered` is a *display* function that writes nothing; migrating
+    means either a pass over every `Area`/`Project`/`Goal`/`Habit`/`Tag` `colorHex` — a schema
+    migration that silently rewrites a value the user chose, with CloudKit conflict surface — or a
+    display-time substitution that makes the grid show a colour the store does not hold, which is
+    precisely what `offered` exists to prevent.
+  * **Close the band.** The only fix that removes the problem rather than dodging it: darken `bg`
+    until `L(bg) ≤ 0.0018518` — roughly `#09090b` → `#060607` — at which point the two edges cross
+    and every fill clears AA with one ink or the other. It drags the entire neutral ramp for one
+    swatch.
+  **What landed is the record, not a change of hue.**
+  `theTwoInkSchemeHasOneDeadBandAndExactlyOneOfferedFillSitsInIt` computes both edges from `bg`,
+  asserts the band is open, pins its width, checks the crossover is inside it, and **censuses the
+  offered fills**: exactly `["#6366f1"]`. So a second unservable swatch is a red run rather than a
+  second exemption. The exemption in `everyFillTheAppOffersClearsAAUnderTheInkOnColorForChooses`
+  stays by **name** on purpose — the property spelling ("exempt anything in the band") reads better
+  and would silently absolve the next swatch added into it, which is the one case worth catching.
+  `Theme.onColorCrossoverLuminance`'s prose now carries the band's expression rather than the
+  rounded "0.004-wide".
 - [T-850] **CLOSED 2026-09-06 (`dcd110c`), as still parked.** Originally: **iOS calendar quick-create branches on only one denied state.**
   `iOSCalendarQuickCreateSheet.swift:342-357` should consume the shared Calendar authorization
   presentation. Real, but iOS is not the v1 distribution channel — **parked behind macOS work.**

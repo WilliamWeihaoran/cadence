@@ -63,4 +63,31 @@ enum CadenceReorderVisibility {
               let target = tasks.first(where: { $0.id == targetID }) else { return nil }
         return sortKeyOrder(dropped, target) == .tie ? nil : offScreenNotice
     }
+
+    /// The same question about a **kanban card** drop (T-1085), which differs from a row drop in
+    /// two ways that are about the gesture and not about the rule.
+    ///
+    /// **A card can be dropped on the column itself, not on another card.** `KanbanBoardSupport`
+    /// takes that as `before: nil` and renumbers the card to the end of the column's `order`, so
+    /// the thing the user is being shown is *the bottom of this column* — and the row it has to tie
+    /// with is the card currently last in that sequence. With no such card there is nothing for the
+    /// drop to be invisible relative to, and the answer is `nil` rather than a sentence about an
+    /// empty column.
+    ///
+    /// **A card can arrive from another column**, refiled by the same commit. It is therefore not
+    /// in `columnOrder` at all, which is why this takes the `AppTask` rather than an id: an id
+    /// lookup against the destination column would answer `nil` on every cross-column drop — the
+    /// half of the gesture most likely to land somewhere the sort will not show.
+    ///
+    /// - Parameter columnOrder: the destination column's cards in `order` sequence — the same array
+    ///   the drop hands `KanbanBoardSupport.reorder`, so "last" here means what it means there.
+    static func cardDropNotice(
+        dropped: AppTask,
+        before target: AppTask?,
+        inColumnOrder columnOrder: [AppTask],
+        sortKeyOrder: (AppTask, AppTask) -> TaskSortKeyOrder
+    ) -> String? {
+        guard let landingBeside = target ?? columnOrder.last(where: { $0.id != dropped.id }) else { return nil }
+        return sortKeyOrder(dropped, landingBeside) == .tie ? nil : offScreenNotice
+    }
 }

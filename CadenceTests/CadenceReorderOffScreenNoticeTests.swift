@@ -461,4 +461,210 @@ struct CadenceReorderOffScreenNoticeTests {
         #expect(tasks.taskSorted(by: .date, direction: .ascending).map(\.title) == ["Charlie", "Alpha", "Bravo"])
         #expect(try notice("Charlie", onto: "Alpha", in: displayed, field: .date, direction: .ascending) == nil)
     }
+
+    // MARK: - T-1085: the two card drops
+
+    private func cardNotice(
+        _ droppedTitle: String,
+        before targetTitle: String?,
+        in tasks: [AppTask],
+        field: TaskSortField,
+        direction: TaskSortDirection,
+        columnOrder: [AppTask]? = nil
+    ) throws -> String? {
+        let dropped = try #require(tasks.first { $0.title == droppedTitle })
+        let target = try targetTitle.map { title in try #require(tasks.first { $0.title == title }) }
+        return CadenceReorderVisibility.cardDropNotice(
+            dropped: dropped,
+            before: target,
+            inColumnOrder: (columnOrder ?? tasks).sorted { $0.order < $1.order },
+            sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: field, direction: direction) }
+        )
+    }
+
+    /// **The same asymmetry the row half is measured by, on a card.** One board, one sort, two
+    /// drops: across a date boundary and inside a tie band. A predicate that fired on everything
+    /// passes the first and a predicate that fired on nothing passes the second.
+    @Test func aCardDroppedOnAnotherCardAsksTheSameQuestionARowDoes() throws {
+        let modelContext = ModelContext(try container())
+        let dated = try datedBoard(in: modelContext)
+        #expect(
+            try cardNotice("Alpha", before: "Delta", in: dated, field: .date, direction: .ascending)
+                == CadenceReorderVisibility.offScreenNotice
+        )
+        #expect(try cardNotice("Alpha", before: "Delta", in: dated, field: .custom, direction: .ascending) == nil)
+
+        let tied = try band(in: modelContext)
+        #expect(try cardNotice("Charlie", before: "Alpha", in: tied, field: .date, direction: .ascending) == nil)
+    }
+
+    /// **A drop on the column itself has no card to be measured against, so it borrows the last
+    /// one.** `KanbanBoardSupport` renumbers a `before: nil` drop to the end of the column's
+    /// `order`, so what the user is shown is *the bottom of this column* — and that claim is true
+    /// exactly when the card ties with whatever is currently last.
+    ///
+    /// The pair is the assertion: under `.date` on a board whose date order is the reverse of its
+    /// custom order, dropping Alpha on the column bottom cannot show it at the bottom; under
+    /// `.custom` it can. Same drop, same array, opposite answers.
+    @Test func aDropOnTheColumnItselfIsMeasuredAgainstTheCardCurrentlyLast() throws {
+        let modelContext = ModelContext(try container())
+        let dated = try datedBoard(in: modelContext)
+        #expect(
+            try cardNotice("Alpha", before: nil, in: dated, field: .date, direction: .ascending)
+                == CadenceReorderVisibility.offScreenNotice
+        )
+        #expect(try cardNotice("Alpha", before: nil, in: dated, field: .custom, direction: .ascending) == nil)
+
+        // **And it is the *last* card it reads, not the first**, which is a different assertion and
+        // needs a column where those two disagree: Alpha is dated, Bravo and Charlie are not, so
+        // under `.date` the bottom of the column is a tie band of two. Dropping Bravo there really
+        // does put it at the bottom and says nothing; reading the *first* card instead would
+        // compare it against Alpha's date and speak.
+        let mixed = try band(in: modelContext)
+        let onlyDatedCard = try #require(mixed.first { $0.title == "Alpha" })
+        onlyDatedCard.scheduledDate = "2026-09-04"
+        try modelContext.save()
+        #expect(try cardNotice("Bravo", before: nil, in: mixed, field: .date, direction: .ascending) == nil)
+        #expect(
+            try cardNotice("Alpha", before: nil, in: mixed, field: .date, direction: .ascending)
+                == CadenceReorderVisibility.offScreenNotice,
+            "non-vacuity: this column can produce the sentence at all"
+        )
+    }
+
+    /// **A column with nothing else in it says nothing.** Not a sentence about an empty column: a
+    /// card that is the only thing in the sequence is at the bottom of it by definition, whatever
+    /// the sort. Both spellings of "nothing else" are covered — an empty `columnOrder`, and one
+    /// holding only the dropped card, which is what a same-column drop on the column background
+    /// hands in.
+    @Test func aCardWithNothingToLandBesideSaysNothing() throws {
+        let modelContext = ModelContext(try container())
+        let dated = try datedBoard(in: modelContext)
+        let alpha = try #require(dated.first { $0.title == "Alpha" })
+        for columnOrder in [[], [alpha]] {
+            #expect(
+                CadenceReorderVisibility.cardDropNotice(
+                    dropped: alpha,
+                    before: nil,
+                    inColumnOrder: columnOrder,
+                    sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: .date, direction: .ascending) }
+                ) == nil
+            )
+        }
+    }
+
+    /// **A card refiled from another column is not in the destination column, and that is the half
+    /// most likely to land somewhere the sort will not show.** This is why `cardDropNotice` takes
+    /// the `AppTask` and not an id: an id lookup against `columnOrder` would answer `nil` on every
+    /// cross-column drop, and the surface would be silent precisely where it has most to say.
+    @Test func aCardArrivingFromAnotherColumnIsStillAnswered() throws {
+        let modelContext = ModelContext(try container())
+        let dated = try datedBoard(in: modelContext)
+        let incoming = try #require(dated.first { $0.title == "Alpha" })
+        let destination = dated.filter { $0.title != "Alpha" }
+        #expect(!destination.contains { $0.id == incoming.id }, "non-vacuity: the card really is elsewhere")
+        #expect(
+            CadenceReorderVisibility.cardDropNotice(
+                dropped: incoming,
+                before: nil,
+                inColumnOrder: destination.sorted { $0.order < $1.order },
+                sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: .date, direction: .ascending) }
+            ) == CadenceReorderVisibility.offScreenNotice
+        )
+    }
+
+    /// **The section board's key leads with the completed/active split, and no sort chip removes
+    /// it** — the same shape as Today's bucket rank in the row half (T-1077). A section column
+    /// draws active cards, then the toggle, then completed ones, so an active card dropped onto a
+    /// completed one lands in the other stack under **every** sort the board offers, `.custom`
+    /// included — where `TaskOrdering.sortKeyOrder` answers `.tie` for every pair by construction
+    /// and would have been silent.
+    ///
+    /// The pair below is that claim exactly: the same drop, read through the two keys.
+    @Test func theSectionBoardsKeyLeadsWithTheHalfTheCardIsDrawnIn() throws {
+        let modelContext = ModelContext(try container())
+        let tasks = try band(in: modelContext)
+        let active = try #require(tasks.first { $0.title == "Alpha" })
+        let finished = try #require(tasks.first { $0.title == "Charlie" })
+        finished.status = .done
+        finished.completedAt = Date()
+        try modelContext.save()
+        #expect(CadenceTaskQuerySupport.isFinishedTask(finished))
+        #expect(!CadenceTaskQuerySupport.isFinishedTask(active))
+
+        for field in TaskSortField.allCases {
+            #expect(
+                KanbanBoardSupport.cardSortKeyOrder(active, finished, field: field, direction: .ascending) == .before,
+                "\(field) loses the completed/active split, which no chip removes"
+            )
+            #expect(
+                TaskOrdering.sortKeyOrder(active, finished, field: .custom, direction: .ascending) == .tie,
+                "non-vacuity: the sort field alone really does tie here"
+            )
+        }
+
+        #expect(
+            CadenceReorderVisibility.cardDropNotice(
+                dropped: active,
+                before: finished,
+                inColumnOrder: tasks.sorted { $0.order < $1.order },
+                sortKeyOrder: { KanbanBoardSupport.cardSortKeyOrder($0, $1, field: .custom, direction: .ascending) }
+            ) == CadenceReorderVisibility.offScreenNotice
+        )
+        // Two active cards under `.custom` still say nothing: the split is a lead key, not a
+        // second reason to speak.
+        let bravo = try #require(tasks.first { $0.title == "Bravo" })
+        #expect(
+            CadenceReorderVisibility.cardDropNotice(
+                dropped: bravo,
+                before: active,
+                inColumnOrder: tasks.sorted { $0.order < $1.order },
+                sortKeyOrder: { KanbanBoardSupport.cardSortKeyOrder($0, $1, field: .custom, direction: .ascending) }
+            ) == nil
+        )
+    }
+
+    /// The source half, matching `everyRowDropSurfaceReportsAnOffScreenLanding` for the two card
+    /// surfaces — and asserting the thing that made them a separate ticket: **the notice does not
+    /// go through the failure slot.** `ListSectionKanbanColumn` funnels four different refusals
+    /// into `columnFailureNotice`, and a fifth arm there would have put a sentence claiming the
+    /// move into a slot `CadenceKanbanColumnLifecycleSurfaceTests` pins as the refusal's.
+    @Test func everyCardDropSurfaceReportsAnOffScreenLanding() throws {
+        var reporting = 0
+        for path in [
+            "Cadence/macOS/Views/KanbanListColumnView.swift",
+            "Cadence/macOS/Views/KanbanSectionColumnView.swift"
+        ] {
+            let source = try CadenceCommitSurfaceScan.scanned(path)
+            #expect(source.contains("private func moveTask("), "non-vacuity: wrong file read")
+            #expect(
+                !source.contains("\"Moved, but this sort"),
+                "\(path) retypes the off-screen sentence instead of reading it"
+            )
+            #expect(
+                source.contains("reorderOffScreenNotice = reordered ? CadenceReorderVisibility.cardDropNotice("),
+                "\(path) does not ask, on a landed drop, whether the card is visible"
+            )
+            #expect(
+                source.contains(") : nil"),
+                "\(path) never clears the off-screen notice, so a stale line outlives its drop"
+            )
+            #expect(
+                !source.contains("reorderFailureNotice = reorderOffScreenNotice")
+                    && !source.contains("columnFailureNotice: reorderOffScreenNotice"),
+                "\(path) reports a landed drop through the refusal slot"
+            )
+            reporting += 1
+        }
+        #expect(reporting == 2, "expected two card-drop surfaces, checked \(reporting)")
+
+        // Drawn, on the informational tone, by both columns' headers. The list board's column
+        // owns its header detail; the section board's goes through `KanbanColumnHeader`.
+        let list = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/KanbanListColumnView.swift")
+        #expect(list.contains("CadenceInlineNotice(text: reorderOffScreenNotice, tone: .informational)"))
+        let support = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/KanbanColumnSupportViews.swift")
+        #expect(support.contains("CadenceInlineNotice(text: offScreenNotice, tone: .informational)"))
+        let section = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/KanbanSectionColumnView.swift")
+        #expect(section.contains("offScreenNotice: reorderOffScreenNotice"))
+    }
 }

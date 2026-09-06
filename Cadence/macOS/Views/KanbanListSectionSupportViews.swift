@@ -71,6 +71,8 @@ struct ListSectionsKanbanView: View {
                                     section: section,
                                     tasks: sectionTasks,
                                     universeTasks: universeTasks ?? tasks,
+                                    sortField: sortField,
+                                    sortDirection: sortDirection,
                                     area: area,
                                     project: project,
                                     isBeingDragged: draggingSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,

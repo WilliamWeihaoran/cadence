@@ -387,6 +387,13 @@ struct CadenceContrastFloorTests {
     /// deliberately: it is a *stored user value*, and `CadenceColorPalette.offered(_:from:)` would
     /// then append a user's saved `#6366f1` as a thirteenth swatch beside its replacement — the
     /// T-245 shape. A 0.7% shortfall on one swatch does not buy that. See T-1056.
+    ///
+    /// **T-1089 settled that as the verdict and left the exemption by *name*, on purpose.** The
+    /// property version of it — "exempt any fill inside the dead band" — reads better and is worse:
+    /// it would silently exempt the *next* swatch added into the band, which is the one case this
+    /// test exists to catch. `theTwoInkSchemeHasOneDeadBandAndExactlyOneOfferedFillSitsInIt` is
+    /// where the band itself is measured, and it is that test, not this one, that would go red if a
+    /// second unservable hue were offered.
     @Test func everyFillTheAppOffersClearsAAUnderTheInkOnColorForChooses() {
         let exempt = "#6366f1"
         var offered: Set<String> = []
@@ -411,6 +418,63 @@ struct CadenceContrastFloorTests {
                 "\(hex) carries its chosen ink at \(t853Rounded(ratio)):1, under \(t853Rounded(required)):1"
             )
         }
+    }
+
+    /// **The band a two-ink scheme cannot serve at all, and the census of what sits in it (T-1089).**
+    ///
+    /// `onColor(for:)` chooses between exactly two inks, so a fill's best available contrast is
+    /// `max(white, bg)` — and that maximum has a minimum. White fails 4.5:1 above
+    /// `1.05/4.5 − 0.05`; `bg` fails 4.5:1 below `4.5·(L(bg)+0.05) − 0.05`. Between those two
+    /// numbers **neither ink clears AA**, and no threshold, rounding or call-site fix can change
+    /// that: the crossover is *solved* from `bg` rather than tuned, and 4.46:1 at the crossover is
+    /// the arithmetic best the scheme can do at the worst fill luminance.
+    ///
+    /// So `#6366f1`'s shortfall is not a defect in a swatch, it is one swatch standing in a window
+    /// **0.0042 of luminance wide** — about 2% of the value — that the scheme was always going to
+    /// have. This is the honest form of the exemption: the shortfall is bounded, it is bounded by
+    /// the scheme rather than by a choice, and exactly one of the app's thirty-odd offered fills is
+    /// in it. Adding a second is what would need a decision, and that is what this test refuses.
+    ///
+    /// **The two ways out and what they cost, since this test is where the numbers are.** Nudging
+    /// the hex needs one step of green — `#6365f1` clears at 4.5043:1 — a change no eye can see;
+    /// its whole cost is that every user who ever picked indigo keeps `#6366f1` in
+    /// `Area.colorHex`/`Project.colorHex`, and `offered(_:from:)` then draws it as a thirteenth
+    /// swatch beside a twin, on every synced device, forever. And 4.5043 is a 0.1% margin: the
+    /// upper edge below **moves with `bg`**, so the nudge is not even durable. Closing the band
+    /// instead means darkening `bg` past `L ≤ 0.00185` — roughly `#09090b` → `#060607` — which
+    /// drags the whole neutral ramp to fix one swatch. Both are larger than 0.033 of a ratio.
+    @Test func theTwoInkSchemeHasOneDeadBandAndExactlyOneOfferedFillSitsInIt() {
+        // White is a constant, so its edge is one too. `bg`'s edge is not: it follows the ramp,
+        // which is the same reason `onColorCrossoverLuminance` is solved rather than stored.
+        let whiteFails = 1.05 / 4.5 - 0.05
+        let inkFails = 4.5 * (Theme.relativeLuminance(of: Theme.bg) + 0.05) - 0.05
+        #expect(whiteFails < inkFails, "the band has closed — every fill now clears AA with one ink, so drop the exemption")
+        #expect(abs((inkFails - whiteFails) - 0.004_159) < 0.000_01, "the band is \(inkFails - whiteFails) wide, not 0.0042")
+        #expect(
+            whiteFails < Theme.onColorCrossoverLuminance && Theme.onColorCrossoverLuminance < inkFails,
+            "non-vacuity: the crossover is not inside the band the crossover defines"
+        )
+
+        var offered: Set<String> = []
+        for palette in CadenceAccentPalette.all { offered.formUnion(palette.swatchHexes) }
+        offered.formUnion(CadenceColorPalette.colors)
+        offered.formUnion(CadenceColorPalette.sectionColors)
+        offered.formUnion(CadenceColorPalette.destinationTints)
+        offered.formUnion(TagSupport.colorOptions)
+        offered.formUnion(TagSupport.defaultTags.map(\.colorHex))
+        offered.insert(TaskSectionDefaults.defaultColorHex)
+        #expect(offered.count > 30, "non-vacuity: \(offered.count) distinct offered fills")
+
+        let inBand = offered.filter { hex in
+            let luminance = Theme.relativeLuminance(of: Color(hex: hex))
+            return luminance > whiteFails && luminance < inkFails
+        }
+        #expect(
+            inBand.map { $0.lowercased() }.sorted() == ["#6366f1"],
+            """
+            the fills no ink can carry to 4.5:1 are \(inBand.sorted()). One of them is T-1089's,             argued and kept; a second is a new decision, not a rounding error — and the palette             has \(String(format: "%.4f", inkFails - whiteFails)) of luminance to avoid, not a point
+            """
+        )
     }
 
     /// The three fills the app *solves* rather than takes raw stay under the crossover, which is

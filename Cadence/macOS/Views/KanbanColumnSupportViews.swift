@@ -283,6 +283,11 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     /// The red line a refused column write leaves on the **column** rather than in the editor
     /// popover (T-646). `nil` while the popover is up, because it is showing the same sentence.
     let failureNotice: String?
+    /// The line a card drop that *landed* leaves when the board's sort will not show it there
+    /// (T-1085). A second slot rather than a second source for `failureNotice`, because the two
+    /// sentences make opposite claims: one says the store would not take the write, this one says
+    /// it did. `CadenceInlineNotice`'s `.informational` tone is what keeps it out of `Theme.red`.
+    var offScreenNotice: String? = nil
     @Binding var showHeaderDueDatePicker: Bool
     @Binding var showEditor: Bool
     let onToggleCompletion: () -> Void
@@ -340,6 +345,13 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
         // this is a failure, and it should not be quieter than the countdown it replaces.
         if let failureNotice {
             CadenceInlineFailureNotice(text: failureNotice)
+                .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
+        }
+
+        // **T-1085.** Same place, same metrics, opposite claim — see `offScreenNotice`. The two
+        // cannot both be set: they are the arms of one `reordered` read at the drop.
+        if let offScreenNotice {
+            CadenceInlineNotice(text: offScreenNotice, tone: .informational)
                 .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
         }
     }

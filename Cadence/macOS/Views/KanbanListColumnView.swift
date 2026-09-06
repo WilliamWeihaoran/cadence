@@ -27,6 +27,11 @@ struct TaskListKanbanColumn: View {
     /// Set when the store refused a card drop (T-869). The cards are already back in their old
     /// column and their old order by then, so the board and this sentence agree.
     @State private var reorderFailureNotice: String? = nil
+    /// Set when a card drop the store *took* landed where this column's sort will not show it
+    /// (T-1085). Never set at the same time as `reorderFailureNotice` — they are the two arms of
+    /// one `reordered` read — and deliberately not folded into it: nothing failed here, the card
+    /// moved, and "Couldn't save this new order. Nothing was moved." would be two false sentences.
+    @State private var reorderOffScreenNotice: String? = nil
 
     private var unfrozenSortedTasks: [AppTask] {
         tasks.taskSorted(by: sortField, direction: sortDirection)
@@ -96,6 +101,9 @@ struct TaskListKanbanColumn: View {
                 if let reorderFailureNotice {
                     CadenceInlineFailureNotice(text: reorderFailureNotice)
                 }
+                if let reorderOffScreenNotice {
+                    CadenceInlineNotice(text: reorderOffScreenNotice, tone: .informational)
+                }
             }
         )
     }
@@ -157,14 +165,21 @@ struct TaskListKanbanColumn: View {
         // arrangement with the date order the first time anyone dragged a card while sorted by
         // date. `TasksPanelSupport.reorderTask` carries the whole reasoning; this column and the
         // section board's `ListSectionKanbanColumn.moveTask` are the two card drops it covers.
+        let columnOrder = unfrozenSortedTasks.sorted { $0.order < $1.order }
         let reordered = KanbanBoardSupport.reorder(
-            unfrozenSortedTasks.sorted { $0.order < $1.order },
+            columnOrder,
             moving: task,
             before: target,
             in: modelContext,
             assigning: { onAssignTask(task) }
         )
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+        reorderOffScreenNotice = reordered ? CadenceReorderVisibility.cardDropNotice(
+            dropped: task,
+            before: target,
+            inColumnOrder: columnOrder,
+            sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
+        ) : nil
         return reordered
     }
 }

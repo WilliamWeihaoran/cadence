@@ -70,6 +70,34 @@ enum KanbanBoardSupport {
         )
     }
 
+    /// Where a pair of **section-column** cards lands on that column's own display key, before
+    /// `order` is consulted — the input `CadenceReorderVisibility.cardDropNotice` needs (T-1085).
+    ///
+    /// **`columnHalves` is a rank, and no sort chip removes it**, exactly as Today's bucket rank is
+    /// a rank no chip removes (T-1077). A section column draws its active cards, then the
+    /// completed-tasks toggle, then its completed ones, so an active card dropped onto a completed
+    /// one lands in the other stack no matter what the board is sorted by — including `.custom`,
+    /// where `TaskOrdering.sortKeyOrder` answers `.tie` for every pair by construction. Reading
+    /// only the sort field would therefore have been silent on the one drop the board *cannot*
+    /// show where it was made.
+    ///
+    /// **The list board deliberately does not use this**, and the difference is in the two boards'
+    /// displays rather than in taste: `activeTasks(from:)` filters finished work out before a list
+    /// column sees it, and `TaskListKanbanColumn` draws one undivided stack. Its display key is
+    /// `TaskOrdering.sortKeyOrder` and nothing else, so that is what it passes. Each surface hands
+    /// the notice the key its own display actually uses.
+    static func cardSortKeyOrder(
+        _ lhs: AppTask,
+        _ rhs: AppTask,
+        field: TaskSortField,
+        direction: TaskSortDirection
+    ) -> TaskSortKeyOrder {
+        let lhsFinished = CadenceTaskQuerySupport.isFinishedTask(lhs)
+        let rhsFinished = CadenceTaskQuerySupport.isFinishedTask(rhs)
+        if lhsFinished != rhsFinished { return .ordered(rhsFinished) }
+        return TaskOrdering.sortKeyOrder(lhs, rhs, field: field, direction: direction)
+    }
+
     static func activeTasks(from allTasks: [AppTask]) -> [AppTask] {
         let tasksInActiveContainers = allTasks.filter(\.isInActiveContainer)
         return CadenceTaskQuerySupport.openTasks(from: tasksInActiveContainers)

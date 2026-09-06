@@ -514,8 +514,11 @@ nonisolated struct Theme {
     /// nothing to re-tune when the neutral ramp moves: change `bg` and this follows it. At the
     /// crossover itself both inks read 4.46:1, which is the *worst* case `onColor(for:)` can
     /// produce at any fill luminance whatsoever — over the 3:1 floor for large text and UI
-    /// components everywhere, and over 4.5:1 everywhere except a 0.004-wide band of luminance
-    /// around this value. `CadenceContrastFloorTests` measures both claims.
+    /// components everywhere, and over 4.5:1 everywhere except a 0.0042-wide band of luminance
+    /// around this value: `(1.05/4.5 - 0.05, 4.5*(L(bg)+0.05) - 0.05)`, where white has already
+    /// fallen under AA and `bg` has not yet risen to it. `CadenceContrastFloorTests` measures both
+    /// claims, and censuses the band (T-1089) — exactly one offered swatch is inside it, `#6366f1`,
+    /// kept deliberately because it is a stored user value and a second would be a new decision.
     static let onColorCrossoverLuminance: Double =
         (1.05 * (relativeLuminance(of: bg) + 0.05)).squareRoot() - 0.05
 
