@@ -1575,6 +1575,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   tag rebuild dropped, the note fold dropped) were each killed by the named test at 0 compile
   errors. **What a user still cannot do is start one** — see [[T-1082]].
 
+- [T-1084] **A cross-device import restores a calendar link the importing device cannot honour, and
+  nothing tells the user.** Found while closing [[T-1082]], and it is the *reopening* of a decision
+  rather than a new defect. `CadenceArchiveArea.linkedCalendarID` / `CadenceArchiveProject.linkedCalendarID`
+  hold an `EKCalendar.calendarIdentifier`, which Apple documents as local to one device. [[T-661]]
+  decided to keep the field and document it rather than drop it, and deliberately shipped **no**
+  user-facing copy about it — on the stated ground that `CadenceDataExportPresentation.description`
+  "already ends *Cadence cannot read an archive back in yet*, so there is no restore for the caveat
+  to qualify". **That ground is gone.** [[T-1082]] shipped the import on both platforms, so an
+  archive taken on one Mac and imported on another now restores lists carrying an identifier the
+  importing machine never issued. [[T-624]]'s evidence gate keeps it *inert* — such a link reads as
+  unverified rather than as a broken one with a repair beside it — so this is a copy question and
+  not a data-loss one, which is why it is a ticket and not a fix. The obvious home is
+  `CadenceArchiveImportPresentation`'s preview, which already names the kinds of record an import
+  cannot store; "calendar links do not survive a move to another device" is the same shape of fact
+  and the preview is the one place a user reads before choosing. Decide whether it earns a line
+  there, or whether inert-and-documented is still the right answer now that the restore exists.
+
 - [T-1083] **`StoredLaunchReportSuiteRule` cannot see a launch-report writer one frame down.**
   Found while closing the engine half of [[T-274]]. The rule greps a suite's own body for the
   literal `migrateIfNeeded(` or `repairIfNeeded(`, so a suite that reaches either *through a
