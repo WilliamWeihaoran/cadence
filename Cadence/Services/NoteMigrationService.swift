@@ -486,11 +486,31 @@ nonisolated enum NoteMigrationService {
     /// control, with nothing in it. `MarkdownNoteTitleSync` reads an empty H1 as "leave the stored
     /// title alone", so the note stays nameless until the user names it and `Note.displayTitle`
     /// calls it `Notepad` in the meantime.
+    /// **The commit un-inserts the note when the store refuses it (T-1071).** It used to be a bare
+    /// `try context.save()`, which throws the error but leaves the `Note` pending in the app's one
+    /// `ModelContext` — so `iOSNotesView.createNotepadNote`, which now says "Nothing was changed"
+    /// on that error, would have been lying: the next unrelated save would have taken the note the
+    /// user was told did not exist. That is exactly what
+    /// `CadencePendingChangePersistence.commitInsert(of:in:)` is for, and
+    /// `CadenceListNoteFiling.createNote` uses it for the list-note `+` (T-497).
+    ///
+    /// **It is spelled out here rather than called, and the reason is a target boundary.** This
+    /// file is in `CadenceMCPServer`'s explicit Sources phase and
+    /// `Cadence/Shared/CadencePendingChangePersistence.swift` is not, so naming the helper breaks
+    /// a target no scheme in this repository builds — the `aaa0064` shape that
+    /// `CadenceTargetSourceMembershipTests` exists to catch, and which it did catch here. Three
+    /// lines of duplication is the cheaper of the two prices; the alternative is adding a shared
+    /// type to a command-line tool's source list to serve one call.
     @discardableResult
     static func createPermanentNote(in context: ModelContext, title: String = "") throws -> Note {
         let note = Note(kind: .permanent, title: title, content: "# \(title)\n\n")
         context.insert(note)
-        try context.save()
+        do {
+            try context.save()
+        } catch {
+            context.delete(note)
+            throw error
+        }
         return note
     }
 

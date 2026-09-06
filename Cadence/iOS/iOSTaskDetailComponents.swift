@@ -342,12 +342,27 @@ struct iOSTaskTagStrip: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var showPicker = false
+    /// **T-1070.** Set when the store refused a chip's `x`. The popover has its own copy for the
+    /// refusals *it* can cause, because it is a separate surface and is still open when one
+    /// happens; this one is for the strip, which is what the user is looking at when they remove a
+    /// chip from the task.
+    @State private var tagFailureNotice: String?
 
     private var selectedTags: [Tag] {
         TagSupport.sorted(task.tags ?? [])
     }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            chips
+
+            if let tagFailureNotice {
+                CadenceInlineFailureNotice(text: tagFailureNotice)
+            }
+        }
+    }
+
+    private var chips: some View {
         CadenceWrappingHStack(
             spacing: CadenceTagChipStyle.editableStripSpacing(for: .regular),
             // Wider than it looks like it needs to be. The chip's remove control carries a 44pt
@@ -382,7 +397,7 @@ struct iOSTaskTagStrip: View {
                     ),
                     allTags: allTags,
                     newTagName: $newTagName,
-                    onCommit: { try? modelContext.save() }
+                    onCommit: { previous in commitTags(restoring: previous) }
                 )
             }
 
@@ -397,9 +412,35 @@ struct iOSTaskTagStrip: View {
         }
     }
 
+    /// **T-1070, the report half of the `try? save()` rule in its plain spelling.** This wrote
+    /// `task.tags` and swallowed the commit, and the chip was already gone from the strip by the
+    /// time the store refused it — a rearrangement the user can see, over a save nobody checked.
     private func remove(_ tag: Tag) {
-        task.tags = (task.tags ?? []).filter { $0.id != tag.id }
-        try? modelContext.save()
+        let previous = task.tags ?? []
+        task.tags = previous.filter { $0.id != tag.id }
+        guard commitTags(restoring: previous) else {
+            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        tagFailureNotice = nil
+    }
+
+    /// Commits a change to `task.tags`, putting `previous` back when the store refuses it.
+    ///
+    /// **T-1070.** This is the whole of what the popover's `onCommit` used to be, spelled
+    /// `{ try? modelContext.save() }` — a refusal that came back indistinguishable from a success,
+    /// with the tick already drawn beside the row and the chip already on the task.
+    /// `commitEdit(in:undo:)` restores the previous array before the `false` is returned, which is
+    /// what makes `editFailureNotice`'s "Nothing was changed" true rather than merely soothing.
+    private func commitTags(restoring previous: [Tag]) -> Bool {
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                task.tags = TagSupport.sorted(previous)
+            }
+            return true
+        } catch {
+            return false
+        }
     }
 }
 
@@ -408,15 +449,26 @@ struct iOSTaskTagStrip: View {
 ///
 /// It edits a **`[Tag]` binding** rather than an `AppTask` so the create sheet — where the task does
 /// not exist yet, and must not until Add is tapped — can present the identical catalogue. The
-/// inspector passes a binding through to `task.tags` and saves in `onCommit`; the create sheet holds
-/// the array in `@State` and commits nothing until creation.
+/// inspector passes a binding through to `task.tags` and commits in `onCommit` — which answers
+/// whether the store took it, so the tick can be taken back (T-1070); the create sheet holds the
+/// array in `@State`, commits nothing until creation, and accepts every change.
 struct iOSTaskTagPickerPopover: View {
     @Binding var selectedTags: [Tag]
     let allTags: [Tag]
     @Binding var newTagName: String
-    /// Run after any change to the selection, for callers whose binding writes straight into
-    /// SwiftData. Defaults to nothing, which is what a not-yet-created task wants.
-    var onCommit: () -> Void = {}
+    /// Commits a change to the selection and answers whether the store took it, for callers whose
+    /// binding writes straight into SwiftData.
+    ///
+    /// **T-1070.** It was `() -> Void`, and the inspector supplied `{ try? modelContext.save() }` —
+    /// so a refused write reached this popover as a tick beside the row and a chip on the task.
+    /// The refusal is *returned* now, and the popover says so: it is still open, which is exactly
+    /// the [[T-664]] shape the rule names — the surface stays up and fills itself in.
+    ///
+    /// It is handed the selection **as it was before the write**, because the binding has already
+    /// been written by the time this runs and only the caller knows where its binding points, so
+    /// the undo has to be the caller's. Defaults to accepting, which is what a not-yet-created task
+    /// wants: the create sheet holds its array in `@State` and commits nothing until Add is tapped.
+    var onCommit: ([Tag]) -> Bool = { _ in true }
     @Environment(\.modelContext) private var modelContext
     /// Set when the store refused the tag the field just tried to create. See `addTag()`.
     @State private var tagFailureNotice: String?
@@ -526,13 +578,21 @@ struct iOSTaskTagPickerPopover: View {
         selectedTags.contains { $0.id == tag.id }
     }
 
+    /// **T-1070.** The checkmark this draws is the report, so it may not outrun the commit: the
+    /// caller undoes the write before answering `false`, and the sentence below the list is the
+    /// only thing left saying anything happened.
     private func toggle(_ tag: Tag) {
+        let previous = selectedTags
         if isSelected(tag) {
             selectedTags = selectedTags.filter { $0.id != tag.id }
         } else {
             selectedTags = TagSupport.sorted(selectedTags + [tag])
         }
-        onCommit()
+        guard onCommit(previous) else {
+            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        tagFailureNotice = nil
     }
 
     /// **T-631.** This inserted a `Tag` one frame down in `TagSupport.resolveTags`, into the
@@ -542,6 +602,12 @@ struct iOSTaskTagPickerPopover: View {
     ///
     /// Clearing the field now happens on the committed path alone, the way
     /// `iOSSettingsTagsSection.createTag` — the same act, one screen over — already did.
+    ///
+    /// **T-1070 closed the other half.** T-631 stopped this minting a tag over a swallowed save,
+    /// and left it *selecting* the tag over one: `onCommit()` returned nothing, so the field
+    /// cleared and the chip appeared whether or not the store took the attachment. Both the mint
+    /// and the selection are guarded now, in that order, and either refusal leaves the typed name
+    /// in the field.
     private func addTag() {
         let name = trimmedNewTagName
         guard !name.isEmpty else { return }
@@ -549,12 +615,16 @@ struct iOSTaskTagPickerPopover: View {
             tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
             return
         }
-        tagFailureNotice = nil
+        let previous = selectedTags
         if !isSelected(tag) {
             selectedTags = TagSupport.sorted(selectedTags + [tag])
         }
+        guard onCommit(previous) else {
+            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        tagFailureNotice = nil
         newTagName = ""
-        onCommit()
     }
 
     /// T-653, the existence half of the `try? save()` rule. The macOS twin is

@@ -304,7 +304,9 @@ struct CadenceInlineTagCommitSurfaceTests {
         let add = try CadenceCommitSurfaceScan.declarationBody(named: "addTag", in: components)
 
         #expect(add.contains("guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {"))
-        for report in [#"newTagName = """#, "onCommit()"] {
+        // `onCommit(previous)` since T-1070 — the selection commit answers `Bool` now, and is
+        // handed the array as it stood before the write so the caller can undo it.
+        for report in [#"newTagName = """#, "onCommit(previous)"] {
             #expect(
                 reportFollowsTheRefusal(
                     marker: "tagFailureNotice = CadencePendingChangePersistence.editFailureNotice",
@@ -314,6 +316,98 @@ struct CadenceInlineTagCommitSurfaceTests {
                 "addTag runs `\(report)` above its refusal branch"
             )
         }
+    }
+
+    // MARK: - T-1070: the selection half, one frame down through a closure property
+
+    /// **Source shape. The half T-631 left behind.**
+    ///
+    /// T-631 stopped six doors *minting* a tag over a swallowed save. The iOS popover's other three
+    /// doors — tick a row, untick a row, create-and-select — went on committing the **selection**
+    /// through one: `onCommit` was `() -> Void`, and `iOSTaskTagStrip` supplied it as
+    /// `{ try? modelContext.save() }`. So the checkmark appeared, the chip appeared on the task,
+    /// and the store may have refused all of it. [[T-664]]'s shape exactly, and invisible to the
+    /// save-commit detector because the report sits one frame down through a **closure property**,
+    /// which a same-file name index does not reach ([[T-657]]).
+    ///
+    /// The refusal is returned now rather than swallowed, which is the repo's established shape,
+    /// and the popover — still open, and the surface the user is looking at — names it.
+    @Test func theTouchTagPickerReportsARefusedSelectionRatherThanTicking() throws {
+        let components = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskDetailComponents.swift")
+
+        #expect(
+            components.contains("var onCommit: ([Tag]) -> Bool = { _ in true }"),
+            "the popover still promises nothing about whether the store took the selection"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"onCommit: \{ try\? modelContext\.save\(\) \}"#, in: components) == 0,
+            "the inspector still hands the popover a swallowed save"
+        )
+
+        let toggle = try CadenceCommitSurfaceScan.declarationBody(named: "toggle", in: components)
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: toggle) == 0, "toggle swallows a commit")
+        #expect(
+            toggle.contains("let previous = selectedTags"),
+            "toggle hands the caller no previous selection to undo the write with"
+        )
+        #expect(
+            toggle.contains("guard onCommit(previous) else {"),
+            "toggle still ticks the row whatever the store said"
+        )
+        #expect(
+            toggle.contains("tagFailureNotice = CadencePendingChangePersistence.editFailureNotice"),
+            "toggle does not name the refusal with the shared sentence"
+        )
+        #expect(
+            reportFollowsTheRefusal(
+                marker: "tagFailureNotice = CadencePendingChangePersistence.editFailureNotice",
+                report: "tagFailureNotice = nil",
+                in: toggle
+            ),
+            "toggle clears its notice above the refusal branch"
+        )
+    }
+
+    /// **Source shape. The same defect in plain spelling, fixed through the same door.**
+    ///
+    /// `iOSTaskTagStrip.remove` wrote `task.tags` and swallowed the commit with the chip already
+    /// gone from the strip — a rearrangement the user can see over a save nobody checked. It shares
+    /// `commitTags(restoring:)` with the popover's `onCommit`, so the two cannot drift: one door,
+    /// three handles.
+    ///
+    /// The undo is what earns the sentence. `editFailureNotice` says "Nothing was changed", and
+    /// that is only true because `commitEdit(in:undo:)` puts the previous array back before the
+    /// `false` is returned.
+    @Test func theTouchTagStripUndoesARemovalTheStoreRefused() throws {
+        let components = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskDetailComponents.swift")
+        let remove = try CadenceCommitSurfaceScan.declarationBody(named: "remove", in: components)
+
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: remove) == 0, "remove still swallows its commit")
+        #expect(remove.contains("let previous = task.tags ?? []"))
+        #expect(
+            remove.contains("guard commitTags(restoring: previous) else {"),
+            "remove still drops the chip whatever the store said"
+        )
+        #expect(remove.contains("tagFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
+
+        let commit = try CadenceCommitSurfaceScan.declarationBody(named: "commitTags", in: components)
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: commit) == 0, "commitTags swallows its own save")
+        #expect(commit.contains("try CadencePendingChangePersistence.commitEdit(in: modelContext) {"))
+        #expect(
+            commit.contains("task.tags = TagSupport.sorted(previous)"),
+            #"the undo does not restore the previous tags, so "Nothing was changed" is a lie"#
+        )
+
+        // Two surfaces, two notices, both drawn. The popover's covers the refusals it can cause
+        // while it is open; the strip's covers the chip's `x`, which happens with no popover up.
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: tagFailureNotice\)"#, in: components) == 2,
+            "the strip and the popover do not each draw the notice they set"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"@State private var tagFailureNotice: String\?"#, in: components) == 2,
+            "one of the two tag surfaces has no notice of its own"
+        )
     }
 
     /// **Source shape.** The `#` suggestion row on iOS routes through the same creator rather than

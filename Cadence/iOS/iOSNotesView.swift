@@ -95,6 +95,9 @@ struct iOSNotesView: View {
     @State private var noteToDelete: Note?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
+    /// **T-1071:** the one thing the Notepad `+` can fail at, said above the column the note would
+    /// have appeared in — the same place `iOSListNotesView` puts its own (T-497).
+    @State private var createFailureNotice: String?
     // Deliberately `@State`, not `@FocusState`. The editor's first responder is a `UITextView`
     // inside a `UIViewRepresentable`; nothing here is ever attached with `.focused(...)`, so a
     // `@FocusState` had no view to move focus to and could not report focus back either. The
@@ -292,6 +295,21 @@ struct iOSNotesView: View {
     /// The month-grouped index column — the same one macOS draws, from the same file.
     @ViewBuilder
     private var sidebar: some View {
+        VStack(spacing: 0) {
+            if let createFailureNotice {
+                CadenceInlineFailureNotice(text: createFailureNotice)
+                    .padding(.horizontal, listMetrics.columnHorizontalPadding)
+                    .padding(.vertical, listMetrics.columnVerticalPadding)
+            }
+
+            sidebarList
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.surface)
+    }
+
+    @ViewBuilder
+    private var sidebarList: some View {
         Group {
             if listedNotes.isEmpty {
                 iOSEmptyPanel(
@@ -310,8 +328,10 @@ struct iOSNotesView: View {
                 }
             }
         }
+        // The surface fill and the outer frame live on `sidebar` above, with the notice; this keeps
+        // only the greedy frame, so the list takes the space the notice is not using. Same split as
+        // `iOSListNotesView.notesColumn` / `.notesColumnContent`.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.surface)
     }
 
     /// One row of the index column, with the delete menu on the one tab that can have one.
@@ -540,8 +560,22 @@ struct iOSNotesView: View {
         selectedNoteID = listedNotes.first?.id
     }
 
+    /// **T-1071.** This was `guard let note = try? … else { return }`, and the `else` was the whole
+    /// of what a refused store produced: a `+` that did nothing at all, with nothing on screen to
+    /// say why. The guard itself was right — nothing must open onto a note the store did not take,
+    /// which is why this was never T-657's "told it worked" shape — so what was missing was only
+    /// the sentence. Third door of the same three: `iOSListNotesView.addNote` (T-497) and
+    /// `iOSTaskTagPickerPopover.addTag` (T-631) are the other two, and this is their notice in
+    /// their spelling.
     private func createNotepadNote() {
-        guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }
+        let note: Note
+        do {
+            note = try NoteMigrationService.createPermanentNote(in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         open(note)
     }
 

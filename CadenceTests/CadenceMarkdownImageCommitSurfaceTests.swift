@@ -401,7 +401,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // Tasks tab, the All Tasks board's list column, and the section board's column rail), all
         // bare for the same reason: the retry is the drag itself. T-642 made it 61: the task
         // settle-failure notice a presented sheet draws for itself, and the seventh dismissable one.
-        #expect(total == 61, "the inline notice has \(total) call sites, not the 61 this test was written over")
+        // T-1070/T-1071 made it 63, both bare: the iOS tag strip (a refused chip removal, the
+        // popover already had its own for a refused selection) and the Notepad `+` (a refused
+        // note). Each sits beside the control that failed and is cleared by the next press of it.
+        #expect(total == 63, "the inline notice has \(total) call sites, not the 63 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

@@ -199,6 +199,58 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         }
     }
 
+    /// **Source shape. T-1071: the third door, and the only one that reported nothing at all.**
+    ///
+    /// The Notepad `+` never showed a note the store had refused — its `try?` was *guarded*, so on
+    /// a refusal neither `presentedNote` nor `selectedNoteID` was written. That is what kept it out
+    /// of the "told it worked" sweeps. What the user got instead was a button that did absolutely
+    /// nothing: no note, no sentence, nothing to distinguish a refused store from dead wiring.
+    ///
+    /// Same fix as its two neighbours, in their spelling: `iOSListNotesView.addNote` (T-497) and
+    /// `iOSTaskDetailComponents.addTag` (T-631).
+    @Test func theNotepadPlusNamesARefusedNoteRatherThanDoingNothing() throws {
+        let view = try scanned("Cadence/iOS/iOSNotesView.swift")
+        let create = try declarationBody(named: "createNotepadNote", in: view)
+
+        #expect(
+            CadenceSourceScan.matchCount(#"try\?"#, in: create) == 0,
+            "createNotepadNote still discards the error it is supposed to report"
+        )
+        #expect(create.contains("try NoteMigrationService.createPermanentNote(in: modelContext)"))
+        #expect(
+            create.contains("createFailureNotice = CadencePendingChangePersistence.editFailureNotice"),
+            "createNotepadNote does not name the failure with the shared sentence"
+        )
+        #expect(reportFollowsTheCatch("open(note)", in: create), "the note opens above the failure branch")
+        #expect(
+            view.contains("CadenceInlineFailureNotice(text: createFailureNotice)"),
+            "iOSNotesView sets a notice it never draws"
+        )
+
+        // The sentence is "Nothing was changed", so nothing may be left changed. A bare
+        // `try context.save()` throws *and* leaves the inserted note pending in the app's one
+        // `ModelContext`, for the next unrelated save to take — which would make the notice false
+        // some seconds after it was shown.
+        //
+        // Spelled out rather than routed through `CadencePendingChangePersistence.commitInsert`,
+        // and the asymmetry with `CadenceListNoteFiling.createNote` above is deliberate:
+        // `NoteMigrationService.swift` is in `CadenceMCPServer`'s explicit Sources phase and the
+        // shared helper is not, so naming it breaks a target no scheme here builds — the exact
+        // violation `CadenceTargetSourceMembershipTests` reported when this was first written that
+        // way.
+        let migration = try scanned("Cadence/Services/NoteMigrationService.swift")
+        let permanent = try declarationBody(named: "createPermanentNote", in: migration)
+        #expect(permanent.contains("context.insert(note)"))
+        #expect(
+            CadenceSourceScan.matchCount(#"try\?"#, in: permanent) == 0,
+            "createPermanentNote swallows its own commit"
+        )
+        #expect(
+            permanent.contains("context.delete(note)"),
+            "a refused notepad note stays pending in the context the notice says was left alone"
+        )
+    }
+
     /// **Source shape, and iOS-only — this file is behind `#if os(iOS)`.** The event-note button
     /// inserts a note and opens it, so presenting the editor *is* the success report and has to sit
     /// below the `catch`.
