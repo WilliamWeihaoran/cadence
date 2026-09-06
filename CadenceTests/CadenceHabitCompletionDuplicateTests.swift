@@ -465,10 +465,12 @@ struct CadenceHabitCompletionDuplicateTests {
         // importer's one write is a verbatim copy of the archived value. A computed count here
         // would be red.
         //
-        // **This does not close [[T-391]] — it is the case T-391 predicted.** The advice in
-        // `aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent` below is that an import
-        // should *fold* a day's split rows into one row's `count` before inserting them, and the
-        // importer does not do that yet. Filed as [[T-1088]].
+        // **The verbatim copy is the decision, not an omission.** [[T-1088]] asked whether the
+        // importer should instead *fold* a day's split rows into one row's `count`, as
+        // `aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent` below used to instruct,
+        // and the answer is no: the two tests beside it measure that the archive carries no field
+        // separating a split day from a synced duplicate, so a fold would read a [[T-359]]
+        // duplicate as 2. A computed count here would be red for that reason as well as this one.
         #expect(
             assigning.remove("CadenceArchiveImportService.swift") != nil,
             "the importer no longer assigns a row's count — delete this exemption"
@@ -515,14 +517,21 @@ struct CadenceHabitCompletionDuplicateTests {
     /// that executes. There is no rule that can fold `[2, 1]` back to 3 without also folding
     /// `[1, 1]` to 2, which is exactly the [[T-359]] bug — `HabitCompletion` carries no provenance
     /// that separates "one day's quantity written across two rows" from "one check-in synced
-    /// twice", so a repair here would have to guess. The place that *does* know is an importer,
-    /// which sees a whole archive's rows for a day at once.
+    /// twice", so a repair here would have to guess.
     ///
-    /// So this is the warning for whoever builds [[T-274]]'s archive import: **fold split rows
-    /// into one row's `count` before inserting them.** `performStartupMaintenance` runs repair the
-    /// instant the container opens, and the collapse deletes the smaller rows — so an import that
-    /// writes a split day loses the remainder before anyone can look at it, and the day reads low
-    /// forever rather than only until the next repair.
+    /// **This test used to name an importer as the party that could do better, and instruct
+    /// [[T-274]]'s archive import to "fold split rows into one row's `count` before inserting
+    /// them". That instruction was wrong and is withdrawn — see [[T-1088]].** The two tests below
+    /// are the measurement that withdrew it: the archive carries the model's five fields and no
+    /// provenance, and the repair is handed a whole habit-day exactly as an importer would be. The
+    /// importer does not know more; it knows the same, so folding there is the same guess refused
+    /// here, made somewhere with less to lose by being wrong.
+    ///
+    /// What stands unchanged is the cost, which is what this test executes:
+    /// `performStartupMaintenance` runs repair the instant the container opens, and the collapse
+    /// deletes the smaller rows — so a store that receives a split day loses the remainder before
+    /// anyone can look at it, and the day reads low for ever rather than only until the next
+    /// repair. That is accepted, not overlooked.
     @Test func aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
@@ -552,6 +561,125 @@ struct CadenceHabitCompletionDuplicateTests {
         #expect(stored.count == 1)
         #expect(stored.first?.count == 2, "repair kept the larger row and dropped the remainder")
         #expect(habit.completionCountsByDate()["2026-03-09"] == 2)
+    }
+
+    // MARK: - T-1088, and why the importer is refused the fold too
+
+    /// **One archive, two truths, and no field that says which.** This is the whole of [[T-1088]]'s
+    /// answer, executed.
+    ///
+    /// T-1088 proposed that `CadenceArchiveImportService` group `archive.habitCompletions` by
+    /// `(habitID, date)` and insert one row carrying the **sum**, on the ground that an importer
+    /// "sees the whole day at once" and so is entitled to a guess the repair is not. The rows below
+    /// are the counterexample: `[1, 1]` for one habit-day is what a check-in synced twice looks
+    /// like ([[T-359]] — one tick, worth 1) *and* what a quantity of 2 split across rows looks like
+    /// (worth 2). Encoded into the archive they are the same records, field for field, so a sum
+    /// reads both as 2 — right for one, wrong for the other, and there is nothing in the file to
+    /// tell an importer which it is holding.
+    ///
+    /// The second half is the source pin: the archived record carries exactly the model's five
+    /// fields. If a provenance field ever appears on either — a device id, a write reason, an
+    /// origin — then this test goes red and T-1088 becomes answerable rather than refused. That is
+    /// the trigger for revisiting the decision, and it is deliberately attached to the fact the
+    /// decision rests on rather than left in prose.
+    @Test func theArchiveCarriesNoFieldThatSeparatesASplitHabitDayFromASyncedDuplicate() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        // Two habits so the rows cannot be told apart by anything but their meaning, which is not
+        // in the file. Both days are one habit-day carrying two rows of 1.
+        let duplicated = Habit(title: "Meditate")
+        duplicated.targetCount = 1
+        context.insert(duplicated)
+        Self.syncedRow(duplicated, on: "2026-03-09", count: 1, context: context)
+        Self.syncedRow(duplicated, on: "2026-03-09", count: 1, context: context)
+
+        let split = Habit(title: "Walk twice")
+        split.targetCount = 2
+        context.insert(split)
+        Self.syncedRow(split, on: "2026-03-09", count: 1, context: context)
+        Self.syncedRow(split, on: "2026-03-09", count: 1, context: context)
+        try context.save()
+
+        let duplicatedRecords = (duplicated.completions ?? []).map { CadenceArchiveHabitCompletion($0) }
+        let splitRecords = (split.completions ?? []).map { CadenceArchiveHabitCompletion($0) }
+        #expect(duplicatedRecords.count == 2 && splitRecords.count == 2)
+        #expect(duplicatedRecords.map(\.date) == splitRecords.map(\.date))
+        #expect(duplicatedRecords.map(\.count) == splitRecords.map(\.count))
+        #expect(duplicatedRecords.map(\.count) == [1, 1])
+
+        // The proposed fold, applied to both: one answer, and it can only be right once.
+        let folded: ([CadenceArchiveHabitCompletion]) -> Int = { $0.reduce(0) { $0 + $1.count } }
+        #expect(folded(splitRecords) == 2, "the number T-1088 wants the importer to write")
+        #expect(
+            folded(duplicatedRecords) == 2,
+            "the same rule writes 2 for a habit checked in once and synced twice — the T-359 bug"
+        )
+        #expect(HabitCompletion.collapsedCount(of: duplicated.completions ?? []) == 1)
+
+        // Nothing else in the record to key on.
+        let exporter = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceDataExportService.swift")
+        )
+        let record = try #require(
+            CadenceSourceScan.declarationBody("struct CadenceArchiveHabitCompletion", in: exporter),
+            "CadenceArchiveHabitCompletion was renamed"
+        )
+        #expect(
+            Self.storedPropertyNames(in: record) == ["id", "date", "count", "createdAt", "habitID"],
+            "the archived habit row gained or lost a field — if it is provenance, T-1088 can be reopened"
+        )
+        let model = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Models/HabitCompletion.swift")
+        )
+        let stored = try #require(
+            CadenceSourceScan.declarationBody("final class HabitCompletion", in: model),
+            "HabitCompletion was renamed"
+        )
+        #expect(
+            Self.storedPropertyNames(in: stored) == ["id", "date", "count", "createdAt", "habit"],
+            "the model gained a field the archive does not carry, or one that could carry provenance"
+        )
+    }
+
+    /// **The asymmetry T-1088 rests on does not exist: the repair sees a whole habit-day too.**
+    ///
+    /// `DataIntegrityRepairService` groups by `(habit.id, date)` and hands
+    /// `CadenceHabitCompletionStore.collapseDuplicates` the entire group, so it has exactly what an
+    /// importer scanning `archive.habitCompletions` would have. The proof is behavioural rather
+    /// than a reading of the grouping code: the survivor's count is the maximum over **all three**
+    /// rows, and the largest is neither the first nor the last, so a collapse that saw them one at
+    /// a time or two at a time could not produce it.
+    @Test func theStartupRepairIsHandedAWholeHabitDayJustAsAnImporterWouldBe() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let habit = Habit(title: "Read")
+        habit.targetCount = 3
+        context.insert(habit)
+        Self.syncedRow(habit, on: "2026-03-09", count: 1, context: context)
+        Self.syncedRow(habit, on: "2026-03-09", count: 3, context: context)
+        Self.syncedRow(habit, on: "2026-03-09", count: 2, context: context)
+        // A second day, so the grouping is doing something rather than collapsing the whole table.
+        Self.syncedRow(habit, on: "2026-03-10", count: 1, context: context)
+        try context.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+
+        #expect(report.duplicateHabitCompletionsRemoved == 2)
+        let stored = try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>())
+        #expect(stored.count == 2)
+        #expect(stored.filter { $0.date == "2026-03-09" }.map(\.count) == [3])
+        #expect(stored.filter { $0.date == "2026-03-10" }.map(\.count) == [1], "the other day was collapsed into it")
+    }
+
+    /// The `var` names declared directly in a type body, in source order.
+    ///
+    /// Deliberately not a regex over the whole file: the two bodies above are read with
+    /// `declarationBody`, so a property added to a nested type or an extension is not silently
+    /// counted as a field of the record.
+    private static func storedPropertyNames(in body: String) -> [String] {
+        CadenceSourceScan.captures(#"(?m)^\s{4}var\s+([A-Za-z_][A-Za-z0-9_]*)\s*:"#, in: body).map(\.text)
     }
 
     /// The needle for "something assigns a row's `count`", shared by the scan and its self-test.

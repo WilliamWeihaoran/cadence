@@ -39,6 +39,10 @@ struct PersistenceController {
             Self.deleteResolvedStoreDirectory()
         }
 
+        // After the reset, never before it: the reset removes the whole directory, lock file
+        // included, and a claim taken on a file that is then deleted owns nothing (T-1090).
+        Self.claimUITestStoreDirectoryIfNeeded()
+
         if Self.isRunningTests {
             do {
                 container = try Self.makeContainer()
@@ -363,12 +367,23 @@ struct PersistenceController {
         ProcessInfo.processInfo.environment["CADENCE_RESET_STORE"] == "1"
     }
 
+    /// Lock this launch's store directory and remove the ones no live process owns.
+    ///
+    /// The whole answer to [[T-1090]] is here rather than in `CadenceUITests`, and the reason is
+    /// on `CadenceUITestStoreDirectory`: the UI-test runner is sandboxed with a read-only
+    /// exception over `/` and cannot delete anything inside the app's container. Which launches
+    /// sweep, and why that is narrower than which launches get a private store, is argued there
+    /// too.
+    private static func claimUITestStoreDirectoryIfNeeded() {
+        guard let id = CadenceUITestStoreDirectory.sweepingLaunchID(
+            in: ProcessInfo.processInfo.environment
+        ) else { return }
+        CadenceUITestStoreDirectory.claimAndSweep(id: id, in: CadenceUITestStoreDirectory.rootDirectory())
+    }
+
     private static func resolvedStoreURL() throws -> URL {
-        if let uiTestStoreID = ProcessInfo.processInfo.environment["CADENCE_UI_TEST_STORE_ID"],
-           !uiTestStoreID.isEmpty {
-            let safeID = uiTestStoreID.replacingOccurrences(of: "/", with: "-")
-            let storeDirectoryURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("CadenceUITestStores", isDirectory: true)
+        if let safeID = CadenceUITestStoreDirectory.directoryID(in: ProcessInfo.processInfo.environment) {
+            let storeDirectoryURL = CadenceUITestStoreDirectory.rootDirectory()
                 .appendingPathComponent(safeID, isDirectory: true)
             try FileManager.default.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
             return storeDirectoryURL.appendingPathComponent("default.store")
