@@ -1544,6 +1544,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   archive into a container and asserts the graph came back — every foreign key resolved, counts
   equal, and a second import of the same file changing nothing.
 
+  **ENGINE LANDED 2026-09-06 (`CadenceArchiveImportService`, `CadenceArchiveImportSurfaceTests`).**
+  Every question above is answered in code and the answers are pinned. **1. CloudKit / 4. legacy
+  notes:** the import writes through whatever store the caller's context belongs to — no
+  `CADENCE_LOCAL_STORE_ONLY` detour — and `validate(_:against:)` runs to completion **before the
+  first insert**, so a refused archive is not a half-uploaded one. Legacy rows are imported and
+  `NoteMigrationService.migrateIfNeeded` is run over the result; its `legacySourceKindRaw` /
+  `legacySourceID` guard is what stops a post-migration archive duplicating every note, and both
+  directions are tested. **2. Identity:** records keep their ids, so a second import is a no-op
+  rather than a second copy — which is the property a *retried* restore needs.
+  `CadenceArchiveImportMode` decides a collision: `.mergeKeepingExistingRows` (the default, and the
+  only mode that cannot revert an edit the archive never saw) or `.restoreOverwritingExistingRows`.
+  Neither deletes, so an import cannot roll a store back to the archive's exact state — a user who
+  wants that runs `PrivacyDataResetService` first. **3. Referential integrity:** a two-pass rebuild,
+  and every non-`nil` reference must resolve in the archive *or* in the destination store, or the
+  whole file is refused by row and field.
+  Measured: macOS and `generic/platform=iOS Simulator` both build at 0 errors / 0 warnings; the new
+  suite is 17/17; four mutations (merge collapsed into overwrite, one foreign key unvalidated, the
+  tag rebuild dropped, the note fold dropped) were each killed by the named test at 0 compile
+  errors. **What a user still cannot do is start one** — see [[T-1082]].
+
+- [T-1083] **`StoredLaunchReportSuiteRule` cannot see a launch-report writer one frame down.**
+  Found while closing the engine half of [[T-274]]. The rule greps a suite's own body for the
+  literal `migrateIfNeeded(` or `repairIfNeeded(`, so a suite that reaches either *through a
+  service* is invisible to it. `CadenceArchiveImportSurfaceTests` is exactly that shape — it calls
+  `CadenceArchiveImportService.apply`, which runs the migration — and it carries
+  `.preservesTheStoredLaunchReports` only because the author happened to know. The same
+  one-frame-down reader `CadenceSaveCommitDisciplineTests` already has for its commit halves is the
+  obvious fix; whether it is worth the false-positive surface is the decision. Until then, a suite
+  that reaches a writer indirectly leaks the app's stored launch report and nothing says so.
+
 - [T-1082] **The archive importer has no user-facing entry point.** Taken while landing the engine
   half of [[T-274]] (`CadenceArchiveImportService` + `CadenceArchiveImportPresentation`). The
   service validates, plans and applies an archive, and `CadenceArchiveImportSurfaceTests` pins the
