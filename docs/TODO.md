@@ -2193,6 +2193,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   paths-filter action and the supply-chain surface that brings. **Decide it rather than leaving it in
   a comment**, and note the cost the file records: ~6-10 billed runner-minutes per iOS run.
 
+- [T-1080] **STUB — id taken 2026-09-06 by iosci, working T-707/T-706/T-531.** Reserved for the
+  decision T-707 asks for: whether the `ios-build` job runs automatically, and on what. Findings so
+  far, all measured: Actions **is** enabled and CI has been green on every push (`gh api
+  .../actions/permissions` → `enabled: true`), so T-707's title clause "and CI does not run" is
+  stale; and a cold iOS build in an isolated `git archive HEAD` tree takes **53 s**, not the
+  ~6-10 min this repository's own `ci.yml` header assumes. Filled in below when the change lands.
+
 - [T-722] **Drag-to-create has never been observed, and the simulator can now do the gesture.**
   Was item 4 of `docs/device-checks.md`; it left that list in [[T-561]] because `control`'s
   `touch_path` drags a single finger along an arbitrary path *including long-press-then-drag*, which
