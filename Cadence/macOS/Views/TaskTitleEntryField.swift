@@ -221,7 +221,7 @@ struct TaskTitleEntryField: View {
             }
             Text("~")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.onColor)
+                .foregroundStyle(Theme.onColor(for: Theme.blue))
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(Theme.blue)
@@ -269,7 +269,7 @@ struct TaskTitleEntryField: View {
             }
             Text("#")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.onColor)
+                .foregroundStyle(Theme.onColor(for: Theme.purple))
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(Theme.purple)

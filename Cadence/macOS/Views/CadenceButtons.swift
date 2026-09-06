@@ -161,7 +161,7 @@ struct CadenceActionButton: View {
     private var foreground: Color {
         switch role {
         case .primary:
-            Theme.onColor
+            Theme.onColor(for: resolvedTint)
         case .secondary:
             resolvedTint
         case .ghost:

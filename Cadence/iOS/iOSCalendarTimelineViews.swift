@@ -532,7 +532,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                         .kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)
                     Text(DateFormatters.dayNumber.string(from: date))
                         .font(.system(size: iOSCalendarTimelineMetrics.dayNumberSize, weight: isToday ? .bold : .regular))
-                        .foregroundStyle(isToday ? Theme.onColor : Theme.text)
+                        .foregroundStyle(isToday ? Theme.onColor(for: Theme.blue) : Theme.text)
                         .frame(
                             width: iOSCalendarTimelineMetrics.dayCircleSize,
                             height: iOSCalendarTimelineMetrics.dayCircleSize

@@ -278,6 +278,233 @@ struct CadenceContrastFloorTests {
         #expect(measured == 18, "non-vacuity: three sets of six, \(measured) measured")
         #expect(t853Ratio(Theme.onColor, on: Theme.bg) > 15, "non-vacuity: Theme.onColor is still near-white")
     }
+
+    // MARK: - T-855: the ink is a function of the fill
+
+    /// `Theme.relativeLuminance(of:)` is the app's own copy of the arithmetic this suite already
+    /// trusts, so the two are checked against each other before anything is built on top of it.
+    ///
+    /// A second implementation is not duplication here, it is the point: the suite's copy is
+    /// deliberately written from the WCAG text and the app's is written against SwiftUI's
+    /// `Color.Resolved`, and a transposed constant or a linear-vs-gamma mix-up in either shows up
+    /// as a disagreement rather than as two files agreeing on the same mistake.
+    @Test func themeRelativeLuminanceAgreesWithThisSuitesOwnWCAGArithmetic() {
+        var compared = 0
+        for hex in ["#000000", "#ffffff", "#767676", "#09090b", "#4a9eff", "#ffc857", "#6366f1"] {
+            let color = Color(hex: hex)
+            compared += 1
+            #expect(
+                abs(Theme.relativeLuminance(of: color) - t853Luminance(color)) < 0.000_01,
+                "Theme.relativeLuminance disagrees with WCAG on \(hex): \(Theme.relativeLuminance(of: color)) vs \(t853Luminance(color))"
+            )
+        }
+        #expect(compared == 7, "non-vacuity: \(compared) colours compared")
+
+        // A wash has no luminance until it is told what it is under, and `Theme` says `bg`.
+        let wash = Color.white.opacity(0.5)
+        #expect(
+            abs(Theme.relativeLuminance(of: wash) - t853Luminance(t853Composited(wash, over: Theme.bg))) < 0.000_01,
+            "an alpha colour was measured as if it were opaque"
+        )
+        #expect(Theme.relativeLuminance(of: wash) < Theme.relativeLuminance(of: .white))
+    }
+
+    /// **`Theme.onColorCrossoverLuminance` is solved, not tuned** — the sentence in T-855 that said
+    /// "the threshold is the only tunable, and it is the part to look at" is answered by there not
+    /// being one to tune.
+    ///
+    /// Recomputed here from `Theme.bg` by this suite's own arithmetic rather than copied from
+    /// `Theme`, and then checked behaviourally: at a fill of exactly that luminance the two inks
+    /// read the *same* ratio, which is what "crossover" has to mean for the comparison in
+    /// `onColor(for:)` to be the right one. A threshold nudged to a rounder number fails both arms.
+    @Test func theOnColorCrossoverIsSolvedFromTheAppBackgroundRatherThanTuned() {
+        let solved = (1.05 * (t853Luminance(Theme.bg) + 0.05)).squareRoot() - 0.05
+        #expect(
+            abs(Theme.onColorCrossoverLuminance - solved) < 0.000_001,
+            "Theme.onColorCrossoverLuminance is \(Theme.onColorCrossoverLuminance), but solving 1.05/(Y+0.05) = (Y+0.05)/(L(bg)+0.05) gives \(solved)"
+        )
+
+        let crossoverFill = t853Grey(luminance: Theme.onColorCrossoverLuminance)
+        let white = t853Ratio(Theme.onColor, on: crossoverFill)
+        let ink = t853Ratio(Theme.bg, on: crossoverFill)
+        #expect(
+            abs(white - ink) < 0.001,
+            "at the crossover white reads \(t853Rounded(white)):1 and Theme.bg reads \(t853Rounded(ink)):1 — not a crossover"
+        )
+
+        // The worst case the whole scheme can produce. Over the 3:1 floor for large text and for
+        // non-text UI components, and just under the 4.5:1 one — which is the honest cost of
+        // keeping every accent hue exactly where the user chose it.
+        #expect(white > 3, "the crossover ratio \(t853Rounded(white)):1 no longer clears the 3:1 non-text floor")
+        #expect(white < 4.5, "non-vacuity: the crossover is still the pinch point, not a comfortable pair")
+    }
+
+    /// **The deliverable for T-855.** `onColor(for:)` returns the better of the two inks at *every*
+    /// fill luminance, and the ratio it delivers never drops below the crossover ratio.
+    ///
+    /// Swept over greys rather than over the palette, on purpose: a sweep over the eighteen
+    /// accents would pass for a function that returned `Theme.bg` unconditionally, because all
+    /// eighteen sit above the crossover. The greys walk both sides of it, so the white arm is
+    /// exercised too — and the hues afterwards check that the decision is luminance-driven rather
+    /// than accidentally right on a neutral.
+    @Test func onColorForPicksTheBetterInkAtEveryFillLuminance() {
+        let floor = 1.05 / (Theme.onColorCrossoverLuminance + 0.05)
+        var sawWhite = 0, sawInk = 0
+
+        var fills: [Color] = (0...200).map { t853Grey(luminance: Double($0) / 200) }
+        fills += ["#001133", "#6366f1", "#4a9eff", "#ffc857", "#3d0000", "#00391f", "#e879f9"].map { Color(hex: $0) }
+
+        for fill in fills {
+            let chosen = Theme.onColor(for: fill)
+            let other = chosen == Theme.bg ? Theme.onColor : Theme.bg
+            if chosen == Theme.bg { sawInk += 1 } else { sawWhite += 1 }
+
+            let chosenRatio = t853Ratio(chosen, on: fill)
+            #expect(
+                chosenRatio >= t853Ratio(other, on: fill) - 0.000_001,
+                "Theme.onColor(for:) picked the worse ink on a fill at luminance \(t853Rounded(Theme.relativeLuminance(of: fill)))"
+            )
+            #expect(
+                chosenRatio >= floor - 0.000_001,
+                "Theme.onColor(for:) delivered \(t853Rounded(chosenRatio)):1, under the \(t853Rounded(floor)):1 the crossover guarantees"
+            )
+        }
+
+        #expect(sawWhite > 20, "non-vacuity: the white arm was taken \(sawWhite) times")
+        #expect(sawInk > 20, "non-vacuity: the dark-ink arm was taken \(sawInk) times")
+    }
+
+    /// Every colour the app *offers* as a fill, under the ink `onColor(for:)` chooses for it.
+    ///
+    /// Wider than `whiteOnAnAccentFillFailsEveryHueWhileDarkInkClearsThemAll`'s eighteen accents,
+    /// because an accent is not the only thing that ends up as a solid plate with a glyph on it:
+    /// a list, goal, habit or context `colorHex` fills the focus button and the habit widget cell,
+    /// a kanban section colour fills its header, and a tag colour fills its chip.
+    ///
+    /// **One of them cannot reach 4.5:1 with either ink, and it is named rather than rounded away.**
+    /// `#6366f1` in `CadenceColorPalette.colors` sits at luminance 0.1851, three ten-thousandths
+    /// under the crossover, so its best available pair is 4.47:1. It is left where it is
+    /// deliberately: it is a *stored user value*, and `CadenceColorPalette.offered(_:from:)` would
+    /// then append a user's saved `#6366f1` as a thirteenth swatch beside its replacement — the
+    /// T-245 shape. A 0.7% shortfall on one swatch does not buy that. See T-1056.
+    @Test func everyFillTheAppOffersClearsAAUnderTheInkOnColorForChooses() {
+        let exempt = "#6366f1"
+        var offered: Set<String> = []
+        for palette in CadenceAccentPalette.all { offered.formUnion(palette.swatchHexes) }
+        offered.formUnion(CadenceColorPalette.colors)
+        offered.formUnion(CadenceColorPalette.sectionColors)
+        offered.formUnion(CadenceColorPalette.destinationTints)
+        offered.formUnion(TagSupport.colorOptions)
+        offered.formUnion(TagSupport.defaultTags.map(\.colorHex))
+        offered.insert(TaskSectionDefaults.defaultColorHex)
+
+        #expect(offered.count > 30, "non-vacuity: \(offered.count) distinct offered fills")
+        #expect(offered.contains { $0.caseInsensitiveCompare(exempt) == .orderedSame }, "the exempt swatch is no longer offered — drop the exemption")
+
+        let crossoverRatio = 1.05 / (Theme.onColorCrossoverLuminance + 0.05)
+        for hex in offered.sorted() {
+            let fill = Color(hex: hex)
+            let ratio = t853Ratio(Theme.onColor(for: fill), on: fill)
+            let required = hex.caseInsensitiveCompare(exempt) == .orderedSame ? crossoverRatio : 4.5
+            #expect(
+                ratio >= required - 0.000_001,
+                "\(hex) carries its chosen ink at \(t853Rounded(ratio)):1, under \(t853Rounded(required)):1"
+            )
+        }
+    }
+
+    /// The three fills the app *solves* rather than takes raw stay under the crossover, which is
+    /// what entitles `CadenceCalendarEventStyle.primaryLabelColor` and the two month chips to keep
+    /// reaching for the bare `Theme.onColor` constant.
+    ///
+    /// Without this, "white unconditionally" is a claim about a number in another file that
+    /// nothing connects to the ink: raise `fillLuminance`'s selected stop past the crossover and
+    /// event titles quietly become the worst-contrast text in the app, with every accent test in
+    /// this file still green.
+    @Test func theSolvedCalendarFillsStayBelowTheCrossoverSoTheirWhiteInkIsRight() {
+        var measured = 0
+        // Includes the two brightest hues the palettes ship, which is where a luminance solve is
+        // most likely to be overrun, plus a raw white calendar.
+        for hex in ["#ffc857", "#4fd6e0", "#ffffff", "#4a9eff", "#3d0000"] {
+            for (selected, active) in [(false, false), (false, true), (true, false)] {
+                measured += 1
+                let fill = CadenceCalendarEventStyle.fill(for: Color(hex: hex), isSelected: selected, isActive: active)
+                #expect(
+                    Theme.relativeLuminance(of: fill) < Theme.onColorCrossoverLuminance,
+                    "a solved event fill for \(hex) (selected: \(selected), active: \(active)) is past the crossover, so its label must stop being unconditional white"
+                )
+                #expect(Theme.onColor(for: fill) == Theme.onColor)
+                #expect(t853Ratio(CadenceCalendarEventStyle.primaryLabelColor, on: fill) >= 4.5)
+            }
+        }
+        #expect(measured == 15, "non-vacuity: five hues in three states, \(measured) measured")
+
+        // The same guard on the luminance targets themselves, independent of any hue.
+        for target in [
+            CadenceCalendarEventStyle.fillLuminance(),
+            CadenceCalendarEventStyle.fillLuminance(isActive: true),
+            CadenceCalendarEventStyle.fillLuminance(isSelected: true),
+        ] {
+            #expect(target < Theme.onColorCrossoverLuminance, "the \(target) fill target is past the crossover")
+        }
+    }
+
+    /// What is still allowed to say `Theme.onColor` without asking which fill it lands on.
+    ///
+    /// The migration is only durable if the *next* accent-filled button is caught, and the whole
+    /// failure mode of T-855 was that a constant looked like an answer. So the residue is
+    /// enumerated: five files, each with a stated reason, and a sixth goes red here.
+    @Test func theOnlyBareThemeOnColorLeftInTheProductTreeIsSolvedOrBrandLocked() throws {
+        let instrument = try CadenceScanInstrument(
+            "Theme.onColor read as a constant rather than asked for a fill",
+            fires: """
+            Text(title)
+                .foregroundStyle(Theme.onColor)
+                .background(Theme.blue)
+            """,
+            // The nearest look-alikes, all of which must be left alone: the fixed call, and the
+            // secondary/border tiers, whose names begin with the same eight characters.
+            andNotOn: """
+            Text(title)
+                .foregroundStyle(Theme.onColor(for: tint))
+                .background(tint)
+                .overlay(Capsule().strokeBorder(Theme.onColorBorder))
+                .shadow(color: Theme.onColorSecondary, radius: 1)
+            """,
+            by: { CadenceSourceScan.matchCount(#"Theme\.onColor(?![A-Za-z(])"#, in: CadenceSourceScan.codeOnly($0)) > 0 }
+        )
+
+        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
+            + CadenceSourceScan.swiftFiles(under: "CadenceWidgets")
+        let hits = try instrument.sweep(
+            paths,
+            atLeast: 300,
+            including: "Cadence/Shared/Theme.swift",
+            read: { try CadenceSourceScan.sourceFile($0) }
+        )
+
+        // Sorted, and `sweep` sorts by path: `Shared` precedes `macOS` because `S` precedes `m`.
+        #expect(hits == [
+            // The solved event fill itself, which is why it is solved.
+            "Cadence/Shared/CadenceCalendarEventStyle.swift",
+            // The fill is `CalendarEventVisualStyle.chipFill`, solved under the crossover.
+            "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
+            // Sign in with Apple: a brand-locked black fill with a mandated white label.
+            "Cadence/macOS/Views/SettingsSectionViews.swift",
+            // A white *wash* laid over a block, not ink read against one.
+            "Cadence/macOS/Views/TimelineEventBlock.swift",
+            "Cadence/macOS/Views/TimelineHoverVisuals.swift",
+        ], "the set of files still reading Theme.onColor as a constant changed: \(hits)")
+    }
+}
+
+/// An opaque grey whose WCAG relative luminance is `luminance`, by inverting the sRGB transfer
+/// function. Greys are what a luminance sweep needs: for any target there is exactly one, so the
+/// sweep walks luminance itself rather than a hue that happens to pass through it.
+private func t853Grey(luminance: Double) -> Color {
+    let clamped = min(max(luminance, 0), 1)
+    let channel = clamped <= 0.003_130_8 ? clamped * 12.92 : 1.055 * pow(clamped, 1 / 2.4) - 0.055
+    return Color(.sRGB, red: channel, green: channel, blue: channel, opacity: 1)
 }
 
 // MARK: - Tokens under test

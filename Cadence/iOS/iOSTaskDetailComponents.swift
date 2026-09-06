@@ -480,7 +480,7 @@ struct iOSTaskTagPickerPopover: View {
                 Button(action: addTag) {
                     Image(systemName: "plus")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.onColor)
+                        .foregroundStyle(Theme.onColor(for: Theme.blue))
                         .frame(width: 40, height: 40)
                         .background(trimmedNewTagName.isEmpty ? Theme.surface : Theme.blue)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))

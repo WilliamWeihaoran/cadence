@@ -491,7 +491,7 @@ struct iOSFocusView: View {
         iOSFocusControlButton(
             systemImage: timerState.isRunning ? "pause.fill" : "play.fill",
             accessibilityLabel: timerState.isRunning ? "Pause session" : "Start session",
-            foreground: Theme.onColor,
+            foreground: Theme.onColor(for: accent),
             background: accent,
             diameter: 64,
             glowColor: accent.opacity(0.45),
@@ -854,7 +854,7 @@ private struct iOSFocusPickRow: View {
             Button(action: toggleSession) {
                 Image(systemName: isRunning ? "pause.fill" : "play.fill")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isRunning ? Theme.onColor : tint)
+                    .foregroundStyle(isRunning ? Theme.onColor(for: tint) : tint)
                     .frame(width: 28, height: 28)
                     .background(Circle().fill(isRunning ? tint : tint.opacity(0.14)))
                     .frame(width: iOSFocusTransportSize, height: iOSFocusTransportSize)

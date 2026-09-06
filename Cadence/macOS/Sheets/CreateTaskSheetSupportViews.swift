@@ -189,7 +189,7 @@ struct TaskDateChip: View {
         } label: {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isSelected ? Theme.onColor : Theme.muted)
+                .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : Theme.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(isSelected ? Theme.blue : Theme.surface)

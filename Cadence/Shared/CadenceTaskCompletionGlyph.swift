@@ -72,7 +72,7 @@ nonisolated struct CadenceTaskCompletionGlyph: Equatable {
 
     let state: CadenceTaskCompletionState
     /// The SF Symbol macOS draws, tinted with `tint`. `.fill` variants are knockouts: the mark is
-    /// the background showing through, which is why iOS draws its mark in `Theme.onColor` instead.
+    /// the background showing through, which is why iOS draws its mark in `Theme.onColor(for:)` instead.
     let symbolName: String
     let mark: Mark
     /// Solid disc (settled) versus stroked ring (still open).

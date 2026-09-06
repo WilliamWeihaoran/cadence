@@ -73,7 +73,7 @@ struct CadenceTodayRolloverBanner: View {
             Button(action: onRollOver) {
                 Text(CadenceTodayRolloverSupport.confirmActionTitle)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.onColor)
+                    .foregroundStyle(Theme.onColor(for: Theme.blue))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Theme.blue)

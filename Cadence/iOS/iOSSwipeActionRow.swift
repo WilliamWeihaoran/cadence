@@ -185,7 +185,7 @@ struct iOSSwipeActionsModifier: ViewModifier {
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(Theme.onColor)
+            .foregroundStyle(Theme.onColor(for: action.tint))
             .frame(width: width)
             .frame(maxHeight: .infinity)
             .background(action.tint)

@@ -126,7 +126,7 @@ struct QuickCreateChoicePopover: View {
                             }
                             Text("~")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.onColor)
+                                .foregroundStyle(Theme.onColor(for: Theme.blue))
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
                                 .background(Theme.blue)

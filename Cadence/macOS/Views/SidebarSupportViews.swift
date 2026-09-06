@@ -60,7 +60,7 @@ struct SidebarAppHeader: View {
                 .overlay {
                     Image(systemName: CadenceFeatureDestination.allTasks.systemImage)
                         .font(.system(size: SidebarMetrics.appMarkFallbackIconSize, weight: .bold))
-                        .foregroundStyle(Theme.onColor)
+                        .foregroundStyle(Theme.onColor(for: Theme.blue))
                 }
                 .accessibilityHidden(true)
         }

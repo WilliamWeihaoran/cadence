@@ -447,12 +447,28 @@ nonisolated struct Theme {
 
     // MARK: - Foreground on colored fills
     // For content drawn ON TOP of a saturated fill (calendar event blocks, a selected day
-    // cell, an accent-filled button) the foreground is deliberately near-white rather than
-    // `text` — it has to hold up against an arbitrary user-chosen hue, not against `bg`.
-    // These replace scattered `.white` / `.white.opacity(...)` literals so the tiers are
-    // named and consistent instead of each call site inventing its own alpha.
+    // cell, an accent-filled button) the foreground cannot be `text`: it has to hold up
+    // against an arbitrary user-chosen hue, not against `bg`. These replace scattered
+    // `.white` / `.white.opacity(...)` literals so the tiers are named and consistent
+    // instead of each call site inventing its own alpha.
+    //
+    // The tiers below are white, and **which of white and `bg` a call site should actually
+    // use is `onColor(for:)`'s answer, not a constant's** (T-855). The accents this app ships
+    // are light — every one of the eighteen is far past the point where white stops winning —
+    // so a raw accent fill takes dark ink and only a *solved* fill (see
+    // `CadenceCalendarEventStyle`, which holds its fills under `onColorCrossoverLuminance` on
+    // purpose) is entitled to reach for the bare constants.
 
     /// Primary content on a colored fill: titles, button labels.
+    ///
+    /// **Use `onColor(for:)` unless the fill's luminance is fixed and known to be dark.** This
+    /// constant is white, and white loses to `bg` on every one of the eighteen accents the three
+    /// palettes ship — 1.54:1 to 3.23:1, not one of them clearing even the 3:1 non-text floor,
+    /// where `bg` on those same fills reads 6.16:1 to 12.93:1 (T-855). It stays a constant, and
+    /// stays white, because the fills that are *solved* rather than raw — a calendar event block,
+    /// whose luminance `CadenceCalendarEventStyle` pins below `onColorCrossoverLuminance` on
+    /// purpose — genuinely want white unconditionally, and asking a function for an answer that
+    /// cannot change is worse than saying so.
     static let onColor = Color.white
     /// Secondary content on a colored fill: time ranges, subtitles, calendar names.
     static let onColorSecondary = Color.white.opacity(0.75)
@@ -471,6 +487,52 @@ nonisolated struct Theme {
     static let onColorHandle = Color.white.opacity(0.16)
     /// `onColorHandle` while the block is hovered, selected, or actively being resized.
     static let onColorHandleActive = Color.white.opacity(0.42)
+
+    // MARK: Choosing between them
+
+    /// WCAG 2.x relative luminance of `color`, in sRGB.
+    ///
+    /// A colour carrying alpha is flattened over `bg` first: a wash has no luminance until it is
+    /// told what it is painted on, and `bg` is what the app is painted on. Passing an opaque
+    /// colour composites with alpha 1, which is the identity, so the flatten costs nothing there.
+    static func relativeLuminance(of color: Color) -> Double {
+        let resolved = color.resolve(in: EnvironmentValues())
+        let flat = resolved.opacity < 1 ? color.composited(over: bg).resolve(in: EnvironmentValues()) : resolved
+        func linear(_ channel: Float) -> Double {
+            let c = Double(channel)
+            return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(flat.red) + 0.7152 * linear(flat.green) + 0.0722 * linear(flat.blue)
+    }
+
+    /// The fill luminance at which `onColor` and `bg` read at exactly the same contrast ratio
+    /// against that fill — below it white is the better ink, above it `bg` is.
+    ///
+    /// **Solved from `bg`, not tuned.** Setting the two WCAG ratios equal,
+    /// `1.05 / (Y + 0.05) = (Y + 0.05) / (L(bg) + 0.05)`, gives
+    /// `Y = sqrt(1.05 * (L(bg) + 0.05)) - 0.05`. There is therefore no threshold to pick and
+    /// nothing to re-tune when the neutral ramp moves: change `bg` and this follows it. At the
+    /// crossover itself both inks read 4.46:1, which is the *worst* case `onColor(for:)` can
+    /// produce at any fill luminance whatsoever — over the 3:1 floor for large text and UI
+    /// components everywhere, and over 4.5:1 everywhere except a 0.004-wide band of luminance
+    /// around this value. `CadenceContrastFloorTests` measures both claims.
+    static let onColorCrossoverLuminance: Double =
+        (1.05 * (relativeLuminance(of: bg) + 0.05)).squareRoot() - 0.05
+
+    /// Primary content drawn on `fill`: whichever of `onColor` and `bg` reads better on it.
+    ///
+    /// This is the fix for T-855, and it is a foreground change rather than a palette one: no
+    /// accent hue moves, because every one of the eighteen already clears 4.5:1 under `bg` ink.
+    /// Every accent the app ships sits *above* `onColorCrossoverLuminance`, so today every raw
+    /// accent fill takes dark ink; a darker user-chosen `colorHex` takes white, which is what
+    /// makes this a function rather than a second constant.
+    ///
+    /// A fill that is already solved for a luminance target does not need this — see
+    /// `CadenceCalendarEventStyle`, which holds its fills under the crossover so that plain
+    /// `onColor` is always right on them.
+    static func onColor(for fill: Color) -> Color {
+        relativeLuminance(of: fill) > onColorCrossoverLuminance ? bg : onColor
+    }
 
     /// Brand-mandated fill for the "Sign in with Apple" button. Not a palette color — Apple's
     /// Sign in with Apple guidelines only permit black / white / outline treatments, so this

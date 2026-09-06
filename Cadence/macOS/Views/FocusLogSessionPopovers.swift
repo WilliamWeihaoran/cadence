@@ -89,7 +89,7 @@ struct LogSessionPopover: View {
                 } label: {
                     Text(totalMinutes > 0 ? "Log \(formatTotal())" : "Log")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.onColor)
+                        .foregroundStyle(Theme.onColor(for: Theme.blue))
                 }
                 .buttonStyle(.cadencePlain)
                 .padding(.horizontal, 14)
@@ -209,7 +209,7 @@ struct BundleLogSessionPopover: View {
                 } label: {
                     Text(totalMinutes > 0 ? "Log \(formatTotal())" : "Log")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.onColor)
+                        .foregroundStyle(Theme.onColor(for: Theme.blue))
                 }
                 .buttonStyle(.cadencePlain)
                 .padding(.horizontal, 14)

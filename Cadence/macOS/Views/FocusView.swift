@@ -116,7 +116,7 @@ struct FocusView: View {
 
             FocusIconButton(
                 systemName: focusManager.isRunning ? "pause.fill" : "play.fill",
-                foreground: Theme.onColor,
+                foreground: Theme.onColor(for: Color(hex: task.containerColor)),
                 background: Color(hex: task.containerColor),
                 size: 52,
                 shadowColor: Color(hex: task.containerColor).opacity(0.45),
@@ -236,7 +236,7 @@ struct FocusView: View {
 
             FocusIconButton(
                 systemName: focusManager.isRunning ? "pause.fill" : "play.fill",
-                foreground: Theme.onColor,
+                foreground: Theme.onColor(for: Theme.amber),
                 background: Theme.amber,
                 size: 52,
                 shadowColor: Theme.amber.opacity(0.45),

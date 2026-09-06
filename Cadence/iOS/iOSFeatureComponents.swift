@@ -39,8 +39,9 @@ struct iOSTaskCompletionCircle: View {
     }
 
     /// macOS gets its mark free, as the knockout inside an SF Symbol; here it is drawn. On a
-    /// filled disc that means `Theme.onColor`, which is what the checkmark has always used —
-    /// the cancelled cross is the same treatment, not a new one.
+    /// filled disc that means `Theme.onColor(for:)` against the tint that fills it — the cancelled
+    /// cross is the same treatment, not a new one. It was plain `Theme.onColor` until T-855: white
+    /// on a `Theme.green` disc reads 2.08:1, which is under even the 3:1 non-text floor.
     @ViewBuilder
     private var mark: some View {
         switch glyph.mark {
@@ -60,7 +61,7 @@ struct iOSTaskCompletionCircle: View {
     private func markSymbol(_ name: String, scale: CGFloat) -> some View {
         Image(systemName: name)
             .font(.system(size: diameter * scale, weight: .bold))
-            .foregroundStyle(glyph.isFilled ? Theme.onColor : glyph.tint)
+            .foregroundStyle(glyph.isFilled ? Theme.onColor(for: glyph.tint) : glyph.tint)
     }
 }
 

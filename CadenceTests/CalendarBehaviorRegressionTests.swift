@@ -1438,7 +1438,10 @@ struct CalendarBehaviorRegressionTests {
         #expect(CalendarMonthDayEmphasis.inMonth.todayDiscFill == nil)
         #expect(CalendarMonthDayEmphasis.inMonth.todayRingStroke == nil)
 
-        #expect(CalendarMonthDayEmphasis.inMonthToday.dateLabelColor == Theme.onColor)
+        // T-855: the numeral on the filled disc is whichever ink reads better on `Theme.blue`,
+        // not unconditional white — and on every accent the app ships that is `Theme.bg`.
+        #expect(CalendarMonthDayEmphasis.inMonthToday.dateLabelColor == Theme.onColor(for: Theme.blue))
+        #expect(CalendarMonthDayEmphasis.inMonthToday.dateLabelColor == Theme.bg)
         #expect(CalendarMonthDayEmphasis.inMonthToday.dateLabelWeight == .bold)
         #expect(CalendarMonthDayEmphasis.inMonthToday.todayDiscFill == Theme.blue)
 

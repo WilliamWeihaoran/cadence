@@ -255,7 +255,7 @@ extension CalendarMonthDayEmphasis {
         switch self {
         case .inMonth: return Theme.text
         // Reads against the filled disc, not against the cell.
-        case .inMonthToday: return Theme.onColor
+        case .inMonthToday: return Theme.onColor(for: Theme.blue)
         case .outOfMonth: return Theme.dim.opacity(Self.outOfMonthLabelOpacity)
         // Not dimmed — dimming today would throw away the emphasis this cell has to keep. It
         // takes the accent's *own* colour instead of the accent's contrast colour, because there

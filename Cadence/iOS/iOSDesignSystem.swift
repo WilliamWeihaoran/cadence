@@ -229,7 +229,7 @@ struct iOSActionButton: View {
 
     private var foreground: Color {
         switch role {
-        case .primary: Theme.onColor
+        case .primary: Theme.onColor(for: resolvedTint)
         case .secondary: resolvedTint
         case .ghost: Theme.muted
         case .destructive: Theme.red

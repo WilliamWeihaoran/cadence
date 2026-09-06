@@ -330,7 +330,7 @@ struct HabitCheckInWidgetView: View {
         // A checked-in cell is filled with the habit's own color, so its glyphs are the one place
         // in the widget set that is genuinely drawn on a saturated fill — hence `onColor` rather
         // than the neutral `text` used everywhere else here.
-        habit.isDoneToday ? Theme.onColor : Color(hex: habit.colorHex)
+        habit.isDoneToday ? Theme.onColor(for: Color(hex: habit.colorHex)) : Color(hex: habit.colorHex)
     }
 
     private func paddedHabits(count: Int) -> [CadenceHabitWidgetHabit?] {

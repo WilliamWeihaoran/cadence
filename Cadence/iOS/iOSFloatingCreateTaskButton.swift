@@ -46,7 +46,7 @@ struct iOSCircularAddButton: View {
     var body: some View {
         Image(systemName: "plus")
             .font(.system(size: diameter * 0.39, weight: .semibold))
-            .foregroundStyle(Theme.onColor)
+            .foregroundStyle(Theme.onColor(for: Theme.blue))
             .frame(width: diameter, height: diameter)
             .background(Theme.blue)
             .clipShape(Circle())

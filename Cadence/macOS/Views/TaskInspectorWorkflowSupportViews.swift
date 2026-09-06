@@ -331,7 +331,7 @@ private struct TaskRecurrencePickerPanel: View {
                 } label: {
                     Text(segment.title)
                         .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected ? Theme.onColor : Theme.muted)
+                        .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : Theme.muted)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 5)
                         .background(

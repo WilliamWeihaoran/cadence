@@ -223,7 +223,7 @@ struct MacTaskRow: View {
                 } label: {
                     Image(systemName: "play.fill")
                         .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Theme.onColor)
+                        .foregroundStyle(Theme.onColor(for: Theme.blue))
                         .frame(width: 20, height: 20)
                         .background(Theme.blue)
                         .clipShape(Circle())

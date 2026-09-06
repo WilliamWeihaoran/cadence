@@ -490,7 +490,7 @@ private struct iOSCalendarMonthCompactDayCell: View {
                 ? Theme.text
                 : Theme.dim.opacity(CadenceCalendarDayBadge.outOfMonthLabelOpacity)
         case .accent: return Theme.blue
-        case .onFill: return Theme.onColor
+        case .onFill: return Theme.onColor(for: Theme.blue)
         }
     }
 

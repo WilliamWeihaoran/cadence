@@ -64,7 +64,7 @@ struct TasksPanelHeader: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Theme.onColor)
+                .foregroundStyle(Theme.onColor(for: Theme.blue))
                 .frame(width: 28, height: 28)
                 .background(Theme.blue)
                 .clipShape(Circle())

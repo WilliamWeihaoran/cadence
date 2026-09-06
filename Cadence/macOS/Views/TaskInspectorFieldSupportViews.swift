@@ -309,7 +309,7 @@ struct TaskInspectorDateControl: View {
         } label: {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isSelected ? Theme.onColor : Theme.muted)
+                .foregroundStyle(isSelected ? Theme.onColor(for: activeColor) : Theme.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(isSelected ? activeColor : Theme.surface)

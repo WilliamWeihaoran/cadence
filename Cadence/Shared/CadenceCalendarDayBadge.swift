@@ -5,7 +5,7 @@ import Foundation
 /// The treatment a month grid's day badge takes, as the four states it can actually be in.
 ///
 /// The colours are `MonthCalendarPanel`'s — the panel behind every date picker in the app, on both
-/// platforms: a **selected** day is a solid `Theme.blue` circle with `Theme.onColor` on it, **today**
+/// platforms: a **selected** day is a solid `Theme.blue` circle with `Theme.onColor(for:)` on it, **today**
 /// is `Theme.blue` at `washOpacity` with `Theme.blue` on it, and anything else has no circle at all.
 /// The iOS month grids had that pairing the wrong way round — today took the solid fill and the
 /// selection took the wash — so the same two facts read as each other's opposite depending on which
@@ -77,7 +77,8 @@ enum CadenceCalendarDayBadge: Hashable, CaseIterable {
         case normal
         /// `Theme.blue`, read against a wash.
         case accent
-        /// `Theme.onColor`, read against a solid fill.
+        /// `Theme.onColor(for:)` against the solid fill — the accent is far too light to carry
+        /// white, so this resolves to dark ink on every palette the app ships (T-855).
         case onFill
     }
 

@@ -130,7 +130,7 @@ struct CadenceTerminalRecoveryView: View {
                     Text(isAttemptingExport ? "Looking For Your Data…" : "Try to Export My Data")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                .foregroundStyle(Theme.onColor)
+                .foregroundStyle(Theme.onColor(for: Theme.green))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(Theme.green)

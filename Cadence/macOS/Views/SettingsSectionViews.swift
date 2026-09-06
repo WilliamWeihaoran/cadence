@@ -72,7 +72,7 @@ struct SettingsAccountSection: View {
                                 }
                                 .buttonStyle(.cadencePlain)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.onColor)
+                                .foregroundStyle(Theme.onColor(for: Theme.red))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .background(Theme.red)
@@ -88,6 +88,10 @@ struct SettingsAccountSection: View {
                                     Text(appleAccountManager.isAuthorizing ? "Signing In..." : "Sign in with Apple")
                                         .font(.system(size: 12, weight: .semibold))
                                 }
+                                // Plain `Theme.onColor`, not `onColor(for:)`: Sign in with Apple is
+                                // a brand-locked black-fill/white-label pair, so the ink is not the
+                                // app's to solve. `Theme.appleSignInFill` is black and white reads
+                                // 21:1 on it regardless.
                                 .foregroundStyle(Theme.onColor)
                                 .padding(.horizontal, 13)
                                 .padding(.vertical, 8)
@@ -232,7 +236,7 @@ struct SettingsAISection: View {
                         }
                         .buttonStyle(.cadencePlain)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.onColor)
+                        .foregroundStyle(Theme.onColor(for: Theme.blue))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(Theme.blue)

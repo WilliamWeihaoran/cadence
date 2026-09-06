@@ -210,7 +210,7 @@ struct iOSCompactSampleDataCard: View {
             Button(action: action) {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.onColor)
+                    .foregroundStyle(Theme.onColor(for: Theme.blue))
                     .frame(width: 34, height: 34)
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))

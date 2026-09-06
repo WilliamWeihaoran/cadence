@@ -335,7 +335,7 @@ private struct iOSScheduleQuickCreateBar: View {
                 Button(action: create) {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(trimmedTitle.isEmpty ? Theme.dim : Theme.onColor)
+                        .foregroundStyle(trimmedTitle.isEmpty ? Theme.dim : Theme.onColor(for: Theme.blue))
                         .frame(width: 44, height: 44)
                         .background(trimmedTitle.isEmpty ? Theme.surfaceElevated.opacity(0.42) : Theme.blue)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))

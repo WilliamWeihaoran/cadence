@@ -190,6 +190,11 @@ struct MonthEventChip: View {
     var calendar: Calendar = .current
 
     var body: some View {
+        // Plain `Theme.onColor` rather than `onColor(for:)`, and deliberately: the plate below is
+        // `CalendarEventVisualStyle.chipFill`, solved to a luminance target well under
+        // `Theme.onColorCrossoverLuminance`, so white is the better ink on it whatever the calendar
+        // colour is. Asking the function would return white every time. Pinned by
+        // `CadenceContrastFloorTests.theSolvedCalendarFillsStayBelowTheCrossoverSoTheirWhiteInkIsRight`.
         HStack(spacing: 4) {
             Text(event.title)
                 .font(.system(size: 10))
@@ -406,7 +411,7 @@ struct CalDayHeaderView: View {
                     .kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)
                 Text(DateFormatters.dayNumber.string(from: date))
                     .font(.system(size: CadenceCalendarWeekdayHeaderMetrics.dayNumberSize, weight: isToday ? .bold : .regular))
-                    .foregroundStyle(isToday ? Theme.onColor : Theme.text)
+                    .foregroundStyle(isToday ? Theme.onColor(for: Theme.blue) : Theme.text)
                     .frame(
                         width: CadenceCalendarWeekdayHeaderMetrics.dayCircleSize,
                         height: CadenceCalendarWeekdayHeaderMetrics.dayCircleSize
@@ -510,6 +515,7 @@ struct AllDayEventChip: View {
     }
 
     var body: some View {
+        // Solved `chipFill` below, so white unconditionally — same reasoning as `MonthEventChip`.
         Text(CadenceEventTitleSupport.displayTitle(event.title))
             .font(.system(size: 10))
             .foregroundStyle(Theme.onColor)

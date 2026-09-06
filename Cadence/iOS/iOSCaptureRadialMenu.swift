@@ -434,7 +434,7 @@ struct iOSCaptureRadialMenuOverlay: View {
         return VStack(spacing: 5) {
             Image(systemName: action.systemImage)
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(isSelected ? Theme.onColor : action.tint)
+                .foregroundStyle(isSelected ? Theme.onColor(for: action.tint) : action.tint)
                 .frame(
                     width: CadenceCapturePaletteMetrics.segmentTileDiameter,
                     height: CadenceCapturePaletteMetrics.segmentTileDiameter

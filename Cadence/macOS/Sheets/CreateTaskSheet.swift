@@ -275,7 +275,7 @@ struct CreateTaskSheet: View {
             Button(action: createTask) {
                 Image(systemName: "arrow.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.onColor)
+                    .foregroundStyle(Theme.onColor(for: Theme.blue))
                     .frame(width: 26, height: 26)
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))

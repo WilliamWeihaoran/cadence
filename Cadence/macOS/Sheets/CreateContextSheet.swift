@@ -107,7 +107,7 @@ struct ColorGrid: View {
                         .frame(width: swatchSize, height: swatchSize)
                         .overlay(
                             Circle()
-                                .strokeBorder(Theme.onColor.opacity(isSelected ? 1 : 0), lineWidth: 2)
+                                .strokeBorder(Theme.onColor(for: Color(hex: hex)).opacity(isSelected ? 1 : 0), lineWidth: 2)
                         )
                         .overlay(
                             Circle()

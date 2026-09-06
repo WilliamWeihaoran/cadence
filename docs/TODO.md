@@ -1063,7 +1063,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   files use it, so it is not dead. Record it as an adapter with no seam so the next "untested file"
   sweep does not re-derive this.
 
-- [T-848] **The accent palettes and the Markdown highlight fail even the 3:1 floor.** Cadence: blue
+- [T-848] **CLOSED 2026-09-06 (contrast2).** Closed the way [[T-853]]'s correction said it would be, with every figure re-measured rather than taken on trust: **no accent hex moved, and none had to.** The six Cadence numbers below reproduce to the hundredth as `Theme.onColor` — white — on the accent *fill*; as foregrounds on `Theme.bg` the same six read blue 7.22, red 7.17, green 9.57, amber 10.45, purple 7.31, teal 10.04, and the worst of all eighteen is Ember blue at 6.16. That side was already enforced at 4.5:1 by `CadenceAccentPaletteTests.everyHueIsLightEnoughToReadOnTheAppBackground`, which sweeps `CadenceAccentPalette.all` × `swatchHexes` and so catches a ninth accent too. The Markdown highlight is unchanged for [[T-853]]'s reason and stays pinned by `theMarkerHighlightFillIsPreCompositedAndStaysLegibleWithItsText`. The real defect — the *fill* side — is [[T-855]], fixed in the same commit. **Filed as:** **The accent palettes and the Markdown highlight fail even the 3:1 floor.** Cadence: blue
   2.75, red 2.78, green 2.08, amber 1.90, purple 2.72, teal 1.98. Glacier is worse — amber **1.54**,
   teal 1.75. Highlighted Markdown text measures **1.48:1** (`Theme.swift:314-316`;
   `MarkdownEditorSupport.swift:219-221`), which is close to unreadable. User-chosen accents are a
@@ -1079,7 +1079,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   composite a reader actually sees carries `markerHighlightText` at **7.03:1**. The defect
   underneath is real and is [[T-855]]; the token trap the alpha is hiding is [[T-856]]. Do not act
   on the numbers above as written.
-- [T-855] **`Theme.onColor` is plain white on every accent fill, and white loses to dark ink on all
+- [T-855] **CLOSED 2026-09-06 (contrast2).** `Theme.onColor(for:)` is the fix, and the threshold this entry asked to look at turned out not to be a tunable: setting the two WCAG ratios equal, `1.05/(Y+0.05) = (Y+0.05)/(L(bg)+0.05)`, **solves** for `Y = sqrt(1.05·(L(bg)+0.05)) − 0.05` = 0.18540, so `Theme.onColorCrossoverLuminance` follows `bg` instead of being picked. At the crossover itself both inks read 4.46:1, which is the worst case the scheme can produce at any fill luminance whatsoever. All eighteen accents sit above it, so every raw accent fill now takes `Theme.bg` and goes from **1.54–3.23:1 to 6.16–12.93:1**; a darker user `colorHex` still takes white, which is why it is a function. Forty-three call sites were swept and the residue is enumerated and pinned by `theOnlyBareThemeOnColorLeftInTheProductTreeIsSolvedOrBrandLocked` — five files, each solved or brand-locked, and a sixth goes red. Six mutations of the luminance maths, the crossover solve, the ink comparison and one swept call site were all killed. One offered swatch cannot reach 4.5:1 with either ink and is named rather than rounded away: [[T-1089]]. **Filed as:** **`Theme.onColor` is plain white on every accent fill, and white loses to dark ink on all
   eighteen.** The real defect behind [[T-848]]'s mis-attributed numbers, and it needs a decision
   rather than an edit, because it changes what filled calendar blocks, selected day cells and accent
   buttons look like. Measured 2026-09-04 by `CadenceContrastFloorTests`, recomputed from the tokens:
@@ -1094,6 +1094,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   above the crossover, so today every filled block would take dark ink. Two arms of
   `whiteOnAnAccentFillFailsEveryHueWhileDarkInkClearsThemAll` already hold both halves of the
   measurement and go red the moment either stops being true.
+- [T-1089] **One offered swatch cannot reach 4.5:1 with either ink, and it is `#6366f1`.**
+  Found by contrast2 while landing [[T-855]]. `CadenceColorPalette.colors` offers `#6366f1`, whose
+  relative luminance is **0.18506** — three ten-thousandths *below* `Theme.onColorCrossoverLuminance`
+  (0.18540), so `Theme.onColor(for:)` correctly picks white and delivers **4.467:1**, under AA's 4.5
+  by 0.7%. Every other offered fill — 30-odd across the three accent sets, `CadenceColorPalette`,
+  `TagSupport` and the section default — clears 4.5:1. It is exempted by name in
+  `everyFillTheAppOffersClearsAAUnderTheInkOnColorForChooses` rather than corrected, because the hex
+  is a **stored user value**: nudging it would make `CadenceColorPalette.offered(_:from:)` append a
+  saved `#6366f1` as a thirteenth swatch beside its replacement, which is the [[T-245]] shape. The
+  decision to make is whether a 0.7% shortfall on one swatch is worth that, or whether `offered` should
+  learn to migrate a retired hex to its replacement.
 - [T-850] **CLOSED 2026-09-06 (`dcd110c`), as still parked.** Originally: **iOS calendar quick-create branches on only one denied state.**
   `iOSCalendarQuickCreateSheet.swift:342-357` should consume the shared Calendar authorization
   presentation. Real, but iOS is not the v1 distribution channel — **parked behind macOS work.**

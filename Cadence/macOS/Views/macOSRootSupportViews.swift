@@ -286,7 +286,7 @@ struct FloatingNewTaskButton: View {
         Button(action: action) {
             Image(systemName: "plus")
                 .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(Theme.onColor)
+                .foregroundStyle(Theme.onColor(for: Theme.blue))
                 .frame(width: 54, height: 54)
                 .background(Theme.blue)
                 .clipShape(Circle())
