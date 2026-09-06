@@ -468,7 +468,7 @@ struct CadenceHabitCompletionDuplicateTests {
         // **This does not close [[T-391]] — it is the case T-391 predicted.** The advice in
         // `aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent` below is that an import
         // should *fold* a day's split rows into one row's `count` before inserting them, and the
-        // importer does not do that yet. Filed as [[T-1086]].
+        // importer does not do that yet. Filed as [[T-1088]].
         #expect(
             assigning.remove("CadenceArchiveImportService.swift") != nil,
             "the importer no longer assigns a row's count — delete this exemption"

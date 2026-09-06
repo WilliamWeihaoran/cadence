@@ -207,9 +207,98 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceArchiveImportEntryPointTests.neitherArchiveImportSurfaceDrawsANativePicker` covers the two
   files T-1082 touched and nothing else; it is a plug, not the rule.
 
-- [T-1086] **STUB — id taken 2026-09-06 by sweepreds.** `CadenceArchiveImportService.swift` trips
-  seven source sweeps on `main`; deciding, per sweep, whether the importer is a new exception or a
-  duplication of a shared helper.
+- [T-1088] **The archive importer does not fold a habit day's split rows, which is the exact case
+  [[T-391]] wrote its warning for.** Found while granting the importer's exemptions in [[T-1086]],
+  not in use. `CadenceHabitCompletionDuplicateTests
+  .aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent` closes T-391 by *documenting* rather
+  than repairing, on the ground that `HabitCompletion` carries no provenance separating "one day's
+  quantity written across two rows" from "one check-in synced twice" — so nothing inside the app can
+  fold `[2, 1]` to 3 without also folding `[1, 1]` to 2, which is [[T-359]]'s bug. That test then
+  names the one party that *can* tell the difference: **"the place that does know is an importer,
+  which sees a whole archive's rows for a day at once"**, and its stated instruction is *"fold split
+  rows into one row's `count` before inserting them."*
+
+  `CadenceArchiveImportService.write(_:mode:into:tally:in:)` does not. Its `habitCompletions` upsert
+  copies each archived row through verbatim (`model.count = record.count`), so an archive holding a
+  day split across rows imports it split. `PersistenceController.performStartupMaintenance` runs
+  `DataIntegrityRepairService` the instant the container opens, and that repair keeps the largest
+  row for a habit-day and **deletes** the rest — so the remainder is gone from the store before
+  anyone can look at it, and the day reads low permanently rather than only until the next repair.
+
+  **Not reachable from an archive this app wrote**, which is why it is filed rather than fixed
+  inside T-1086: the initializer takes no `count`, so every row Cadence creates is `1`, and the only
+  other write is `collapseDuplicates`' `max` over rows that are already `1`. It needs a store that
+  received split rows by CloudKit from a build that could write them, exported from there. The fix
+  is local — group `archive.habitCompletions` by `(habitID, date)` before the upsert and insert one
+  row carrying the sum — and it must be decided against the T-391 argument, because summing here is
+  the same guess T-391 refused to let the repair make; the importer's claim to be allowed it is
+  that it sees the whole day at once and the repair sees one row at a time.
+
+- [T-1086] **CLOSED 2026-09-06 — the archive importer tripped seven source sweeps; six are real
+  exceptions and the seventh was a shared helper the importer had simply not called.**
+  `CadenceArchiveImportService.swift` landed with [[T-1082]]'s engine after a hygiene pass of 7
+  suites / 134 tests, so the seven reds it put on `main` were first seen by a later full 4,536-test
+  run: `everyRollbackCallSiteInTheAppIsADeleteCommit`, `onlyTheSharedHelperConstructsALink`,
+  `onlyTheHabitCompletionStoreConstructsAHabitCompletion`,
+  `nothingUnderCadenceEverWritesAHabitDayQuantityAboveOne`,
+  `onlyTheSharedFilingHelperWritesAFolderPath`,
+  `nothingOutsideTheWorkflowAndTheModelWritesTheEndFieldsDirectly` and
+  `noNewSurfaceTypesTheRetiredBundleNounEither`.
+
+  **Every one of the seven sweeps was correct.** Each says "only the sanctioned helper does this",
+  and an importer rebuilding a store from an archive genuinely constructs these types — so the
+  question was never whether to silence them but what kind of exception an importer is. Taken one
+  at a time, on each sweep's own evidence:
+
+  **One was duplication, and is fixed in source rather than exempted.**
+  `onlyTheSharedFilingHelperWritesAFolderPath`. Its own doc says the folder convention "is
+  protected by there being one *normalizer*", and the importer wrote `model.folderPath =
+  record.folderPath` — the archive's raw string, never normalized. `CadenceListNoteFiling.move(_:
+  toFolder:)` is one line and is exactly that normalizer, so the importer now calls it. It is
+  idempotent on anything Cadence wrote, so a real archive round-trips unchanged; a hand-edited one
+  with `"/Planning/"` now files under `Planning` instead of forming a phantom third group no
+  surface can merge. The one obstacle was isolation — `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+  makes `CadenceListNoteFiling` main-actor by default and the importer is `nonisolated` — so `move`
+  is now `nonisolated`, which it always was in substance. That sweep needed no exemption at all.
+
+  **Six are exceptions, each stated as its *reason* rather than as the importer's name**, following
+  the precedent in `DataIntegrityRepairServiceTests` (assert the Sources-phase fact, not the file)
+  and in this very family — T-19's exporter, which was granted a *read* on the recurrence-end
+  fields as "a named file with a stated capability". Each exemption is a **pure insertion** that
+  asserts its own premise, so it goes red and retires itself the day the premise stops holding:
+
+  - **`rollback`** — exception, because the context is the importer's own.
+    `importArchive(_:mode:into:)` hands `apply` a `ModelContext(container)` it built on the spot,
+    so the reason `commitEdit` refuses to offer `rollback()` (it would discard the note someone is
+    typing behind the popover) cannot apply. Pinned: the fresh context, one rollback inside
+    `apply`, and that it rethrows.
+  - **`GoalListLink(`** — exception, and the *empty* construction is the exemption.
+    `GoalLinkTarget.makeLink(for:)` exists to make the area-or-project choice unspellable-wrong;
+    the importer makes no choice, it restores rows in two passes because a link's goal and list can
+    arrive later in the same archive than the link does. Pinned: the construction is
+    `GoalListLink()` with no arguments and all three relationships are set in the wiring pass.
+    `GoalListLink(goal:area:)` here would be red.
+  - **`HabitCompletion(`** — exception, same shape. The store owns the *toggle*; the importer
+    restores a row with its archived `id` and `createdAt` and cannot use a toggle for that. Pinned:
+    `HabitCompletion(date:)` only, with the habit arriving through the wiring pass. A merge can
+    still land a second row on a day the destination already has, which is not a hole this opens —
+    `DataIntegrityRepairService` collapses duplicate habit-days at every launch.
+  - **`.count =` on a completion row** — exception, and it is the **frontier** of that sweep's
+    premise rather than a hole in it. Everything the sweep says stays true of anything the *app*
+    can write; what changed is that a store can now be handed a quantity from outside. Pinned: the
+    importer's one write is `model.count = record.count`, a verbatim copy. See [[T-1088]].
+  - **`recurrenceEndMode` / `Date` / `Count`** — exception, and it is the exporter's mirror. T-19's
+    file was granted read on the ground that an export skipping these would produce a backup in
+    which every recurring task repeats forever; a restore skipping them is the same defect by the
+    same door. `applyRecurrenceEnd` would be *wrong* here, not merely unavailable: it normalizes
+    off-mode fields and propagates across the series, so restoring a hundred rows through it would
+    leave them all reading like the last one. Pinned: each assignment is `model.<field> =
+    record.<field>` and the importer never names the workflow.
+  - **`"TaskBundle"`** — exception, and a one-key insertion into `allowedLiteralsByPath`. It is the
+    same SwiftData schema-entity key the exporter is already exempted for, used in per-table
+    validation errors and the destination index. Technical, not product vocabulary.
+
+  Measured, not reasoned: full `-only-testing:CadenceTests` run, zero warnings.
 
 - [T-1085] **The two kanban card drops have no off-screen notice.** [[T-1077]]'s change wires the
   three row surfaces that renumber `AppTask.order` from a drop — Today, All Tasks/Inbox, and a
