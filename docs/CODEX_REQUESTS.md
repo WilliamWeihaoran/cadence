@@ -2539,7 +2539,7 @@ failure is specifically the reversed white-on-bright-fill contract and over-dimm
 user-selected color corpus, build, tests, or visual Dynamic Type run. Ratios are measured; actual
 pair reachability is source-derived where cited and cannot account for arbitrary SwiftUI compositing.
 
-<!-- FOLDED-THROUGH: R30 -->
+<!-- FOLDED-THROUGH: R40 -->
 
 ## R31 — Standing: has any of R25–R30 gone stale yet?
 
