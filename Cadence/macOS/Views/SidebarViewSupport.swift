@@ -149,6 +149,60 @@ extension CadenceFeatureDestination {
     }
 }
 
+/// **The vertical rhythm around a sidebar context header, composed the way the column actually
+/// composes it (T-1067).**
+///
+/// A context header's two gaps are each built from pads applied in *different files*, so neither
+/// call site can see either number:
+///
+/// - above it: the previous section's `sectionBottomPadding` (`SidebarComponents`), then
+///   `sectionOuterVerticalPadding` twice (`SidebarView.listsSection` pads every section on both
+///   edges and stacks them at zero spacing, so two neighbours contribute it once each), then this
+///   section's `headerTopPadding` (`SidebarComponents`).
+/// - below it: `headerBottomSpacing`, then — when the context has lists — the leading drop zone,
+///   which is a `Color.clear` of `leadingDropZoneHeight`, and the `rowSpacing` after it. The drop
+///   zone is a control, but it is transparent, so a reader counts its height as whitespace.
+///
+/// This type is where those are added up, and `SidebarMetrics` re-publishes every part so the views
+/// keep reading one vocabulary. The arithmetic here and the pixels on screen can only drift if a
+/// view introduces a pad this type does not know about, which
+/// `theSidebarComposesAContextSectionOnlyFromNamedSpacing` forbids by source scan.
+///
+/// **T-1041 pinned the right relationship with the wrong two numbers, which is why this exists.**
+/// It compared `sectionBottomPadding + headerTopPadding` against `headerBottomSpacing` alone: 22
+/// against 3, where the column draws 26 against 9. A test that re-derives its own arithmetic can be
+/// individually defensible and still measure something the app never renders, and this class of
+/// defect — a *relationship* between composed gaps — is checkable with no running app, so leaving
+/// it measured wrong is worse than leaving it unmeasured. The conclusion survived the correction;
+/// see the finding in [[T-1067]] for the two claims that did not.
+nonisolated enum SidebarContextHeaderRhythm {
+    /// Above the header, inside the section (`ContextSection`'s header `HStack`).
+    static let headerTopPadding: CGFloat = 14
+    /// The `ContextSection` `VStack`'s own spacing: header to whatever the section draws next.
+    static let headerBottomSpacing: CGFloat = 3
+    /// Below the section's last row, inside the section.
+    static let sectionBottomPadding: CGFloat = 8
+    /// `SidebarView.listsSection` pads every section by this on **both** edges.
+    static let sectionOuterVerticalPadding: CGFloat = 2
+    /// The "drop above the first row" target that opens every populated context's row stack.
+    static let leadingDropZoneHeight: CGFloat = 4
+    /// Between two list rows of one context.
+    static let rowSpacing: CGFloat = CadenceSidebarMetrics.metrics(for: .desktop).rowSpacing
+
+    /// From the previous context's last list row to this context's header.
+    static let gapAboveHeader: CGFloat =
+        sectionBottomPadding + sectionOuterVerticalPadding * 2 + headerTopPadding
+
+    /// From the header to the first list row it labels.
+    static let gapBelowHeader: CGFloat =
+        headerBottomSpacing + leadingDropZoneHeight + rowSpacing
+
+    /// From the header to the "Add first list" button of a context that has none. No drop zone is
+    /// drawn there, so this is the bare stack spacing and is deliberately *not* the number the
+    /// relationship is pinned on: an empty context has no lists for its header to belong to.
+    static let gapBelowHeaderInEmptyContext: CGFloat = headerBottomSpacing
+}
+
 /// Fixed geometry for the single sidebar column: app header, nav rows, the scrolling
 /// lists region, and the pinned bottom group all size off these values.
 ///
@@ -241,15 +295,19 @@ enum SidebarMetrics {
     static let contextHeaderKerning: CGFloat = SectionEyebrowLabel.Size.standard.kerning
     /// **Asymmetric on purpose, and the asymmetry is the point (T-1041).** A context header belongs
     /// to the lists *under* it, so it must sit far from the group above and close to its own. These
-    /// were 3 and 6 -- the header nearly equidistant between two groups, and marginally nearer the
-    /// one it does not label. The gap a reader actually sees above a header is
-    /// `contextSectionBottomSpacing + contextHeaderTopPadding`; below it is
-    /// `contextHeaderBottomSpacing` alone, which is why the two numbers are not comparable directly
-    /// and why the pinned relationship is written as a test rather than trusted to look right.
-    /// Below is now near `rowSpacing` (2), so the header reads as the first line of its own group.
-    static let contextHeaderTopPadding: CGFloat = 14
-    static let contextHeaderBottomSpacing: CGFloat = 3
-    static let contextSectionBottomSpacing: CGFloat = 8
+    /// were 3 and 6 -- and *neither* number is a gap. Every one of the five below is one term of a
+    /// sum applied in a different place, so what a reader sees is 26pt above a header and 9pt
+    /// below it; `SidebarContextHeaderRhythm` does that arithmetic, this enum only re-publishes the
+    /// terms under the names the views use, and `CadenceSidebarLayoutTests` asserts on the sums
+    /// rather than re-deriving them. Retune here and the model and the test follow.
+    static let contextHeaderTopPadding: CGFloat = SidebarContextHeaderRhythm.headerTopPadding
+    static let contextHeaderBottomSpacing: CGFloat = SidebarContextHeaderRhythm.headerBottomSpacing
+    static let contextSectionBottomSpacing: CGFloat = SidebarContextHeaderRhythm.sectionBottomPadding
+    /// Applied by `SidebarView.listsSection` to each section, on both edges.
+    static let contextSectionOuterVerticalPadding: CGFloat =
+        SidebarContextHeaderRhythm.sectionOuterVerticalPadding
+    /// The transparent "drop above the first row" target inside a populated context.
+    static let contextLeadingDropZoneHeight: CGFloat = SidebarContextHeaderRhythm.leadingDropZoneHeight
     static let contextAddButtonSize: CGFloat = 16
     static let contextAddIconSize: CGFloat = 9
 

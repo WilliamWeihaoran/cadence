@@ -319,23 +319,71 @@ struct SidebarStaticDestinationBridgeTests {
         #expect(CadenceFeatureDestination.search.macSidebarItem == nil)
     }
 
-    /// **A context header belongs to the lists under it (T-1041).**
+    /// **A context header belongs to the lists under it (T-1041, corrected by T-1067).**
     ///
-    /// Pins the *relationship*, not the three numbers -- a test asserting `== 14` keeps passing
-    /// long after the reason for 14 stops being true, and fails the moment somebody legitimately
-    /// retunes the sidebar. What must stay true is that a reader sees the header grouped with the
-    /// lists it labels rather than floating between two groups.
+    /// Pins the *relationship*, not the five numbers -- a test asserting `== 14` keeps passing long
+    /// after the reason for 14 stops being true, and fails the moment somebody legitimately retunes
+    /// the sidebar. What must stay true is that a reader sees the header grouped with the lists it
+    /// labels rather than floating between two groups.
     ///
-    /// The gap above a header is what the previous section left plus the header's own top padding;
-    /// the gap below it is the header stack's spacing alone. They are not the same quantity, which
-    /// is exactly why this was wrong by inspection for so long: the raw numbers were 3 and 6, and 6
-    /// looks like the larger one.
+    /// **It reads the gaps off `SidebarContextHeaderRhythm` instead of re-deriving them, and that
+    /// is the whole repair.** T-1041 added up `contextSectionBottomSpacing + contextHeaderTopPadding`
+    /// against `contextHeaderBottomSpacing`, which is 22 against 3; the column draws 26 against 9.
+    /// Every pad in those sums is applied in a different place from the others, so an arithmetic
+    /// spelled out here is arithmetic nothing else checks -- individually defensible, and measuring
+    /// a layout the app does not have. The model is the layout's own now.
     @Test func aContextHeaderSitsNearerTheListsItLabelsThanTheGroupAboveIt() {
-        let above = SidebarMetrics.contextSectionBottomSpacing + SidebarMetrics.contextHeaderTopPadding
-        let below = SidebarMetrics.contextHeaderBottomSpacing
+        let above = SidebarContextHeaderRhythm.gapAboveHeader
+        let below = SidebarContextHeaderRhythm.gapBelowHeader
 
         #expect(above > below * 2, "a header \(above)pt below the last group and \(below)pt above its own reads as belonging to neither")
-        #expect(below <= SidebarMetrics.rowSpacing + 2, "\(below)pt under a header, against \(SidebarMetrics.rowSpacing)pt between its rows, detaches the header from its own list")
+    }
+
+    /// **The rhythm model is only as true as the pads it knows about (T-1067).**
+    ///
+    /// `SidebarContextHeaderRhythm` sums five constants. Nothing stops a view adding a sixth, and
+    /// when one did -- `SidebarView.listsSection`'s bare `.padding(.vertical, 2)` -- the gap above a
+    /// header was 4pt wider than every account of it, for as long as the account was written by
+    /// hand. So the two declarations that compose a context section may not spell a vertical
+    /// measurement as a literal: naming it puts it in front of whoever next edits the model.
+    ///
+    /// Only three spellings can carry a vertical gap here, and only those three are forbidden a
+    /// literal: a `.vertical`/`.top`/`.bottom` pad, a `VStack`'s spacing, and a fixed `height`.
+    /// `spacing: 0` is allowed -- a zero contributes nothing, and forbidding it would push
+    /// `listsSection` into naming the absence of a pad -- and an `HStack`'s spacing is not vertical.
+    ///
+    /// Both scans are scoped to the **body** that composes the section, not to the enclosing file
+    /// or type: `ContextSection`'s row helpers carry a `frame(height: 2)` drop indicator that has
+    /// nothing to do with the header's rhythm, and a scan wide enough to see it would have to be
+    /// loosened until it saw nothing.
+    @Test func theSidebarComposesAContextSectionOnlyFromNamedSpacing() throws {
+        let unnamedVerticalSpacing =
+            "(padding\\(\\.(vertical|top|bottom), *[0-9]|VStack\\([^)]*spacing: *[1-9]|frame\\(height: *[0-9])"
+
+        let view = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarView.swift")
+        )
+        let listsSection = try #require(
+            CadenceSourceScan.declarationBody("var listsSection: some View", in: view)
+        )
+        #expect(
+            CadenceSourceScan.matchCount(unnamedVerticalSpacing, in: listsSection) == 0,
+            "listsSection spells a vertical measurement as a literal, so SidebarContextHeaderRhythm cannot see it"
+        )
+
+        let components = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarComponents.swift")
+        )
+        let contextSection = try #require(
+            CadenceSourceScan.declarationBody("struct ContextSection: View", in: components)
+        )
+        let sectionBody = try #require(
+            CadenceSourceScan.declarationBody("var body: some View", in: contextSection)
+        )
+        #expect(
+            CadenceSourceScan.matchCount(unnamedVerticalSpacing, in: sectionBody) == 0,
+            "ContextSection's body spells a vertical measurement as a literal, so SidebarContextHeaderRhythm cannot see it"
+        )
     }
 }
 

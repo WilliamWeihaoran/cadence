@@ -197,7 +197,11 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(listSections) { section in
                     contextSection(section)
-                        .padding(.vertical, 2)
+                        // Counted by `SidebarContextHeaderRhythm`: two neighbours contribute it
+                        // once each to the gap above a header, and it was a bare `2` here — in a
+                        // different file from the other three pads — for exactly as long as the
+                        // T-1041 test measured the wrong gap.
+                        .padding(.vertical, SidebarMetrics.contextSectionOuterVerticalPadding)
                 }
             }
             .padding(.vertical, SidebarMetrics.groupSpacing)

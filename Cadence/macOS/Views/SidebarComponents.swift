@@ -159,11 +159,13 @@ struct ContextSection: View {
 
             if hasLists {
                 VStack(alignment: .leading, spacing: SidebarMetrics.listRowSpacing) {
-                    // Top drop zone — lets the user drag any item to the first position
+                    // Top drop zone — lets the user drag any item to the first position. It is
+                    // transparent, so its height is also 4pt of whitespace under the header;
+                    // `SidebarContextHeaderRhythm.gapBelowHeader` counts it as such.
                     if let firstItem = entries.first?.dragItem {
                         Color.clear
                             .frame(maxWidth: .infinity)
-                            .frame(height: 4)
+                            .frame(height: SidebarMetrics.contextLeadingDropZoneHeight)
                             .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
                                 target: firstItem,
                                 dragOverItem: $dragOverListItem,
