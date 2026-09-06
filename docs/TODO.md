@@ -111,6 +111,39 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   was clean and none of the three paths reads `behind`. `--removes 45` is user-gated in this batch,
   so the verified count is reported here instead of typed. [[T-992]], [[T-991]], [[T-986]] and the
   second half of [[T-781]] are all waiting on that one flag.
+  **The sweep is finished, and it found two more -- both live, both in code that had not landed
+  yet (2026-09-06, agent `zshlocal`).** `mutate.sh`, `test-host-lock.sh` and `simulator-claim.sh`
+  are **clean: 0 each**, measured, not eyeballed -- as are `codex-inbox.sh`, `agent-cleanup.sh`,
+  `prune-shared-derived-data.sh`, `real-tree-sweep-manifest.sh`, `run-macos-app.sh` and
+  `test-suite-index.sh`, so all twelve scripts in `scripts/` have now been read. `xcb.sh` was
+  **2**, in the `UNKNOWN-SUITE` refusal [[T-1076]] had just added: `local sf` in the "That file
+  declares:" branch and `local n` in the "Did you mean:" branch, both inside the per-unknown-name
+  loop. Both reproduced against the real script -- `sf=OpenAIResponsesProviderTests` lands directly
+  under *"That file declares:"*, and `n=AlphaTests` between *"Did you mean:"* and the answer.
+  Hoisted into the existing
+  `local u stem_file` line; the `local -a in_file` and `local -a near` beside them are safe and
+  stay, which is the distinction any check here has to make.
+  **The instrument now has two halves.** Behavioural, in `xcb.sh selftest`: name one unknown suite
+  TWICE -- the cheapest second pass through the loop, and it needs no second name to exist -- then
+  `grep -qE '^[a-z_][a-z_0-9]*='` over the refusal. Mutation control run: re-breaking the two
+  declarations takes the selftest from 18 passed / 0 failed to 16 / 2, and it names both.
+  Structural, in `CadenceShellLocalScan` (`CadenceGuardScriptSelftestTests`): every `scripts/*.sh`
+  rather than a named six, so the next script written there is swept without anybody remembering to
+  add it, and a bare declaration in a loop nobody thought to induce is still caught.
+  **It does not grep.** zsh hands over its own parse -- `eval` a whole file into one function
+  definition, which parses the body without running a line of it, then `functions <name>` prints it
+  back re-serialised from the parse tree: comments gone, one statement per line, `do`/`done` alone
+  on theirs, and tab indentation that is real block nesting. That is the shell answer to
+  `strippedSourceReader()`, and better than stripping, because it is the same parser that will run
+  the script. Nine fixture probes pin it
+  against its near misses -- `local -a` in a loop, a second declaration that assigns, the same name
+  in two functions, a bare `local` after the loop closed, and `local` inside a comment or a string.
+  Each probe's expected answer was checked by RUNNING it in zsh, so the fixture is measured too.
+  Green: `CadenceGuardScriptSelftestTests`, 11 tests, 144s, 0 Swift warnings.
+  **Neither fix is committed, and that is deliberate.** `scripts/xcb.sh` (+390/-0 vs HEAD) and
+  `CadenceTests/CadenceGuardScriptSelftestTests.swift` both carry [[T-1076]]'s unlanded work in the
+  shared checkout; naming either path would land a sibling's change under someone else's message.
+  Both edits sit in the tree for that agent's batch to carry. Only this ledger entry was committed.
 
 - [T-1076] **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
 
