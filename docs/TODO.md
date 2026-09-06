@@ -144,8 +144,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceTests/CadenceGuardScriptSelftestTests.swift` both carry [[T-1076]]'s unlanded work in the
   shared checkout; naming either path would land a sibling's change under someone else's message.
   Both edits sit in the tree for that agent's batch to carry. Only this ledger entry was committed.
+  **Still open at HEAD, verified 2026-09-06 (`reconcile`).** The sweep half is on the record (`43bc200`);
+  the fixes are not. `git show HEAD:scripts/worktree-drift.sh` still declares a bare `local gone` at
+  line 295, **inside** the per-behind-path loop of the drift report — the measured instance above — and
+  `HEAD:scripts/xcb.sh` contains no `UNKNOWN-SUITE` refusal at all, so [[T-1076]]'s branch and the two
+  declarations the sweep found in it are uncommitted working-tree edits. Nothing here has landed.
 
 - [T-1076] **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+  **Still a stub at HEAD, verified 2026-09-06 (`reconcile`).** No body was ever written under it and no
+  code landed: `UNKNOWN-SUITE` occurs 0 times in `git show HEAD:scripts/xcb.sh` and 4 times in the
+  working copy, so both the verdict and the instrument that would carry it are uncommitted.
 
 - [T-1078] **RESERVED 2026-09-06 (agent `sweeps`) — `main` is red a THIRD way: half 3 of the save-commit rule reads ownership off a signature, so a nested `func` that captures its parent's `ModelContext` is misread as owning the unit of work.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Confirmed independently 2026-09-06 (coordinator), and two rival readings refuted by measurement.**
@@ -161,6 +169,11 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   count is irrelevant, and `seedDailyNoteWithImage(todayKey:modelContext:)` is correctly exempt by it.
   The repair belongs in `parsedDeclarations`, which flattens nested declarations and models no lexical
   scope at all. **A duplicate of this was drafted as T-1079 with the wrong offender named; do not file it.**
+  **Half landed 2026-09-06 (`19d2136`); the rule's blind spot is untouched and is the open half.**
+  The offender was fixed at the call site — the nested `insertTask` is now *handed* its `ModelContext`
+  rather than capturing it — so `noInsertIsLeftPendingWithNoCommitAnywhereInItsDeclaration` passes and
+  that red is gone from `main`. `parsedDeclarations` still flattens nested declarations and still models
+  no lexical scope, so the next nested `func` that captures its parent's context is misread the same way.
 
 - [T-1077] **RESERVED 2026-09-06 (agent `decide`) — the drag-under-a-non-custom-sort rule that [[T-1054]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Body, 2026-09-06 (agent `dropnotice`). Built and green — 4,536 tests, zero new failures, zero
@@ -190,6 +203,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `List Order` included. A per-sort rule would have been silent on the app's busiest drop surface.
   **Deliberately not wired: the two kanban card drops** — [[T-1085]].
   **Filed as:** **[[T-1054]]'s premise is false, and the honest fix is per drop.**
+  **The ledger half is in HEAD and the code half is not, verified 2026-09-06 (`reconcile`).**
+  `e340205` changed `docs/TODO.md` and nothing else (+41/-0). At HEAD, `CadenceReorderVisibility` and
+  `sortKeyOrder` occur in this file and nowhere else in the repository;
+  `Cadence/Shared/CadenceReorderVisibility.swift`, `CadenceTests/CadenceReorderOffScreenNoticeTests.swift`
+  and the four edited surfaces are uncommitted working-tree edits. Do not read this entry as shipped —
+  it is the exact shape [[T-1085]] and [[T-1054]] both now depend on.
 
 - [T-1087] **The native-picker sweep stops at the macOS Settings folder, and the phone has the same
   screens.** Found while closing [[T-1082]].
@@ -329,8 +348,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   edit should land it; if it was abandoned, the list entry is what has to go. Unrelated to
   [[T-1073]] (a Kanban needle) and to this batch's own changes, which touch neither `mutate.sh` nor
   `mutationRunnerRefusals`.
+  **CLOSED 2026-09-06 — the premise is false at HEAD, and that correction is the whole of it.**
+  Re-measured by `reconcile`: `STRANDED` occurs **zero** times anywhere under `CadenceTests/` at HEAD
+  — `mutationRunnerRefusals` lists eight refusals and that is not one of them, and that file has not
+  been committed since `452c803`, which predates this entry — and zero times in
+  `git show HEAD:scripts/mutate.sh`. Both copies carrying it are **uncommitted working-tree edits**:
+  2 occurrences in the test, 9 in the script, and they agree with each other. So the half-landed pair
+  was read from the shared checkout rather than from HEAD, which is the failure mode [[T-975]] exists
+  for, one level up: a pristine `git archive HEAD` tree is only pristine if the *reading* is taken
+  there too. `main` is green at HEAD.
 
-- [T-1073] **`main` is red: [[T-885]]'s rename left one [[T-646]] needle behind.** Found 2026-09-06
+- [T-1073] **CLOSED 2026-09-06 (`989deb6`) — the stale needle reads `editorFailureNotice` now, and one premise below is corrected: [[T-885]] renamed nothing.** [[T-914]] added that property *above* `saveFailureNotice`, which still exists, so the three other mentions in this entry were right to be left alone. Originally: **`main` is red: [[T-885]]'s rename left one [[T-646]] needle behind.** Found 2026-09-06
   by a full `CadenceTests` run while landing [[T-642]]; **not caused by that change, which touches
   no Kanban file.** `5aac94d` renamed `saveFailureNotice` to `editorFailureNotice` in
   `KanbanSectionColumnView` and updated 55 lines of
@@ -351,7 +379,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   build stays green and only a run says otherwise. The same class as `mutate.sh`'s STALE NEEDLE
   guard, which exists because a needle that no longer occurs reads exactly like success.
 
-- [T-1068] **The first test in this repository that looks at the composed main window.**
+- [T-1068] **CLOSED 2026-09-06 (`57ea52f`).** Shipped; the NOT PINNED half below is unchanged, and groups 3b/4b/3c/4c/3d/4d have still never executed ([[T-563]]). Originally: **The first test in this repository that looks at the composed main window.**
   Codex's inventory, 2026-09-05: **4 of 4,431 `@Test` declarations exercise a running surface, and
   all four are opt-in.** No test entered full screen, populated Today with rollover tasks, loaded an
   image note, resized its editor, or compared successive hover frames — which is, item for item, the
@@ -460,7 +488,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
      `accessibilitySlug` rather than replacing it. The slug pair is not unpinned while it waits — one
      UI run asserts an identifier built by each copy.
 
-- [T-1053] **Renaming a kanban column to whitespace deletes it.**
+- [T-1053] **CLOSED 2026-09-06 (`5667e72`) — a column name that trims to empty is a refused rename now, on both platforms' roads.** Originally: **Renaming a kanban column to whitespace deletes it.**
   `Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` drop any config whose name
   trims to empty, and the setter runs on every write — so `updateSectionConfig(uuid:) { $0.name =
   "   " }` does not no-op, it removes the column from the blob, and `AppTask.sectionName` still
@@ -481,6 +509,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   also *assigns* on the way past (a row dropped into a Today list group is filed into that list),
   so a refused reorder must not be reported as a refused drop — the answer would have to become
   `assigned || reordered`, across four surfaces. Ask before implementing.
+  **Half measured 2026-09-06 (`9567276`); the decision this ticket asks for is still the open half.**
+  Three behavioural tests landed in `CadenceRowReorderSequenceTests`, and what they measure is that the
+  drag is invisible only **across a sort-key boundary** — inside a tie band the displayed sequence *is*
+  the `order` sequence, so the blanket refusal proposed above would refuse a gesture that works.
+  [[T-1077]] files the per-drop rule that follows from that and records this premise as false. Left
+  open because nobody has answered the product question, and because [[T-1077]]'s code is not in HEAD.
 - [T-1055] **Every row renumber writes 0…n over a visible slice, not over the sequence it spans.**
   `CadenceOrderCommit.commit`'s own doc says the array "must be the *whole* collection the `order`
   sequence spans rather than the visible slice — renumbering only the visible rows hands them
@@ -494,7 +528,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   allocated per container (`nextTaskOrder(in:)` maxes over one list), so on a cross-list surface
   there is no "whole sequence" to renumber. Deciding what `order` means across containers has to
   come first. Noted by z4 under [[T-884]] and left alone under that ticket's scope.
-- [T-1067] **RESERVED 2026-09-06 (agent `gapmodel`) — the sidebar gap model measures the wrong two numbers.** Placeholder written at the moment the id was handed out, not when the work lands. Codex R36 found that `4c091c1`'s new relationship test composes its gaps without the outer padding, so it asserts on a number no user sees.
+- [T-1067] **CLOSED 2026-09-06 (`8a13268`) — one composition model for the sidebar's context-header gaps, read by the layout and by the test.** Reserved 2026-09-06 by agent `gapmodel` from Codex R36's finding that `4c091c1`'s new relationship test composed its gaps without the outer padding, so it asserted on a number no user sees. Nothing was retuned; the corrected figures are 26pt above a context header against 9 below, and what changed is the description.
 - [T-1070] **RESERVED 2026-09-06 (agent `savefail2`, RENUMBERED from a collided T-1068) — `iOSTaskTagPickerPopover.toggle` writes a collection `@Binding` then calls `onCommit()`.** The call site supplies `{ try? modelContext.save() }`. [[T-631]] fixed the insert half and left the selection half; `iOSTaskTagsRow.remove` is the same defect in plain spelling. The save-commit detector cannot see any of them: the report is one frame down through a **closure property**, which a same-file name index does not reach.
   **Found 2026-09-06 while measuring [[T-657]]'s arm**, and it is one of the two sites in that
   measurement that are real. `iOSTaskDetailComponents.iOSTaskTagPickerPopover.toggle(_:)` writes
@@ -1060,7 +1094,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   above the crossover, so today every filled block would take dark ink. Two arms of
   `whiteOnAnAccentFillFailsEveryHueWhileDarkInkClearsThemAll` already hold both halves of the
   measurement and go red the moment either stops being true.
-- [T-850] **iOS calendar quick-create branches on only one denied state.**
+- [T-850] **CLOSED 2026-09-06 (`dcd110c`), as still parked.** Originally: **iOS calendar quick-create branches on only one denied state.**
   `iOSCalendarQuickCreateSheet.swift:342-357` should consume the shared Calendar authorization
   presentation. Real, but iOS is not the v1 distribution channel — **parked behind macOS work.**
 
@@ -1075,7 +1109,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   "Allow Calendar Access" button that a restricted device can never satisfy. **Reopen the day iOS
   becomes a channel**, which `apple-release-readiness.md` already instructs its reader to do.
 
-- [T-809] **Two sweeps outside [[T-808]]'s product-tree boundary are still unpinned.** The R19
+- [T-809] **CLOSED 2026-09-04 (`c1efab0`).** Originally: **Two sweeps outside [[T-808]]'s product-tree boundary are still unpinned.** The R19
   audit counted them; `CadenceRealTreeSweepManifest.txt` deliberately does not, because its rule is
   "walks Swift source under `Cadence`/`CadenceWidgets`/`CadenceMCPServer`" and neither does.
   `CadenceInPlaceEditFlushCommitTests/themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse`
@@ -1170,7 +1204,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a refused calendar-event delete can report the real cause through the confirmation manager, the
   way Save's inline notice already does.
 
-- [T-760] **The shared "two tasks become a block" mutation commits through a swallowed save, and
+- [T-760] **CLOSED 2026-09-04 (`a1e5791`).** Originally: **The shared "two tasks become a block" mutation commits through a swallowed save, and
   iOS still relies on it.** Found while landing [[T-655]].
   `CadenceTaskMutationSupport.addTask(_:to:modelContext:)` ends `try? modelContext.save()`, and
   `insertBundle(from:adding:modelContext:)` calls it twice after `modelContext.insert(bundle)`. So
@@ -1676,7 +1710,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   deliberate scope cut, not an overlooked finding -- do not re-file the string-count or
   localisation-readiness measurements above as a new ticket.
 
-- [T-274] **Importing a Cadence archive.** [[T-19]] shipped the export and deliberately stopped
+- [T-274] **CLOSED 2026-09-06 (`d61ca6f`, `f9e5b80`, `cffcff1`), and the entry point landed with [[T-1082]] (`d126178`), so the closing sentence below no longer holds.** Originally: **Importing a Cadence archive.** [[T-19]] shipped the export and deliberately stopped
   there: an unverified restore is worse than none, because it invites the user to trust it.
   `CadenceDataExportService.decode` already returns a `CadenceArchive`, and
   `CadenceDataExportSurfaceTests.theArchiveRoundTripsThroughJSON` proves encode → decode → equal, so
@@ -1752,7 +1786,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   obvious fix; whether it is worth the false-positive surface is the decision. Until then, a suite
   that reaches a writer indirectly leaks the app's stored launch report and nothing says so.
 
-- [T-1082] **The archive importer has no user-facing entry point.** Taken while landing the engine
+- [T-1082] **CLOSED 2026-09-06 (`c6cbef3`, `e344266`, `d126178`) — both Data Safety screens mount the importer, and the sentence saying they could not is retired.** Originally: **The archive importer has no user-facing entry point.** Taken while landing the engine
   half of [[T-274]] (`CadenceArchiveImportService` + `CadenceArchiveImportPresentation`). The
   service validates, plans and applies an archive, and `CadenceArchiveImportSurfaceTests` pins the
   round trip — but **nothing in either Settings screen calls it**, so a user still cannot restore.
@@ -1769,6 +1803,9 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   false positives — but it imposes a new authoring rule that **32 existing files already break**, so it
   is a decision, not a fix. Options: adopt with those 32 allowlisted; adopt and split them; decline and
   keep the periodic `scripts/test-suite-index.sh` read that T-465 settled on.
+  **The verdict is written and is not in HEAD, 2026-09-06.** `fa4b331` reserved [[T-1076]] to carry it,
+  and `9567276` records that the commit holding it is blocked on a user-gated `--removes 17`. [[T-1076]]
+  is still an empty stub, so this remains undecided rather than decided-and-unfiled.
 
 
 
@@ -1776,7 +1813,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-491] **The iPad capture palette's scrim stops at the detail pane.** Found while closing [[T-282]].
+- [T-491] **CLOSED 2026-09-06 (`dcd110c`).** Originally: **The iPad capture palette's scrim stops at the detail pane.** Found while closing [[T-282]].
   `iPadMacStyleRootShell` clips `detail()` and the capture host is inside it, so an open palette **dims
   the page and leaves the sidebar bright**; on iPhone the shell-level host dims everything including the
   tab bar. The scrim's `.ignoresSafeArea()` is a no-op inside that clip. Placement-vs-capability
@@ -1863,7 +1900,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-531] **macOS UI tests need a one-time system authorisation that no agent can grant.** Measured
+- [T-531] **CLOSED 2026-09-06 (`a773155`), as a split rather than a fix.** Originally: **macOS UI tests need a one-time system authorisation that no agent can grant.** Measured
   2026-08-30 in integration run r31: `CadenceUITests` fails at launch with *"The test runner failed to
   initialize for UI testing. (Underlying Error: Authentication canceled. System authentication…)"*. The
   tests themselves are well built — they isolate their store per run with `CADENCE_LOCAL_STORE_ONLY`, a
@@ -2370,7 +2407,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   That is the identical claim `iOSMarkdownEditingSurface` makes by *returning* the same value, and
   the detector sees the iOS one and not the macOS three.
 
-- [T-654] **The block focus timer banks its minutes over a swallowed save, then clears the clock.**
+- [T-654] **CLOSED 2026-09-04 (`a1e5791`).** Originally: **The block focus timer banks its minutes over a swallowed save, then clears the clock.**
   Found while landing [[T-636]](c), which fixed the single-task door beside it.
   `iOSFocusView.logBundleSession` calls `CadenceFocusSupport.logElapsedSeconds(_:across:)` →
   `CadenceFocusBundleSupport.distributeMinutes`, which writes `AppTask.actualMinutes` and the
@@ -2406,7 +2443,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   entries. Green across 4 targets; 3 mutations (reversed-restore removed, member-restore dropped,
   `addTask`'s old swallow reintroduced) killed.
 
-- [T-762] **`NoteEditorPane`'s debounced-autosave tag writes are still the one open piece of
+- [T-762] **CLOSED 2026-09-04 (`9591932`).** Originally: **`NoteEditorPane`'s debounced-autosave tag writes are still the one open piece of
   [[T-651]]'s family, left there on purpose.** `noteTagsBinding`'s `Binding<[Tag]>` setter and
   `.persistEditorContentIfNeeded` both write tags through `TagSupport.setTags(named:on:in:)` /
   `syncNoteTagsFromMarkdown(_:in:)` — an ambient `ModelContext`, no commit — on the path that fires
@@ -2497,7 +2534,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   literals do" — is not met, so eight honest strings stay. Nothing to build; this entry formalizes
   the decision the codebase already made.
 
-- [T-706] **`/private/tmp/cadence-uitest-auth` is a 1.4 GB DerivedData directory, not an authorization
+- [T-706] **CLOSED 2026-09-06 (`a773155`), as moot.** Originally: **`/private/tmp/cadence-uitest-auth` is a 1.4 GB DerivedData directory, not an authorization
   store — and ~2.7 GB of other agent debris is still in `/private/tmp`.** **Confirmed and partly
   cleared 2026-09-04.** The name has been read as "the one-time macOS UI-test automation grant,
   re-granting needs the user's password", and three briefs have carried that warning. **It is a
@@ -2544,7 +2581,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   as "no sibling will look at it again". This is a one-line user or coordinator action, not an
   agent judgement call, and the single 696 MB directory is 74% of the win.
 
-- [T-707] **The iOS build reaches CI only if a human ticks a box, and CI does not run.**
+- [T-707] **CLOSED 2026-09-06 (`b86a275`).** Originally: **The iOS build reaches CI only if a human ticks a box, and CI does not run.**
   From [[T-535]]. `.github/workflows/ci.yml` has an `ios-build` job filed under T-535's name, but it
   is gated on `github.event_name == 'workflow_dispatch' && inputs.run_ios`, and the file's own header
   says "PROPOSAL. Nothing runs until Actions is enabled on this repository." So the only iOS gate that
@@ -2578,7 +2615,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   red, it goes quiet, which is [[T-535]]'s shape and the unsettable-env-var shape in [[T-531]] all
   over again. No third-party action was added and `paths-ignore` still makes the large cut.
 
-- [T-1080] **STUB — id taken 2026-09-06 by iosci, working T-707/T-706/T-531.** Reserved for the
+- [T-1080] **CLOSED 2026-09-06 (`b86a275`).** Originally: **STUB — id taken 2026-09-06 by iosci, working T-707/T-706/T-531.** Reserved for the
   decision T-707 asks for: whether the `ios-build` job runs automatically, and on what. Findings so
   far, all measured: Actions **is** enabled and CI has been green on every push (`gh api
   .../actions/permissions` → `enabled: true`), so T-707's title clause "and CI does not run" is
@@ -2614,7 +2651,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   badge in the run history describes a tree without those commits in it, and the first push will be
   red for the two reasons above. That is the correct outcome, not a regression to chase.
 
-- [T-722] **Drag-to-create has never been observed, and the simulator can now do the gesture.**
+- [T-722] **CLOSED 2026-09-03 (`714864b`).** Originally: **Drag-to-create has never been observed, and the simulator can now do the gesture.**
   Was item 4 of `docs/device-checks.md`; it left that list in [[T-561]] because `control`'s
   `touch_path` drags a single finger along an arbitrary path *including long-press-then-drag*, which
   is every gesture the item asked for, and `attach` opens a live panel to watch the mid-drag ghost
@@ -2647,7 +2684,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `xcrun simctl io <udid> screenshot` loop running across the gesture. **That recipe is now in
   `docs/device-checks.md`**; without it the next agent reports "the ghost could not be seen".
 
-- [T-723] **Two note-editor taps have never been observed, and together they are one simulator
+- [T-723] **CLOSED 2026-09-03 (`714864b`).** Originally: **Two note-editor taps have never been observed, and together they are one simulator
   session.** Were steps 3.3 and 3.4 of `docs/device-checks.md`; they left the phone list in
   [[T-561]] because both are single taps, which `control`'s `tap` performs. Single-tap plain text --
   the caret lands there. Tap a `[[wiki link]]` or a task-embed card -- it opens. Which target a
@@ -2676,7 +2713,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   whether to build the first one properly.
 
 
-- [T-731] **The `isRegularWidth == true` branch of the iOS editor sheets is dead on the iPad anyone
+- [T-731] **CLOSED 2026-09-06 (`dcd110c`).** Originally: **The `isRegularWidth == true` branch of the iOS editor sheets is dead on the iPad anyone
   has measured, and the two checks that would settle it outright are out of tooling reach.**
   OBSERVED 2026-09-02: at 834pt, `iOSLinkedNoteEditorSheet`, `iOSEventNoteEditorSheet` and
   `iOSCalendarEventEditSheet` all rendered **compact**; the sheet measures ~577 x 639pt, and a plain
@@ -2848,7 +2885,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   it by name (the pattern above), and prove that property by direct terminal invocation instead --
   which is what [[T-748]] and [[T-749]]'s entries above do.
 
-- [T-786] **`scripts/mutate.sh` cannot verify a mutation against a `@Test("...")` display-named
+- [T-786] **CLOSED 2026-09-04 (`051712d`, `c1efab0`).** Originally: **`scripts/mutate.sh` cannot verify a mutation against a `@Test("...")` display-named
   test.** Found while fixing [[T-667]]. `FAILED_SWIFT_TESTING = re.compile(r"✘ Test
   ([A-Za-z0-9_]+)\(\)")` and `classify_run`'s `missing = [t for t in tests if ("Test %s()" % t) not
   in log and ("%s]" % t) not in log]` both assume a test's function name appears literally in the
@@ -2913,7 +2950,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `noSurfaceTestsATrimmedNameAndThenReturnsTheUntrimmedOne` — as the sweep that stops an eighth
   site re-typing this shape.
 
-- [T-785] **Two scans left reading wider than they now need to, both unblocked by [[T-668]].**
+- [T-785] **CLOSED 2026-09-04 (`c1efab0`).** Originally: **Two scans left reading wider than they now need to, both unblocked by [[T-668]].**
   (1) `MarkdownNoteSupport.resolved(_:with:)` holds the last two constant-fallback ternaries in the
   app — `override.title.isEmpty ? template.title : override.title` and the `subtitle` twin — and is
   the one measured exemption in `CadenceEmptyTitleFallbackSweepTests`. They fall back to the
@@ -2979,7 +3016,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   case a future picker converges the two families on its own terms; not attempting the hoist now.
 
 
-- [T-798] **The five App Store screenshot candidates still do not exist, and the only thing missing
+- [T-798] **CLOSED 2026-09-05 (`f11f52c`) — the five candidates exist under `docs/screenshots/`.** Originally: **The five App Store screenshot candidates still do not exist, and the only thing missing
   is an unlocked screen.** Everything else landed: `docs/screenshots/seed-screenshot-data.py` drives
   a built `CadenceMCPServer` against a throwaway `CADENCE_MCP_STORE_URL` and seeds 27 presentable
   tasks (timed across today, spread over the next four weeks, two already completed, eight tags) plus
