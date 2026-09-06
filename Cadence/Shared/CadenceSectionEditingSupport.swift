@@ -69,9 +69,46 @@ enum CadenceSectionEditingSupport {
     /// Drafts with an empty name are dropped rather than saved as an unnameable column, matching
     /// the newline-list editor this replaced. An edit that removes everything still leaves the
     /// default column, because `normalizedSectionConfigs` would reinstate it anyway.
+    ///
+    /// **A column that already exists keeps its name instead of being dropped (T-1053).** Dropping
+    /// it was not a refusal, it was a deletion: a draft missing from this array is a column the
+    /// caller *removed*, so `applySectionConfigEdits` took the whole column out of the blob and
+    /// `reassignTasks` emptied its cards into Default. Measured on a real `Area` in a real store —
+    /// clearing one text field in the list editor and pressing Save left the list with two columns
+    /// instead of three, with no confirmation and nothing said, and took the column's colour and
+    /// due date with it. Handing the old name back makes it a *rename* the merge then declines
+    /// (`CadenceSectionConfigMerge.applyingChangedFields`), so everything else in the same save
+    /// still lands and `clearedColumnNames(in:)` gives the editor the refusal to report.
+    ///
+    /// A draft with no `originalName` never reached disk, so there is no column, no colour and no
+    /// card to lose; those are still dropped without a word.
     static func configs(from drafts: [CadenceSectionDraft]) -> [TaskSectionConfig] {
-        let configs = drafts.map(\.config).filter { !$0.name.isEmpty }
+        let configs = drafts.compactMap { draft -> TaskSectionConfig? in
+            var config = draft.config
+            guard config.name.isEmpty else { return config }
+            guard let originalName = draft.originalName,
+                  !originalName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            config.name = originalName
+            return config
+        }
         return configs.isEmpty ? [TaskSectionConfig(name: TaskSectionDefaults.defaultName)] : configs
+    }
+
+    /// **The names of columns that already exist and whose name the editor has cleared (T-1053).**
+    ///
+    /// The seam behind the one sentence a list editor shows for a blank column name. It is
+    /// deliberately not "every blank draft": a row added during this edit and left empty has no
+    /// column, no colour and no card behind it, and refusing a whole save over an empty row the
+    /// user never typed in would be worse than dropping it. A draft with an `originalName` is a
+    /// column that exists on disk, and clearing its field used to delete it.
+    static func clearedColumnNames(in drafts: [CadenceSectionDraft]) -> [String] {
+        drafts.compactMap { draft in
+            guard let originalName = draft.originalName,
+                  draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return originalName
+        }
     }
 
     /// `(old, new)` for every draft whose name changed. Case-insensitive, because section matching

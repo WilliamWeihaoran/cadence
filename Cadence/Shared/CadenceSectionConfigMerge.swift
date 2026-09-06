@@ -219,13 +219,31 @@ enum CadenceSectionConfigMerge {
         return nil
     }
 
+    /// **A name that trims to empty is withheld, and the rest of the edit still lands (T-1053).**
+    ///
+    /// This is the only place a rename enters the blob, and until this guard existed a rename to
+    /// whitespace was not a no-op — it was a *delete*. `Area.normalizedSectionConfigs` /
+    /// `Project.normalizedSectionConfigs` drop any config whose name trims to empty, and the setter
+    /// runs them on every write, so `updateSectionConfig(uuid:) { $0.name = "   " }` came out of
+    /// the setter one column short. Measured on a real `Area` in a real store: the column went,
+    /// and its cards were left naming it — `CadenceTaskQuerySupport.sectionGroups` builds its
+    /// groups from the surviving column names, so every one of those cards fell out of every group
+    /// and was drawn nowhere.
+    ///
+    /// Withheld rather than refused outright, which is the shape T-914 settled one door up: the
+    /// colour and the due date pressed in the same edit still go in, and only the unusable name is
+    /// left alone. Deleting a column is still deleting a column — it is expressed by the column's
+    /// *absence* from `edited`, which this function never sees.
     private static func applyingChangedFields(
         from base: TaskSectionConfig,
         to edited: TaskSectionConfig,
         onto current: TaskSectionConfig
     ) -> TaskSectionConfig {
         var result = current
-        if edited.name != base.name { result.name = edited.name }
+        if edited.name != base.name,
+           !edited.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.name = edited.name
+        }
         if edited.colorHex != base.colorHex { result.colorHex = edited.colorHex }
         if edited.dueDate != base.dueDate { result.dueDate = edited.dueDate }
         if edited.isCompleted != base.isCompleted { result.isCompleted = edited.isCompleted }
@@ -252,6 +270,49 @@ enum CadenceSectionConfigMerge {
 
     private static func nameKey(_ name: String) -> String {
         name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+/// **Why a column rename did not reach the store, when the *editor* refused it rather than the
+/// store (T-914).**
+///
+/// These are not the failure `saveFailureNotice` is for, and conflating them is the defect this
+/// type exists to end. `CadenceInPlaceEditFlush.failureNotice` says "the store would not take your
+/// change, it is still here, try again" — an invitation to press the same key again, which is
+/// exactly the wrong advice for a name another column already holds. Pressing Return again will
+/// refuse it again, forever.
+///
+/// Before this existed, `applySectionEdits` returned without writing and without saying anything,
+/// and `commitSectionEdits` then flushed a context with nothing pending in it, succeeded, and
+/// **cleared** the notice. So a refused rename was reported as a rename that landed: the user
+/// pressed Return over a duplicate and the column simply kept its old title, with no red line
+/// anywhere and nothing to read.
+///
+/// **Shared rather than macOS-only, since T-1053.** It lived beside the macOS column popover while
+/// that popover was the only surface that refused a name. It is not: the iOS list editor can clear
+/// an existing column's name too, and that used to delete the column outright. One refusal, one
+/// sentence — a second copy of "A column needs a name." on the other platform is exactly the
+/// near-copy this repository's rules forbid.
+enum KanbanColumnRenameRefusal: Equatable {
+    /// The field is empty, or holds only whitespace.
+    case emptyName
+    /// Another column in this list already holds the name.
+    case nameAlreadyTaken
+
+    /// What the popover — or the column header, once the popover has gone, or the iOS list
+    /// editor — says.
+    ///
+    /// "A column with this name already exists." is deliberately the sentence the tag editors
+    /// already use for the same refusal (`SettingsTagsSection`, `TagPickerPopoverViews`,
+    /// `iOSSettingsTagsSection`), because it *is* the same refusal one noun along, and a user who
+    /// has met it once should not have to learn a second phrasing for it.
+    var notice: String {
+        switch self {
+        case .emptyName:
+            return "A column needs a name."
+        case .nameAlreadyTaken:
+            return "A column with this name already exists."
+        }
     }
 }
 

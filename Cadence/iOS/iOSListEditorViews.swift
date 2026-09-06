@@ -47,6 +47,10 @@ struct iOSListEditorSheet: View {
     @State private var pendingColumnWindDown: iOSColumnWindDownTarget?
     /// Set when the commit was refused. The editor stays open holding it — see `save()`.
     @State private var saveFailureNotice: String?
+    /// Set when *this editor* declined a column name rather than the store declining the write
+    /// (T-1053). Separate from `saveFailureNotice` for the reason `KanbanColumnRenameRefusal`
+    /// gives: "try again" is the wrong advice for a name that will be refused every time.
+    @State private var nameRefusalNotice: String?
 
     private var isProjectMode: Bool {
         switch mode {
@@ -101,9 +105,9 @@ struct iOSListEditorSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                if let saveFailureNotice {
+                if let editorFailureNotice {
                     Section {
-                        CadenceInlineFailureNotice(text: saveFailureNotice)
+                        CadenceInlineFailureNotice(text: editorFailureNotice)
                     }
                     .iOSListEditorSectionChrome()
                 }
@@ -422,6 +426,15 @@ struct iOSListEditorSheet: View {
     /// The sheet's `@State` still holds everything the user typed either way, so a refused save
     /// leaves the editor open and intact rather than empty.
     private func save() {
+        // **A column whose name the user cleared is a refused rename, not a delete (T-1053).**
+        // `CadenceSectionEditingSupport.configs(from:)` used to drop such a draft, which read as
+        // "this caller removed the column" — so the column left the blob, its colour and due date
+        // went with it, and its cards were emptied into Default, from clearing a text field, with
+        // no confirmation and nothing said. The column now keeps the name it had; this is what
+        // says so.
+        let refusal: KanbanColumnRenameRefusal? =
+            CadenceSectionEditingSupport.clearedColumnNames(in: sectionDrafts).isEmpty ? nil : .emptyName
+        nameRefusalNotice = refusal?.notice
         do {
             switch mode {
             case .newArea:
@@ -500,7 +513,19 @@ struct iOSListEditorSheet: View {
             return
         }
         saveFailureNotice = nil
+        // The sheet stays open when a column name was refused, because the notice is the only
+        // thing that would say so and a dismissed sheet cannot draw it. Everything else in the
+        // save has already landed and been committed, exactly as the macOS column popover leaves
+        // a refused rename's colour and date in the store with the popover still up (T-914).
+        guard refusal == nil else { return }
         dismiss()
+    }
+
+    /// The one line the editor shows, and the order is the one macOS's column popover settled on
+    /// (T-914): a refused *commit* leads a refused *name*, because of the two it is the one with
+    /// work still pending behind it. Both can be true at once, and the next Save re-answers both.
+    private var editorFailureNotice: String? {
+        saveFailureNotice ?? nameRefusalNotice
     }
 
     /// Re-points what this editor just invalidated on the tasks already in the list.

@@ -1,42 +1,6 @@
 #if os(macOS)
 import SwiftUI
 
-/// **Why a column rename did not reach the store, when the *editor* refused it rather than the
-/// store (T-914).**
-///
-/// These are not the failure `saveFailureNotice` is for, and conflating them is the defect this
-/// type exists to end. `CadenceInPlaceEditFlush.failureNotice` says "the store would not take your
-/// change, it is still here, try again" — an invitation to press the same key again, which is
-/// exactly the wrong advice for a name another column already holds. Pressing Return again will
-/// refuse it again, forever.
-///
-/// Before this existed, `applySectionEdits` returned without writing and without saying anything,
-/// and `commitSectionEdits` then flushed a context with nothing pending in it, succeeded, and
-/// **cleared** the notice. So a refused rename was reported as a rename that landed: the user
-/// pressed Return over a duplicate and the column simply kept its old title, with no red line
-/// anywhere and nothing to read.
-enum KanbanColumnRenameRefusal: Equatable {
-    /// The field is empty, or holds only whitespace.
-    case emptyName
-    /// Another column in this list already holds the name.
-    case nameAlreadyTaken
-
-    /// What the popover — or the column header, once the popover has gone — says.
-    ///
-    /// "A column with this name already exists." is deliberately the sentence the tag editors
-    /// already use for the same refusal (`SettingsTagsSection`, `TagPickerPopoverViews`,
-    /// `iOSSettingsTagsSection`), because it *is* the same refusal one noun along, and a user who
-    /// has met it once should not have to learn a second phrasing for it.
-    var notice: String {
-        switch self {
-        case .emptyName:
-            return "A column needs a name."
-        case .nameAlreadyTaken:
-            return "A column with this name already exists."
-        }
-    }
-}
-
 /// The macOS column's section writes. Every one of them goes through
 /// `CadenceSectionConfigMerge` rather than reading the whole array, changing one entry and writing
 /// the whole array back — see that type for what the merge keeps and what it still loses
