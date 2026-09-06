@@ -1136,7 +1136,7 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
     /// refusals had nowhere to appear either.
     ///
     /// The fix is one flag read through two surfaces rather than a second flag: `columnFailureNotice`
-    /// is `saveFailureNotice` while the editor is closed and `nil` while it is open, so a refusal is
+    /// is `editorFailureNotice` (T-914: the store's refusal or the name's) while the editor is closed and `nil` while it is open, so a refusal is
     /// reported exactly once and by whichever surface the user can actually see.
     @Test func aRefusedColumnCompletionIsReportedOnTheColumnOnceThePopoverIsGone() throws {
         let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
@@ -1157,7 +1157,7 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         // `guard saveFailureNotice == nil`. Two sources, one slot.
         #expect(
             matches(
-                #"private var columnFailureNotice: String\? \{\s*if let reorderFailureNotice \{ return reorderFailureNotice \}\s*return showEditor \? nil : saveFailureNotice\s*\}"#,
+                #"private var columnFailureNotice: String\? \{\s*if let reorderFailureNotice \{ return reorderFailureNotice \}\s*return showEditor \? nil : editorFailureNotice\s*\}"#,
                 in: column
             ) == 1,
             "the column's notice is no longer the popover's notice read through showEditor"
