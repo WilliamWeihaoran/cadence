@@ -85,6 +85,11 @@ on:
         description: 'Also compile the iOS surface (T-535). Costs ~6-10 extra runner minutes.'
         type: boolean
         default: false
+        # T-1080 (2026-09-06): this input is now only a way to FORCE the iOS job on a manual
+        # run with everything else. Since T-707 was decided the job also runs on every push and
+        # pull request that survives `paths-ignore` above, so leaving this false no longer means
+        # "no iOS build" -- it means "no iOS build on THIS dispatch". The description above
+        # predates that and its ~6-10 minute figure is wrong; see the ios-build job's comment.
 
 # Superseded pushes are cancelled rather than billed.
 concurrency:
@@ -198,12 +203,52 @@ jobs:
   # third-party paths-filter action would add supply-chain surface for one
   # boolean. Left as a decision rather than guessed at.
   # ---------------------------------------------------------------------------
+  #
+  # DECIDED 2026-09-06 (T-1080, closing T-707's open question). The job now also runs on every
+  # push and pull request that survives `paths-ignore`. The `changes`-job filter sketched above
+  # was measured and rejected, not skipped:
+  #
+  #   * It buys less than it looks like. Over this repository's last 120 commits, 74 survive
+  #     `paths-ignore` and would start CI at all -- and 46 of those 74 (62%) touch a path the
+  #     iOS build compiles. Only 20 of 74 touch `Cadence/iOS/` itself, but filtering on that
+  #     narrow set would be WRONG and would rebuild exactly the hole T-535 was filed for: 100 of
+  #     the 105 files under Cadence/iOS sit behind platform fences, so what breaks the iOS tree
+  #     is routinely an edit to Cadence/Shared, Cadence/Models or Cadence/Services that macOS
+  #     compiles happily. The honest filter is the broad one, and it skips 38% of runs.
+  #   * The thing it was meant to save is much smaller than this file assumed. Measured
+  #     2026-09-06, cold, in a `git archive HEAD` tree with a private derivedDataPath on the
+  #     user's M3 Pro: `-destination 'generic/platform=iOS Simulator' build` took **53 seconds**
+  #     (1410 Swift compile tasks, BUILD SUCCEEDED, 0 errors, 0 warnings). The ~6-10 minute
+  #     estimate above was reasoned, never measured. Applying this file's own measured hosted
+  #     multiplier (local full pass 526 s -> 20-30 hosted min, i.e. 2.3-3.4x) puts the compile
+  #     near 2-3 min; call it 4-6 min with checkout, toolchain assert and a cold SourcePackages
+  #     resolve. So the filter would save roughly 38% of a 4-6 minute job, not of a 10 minute one.
+  #   * Its failure mode is the one this project keeps getting bitten by. A path glob that stops
+  #     matching does not go red; it goes QUIET, and the gate reports success having compiled
+  #     nothing. That is the same shape as T-535 (a green release gate that never built iOS) and
+  #     as the `CADENCE_RUN_INTERACTIVE_UI_TESTS` gate that skipped silently for weeks because
+  #     no channel could set it. Trading a measured 38% of a cheap job for a silent-skip risk on
+  #     the only gate that compiles half the repository is a bad trade at this price.
+  #
+  # `paths-ignore` at the top of this file still does the large cut (106 of the last 120 commits
+  # touch only docs/**, AGENTS.md, CLAUDE.md or README.md), and no third-party action is added.
+  #
+  # Deliberately NOT changed: this job does not exclude, skip or tolerate any failing test. It
+  # compiles; it runs no tests at all, so it cannot mask the two reds that stand at HEAD
+  # (CadenceKanbanColumnLifecycleSurfaceTests.aRefusedColumnCompletionIsReportedOnTheColumnOnce-
+  # ThePopoverIsGone and CadenceSaveCommitDisciplineTests.noInsertIsLeftPendingWithNoCommit-
+  # AnywhereInItsDeclaration). Those belong to `macos-tests`, which is untouched and WILL go red
+  # on them the moment the unpushed commits reach origin. No `-skip-testing:` was added for
+  # either, on purpose: a named exclusion is how a red becomes permanent furniture.
+  # ---------------------------------------------------------------------------
   ios-build:
     name: Build iOS surface
     runs-on: macos-latest
     timeout-minutes: 40
     if: >-
       github.event_name == 'workflow_dispatch' && inputs.run_ios
+      || github.event_name == 'push'
+      || github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Assert toolchain
