@@ -2894,3 +2894,71 @@ seeds overdue/rollover tasks and an image note, visits Today, and compares geome
 resize and hover release. Reuse the test-host lock and private-store setup; do not add another
 parallel app runner. Keep process-start, surface-existence, geometry, and pixel assertions labeled
 separately. No production patch follows merely from this coverage inventory.
+
+## R41 — The gated-flag backlog: is the guard's cost now exceeding its benefit?
+
+`agent-commit.sh`'s `REMOVES-HEAD-LINES` refusal fires on **any** commit that rewrites an existing
+line, because a modification is a removal plus an addition. Clearing it needs `--removes N`, which
+is currently user-gated in this project. The result, measured 2026-09-06: **nine verified commits
+queued unlanded**, and they now conflict with one another — each was reconstructed against a
+different HEAD, so landing any one makes the rest refuse with `HEAD-MOVED`.
+
+The guard has earned its place: it caught a stale reconstruction and it forced a line-by-line read
+that found real hazards. But a guard that fires on the ordinary case is one people route around.
+
+Answer with numbers, not preference: across this repository's history, **what fraction of commits
+would have tripped it**, and of those, how many actually removed a line that a sibling had landed?
+That ratio is the true-positive rate. Then say whether a narrower trigger exists that keeps the
+true positives — for instance firing only when a removed line is absent from the committer's own
+base, or only when the path is behind HEAD — and what it would have missed.
+
+Do not assume the flag should be ungated. Say what the evidence supports.
+
+## R42 — Three checks were green over violations of themselves. Is there a fourth?
+
+Measured in one day: (1) a source-scan regex pinned `columnFailureNotice` against `saveFailureNotice`
+and stayed green when a new layer was added above it; (2) a dismissal-policy needle matched bare
+identifiers but not dotted ones, so the assertion held over a violation of itself; (3) two
+independent audits of `UserDefaults.standard` both reported 19 sites where there are 31, each having
+grepped only the literal spelling.
+
+The through-line: **a check that no longer matches reads exactly like a check that passes.**
+
+Enumerate every guard in `CadenceTests/` whose assertion is a *count* or a *literal needle* against
+source text, and for each say what a correct author could write today that it would not see. Rank by
+whether the blind spot is reachable by ordinary code rather than contrived code. One agent's fix for
+this family was to delete `@discardableResult` so the **compiler** enforces the rule instead of a
+regex — say where else that substitution is available.
+
+## R43 — What else is in the working tree and not in HEAD?
+
+`scripts/run-macos-app.sh` has exactly one commit, from 2026-08-22. A fix for its store-leak bug
+lived in the working tree for two weeks and was never committed. Every agent starts from
+`git archive HEAD`, so **every agent ran the unfixed script**, and 80 leaked stores accumulated with
+each one believing it had cleaned up. `git status` shows ` M <path>` identically for work in flight
+and for a fix finished a fortnight ago.
+
+Sweep the current working tree against HEAD and classify every difference: in flight, abandoned, or
+finished-but-never-landed. Name anything in the third class. Then say what signal would have
+distinguished them at the time — the repository already has `worktree-drift.sh` for the opposite
+direction (a checkout *behind* HEAD), so the asymmetry is the question.
+
+## R44 — Does the app still start, and does the main window still compose?
+
+A deliberately blunt one. Four of this week's defects were found by the user opening the app, and
+the first test that looks at the composed main window landed only yesterday — six of its assertion
+groups have still never executed, because the screen was locked.
+
+Without running anything, read the launch path and say what would have to be true for the app to
+reach a usable Today on a cold start with an empty store: the SwiftData container, the CloudKit
+attach, the seed, the first layout pass. Flag any step whose failure mode is silent — a `try?`, an
+empty catch, a default that stands in for an error. The image-overlap bug was exactly that shape:
+the editor styled itself at a content width of about 1 point because SwiftUI had not yet given the
+view a frame, and nothing anywhere said so.
+
+## R45 — Standing: which of R41–R44 has gone stale?
+
+Re-read your own answers to R41–R44 against the current tree before anyone acts on them. Say which
+premises have been overtaken, and name the commit that overtook each. This repository has now had
+four tickets whose premise was false by the time an agent reached them, and two audits that agreed
+with each other and were both wrong.
