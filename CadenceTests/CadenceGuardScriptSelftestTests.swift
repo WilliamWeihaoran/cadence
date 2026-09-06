@@ -188,6 +188,26 @@ struct CadenceGuardScriptSelftestTests {
         "PARTIAL-SCOPE",
     ]
 
+    /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody
+    /// types: git runs it, with no arguments, or nothing runs it at all. That makes it the one most
+    /// able to rot unnoticed — a hook that has quietly stopped refusing looks exactly like a hook
+    /// nobody has tripped lately.
+    ///
+    /// Two names, and the second is not a refusal at all, which is the point. `BARE-COMMIT` is the
+    /// refusal itself; `ALLOW-OVERRIDE` is the escape hatch **announcing that it was used**. A guard
+    /// with a silent bypass is a guard whose bypass becomes the habit, so the notice is as
+    /// load-bearing as the refusal and is pinned the same way.
+    ///
+    /// What is deliberately NOT pinned here is that the hook is armed. `core.hooksPath` lives in
+    /// the untracked `.git/config`, so this file lands inert and stays inert until the repository's
+    /// owner types `git config core.hooksPath .githooks` — their decision, because it also refuses
+    /// their own by-hand commits. A test that asserted the live checkout was armed would be an
+    /// agent installing that decision by the back door, and would fail in every fresh clone.
+    static let preCommitHookRefusals = [
+        "BARE-COMMIT",
+        "ALLOW-OVERRIDE",
+    ]
+
     @Test func theMutationRunnersOwnGuardsStillFire() throws {
         let run = try CadenceSelftestRun.of("scripts/mutate.sh")
         let complaints = run.complaints(requiring: Self.mutationRunnerRefusals)
@@ -208,6 +228,23 @@ struct CadenceGuardScriptSelftestTests {
         let run = try CadenceSelftestRun.of("scripts/worktree-drift.sh")
         let complaints = run.complaints(requiring: Self.worktreeDriftRefusals)
         #expect(complaints.isEmpty, "./scripts/worktree-drift.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
+    /// T-780. Runs entirely inside a throwaway git repository under `$TMPDIR`, like the drift
+    /// guard's: it arms `core.hooksPath` **there**, never here, so it says nothing about — and does
+    /// nothing to — whether the real checkout has the hook installed. About a second.
+    ///
+    /// The selftest's own mode 0 is what makes the rest of it evidence: the same bare commit must
+    /// SUCCEED with the hook unarmed. Without that control every refusal below it could equally be
+    /// a fixture that cannot commit at all, which is the shape of a guard that passes for the wrong
+    /// reason. Mode 3 is the other half — it runs the real `scripts/agent-commit.sh` against the
+    /// armed repository, because "plumbing runs no hooks" is a claim about git that this repository
+    /// is now betting its commit path on, and citing it is cheaper than checking by exactly the
+    /// margin that makes it worth checking.
+    @Test func theBareCommitHooksOwnGuardsStillFire() throws {
+        let run = try CadenceSelftestRun.of(".githooks/pre-commit")
+        let complaints = run.complaints(requiring: Self.preCommitHookRefusals)
+        #expect(complaints.isEmpty, ".githooks/pre-commit selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
     /// T-748. Runs against the REAL lock's own sandbox (`CADENCE_LOCK_DIR`, not the live
@@ -350,6 +387,7 @@ struct CadenceGuardScriptSelftestTests {
             ("scripts/agent-commit.sh", Self.commitHelperRefusals),
             ("scripts/worktree-drift.sh", Self.worktreeDriftRefusals),
             ("scripts/xcb.sh", Self.buildRunnerRefusals),
+            (".githooks/pre-commit", Self.preCommitHookRefusals),
         ] {
             let source = try String(
                 contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent(script),
@@ -368,8 +406,13 @@ struct CadenceGuardScriptSelftestTests {
         }
     }
 
-    /// And all six scripts have to be there to be run. A renamed script would otherwise make the
+    /// And all seven guards have to be there to be run. A renamed script would otherwise make the
     /// tests above fail for a reason that reads nothing like "the guard is gone".
+    ///
+    /// The executable bit is not a formality for `.githooks/pre-commit` (T-780): git **silently
+    /// skips** a hook it cannot execute — no warning, no non-zero exit, the commit simply goes
+    /// through — so a mode lost to a `chmod`, a `cp`, or a patch applied by hand turns the refusal
+    /// off while leaving every line of it in the file for a reader to be reassured by.
     @Test func allGuardScriptsExistAndAreExecutable() throws {
         for script in [
             "scripts/mutate.sh",
@@ -378,6 +421,7 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/simulator-claim.sh",
             "scripts/worktree-drift.sh",
             "scripts/xcb.sh",
+            ".githooks/pre-commit",
         ] {
             let path = CadenceSelftestRun.repositoryRoot().appendingPathComponent(script).path
             #expect(FileManager.default.isExecutableFile(atPath: path), "\(script) is missing or not executable")
@@ -406,21 +450,29 @@ struct CadenceGuardScriptSelftestTests {
         // Every script in `scripts/`, not just the six with selftests: the shape is a property of
         // the shell, so naming a list would leave the next script written here unswept. The floor
         // below is what stops a broken enumeration from sweeping nothing and reading as a pass.
-        let scripts = CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts")
+        let root = CadenceSelftestRun.repositoryRoot()
+        let scripts = root.appendingPathComponent("scripts")
         let names = try FileManager.default.contentsOfDirectory(atPath: scripts.path)
             .filter { $0.hasSuffix(".sh") }
             .sorted()
+        // `.githooks/pre-commit` (T-780) is a zsh script with a `selftest` and a `check` loop like
+        // the rest of them, and it is the one member of the family with no `.sh` on the end —
+        // git requires the bare name. Enumerating `scripts/` alone would have left exactly the
+        // guard nobody invokes by hand as the only one unswept.
+        var targets = names.map { (path: scripts.appendingPathComponent($0).path, label: "scripts/\($0)") }
+        targets.append((path: root.appendingPathComponent(".githooks/pre-commit").path, label: ".githooks/pre-commit"))
         var findings: [String] = []
         var declarationsRead = 0
-        for name in names {
-            let scan = try CadenceShellLocalScan.of(path: scripts.appendingPathComponent(name).path, label: "scripts/\(name)")
+        for target in targets {
+            let scan = try CadenceShellLocalScan.of(path: target.path, label: target.label)
             findings.append(contentsOf: scan.findings.map(\.description))
             declarationsRead += scan.declarationsRead
         }
         // The floor, because a clean sweep and a sweep that stopped reading print the same nothing.
-        // 12 scripts declared 229 names when this was written; a reading that has fallen under 100
-        // has lost a parse, not a script. (228 before the `case`-arm read below was added — the
-        // 229th is `run-macos-app.sh`'s `(status) local -a pf`, which the reader used to skip.)
+        // 12 scripts declared 229 names when this was written, and `.githooks/pre-commit` adds 12
+        // more (T-780); a reading that has fallen under 100 has lost a parse, not a script. (228
+        // before the `case`-arm read below was added — the 229th is `run-macos-app.sh`'s
+        // `(status) local -a pf`, which the reader used to skip.)
         #expect(names.count >= 6, "scripts/ holds \(names.count) .sh files, so this sweep is reading less than it claims")
         #expect(declarationsRead >= 100, "the sweep read only \(declarationsRead) declarations, so its silence means nothing")
         #expect(

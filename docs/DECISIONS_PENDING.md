@@ -121,11 +121,12 @@ on 2026-09-04:
 `.git/hooks`), so this is a one-line change to a value that is already non-default.
 
 **What it costs you.** Every `git commit` and `git commit --amend` you type in this checkout is
-refused once, until you use `--no-verify` or set the variable. `git merge` is not affected
-(`pre-merge-commit` is a different hook, which we would not install); `rebase` and `cherry-pick`
-do not run `pre-commit` either. Some GUI git clients pass `--no-verify` themselves and would
-notice nothing. The refusal message can name both escapes, so the cost is one surprise, not a
-recurring one.
+refused once, until you use `--no-verify` or set the variable. Measured 2026-09-07 with the hook
+armed in a throwaway repository: `merge --no-ff`, `cherry-pick`, `revert`, `rebase` and `stash` are
+all unaffected — only `git commit` runs `pre-commit`. **The one exception is a conflicted merge**,
+which you finish with a literal `git commit`, and which is therefore refused; `--no-verify` finishes
+it. Some GUI git clients pass `--no-verify` themselves and would notice nothing. The refusal
+message names both escapes, so the cost is one surprise, not a recurring one.
 
 **The part that is not solved by the hook.** `core.hooksPath` lives in `.git/config`, which is not
 tracked, so a fresh clone has no hook and nothing reminds anyone to install it — the same prose
@@ -141,6 +142,22 @@ whole thing is here.
   marked active. Costs you nothing at all, and protects nothing during the sessions where nobody
   remembered to set the variable — which are the sessions where a bare `git commit` happens.
 - **Decline** — zero code. The rule stays prose, and the next sweep is a matter of when.
+
+**Status 2026-09-07: the hook is now in the repository, and it does nothing.** `.githooks/pre-commit`
+is tracked, executable, and tested (25/25 checks in its own `selftest`, pinned from Swift by
+`CadenceGuardScriptSelftestTests`, 4 of 4 mutations killed). Landing it changes **nothing** about
+your `git commit` until you decide, because `core.hooksPath` is untracked local config. So the
+decision above is now one line rather than a piece of work:
+
+```sh
+git config core.hooksPath .githooks     # arm it
+git config --unset core.hooksPath       # take it back off
+```
+
+Nothing else in the repository sets that value, and `AGENTS.md` and the subagent runbook both now
+tell agents in bold not to run it. That closes the "a fresh clone gets nothing" gap the only way
+that does not install configuration into your repository unasked: the hook ships with the code, and
+the one line that turns it on stays yours.
 
 ## T-497 Tier 3 — what does undo mean for a field the user still has focus in? **ANSWERED**
 

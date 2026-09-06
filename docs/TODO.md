@@ -1762,21 +1762,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and the snapshot is not about it.
 
 
-- [T-780] **Nothing makes an agent *use* `scripts/agent-commit.sh`.** [[T-679]] is fixed in the sense
-  that the incantation is now a script that refuses the measured failures — but the instruction to
-  call it is prose in `AGENTS.md` and `docs/SUBAGENT_RUNBOOK.md`, which is exactly the shape T-679
-  was filed about. A bare `git commit` still works and still sweeps a sibling's staged hunk.
-  **Designed and measured 2026-09-04, deliberately not landed.** A tracked `.githooks/pre-commit`
-  behind `core.hooksPath` refuses a bare `git commit` and `git commit --amend`, from the root and
-  from a subdirectory, and does **not** touch `agent-commit.sh` — that commits by
-  `write-tree`/`commit-tree`/`update-ref`, and git runs no hooks for plumbing, which is the whole
-  reason the hook can be strict. `--no-verify` bypasses it, unfixably. The part the hook does not
-  solve is that `core.hooksPath` lives in the untracked `.git/config`, so a fresh clone has none and
-  nothing reminds anyone — closing that means `xcb.sh`/`agent-commit.sh` setting it idempotently,
-  i.e. installing configuration into the user's repository unasked.
-  **This needs the user's decision, not an agent's**, because it would refuse their own by-hand
-  commits in their own checkout. Options, costs and a recommendation are in
-  `docs/DECISIONS_PENDING.md`. Do not land it before that is answered.
+- [T-780] **CLOSED 2026-09-07 (`hook4`).** Landed as a tracked, executable `.githooks/pre-commit`
+  that refuses a bare `git commit` — and landed **inert**, which is the whole point. `core.hooksPath`
+  is untracked local config, so nothing about anyone's `git commit` changes until the repository's
+  owner types `git config core.hooksPath .githooks`, and that line is still theirs: arming it
+  refuses their own by-hand commits too. `docs/DECISIONS_PENDING.md` keeps the decision and is
+  updated to say the work is now one line rather than a piece of work. `AGENTS.md` and
+  `docs/SUBAGENT_RUNBOOK.md` both lead with *do not arm it yourself* rather than with the command —
+  deliberately, because the bold headline is what gets followed and an earlier draft of this same
+  bullet opened with **"Arm the hook once per clone"** and only said five lines later that the line
+  was not an agent's to type.
+  **Measured, in a throwaway repository, 25/25 checks in `.githooks/pre-commit selftest`:** a bare
+  `git commit` and a `git commit --amend` are each refused from the repo root **and** from a
+  subdirectory, with nothing committed and the staged change still staged; the refusal names
+  `agent-commit.sh` and both escapes. `CADENCE_ALLOW_BARE_COMMIT=1` commits and says on stderr that
+  it did; `git commit --no-verify` bypasses the hook, exactly as the refusal says it does. Two of
+  the checks are the ones that make the rest mean anything. **Mode 0 is a control**: the same bare
+  commit must SUCCEED with the hook unarmed, without which every refusal above it could equally be
+  a fixture that cannot commit at all. **Mode 3 checks the claim the design rests on rather than
+  citing it**: the real `scripts/agent-commit.sh` commits through an armed hook untouched, because
+  it lands trees by `write-tree`/`commit-tree`/`update-ref` and git runs no hooks for plumbing.
+  **Pinned from Swift** by `CadenceGuardScriptSelftestTests.theBareCommitHooksOwnGuardsStillFire`,
+  which shells the selftest out and reads its tally (0.4s, and it passes inside the App-Sandboxed
+  test host); plus the source-level refusal pin, the executable-bit check — git **silently skips** a
+  hook it cannot execute, no warning and no non-zero exit — and the T-1074 bare-`local` sweep, which
+  had been enumerating `scripts/*.sh` and so was blind to the one guard in the family with no `.sh`
+  on its name.
+  **Mutation-tested 4/4 KILLED**, every one by that test by name: neutering the refusal to
+  `return 0`; making the escape hatch unreachable; dropping `agent-commit.sh` out of the refusal
+  message (it still refuses, so only the check that reads the message notices); and silencing the
+  `ALLOW-OVERRIDE` notice — which the source-level pin **cannot** see, since the token stays in the
+  file's header, and which is the argument for running the selftest rather than reading it.
+  **Which git verbs it touches, measured rather than reasoned** (throwaway repo, hook armed):
+  `merge --no-ff`, `cherry-pick`, `revert`, `rebase` and `stash` all pass through untouched — only
+  `git commit` runs `pre-commit` — **but a conflicted merge resolved by hand IS refused**, because
+  that resolution is a literal `git commit`. That is the one surprise worth knowing before arming
+  it; `--no-verify` finishes the merge.
+  **What is still not solved, unchanged:** `--no-verify` bypasses it, unfixably, and a fresh clone
+  gets no hook until someone runs the config line. Closing the second would mean `xcb.sh` /
+  `agent-commit.sh` writing configuration into the user's repository on every invocation, which is
+  the part that is still not an agent's to decide.
 
 
 - [T-720] **CLOSED 2026-09-05 (`1d76ede1`).** Resolved by **deletion, not a shared base**. Every one of the four `shortLabel` callers is guarded by `recurrenceRule != .none` / `task.isRecurring` before it reads the property, so the single arm where `label` and `shortLabel` disagreed -- "Never" against "None" -- was unreachable through all four. Nobody needed the distinction. **No surface changes:** all four already showed only the byte-identical arms, and the pickers that do show `.none` already read `.label`. `TaskRecurrenceEndMode.shortLabel` deliberately left alone -- it differs on 2 of 3 arms and is doing real work. **Filed as:** **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
@@ -5071,7 +5096,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   does leave the shared index dirty. Pinned by `CadenceGuardScriptSelftestTests` ([[T-719]]).
   Mutations M1–M3, M5, M7 (`scripts/mutate.sh`): disabling `FOREIGN-STAGED`, deleting the shared-index
   repair, and stopping the declined-hunk refusal from firing were each KILLED. Using it at all is
-  still a rule rather than a mechanism — [[T-780]].
+  a rule rather than a mechanism until `.githooks/pre-commit` is armed — [[T-780]], landed inert.
   **Two amendments the same day, both from its own first real use, both on `docs/TODO.md`.**
   (1) "Declined" was first computed as *worktree lines the staged blob does not have*, which counts
   every line the commit deliberately **deletes**: this ticket's own ledger move recorded 179 of them,

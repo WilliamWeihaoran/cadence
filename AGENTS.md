@@ -89,9 +89,13 @@ Long references, searchable only when needed:
 - Do not revert unrelated user or agent changes.
 - **Commit with `scripts/agent-commit.sh <id> -m <msg> <path>...`, not `git commit`** (T-679). The
   index is shared: it refuses a foreign staged path, commits a private one, then repairs the shared one.
-  `HEAD-MOVED` (T-974) means a sibling landed while you were validating — nothing was committed,
-  re-read `git show HEAD:<path>` and run it again. Before a batch closes,
-  `scripts/agent-commit.sh check` must exit 0 (T-781).
+  `HEAD-MOVED` (T-974) means a sibling landed while you were validating — nothing was committed;
+  re-read `git show HEAD:<path>` and rerun. `agent-commit.sh check` must exit 0 before a batch
+  closes (T-781).
+- **`.githooks/pre-commit` is not yours to arm** (T-780). Never run `git config core.hooksPath`, or
+  teach a script to: the hook refuses a bare `git commit`, so arming it refuses the repository
+  owner's own commits — their call, not an agent's. It ships inert, and an armed one still lets
+  `agent-commit.sh` through, because that commits by plumbing and git runs no hooks for plumbing.
 
 ### The `try? save()` rule
 
@@ -131,16 +135,14 @@ the next unrelated `save()` to take or `rollback()` to discard. Enforced by `Cad
 - **A dead owner pid does not mean a stale lock.** A `nohup`'d `xcodebuild` outlives the shell that
   took the lease, so the pid is routinely gone mid-run. It reclaims only on an expired lease **and**
   zero live test hosts; forcing it starts a second host on one app-group container (T-236).
-- If `xcodebuild` sits at `Command line invocation` with 0% CPU, suspect a project-file lock before
-  debugging Swift.
+- `xcodebuild` idle at `Command line invocation` with 0% CPU is a project-file lock, not Swift.
 - Never create simulator devices. Use one existing stock simulator and `scripts/simulator-claim.sh`.
 - Launch the macOS app only through `scripts/run-macos-app.sh start <Cadence.app> <id>`, and pair it
   with `stop <id>` in the same turn.
 - Use one scratch directory per agent and clean only inside it.
 - Isolate with `git archive HEAD | tar -x -C <dir>`: 910 files in 0.2s and already exactly HEAD, so
   no dirty-path restore step. `rsync` copies 8963 files / 464 MB and another agent's in-flight edits.
-- Long build/test runs should launch and poll in one shell invocation.
-- Confirm the build log names the tree you intended to test.
+- Launch long build/test runs and poll them in one shell invocation; confirm the log names your tree.
 
 ## Red-Run Triage
 
@@ -156,10 +158,8 @@ Before treating a red run as a code regression, check:
   exited early.
 - UI-test failures in an ordinary test run: the run was not scoped to `CadenceTests`.
 - **`CadenceUITests` was never flaky — it cannot pass while the Mac's screen is locked (T-563).**
-  `loginwindow` holds the foreground, so `app.launch()` fails ~60s in with *"Failed to activate
-  application … (current state: Running Background)"*, on whichever line called it. Measured either
-  side of one lock event: 40 launches before, zero failures; 100% after. `xcb.sh` refuses such a run
-  and the tests skip themselves, so a red UI run **is** evidence again. Still re-run under the lock.
+  `app.launch()` then fails ~60s in on whichever line called it; `xcb.sh` refuses such a run and the
+  tests skip themselves, so a red UI run **is** evidence. Measurements: `docs/AGENTS_REFERENCE.md`.
 - Compile failures that name your file are real until proven otherwise.
 - **Count test hosts with `pgrep -f '^/Applications/.*/xcodebuild test'`.** A loose
   `pgrep -f xcodebuild` matches any script whose own command text contains the word — including the

@@ -1,0 +1,281 @@
+#!/bin/zsh
+# Refuse a bare `git commit` in this checkout (T-780).
+#
+#   .githooks/pre-commit             # git runs this with no arguments
+#   .githooks/pre-commit selftest    # prove the refusal still fires
+#
+# DO NOT ARM THIS YOURSELF.
+#
+# The hook is inert until somebody points `core.hooksPath` at this directory, and that line is the
+# repository OWNER's to type, not an agent's:
+#
+#     git config core.hooksPath .githooks     # <- the user types this, once, if they want it
+#
+# `core.hooksPath` lives in `.git/config`, which is not tracked, so this file lands doing nothing
+# and a fresh clone gets nothing. That is deliberate. Arming it refuses the owner's own by-hand
+# `git commit` in their own checkout, which is a decision about their tools rather than about the
+# code — `docs/DECISIONS_PENDING.md` carries it under T-780. An agent that runs the line above,
+# or teaches another script to run it, has installed configuration into someone's repository
+# unasked. Do not.
+#
+# WHY IT EXISTS
+#
+# `scripts/agent-commit.sh` is mandatory in PROSE only: a line in `AGENTS.md` and a section in
+# `docs/SUBAGENT_RUNBOOK.md`. That is the same shape T-679 was filed about — `git add <specific
+# paths>` was also prose, was also followed every time, and was also insufficient, because **the
+# git index is one object shared by every agent working in this checkout**. A bare `git commit`
+# still works and still sweeps whatever a sibling has staged into your commit.
+#
+# The week of 2026-09-01 made the case rather than argued it: eight agents committing concurrently
+# into one checkout, a landed line destroyed once, and shared files repeatedly holding three or four
+# agents' uncommitted work at a time.
+#
+# WHY IT CAN AFFORD TO BE STRICT
+#
+# `scripts/agent-commit.sh` does not go through `git commit` at all. It assembles a tree in a
+# PRIVATE index and lands it with `write-tree` / `commit-tree` / `update-ref` — plumbing, and git
+# runs no hooks for plumbing. So the sanctioned path passes an armed hook without knowing the hook
+# exists, and this file does not have to guess which caller it is looking at. `mode 3` below proves
+# that by running the real script against an armed repository rather than asserting it.
+#
+# WHAT IT REFUSES
+#
+#   BARE-COMMIT     any `git commit`, with or without `--amend`, from the repo root or from a
+#                   subdirectory. Use `scripts/agent-commit.sh` instead.
+#
+# WHAT IT LETS THROUGH, LOUDLY
+#
+#   ALLOW-OVERRIDE  `CADENCE_ALLOW_BARE_COMMIT=1 git commit ...` — the escape hatch, which says on
+#                   stderr that it was used. `git commit --no-verify` also bypasses it; that one is
+#                   git's, it cannot be closed from inside a hook, and pretending otherwise would be
+#                   worse than naming it.
+
+set -uo pipefail
+
+# `$0` inside a zsh function is the FUNCTION name, not the script, so capture it at top level.
+SCRIPT_PATH="${0:A}"
+
+say() { print -r -- "$@" }
+
+TMP_BASE="${TMPDIR:-/private/tmp/}"; [[ "$TMP_BASE" != */ ]] && TMP_BASE="$TMP_BASE/"
+
+# zsh writes here-document temp files to $TMPPREFIX, and zsh SETS that itself at startup to
+# `/tmp/zsh` — not $TMPDIR, and never empty. An App-Sandboxed caller (the test host that runs
+# `selftest`) cannot write there, so every here-document in this file would fail for a reason that
+# reads nothing like "sandbox".
+export TMPPREFIX="${CADENCE_TMPPREFIX:-${TMP_BASE}zsh}"
+
+# `/usr/bin/git` is an xcrun shim and xcrun REFUSES to run inside an App Sandbox
+# ("xcrun: error: cannot be used within an App Sandbox"), so every git call fails with that on
+# stderr and nothing else, which reads like a broken repository. Probe by running one. This matters
+# only for `selftest`; git running the hook obviously has a git.
+if ! git --version >/dev/null 2>&1; then
+    for _candidate in /Applications/Xcode.app/Contents/Developer/usr/bin /opt/homebrew/bin /usr/local/bin; do
+        [[ -x "$_candidate/git" ]] || continue
+        "$_candidate/git" --version >/dev/null 2>&1 || continue
+        PATH="$_candidate:$PATH"; break
+    done
+fi
+
+# --- the hook -----------------------------------------------------------------
+
+cmd_hook() {
+    if [[ -n "${CADENCE_ALLOW_BARE_COMMIT:-}" ]]; then
+        say "ALLOW-OVERRIDE: CADENCE_ALLOW_BARE_COMMIT is set, so this bare commit is allowed." >&2
+        say "                It will carry everything staged in the SHARED index — check" >&2
+        say "                \`git diff --cached --name-only\` before you trust the result." >&2
+        return 0
+    fi
+
+    say "REFUSED (BARE-COMMIT): the git index in this checkout is shared by every agent working" >&2
+    say "                       in it, so \`git commit\` commits whatever ANY of them has staged." >&2
+    say "" >&2
+    say "  use instead:  ./scripts/agent-commit.sh <id> -m <message> <path>..." >&2
+    say "" >&2
+    say "  It stages only the paths you name, into a private index; refuses when the shared index" >&2
+    say "  holds a path you did not name; repairs the shared index afterwards; and remembers the" >&2
+    say "  hunks it declined so the next commit of that file has to account for them (T-679)." >&2
+    say "" >&2
+    say "  If you really mean a bare commit — this is the repository owner's own checkout, or the" >&2
+    say "  shared index is provably yours — either of these does it:" >&2
+    say "" >&2
+    say "      CADENCE_ALLOW_BARE_COMMIT=1 git commit ..." >&2
+    say "      git commit --no-verify ..." >&2
+    say "" >&2
+    say "  To take the hook off entirely:  git config --unset core.hooksPath" >&2
+    return 1
+}
+
+# --- selftest -----------------------------------------------------------------
+#
+# A guard nobody exercises is the hollow instrument this repository keeps finding one layer up, so
+# every claim above is induced against a real throwaway git repository: the refusal from four
+# places, the override, the documented bypass, a control that proves the refusals came from THIS
+# file, and the plumbing path that `scripts/agent-commit.sh` actually uses. It builds nothing and
+# takes about a second.
+
+cmd_selftest() {
+    local -a failures performed
+    failures=(); performed=()
+    check() {
+        local name=$1 ok=$2 detail=${3:-}
+        performed+=("$name")
+        say "  $( (( ok )) && print -n "ok  " || print -n "FAIL")  $name$( (( ok )) || print -n "  <- $detail")"
+        (( ok )) || failures+=("$name")
+    }
+
+    say "== .githooks/pre-commit selftest =="
+    local hooks_dir="${SCRIPT_PATH:h}"
+    local repo_root="${SCRIPT_PATH:h:h}"
+    local ws; ws=$(mktemp -d "${TMP_BASE}cadence-pre-commit-selftest-XXXXXX")
+    local out rc before
+    local M=$'msg\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+
+    (
+        cd "$ws" || exit 1
+        git init -q .
+        git config user.email selftest@example.com
+        git config user.name Selftest
+        git config commit.gpgsign false
+        # An explicit default, exactly as this repository's own `.git/config` carries: the mode-0
+        # control below has to unset something to be a control.
+        git config core.hooksPath .git/hooks
+        mkdir -p sub
+        print -r -- "one" > mine.txt
+        print -r -- "deep" > sub/deep.txt
+        git add mine.txt sub/deep.txt
+        git commit -qm "base
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+    ) > "$ws.fixture.log" 2>&1 || {
+        say "  FAIL  could not build the fixture repository -- git said:"
+        sed 's/^/        /' "$ws.fixture.log"
+        say "        git: $(command -v git 2>&1)  version: $(git --version 2>&1)"
+        rm -rf "$ws" "$ws.fixture.log"; return 1
+    }
+    rm -f "$ws.fixture.log"
+
+    say ""
+    say " mode 0 (control) -- the same commit must SUCCEED with the hook not armed"
+    # Without this, every refusal below could come from a broken fixture and read as a working
+    # guard. Same shape as agent-commit.sh's mode-2 positive control.
+    ( cd "$ws" && print -r -- "control" >> mine.txt && git add mine.txt )
+    out=$( cd "$ws" && git commit -m "control
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" 2>&1 ); rc=$?
+    check "an unarmed bare commit is accepted" $(( rc == 0 )) "exit $rc: $out"
+    check "and it landed" $( [[ $( cd "$ws" && git rev-list --count HEAD ) == 2 ]] && print 1 || print 0 )
+
+    # Arm it. `core.hooksPath` takes a directory, and an absolute one is fine, so the fixture runs
+    # THIS file rather than a copy that could drift from it.
+    ( cd "$ws" && git config core.hooksPath "$hooks_dir" )
+
+    say ""
+    say " mode 1 (BARE-COMMIT) -- a bare commit must be refused from anywhere in the checkout"
+    ( cd "$ws" && print -r -- "two" >> mine.txt && git add mine.txt )
+    out=$( cd "$ws" && git commit -m "$M" 2>&1 ); rc=$?
+    check "a bare commit from the repo root is refused" $(( rc != 0 )) "exit $rc: $out"
+    check "and the refusal is named" $( [[ "$out" == *BARE-COMMIT* ]] && print 1 || print 0 ) "$out"
+    check "and it says what to use instead" \
+        $( [[ "$out" == *agent-commit.sh* ]] && print 1 || print 0 ) "$out"
+    check "and it names both escapes" \
+        $( [[ "$out" == *CADENCE_ALLOW_BARE_COMMIT* && "$out" == *--no-verify* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" $( [[ $( cd "$ws" && git rev-list --count HEAD ) == 2 ]] && print 1 || print 0 )
+    check "and the change is still staged, not lost" \
+        $( [[ -n $( cd "$ws" && git diff --cached --name-only ) ]] && print 1 || print 0 )
+
+    # Git chdirs to the top of the worktree before running a hook, so a hook written against `$PWD`
+    # can pass from the root and still be wrong from `sub/`. Measured, not assumed.
+    out=$( cd "$ws/sub" && git commit -m "$M" 2>&1 ); rc=$?
+    check "a bare commit from a SUBDIRECTORY is refused" $(( rc != 0 )) "exit $rc: $out"
+    check "and that refusal is named too" $( [[ "$out" == *BARE-COMMIT* ]] && print 1 || print 0 ) "$out"
+    check "still nothing committed" $( [[ $( cd "$ws" && git rev-list --count HEAD ) == 2 ]] && print 1 || print 0 )
+
+    before=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && git commit --amend --no-edit 2>&1 ); rc=$?
+    check "\`git commit --amend\` from the root is refused" $(( rc != 0 )) "exit $rc: $out"
+    check "and that refusal is named too" $( [[ "$out" == *BARE-COMMIT* ]] && print 1 || print 0 ) "$out"
+    check "HEAD was not rewritten" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$before" ]] && print 1 || print 0 ) \
+        "HEAD moved from $before"
+    out=$( cd "$ws/sub" && git commit --amend --no-edit 2>&1 ); rc=$?
+    check "\`git commit --amend\` from a SUBDIRECTORY is refused" \
+        $( [[ $rc != 0 && "$out" == *BARE-COMMIT* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "HEAD was still not rewritten" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$before" ]] && print 1 || print 0 ) \
+        "HEAD moved from $before"
+
+    say ""
+    say " mode 2 (ALLOW-OVERRIDE) -- the escape hatch must work, and must say it was used"
+    out=$( cd "$ws" && CADENCE_ALLOW_BARE_COMMIT=1 git commit -m "$M" 2>&1 ); rc=$?
+    check "the override commits" $(( rc == 0 )) "exit $rc: $out"
+    check "and it announces itself" $( [[ "$out" == *ALLOW-OVERRIDE* ]] && print 1 || print 0 ) "$out"
+    check "and HEAD advanced" $( [[ $( cd "$ws" && git rev-list --count HEAD ) == 3 ]] && print 1 || print 0 )
+    # git's own bypass, named in the refusal because it cannot be closed from inside a hook.
+    ( cd "$ws" && print -r -- "three" >> mine.txt && git add mine.txt )
+    out=$( cd "$ws" && git commit --no-verify -m "$M" 2>&1 ); rc=$?
+    check "\`--no-verify\` bypasses the hook, as the refusal says it does" $(( rc == 0 )) "exit $rc: $out"
+    check "and THAT advanced HEAD too" $( [[ $( cd "$ws" && git rev-list --count HEAD ) == 4 ]] && print 1 || print 0 )
+
+    say ""
+    say " mode 3 (plumbing) -- the sanctioned path must pass an armed hook without knowing it exists"
+    # Half one: the bare mechanism. `commit-tree` runs no hooks, which is the fact the whole design
+    # rests on, and it is cheap to assert rather than to cite.
+    before=$( cd "$ws" && git rev-parse HEAD )
+    ( cd "$ws"
+      print -r -- "four" >> mine.txt
+      idx=$ws/private-index
+      GIT_INDEX_FILE=$idx git read-tree HEAD >/dev/null 2>&1
+      b=$(git hash-object -w -- mine.txt)
+      GIT_INDEX_FILE=$idx git update-index --add --cacheinfo "100644,$b,mine.txt" >/dev/null 2>&1
+      t=$(GIT_INDEX_FILE=$idx git write-tree)
+      c=$(print -r -- "$M" | git commit-tree "$t" -p HEAD)
+      git update-ref HEAD "$c" >/dev/null 2>&1 ) >/dev/null 2>&1
+    check "a private-index \`commit-tree\` lands with the hook armed" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) != "$before" ]] && print 1 || print 0 ) \
+        "the plumbing path was blocked, so this hook breaks agent-commit.sh"
+    ( cd "$ws" && git reset -q --hard HEAD >/dev/null 2>&1 )
+
+    # Half two: the REAL script, against the armed repository. Half one proves the mechanism; this
+    # proves the thing agents actually type, which is the claim that matters.
+    if [[ -x "$repo_root/scripts/agent-commit.sh" ]]; then
+        ( cd "$ws" && print -r -- "five" >> mine.txt )
+        before=$( cd "$ws" && git rev-parse HEAD )
+        out=$( cd "$ws" && CADENCE_DECLINED_LEDGER="$ws/ledger" \
+               zsh "$repo_root/scripts/agent-commit.sh" hk -m "$M" mine.txt 2>&1 ); rc=$?
+        check "scripts/agent-commit.sh commits through the armed hook" $(( rc == 0 )) "exit $rc: $out"
+        check "and HEAD moved" \
+            $( [[ $( cd "$ws" && git rev-parse HEAD ) != "$before" ]] && print 1 || print 0 ) "$out"
+        check "and no BARE-COMMIT refusal was printed at it" \
+            $( [[ "$out" != *BARE-COMMIT* ]] && print 1 || print 0 ) "$out"
+    else
+        check "scripts/agent-commit.sh is where this selftest expects it" 0 \
+            "not executable at $repo_root/scripts/agent-commit.sh, so the claim it is unaffected went untested"
+    fi
+
+    rm -rf "$ws"
+    say ""
+    # A tally derived from the checks that actually ran. A selftest gutted to `return 0` still exits
+    # 0; it cannot print a non-zero passed count (T-719).
+    say "checks: $(( ${#performed} - ${#failures} )) passed, ${#failures} failed"
+    if (( ${#failures} )); then
+        say "SELFTEST FAILED: ${(j:, :)failures}"
+        return 1
+    fi
+    say "SELFTEST PASSED"
+    return 0
+}
+
+# --- entry --------------------------------------------------------------------
+#
+# git runs this hook with NO arguments, so `selftest` can never collide with a real invocation.
+
+case "${1:-}" in
+    selftest) shift; cmd_selftest "$@"; exit $? ;;
+    -h|--help)
+        say "usage: .githooks/pre-commit             # git runs this with no arguments"
+        say "       .githooks/pre-commit selftest    # prove the refusal still fires"
+        exit 0 ;;
+esac
+cmd_hook
+exit $?

@@ -412,6 +412,24 @@ it, and the failure lands on whoever added it rather than on whoever chose the s
 ./scripts/agent-commit.sh accept <path> # clear one record deliberately, out of band
 ```
 
+### `.githooks/pre-commit` is not yours to arm (T-780)
+
+**Never run `git config core.hooksPath`, and never teach a script to run it.** The repository tracks
+a `.githooks/pre-commit` that refuses a bare `git commit` and `git commit --amend` — from the repo
+root and from a subdirectory — and points at `agent-commit.sh` instead. `core.hooksPath` lives in
+the untracked `.git/config`, so the hook lands **inert** and stays inert until somebody sets that
+value, and arming it also refuses the repository owner's own by-hand commits in their own checkout.
+That is their decision (`docs/DECISIONS_PENDING.md`, T-780), and an agent that makes it for them has
+installed configuration into someone's repository unasked.
+
+What you need to know if you find yourself in an armed checkout: `agent-commit.sh` is unaffected —
+it commits by `write-tree`/`commit-tree`/`update-ref`, and git runs no hooks for plumbing, which is
+the whole reason the hook can refuse everything else. `CADENCE_ALLOW_BARE_COMMIT=1` and
+`git commit --no-verify` both bypass it; if you are reaching for either, you are about to commit
+whatever every sibling has staged, which is the thing T-679 was filed about. The refusal, the
+override, the plumbing pass-through and a control that proves the refusal came from the hook are all
+induced by `.githooks/pre-commit selftest`, which `CadenceGuardScriptSelftestTests` runs every time.
+
 **Do not hand-roll the incantation.** `git add <specific paths>`, never `git add -A`, is necessary
 and not sufficient: the index is one object shared by every agent in the checkout (T-679), and the
 rule was followed every time it failed. Four measured failures, and this is what the helper does
