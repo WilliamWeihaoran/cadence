@@ -70,6 +70,39 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(archive.totalRecordCount >= 21)
     }
 
+    /// **A restored note's folder goes through the shared normalizer (T-1086).**
+    ///
+    /// `Note.folderPath` is a convention over a plain `String` — separator `/`, no leading or
+    /// trailing separator, no empty components — and it holds only because exactly one place
+    /// writes it. Every other writer in the app is a user action that has already been normalized;
+    /// an archive is the one source of paths that has not, since it is JSON and can have been
+    /// edited by hand or written by an older build. The importer copied it through verbatim, which
+    /// made it the second writer, and `onlyTheSharedFilingHelperWritesAFolderPath` said so.
+    ///
+    /// It now calls `CadenceListNoteFiling.move(_:toFolder:)`. The un-normalized path is seeded on
+    /// the *source* store deliberately: it is what a hand-edited archive looks like, and the
+    /// assertion on the archive in between is what makes this a test of the import rather than of
+    /// an export that had already cleaned it.
+    @Test func anImportedNoteIsFiledThroughTheSharedNormalizer() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let note = Note(kind: .list, title: "Kitchen notes", content: "# Kitchen")
+        note.folderPath = "/Planning//Research/"
+        source.insert(note)
+        try source.save()
+
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        #expect(
+            archive.notes.first?.folderPath == "/Planning//Research/",
+            "the export normalized the path, so this says nothing about the import"
+        )
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(archive, in: destination)
+
+        let restored = try #require(try destination.fetch(FetchDescriptor<Note>()).first)
+        #expect(restored.folderPath == "Planning/Research")
+    }
+
     /// Every foreign key resolved — checked on the *destination's own objects*, not on the archive,
     /// because the archive is only ids and the thing under test is whether they became references.
     @Test func everyRelationshipInTheArchiveIsWiredBackUp() throws {

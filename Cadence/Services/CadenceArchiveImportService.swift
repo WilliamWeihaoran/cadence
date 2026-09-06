@@ -575,7 +575,14 @@ nonisolated enum CadenceArchiveImportService {
                 model.eventEndMin = record.eventEndMin
                 model.legacySourceKindRaw = record.legacySourceKindRaw
                 model.legacySourceID = record.legacySourceID
-                model.folderPath = record.folderPath
+                // Through the shared filing helper, not `model.folderPath = record.folderPath`.
+                // The folder convention is a convention over a `String`, and it survives only
+                // because exactly one normalizer writes it (`CadenceNoteFolderSupport.swift`) —
+                // an archive is the one source of paths that has not already been through it.
+                // Idempotent on anything Cadence wrote, so a real round trip is unchanged; a
+                // hand-edited `"/Planning/"` is filed under `Planning` rather than becoming a
+                // third group no surface can merge with the other two.
+                CadenceListNoteFiling.move(model, toFolder: record.folderPath)
             }
         )
 

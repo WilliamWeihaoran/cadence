@@ -223,7 +223,12 @@ enum CadenceListNoteFiling {
 
     /// Moves a note into a folder, or out of every folder when handed anything that normalizes to
     /// the root.
-    static func move(_ note: Note, toFolder rawPath: String) {
+    ///
+    /// `nonisolated` because the archive importer files restored notes through it (T-1086) and runs
+    /// off the main actor. It is a pure write to one plain `String` property, so there was never
+    /// anything main-actor about it — the annotation is the target's `SWIFT_DEFAULT_ACTOR_ISOLATION
+    /// = MainActor` default being opted out of, not a concurrency claim being made.
+    nonisolated static func move(_ note: Note, toFolder rawPath: String) {
         note.folderPath = CadenceNoteFolderPath.normalized(rawPath)
     }
 
