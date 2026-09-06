@@ -191,6 +191,22 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Deliberately not wired: the two kanban card drops** — [[T-1085]].
   **Filed as:** **[[T-1054]]'s premise is false, and the honest fix is per drop.**
 
+- [T-1087] **The native-picker sweep stops at the macOS Settings folder, and the phone has the same
+  screens.** Found while closing [[T-1082]].
+  `SettingsSharedVocabularyTests.noSettingsPaneStillDrawsAMenuPicker` walks `Cadence/macOS/Views`
+  filtered to paths containing `/Settings` and refuses `.pickerStyle(` in each — the rule [[T-20]]
+  set, and a good one: a `Picker` on the Mac draws AppKit's bezel and AppKit's accent and takes no
+  palette colour. **Its corpus is one platform.** [[T-1082]] landed the same preview sheet twice,
+  macOS and iOS, and both drew the mode choice as `Picker(.segmented)`; only the Mac's was caught,
+  and the phone's was found by reading rather than by a test. That is the part worth fixing.
+  `Cadence/iOS/` has no equivalent sweep at all, and iOS *does* have the rule — the whole point of
+  `CadenceChoicePicker`'s doc comment is that `iOSChoiceRow` and its siblings were "written to
+  replace `Picker(.segmented)` on mobile". Scope is the judgement, not the fix: a bare
+  `.pickerStyle(` ban over `Cadence/iOS/` needs its live call sites counted first, and some may be
+  deliberate — a `.wheel` picker on a phone is not an AppKit bezel.
+  `CadenceArchiveImportEntryPointTests.neitherArchiveImportSurfaceDrawsANativePicker` covers the two
+  files T-1082 touched and nothing else; it is a plug, not the rule.
+
 - [T-1086] **STUB — id taken 2026-09-06 by sweepreds.** `CadenceArchiveImportService.swift` trips
   seven source sweeps on `main`; deciding, per sweep, whether the importer is a new exception or a
   duplication of a shared helper.
