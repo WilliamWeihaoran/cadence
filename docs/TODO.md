@@ -2508,6 +2508,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the multi-release rollout clock from a *shipped* build rather than a hypothetical one, and
   permanently foreclose any variant that *replaces* an existing stored property instead of adding
   beside it. The park is unchanged.
+  **Restated for the user 2026-09-06 in `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`.** The
+  park is unchanged and the ask there is one word — "stay parked" — so this stops being re-verified a
+  fourth time. Two inherited figures were re-measured for it and had drifted *upward*, which
+  strengthens the case rather than changing it: the literal soft-delete alternative now costs **246**
+  `@Query` and **79** `FetchDescriptor` sites (the paragraph above says 243 and 70). The three cascade
+  functions have each shifted a line — `deleteContext` `:39`, `deleteProject` `:108`, `deleteArea`
+  `:133` — and the five import-gate greps still return zero.
 
 - [T-624] **A device-local EventKit calendar identifier is stored in CloudKit.** VERIFIED 2026-09-01
   from CXT-020 — mechanism confirmed; **the ping-pong premise is the one unmeasured link in the set.**
@@ -2594,6 +2601,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Unchanged, and the reason this stays open:** nobody has measured whether the identifiers really
   differ across this user's devices, and nobody here can — it needs an EventKit call on the user's
   own Mac, which raises a TCC prompt. That measurement is a user action, not an agent one.
+  **Restated for the user 2026-09-06 in `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`, and
+  the blocking measurement is converted there into something the user can actually run.** It needs no
+  console and no raw EventKit call, because the app already prints the answer: link a list to an
+  **iCloud** calendar on the iPhone, then read the macOS list editor's Apple Calendar row.
+  `CadenceCalendarLinkRowState.valueText` has exactly five outcomes and three of them decide this
+  ticket — `unlinkedText` ("None") means the sync has not arrived; the calendar's own title means the
+  identifiers **match** and this is moot; `unverifiedText` ("Linked calendar is not on this device")
+  means they **differ**. The third reading is self-verifying: it is reachable only with a non-empty
+  stored `linkedCalendarID`, so seeing it proves the sync arrived *and* that the identifier did not
+  resolve. The TCC prompt that stops an agent measuring this does not stop the user reading a row.
 
 - [T-626] **iOS omits the background mode CloudKit silent-sync needs — latent, and BLOCKED ON iOS
   DISTRIBUTION. Do not implement this until that changes.** VERIFIED 2026-09-01 from CXT-016;
@@ -3384,6 +3401,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Cadence/iOS/` as **text**: that tree is inside `#if os(iOS)` and the macOS test target has no
   symbol for it. iOS has no list-editor calendar row today, which is the only reason it is not
   already a second synced caller — so the sweep is worth having before one is added, not after.
+  **Restated for the user 2026-09-06 in `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`, and
+  presented there as one decision with [[T-1043]] rather than two.** Population re-measured at HEAD
+  and unchanged: exactly two `CadenceCalendarLink(` sites (`ListEditorSupportViews.swift:414`,
+  `TimelineEventBlockSupportViews.swift:218`), both still pinned by the two named tests. And
+  `Cadence/iOS/iOSListEditorViews.swift` still contains the string `calendar` **zero** times, which
+  is the whole reason there is no third one yet.
 
 - [T-752] **A list-delete confirmation promises completeness it cannot have.** Filed 2026-09-05.
   Named as residue by [[T-623]] on 2026-09-03 and **never actually filed** — the two `[[T-752]]`
@@ -3433,6 +3456,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   reaches `saveCalendarLinks()`. It has to read `Cadence/iOS/` as **text** for T-899's reason: that
   tree is inside `#if os(iOS)` and the macOS test target has no symbol for it. Worth folding into
   T-899's sweep if that lands first — the two want the same file.
+  **Restated for the user 2026-09-06 in `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`, and
+  the rule as worded above is already red at HEAD.** `CadenceArchiveImportService.swift:380` and
+  `:402` write `model.linkedCalendarID = record.linkedCalendarID` and record nothing. They landed
+  with [[T-274]]'s importer on **2026-09-06 — one day after this entry asserted three paths in four
+  files** — so the writer population is now **18 model assignments across five files**, and **four**
+  of them (`CadenceListEditSnapshot.swift:119`/`:131` plus the two above) satisfy none of the three
+  conditions above while being correct. Both pairs *restore a value that was already stored* rather
+  than making a link, and recording nothing is the right answer for both: an imported foreign
+  identifier must read `.unverified`, which is precisely what [[T-1084]] relies on. **The sweep needs
+  a fourth allowance for restore paths**, or it fails on landed, deliberate code. That is worth
+  knowing before the session that writes it starts — and it is the measured argument *for* writing
+  it, since the population grew, in a shape this entry did not anticipate, within 24 hours of being
+  written down as stable.
+  (The memo names this id as *the calendar-link one*; [[T-1072]] records that `T-1043` was handed out
+  twice and the other holder is the closed macOS note-image ticket.)
 
 ## Done
 - [T-642] **CLOSED 2026-09-06 (savefail2).** A presented surface may now **claim** the refused-settle

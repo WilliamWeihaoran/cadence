@@ -11,6 +11,11 @@ it is here because answering it changes how *your* `git commit` behaves in this 
 
 Two are visual and **nobody has seen them on screen** — that is stated where it applies.
 
+**A second memo covers four more, added 2026-09-06:**
+`docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md` — T-623, T-624, T-899 and T-1043, all four
+parked on a decision rather than on work. One of them (T-624) asks you for a five-minute test you
+can run inside the app; the answer either closes it outright or fixes its cost.
+
 ---
 
 ## T-352 — should the root destination persist? **Recommend: static destinations only**
