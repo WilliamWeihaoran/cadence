@@ -183,7 +183,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `theBareLocalScanCanTellTheShapeFromItsNearMisses` red on both C-style probes. All twelve scripts
   still read clean: 0 findings over 229 declarations.
 
-- [T-1076] **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+- [T-1076] **CLOSED 2026-09-06 (suitecheck, landed in `7584c5f`).** `xcb.sh` resolves `-only-testing:` suite names **pre-build and pre-lock**: an unknown name is refused at exit 8 in ~1.7s, and a known name whose file has siblings prints the skipped suites and their counts without failing the run. Counterexample proven first — a real run scoped to a filename returned exit 0 having silently skipped 58% of that file. **Originally:** **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Still a stub at HEAD, verified 2026-09-06 (`reconcile`).** No body was ever written under it and no
   code landed: `UNKNOWN-SUITE` occurs 0 times in `git show HEAD:scripts/xcb.sh` and 4 times in the
   working copy, so both the verdict and the instrument that would carry it are uncommitted.
@@ -290,7 +290,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   direction is the one that mattered — a rule that goes quiet is exactly this week's shape — and
   `nestingStaysARoundingErrorAcrossTheApp` is the standing detector for it.
 
-- [T-1077] **RESERVED 2026-09-06 (agent `decide`) — the drag-under-a-non-custom-sort rule that [[T-1054]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
+- [T-1077] **CLOSED 2026-09-06 (dropnotice, landed in `9e96c03`).** `CadenceReorderVisibility` says so when a dropped row lands outside the visible sort band — a notice, not a refusal, and deliberately not the failure sentence, because nothing failed. The condition is per-drop, not per-sort. **Originally:** **RESERVED 2026-09-06 (agent `decide`) — the drag-under-a-non-custom-sort rule that [[T-1054]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Body, 2026-09-06 (agent `dropnotice`). Built and green — 4,536 tests, zero new failures, zero
   warnings on both the macOS and the iOS-simulator destination — and the code commit needs
   `--removes 50`, which is user-gated, so this entry may land ahead of it.** The rule is: show a
@@ -1470,7 +1470,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   above the crossover, so today every filled block would take dark ink. Two arms of
   `whiteOnAnAccentFillFailsEveryHueWhileDarkInkClearsThemAll` already hold both halves of the
   measurement and go red the moment either stops being true.
-- [T-1089] **One offered swatch cannot reach 4.5:1 with either ink, and it is `#6366f1`.**
+- [T-1089] **CLOSED 2026-09-07 (residue, landed in `a499f2f`) — verdict: leave it, and pin the band.** The shortfall is the two-ink scheme's, not the swatch's: white fails above L=0.1833333 and the dark ink below L=0.1874926, leaving a **dead band 0.0041593 wide** that no threshold or rounding can close. `#6366f1` is the only one of ~35 offered fills inside it, at 4.4669:1 — 0.736% short, still above the 3:1 UI floor. Nudging would cost every user who already picked indigo a **thirteenth swatch beside its own twin, permanently, on every synced device** ([[T-245]]), for 0.033 of a ratio, and would not be durable. `theTwoInkSchemeHasOneDeadBandAndExactlyOneOfferedFillSitsInIt` computes both edges from `bg` and censuses the fills, so the next swatch added into the band cannot slip through. **Originally:** **One offered swatch cannot reach 4.5:1 with either ink, and it is `#6366f1`.**
   Found by contrast2 while landing [[T-855]]. `CadenceColorPalette.colors` offers `#6366f1`, whose
   relative luminance is **0.18506** — three ten-thousandths *below* `Theme.onColorCrossoverLuminance`
   (0.18540), so `Theme.onColor(for:)` correctly picks white and delivers **4.467:1**, under AA's 4.5
