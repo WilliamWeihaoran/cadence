@@ -51,6 +51,25 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1110] **A newly minted tag survives behind "Nothing was changed" when attaching it to the task is refused.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/recent-fix-claims.md` (ROI-05).
 
+- [T-1111] **A restore says "Import failed" after every imported row is already on disk.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-recovery.md` (ROI-01).
+
+- [T-1112] **An import changes tasks and habits without reconciling the pending OS reminders they own.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-reconciliation.md` (ROI-03).
+
+<!-- SUPERSEDED RESERVATION -- the three lines below are inert text inside this HTML
+     comment, not ledger entries, and the ids they name are NOT what they say.
+     `importgraph` and `importedge` read the same ledger minutes apart and both reserved
+     the next two ids. b67590f2 committed T-1109/T-1110 for ROI-02 and ROI-05; `importedge`
+     was holding the same two ids, unstaged, for ROI-01 and ROI-03, and agent-commit.sh
+     correctly recorded those worktree lines as a declined hunk. History breaks the tie --
+     ids are never reused, so the committed numbering stands and the unstaged one moves to
+     T-1111/T-1112 above, filed on that agent's behalf and otherwise verbatim. The lines are
+     reproduced here character for character because that is what puts a declined hunk into
+     a commit instead of stranding it, and a record nobody clears refuses every agent's next
+     commit on any path after thirty minutes. Do not read them as a second T-1109/T-1110.
+- [T-1109] **A restore says "Import failed" after every imported row is already on disk.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-recovery.md` (ROI-01).
+- [T-1110] **An import changes tasks and habits without reconciling the pending OS reminders they own.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-reconciliation.md` (ROI-03).
+<!-- importedge 2026-09-07: T-1109..T-1110 taken from docs/audits/2026-09-07/ (ROI-01, ROI-03). -->
+
 - [T-1096] **Both right-click overlays return themselves for any right-click, wherever the pointer was.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/appkit-behavior.md` (AK-1).
 
 - [T-1097] **The terminal recovery screen calls a fresh recovery store a "backup location", and diagnoses a cause it never measured.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/recovery-export.md` (RE-2).
