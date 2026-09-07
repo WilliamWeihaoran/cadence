@@ -281,8 +281,9 @@ struct CadenceContextlessListSurfaceTests {
     ///
     /// A scan cannot judge these — a fold scoped to one context on purpose (a deletion cascade, an
     /// MCP response *about* that context) is right, and a fold meant to show the user every list is
-    /// wrong. What the ledger buys is that the tenth entry cannot be added silently, which is
-    /// exactly how the first five got written.
+    /// wrong. What the ledger buys is that the next entry cannot be added silently, which is
+    /// exactly how the first five got written — and it worked: the tenth
+    /// (`CadenceWriteService`, T-799) was caught by this test rather than by a reviewer.
     private static let knownContextDerivedListSites: [String: Int] = [
         // Correct by scope: both walk the one context being deleted, and its lists are precisely
         // what the cascade is about.
@@ -291,6 +292,13 @@ struct CadenceContextlessListSurfaceTests {
         // Correct by scope: an MCP response *about* a named context, plus one habit filter keyed
         // on a context id the caller asked for.
         "Cadence/Services/MCPReadOnly/CadenceReadService.swift": 7,
+        // Correct: the same optional-to-optional comparison `CreateListSheet` makes, for the same
+        // reason and by deliberate copy (T-799). `createContainer`'s `nextListOrder` numbers a new
+        // area or project one past the highest `order` among the lists it will sit beside, and
+        // `nil == nil` is the unfiled bucket — a list created with no `contextId` is numbered
+        // against the other unfiled ones rather than left at 0, where `CadenceMCPOrdering.precedes`
+        // would break the tie on its name and interleave it with the user's own lists.
+        "Cadence/Services/MCPReadOnly/CadenceWriteService.swift": 2,
         // A write path: the DEBUG sample-data seeder attaches lists to the contexts it just made.
         "Cadence/iOS/iOSSampleDataSupport.swift": 6,
         // **Guarded downstream, not here.** `listGroupOrder` is a bare context walk and does lose
@@ -351,8 +359,8 @@ struct CadenceContextlessListSurfaceTests {
 
         #expect(actual == Self.knownContextDerivedListSites, "measured: \(actual.sorted { $0.key < $1.key })")
         // The headline, so a report and the ledger cannot disagree.
-        #expect(actual.values.reduce(0, +) == 27)
-        #expect(actual.count == 9)
+        #expect(actual.values.reduce(0, +) == 29)
+        #expect(actual.count == 10)
         // And the two columns that used to be the worst of them are off the list entirely: neither
         // derives its rows by walking contexts any more (T-538).
         #expect(actual["Cadence/macOS/Views/SidebarView.swift"] == nil)
@@ -746,5 +754,113 @@ struct CadenceContextlessListSurfaceTests {
             cascaded.context?.id == work.id,
             "the iOS editor's undo set left a child project's tasks in the context the refused save did not land"
         )
+    }
+
+    // MARK: - 6. T-1096: the first list on a blank Mac
+
+    /// **The one store shape the column could not draw its way out of.**
+    ///
+    /// Every header in the lists region is derived from an existing context or an existing list, and
+    /// the header is what carries the "+" that opens `CreateListSheet` — the sheet's only macOS call
+    /// site. Zero contexts, zero areas, zero projects therefore produced zero sections, an empty
+    /// `ForEach`, and no route to list creation at all; the way out was Settings → Contexts → New
+    /// Context, purely to manufacture a header. That is the state a fresh install is in.
+    ///
+    /// This is the section builder's own answer, not a restatement of it: `sections` really does
+    /// return `[]` here, and `SidebarListRegionContent` is what makes an empty region draw
+    /// something anyway.
+    @Test func aBlankStoreProducesNoSectionsAndTheListRegionOffersTheFirstListActionAnyway() {
+        let sections = CadenceSidebarLists.sections(
+            contexts: [],
+            elements: [] as [CadenceSidebarLists.Item],
+            keepingEmptyContexts: true,
+            item: { $0 }
+        )
+
+        #expect(sections.isEmpty)
+        #expect(SidebarListRegionContent.resolve(sectionCount: sections.count) == .firstListAction)
+    }
+
+    /// **And the other half: a store that produces even one section gets no second create control.**
+    ///
+    /// Both ways a single section arises are checked, because they arise for opposite reasons — the
+    /// catch-all exists when a context-less list does, and an empty context is kept only on macOS
+    /// and only because its header carries the "+". Either way the header is on screen, so the
+    /// empty-state row must not be.
+    @Test func anyStoreThatProducesASectionDrawsSectionsAndNoSecondCreateControl() throws {
+        let fixture = try makeFixture()
+
+        let onlyContextLess = CadenceSidebarLists.sections(
+            contexts: [],
+            elements: [CadenceSidebarLists.Item(fixture.loose)],
+            keepingEmptyContexts: true,
+            item: { $0 }
+        )
+        #expect(onlyContextLess.map(\.title) == [CadenceSidebarLists.ungroupedTitle])
+        #expect(SidebarListRegionContent.resolve(sectionCount: onlyContextLess.count) == .sections)
+
+        let onlyEmptyContext = CadenceSidebarLists.sections(
+            contexts: fixture.offered.map { CadenceSidebarLists.ContextRef(id: $0.id, name: $0.name) },
+            elements: [] as [CadenceSidebarLists.Item],
+            keepingEmptyContexts: true,
+            item: { $0 }
+        )
+        #expect(onlyEmptyContext.map(\.title) == ["Work"])
+        #expect(SidebarListRegionContent.resolve(sectionCount: onlyEmptyContext.count) == .sections)
+    }
+
+    /// **The wiring, not the helper.** A model of the region that no view reads is a fiction, and
+    /// this defect is precisely a correct helper reached by nobody: `CadenceSidebarLists.sections`
+    /// answered "no sections" perfectly well before T-1096, and the column drew nothing.
+    ///
+    /// Scoped to `listsSection`'s own body, so a mention of the type anywhere else in the file
+    /// cannot stand in for the branch that renders it.
+    @Test func theMacSidebarsListRegionDrawsTheFirstListActionWhenItHasNoSections() throws {
+        let raw = try cadenceTestSource("Cadence/macOS/Views/SidebarView.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code != raw, "the comment stripper read the wrong file")
+        #expect(code.contains("struct SidebarView: View {"))
+
+        let region = try #require(
+            CadenceSourceScan.declarationBody("var listsSection: some View", in: code)
+        )
+
+        #expect(region.contains("SidebarListRegionContent.resolve(sectionCount: sections.count)"))
+        #expect(region.contains("case .firstListAction:"))
+        #expect(region.contains("SidebarAddFirstListButton {"))
+        // On no context, so the sheet opens on the row `CreateListSheet` has accepted since T-559
+        // rather than on some unrelated context the reader would have to clear.
+        #expect(region.contains("newListTarget = SidebarNewListTarget(context: nil)"))
+
+        // The pre-T-1096 spelling: a region that is only whatever sections it happens to have.
+        #expect(CadenceSourceScan.matchCount("ForEach\\(listSections\\)", in: region) == 0)
+    }
+
+    /// One row, two callers, and no third spelling of it.
+    ///
+    /// The empty-context row and the empty-store row differ only in which context the sheet opens
+    /// on — which is the caller's closure — so a second copy would be a near-duplicate of a button
+    /// that already exists. The sweep is over the whole app target because that is the only way to
+    /// see a third one appear.
+    @Test func theAddFirstListRowIsOneComponentBothCallersShare() throws {
+        let componentsPath = "Cadence/macOS/Views/SidebarComponents.swift"
+        let components = CadenceSourceScan.strippingComments(try cadenceTestSource(componentsPath))
+        #expect(components.contains("struct SidebarAddFirstListButton: View {"))
+
+        let files = try cadenceAppSwiftFiles()
+        #expect(files.count >= 400, "the app-target sweep found almost nothing, so it proves nothing")
+
+        var callers: [String] = []
+        var spellsTheWords: [String] = []
+        for path in files {
+            let code = CadenceSourceScan.strippingComments(try cadenceTestSource(path))
+            if CadenceSourceScan.matchCount("SidebarAddFirstListButton\\s*[({]", in: code) > 0 {
+                callers.append(path)
+            }
+            if code.contains("\"Add first list\"") { spellsTheWords.append(path) }
+        }
+
+        #expect(callers.sorted() == [componentsPath, "Cadence/macOS/Views/SidebarView.swift"])
+        #expect(spellsTheWords == [componentsPath])
     }
 }

@@ -17,9 +17,10 @@ Run it BEFORE launching the app, then launch with the matching store id:
 
     ./scripts/run-macos-app.sh start <...>/Cadence.app shots
 
-The MCP write surface can create tasks and append to daily/weekly/permanent
-notes. It cannot create contexts, areas or projects, so the Lists/Kanban angle
-still needs the few UI steps written down in docs/screenshots/README.md.
+The MCP write surface creates the whole Lists/Kanban angle as of T-799:
+`create_context` and `create_container` mint a context and a project with its
+kanban columns, and `create_task`'s `sectionName` files a card into one. Nothing
+here needs the UI any more.
 """
 
 import argparse
@@ -156,6 +157,29 @@ BACKLOG_TASKS = [
     ("Read the CloudKit conflict-resolution notes", "low", ["research"]),
 ]
 
+# The Lists/Kanban angle (T-799). `SCREENSHOT_CONTEXT` owns the sidebar group, `SCREENSHOT_AREA`
+# is an ongoing list beside it so the sidebar is not a single row, and `SCREENSHOT_BOARD` is the
+# project the kanban screenshot is actually of. A "Default" column exists whether or not it is
+# asked for -- the container normaliser synthesises it and every task with no section name lands
+# there -- so the board is written with the three named columns only and Default stays empty.
+SCREENSHOT_CONTEXT = ("Work", "#4a9eff", "square.stack.fill")
+SCREENSHOT_AREA = ("Product", "#4a9eff", "sparkles")
+SCREENSHOT_BOARD = ("1.0 Launch", "#4ecb71", "checklist")
+SCREENSHOT_COLUMNS = ["Backlog", "In progress", "Review", "Shipped"]
+
+# (column, title, priority, tags). Weighted so the board reads as work in flight rather than a
+# tidy diagonal: a full Backlog, two cards moving, one waiting, two done.
+BOARD_CARDS = [
+    ("Backlog", "Dark mode pass on the timeline", "low", ["design"]),
+    ("Backlog", "Shortcut for jump-to-today", "low", ["engineering"]),
+    ("Backlog", "Trim the onboarding to three screens", "medium", ["design"]),
+    ("In progress", "App Store screenshots", "high", ["release", "design"]),
+    ("In progress", "Privacy nutrition labels", "high", ["release"]),
+    ("Review", "Accessibility audit fixes", "medium", ["engineering"]),
+    ("Shipped", "Widget timeline refresh", "medium", ["engineering"]),
+    ("Shipped", "Markdown tables in notes", "low", ["writing"]),
+]
+
 DAILY_NOTE = """# {weekday}
 
 Shipping week. The build is green and the only thing between us and review is
@@ -265,6 +289,60 @@ def main() -> int:
             client.call("create_task", {"title": title, "priority": priority, "tagNames": tags})
             created += 1
 
+        # --- the Lists/Kanban angle, which used to be clicked (T-799) --------------------
+        context_name, context_color, context_icon = SCREENSHOT_CONTEXT
+        context = client.call("create_context", {
+            "name": context_name,
+            "colorHex": context_color,
+            "icon": context_icon,
+        })
+        context_id = context["context"]["id"]
+
+        area_name, area_color, area_icon = SCREENSHOT_AREA
+        client.call("create_container", {
+            "containerKind": "area",
+            "name": area_name,
+            "contextId": context_id,
+            "colorHex": area_color,
+            "icon": area_icon,
+        })
+
+        board_name, board_color, board_icon = SCREENSHOT_BOARD
+        board = client.call("create_container", {
+            "containerKind": "project",
+            "name": board_name,
+            "contextId": context_id,
+            "colorHex": board_color,
+            "icon": board_icon,
+            "sectionNames": SCREENSHOT_COLUMNS,
+        })
+        board_id = board["container"]["id"]
+        # `create_container` answers the same summary `get_container_summary` does, so the columns
+        # can be read back rather than assumed. An empty board here means the write landed only in
+        # the response, which is exactly the failure a screenshot would show and a log would not.
+        board_columns = [section["name"] for section in board["sections"]]
+        for column in SCREENSHOT_COLUMNS:
+            if column not in board_columns:
+                raise RuntimeError(f"board {board_name!r} is missing column {column!r}: {board_columns}")
+
+        for column, title, priority, tags in BOARD_CARDS:
+            payload = {
+                "title": title,
+                "priority": priority,
+                "containerKind": "project",
+                "containerId": board_id,
+                "sectionName": column,
+            }
+            if tags:
+                payload["tagNames"] = tags
+            result = client.call("create_task", payload)
+            created += 1
+            if column == "Shipped":
+                task_id = (result or {}).get("summary", {}).get("id")
+                if not task_id:
+                    raise RuntimeError(f"create_task gave no summary.id for {title!r}: {result!r}")
+                client.call("complete_task", {"taskId": task_id})
+
         # The heading has to be the day the note is dated, not a fixed weekday: the note
         # page prints "Saturday, September 5" above it, and a hardcoded "# Thursday"
         # underneath that is the first thing a reviewer notices in a screenshot.
@@ -276,6 +354,8 @@ def main() -> int:
         summary = client.call("list_tasks", {"limit": 1})
         print(f"seeded {created} tasks; store reports totalCount={summary.get('totalCount')}")
         print("seeded daily, weekly and permanent notes")
+        print(f"seeded context {context_name!r}, area {area_name!r} and board {board_name!r} "
+              f"with columns {board_columns}")
     finally:
         client.close()
     return 0

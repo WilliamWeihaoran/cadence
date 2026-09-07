@@ -4,6 +4,10 @@ import SwiftData
 nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case emptyTitle
     case emptyContent
+    case emptyName
+    case invalidColorHex(String)
+    case emptySectionName
+    case duplicateSectionName(String)
     case invalidPriority(String)
     case invalidNoteKind(String)
     case invalidScheduledStartMin(Int)
@@ -20,6 +24,14 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "Task title must not be empty."
         case .emptyContent:
             return "Note content must not be empty."
+        case .emptyName:
+            return "Name must not be empty."
+        case .invalidColorHex(let value):
+            return "Invalid colorHex: \(value). Expected a six-digit hex colour such as #4a9eff."
+        case .emptySectionName:
+            return "Section names must not be empty."
+        case .duplicateSectionName(let name):
+            return "Duplicate section name: \(name). Section names must be unique within one list."
         case .invalidPriority(let value):
             return "Invalid priority value: \(value). Expected none, low, medium, or high."
         case .invalidNoteKind(let value):
@@ -88,6 +100,29 @@ nonisolated struct CadenceBulkCancelTaskOptions: Sendable {
     var titlePrefix: String? = nil
 }
 
+nonisolated struct CadenceCreateContextOptions: Sendable {
+    var name: String
+    var colorHex: String? = nil
+    var icon: String? = nil
+}
+
+/// **`areaId` and `dueDate` are project-only, and that is the model talking, not a policy.**
+/// `Area` declares neither an owning area nor a due date — an area is an ongoing responsibility
+/// with no end — so an `area` request carrying either is refused rather than quietly ignored. The
+/// same argument `CadenceMCPServiceSupport.normalizedSectionName` makes about a mistyped section:
+/// a caller who only ever reads the word "success" cannot notice a dropped argument.
+nonisolated struct CadenceCreateContainerOptions: Sendable {
+    var containerKind: String
+    var name: String
+    var description: String? = nil
+    var contextId: String? = nil
+    var areaId: String? = nil
+    var colorHex: String? = nil
+    var icon: String? = nil
+    var dueDate: String? = nil
+    var sectionNames: [String]? = nil
+}
+
 private struct PendingAuditEntry {
     let tool: String
     let entityType: String
@@ -100,6 +135,16 @@ private struct PendingAuditEntry {
 
     static func coreNote(id: UUID, summary: String) -> PendingAuditEntry {
         PendingAuditEntry(tool: "append_core_note", entityType: "core_note", entityId: id.uuidString, summary: summary)
+    }
+
+    static func context(id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "create_context", entityType: "context", entityId: id.uuidString, summary: summary)
+    }
+
+    /// `entityType` is the container's own kind — `area` or `project` — rather than a flat
+    /// "container", so the audit log distinguishes the two the way every other MCP surface does.
+    static func container(kind: String, id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "create_container", entityType: kind, entityId: id.uuidString, summary: summary)
     }
 }
 
@@ -149,6 +194,104 @@ final class CadenceWriteService {
         self.notifiesExternalWrites = notifiesExternalWrites
         self.auditLogger = auditLogger
         self.executedStartupStepCount = steps + readService.executedStartupStepCount
+    }
+
+    /// Create a `Context`, the top-level grouping every area and project can be filed under.
+    ///
+    /// **T-799.** MCP could create a task and append to a core note and nothing else, so the one
+    /// argument `create_task` needs in order to put a task anywhere — a `containerId` — could not
+    /// be minted from this surface at all. Seeding a kanban board had to be clicked by hand.
+    ///
+    /// `order` is one past the highest among the rows the new one will sit beside, which is what
+    /// `CreateListSheet.nextListOrder` and `iOSContextEditorSheet.nextContextOrder` already do.
+    /// Leaving it at the model default is not neutral here: `CadenceMCPOrdering.precedes` breaks an
+    /// `order` tie on the *name*, so every seeded context would interleave alphabetically with the
+    /// user's own rather than landing at the end of the list where it was created.
+    func createContext(options: CadenceCreateContextOptions) throws -> CadenceContextSummary {
+        let name = try normalizedRequiredText(options.name, emptyError: CadenceWriteError.emptyName)
+        let colorHex = try normalizedOptionalColorHex(options.colorHex)
+        let icon = CadenceMCPServiceSupport.normalizedOptionalText(options.icon)
+
+        let created = Context(name: name)
+        if let colorHex { created.colorHex = colorHex }
+        if let icon { created.icon = icon }
+        created.order = try nextContextOrder()
+        context.insert(created)
+
+        try saveNotifyAndAudit(.context(id: created.id, summary: "Created context: \(created.name)"))
+        return try readService.contextSummary(contextID: created.id.uuidString)
+    }
+
+    /// Create an `Area` or a `Project`, optionally carrying the kanban columns that make it a board.
+    ///
+    /// **The columns are written straight through `sectionConfigs`, not through
+    /// `CadenceSectionConfigMerge`, and that is deliberate.** The merge exists to reconcile two
+    /// editors holding stale snapshots of one list's single JSON blob; a container this call
+    /// inserted a line earlier has no other holder, no `base` and no `current` to reconcile
+    /// against, so the merge would degenerate to "apply the edit" — the case its own documentation
+    /// names. It is also not in `CadenceMCPServer`'s explicit Sources phase, and adding a
+    /// `Cadence/Shared/` file there to reach a no-op is exactly the coupling
+    /// `CadenceMCPServer/AGENTS.md` warns about.
+    ///
+    /// **A Default column always exists.** `Area.normalizedSectionConfigs` /
+    /// `Project.normalizedSectionConfigs` synthesise it when absent and force it to index 0, on
+    /// every read and every write, because `AppTask.resolvedSectionName` funnels every task with no
+    /// section name into it. So `sectionNames: ["Backlog", "Doing"]` produces three columns, not
+    /// two, and the advertised schema says so rather than letting a caller discover it.
+    func createContainer(options: CadenceCreateContainerOptions) throws -> CadenceContainerSummary {
+        let kind = try normalizedContainerKind(options.containerKind)
+        let name = try normalizedRequiredText(options.name, emptyError: CadenceWriteError.emptyName)
+        let colorHex = try normalizedOptionalColorHex(options.colorHex)
+        let icon = CadenceMCPServiceSupport.normalizedOptionalText(options.icon)
+        let sectionNames = try CadenceMCPServiceSupport.normalizedSectionNames(options.sectionNames)
+
+        // Refused on the *requested* text, before resolution: an `areaId` sent to an area is a
+        // misunderstanding of the shape whether or not that id happens to name a real area, and
+        // answering "no area found" instead would send the caller looking for the wrong bug.
+        let requestsArea = CadenceMCPServiceSupport.normalizedOptionalText(options.areaId) != nil
+        let requestsDueDate = CadenceMCPServiceSupport.normalizedOptionalText(options.dueDate) != nil
+        if kind == "area" {
+            if requestsArea {
+                throw CadenceWriteError.invalidCombination("areaId applies to a project; an area cannot be filed inside another area.")
+            }
+            if requestsDueDate {
+                throw CadenceWriteError.invalidCombination("dueDate applies to a project; an area is ongoing and carries no due date.")
+            }
+        }
+
+        let parentContext = try resolveContext(options.contextId)
+        let parentArea = try resolveArea(options.areaId)
+        let dueDate = try validatedOptionalDate(options.dueDate)
+        let order = try nextListOrder(inContextWithID: parentContext?.id)
+
+        // Colour and icon are only assigned when the caller named one, so an omitted argument
+        // leaves the model's own default rather than a copy of it restated here — `Area`,
+        // `Project` and `Context` each declare a different pair.
+        let id: UUID
+        switch kind {
+        case "area":
+            let area = Area(name: name, context: parentContext)
+            if let colorHex { area.colorHex = colorHex }
+            if let icon { area.icon = icon }
+            if let description = options.description { area.desc = description }
+            area.order = order
+            context.insert(area)
+            if let sectionNames { area.sectionConfigs = sectionNames.map { TaskSectionConfig(name: $0) } }
+            id = area.id
+        default:
+            let project = Project(name: name, context: parentContext, area: parentArea)
+            if let colorHex { project.colorHex = colorHex }
+            if let icon { project.icon = icon }
+            if let description = options.description { project.desc = description }
+            if let dueDate { project.dueDate = dueDate }
+            project.order = order
+            context.insert(project)
+            if let sectionNames { project.sectionConfigs = sectionNames.map { TaskSectionConfig(name: $0) } }
+            id = project.id
+        }
+
+        try saveNotifyAndAudit(.container(kind: kind, id: id, summary: "Created \(kind): \(name)"))
+        return try readService.containerSummary(kind: kind, id: id.uuidString)
     }
 
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {
@@ -511,6 +654,48 @@ final class CadenceWriteService {
 
     private func fetchProjects() throws -> [Project] {
         try context.fetch(FetchDescriptor<Project>())
+    }
+
+    private func fetchContexts() throws -> [Context] {
+        try context.fetch(FetchDescriptor<Context>())
+    }
+
+    private func nextContextOrder() throws -> Int {
+        (try fetchContexts().map(\.order).max() ?? -1) + 1
+    }
+
+    /// One past the highest `order` among the lists the new one will sit beside.
+    ///
+    /// Areas and projects share one sequence per context, and the comparison is
+    /// **optional-to-optional** on purpose — `nil == nil` is the unfiled bucket, numbered exactly
+    /// like a filed one. `CreateListSheet.nextListOrder` spells the same rule for the same reason:
+    /// walking `context.areas` instead would leave every context-less list created at 0.
+    private func nextListOrder(inContextWithID id: UUID?) throws -> Int {
+        var orders = try fetchAreas().filter { $0.context?.id == id }.map(\.order)
+        orders += try fetchProjects().filter { $0.context?.id == id }.map(\.order)
+        return (orders.max() ?? -1) + 1
+    }
+
+    private func resolveContext(_ id: String?) throws -> Context? {
+        guard let requested = CadenceMCPServiceSupport.normalizedOptionalText(id) else { return nil }
+        let uuid = try uuid(from: requested)
+        guard let match = try fetchContexts().first(where: { $0.id == uuid }) else {
+            throw CadenceReadError.contextNotFound(requested)
+        }
+        return match
+    }
+
+    private func resolveArea(_ id: String?) throws -> Area? {
+        guard let requested = CadenceMCPServiceSupport.normalizedOptionalText(id) else { return nil }
+        let uuid = try uuid(from: requested)
+        guard let match = try fetchAreas().first(where: { $0.id == uuid }) else {
+            throw CadenceReadError.containerNotFound("area", requested)
+        }
+        return match
+    }
+
+    private func normalizedOptionalColorHex(_ value: String?) throws -> String? {
+        try CadenceMCPServiceSupport.normalizedOptionalColorHex(value)
     }
 
     private func normalizedRequiredText(_ value: String, emptyError: Error) throws -> String {

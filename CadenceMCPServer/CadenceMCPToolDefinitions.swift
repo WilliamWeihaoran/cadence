@@ -29,8 +29,18 @@ enum CadenceMCPToolDefinitions {
     // nothing derives one from the other. 0.6.0 was applied here first and the handshake kept
     // saying 0.5.0 through a green MCP build, a green contract scan and a passing smoke test —
     // `CadenceMCPToolContractTests.theTwoAdvertisedServerVersionsAreOneNumber` exists because of it.
-    private static let serverVersion = "0.6.0"
+    //
+    // 0.7.0 is the first bump here that breaks **nothing**: `create_context` and `create_container`
+    // are two new tools and not one changed field (T-799). It is taken anyway, because the version
+    // is the only thing a client can ask, and "can this server mint a list to put a task in?" is
+    // exactly the question an agent has to answer before it plans a write. A capability that
+    // arrives without a version change is discoverable only by calling a tool and reading the
+    // error — and the additive half of semver exists so that a client can tell "older than I need"
+    // from "broken" without doing that.
+    private static let serverVersion = "0.7.0"
     private static let writeToolNames: Set<String> = [
+        "create_context",
+        "create_container",
         "create_task",
         "update_task",
         "schedule_task",
@@ -173,6 +183,22 @@ enum CadenceMCPToolDefinitions {
                 "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
                 "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
+            Tool(name: "create_context", description: "Create a Cadence context, the top-level grouping areas and projects are filed under. Answers the same summary get_context_summary does.", inputSchema: schema([
+                "name": stringProperty("Context name.", minLength: 1),
+                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
+                "icon": stringProperty("Optional SF Symbol name."),
+            ], required: ["name"])),
+            Tool(name: "create_container", description: "Create a Cadence area or project, optionally with the kanban columns that make it a board. Answers the same summary get_container_summary does, so the new containerId is ready for create_task.", inputSchema: schema([
+                "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
+                "name": stringProperty("List name.", minLength: 1),
+                "description": stringProperty("Optional list description."),
+                "contextId": uuidProperty("Optional context UUID to file the list under. Omit for an unfiled list."),
+                "areaId": uuidProperty("Optional owning area UUID. Projects only — an area cannot be filed inside another area, and sending this with containerKind area is rejected."),
+                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
+                "icon": stringProperty("Optional SF Symbol name."),
+                "dueDate": dateProperty("Optional due date, yyyy-MM-dd or natural day. Projects only — an area is ongoing and carries no due date, and sending this with containerKind area is rejected."),
+                "sectionNames": flexibleStringArrayProperty("Optional kanban column names, in order. Each must be non-empty and unique within the list; a blank or repeated name is rejected rather than dropped. A column named Default always exists and is prepended when this list omits it, because every task with no section name lands in it."),
+            ], required: ["containerKind", "name"])),
             Tool(name: "create_task", description: "Create a Cadence task without Calendar side effects.", inputSchema: schema([
                 "title": stringProperty("Task title.", minLength: 1),
                 "notes": stringProperty("Optional notes."),

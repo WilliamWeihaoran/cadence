@@ -101,14 +101,23 @@ struct CadenceMCPToolContractTests {
     // MARK: - List-tool DTO shapes (T-269)
 
     /// Six `list_*` tools — `list_task_bundles`, `list_goals`, `list_habits`, `list_links`,
-    /// `list_contexts`, `list_containers` — are dispatched by the smoke test only against a fresh
-    /// fixture store, because MCP has no write tool that can put a bundle, a goal, a habit, a
-    /// link, a context or a container into one. `create_task` and `append_core_note` are the only
-    /// constructors on the surface. So the smoke test can exercise the argument wiring and the
-    /// empty-result path for all six, but never observes one row of `CadenceTaskBundleSummary`,
+    /// `list_contexts`, `list_containers` — were dispatched by the smoke test only against a fresh
+    /// fixture store, because MCP had no write tool that could put a bundle, a goal, a habit, a
+    /// link, a context or a container into one: `create_task` and `append_core_note` were the only
+    /// constructors on the surface. So the smoke test could exercise the argument wiring and the
+    /// empty-result path for all six, but never observed one row of `CadenceTaskBundleSummary`,
     /// `CadenceGoalSummary`, `CadenceHabitSummary`, `CadenceSavedLinkSummary`, `CadenceContextRef`
     /// or `CadenceContainerRef` coming back over the wire — a renamed or dropped field on any of
     /// them reaches a user's editor with nothing red anywhere.
+    ///
+    /// **Two of the six are no longer in that position (T-799).** `create_context` and
+    /// `create_container` now mint a context and a container over the wire, and the smoke test
+    /// checks the resulting `CadenceContextRef` and `CadenceContainerRef` key sets against real
+    /// rows. Both stay in the list below anyway: this scan runs inside `CadenceTests` on every
+    /// unit run, the smoke test runs only when someone remembers to invoke it, and a scan that
+    /// agrees with a stronger check costs nothing. The other four — bundles, goals, habits and
+    /// links — still have no constructor anywhere on the surface, so for them this remains the
+    /// only check of any kind.
     ///
     /// T-269 weighed seeding a fixture store out-of-band (a second process opening the same
     /// SwiftData store the server is about to open, with a fixture that has to be hand-kept in

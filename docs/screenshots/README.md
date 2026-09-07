@@ -92,18 +92,24 @@ the largest accepted size and the one to aim for. `Cadence/CadenceApp.swift` set
 | --- | --- | --- |
 | `01-today.png` | Today | `seed-screenshot-data.py` — timed tasks across the working day, two already done |
 | `02-calendar.png` | Calendar | `seed-screenshot-data.py` — tasks spread over the next four weeks |
-| `03-lists-kanban.png` | Lists, board mode | **manual** — see below |
+| `03-lists-kanban.png` | Lists, board mode | `seed-screenshot-data.py` — a context, an area, and a four-column board with eight cards |
 | `04-notes.png` | Notes, daily note open | `seed-screenshot-data.py` — a markdown daily note with headings, a quote, and checkboxes |
 | `05-settings.png` | Settings, Privacy / Data Safety | nothing to seed |
 
-### Why the Kanban angle is manual
+### The Kanban angle used to be manual, and is not any more
 
-The MCP write surface (`CadenceMCPServer/CadenceMCPToolDefinitions.swift`) can create tasks and
-append to daily/weekly/permanent notes. It has no tool that creates a context, area or project, and
-Kanban columns are `TaskSectionConfig` values stored on an `Area` or `Project`
-(`Cadence/Models/AppTask.swift`). `create_task` will only accept a `sectionName` that already exists
-on the target list.
+Until T-799 the MCP write surface could create tasks and append to daily/weekly/permanent notes and
+nothing else. It had no tool that created a context, area or project — and Kanban columns are
+`TaskSectionConfig` values stored on an `Area` or `Project` (`Cadence/Models/AppTask.swift`), while
+`create_task` accepts only a `sectionName` that already exists on the target list. So angle 3 had to
+be clicked: a project made in the running app, two or three sections added by hand, cards dragged in.
 
-So before capturing angle 3, create one project in the running app — Lists, new project, add two or
-three sections — and then either drag a few of the seeded inbox tasks onto it or add cards from the
-board's own composer. Everything else in this set needs no manual step.
+`create_context` and `create_container` closed that. The seeder now mints a `Work` context, a
+`Product` area beside it so the sidebar is not one row, and a `1.0 Launch` project carrying
+`Backlog` / `In progress` / `Review` / `Shipped`, then files eight cards across those columns and
+completes the two in `Shipped`. **No angle in this set needs a manual step.**
+
+One thing to expect in the capture: a column named `Default` sits at the left of the board even
+though the seeder never asks for one. That is the model, not a bug — `Area.normalizedSectionConfigs`
+/ `Project.normalizedSectionConfigs` synthesise it on every read and write because every task with
+no section name lands in it. It is empty here, because every seeded card names a column.

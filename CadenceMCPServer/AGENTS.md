@@ -57,9 +57,9 @@ compiles in a view is not evidence it compiles here.
   (`group.com.haoranwei.Cadence`, `Library/Application Support/Cadence/default.store`) with
   `allowsSave: true` — the same file the running app has open. It is gated on the
   `CADENCE_MCP_ENABLE_WRITES` environment flag and defaults to read-only, but when enabled there is
-  no confirmation step and no undo stack: `createTask`, `updateTask`, `scheduleTask`,
-  `completeTask`, `reopenTask`, `cancelTask`, `bulkCancelTasks` and `appendCoreNote` write and
-  save. `mcp-audit.log` beside the store is the only record, and
+  no confirmation step and no undo stack: `createContext`, `createContainer`, `createTask`,
+  `updateTask`, `scheduleTask`, `completeTask`, `reopenTask`, `cancelTask`, `bulkCancelTasks` and
+  `appendCoreNote` write and save. `mcp-audit.log` beside the store is the only record, and
   `CadenceMCPRefreshCoordinator` (macOS Services) watches a `.cadence-mcp-refresh` marker file so
   the app reloads after an external write. Treat a write-path change as a data-safety change.
 - Opening the read-write container also runs `NoteMigrationService`, `TagSupport` seeding/sync and
@@ -75,7 +75,7 @@ compiles in a view is not evidence it compiles here.
   `CadenceMCPArgumentParsing` has a router call site (T-260 deleted two that did not), and that the
   smoke test still checks its own dispatch coverage. It executes nothing. Do not read it as
   behavioural coverage of the router.
-- **The smoke test dispatches all 30 arms and asserts that it does.** It ran 21 of them until
+- **The smoke test dispatches all 32 arms and asserts that it does.** It ran 21 of 30 until
   T-259, with `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task`
   executed by nothing anywhere — five of the eight write tools, each with its own argument wiring,
   and `schedule_task` the only place `minuteOfDay`, `durationMinutes` and `clearScheduledDate` are
@@ -84,13 +84,13 @@ compiles in a view is not evidence it compiles here.
   `tools/call` so an unexercised arm fails the run. Its error-path checks assert the error *text*,
   because a deleted arm answers "Unknown tool" and a renamed argument key answers a different
   "Missing required argument" — both errors, and a bare `isError` check is green for both.
-- **The 30 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
-  (the advertised schema), `CadenceMCPToolRouter.swift` (30 `case` arms), and the smoke test's
+- **The 32 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
+  (the advertised schema), `CadenceMCPToolRouter.swift` (32 `case` arms), and the smoke test's
   expectations. Renaming or adding one means all three, and the definitions/router pair will
   compile perfectly while disagreeing. `CadenceTests/CadenceMCPToolContractTests.swift` is the
   guard: it fails when those three sets diverge, and separately when
   `CadenceMCPToolDefinitions.writeToolNames`, the router arms that call `requireWriteService`, and
-  the smoke test's `WRITE_TOOLS` stop naming the same eight tools. That second assertion is the
+  the smoke test's `WRITE_TOOLS` stop naming the same ten tools. That second assertion is the
   data-safety one — a mutating arm missing from `writeToolNames` is **advertised and executable in
   the default read-only mode**, which is not a typo-class failure.
 
@@ -172,6 +172,16 @@ than naming a build.
   `preparesStore: false`, because the services default to preparing and used to re-run the sequence
   twice more over the same context, against a live store, before any tool call. Do not add a guard
   inside `prepare` instead: the flag is readable at the call site, which is where the mistake was.
+- **The write surface can mint a context and a list, and nothing else** (T-799). `create_context`
+  and `create_container` exist because `create_task` took a `containerId` the surface had no way to
+  produce, and `create_task`'s `sectionName` is refused unless the column already exists — so a
+  kanban board could not be seeded at all, and the App Store screenshot run had to click one.
+  `create_container` writes its columns straight through the container's `sectionConfigs` setter
+  rather than through `Cadence/Shared/CadenceSectionConfigMerge`: the merge reconciles two editors
+  holding stale snapshots of one list's JSON blob, a container inserted a line earlier has no other
+  holder, and that file is not in this target's Sources phase. **Mutating the columns of an
+  *existing* list is the case that would need it**, and no tool does that — nor can any tool create
+  a goal, a habit, a tag, a saved link, a list note or a task bundle, or delete or rename anything.
 - Keep MCP behavior read-oriented unless the requested change clearly adds write capability.
 - Prefer stable response schemas over exposing raw SwiftData models. If a model change forces a DTO
   change, make it deliberately and update the smoke test's expectations in the same commit.

@@ -586,6 +586,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   so the next UI-test run starts the backlog again.
 
 - [T-1094] **The agent brief told agents to delete their scratch, and agents whose commit was refused deleted the only copy of verified work.** Measured 2026-09-07: two batches of finished, mutation-tested work no longer exist. [[T-780]]'s pre-commit hook (16/16 selftest checks, 3 killed mutations) and [[T-996]]/[[T-997]]/[[T-998]]/[[T-999]]'s guard fixes (219 insertions over 8 files, 5/5 mutations killed, `git apply --check` clean) were both refused by `REMOVES-HEAD-LINES` while the flag was user-gated, and both agents then followed the brief's standing *"delete DerivedData and scratch when done"* — which was the only copy. **Not the `SubagentStop` cleanup hook**: `scripts/agent-cleanup.sh` only sweeps `scratchpad/(agent|lead)-*` and never matched these names. The instruction and the refusal are individually right and jointly destructive. **Fix the brief, not the script**: an agent whose commit did not land must preserve its content files and say where they are, and cleanup applies only to what it committed. Later briefs in the same session already say *"report anything worth preserving before you stop"*; that line needs to be in the standing preamble, and the standing preamble is `docs/AGENT_BRIEF_PREAMBLE.md`. T-780 has since been rebuilt from scratch (`1236238`); the four guard tickets have not.
+- [T-1095] **The MCP write surface can now create a list but still cannot change one, and six model types have no constructor at all.** [[T-799]] added `create_context` and `create_container`; what is still missing, in rough order of how often it bites: (a) **no tool mutates an existing list's kanban columns** — add, rename, recolour, archive, reorder. This is the case `Cadence/Shared/CadenceSectionConfigMerge` exists for, so unlike the create path it genuinely needs `base`/`edited`/`current`, and that file is **not** in `CadenceMCPServer`'s explicit Sources phase; adding it there is the decision, and `KanbanColumnRenameRefusal`'s two refusals are the vocabulary. (b) No tool creates a **goal, habit, tag, saved link, list note or task bundle**, which is exactly the set `CadenceMCPToolContractTests.listToolDTOSpecs` still pins by source scan because the smoke test can never see a row of them. (c) Nothing **renames, archives or deletes** anything — `update_task` is the only editor on the surface, and there is no `update_container` / `update_context`. Deletion is the one that should stay refused without a separate decision: this path has no undo and no confirmation, and `mcp-audit.log` is its only record. Not urgent — nothing measured needs it — but it is the honest shape of the gap, and (a) is what a second seeding job will hit first.
 - [T-1092] **The real-tree sweep manifest is derivable, and nothing derives it when it changes.** A `@Test` that walks the product tree must be listed in `CadenceTests/CadenceRealTreeSweepManifest.txt` so a deleted sweep cannot vanish quietly. `scripts/real-tree-sweep-manifest.sh --write` regenerates it from the scan and is the sanctioned tool — but nothing runs it at the moment a tree-walking test is added. **Measured: three times in two days** (T-1068's seed test, T-1090's store-directory test, T-1091's nested-helper test) a new sweep landed without its entry and the omission was found by a **full 22-minute suite run**, i.e. by whoever ran the suite next rather than by the author who could have prevented it. Candidates: run the derivation in the test itself and fail with the exact delta (it already prints one), or have `xcb.sh` check it pre-lock the way it now resolves `-only-testing:` suite names.
 - [T-1091] **CLOSED 2026-09-07 (typefiling, landed by the coordinator after a session limit).** A declaration is now filed under the type that **contains** it, using the character extents `declarationExtents(in:)` already provided. **The offender diff is the result worth keeping: 12 before, 12 after — nothing surfaced, nothing hidden.** The index resolves 3 more committers and 1 more swallow name, so the 10.3% mis-filing was real and happened to be inert on today's tree; the false negatives it could have hidden are not currently occurring. Two of its own doc comments name unresolvable symbols *as the examples of the defect*, so they are ledgered as deliberate tombstones — and the comment explaining that is written unqualified, because spelling it out made the explanation itself an unresolvable claim the rule then flagged. **Originally:** **`CadenceSaveCommitRule` files a declaration under the last type *declared* above it, not
   the type that *contains* it — so the app's own migration entry point is indexed under a private
@@ -3675,7 +3676,55 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   under, so the fix is "run this while the Mac is unlocked", not code. Remaining work is one command
   per angle plus the Kanban angle's manual list creation, which the README spells out.
 
-- [T-799] **Nothing in `CadenceMCPServer`'s write surface can create a context, an area or a
+- [T-799] **CLOSED 2026-09-07 (agent `mcpwrite2`) — the MCP write surface can mint a context and
+  a list, so a Kanban board is seedable from the wire and the screenshot angle is no longer
+  clicked.** Two additive tools, `create_context` and `create_container`, take the surface from 30
+  to 32 and its write half from 8 to 10. `create_container` takes `containerKind`, `name`, and
+  optionally `description`, `contextId`, `areaId`, `colorHex`, `icon`, `dueDate` and
+  `sectionNames`; both answer the same DTO their `get_*_summary` counterpart does, so the new
+  `containerId` is immediately usable by `create_task`. **No model change** — `Context`, `Area` and
+  `Project` are untouched, sections are still `TaskSectionConfig` JSON on the container, and no
+  CloudKit record type moved. Four decisions worth keeping:
+  - **Columns are written through the container's own `sectionConfigs` setter, not through
+    `CadenceSectionConfigMerge`.** The merge reconciles two editors holding stale snapshots of one
+    list's single JSON blob; a container inserted one line earlier has no second holder and no
+    `base`/`current` to reconcile, so the merge would degenerate to "apply the edit" — the case its
+    own doc comment names. It is also not in `CadenceMCPServer`'s explicit Sources phase, and
+    adding a `Shared/` file there to reach a no-op is the coupling that guide warns about.
+  - **Refusals where the app forgives.** `Area.normalizedSectionConfigs` silently drops a blank
+    column name and a case-insensitive duplicate, and `TagSupport.normalizedColorHex` silently
+    falls back on a bad hex. Both are right beside a UI the user is watching and wrong as an answer
+    to an API request, which sees only the word "success" — so all three are `throw`s here, on the
+    same argument `CadenceMCPServiceSupport.normalizedSectionName` already makes about a mistyped
+    section. `areaId` and `dueDate` sent to an `area` are refused on the *requested text*, before
+    resolution, so the error is about the shape rather than about an id.
+  - **`order` is `max + 1` among siblings**, mirroring `CreateListSheet.nextListOrder` including its
+    optional-to-optional `nil == nil` unfiled bucket. Not cosmetic: `CadenceMCPOrdering.precedes`
+    breaks an `order` tie on the *name*, so a row left at the model default of 0 would interleave
+    alphabetically with the user's own rather than landing where it was created.
+  - **A `Default` column always exists**, synthesised by the container normaliser, so
+    `sectionNames: ["Backlog", "Doing"]` yields three columns. The advertised schema says so rather
+    than letting a caller find out.
+
+  **Measured:** full `-only-testing:CadenceTests` green over a `git archive HEAD` tree carrying the
+  change; `CadenceMCPServer` scheme built separately into private DerivedData — 0 errors, **0
+  warnings**, log confirms it recompiled `CadenceWriteService.swift`; `plugins/cadence-mcp/scripts/smoke-test.py`
+  green, now dispatching 32/32 arms and seeding a real board over stdio. Seven new `@Test`s in
+  `CadenceWriteServiceTests`; the DTO scan in `CadenceMCPToolContractTests` keeps
+  `CadenceContextRef`/`CadenceContainerRef` even though the smoke test now sees real rows of both,
+  because the scan runs on every unit run and the smoke test runs when someone remembers.
+  `docs/screenshots/seed-screenshot-data.py` now seeds a `Work` context, a `Product` area and a
+  `1.0 Launch` board with four columns and eight cards, and `docs/screenshots/README.md` no longer
+  lists a manual angle. `serverVersion` and `main.swift`'s handshake both moved to **0.7.0** — the
+  first bump here that breaks nothing, taken because the version is the only thing a client can ask
+  about a capability.
+
+  **Not done, and deliberately out of scope:** nothing can mutate the columns of an *existing* list
+  (that is the case `CadenceSectionConfigMerge` exists for, and it would need the file added to the
+  MCP target), and nothing can create a goal, a habit, a tag, a saved link, a list note or a task
+  bundle, or delete, rename or archive anything. Filed as [[T-1095]].
+
+  Originally: **Nothing in `CadenceMCPServer`'s write surface can create a context, an area or a
   project, which is why the Kanban screenshot angle cannot be seeded and has to be clicked.**
   `CadenceMCPToolDefinitions.swift` exposes `create_task`, `update_task`, `schedule_task`,
   `complete_task`, `reopen_task`, `cancel_task`, `bulk_cancel_tasks` and `append_core_note` and

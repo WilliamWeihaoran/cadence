@@ -542,6 +542,236 @@ struct CadenceWriteServiceTests {
         #expect(detail.summary.container == nil)
     }
 
+    // MARK: - T-799: minting the container a task can be filed into
+
+    /// The whole point of the ticket, end to end: before this, `create_task` took a `containerId`
+    /// the MCP surface had no way to produce, so seeding a kanban board had to be clicked.
+    ///
+    /// The last two assertions are what make this behavioural rather than decorative.
+    /// `createTask` refuses a `sectionName` the target list does not carry, so a card landing in
+    /// "In Progress" proves the columns reached the *store* and not merely the response — and the
+    /// refusal names all four columns, Default included, which is the normaliser's doing.
+    @Test func aBoardCanBeSeededEndToEndAndTasksFiledIntoItsColumns() throws {
+        let fixture = try Fixture()
+
+        let context = try fixture.writeService.createContext(options: .init(name: "  Seeded  "))
+        #expect(context.context.name == "Seeded")
+
+        let board = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project",
+            name: "Launch board",
+            description: "Seeded from MCP.",
+            contextId: context.context.id,
+            sectionNames: ["Backlog", "In Progress", "Shipped"]
+        ))
+
+        #expect(board.container.kind == "project")
+        #expect(board.container.name == "Launch board")
+        #expect(board.container.contextId == context.context.id)
+        #expect(board.sections.map(\.name) == ["Default", "Backlog", "In Progress", "Shipped"])
+
+        let card = try fixture.writeService.createTask(options: .init(
+            title: "First card",
+            containerKind: "project",
+            containerId: board.container.id,
+            sectionName: "in progress"
+        ))
+        #expect(card.summary.sectionName == "In Progress")
+        #expect(card.summary.container?.id == board.container.id)
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTask(options: .init(
+                title: "Stray card",
+                containerKind: "project",
+                containerId: board.container.id,
+                sectionName: "Nowhere"
+            ))
+        }
+        #expect(error?.errorDescription == "Invalid sectionName: Nowhere. Expected one of: Default, Backlog, In Progress, Shipped.")
+    }
+
+    /// An area declares neither an owning area nor a due date, so a request carrying one is a
+    /// misunderstanding of the shape. It is refused rather than dropped for the reason
+    /// `normalizedSectionName` gives about a mistyped section: the caller sees only "success".
+    ///
+    /// Both refusals fire on the *requested text*, before resolution — the `areaId` here names an
+    /// area that really exists, and the answer is still about the shape and not about the id.
+    @Test func anAreaRefusesTheTwoArgumentsOnlyAProjectHas() throws {
+        let fixture = try Fixture()
+        let owner = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area",
+            name: "Owner"
+        ))
+
+        let nested = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createContainer(options: .init(
+                containerKind: "area",
+                name: "Nested",
+                areaId: owner.container.id
+            ))
+        }
+        #expect(nested?.errorDescription == "areaId applies to a project; an area cannot be filed inside another area.")
+
+        let dated = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createContainer(options: .init(
+                containerKind: "area",
+                name: "Dated",
+                dueDate: "2026-04-30"
+            ))
+        }
+        #expect(dated?.errorDescription == "dueDate applies to a project; an area is ongoing and carries no due date.")
+
+        // Neither refusal left a half-made list behind.
+        let containers = try fixture.readService.listContainers(limit: 200)
+        #expect(containers.items.map(\.name).sorted() == ["Cadence MCP", "Owner"])
+
+        // The same two arguments are accepted on a project, which is what makes the refusal a
+        // rule about the kind rather than about the arguments being unsupported anywhere.
+        let project = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project",
+            name: "Nested project",
+            areaId: owner.container.id,
+            dueDate: "2026-04-30"
+        ))
+        #expect(project.container.kind == "project")
+        let stored = try #require(try fixture.modelContext.fetch(FetchDescriptor<Project>()).first { $0.name == "Nested project" })
+        #expect(stored.area?.id.uuidString == owner.container.id)
+        #expect(stored.dueDate == "2026-04-30")
+    }
+
+    /// `Area.normalizedSectionConfigs` drops a blank column name and a case-insensitive duplicate
+    /// silently — correct for a setter that has to survive the legacy `sectionNamesRaw` fallback,
+    /// and wrong as an answer to an API request. A caller asking for four columns and getting
+    /// three back under a "success" has been told nothing.
+    @Test func blankAndDuplicateColumnNamesAreRefusedRatherThanSilentlyDropped() throws {
+        let fixture = try Fixture()
+
+        let blank = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createContainer(options: .init(
+                containerKind: "project",
+                name: "Blank column",
+                sectionNames: ["Backlog", "   "]
+            ))
+        }
+        #expect(blank?.errorDescription == "Section names must not be empty.")
+
+        let duplicate = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createContainer(options: .init(
+                containerKind: "project",
+                name: "Duplicate column",
+                sectionNames: ["Backlog", " backlog "]
+            ))
+        }
+        #expect(duplicate?.errorDescription == "Duplicate section name: backlog. Section names must be unique within one list.")
+
+        let containers = try fixture.readService.listContainers(limit: 200)
+        #expect(containers.items.map(\.name) == ["Cadence MCP"])
+    }
+
+    /// `TagSupport.normalizedColorHex` falls back, which is right beside a colour well the user
+    /// watches. MCP has no swatch, so the same grammar has to answer a bad value the other way.
+    @Test func anUnparseableColorHexIsRefusedInsteadOfFallingBackToADefault() throws {
+        let fixture = try Fixture()
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createContext(options: .init(name: "Bad colour", colorHex: "#GGGGGG"))
+        }
+        #expect(error?.errorDescription == "Invalid colorHex: #GGGGGG. Expected a six-digit hex colour such as #4a9eff.")
+
+        // The same grammar as the tag editors: a missing `#` is accepted and the result is
+        // lower-cased, so the two surfaces cannot disagree about what a colour is.
+        let created = try fixture.writeService.createContext(options: .init(name: "Good colour", colorHex: " 4A9EFF "))
+        #expect(created.context.colorHex == "#4a9eff")
+
+        // Omitted entirely leaves the model's own default rather than a value restated here.
+        let plain = try fixture.writeService.createContext(options: .init(name: "Plain"))
+        #expect(plain.context.colorHex == Context(name: "probe").colorHex)
+        #expect(plain.context.icon == Context(name: "probe").icon)
+    }
+
+    /// `CadenceMCPOrdering.precedes` breaks an `order` tie on the *name*, so a new row left at the
+    /// model default of 0 interleaves alphabetically with everything already at 0 instead of
+    /// landing at the end. Areas and projects share one sequence per context, and `nil == nil` is
+    /// the unfiled bucket — `CreateListSheet.nextListOrder` spells the same rule.
+    @Test func newContextsAndListsNumberThemselvesPastTheirSiblings() throws {
+        let fixture = try Fixture()
+        fixture.context.order = 4
+        fixture.project.order = 7
+        try fixture.modelContext.save()
+
+        let context = try fixture.writeService.createContext(options: .init(name: "Second context"))
+        #expect(context.context.order == 5)
+
+        let filed = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area",
+            name: "Filed area",
+            contextId: fixture.context.id.uuidString
+        ))
+        let filedArea = try #require(try fixture.modelContext.fetch(FetchDescriptor<Area>()).first { $0.name == "Filed area" })
+        #expect(filedArea.order == 8)
+        #expect(filed.container.contextId == fixture.context.id.uuidString)
+
+        // The unfiled bucket numbers from its own siblings, not from the filed ones.
+        let unfiled = try fixture.writeService.createContainer(options: .init(containerKind: "project", name: "Unfiled project"))
+        let unfiledProject = try #require(try fixture.modelContext.fetch(FetchDescriptor<Project>()).first { $0.name == "Unfiled project" })
+        #expect(unfiledProject.order == 0)
+        #expect(unfiled.container.contextId == nil)
+    }
+
+    /// The audit log is the write path's only record, and the smoke test fails a write tool that
+    /// mutates without landing in it. `entityType` is the container's own kind rather than a flat
+    /// "container", so the log distinguishes an area from a project the way every other MCP
+    /// surface does.
+    @Test func creatingAContextAndAContainerIsAudited() throws {
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-create-audit-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+        let fixture = try Fixture(auditLogger: CadenceMCPAuditLogger(logURL: auditURL))
+
+        let context = try fixture.writeService.createContext(options: .init(name: "Audited context"))
+        let area = try fixture.writeService.createContainer(options: .init(containerKind: "area", name: "Audited area"))
+        _ = try fixture.writeService.createContainer(options: .init(containerKind: "project", name: "Audited project"))
+
+        let entries = try readAuditEntries(from: auditURL)
+        #expect(entries.map(\.tool) == ["create_context", "create_container", "create_container"])
+        #expect(entries.map(\.summary) == [
+            "Created context: Audited context",
+            "Created area: Audited area",
+            "Created project: Audited project",
+        ])
+        #expect(entries.map(\.entityType) == ["context", "area", "project"])
+        #expect(entries[0].entityId == context.context.id)
+        #expect(entries[1].entityId == area.container.id)
+    }
+
+    /// An unknown `contextId` or `areaId` is the container's own not-found error, one level up
+    /// from `create_task`'s — and nothing is inserted on the way to raising it.
+    @Test func anUnknownParentIsRefusedBeforeAnythingIsInserted() throws {
+        let fixture = try Fixture()
+        let missing = UUID().uuidString
+
+        let unknownContext = #expect(throws: CadenceReadError.self) {
+            try fixture.writeService.createContainer(options: .init(
+                containerKind: "area",
+                name: "Orphan",
+                contextId: missing
+            ))
+        }
+        #expect(unknownContext?.errorDescription == "No context found with id \(missing).")
+
+        let unknownArea = #expect(throws: CadenceReadError.self) {
+            try fixture.writeService.createContainer(options: .init(
+                containerKind: "project",
+                name: "Orphan",
+                areaId: missing
+            ))
+        }
+        #expect(unknownArea?.errorDescription == "No area found with id \(missing).")
+
+        let containers = try fixture.readService.listContainers(limit: 200)
+        #expect(containers.items.map(\.name) == ["Cadence MCP"])
+    }
+
     // MARK: - T-307: an unreadable tag table is a failure, not "no tags"
 
     @Test func unreadableTagsFailTheWriteInsteadOfSilentlyChangingNothing() throws {
@@ -585,6 +815,10 @@ struct CadenceWriteServiceTests {
     private struct TestAuditEntry: Decodable {
         let timestamp: String
         let tool: String
+        /// Decoded since T-799, so `create_container`'s "area" / "project" is checked rather than
+        /// assumed. Every existing entry carries one — `CadenceMCPAuditEntry` declares it
+        /// non-optional — so making it non-optional here narrows nothing.
+        let entityType: String
         let entityId: String
         let summary: String
     }

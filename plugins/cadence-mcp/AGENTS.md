@@ -5,9 +5,9 @@ This plugin wraps Cadence MCP workflows for coding agents: a launcher script and
 definitions and argument parsing. `CadenceTests/CadenceMCPToolContractTests.swift` scans those
 files as text and pins the tool-name and write-gating contracts, but executes nothing.
 
-It dispatched **21 of the router's 30 arms** until T-259 — five of the eight write tools
-(`update_task`, `schedule_task`, `complete_task`, `reopen_task`, `cancel_task`) were run by
-nothing at all. It now dispatches all 30, and, more to the point, **it checks that it does**: every
+It dispatched **21 of the router's 30 arms** until T-259 — five of the eight write tools then on
+the surface (`update_task`, `schedule_task`, `complete_task`, `reopen_task`, `cancel_task`) were run
+by nothing at all. It now dispatches all 32, and, more to the point, **it checks that it does**: every
 `tools/call` it sends is recorded in `DISPATCHED`, and the run fails if that set does not cover the
 server's own `tools/list`. Adding a router arm and forgetting to exercise it is now a red smoke
 test rather than a number nobody was counting. Keep that guard — a Swift test pins its presence
@@ -19,11 +19,16 @@ missing-argument case, and a deleted router arm answers `Unknown tool` while a r
 answers a different `Missing required argument` — both of them errors. A bare `isError` check is
 green for all three, so `call_error` takes the expected text. Do not "simplify" it away.
 
-What is still not covered: `list_task_bundles`, `list_goals`, `list_habits`, `list_links`,
-`list_contexts` and `list_containers` are dispatched but return `[]`, because MCP has no tool that
-creates a bundle, goal, habit, link, context or container, so a fresh fixture store cannot hold
-one. `list_tasks`, `list_tags` and `list_notes` run against real rows and have their DTO shapes
-checked. See T-269.
+What is still not covered: `list_task_bundles`, `list_goals`, `list_habits` and `list_links` are
+dispatched but return `[]`, because MCP has no tool that creates a bundle, goal, habit or link, so a
+fresh fixture store cannot hold one. `list_tasks`, `list_tags` and `list_notes` run against real
+rows and have their DTO shapes checked. See T-269.
+
+`list_contexts` and `list_containers` left that list in T-799: `create_context` and
+`create_container` seed a context, a project with three named kanban columns and a card filed into
+one of them, and the run checks the resulting `CadenceContextRef` / `CadenceContainerRef` key sets.
+Those two calls sit **after** the empty-store assertions that precede them and **before** the
+bulk-cancel block, which asserts the newest audit entry — moving them breaks both.
 
 This file used to say the plugin "should not be touched during unrelated refactors". Read that as
 scope, not as a ban: nothing here needs to change for a UI refactor, but the smoke test is what
@@ -35,7 +40,7 @@ too. The boundary's rules live in `CadenceMCPServer/AGENTS.md`.
 - Keep scripts deterministic and safe to run repeatedly.
 - Do not assume the macOS app is open unless the script explicitly checks/launches it.
 - Preserve command-line output that other agents or smoke tests parse.
-- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 30 tool
+- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 32 tool
   names are a contract in three places — the definitions, the router's `case` arms, and this
   smoke test — and the first two can disagree while compiling.
 - A new tool means a new dispatch here, not only a new name in `EXPECTED_TOOLS`. The coverage

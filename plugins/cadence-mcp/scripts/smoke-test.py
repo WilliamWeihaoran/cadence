@@ -18,6 +18,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PLUGIN_DIR = SCRIPT_DIR.parent
 LAUNCHER = SCRIPT_DIR / "run-cadence-mcp.sh"
 WRITE_TOOLS = {
+    "create_context",
+    "create_container",
     "create_task",
     "update_task",
     "schedule_task",
@@ -79,6 +81,30 @@ TAG_SUMMARY_KEYS = {"id", "slug", "name", "colorHex", "description", "isArchived
 TAG_DETAIL_KEYS = {"summary", "taskCount", "noteCount", "createdAt", "updatedAt"}
 NOTE_SUMMARY_KEYS = {"id", "kind", "title", "key", "container", "updatedAt", "excerpt", "tags"}
 NOTE_SUMMARY_OPTIONAL = {"key", "container"}
+
+# T-799. `create_context` and `create_container` answer with the same DTOs `get_context_summary`
+# and `get_container_summary` do, which is what finally gives `CadenceContextRef` and
+# `CadenceContainerRef` a *runtime* check: until these tools existed nothing on the MCP surface
+# could put a context or a container into the fixture store, so both were pinned only by the source
+# scan in `CadenceMCPToolContractTests.listToolDTOsDeclareTheirEstablishedStoredProperties`.
+CONTEXT_REF_KEYS = {
+    "id", "name", "colorHex", "icon", "order", "isArchived", "areaCount", "projectCount",
+    "activeTaskCount", "goalCount", "habitCount",
+}
+CONTEXT_SUMMARY_KEYS = {
+    "context", "inboxTaskCount", "activeTaskCount", "completedTaskCount", "scheduledTaskCount",
+    "overdueTaskCount", "activeGoalCount", "documentCount", "linkCount", "areas", "projects",
+}
+CONTAINER_REF_KEYS = {"kind", "id", "name", "contextId", "contextName", "status", "colorHex", "icon"}
+CONTAINER_REF_OPTIONAL = {"contextId", "contextName"}
+CONTAINER_SUMMARY_KEYS = {
+    "container", "activeTaskCount", "completedTaskCount", "overdueTaskCount", "sections",
+    "documents", "links",
+}
+SECTION_SUMMARY_KEYS = {
+    "name", "colorHex", "dueDate", "isCompleted", "isArchived", "taskCount", "activeTaskCount",
+    "completedTaskCount",
+}
 
 # T-382: every list/search tool answers with a page envelope rather than a bare array, so a caller
 # can tell a complete result from the first 200 rows. `nextOffset` is absent (not null) when there
@@ -794,6 +820,98 @@ def main() -> int:
             f"No goal found with id {MISSING_UUID}.",
         )
 
+        # --- Seeding a board from the wire (T-799) ----------------------------------------
+        # `create_task` has always taken a `containerId` with no way to mint one, so every check
+        # above this line runs against an empty sidebar. These two tools close that: a context, a
+        # project filed under it carrying three named kanban columns, and then a task landing in a
+        # column by name — the sequence the App Store screenshot run had to click by hand. It runs
+        # after the `list_containers` / `list_contexts` empty-store assertions above and before the
+        # bulk-cancel block below, which asserts the *newest* audit entry.
+        seeded_context = call_ok(90, "create_context", {
+            "name": "MCP smoke context",
+            "colorHex": "4A9EFF",
+            "icon": "square.stack.fill",
+        })
+        check_keys(seeded_context, CONTEXT_SUMMARY_KEYS, set(), "create_context summary")
+        check_keys(seeded_context["context"], CONTEXT_REF_KEYS, set(), "create_context ref")
+        if seeded_context["context"]["colorHex"] != "#4a9eff":
+            raise AssertionError(f"expected a normalised colorHex, got {seeded_context['context']}")
+        context_id = seeded_context["context"]["id"]
+
+        # `requiredString` refuses a whitespace-only required argument in the router, before the
+        # write service is reached, exactly as it does for `create_task`'s title — so over the wire
+        # this is "Missing required argument" and not the service's own `emptyName`. That case is
+        # real and is covered where it is reachable, in `CadenceWriteServiceTests`.
+        call_error(91, "create_context", {"name": "   "}, "blank name", "Missing required argument: name")
+        call_error(
+            92,
+            "create_container",
+            {"containerKind": "area", "name": "Not a board", "dueDate": "2026-04-30"},
+            "dueDate on an area",
+            "dueDate applies to a project",
+        )
+        call_error(
+            93,
+            "create_container",
+            {"containerKind": "project", "name": "Bad columns", "sectionNames": ["Backlog", "backlog"]},
+            "duplicate section names",
+            "Duplicate section name: backlog.",
+        )
+        call_error(
+            94,
+            "create_container",
+            {"containerKind": "project", "name": "Bad colour", "colorHex": "#GGGGGG"},
+            "unparseable colorHex",
+            "Invalid colorHex: #GGGGGG.",
+        )
+
+        board = call_ok(95, "create_container", {
+            "containerKind": "project",
+            "name": "MCP smoke board",
+            "description": "Seeded by the smoke test.",
+            "contextId": context_id,
+            "sectionNames": "Backlog, In Progress, Shipped",
+        })
+        check_keys(board, CONTAINER_SUMMARY_KEYS, set(), "create_container summary")
+        check_keys(board["container"], CONTAINER_REF_KEYS, CONTAINER_REF_OPTIONAL, "create_container ref")
+        for section in board["sections"]:
+            check_keys(section, SECTION_SUMMARY_KEYS, set(), "create_container section")
+        # Default is synthesised at index 0 by the container's own normaliser whether or not the
+        # caller asked for it, because every task with no section name lands in it.
+        if [section["name"] for section in board["sections"]] != ["Default", "Backlog", "In Progress", "Shipped"]:
+            raise AssertionError(f"expected a Default-prefixed column list, got {board['sections']}")
+        if board["container"]["contextId"] != context_id:
+            raise AssertionError(f"expected the board filed under the new context, got {board['container']}")
+        board_id = board["container"]["id"]
+
+        # The point of the whole exercise: a task filed into a column that did not exist until this
+        # run. `create_task` rejects a sectionName the target list does not carry, so this is a real
+        # assertion that the columns reached the store and not just the response.
+        carded = call_ok(96, "create_task", {
+            "title": "MCP smoke board card",
+            "containerKind": "project",
+            "containerId": board_id,
+            "sectionName": "In Progress",
+        })
+        if carded["summary"]["sectionName"] != "In Progress":
+            raise AssertionError(f"expected the card in the seeded column, got {carded['summary']}")
+        call_error(
+            97,
+            "create_task",
+            {
+                "title": "MCP smoke board stray",
+                "containerKind": "project",
+                "containerId": board_id,
+                "sectionName": "Nowhere",
+            },
+            "unknown section on a seeded board",
+            "Expected one of: Default, Backlog, In Progress, Shipped.",
+        )
+
+        containers_after = page_items(call_ok(98, "list_containers", {"limit": 3}), "list_containers")
+        if [container["id"] for container in containers_after] != [board_id]:
+            raise AssertionError(f"expected list_containers to see the seeded board, got {containers_after}")
+
         # --- The five write tools that ran nowhere at all (T-259) ------------------------
         # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are
         # five of the eight write tools and had no execution path in this file or in any test.
@@ -1088,6 +1206,7 @@ def main() -> int:
         print("OK bundle/container/goal read arms")
         print("OK natural date/duration/time parsing branches")
         print("OK list DTO shapes")
+        print("OK context/container creation and board seeding")
         print(f"OK dispatched {len(DISPATCHED)}/{len(tool_names)} advertised tools")
         return 0
     finally:

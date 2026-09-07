@@ -188,6 +188,28 @@ struct CadenceMCPToolRouter {
                 offset: try arguments.strictInt("offset") ?? 0
             ))
 
+        case "create_context":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.createContext(options: CadenceCreateContextOptions(
+                name: try arguments.requiredString("name"),
+                colorHex: arguments.string("colorHex"),
+                icon: arguments.string("icon")
+            )))
+
+        case "create_container":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.createContainer(options: CadenceCreateContainerOptions(
+                containerKind: try arguments.requiredString("containerKind"),
+                name: try arguments.requiredString("name"),
+                description: arguments.string("description"),
+                contextId: arguments.string("contextId"),
+                areaId: arguments.string("areaId"),
+                colorHex: arguments.string("colorHex"),
+                icon: arguments.string("icon"),
+                dueDate: try arguments.dateKey("dueDate"),
+                sectionNames: try arguments.flexibleStringArray("sectionNames")
+            )))
+
         case "create_task":
             let writeService = try requireWriteService(for: name)
             return try encode(writeService.createTask(options: CadenceCreateTaskOptions(

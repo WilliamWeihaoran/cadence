@@ -135,6 +135,54 @@ nonisolated enum CadenceMCPServiceSupport {
         return resolved
     }
 
+    /// The trimmed text, or `nil` for absent-or-blank. One spelling of "the caller did not say",
+    /// so an argument sent as `""` is the same request as an argument left out.
+    static func normalizedOptionalText(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    /// The canonical `#rrggbb` spelling of an externally supplied colour, or `invalidColorHex`.
+    ///
+    /// The grammar is `TagSupport.normalizedColorHex`'s and deliberately so — one hex rule in the
+    /// app — but the answer to a bad value is the opposite one. `TagSupport` *falls back*, which is
+    /// right beside a colour well where the user watches the swatch land on something else. MCP has
+    /// no swatch: a caller that sends `#GGGGGG`, is told "created", and gets the model's default
+    /// blue has no way to find out. `fallback: ""` turns that function into a validator without
+    /// restating its regex.
+    static func normalizedOptionalColorHex(_ value: String?) throws -> String? {
+        guard let requested = normalizedOptionalText(value) else { return nil }
+        let normalized = TagSupport.normalizedColorHex(requested, fallback: "")
+        guard !normalized.isEmpty else { throw CadenceWriteError.invalidColorHex(requested) }
+        return normalized
+    }
+
+    /// The kanban column names a list is being created with, or a refusal.
+    ///
+    /// `Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` discard a blank name
+    /// and drop a case-insensitive duplicate **silently**, which is the right behaviour for a
+    /// setter that has to survive whatever the legacy `sectionNamesRaw` fallback hands it. It is
+    /// the wrong answer to an API request: a caller asking for four columns and getting three back
+    /// under a "success" has been told nothing. The same two refusals the app already names on
+    /// this noun — `KanbanColumnRenameRefusal.emptyName` and `.nameAlreadyTaken` — are raised here
+    /// instead, before anything is inserted.
+    static func normalizedSectionNames(_ values: [String]?) throws -> [String]? {
+        guard let values else { return nil }
+        var seen = Set<String>()
+        var result: [String] = []
+        for value in values {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { throw CadenceWriteError.emptySectionName }
+            guard seen.insert(trimmed.lowercased()).inserted else {
+                throw CadenceWriteError.duplicateSectionName(trimmed)
+            }
+            result.append(trimmed)
+        }
+        return result
+    }
+
     static func normalizedSubtaskTitles(_ values: [String]) -> [String] {
         values
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
