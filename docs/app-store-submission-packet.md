@@ -57,7 +57,7 @@ Habits and Goals
 Track recurring habits with check-ins, and set longer-term goals you can connect your tasks and progress to.
 
 iCloud Sync
-Your tasks, notes, habits, goals, and settings sync through your own private iCloud account across your Macs. Cadence does not run its own servers and does not see your data.
+Your tasks, notes, habits, and goals sync through your own private iCloud account across your Macs. Cadence does not run its own servers and does not see your data.
 
 Widgets
 Add Cadence widgets to see today's tasks, upcoming calendar events, habit check-ins, and goal milestones at a glance.

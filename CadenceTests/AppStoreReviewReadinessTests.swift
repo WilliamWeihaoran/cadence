@@ -222,6 +222,48 @@ struct AppStoreReviewReadinessTests {
         #expect(reviewNotes.contains("private iCloud database"))
     }
 
+    /// **T-1098.** The submitted App Store description used to read "Your tasks, notes, habits,
+    /// goals, **and settings** sync through your own private iCloud account across your Macs."
+    ///
+    /// The models do sync — `PersistenceController` configures the store's private CloudKit
+    /// database. Settings do not, and nothing in this repository ever made them: every preference
+    /// on that screen is an `@AppStorage` resolving through `CadenceDefaults.store`, which is
+    /// `UserDefaults.standard` on an ordinary launch, and a search of `Cadence/` and
+    /// `CadenceWidgets/` finds **zero** occurrences of `NSUbiquitousKeyValueStore`. A second Mac
+    /// inherits none of the sidebar order, tab colours, default list page, note templates or
+    /// notification toggle the sentence promised it would.
+    ///
+    /// This is the one sentence on the page a reviewer can check by installing on two machines, so
+    /// it is pinned rather than left to the next person editing marketing copy. The fix was the
+    /// sentence, deliberately, and not a preference-sync subsystem written to rescue one word of it.
+    @Test func theDescriptionDoesNotPromiseSettingsSync() throws {
+        let packet = try textFile(at: "docs/app-store-submission-packet.md")
+
+        #expect(packet.contains("sync through your own private iCloud account across your Macs"))
+        #expect(
+            !packet.contains("and settings sync"),
+            "the App Store description promises settings sync again; settings are device-local UserDefaults"
+        )
+
+        // The reason the claim is false, asserted where it lives rather than restated here: if a
+        // ubiquitous key-value store ever does arrive, this line fails and the sentence above can
+        // honestly be widened again.
+        let productRoot = repositoryRoot().appendingPathComponent("Cadence")
+        let enumerator = try #require(FileManager.default.enumerator(atPath: productRoot.path))
+        var ubiquitousUsers: [String] = []
+        for case let relativePath as String in enumerator where relativePath.hasSuffix(".swift") {
+            let contents = try String(
+                contentsOf: productRoot.appendingPathComponent(relativePath),
+                encoding: .utf8
+            )
+            if contents.contains("NSUbiquitousKeyValueStore") { ubiquitousUsers.append(relativePath) }
+        }
+        #expect(
+            ubiquitousUsers.isEmpty,
+            "settings sync may exist now (\(ubiquitousUsers)); revisit the description claim"
+        )
+    }
+
     @Test func accountDeletionIsExplicitInSettingsAndReviewDocs() throws {
         let accountSettings = try String(
             contentsOf: repositoryRoot().appendingPathComponent("Cadence/macOS/Views/SettingsSectionViews.swift"),

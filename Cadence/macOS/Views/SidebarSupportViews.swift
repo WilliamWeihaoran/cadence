@@ -348,7 +348,9 @@ struct SidebarListRow: View {
         .buttonStyle(.plain)
         .contentShape(Rectangle())
         .overlay {
-            SidebarRightClickEditTrigger(action: onEdit)
+            // Was a private, byte-identical copy of this type (T-1096); one overlay now, one
+            // hit-test rule, one place to get it wrong.
+            RightClickActionTrigger(action: onEdit)
         }
         .accessibilityIdentifier("sidebar.list.\(kind.accessibilityFragment).\(accessibilitySlug(label))")
         .onHover { hovering in
@@ -457,35 +459,6 @@ private func accessibilitySlug(_ value: String) -> String {
         .components(separatedBy: CharacterSet.alphanumerics.inverted)
         .filter { !$0.isEmpty }
         .joined(separator: "-")
-}
-
-private struct SidebarRightClickEditTrigger: NSViewRepresentable {
-    typealias NSViewType = RightClickEditView
-
-    let action: () -> Void
-
-    func makeNSView(context: NSViewRepresentableContext<SidebarRightClickEditTrigger>) -> RightClickEditView {
-        let view = RightClickEditView()
-        view.action = action
-        return view
-    }
-
-    func updateNSView(_ nsView: RightClickEditView, context: NSViewRepresentableContext<SidebarRightClickEditTrigger>) {
-        nsView.action = action
-    }
-
-    final class RightClickEditView: NSView {
-        var action: () -> Void = {}
-
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = window?.currentEvent ?? NSApp.currentEvent else { return nil }
-            return event.type == .rightMouseDown ? self : nil
-        }
-
-        override func rightMouseDown(with event: NSEvent) {
-            action()
-        }
-    }
 }
 
 #endif
