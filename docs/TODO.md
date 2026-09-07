@@ -51,6 +51,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1110] **A newly minted tag survives behind "Nothing was changed" when attaching it to the task is refused.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/recent-fix-claims.md` (ROI-05).
 
+<!-- importedge 2026-09-07: T-1111..T-1112 taken from docs/audits/2026-09-07/ (ROI-01, ROI-03). -->
+
 - [T-1111] **A restore says "Import failed" after every imported row is already on disk.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-recovery.md` (ROI-01).
 
 - [T-1112] **An import changes tasks and habits without reconciling the pending OS reminders they own.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-reconciliation.md` (ROI-03).
