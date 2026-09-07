@@ -51,26 +51,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1110] **A newly minted tag survives behind "Nothing was changed" when attaching it to the task is refused.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/recent-fix-claims.md` (ROI-05).
 
-<!-- importedge 2026-09-07: T-1111..T-1112 taken from docs/audits/2026-09-07/ (ROI-01, ROI-03). -->
-
-- [T-1111] **A restore says "Import failed" after every imported row is already on disk.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-recovery.md` (ROI-01).
-
-- [T-1112] **An import changes tasks and habits without reconciling the pending OS reminders they own.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-reconciliation.md` (ROI-03).
-
-<!-- SUPERSEDED RESERVATION -- the three lines below are inert text inside this HTML
-     comment, not ledger entries, and the ids they name are NOT what they say.
-     `importgraph` and `importedge` read the same ledger minutes apart and both reserved
-     the next two ids. b67590f2 committed T-1109/T-1110 for ROI-02 and ROI-05; `importedge`
-     was holding the same two ids, unstaged, for ROI-01 and ROI-03, and agent-commit.sh
-     correctly recorded those worktree lines as a declined hunk. History breaks the tie --
-     ids are never reused, so the committed numbering stands and the unstaged one moves to
-     T-1111/T-1112 above, filed on that agent's behalf and otherwise verbatim. The lines are
-     reproduced here character for character because that is what puts a declined hunk into
-     a commit instead of stranding it, and a record nobody clears refuses every agent's next
-     commit on any path after thirty minutes. Do not read them as a second T-1109/T-1110.
-- [T-1109] **A restore says "Import failed" after every imported row is already on disk.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-recovery.md` (ROI-01).
-- [T-1110] **An import changes tasks and habits without reconciling the pending OS reminders they own.** Reserved by `importedge` 2026-09-07 from `docs/audits/2026-09-07/import-reconciliation.md` (ROI-03).
-<!-- importedge 2026-09-07: T-1109..T-1110 taken from docs/audits/2026-09-07/ (ROI-01, ROI-03). -->
 
 - [T-1096] **Both right-click overlays return themselves for any right-click, wherever the pointer was.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/appkit-behavior.md` (AK-1).
 
@@ -885,6 +865,11 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   whole document, and the non-committing spelling is safe to keep only because
   `noNoteFolderMoveSkipsTheCommitOutsideTheImporter` pins it to that one call site: a door that does
   not commit is fine for an importer and a trap for a view, so it now says so at the call site.
+  **Correction, 2026-09-07 ([[T-1111]]): that sentence and this ticket's commit message both read
+  as an atomicity claim and are not one.** The count is of `modelContext.save()` in the importer's
+  own file; `NoteMigrationService` saves again, in the legacy-note fold `apply` runs *after* that
+  commit, so the import is two commits. What is guaranteed is the narrower thing the count can see
+  — no per-note save inside the write loop — and the test is now named for it.
 
   **The undo restores the raw previous path, not a re-normalized one.** A `folderPath` can arrive
   un-normalized from a merge, from CloudKit or from a build older than the convention — the case
@@ -3895,9 +3880,75 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Nothing is seeded to make a button exist.** `SidebarListRegionContent.resolve(sectionCount:)` (`Cadence/macOS/Views/SidebarViewSupport.swift`) answers `.firstListAction` at zero sections and `.sections` at one or more; `SidebarView.listsSection` switches on it. The empty branch draws `SidebarAddFirstListButton` — the "Add first list" row `ContextSection` has always drawn under an *empty context's* header, extracted so the two callers share one spelling and one copy of the words rather than the near-copy the audit's suggested fix invited. The only difference is the caller's closure: the empty-store one opens the sheet on `context: nil`, so it lands on "No context", and a list saved that way is visible immediately under `CadenceSidebarLists.ungroupedTitle`. `PersistenceController`'s deliberate refusal to seed defaults on an empty CloudKit store is untouched, and so is the failure path — `CreateListSheet.create` already keeps the sheet open on a refused `commitInsert` and shows `CadenceInlineFailureNotice`.
   Pinned by four `@Test`s in `CadenceContextlessListSurfaceTests`: the behavioural pair over the real section builder (blank store → no sections → `.firstListAction`; one context-less list *or* one empty context → `.sections`, so no second create control beside a header that already carries one), the wiring scan scoped to `listsSection`'s own body, and the app-target sweep that would see a third spelling of the row appear. The sweep is registered in `CadenceTests/CadenceRealTreeSweepManifest.txt`; note for [[T-1092]] that its build-free precheck does **not** flag it — `cadenceAppSwiftFiles()` does not contain the lowercase `swiftFiles(` needle, so only the authoritative Swift scan's cross-file hop reaches the walk, and the `--write` run is what caught it.
   **Those four tests reached HEAD before this fix did, and that is [[T-679]]'s shared-index hazard in a new spelling.** They were sitting unstaged in the working tree while `mcpwrite2` committed its own edit to the *same file*, so `2c95a84` carried them in. Between that commit and this one, `CadenceTests` did not compile at HEAD: the tests name `SidebarListRegionContent` and `SidebarAddFirstListButton`, which existed only in this agent's tree. Nothing was lost and nothing needed rewriting, but the window is real and `agent-commit.sh`'s foreign-path refusal does not see it — a path the committing agent legitimately touches can still carry somebody else's uncommitted lines.
-  Measured: full `-only-testing:CadenceTests` green at 4650 tests in 394 suites, 0 warnings, 0 compile errors. **Mutation results are not in this commit and that is deliberate**: the four-mutation plan (the bare `ForEach(listSections)`; `resolve` pinned to each case; `ContextSection` back to its own inline copy of the row) sat second in the test-host queue behind two other agents while `CadenceTests` did not compile at HEAD, and unbreaking HEAD came first. They follow in a docs-only commit.
+  Measured: full `-only-testing:CadenceTests` green at 4650 tests in 394 suites, 0 warnings, 0 compile errors. **Mutation-tested 4/4 killed, 0 survived, 0 inconclusive, 0 invalid**, over a baseline green at 22 tests, in the tree that produced the run above. M1 is the one that matters — the bare `ForEach(listSections)`, i.e. the empty sidebar a fresh install saw — killed by `theMacSidebarsListRegionDrawsTheFirstListActionWhenItHasNoSections`. M2 pins `resolve` to `.sections` (the same defect one level down) and M3 to `.firstListAction` (a second create control beside headers that already carry one); M4 puts `ContextSection`'s inline copy of the row back, and is killed by the app-target sweep, which is the guard against the near-copy. The results arrive one commit late because the batch sat second in the test-host queue for 55 minutes while `CadenceTests` did not compile at HEAD, and unbreaking HEAD came first.
 
 ## Done
+
+- [T-1111] **CLOSED 2026-09-07 (agent `importedge`) — a restore that committed says so, even when
+  the legacy-note fold after it did not.** From `docs/audits/2026-09-07/import-recovery.md` (ROI-01).
+
+  **The import was never one commit, and the error contract said it was.**
+  `CadenceArchiveImportService.apply` saves the archive's rows, and *then* runs
+  `NoteMigrationService.migrateIfNeeded(…, saveChanges: true)`, which saves again. A throw from
+  that second write left `apply` through the same door as "this file is malformed", so
+  `CadenceArchiveImportFlow.confirm()` printed `Import failed: …` over rows that were already
+  durable — and in CloudKit's case already uploaded. For a **restore** that is the worst direction
+  to be wrong in: the user retries, and a merge-mode retry over committed rows is not the operation
+  they think they are repeating.
+
+  **The fix is a shape, not a message.** `CadenceArchiveImportOutcome` gains
+  `legacyNoteFoldFailure: String?` (and `isComplete`), and the rule is now flat: **a throw means
+  nothing was written; a returned outcome means the archive is on disk.** `apply` catches the fold,
+  `rollback()`s only the fold's own pending inserts — the last `save()` was the archive's, so the
+  rollback cannot reach past it — and returns the counts that committed.
+  `CadenceArchiveImportPresentation.successMessage` is renamed `outcomeMessage`, because it now has
+  two moods, and the warning branch leads with what is saved: *"Your data is saved, but older notes
+  could not be brought forward yet — Cadence will try again next time it opens."* No retry is
+  requested: `PersistenceController` runs the same migration at the next launch.
+
+  **The fold is injectable (`apply(_:mode:in:foldingLegacyNotes:)`) because the failure cannot be
+  induced on a real store.** An untestable branch is how the two outcomes collapsed into one in the
+  first place. Four `@Test`s in `CadenceArchiveImportSurfaceTests` hold the split from both sides —
+  a failed fold returns with its rows visible from a *second* context, a failed fold leaves nothing
+  pending, the default seam is the real migration, and a pre-commit refusal still throws over an
+  untouched store — plus
+  `CadenceArchiveImportEntryPointTests.aCommittedImportWhoseFoldFailedSaysTheDataIsSavedRatherThanFailed`.
+  **Mutation-tested:** rethrowing the fold instead of recording it turns the first red; deleting the
+  warning branch from `outcomeMessage` turns the last red.
+
+  **The over-broad claim this audit also caught is corrected in place.**
+  `theImporterHoldsExactlyOneCommitForTheWholeArchive` counted `modelContext.save()` in one file and
+  was read — in [[T-1093]]'s ledger entry and its commit message — as proof of atomicity. It cannot
+  see `NoteMigrationService`'s save. Renamed `theImporterHoldsNoPerNoteSaveInsideTheArchiveWrite`,
+  which is what it actually guarantees; T-1093's entry above now says so too. **Filed as:** ROI-01.
+
+- [T-1112] **CLOSED 2026-09-07 (agent `importedge`) — an import reconciles the OS reminders its
+  rows own, from the committed state.** From `docs/audits/2026-09-07/import-reconciliation.md`
+  (ROI-03).
+
+  An overwrite import can mark a task done or move its reminder time, and a merge import can
+  introduce a scheduled task or a habit. The importer posted nothing afterwards: no
+  `scheduleReconcile`, no external-write marker. The stale pending request survived until some
+  unrelated trigger — macOS leaving active, an iOS scene transition — happened to reconcile, so a
+  reminder for a task the archive had just completed could still fire.
+
+  `CadenceArchiveImportFlow` now takes an injectable post-commit effect and runs it on **any**
+  returned outcome, including [[T-1111]]'s committed-with-warning case; only the `catch`, which
+  wrote nothing, does not reconcile. It reconciles over `ModelContext(container)` — a **fresh**
+  context on the committed store, never the app's, which has not seen the private import context's
+  rows and would diff the OS's pending requests against the pre-import state.
+  `HabitNotificationReconcileSupport.scheduleReconcile` already skips a pass whose fetch failed, so
+  an unreadable store does not become "cancel everything".
+
+  **The seam is injectable for the reason `CadenceNotificationsEnabledEffects` is:**
+  `NotificationManager` early-returns inside a test host, so a reconcile that ran and one that never
+  happened are indistinguishable from outside. `? = nil` rather than `= live` in the initialiser,
+  because a default argument is evaluated in a nonisolated context and the live reconcile is
+  `@MainActor` — the same compiler trap `applyNotificationsEnabledChange` documents. Pinned by
+  `aCommittedImportReconcilesTheNotificationsItsRowsOwn`, `anImportThatWroteNothingDoesNotReconcile`
+  and `theLiveFlowReconcilesThroughTheSharedSupport`. Both platform mounts share this flow, so
+  pinning it here pins both. **Mutation-tested:** deleting the call turns the first red.
+  **Filed as:** ROI-03.
 - [T-642] **CLOSED 2026-09-06 (savefail2).** A presented surface may now **claim** the refused-settle
   sentence for as long as it is on screen, and the shell stays quiet while anything holds a claim.
   `CadenceTaskSettleFailureCenter` grows a claim *stack* — a stack, not a flag, because these
