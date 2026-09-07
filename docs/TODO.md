@@ -45,6 +45,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 <!-- audittriage 2026-09-07: T-1096..T-1108 reserved from docs/audits/. -->
 
+<!-- importgraph 2026-09-07: T-1109..T-1110 reserved from docs/audits/2026-09-07/. -->
+
+- [T-1109] **An import can accept a goal cycle that has no root, so the goals exist and the Goals page can never show them.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/import-graph.md` (ROI-02).
+
+- [T-1110] **A newly minted tag survives behind "Nothing was changed" when attaching it to the task is refused.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/recent-fix-claims.md` (ROI-05).
+
 - [T-1096] **Both right-click overlays return themselves for any right-click, wherever the pointer was.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/appkit-behavior.md` (AK-1).
 
 - [T-1097] **The terminal recovery screen calls a fresh recovery store a "backup location", and diagnoses a cause it never measured.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/recovery-export.md` (RE-2).
