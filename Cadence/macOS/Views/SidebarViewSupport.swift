@@ -203,6 +203,36 @@ nonisolated enum SidebarContextHeaderRhythm {
     static let gapBelowHeaderInEmptyContext: CGFloat = headerBottomSpacing
 }
 
+/// What the sidebar's scrolling lists region draws.
+///
+/// **Two cases because the region has two, and only one of them was ever drawn (T-1113).**
+/// `SidebarView.listSections` derives every header from an existing context or an existing list, so
+/// a store holding none of either produces *no sections*, the `ForEach` renders nothing, and the
+/// column offers no route to `CreateListSheet` at all — that sheet has exactly one call site on
+/// macOS and a context header's "+" is the only thing that reaches it. The reader guaranteed to hit
+/// that state is the one opening Cadence for the first time; the documented way out was
+/// Settings → Contexts → New Context, purely to manufacture a header that carries the button.
+///
+/// It is a resolved value rather than a bare `isEmpty` at the call site so the rule can be checked
+/// without a running app, and so the *other* half stays checkable too: a store with even one
+/// section resolves to `.sections` and never draws a second, competing create control beside the
+/// headers that already carry one.
+///
+/// Nothing is seeded to make the button exist. An empty store stays empty until the reader saves
+/// something, and a list saved with no context is visible immediately under
+/// `CadenceSidebarLists.ungroupedTitle` — see `PersistenceController`, which deliberately declines
+/// to seed defaults because an empty CloudKit store can simply mean data has not arrived yet.
+nonisolated enum SidebarListRegionContent: Equatable {
+    /// One `ContextSection` per header, each carrying its own "+".
+    case sections
+    /// The lone "Add first list" row, opening `CreateListSheet` on no context.
+    case firstListAction
+
+    static func resolve(sectionCount: Int) -> SidebarListRegionContent {
+        sectionCount == 0 ? .firstListAction : .sections
+    }
+}
+
 /// Fixed geometry for the single sidebar column: app header, nav rows, the scrolling
 /// lists region, and the pinned bottom group all size off these values.
 ///

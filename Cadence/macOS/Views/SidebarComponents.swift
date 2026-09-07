@@ -183,25 +183,7 @@ struct ContextSection: View {
                     }
                 }
             } else {
-                Button(action: onAddList) {
-                    // Starts on the same x as a list name would, so an empty context and a
-                    // populated one share a left edge.
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus.circle")
-                            .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
-                        Text("Add first list")
-                            .font(.system(size: SidebarMetrics.listLabelFontSize, weight: .medium))
-                        Spacer(minLength: SidebarMetrics.listTrailingGap)
-                    }
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
-                    .padding(.vertical, SidebarMetrics.listRowVerticalPadding)
-                    .background(
-                        RoundedRectangle(cornerRadius: SidebarMetrics.listRowCornerRadius, style: .continuous)
-                            .fill(Theme.surfaceElevated.opacity(0.55))
-                    )
-                }
-                .buttonStyle(.cadencePlain)
+                SidebarAddFirstListButton(action: onAddList)
             }
         }
         .padding(.bottom, SidebarMetrics.contextSectionBottomSpacing)
@@ -306,6 +288,48 @@ struct ContextSection: View {
             dragOverItem: $dragOverListItem,
             onDrop: reorderList
         ))
+    }
+}
+
+// MARK: - First list
+
+/// "Add first list", the only row the lists region draws when it has no list rows to draw.
+///
+/// **Two callers, and the second one is the whole of T-1113.** `ContextSection` draws it under the
+/// header of a context that holds nothing, and `SidebarView.listsSection` draws it when the region
+/// produced *no sections at all* — which is what a genuinely fresh install produces, because
+/// `CadenceSidebarLists.sections` derives every header from an existing context or an existing
+/// list. Before that second caller the column's only route to `CreateListSheet` was a context
+/// header's "+", and on a blank store there was no header, so the first list on a new Mac had to be
+/// preceded by a trip to Settings → Contexts. An App Store reviewer opens a blank store.
+///
+/// It is one view rather than two spellings of one button because the two cases differ only in what
+/// context the sheet opens on, and that is the caller's `action`. The empty-store caller passes
+/// `nil`, so the sheet opens on "No context" — the state `CreateListSheet` has accepted since
+/// T-559 and the state the resulting list is filed under ("Other") if it is saved that way.
+struct SidebarAddFirstListButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            // Starts on the same x as a list name would, so an empty context and a
+            // populated one share a left edge.
+            HStack(spacing: 6) {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
+                Text("Add first list")
+                    .font(.system(size: SidebarMetrics.listLabelFontSize, weight: .medium))
+                Spacer(minLength: SidebarMetrics.listTrailingGap)
+            }
+            .foregroundStyle(Theme.dim)
+            .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
+            .padding(.vertical, SidebarMetrics.listRowVerticalPadding)
+            .background(
+                RoundedRectangle(cornerRadius: SidebarMetrics.listRowCornerRadius, style: .continuous)
+                    .fill(Theme.surfaceElevated.opacity(0.55))
+            )
+        }
+        .buttonStyle(.cadencePlain)
     }
 }
 

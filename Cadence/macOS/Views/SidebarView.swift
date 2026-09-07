@@ -192,16 +192,32 @@ struct SidebarView: View {
 
     /// The single scrolling region. Takes every point the pinned groups don't, so
     /// Settings stays on the bottom edge whether the user has two lists or forty.
+    ///
+    /// **What it draws when there is nothing to draw is `SidebarListRegionContent`'s decision
+    /// (T-1113).** This was a bare `ForEach(listSections)`, and `listSections` is derived entirely
+    /// from existing contexts and existing lists — so on a fresh install it rendered *nothing*, and
+    /// with it went the only macOS route to `CreateListSheet`. The `.firstListAction` row opens the
+    /// same sheet the headers do, on no context.
     private var listsSection: some View {
-        ScrollView {
+        let sections = listSections
+
+        return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(listSections) { section in
-                    contextSection(section)
-                        // Counted by `SidebarContextHeaderRhythm`: two neighbours contribute it
-                        // once each to the gap above a header, and it was a bare `2` here — in a
-                        // different file from the other three pads — for exactly as long as the
-                        // T-1041 test measured the wrong gap.
-                        .padding(.vertical, SidebarMetrics.contextSectionOuterVerticalPadding)
+                switch SidebarListRegionContent.resolve(sectionCount: sections.count) {
+                case .firstListAction:
+                    SidebarAddFirstListButton {
+                        newListTarget = SidebarNewListTarget(context: nil)
+                    }
+                    .padding(.vertical, SidebarMetrics.contextSectionOuterVerticalPadding)
+                case .sections:
+                    ForEach(sections) { section in
+                        contextSection(section)
+                            // Counted by `SidebarContextHeaderRhythm`: two neighbours contribute it
+                            // once each to the gap above a header, and it was a bare `2` here — in a
+                            // different file from the other three pads — for exactly as long as the
+                            // T-1041 test measured the wrong gap.
+                            .padding(.vertical, SidebarMetrics.contextSectionOuterVerticalPadding)
+                    }
                 }
             }
             .padding(.vertical, SidebarMetrics.groupSpacing)
