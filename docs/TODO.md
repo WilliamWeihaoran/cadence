@@ -43,6 +43,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+<!-- audittriage 2026-09-07: T-1096..T-1108 reserved from docs/audits/. -->
+
+- [T-1096] **Both right-click overlays return themselves for any right-click, wherever the pointer was.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/appkit-behavior.md` (AK-1).
+
+- [T-1097] **The terminal recovery screen calls a fresh recovery store a "backup location", and diagnoses a cause it never measured.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/recovery-export.md` (RE-2).
+
+- [T-1098] **The App Store description promises settings sync the app does not implement.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-06/request-follow-up.md`.
+
+- [T-1099] **Terminal recovery export stops at the first store that opens, even when a later one could actually export.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/recovery-export.md` (RE-1).
+
+- [T-1100] **A failed restore rollback still deletes the displaced originals it failed to put back.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/backup-replacement.md` (BR-1).
+
+- [T-1101] **"Delete my data" reports success over a Keychain deletion that threw, leaving the OpenAI key.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/privacy-reset.md` (PR-1).
+
+- [T-1102] **A failed privacy reset leaves rows marked deleted in the shared context for someone else's save to commit.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/privacy-reset.md` (PR-2).
+
+- [T-1103] **macOS focus time is counted by a view's timer, so leaving the Focus screen stops the clock the manager says is running.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/focus-continuity.md` (FC-1).
+
+- [T-1104] **The iOS photo import inserts asset rows between `await`s and calls the whole batch its own.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/image-import-transaction.md` (IM-1).
+
+- [T-1105] **A late Reminders fetch publishes unconditionally, so it can restore a stale list or resurrect a completed reminder.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/reminders-refresh-ordering.md` (RM-1).
+
+- [T-1106] **Seven modern ticket ids have commit history and no formal ledger entry, and nothing stops the eighth.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/commit-ledger.md` (CL-1).
+
+- [T-1107] **Two forms put a section label exactly as far from the block above it as from the block it names.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/grouping-spacing.md` (SP-1) and `docs/audits/2026-09-06/request-follow-up.md` (R38).
+
+- [T-1108] **The empty-store startup test replays a startup sequence that is missing one of the operations it asserts production performs.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-06/request-follow-up.md`.
+
 - [T-1081] **CLOSED 2026-09-06 — PDF export painted a note's images on top of its text, and now
   reserves the room for them.** The same defect as [[T-1043]], in the surface that still shipped it.
   `NoteExportService.renderedPDFData` built its text view `frame: .zero`, styled it there, measured
