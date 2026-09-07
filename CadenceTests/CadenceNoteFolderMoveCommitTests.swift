@@ -155,10 +155,11 @@ struct CadenceNoteFolderMoveCommitTests {
 
     // MARK: - Behavioural: the importer still commits once
 
-    /// The importer files restored notes through the non-committing door and saves **once**, in
-    /// `apply`. Behaviourally this shows the import lands and leaves nothing pending; that it is
-    /// one commit rather than many is `theImporterHoldsExactlyOneCommitForTheWholeArchive` below,
-    /// because a count of `save()` calls is not something a value can be asked for.
+    /// The importer files restored notes through the non-committing door and saves **once for the
+    /// archive**, in `apply`. Behaviourally this shows the import lands and leaves nothing pending;
+    /// that the archive's own rows go in one commit rather than one per note is
+    /// `theImporterHoldsNoPerNoteSaveInsideTheArchiveWrite` below, because a count of `save()`
+    /// calls is not something a value can be asked for.
     @Test func animportedArchiveIsFiledThroughTheNonCommittingDoorAndStillLands() throws {
         let source = ModelContext(try CadenceTestStore.container())
         for (index, raw) in ["/Planning//Research/", "Admin", "  /  "].enumerated() {
@@ -243,10 +244,17 @@ struct CadenceNoteFolderMoveCommitTests {
         #expect(helper.contains("static func fileWithoutCommitting(_ note: Note, toFolder rawPath: String)"))
     }
 
-    /// The importer holds **one** commit for the whole document, which is the constraint that kept
-    /// T-1093 out of T-1071: the fix could not be "make the write commit", because one of its
+    /// The importer holds **one** commit for the archive's own rows, which is the constraint that
+    /// kept T-1093 out of T-1071: the fix could not be "make the write commit", because one of its
     /// callers must not.
-    @Test func theImporterHoldsExactlyOneCommitForTheWholeArchive() throws {
+    ///
+    /// **This is not an atomicity claim, and its old name said it was** ([[T-1111]]). It counts
+    /// `save()` calls in one file, so it cannot see `NoteMigrationService`'s own `context.save()`
+    /// in the legacy-note fold that `apply` runs *after* this commit. What it guarantees is the
+    /// narrower thing it can actually see: no per-note save inside the write loop. The importer is
+    /// two commits, and `CadenceArchiveImportSurfaceTests` covers what happens when the second one
+    /// fails.
+    @Test func theImporterHoldsNoPerNoteSaveInsideTheArchiveWrite() throws {
         let importer = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Services/CadenceArchiveImportService.swift")
         )
@@ -254,5 +262,8 @@ struct CadenceNoteFolderMoveCommitTests {
         // And it is the one `apply` rolls back around, not a stray save inside the row loop.
         #expect(importer.contains("try modelContext.save()"))
         #expect(importer.contains("modelContext.rollback()"))
+        // The second write is real and is delegated, not spelled out here — which is precisely why
+        // the count above cannot stand for the whole document.
+        #expect(importer.contains("NoteMigrationService.migrateIfNeeded("))
     }
 }

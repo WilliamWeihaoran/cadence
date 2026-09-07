@@ -37,17 +37,25 @@ import SwiftData
 /// insert.** A malformed archive is refused having written nothing, so there is no such thing as a
 /// half-uploaded rejected import. See `validate(_:against:)`.
 ///
-/// **4. Partial failure.** Two failure classes, and they are answered differently rather than
-/// hidden behind one word:
+/// **4. Partial failure.** Three failure classes, and they are answered differently rather than
+/// hidden behind one word. The line that matters runs between the first two and the third: **a
+/// throw from this service means nothing was written; a returned outcome means the archive is on
+/// disk.**
 /// - *The archive is bad.* Unreadable JSON, a format version this build does not know, a repeated
 ///   id, or a reference to a row that exists neither in the archive nor in the destination — all
 ///   throw from `validate(_:against:)`, which runs to completion before anything is inserted. The
 ///   store is untouched and the thrown `CadenceArchiveImportFailure` names the table, the row and
 ///   the field.
-/// - *The write itself fails.* `apply(_:mode:in:)` inserts and then commits once. If that commit
-///   throws, it rolls the context back and rethrows, so the import leaves nothing pending for an
-///   unrelated later `save()` to pick up. The caller must hand this a context it is willing to
-///   have rolled back — `importArchive(_:mode:into:)` makes a private one for exactly that reason.
+/// - *The write itself fails.* `apply(_:mode:in:foldingLegacyNotes:)` inserts and then commits
+///   once. If that commit throws, it rolls the context back and rethrows, so the import leaves
+///   nothing pending for an unrelated later `save()` to pick up. The caller must hand this a
+///   context it is willing to have rolled back — `importArchive(_:mode:into:)` makes a private one
+///   for exactly that reason.
+/// - *The archive committed and the legacy-note fold after it did not.* The fold is a second write
+///   (see below), so it cannot be reported as a refusal without telling the user that data which is
+///   already on their disk is not. It **returns**, with the committed counts intact and
+///   `CadenceArchiveImportOutcome.legacyNoteFoldFailure` naming what is still outstanding — the
+///   distinction [[T-1111]] exists to keep.
 ///
 /// ## The legacy note tables
 ///
@@ -59,6 +67,12 @@ import SwiftData
 /// archive carries, so a legacy row whose canonical `Note` came in from the same archive is
 /// recognised as already folded and is not duplicated. A pre-migration archive folds; a
 /// post-migration one does not move.
+///
+/// **That fold is a second commit, and the importer is therefore not one transaction.** The
+/// archive's own rows land in a single `save()`; `NoteMigrationService` then reads the settled
+/// store and saves its own inserts. The source sweep in `CadenceNoteFolderMoveCommitTests` counts
+/// the `save()` calls *in this file* and so cannot see the second one — read it as "no per-row
+/// save", which is what it actually guarantees, not as atomicity.
 nonisolated enum CadenceArchiveImportService {
 
     /// The highest `CadenceArchive.formatVersion` this build knows how to read.
@@ -114,15 +128,26 @@ nonisolated enum CadenceArchiveImportService {
         try plan(CadenceDataExportService.decode(data), mode: mode, in: modelContext)
     }
 
-    /// Apply an archive to `modelContext` and commit once.
+    /// Apply an archive to `modelContext`, commit the archive once, and then fold its legacy notes.
     ///
     /// The caller owns the unit of work and must be willing to have this context rolled back; see
     /// the type's note. Nothing is inserted until `validate(_:against:)` has returned.
+    ///
+    /// **This throws for a refused import and returns for a committed one — including a committed
+    /// one whose fold failed** ([[T-1111]]). The two are different facts and used to arrive as the
+    /// same one: the fold is a *second* write, after the archive's own commit, so a throw from it
+    /// reached the caller as an undifferentiated failure over rows that were already durable. For a
+    /// restore that is the worst direction to be wrong in — the user is told to retry an operation
+    /// they have in fact already performed, and a merge-mode retry over committed rows is not the
+    /// operation they think they are repeating. So a fold failure is reported in
+    /// `CadenceArchiveImportOutcome.legacyNoteFoldFailure` and the counts that *did* commit survive
+    /// it; only a failure that left the store untouched still throws.
     @discardableResult
     nonisolated static func apply(
         _ archive: CadenceArchive,
         mode: CadenceArchiveImportMode = .mergeKeepingExistingRows,
-        in modelContext: ModelContext
+        in modelContext: ModelContext,
+        foldingLegacyNotes fold: (ModelContext) throws -> Int = foldLegacyNotes(in:)
     ) throws -> CadenceArchiveImportOutcome {
         var destination = try DestinationIndex(in: modelContext)
         let plan = try makePlan(archive, mode: mode, against: destination)
@@ -138,24 +163,47 @@ nonisolated enum CadenceArchiveImportService {
             throw error
         }
 
-        // Fold any legacy note rows this import brought in that are not already represented by a
-        // `Note`. Run after the commit above rather than inside it so the migration reads a
-        // settled store, and with `saveChanges: true` so its own inserts are committed by the
-        // service that made them. A failure here leaves the imported rows in place and the fold
-        // undone, which the next launch repairs: `PersistenceController` runs the same migration.
-        let migration = try NoteMigrationService.migrateIfNeeded(
-            in: modelContext,
-            source: "archive-import",
-            saveChanges: true
-        )
+        // Past this line the archive is on disk. Everything below reports, and nothing below may
+        // throw, because a throw here would describe committed work as a refusal.
+        var foldedNotes = 0
+        var foldFailure: String?
+        do {
+            foldedNotes = try fold(modelContext)
+        } catch {
+            // The fold's own half-written inserts, and only those: `rollback()` discards changes
+            // made since the last `save()`, and the last `save()` is the archive's own. Left
+            // pending they would ride out on the next unrelated commit through this context.
+            modelContext.rollback()
+            foldFailure = error.localizedDescription
+        }
 
         return CadenceArchiveImportOutcome(
             plan: plan,
             insertedRecordCount: tally.inserted,
             overwrittenRecordCount: tally.overwritten,
             skippedRecordCount: tally.skipped,
-            notesFoldedFromLegacyRows: migration.insertedTotal
+            notesFoldedFromLegacyRows: foldedNotes,
+            legacyNoteFoldFailure: foldFailure
         )
+    }
+
+    /// Fold any legacy note rows an import brought in that are not already represented by a `Note`.
+    ///
+    /// Run after the archive's commit rather than inside it so the migration reads a settled store,
+    /// and with `saveChanges: true` so its own inserts are committed by the service that made them.
+    /// A failure here leaves the imported rows in place and the fold undone, which the next launch
+    /// repairs: `PersistenceController` runs the same migration.
+    ///
+    /// A separate declaration so `apply` can be handed a failing one. A store that refuses this
+    /// second write is not something a test can induce on a real container, and the outcome
+    /// distinction this feeds is the whole of [[T-1111]] — an untestable branch is how the two
+    /// outcomes collapsed back into one the first time.
+    nonisolated static func foldLegacyNotes(in modelContext: ModelContext) throws -> Int {
+        try NoteMigrationService.migrateIfNeeded(
+            in: modelContext,
+            source: "archive-import",
+            saveChanges: true
+        ).insertedTotal
     }
 
     // MARK: - Validation
@@ -1033,6 +1081,11 @@ nonisolated struct CadenceArchiveImportPlan: Equatable, Sendable {
 // MARK: - Outcome
 
 /// One finished import, as counts the caller can put in a sentence.
+///
+/// **Every value of this type describes a committed import.** A refused one throws instead, so a
+/// caller holding an outcome knows the archive is on disk — `legacyNoteFoldFailure` narrows that to
+/// *which part* of the work is still outstanding rather than reopening the question of whether any
+/// of it landed ([[T-1111]]).
 nonisolated struct CadenceArchiveImportOutcome: Equatable, Sendable {
     let plan: CadenceArchiveImportPlan
     let insertedRecordCount: Int
@@ -1041,6 +1094,31 @@ nonisolated struct CadenceArchiveImportOutcome: Equatable, Sendable {
     /// Legacy note rows this import folded into `Note` by running `NoteMigrationService`. Zero for
     /// an archive taken after that migration had already run on the exporting device.
     let notesFoldedFromLegacyRows: Int
+    /// Why the post-commit legacy-note fold did not finish, or `nil` when it did.
+    ///
+    /// Carried as the message rather than the `Error` so the outcome stays `Equatable` and
+    /// `Sendable` — a caller that wanted to branch on the error *kind* would be deciding whether
+    /// the import landed, and it did.
+    let legacyNoteFoldFailure: String?
+
+    init(
+        plan: CadenceArchiveImportPlan,
+        insertedRecordCount: Int,
+        overwrittenRecordCount: Int,
+        skippedRecordCount: Int,
+        notesFoldedFromLegacyRows: Int,
+        legacyNoteFoldFailure: String? = nil
+    ) {
+        self.plan = plan
+        self.insertedRecordCount = insertedRecordCount
+        self.overwrittenRecordCount = overwrittenRecordCount
+        self.skippedRecordCount = skippedRecordCount
+        self.notesFoldedFromLegacyRows = notesFoldedFromLegacyRows
+        self.legacyNoteFoldFailure = legacyNoteFoldFailure
+    }
+
+    /// The archive committed and every follow-up write it owns finished too.
+    var isComplete: Bool { legacyNoteFoldFailure == nil }
 }
 
 // MARK: - Failure

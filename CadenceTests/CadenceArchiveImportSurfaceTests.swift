@@ -454,6 +454,123 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(try destination.fetchCount(FetchDescriptor<Note>()) == 1)
     }
 
+    // MARK: - The fold is a second write, and it fails on its own terms
+
+    /// **[[T-1111]]. A failed fold must not be reported as a failed import**, because by then the
+    /// archive is on disk.
+    ///
+    /// The fold is a second commit after the archive's own, so a throw from it used to leave `apply`
+    /// via the same door as "this file is malformed" — and the caller had no way to tell a restore
+    /// that wrote four thousand rows from one that wrote none. This asserts the split from both
+    /// sides at once: `apply` **returns**, its committed counts are intact, `legacyNoteFoldFailure`
+    /// names what is outstanding, and a *second* context over the same container — the only reader
+    /// that cannot be fooled by the importing context's own memory — still finds the rows.
+    @Test func aFailedFoldReturnsTheCommittedImportInsteadOfThrowingOverIt() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        try Self.seedTheWholeSchema(into: source)
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let outcome = try CadenceArchiveImportService.apply(
+            archive,
+            in: destination,
+            foldingLegacyNotes: { _ in throw CadenceArchiveImportSurfaceTests.FoldRefusal.disk }
+        )
+
+        #expect(outcome.insertedRecordCount == archive.totalRecordCount)
+        #expect(outcome.notesFoldedFromLegacyRows == 0)
+        #expect(outcome.isComplete == false)
+        let reason = try #require(outcome.legacyNoteFoldFailure)
+        #expect(reason == CadenceArchiveImportSurfaceTests.FoldRefusal.disk.localizedDescription)
+
+        let observer = ModelContext(container)
+        #expect(try observer.fetchCount(FetchDescriptor<AppTask>()) == 1)
+        #expect(try observer.fetchCount(FetchDescriptor<Context>()) == 1)
+    }
+
+    /// The other half of the same guarantee: a fold that inserted before it threw leaves **nothing**
+    /// pending for the next unrelated `save()` through this context to adopt, and the rollback that
+    /// achieves that does not reach back past the archive's own commit.
+    @Test func aFailedFoldDiscardsItsOwnPendingWorkAndNothingEarlier() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(AppTask(title: "Buy milk"))
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let outcome = try CadenceArchiveImportService.apply(
+            archive,
+            in: destination,
+            foldingLegacyNotes: { context in
+                context.insert(Note(kind: .permanent, title: "half-folded", content: ""))
+                throw CadenceArchiveImportSurfaceTests.FoldRefusal.disk
+            }
+        )
+
+        #expect(outcome.legacyNoteFoldFailure != nil)
+        #expect(destination.hasChanges == false)
+
+        let observer = ModelContext(container)
+        #expect(try observer.fetchCount(FetchDescriptor<AppTask>()) == 1, "the committed import was rolled back")
+        #expect(try observer.fetchCount(FetchDescriptor<Note>()) == 0, "the failed fold's insert survived")
+    }
+
+    /// The seam is a seam and not a second implementation: the default argument runs the real
+    /// migration, so a successful import through it still folds and still reports a clean outcome.
+    /// Without this, injecting a failure everywhere would be compatible with `apply` never calling
+    /// the fold at all.
+    @Test func theDefaultFoldIsTheRealMigrationAndReportsACleanOutcome() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let legacy = DailyNote(date: "2026-02-02")
+        legacy.content = "Notes from that day"
+        source.insert(legacy)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
+
+        #expect(outcome.notesFoldedFromLegacyRows == 1)
+        #expect(outcome.legacyNoteFoldFailure == nil)
+        #expect(outcome.isComplete)
+    }
+
+    /// And the line the split is drawn on holds in the other direction: a refusal that happens
+    /// **before** the archive's commit is still a throw, with an untouched store behind it. This is
+    /// the mutation guard — collapse the two outcomes back into one and either this test or
+    /// `aFailedFoldReturnsTheCommittedImportInsteadOfThrowingOverIt` goes red, whichever way the
+    /// collapse runs.
+    @Test func aRefusalBeforeTheCommitIsStillAThrowOverAnUntouchedStore() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(AppTask(title: "Buy milk"))
+        try source.save()
+        var archive = try CadenceDataExportService.makeArchive(in: source)
+        archive.formatVersion = CadenceArchiveImportService.readableFormatVersion + 1
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        var returned: CadenceArchiveImportOutcome?
+        do {
+            returned = try CadenceArchiveImportService.apply(archive, in: destination)
+            Issue.record("a refused import returned an outcome instead of throwing")
+        } catch {
+            #expect(error is CadenceArchiveImportFailure)
+        }
+        #expect(returned == nil)
+
+        let observer = ModelContext(container)
+        #expect(try observer.fetchCount(FetchDescriptor<AppTask>()) == 0)
+    }
+
+    /// The injected failure, so the tests above are not depending on some real error's wording.
+    enum FoldRefusal: LocalizedError {
+        case disk
+
+        var errorDescription: String? { "the notes table could not be read" }
+    }
+
     // MARK: - Helpers
 
     private static func one<Model: PersistentModel>(

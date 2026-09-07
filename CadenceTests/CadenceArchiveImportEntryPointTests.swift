@@ -190,7 +190,7 @@ struct CadenceArchiveImportEntryPointTests {
             CadenceArchiveImportPresentation.neverDeletesNote,
             CadenceArchiveImportPresentation.modeQuestion,
             CadenceArchiveImportPresentation.planSummary(plan),
-            CadenceArchiveImportPresentation.successMessage(outcome),
+            CadenceArchiveImportPresentation.outcomeMessage(outcome),
             CadenceArchiveImportPresentation.failureMessage("disk full"),
         ]
         for mode in CadenceArchiveImportMode.allCases {
@@ -324,7 +324,7 @@ struct CadenceArchiveImportEntryPointTests {
             skippedRecordCount: 0,
             notesFoldedFromLegacyRows: 0
         )
-        #expect(CadenceArchiveImportPresentation.successMessage(both) == "Imported 3 records and replaced 2 records.")
+        #expect(CadenceArchiveImportPresentation.outcomeMessage(both) == "Imported 3 records and replaced 2 records.")
 
         let addedOnly = CadenceArchiveImportOutcome(
             plan: plan,
@@ -333,7 +333,7 @@ struct CadenceArchiveImportEntryPointTests {
             skippedRecordCount: 0,
             notesFoldedFromLegacyRows: 0
         )
-        #expect(CadenceArchiveImportPresentation.successMessage(addedOnly) == "Imported 1 record.")
+        #expect(CadenceArchiveImportPresentation.outcomeMessage(addedOnly) == "Imported 1 record.")
 
         let nothing = CadenceArchiveImportOutcome(
             plan: plan,
@@ -342,7 +342,7 @@ struct CadenceArchiveImportEntryPointTests {
             skippedRecordCount: 7,
             notesFoldedFromLegacyRows: 0
         )
-        #expect(CadenceArchiveImportPresentation.successMessage(nothing).contains("Nothing changed"))
+        #expect(CadenceArchiveImportPresentation.outcomeMessage(nothing).contains("Nothing changed"))
 
         let folded = CadenceArchiveImportOutcome(
             plan: plan,
@@ -351,11 +351,119 @@ struct CadenceArchiveImportEntryPointTests {
             skippedRecordCount: 0,
             notesFoldedFromLegacyRows: 1
         )
-        #expect(CadenceArchiveImportPresentation.successMessage(folded).contains("1 older note was brought forward"))
+        #expect(CadenceArchiveImportPresentation.outcomeMessage(folded).contains("1 older note was brought forward"))
     }
 
     @Test func theImportFailureSentenceNamesTheReasonItWasGiven() {
         #expect(CadenceArchiveImportPresentation.failureMessage("disk full") == "Import failed: disk full")
+    }
+
+    /// **[[T-1111]]. The two outcomes are two sentences, and the committed one never says "failed".**
+    ///
+    /// A restore whose legacy-note fold failed has still written every row it counted. Telling that
+    /// user the import failed sends them to retry an operation they have already performed — and in
+    /// merge mode a retry over committed rows is a different operation from the one they think they
+    /// are repeating. So the sentence leads with the counts that landed, names the outstanding work
+    /// without asking for anything, and is not the failure sentence.
+    @Test func aCommittedImportWhoseFoldFailedSaysTheDataIsSavedRatherThanFailed() {
+        let plan = Self.plan(mode: .mergeKeepingExistingRows, inserts: ["AppTask": 3], matches: [:])
+        let warned = CadenceArchiveImportOutcome(
+            plan: plan,
+            insertedRecordCount: 3,
+            overwrittenRecordCount: 0,
+            skippedRecordCount: 0,
+            notesFoldedFromLegacyRows: 0,
+            legacyNoteFoldFailure: "the notes table could not be read"
+        )
+        let sentence = CadenceArchiveImportPresentation.outcomeMessage(warned)
+
+        #expect(sentence.hasPrefix("Imported 3 records."))
+        #expect(sentence.contains("Your data is saved"))
+        #expect(sentence.contains("older notes could not be brought forward yet"))
+        #expect(sentence.contains("the notes table could not be read"))
+        #expect(!sentence.contains("Import failed"))
+        // No retry instruction: the import must not be run again, and the fold retries itself.
+        #expect(!sentence.lowercased().contains("try again and"))
+        #expect(sentence.contains("Cadence will try again next time it opens"))
+
+        // …and the clean outcome with the same counts is the plain sentence, so the warning is a
+        // branch rather than boilerplate every import carries.
+        let clean = CadenceArchiveImportOutcome(
+            plan: plan,
+            insertedRecordCount: 3,
+            overwrittenRecordCount: 0,
+            skippedRecordCount: 0,
+            notesFoldedFromLegacyRows: 0
+        )
+        #expect(CadenceArchiveImportPresentation.outcomeMessage(clean) == "Imported 3 records.")
+        #expect(clean.isComplete)
+    }
+
+    // MARK: - What runs after the store has changed
+
+    /// **[[T-1112]]. An import changes the rows the OS holds reminders for, so it reconciles them.**
+    ///
+    /// Before this the importer posted nothing: a task the archive marked done kept its pending
+    /// reminder, and a scheduled task the archive introduced got none, until some unrelated trigger
+    /// — leaving the app active, a scene transition — happened to reconcile. Both platforms mount
+    /// this one flow, so pinning it here pins both.
+    @Test func aCommittedImportReconcilesTheNotificationsItsRowsOwn() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(AppTask(title: "Buy milk"))
+        try source.save()
+
+        let url = try Self.writeArchive(from: source)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let destination = try CadenceTestStore.container()
+        var reconciled: [ObjectIdentifier] = []
+        let flow = CadenceArchiveImportFlow(reconcileNotifications: { reconciled.append(ObjectIdentifier($0)) })
+        flow.preview(.success(url), in: destination)
+        flow.confirm()
+
+        #expect(try ModelContext(destination).fetchCount(FetchDescriptor<AppTask>()) == 1)
+        // Once, over the container the rows landed in — not the app's stale context.
+        #expect(reconciled == [ObjectIdentifier(destination)])
+    }
+
+    /// The other side of the same seam. A file that never reached the store must not reconcile:
+    /// there is nothing new to reconcile against, and a pass triggered by a refusal is a pass whose
+    /// desired set was read for no reason.
+    @Test func anImportThatWroteNothingDoesNotReconcile() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-import-refused-\(UUID().uuidString).json")
+        try Data("{\"hello\":\"world\"}".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let destination = try CadenceTestStore.container()
+        var reconciled = 0
+        let flow = CadenceArchiveImportFlow(reconcileNotifications: { _ in reconciled += 1 })
+        flow.preview(.success(url), in: destination)
+        #expect(!flow.isPreviewing)
+        flow.confirm()
+
+        #expect(reconciled == 0)
+
+        // And a cancelled preview is the same: armed, disarmed, confirmed, nothing.
+        let real = ModelContext(try CadenceTestStore.container())
+        real.insert(AppTask(title: "Buy milk"))
+        try real.save()
+        let archiveURL = try Self.writeArchive(from: real)
+        defer { try? FileManager.default.removeItem(at: archiveURL) }
+        flow.preview(.success(archiveURL), in: destination)
+        flow.cancel()
+        flow.confirm()
+        #expect(reconciled == 0)
+    }
+
+    /// Non-vacuity for the pair above: the seam's default is the real reconciler, so a mount that
+    /// takes no argument is not silently opting out of notifications.
+    @Test func theLiveFlowReconcilesThroughTheSharedSupport() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceArchiveImportPresentation.swift")
+        )
+        #expect(source.contains("HabitNotificationReconcileSupport.scheduleReconcile(in: ModelContext(container))"))
+        #expect(source.contains("(reconcileNotifications ?? Self.liveReconcileNotifications)(container)"))
     }
 
     // MARK: - The per-kind rows

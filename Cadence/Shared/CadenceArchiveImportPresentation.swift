@@ -194,7 +194,15 @@ nonisolated enum CadenceArchiveImportPresentation {
 
     // MARK: - Outcomes
 
-    static func successMessage(_ outcome: CadenceArchiveImportOutcome) -> String {
+    /// The sentence for an import that **committed** — which is every `CadenceArchiveImportOutcome`,
+    /// since a refused one throws and lands on `failureMessage` instead.
+    ///
+    /// Named for the outcome rather than for success because it has two moods ([[T-1111]]): the
+    /// archive is on disk either way, but its legacy-note fold may still be outstanding, and that
+    /// difference decides whether the user should do anything next. Collapsing the two — either by
+    /// dropping the warning or by routing the fold failure to `failureMessage` — is the bug this
+    /// replaced, where a restore whose rows were already durable said "Import failed".
+    static func outcomeMessage(_ outcome: CadenceArchiveImportOutcome) -> String {
         var sentence: String
         switch (outcome.insertedRecordCount, outcome.overwrittenRecordCount) {
         case (0, 0):
@@ -210,9 +218,20 @@ nonisolated enum CadenceArchiveImportPresentation {
             let folded = outcome.notesFoldedFromLegacyRows
             sentence += " \(folded) older note\(folded == 1 ? "" : "s") \(folded == 1 ? "was" : "were") brought forward into Notes."
         }
+        if let failure = outcome.legacyNoteFoldFailure {
+            // Says what is saved before it says what is not, and does not ask for a retry: the
+            // import itself must not be run again, and the fold is retried at the next launch by
+            // `PersistenceController` without the user doing anything.
+            sentence += """
+                 Your data is saved, but older notes could not be brought forward yet — \
+                Cadence will try again next time it opens. (\(failure))
+                """
+        }
         return sentence
     }
 
+    /// The sentence for an import that wrote **nothing**. Every reason that reaches this one left
+    /// the store untouched; see `CadenceArchiveImportService`'s three failure classes.
     static func failureMessage(_ reason: String) -> String {
         "Import failed: \(reason)"
     }
@@ -357,7 +376,39 @@ final class CadenceArchiveImportFlow {
     private var pendingData: Data?
     private var container: ModelContainer?
 
-    init() {}
+    /// What runs once, after an import has committed, to bring the OS's pending reminders back in
+    /// line with the rows the archive just changed ([[T-1112]]).
+    ///
+    /// **Injectable because the live one is unobservable from a test host.**
+    /// `HabitNotificationReconcileSupport.scheduleReconcile` bottoms out in `NotificationManager`,
+    /// which early-returns under `XCTestConfigurationFilePath` — so a reconcile that ran and one
+    /// that never happened look identical from outside, which is exactly the shape in which a
+    /// dropped call stays green forever. Same reasoning as
+    /// `CadenceNotificationsEnabledEffects`, and it takes the container rather than a context for
+    /// the reason below.
+    private let reconcileNotifications: ((ModelContainer) -> Void)?
+
+    /// `? = nil` rather than `= liveReconcile`, for the compiler reason
+    /// `HabitNotificationReconcileSupport.applyNotificationsEnabledChange` already records: a
+    /// default argument expression is evaluated in a *nonisolated* context, and the live reconcile
+    /// is main-actor isolated. The live one is therefore named at the call site in `confirm()`,
+    /// which is isolated, and `nil` means "use it".
+    init(reconcileNotifications: ((ModelContainer) -> Void)? = nil) {
+        self.reconcileNotifications = reconcileNotifications
+    }
+
+    /// A **fresh** context over the same container, never the app's.
+    ///
+    /// The import wrote through a private context of its own, so the app's shared context has not
+    /// seen those rows: reconciling from it would diff the OS's pending requests against the
+    /// pre-import store and could cancel a reminder the archive just restored, or leave one
+    /// pending for a task the archive just completed. A context made here reads the committed
+    /// state. `scheduleReconcile` skips the pass entirely if either fetch fails, so a store that
+    /// cannot be read does not become "nothing should be pending".
+    @MainActor
+    private static func liveReconcileNotifications(_ container: ModelContainer) {
+        HabitNotificationReconcileSupport.scheduleReconcile(in: ModelContext(container))
+    }
 
     /// The `.fileImporter` result, on both platforms. Reads, decodes and fully validates the
     /// archive before showing anything, so the preview cannot promise an import that then fails —
@@ -393,6 +444,11 @@ final class CadenceArchiveImportFlow {
     }
 
     /// Write. Nothing before this point has touched the store.
+    ///
+    /// **The reconcile hangs off the returned outcome, not off a fully clean one.** A committed
+    /// import whose legacy-note fold failed ([[T-1111]]) has still changed the tasks and habits the
+    /// OS holds reminders for, so it needs the same follow-up as a spotless one. The `catch` is the
+    /// only branch that wrote nothing, and it is the only branch that does not reconcile.
     func confirm() {
         guard !isWriting, let pendingData, let container else { return }
         isWriting = true
@@ -406,7 +462,8 @@ final class CadenceArchiveImportFlow {
                 mode: mode,
                 into: container
             )
-            statusMessage = CadenceArchiveImportPresentation.successMessage(outcome)
+            statusMessage = CadenceArchiveImportPresentation.outcomeMessage(outcome)
+            (reconcileNotifications ?? Self.liveReconcileNotifications)(container)
         } catch {
             statusMessage = CadenceArchiveImportPresentation.failureMessage(error.localizedDescription)
         }

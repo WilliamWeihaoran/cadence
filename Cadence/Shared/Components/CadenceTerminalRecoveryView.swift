@@ -86,11 +86,26 @@ struct CadenceTerminalRecoveryView: View {
         }
     }
 
+    /// **T-1097 — this paragraph used to describe a backup Cadence does not have, and diagnose a
+    /// cause nobody measured.** It said startup tried "a backup location on this device", and that
+    /// failing "usually means the device was very low on memory or storage".
+    ///
+    /// Neither is true. `PersistenceController.makeRecoveryContainer` opens a *separate* store at
+    /// `recovery.store` and restores nothing into it — a brand-new, empty database, created because
+    /// the real one would not open. Calling that a backup tells a user in the worst moment of the
+    /// app's life that a safety copy was tried and failed, which invites exactly the wrong
+    /// conclusion about what is still on disk. And "usually" is a frequency claim: no
+    /// failure-frequency measurement exists anywhere in this repository to support it.
+    ///
+    /// What replaces them is what the code actually does, plus a pointer at the one thing on this
+    /// screen that *is* measured — the recorded error in `technicalDetail`. The export card below
+    /// keeps its own promise conditional ("tries to get a backup"), because that one is a copy this
+    /// screen is about to attempt, not a copy it is claiming already exists.
     private var explanation: String {
         """
-        Cadence tried three different ways to open your data when it started — through iCloud, from a backup location on this device, and as a temporary store — and none of them worked. This usually means the device was very low on memory or storage at the moment it launched.
+        Cadence tried three ways to open your data when it started — its main database, a separate empty one it creates here when the main one will not open, and a temporary in-memory one — and none of them worked. The second and third are fallbacks rather than backups: nothing was restored from them, and nothing has been deleted.
 
-        Quit Cadence and reopen it. If this keeps happening, try the recovery below before you give up on this launch.
+        The recorded reason is at the bottom of this screen. Quit Cadence and reopen it; if this keeps happening, try the export below before you give up on this launch.
         """
     }
 

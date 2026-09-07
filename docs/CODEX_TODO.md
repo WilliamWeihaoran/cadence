@@ -8,6 +8,31 @@ Each open finding includes a suggested implementation and acceptance checks. The
 guidance from a source audit, not a claim that the proposed patch has compiled; the implementing
 agent should preserve the stated behavior while adjusting signatures to the current tree as needed.
 
+## Latest Audit Batch: 2026-09-07
+
+```text
+Tree read: 4ad2178
+Dirty files at initial capture: 22; excluded via clean git archive
+Mode: source/history and arithmetic only; no build, tests, app, or simulator
+```
+
+See the [new audit batch](audits/2026-09-07/README.md) for five findings across four focused
+reviews: import partial-failure reporting, goal-cycle validation, post-import notification/focus
+reconciliation, and iOS tag-attachment failure wording. Each has exact references, confirming
+commands, suggested fixes, acceptance checks, and existing-ticket context. Runtime effects there are
+reasoned, not reproduced. The batch's own local ROI IDs allocate no T-numbers; the dispositions
+below do, and they are the reason this pointer is not a live queue.
+
+| Finding | Disposition |
+| --- | --- |
+| ROI-01 — import reports failure over rows that committed | **Fixed**, `docs/TODO.md` [T-1111] |
+| ROI-03 — import does not reconcile pending reminders | **Fixed**, `docs/TODO.md` [T-1112] |
+| ROI-02 — import accepts a rootless goal cycle | Filed, [T-1109], not started |
+| ROI-05 — new tag survives behind "Nothing was changed" (iOS) | Filed, [T-1110], not started |
+| ROI-04 — merged focus sessions leave their cached totals behind | Filed, [T-1114], not started |
+
+The older CXT entries below are preserved; this pointer does not reopen their already-fixed scopes.
+
 ## Repo Stamp
 
 - Tree read: `1706226`

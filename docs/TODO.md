@@ -51,8 +51,25 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1110] **A newly minted tag survives behind "Nothing was changed" when attaching it to the task is refused.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/recent-fix-claims.md` (ROI-05).
 
+<!-- rescue-import 2026-09-07: T-1114 filed for the one finding in that batch nobody reserved. -->
 
-- [T-1097] **The terminal recovery screen calls a fresh recovery store a "backup location", and diagnoses a cause it never measured.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/recovery-export.md` (RE-2).
+- [T-1114] **A merge import restores a task's missing focus sessions and leaves the task's cached
+  minutes where they were.** Filed by `rescue-import` 2026-09-07 from
+  `docs/audits/2026-09-07/import-reconciliation.md` (ROI-04) — the **fifth** finding of that batch,
+  and the only one `importgraph` did not reserve a number for before it was cut off. ROI-01 and
+  ROI-03 are [[T-1111]] and [[T-1112]], ROI-02 and ROI-05 are [[T-1109]] and [[T-1110]]; this one
+  had none, so a real finding was one commit away from being lost with the audit directory, which
+  is untracked.
+  **What it is, per the audit, and NOT verified against the code by this agent:** merge mode keeps
+  the matched destination task and skips its matched sessions, but inserts the session rows the
+  destination lacks — and nothing then re-runs `CadenceFocusLedger`'s raise-only reconcile, whose
+  only production caller is `PersistenceController`'s startup. The audit's arithmetic witness:
+  destination `actualMinutes = 10` with session `(previousMinutes: 0, minutes: 10)`, archive adds
+  `(previousMinutes: 10, minutes: 20)`; the stored scalar stays 10 while the ledger rule yields 30.
+  Area/Project `loggedMinutes` is the same shape. Anyone taking this should confirm those line
+  references first — they were read at `4ad2178` and `apply` has changed since ([[T-1111]]).
+  Note the interaction with [[T-1112]]: the import now has a post-commit seam, but it reconciles
+  *notifications*, not focus totals, and widening it is a decision rather than an obvious extension.
 
 - [T-1099] **Terminal recovery export stops at the first store that opens, even when a later one could actually export.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/recovery-export.md` (RE-1).
 
@@ -3890,6 +3907,49 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Measured, not assumed:** every preference resolves through `CadenceDefaults.store` (`Cadence/Shared/CadenceDefaults.swift:63`), which is a `UserDefaults` — `.standard` on an ordinary launch — and `grep -rn NSUbiquitousKeyValueStore --include="*.swift" Cadence CadenceWidgets` returns **zero** hits. Nothing syncs settings, so the submitted copy described a feature that does not exist.
   Pinned by `theDescriptionDoesNotPromiseSettingsSync()` in `CadenceTests/AppStoreReviewReadinessTests.swift`, which asserts the sentence **and** enumerates `Cadence/` for `NSUbiquitousKeyValueStore`, so the claim can honestly widen again if preference sync ever ships.
 
+
+- [T-1097] **CLOSED 2026-09-07 (agent `rescue-import`) — the terminal recovery screen stopped
+  calling an empty new database a backup, and stopped diagnosing a cause nobody measured.** From
+  `docs/audits/2026-09-05/recovery-export.md` (RE-2). Reserved by `audittriage`; the edit was
+  written by `importedge`/`importgraph` before the rate limit took them and was sitting untested and
+  unfiled in the working tree, which is how it reached this agent.
+
+  `CadenceTerminalRecoveryView.explanation` said startup had tried "a backup location on this
+  device", and that all three tiers failing "usually means the device was very low on memory or
+  storage". **MEASURED against `PersistenceController.makeRecoveryContainer`:** the second tier
+  creates a `ModelConfiguration` at a fresh `recovery.store` with `cloudKitDatabase: .none` and
+  returns a container built from it — there is no restore step anywhere in that function. It is a
+  brand-new empty database, made *because* the real one would not open. Telling a user in the worst
+  moment of the app's life that a safety copy was tried and failed invites exactly the wrong
+  conclusion about what is still on their disk. The second sentence is worse than wrong, it is
+  unfounded: "usually" is a frequency claim, and no failure-frequency measurement exists in this
+  repository.
+
+  The replacement says what the three tiers are ("its main database, a separate empty one it creates
+  here when the main one will not open, and a temporary in-memory one"), states plainly that
+  "nothing was restored from them, and nothing has been deleted", and points at the one thing on the
+  screen that *is* measured — the recorded error in `technicalDetail`. The export card keeps its own
+  conditional "tries to get a backup", because that copy is one this screen is about to attempt
+  rather than one it claims already exists; that distinction is asserted, so deleting the word
+  everywhere does not pass.
+
+  Pinned by two `@Test`s added to `PersistenceControllerTerminalRecoveryTests`:
+  `theTerminalRecoveryExplanationDropsTheBackupAndTheUnmeasuredCause` reads the view with comments
+  stripped (the doc comment quotes both retired sentences, so a raw read would be vacuously red) and
+  `theRecoveryTierCreatesAnEmptyStoreRatherThanRestoringABackup` pins the code fact the new sentence
+  rests on, so a future real restore makes the copy's guard fail with it.
+
+  Measured: full `-only-testing:CadenceTests` green at **4670 tests in 395 suites, 0 failures, 0
+  compiler warnings, 0 compile errors**, in a run that recompiled every file this commit edits — the
+  only `warning:` line anywhere in the log is `appintentsmetadataprocessor`'s "No AppIntents.framework
+  dependency found", which is the runner's and not Swift's. That one run also carries [[T-1111]] and
+  [[T-1112]], because all three landed together out of one rescued working tree.
+  **Mutation-tested 1/1 killed here:** putting the two retired sentences back compiled and turned
+  `theTerminalRecoveryExplanationDropsTheBackupAndTheUnmeasuredCause` red on five assertions — the
+  two absence checks, the two replacement sentences, and the export card's surviving conditional
+  "backup". Across the whole commit the count is **4/4 killed, 0 survived, 0 inconclusive, 0
+  invalid**.
+
 - [T-1111] **CLOSED 2026-09-07 (agent `importedge`) — a restore that committed says so, even when
   the legacy-note fold after it did not.** From `docs/audits/2026-09-07/import-recovery.md` (ROI-01).
 
@@ -3928,6 +3988,22 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   see `NoteMigrationService`'s save. Renamed `theImporterHoldsNoPerNoteSaveInsideTheArchiveWrite`,
   which is what it actually guarantees; T-1093's entry above now says so too. **Filed as:** ROI-01.
 
+  **Landed by `rescue-import` 2026-09-07, with the measurements this entry was written without.**
+  `importedge` was cut off by a rate limit having written the code and this ledger entry but having
+  committed only the entry, so for several commits `docs/TODO.md` said CLOSED over an uncommitted
+  working tree. **MEASURED, and it confirms the finding rather than restating it:** at HEAD
+  `4c091c1`, `apply` reached `try modelContext.save()` and *then*
+  `NoteMigrationService.migrateIfNeeded(…, saveChanges: true)`, whose own `try context.save()` is
+  `NoteMigrationService.swift:260` — two commits, one error contract. **Full `-only-testing:CadenceTests`
+  green at 4670 tests in 395 suites, 0 failures, 0 compiler warnings, 0 compile errors**, over a
+  tree that recompiled every edited file (the one AppIntents metadata line is the runner's, not
+  Swift's). **Mutation-tested 2/2 killed for this ticket:** rethrowing the fold instead of recording
+  it turns `aFailedFoldReturnsTheCommittedImportInsteadOfThrowingOverIt` **and**
+  `aFailedFoldDiscardsItsOwnPendingWorkAndNothingEarlier` red; deleting the warning branch from
+  `outcomeMessage` turns `aCommittedImportWhoseFoldFailedSaysTheDataIsSavedRatherThanFailed` red on
+  four separate assertions. Both mutations compiled (0 compile errors in each run), which is the
+  half of a mutation result that is easy to skip.
+
 - [T-1112] **CLOSED 2026-09-07 (agent `importedge`) — an import reconciles the OS reminders its
   rows own, from the committed state.** From `docs/audits/2026-09-07/import-reconciliation.md`
   (ROI-03).
@@ -3955,6 +4031,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and `theLiveFlowReconcilesThroughTheSharedSupport`. Both platform mounts share this flow, so
   pinning it here pins both. **Mutation-tested:** deleting the call turns the first red.
   **Filed as:** ROI-03.
+
+  **Landed by `rescue-import` 2026-09-07**, in the same commit as [[T-1111]] and for the same
+  reason: `importedge` committed this entry and not the code it describes. **MEASURED:** the
+  mutation is real — replacing `(reconcileNotifications ?? Self.liveReconcileNotifications)(container)`
+  with a bare read of the stored property compiled (0 compile errors) and turned **two** tests red,
+  `aCommittedImportReconcilesTheNotificationsItsRowsOwn` on the injected recorder and
+  `theLiveFlowReconcilesThroughTheSharedSupport` on the wiring scan, so the seam and its default are
+  each pinned by something. The suite numbers are in [[T-1097]]'s and [[T-1111]]'s entries: one
+  green run covers all three.
+
 - [T-642] **CLOSED 2026-09-06 (savefail2).** A presented surface may now **claim** the refused-settle
   sentence for as long as it is on screen, and the shell stays quiet while anything holds a claim.
   `CadenceTaskSettleFailureCenter` grows a claim *stack* — a stack, not a flag, because these

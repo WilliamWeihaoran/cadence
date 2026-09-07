@@ -274,4 +274,60 @@ struct PersistenceControllerTerminalRecoveryTests {
         let archive = try CadenceDataExportService.decode(outcome.data)
         #expect(archive.tasks.map(\.title) == ["Exported from recovery"])
     }
+
+    // MARK: - The screen's diagnosis
+
+    /// **[[T-1097]]. The explanation described a backup this app does not have, and diagnosed a
+    /// cause nobody measured.**
+    ///
+    /// It said startup tried "a backup location on this device", and that all three failing
+    /// "usually means the device was very low on memory or storage". Neither survives contact with
+    /// `makeRecoveryContainer`, pinned by the test below it: the second tier opens a *separate,
+    /// empty* store at `recovery.store` and restores nothing into it, so calling it a backup tells
+    /// a user in the worst moment of the app's life that a safety copy was tried and failed — the
+    /// opposite of what is true about their disk. And "usually" is a frequency claim with no
+    /// measurement anywhere in this repository behind it.
+    ///
+    /// Read with comments stripped, because the paragraph above quotes both retired sentences.
+    @Test func theTerminalRecoveryExplanationDropsTheBackupAndTheUnmeasuredCause() throws {
+        let raw = try CadenceSourceScan.sourceFile(
+            "Cadence/Shared/Components/CadenceTerminalRecoveryView.swift"
+        )
+        let source = CadenceSourceScan.strippingComments(raw)
+        // Non-vacuity: the read found a real file, the stripper ran, and it kept every offset.
+        #expect(source.contains("private var explanation: String {"))
+        #expect(source != raw)
+        #expect(source.count == raw.count)
+
+        #expect(!source.contains("backup location on this device"))
+        #expect(!source.contains("very low on memory or storage"))
+        #expect(!source.contains("This usually means"))
+
+        // What replaces them says what the fallbacks are, and what they are not.
+        #expect(source.contains(
+            "The second and third are fallbacks rather than backups: nothing was restored from them, and nothing has been deleted."
+        ))
+        // …and points at the one thing on this screen that *is* measured.
+        #expect(source.contains("The recorded reason is at the bottom of this screen."))
+
+        // The export card keeps its own "backup" promise, because that one is a copy this screen
+        // is about to attempt rather than one it claims already exists. Without this line, deleting
+        // the word from the whole file would also pass.
+        #expect(source.contains("it only tries to get a backup of what is already on this device"))
+    }
+
+    /// The code fact that sentence rests on: the recovery tier **creates** an empty store, it does
+    /// not restore one. If this ever becomes a real restore, the copy pinned above becomes wrong
+    /// and has to change with it.
+    @Test func theRecoveryTierCreatesAnEmptyStoreRatherThanRestoringABackup() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "makeRecoveryContainer", in: source),
+            "could not find makeRecoveryContainer in PersistenceController"
+        )
+        #expect(body.contains("url: recoveryDirectoryURL.appendingPathComponent(\"recovery.store\")"))
+        #expect(body.contains("return try ModelContainer(for: schema, configurations: [recoveryConfig])"))
+    }
 }
