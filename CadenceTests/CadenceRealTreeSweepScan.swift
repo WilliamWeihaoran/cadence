@@ -95,7 +95,11 @@ enum CadenceRealTreeSweepScan {
 
     // MARK: - Needles
 
-    private static let walkNeedles = [
+    /// Not `private`: `scripts/real-tree-sweep-manifest.sh`'s `precheck` carries its own copy of
+    /// these six, because it runs before any build and cannot ask Swift. A second spelling that
+    /// nothing compares is how the cheap reader goes blind to a family this one has learned about,
+    /// so `theCheapPrecheckLooksForExactlyTheWalkNeedlesTheScanDoes` compares them every run.
+    static let walkNeedles = [
         "swiftFiles(",
         "enumerator(atPath:",
         "enumerator(at:",

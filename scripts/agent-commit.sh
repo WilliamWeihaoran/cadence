@@ -60,6 +60,14 @@
 #                        content file itself was built on an older revision. Same escape hatch.
 #                        This is the diagnosis for the count REMOVES-HEAD-LINES would otherwise
 #                        give you one step later, and it names the sha to rebuild on.
+#   SWEEP-MANIFEST-MISSING
+#                        a `CadenceTests/*.swift` this commit stages declares a `@Test` that walks
+#                        the real product tree and is not on `CadenceRealTreeSweepManifest.txt`, so
+#                        deleting that test later would stop an app-wide sweep with nothing going
+#                        red (T-808). Regenerate with `real-tree-sweep-manifest.sh <id> --write` and
+#                        add the file to this commit. `--not-a-sweep <name>` is the escape, and it
+#                        should only ever be needed if the cheap precheck and the authoritative
+#                        Swift scan have drifted apart -- which is itself worth a ticket (T-1092).
 #   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
 #                        `--removes <exact count>` acknowledges them. A reconstruction built on a
 #                        stale HEAD reverts a sibling's landed work in exactly this shape.
@@ -176,7 +184,7 @@ fi
 usage() {
     say "usage: ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]..."
     say "       flags: --removes <n> --drops-ids <ids> --reopens-ids <ids>"
-    say "              --accept-declined <path> --commits-stale <path>"
+    say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
     say "       ./scripts/agent-commit.sh status         # report outstanding declined hunks"
     say "       ./scripts/agent-commit.sh check          # exit 3 while any is outstanding"
@@ -349,8 +357,8 @@ cmd_accept() {
 cmd_commit() {
     local id=$1; shift
     local message="" have_message=0 declared_removals="" declared_dropped_ids="" declared_reopened_ids=""
-    local -a paths accepted stale_declared
-    paths=(); accepted=(); stale_declared=()
+    local -a paths accepted stale_declared not_sweeps
+    paths=(); accepted=(); stale_declared=(); not_sweeps=()
 
     while (( $# )); do
         case "$1" in
@@ -368,6 +376,8 @@ cmd_commit() {
                 declared_reopened_ids="$2"; shift 2 ;;
             --commits-stale) [[ $# -ge 2 ]] || refuse BAD-OPTION "--commits-stale needs a path"
                 stale_declared+=("$2"); shift 2 ;;
+            --not-a-sweep) [[ $# -ge 2 ]] || refuse BAD-OPTION "--not-a-sweep needs a @Test name"
+                not_sweeps+=("$2"); shift 2 ;;
             --) shift; paths+=("$@"); break ;;
             -*) refuse BAD-OPTION "unknown option $1" ;;
             *)  paths+=("$1"); shift ;;
@@ -555,6 +565,87 @@ $(print -rl -- "${stale_report[@]}" | sed 's/^/    /')
   If the older content really is what you mean to commit: --commits-stale <path>"
         fi
         say "note: committing a path that is behind HEAD at your request (--commits-stale): ${(j:, :)stale_found}"
+    fi
+
+    # 1d. T-1092. A `@Test` that walks the real product tree must be named in
+    #     `CadenceTests/CadenceRealTreeSweepManifest.txt`, or deleting it stops an app-wide sweep and
+    #     nothing goes red. That rule has a detector already -- and it is the FULL SUITE, ~22 minutes,
+    #     so three times in two days a new sweep landed without its entry and the bill went to
+    #     whoever ran the suite next rather than to the author who could have prevented it.
+    #
+    #     `real-tree-sweep-manifest.sh precheck` is the ~1s, build-free half. It is deliberately
+    #     SOUND rather than complete: it reads a subset of what the Swift scan reads, and the Swift
+    #     scan's markers only ever grow along a test's reach, so anything this flags IS a sweep by
+    #     the real rule (measured: 228 flagged, 228 of them on the committed manifest, 0 false
+    #     positives, 86% of the manifest's 265 entries). What it misses the full suite still catches;
+    #     this only moves the cheap majority of the finding to the person holding the file.
+    #
+    #     Here rather than in `xcb.sh` because this is where the facts are: the real repository, the
+    #     exact staged bytes, and `git show HEAD:` for the manifest. `xcb.sh` runs per test
+    #     invocation -- once per mutation inside `mutate.sh` -- usually in a `git archive HEAD` tree
+    #     that is not a checkout at all, so it has nothing to gate on and would re-read all 314 test
+    #     files every time.
+    local -a staged_tests
+    staged_tests=()
+    for name in "${names[@]}"; do
+        [[ "$name" == CadenceTests/*.swift ]] || continue
+        src="${source_of[$name]}"
+        [[ -n "$src" ]] || src="$name"
+        [[ -f "$src" ]] && staged_tests+=("$name=$src")
+    done
+    if (( ${#staged_tests} )); then
+        local sweep_script="${SCRIPT_PATH:h}/real-tree-sweep-manifest.sh"
+        local sweep_manifest="CadenceTests/CadenceRealTreeSweepManifest.txt"
+        [[ -f "$sweep_script" ]] || refuse SWEEP-CHECK-MISSING "$sweep_script is not there, so the
+  sweep-manifest precheck cannot run on the test sources this commit stages. Skipping it silently is
+  how a guard becomes decoration; restore the script."
+        # The manifest AS THIS COMMIT WOULD LEAVE IT: the staged copy when the commit carries one,
+        # HEAD's otherwise. Regenerating and staging it is what clears this check, so reading the
+        # worktree copy here would let an unregenerated commit through on a sibling's edit.
+        local sweep_manifest_file="${source_of[$sweep_manifest]:-}"
+        local sweep_tmp=""
+        if [[ -z "$sweep_manifest_file" ]]; then
+            if [[ -n "${names[(r)$sweep_manifest]:-}" && -f "$sweep_manifest" ]]; then
+                sweep_manifest_file="$sweep_manifest"
+            else
+                sweep_tmp=$(mktemp "${TMP_BASE}cadence-sweep-manifest-${id}-XXXXXX") || refuse SCRATCH "cannot make a scratch file"
+                git show "$headsha:$sweep_manifest" > "$sweep_tmp" 2>/dev/null || : > "$sweep_tmp"
+                sweep_manifest_file="$sweep_tmp"
+            fi
+        fi
+        local sweep_out flagged
+        sweep_out=$(zsh "$sweep_script" "$id" precheck "$sweep_manifest_file" "${staged_tests[@]}" 2>&1)
+        local swrc=$?
+        [[ -n "$sweep_tmp" ]] && rm -f "$sweep_tmp"
+        # 0 and 4 are readings. 2 means it refused to answer -- no needles, an empty manifest, an
+        # unreadable source -- and a guard that reads its own refusal as "clean" is the hollow
+        # instrument this file exists to avoid.
+        (( swrc == 0 || swrc == 4 )) || refuse SWEEP-CHECK-FAILED "\`real-tree-sweep-manifest.sh $id precheck\` exited $swrc and said: ${sweep_out:-(nothing)}
+  Nothing was committed, because whether these test sources add an unlisted product-tree sweep went
+  unanswered."
+        if (( swrc == 4 )); then
+            local -a sweep_names
+            sweep_names=(${(f)"$(print -r -- "$sweep_out" | cut -f2)"})
+            local -a still_unnamed
+            still_unnamed=()
+            for flagged in "${sweep_names[@]}"; do
+                [[ -n "${not_sweeps[(r)$flagged]:-}" ]] || still_unnamed+=("$flagged")
+            done
+            if (( ${#still_unnamed} )); then
+                refuse SWEEP-MANIFEST-MISSING "these @Test functions walk the real product tree and are not on $sweep_manifest:
+$(print -r -- "$sweep_out" | sed 's/^/    /')
+  Deleting one of them would stop an app-wide sweep with nothing going red, which is what the
+  manifest exists to prevent (T-808), and finding it costs a full 22-minute suite run (T-1092).
+  Regenerate it from the scan -- never by hand:
+      ./scripts/real-tree-sweep-manifest.sh $id --write
+  then add the regenerated file to this commit:
+      $sweep_manifest=<the regenerated file>
+  If the authoritative scan disagrees and reports no change, this precheck and
+  CadenceRealTreeSweepScan have drifted apart: that is a finding worth a ticket, and
+  --not-a-sweep <name> lets the commit through once you have said which names you mean."
+            fi
+            say "note: precheck flagged ${#sweep_names} sweep(s) you declared not sweeps (--not-a-sweep): ${(j:, :)sweep_names}"
+        fi
     fi
 
     # 1c. T-991. `--commits-stale` is the one deliberate override in this script that discarded
@@ -1522,6 +1613,137 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "so dropping the declined hunk is still refused after the failed commit" \
         $( [[ $rc == 3 && "$out" == *DECLINED-HUNK-LOST*"mode7 in-flight line"* ]] && print 1 || print 0 ) "exit $rc: $out"
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+
+    say ""
+    say " mode 8 (SWEEP-MANIFEST-MISSING) -- a test that walks the product tree must arrive with its"
+    say "         manifest entry, at the commit, not 22 minutes later in someone else's suite run"
+    say "         ...and it must not be disableable by the precheck not being there, or not answering"
+    say "         (SWEEP-CHECK-MISSING / SWEEP-CHECK-FAILED)"
+    # The mutation this is here to kill: a `@Test` that sweeps the real product tree, committed with
+    # no line for it in CadenceRealTreeSweepManifest.txt. Both directions are asked, because a check
+    # that flags everything and a check that flags nothing both pass a one-sided test.
+    # Every later revision of this file only ADDS lines, so REMOVES-HEAD-LINES stays out of the way
+    # and each check below is answering the question it was written for.
+    ( cd "$ws"
+      mkdir -p CadenceTests
+      print -r -- "SweepSelftestSuite/theSweepThatIsAlreadyListed" > CadenceTests/CadenceRealTreeSweepManifest.txt
+      print -rl -- 'import Testing' \
+          '' \
+          'struct SweepSelftestSuite {' \
+          '    @Test func theSweepThatIsAlreadyListed() throws {' \
+          '        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") { #expect(!path.isEmpty) }' \
+          '    }' \
+          '}' > CadenceTests/SweepSelftest.swift
+      git add CadenceTests >/dev/null
+      git commit -qm "sweep fixture
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" )
+    ( cd "$ws" && print -rl -- 'import Testing' \
+        '' \
+        'struct SweepSelftestSuite {' \
+        '    @Test func theSweepThatIsAlreadyListed() throws {' \
+        '        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") { #expect(!path.isEmpty) }' \
+        '    }' \
+        '' \
+        '    @Test func theNewSweepNobodyListed() throws {' \
+        '        for path in try CadenceSourceScan.swiftFiles(under: "CadenceWidgets") {' \
+        '            #expect(path.hasSuffix(".swift"))' \
+        '        }' \
+        '    }' \
+        '}' > CadenceTests/SweepSelftest.swift
+    )
+    out=$( cd "$ws" && zsh "$here" s8 -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
+    check "an unlisted product-tree sweep is refused" \
+        $( [[ $rc == 3 && "$out" == *SWEEP-MANIFEST-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the exact @Test is named" \
+        $( [[ "$out" == *theNewSweepNobodyListed* ]] && print 1 || print 0 ) "$out"
+    check "the sweep that IS listed is not dragged in with it" \
+        $( [[ "$out" != *theSweepThatIsAlreadyListed* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git show HEAD:CadenceTests/SweepSelftest.swift ) != *theNewSweepNobodyListed* ]] && print 1 || print 0 )
+    check "it says how to regenerate, and says not to hand-edit" \
+        $( [[ "$out" == *"real-tree-sweep-manifest.sh"*"--write"* ]] && print 1 || print 0 ) "$out"
+
+    # A manifest edited in the CHECKOUT and left out of the commit clears nothing: the file HEAD
+    # ends up with is the one that has to name the sweep, and this checkout is not it (T-975 --
+    # a commit lands through a private index and never writes the checkout).
+    ( cd "$ws" && print -rl -- "SweepSelftestSuite/theSweepThatIsAlreadyListed" \
+        "SweepSelftestSuite/theNewSweepNobodyListed" > CadenceTests/CadenceRealTreeSweepManifest.txt )
+    out=$( cd "$ws" && zsh "$here" s8w -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
+    check "a manifest edited only in the checkout does not clear the check" \
+        $( [[ $rc == 3 && "$out" == *SWEEP-MANIFEST-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
+    ( cd "$ws" && git show HEAD:CadenceTests/CadenceRealTreeSweepManifest.txt > CadenceTests/CadenceRealTreeSweepManifest.txt )
+
+    # The override has to cost the same thing `--removes <n>` costs: reading the refusal. Naming
+    # some other test does not get you past it.
+    out=$( cd "$ws" && zsh "$here" s8a -m "$M" --not-a-sweep theSweepThatIsAlreadyListed \
+        CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
+    check "--not-a-sweep naming the WRONG test is still refused" \
+        $( [[ $rc == 3 && "$out" == *SWEEP-MANIFEST-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" s8a2 -m "$M" --not-a-sweep theNewSweepNobodyListed \
+        CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
+    check "naming the right one lets it through deliberately" $(( rc == 0 )) "exit $rc: $out"
+    check "and it says out loud which names were waved past" \
+        $( [[ "$out" == *"--not-a-sweep"*theNewSweepNobodyListed* ]] && print 1 || print 0 ) "$out"
+
+    # Committing the regenerated manifest ALONGSIDE the test is what clears it -- the manifest read
+    # is the one this commit would leave behind, not the checkout's copy.
+    ( cd "$ws" && print -rl -- "SweepSelftestSuite/theNewSweepNobodyListed" \
+        "SweepSelftestSuite/theSweepThatIsAlreadyListed" > sweep-manifest.txt )
+    out=$( cd "$ws" && zsh "$here" s8b -m "$M" CadenceTests/SweepSelftest.swift \
+        CadenceTests/CadenceRealTreeSweepManifest.txt=sweep-manifest.txt 2>&1 ); rc=$?
+    check "the same commit WITH the regenerated manifest is accepted" $(( rc == 0 )) "exit $rc: $out"
+    check "and HEAD now names the new sweep" \
+        $( [[ $( cd "$ws" && git show HEAD:CadenceTests/CadenceRealTreeSweepManifest.txt ) == *theNewSweepNobodyListed* ]] && print 1 || print 0 )
+
+    # A test that names product paths but walks nothing must commit untouched, or the guard is the
+    # "flags everything" failure and every test author learns to reach for --not-a-sweep.
+    ( cd "$ws" && print -rl -- 'import Testing' \
+        '' \
+        'struct SweepSelftestSuite {' \
+        '    @Test func theSweepThatIsAlreadyListed() throws {' \
+        '        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") { #expect(!path.isEmpty) }' \
+        '    }' \
+        '' \
+        '    @Test func theNewSweepNobodyListed() throws {' \
+        '        for path in try CadenceSourceScan.swiftFiles(under: "CadenceWidgets") {' \
+        '            #expect(path.hasSuffix(".swift"))' \
+        '        }' \
+        '    }' \
+        '' \
+        '    @Test func theFixedFileAssertionThatWalksNothing() throws {' \
+        '        let source = try CadenceSourceScan.sourceFile("Cadence/Models/AppTask.swift")' \
+        '        #expect(!source.isEmpty)' \
+        '    }' \
+        '}' > CadenceTests/SweepSelftest.swift
+    )
+    out=$( cd "$ws" && zsh "$here" s8c -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
+    check "a fixed-file assertion that walks nothing commits with no manifest change" \
+        $(( rc == 0 )) "exit $rc: $out"
+
+    # And it must not be disableable by the precheck simply not being there, or not answering. Same
+    # shape as DRIFT-CHECK-MISSING above: "the check could not run, so everything is fine" is the
+    # hollow instrument in miniature. `worktree-drift.sh` is copied along so the run gets far enough
+    # to reach this check rather than stopping one guard earlier.
+    ( cd "$ws" && mkdir -p lonely8 && cp "$here" lonely8/agent-commit.sh
+      cp "${here:h}/worktree-drift.sh" lonely8/worktree-drift.sh
+      print -r -- "// a sweep committed with no precheck nearby" >> CadenceTests/SweepSelftest.swift )
+    out=$( cd "$ws" && zsh "$ws/lonely8/agent-commit.sh" s8d -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
+    check "a copy with no real-tree-sweep-manifest.sh beside it refuses rather than skipping" \
+        $( [[ $rc == 3 && "$out" == *SWEEP-CHECK-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and nothing was committed by it" \
+        $( [[ $( cd "$ws" && git show HEAD:CadenceTests/SweepSelftest.swift ) != *"no precheck nearby"* ]] && print 1 || print 0 )
+    ( cd "$ws" && print -rl -- '#!/bin/zsh' 'print -r -- "something went wrong" >&2; exit 2' > lonely8/real-tree-sweep-manifest.sh )
+    out=$( cd "$ws" && zsh "$ws/lonely8/agent-commit.sh" s8e -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
+    check "a precheck that exits neither 0 nor 4 is refused, not read as a pass" \
+        $( [[ $rc == 3 && "$out" == *SWEEP-CHECK-FAILED* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    # The precheck's own fixtures -- the helper-hop sweep, the fixed-file assertion, the sweep that
+    # exists only inside a string literal, and both vacuity ends -- are asserted next door, and
+    # chained to here so that "run agent-commit.sh selftest before a batch closes" (T-781) covers
+    # them too. A selftest no runbook names is the hollow instrument one layer along.
+    out=$(zsh "${here:h}/real-tree-sweep-manifest.sh" selftest-chain precheck-selftest 2>&1); rc=$?
+    check "the precheck's own selftest passes (chained)" $(( rc == 0 )) "exit $rc: $out"
 
     rm -rf "$ws"
     say ""

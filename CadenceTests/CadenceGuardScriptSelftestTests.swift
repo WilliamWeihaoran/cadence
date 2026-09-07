@@ -97,6 +97,12 @@ struct CadenceGuardScriptSelftestTests {
         "NOTHING-TO-COMMIT",
         "NO-COAUTHOR-TRAILER",
         "NOT-REPO-ROOT",
+        // T-1092. The commit is where a new product-tree sweep gets its manifest entry, or does not
+        // and costs someone else a 22-minute suite run. Naming all three here means deleting mode 8
+        // from the selftest goes red rather than quietly halving what the guard is asked to prove.
+        "SWEEP-MANIFEST-MISSING",
+        "SWEEP-CHECK-MISSING",
+        "SWEEP-CHECK-FAILED",
     ]
 
     /// Every refusal `scripts/worktree-drift.sh` makes (T-975). Two, because the script's job is

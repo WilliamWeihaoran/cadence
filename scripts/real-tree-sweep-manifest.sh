@@ -14,6 +14,13 @@
 #                                                          # own derived data and signing overrides
 #                                                          # rather than paying for a second full
 #                                                          # build under an unrelated identity.
+#   ./scripts/real-tree-sweep-manifest.sh <id> precheck <manifest-file> <repo-path>[=<file>]...
+#                                                          # T-1092: the ~1s, build-free half. Names
+#                                                          # any `@Test` in the given sources that
+#                                                          # is a sweep and is NOT on the manifest.
+#   ./scripts/real-tree-sweep-manifest.sh <id> precheck-selftest
+#                                                          # prove the precheck still separates the
+#                                                          # four cases it is built to separate
 #
 # WHY THE MANIFEST EXISTS
 #
@@ -62,7 +69,8 @@ if [[ -z "$ID" ]]; then
     print -r -- "usage: real-tree-sweep-manifest.sh <id> [--write|selftest]" >&2
     exit 2
 fi
-if [[ -n "$MODE" && "$MODE" != "--write" && "$MODE" != "selftest" ]]; then
+if [[ -n "$MODE" && "$MODE" != "--write" && "$MODE" != "selftest" \
+      && "$MODE" != "precheck" && "$MODE" != "precheck-selftest" ]]; then
     print -r -- "real-tree-sweep-manifest.sh: unknown option '$MODE'" >&2
     exit 2
 fi
@@ -72,9 +80,358 @@ EXTRA_XCB_ARGS=("${@:3}")
 
 MANIFEST="$ROOT_DIR/CadenceTests/CadenceRealTreeSweepManifest.txt"
 _tmp_base="${TMPDIR:-/tmp/}"; [[ "$_tmp_base" != */ ]] && _tmp_base="$_tmp_base/"
+# zsh writes here-document temp files to $TMPPREFIX and sets that itself at startup, to `/tmp/zsh`
+# -- never $TMPDIR, and never empty, so a `[[ -z $TMPPREFIX ]]` guard would never fire. An
+# App-Sandboxed caller cannot write /tmp, so every heredoc below dies with `can't create temp file
+# for here document` before one line of it runs. Measured 2026-09-07: that is exactly how this
+# script's precheck read as broken from inside `CadenceGuardScriptSelftestTests`, which shells out
+# to `agent-commit.sh selftest` from the test host. Same fix, same reason, as `scripts/mutate.sh`.
+export TMPPREFIX="${CADENCE_TMPPREFIX:-${_tmp_base}zsh}"
+# `/usr/bin/python3` is an xcrun shim, and xcrun REFUSES to run inside an App Sandbox, exiting 1
+# with nothing on stdout. Probe by running one rather than trusting a path to mean an interpreter.
+PYTHON_BIN="${CADENCE_PYTHON:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+    for _candidate in /usr/bin/python3 /Applications/Xcode.app/Contents/Developer/usr/bin/python3 \
+                      /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+        [[ -x "$_candidate" ]] || continue
+        "$_candidate" -c '' >/dev/null 2>&1 || continue
+        PYTHON_BIN="$_candidate"; break
+    done
+fi
 LOG="${_tmp_base}cadence-real-tree-sweep-${ID}.log"
 XCB_LOG="${_tmp_base}cadence-xcb-${ID}.log"
 REGENERATED="${_tmp_base}cadence-real-tree-sweep-${ID}.manifest"
+
+# --- precheck: the build-free half (T-1092) -----------------------------------
+#
+# The scan above is the authority and costs a build plus the test-host lock: measured 158s wall for
+# `-only-testing:CadenceTests/CadenceTestTargetHygieneTests` alone on warm derived data, which is
+# why nothing can afford to run it on every `xcb.sh test`, and why for three days running a new
+# tree-walking test landed with no manifest entry and was found by whoever next paid for the full
+# 22-minute suite.
+#
+# So this is a second, cheap reader -- and the one property that keeps it from being the "shell copy
+# of the classifier" that CadenceRealTreeSweepScan's header rightly refuses is that it is **sound,
+# not complete**. The Swift scan starts a test's markers at its own body and only ever unions more
+# in (`var union = test.markers`, `union.formUnion(...)`), so ANY SUBSET of a test's reach that
+# already carries all three markers proves the full reach does. This reads exactly two levels of
+# that subset -- the test's own body, and same-file `func`s at brace depth 0 or 1 whose names the
+# body mentions -- so a test it flags is a sweep by the Swift rule, always. It just cannot see every
+# sweep, and it is not asked to: the authoritative test still runs in the full suite behind it.
+#
+# Measured 2026-09-07 over the committed manifest's 265 entries and 4,638 tests in `CadenceTests/`:
+#
+#   body only              146 flagged, 146 on the manifest,  0 false positives, 55.1% recall
+#   body + one same-file `func` hop
+#                          228 flagged, 228 on the manifest,  0 false positives, 86.0% recall
+#
+# and both incidents that could be replayed from git -- T-1090's
+# `theStoreRootIsNamedInExactlyOnePlaceUnderCadence` (walks in its own body) and T-1091's
+# `theAppsNestedHelperTypesNoLongerSwallowTheDeclarationsBelowThem` (walks through a same-file
+# `saveCommitSwiftFiles()`) -- are caught by the second. The hop is restricted to `func` on purpose:
+# an earlier spelling hopped into `var`/`let` too, and because a braceless `let x = 5` has no body
+# to delimit, the span reader ran on to the next `{` in the file and swallowed unrelated code. That
+# version reported 23 false positives, which is the whole failure mode this one has to not have.
+#
+# `scripts/xcb.sh` is deliberately NOT the caller. It runs per test invocation, including once per
+# mutation inside `scripts/mutate.sh`, where the mutation is in product source and the manifest
+# cannot have moved; and it commonly runs in a `git archive HEAD` tree, which is not a checkout, so
+# it has no cheap "what changed" to gate on -- it would have to re-read all 314 test files every
+# run. `agent-commit.sh` runs once, at the last moment before the work becomes everyone's problem,
+# in the real repository, and knows exactly which files are being staged.
+precheck_needles=(
+    'swiftFiles('
+    'enumerator(atPath:'
+    'enumerator(at:'
+    'contentsOfDirectory(at'
+    'subpathsOfDirectory'
+    '.sweep('
+)
+
+cmd_precheck() {
+    local manifest_file="${1:-}"
+    local -a sources
+    sources=("${@:2}")
+    if [[ -z "$manifest_file" || ! -f "$manifest_file" ]]; then
+        print -r -- "real-tree-sweep-manifest.sh: precheck needs a readable manifest file, got '${manifest_file:-(nothing)}'" >&2
+        return 2
+    fi
+    (( ${#sources} )) || {
+        print -r -- "real-tree-sweep-manifest.sh: precheck needs at least one <repo-path>[=<file>]" >&2
+        return 2
+    }
+    [[ -n "$PYTHON_BIN" ]] || {
+        print -r -- "real-tree-sweep-manifest.sh: no working python3 found, so the precheck cannot answer" >&2
+        return 2
+    }
+    CADENCE_SWEEP_NEEDLES="${(pj:\n:)precheck_needles}" \
+        "$PYTHON_BIN" -c "$PRECHECK_PY" "$manifest_file" "${sources[@]}"
+}
+
+PRECHECK_PY=$(cat <<'PYEOF'
+import os, re, sys
+
+# Sound-not-complete reader of the same rule CadenceTests/CadenceRealTreeSweepScan.swift applies.
+# Every needle it uses arrives in CADENCE_SWEEP_NEEDLES from the zsh array above, so there is one
+# spelling of them in this file and CadenceTestTargetHygieneTests pins that array against the Swift
+# scan's own `walkNeedles`.
+WALK = [n for n in os.environ.get("CADENCE_SWEEP_NEEDLES", "").split("\n") if n]
+if not WALK:
+    sys.stderr.write("precheck: no walk needles were handed in, so it would flag nothing\n")
+    sys.exit(2)
+
+QUOTE = '"'
+PRODUCT = re.compile(
+    QUOTE + r"(?:Cadence|CadenceWidgets|CadenceMCPServer)(?:/[^" + QUOTE + r"\n]*)?" + QUOTE
+)
+SWIFT_SOURCE = re.compile(r"swiftFiles\(|\.swift" + QUOTE)
+TEST = re.compile(r"@Test\b[\s\S]*?\bfunc\s+([A-Za-z0-9_]+)")
+FUNC = re.compile(r"\bfunc\s+([A-Za-z0-9_]+)")
+IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+WALK_MARK, PRODUCT_MARK, SWIFT_MARK = 1, 2, 4
+SWEEP = WALK_MARK | PRODUCT_MARK | SWIFT_MARK
+
+
+def code_only(src):
+    """Blank comments and string literals, preserving every offset -- the same invariant
+    CadenceRealTreeSweepScan asserts before it trusts a span (`maskOffsetsDisagree`)."""
+    out = list(src)
+    i, n = 0, len(src)
+    while i < n:
+        if src.startswith('"""', i):
+            j = src.find('"""', i + 3)
+            j = n if j < 0 else j + 3
+        elif src[i] == '"':
+            j = i + 1
+            while j < n and src[j] != '"':
+                if src[j] == "\\":
+                    j += 1
+                if j < n and src[j] == "\n":
+                    break
+                j += 1
+            j = min(j + 1, n)
+        elif src.startswith("//", i):
+            j = src.find("\n", i)
+            j = n if j < 0 else j
+        elif src.startswith("/*", i):
+            j = src.find("*/", i)
+            j = n if j < 0 else j + 2
+        else:
+            i += 1
+            continue
+        for k in range(i, j):
+            if out[k] != "\n":
+                out[k] = " "
+        i = j
+    return "".join(out)
+
+
+def body_span(code, start, after_name):
+    """`start` through the close of the brace block that opens after the declaration's name."""
+    open_at = code.find("{", after_name)
+    if open_at < 0:
+        return None
+    depth = 0
+    for j in range(open_at, len(code)):
+        if code[j] == "{":
+            depth += 1
+        elif code[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return (start, j + 1)
+    return None
+
+
+def markers(code_slice, raw_slice):
+    """Walk needles from code (a fixture that *quotes* a sweep is not one); the path literal and the
+    Swift-source evidence from raw, where literals survive. Same split as the Swift scan."""
+    found = 0
+    if any(needle in code_slice for needle in WALK):
+        found |= WALK_MARK
+    if PRODUCT.search(raw_slice):
+        found |= PRODUCT_MARK
+    if SWIFT_SOURCE.search(raw_slice):
+        found |= SWIFT_MARK
+    return found
+
+
+def sweeps_in(raw):
+    code = code_only(raw)
+    if len(code) != len(raw):
+        raise SystemExit("precheck: masking changed the source's offsets, so spans read the wrong text")
+
+    depth, depths = 0, [0] * len(code)
+    for i, ch in enumerate(code):
+        depths[i] = depth
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+
+    test_names = set(m.group(1) for m in TEST.finditer(code))
+
+    # Hop targets: same-file `func`s at file scope or one type deep, exactly the subset of the Swift
+    # scan's `byFileAndName` that is safe to delimit without a type checker. A `@Test` is never a hop
+    # target there either.
+    helpers = {}
+    for m in FUNC.finditer(code):
+        if depths[m.start()] > 1 or m.group(1) in test_names:
+            continue
+        span = body_span(code, m.start(), m.end(1))
+        if span:
+            helpers.setdefault(m.group(1), 0)
+            helpers[m.group(1)] |= markers(code[span[0]:span[1]], raw[span[0]:span[1]])
+
+    found = []
+    for m in TEST.finditer(code):
+        span = body_span(code, m.start(), m.end(1))
+        if not span:
+            continue
+        slice_code, slice_raw = code[span[0]:span[1]], raw[span[0]:span[1]]
+        union = markers(slice_code, slice_raw)
+        for ident in set(IDENT.findall(slice_code)):
+            union |= helpers.get(ident, 0)
+        if union & SWEEP == SWEEP:
+            found.append(m.group(1))
+    return found
+
+
+manifest_path, pairs = sys.argv[1], sys.argv[2:]
+listed = set()
+with open(manifest_path, encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        listed.add(line.split("/", 1)[-1])
+if not listed:
+    sys.stderr.write("precheck: the manifest handed in names no test, so every sweep would look new\n")
+    sys.exit(2)
+
+unlisted = []
+for pair in pairs:
+    repo_path, _, source_file = pair.partition("=")
+    source_file = source_file or repo_path
+    if not repo_path.endswith(".swift"):
+        continue
+    try:
+        with open(source_file, encoding="utf-8", errors="replace") as handle:
+            raw = handle.read()
+    except OSError as problem:
+        sys.stderr.write("precheck: cannot read %s: %s\n" % (source_file, problem))
+        sys.exit(2)
+    for name in sweeps_in(raw):
+        if name not in listed:
+            unlisted.append((repo_path, name))
+
+for repo_path, name in unlisted:
+    print("%s\t%s" % (repo_path, name))
+sys.exit(4 if unlisted else 0)
+PYEOF
+)
+
+if [[ "$MODE" == "precheck" ]]; then
+    cmd_precheck "${@:3}"
+    exit $?
+fi
+
+# --- precheck-selftest --------------------------------------------------------
+#
+# Four fixtures, because a precheck is only worth calling if it separates them: the sweep written in
+# the test's own body, the sweep written through a same-file helper (the T-1091 shape, and the one
+# the body-only reader missed), the fixed-file assertion that names product paths but walks nothing,
+# and the sweep that IS already on the manifest. A reader that stopped reading passes the first
+# three by flagging everything, or the last three by flagging nothing, so both directions are asked.
+if [[ "$MODE" == "precheck-selftest" ]]; then
+    FAILURES=0
+    check() {  # $1 = what, $2 = 1|0
+        if (( $2 )); then print -r -- "  ok    $1"; else print -r -- "  FAIL  $1"; FAILURES=$((FAILURES + 1)); fi
+    }
+    WS=$(mktemp -d "${_tmp_base}cadence-sweep-precheck-${ID}-XXXXXX") || exit 2
+    trap 'rm -rf "$WS"' EXIT
+    print -r -- "SweepPrecheckFixtures/theOneAlreadyOnTheManifest" > "$WS/manifest.txt"
+
+    cat > "$WS/Fixture.swift" <<'SWIFTEOF'
+import Testing
+
+struct SweepPrecheckFixtures {
+    private func everyProductSwiftFile() throws -> [String] {
+        try CadenceSourceScan.swiftFiles(under: "Cadence")
+    }
+
+    @Test func theOneInItsOwnBody() throws {
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/Services") {
+            #expect(path.hasSuffix(".swift"))
+        }
+    }
+
+    @Test func theOneThroughASameFileHelper() throws {
+        for path in try everyProductSwiftFile() {
+            #expect(!path.isEmpty)
+        }
+    }
+
+    @Test func theFixedFileAssertionThatWalksNothing() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/Models/AppTask.swift")
+        #expect(!source.isEmpty)
+    }
+
+    @Test func theOneAlreadyOnTheManifest() throws {
+        for path in try CadenceSourceScan.swiftFiles(under: "CadenceWidgets") {
+            #expect(path.hasSuffix(".swift"))
+        }
+    }
+
+    @Test func theOneThatOnlyQuotesASweep() throws {
+        let fixture = "for path in try CadenceSourceScan.swiftFiles(under: \"Cadence\") { }"
+        #expect(fixture.contains("Cadence"))
+    }
+}
+SWIFTEOF
+
+    OUT=$(cmd_precheck "$WS/manifest.txt" "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC=$?
+    print -r -- "real-tree-sweep-manifest.sh: precheck-selftest (exit $RC)"
+    check "an unlisted sweep is reported (exit 4)" $(( RC == 4 ))
+    check "the body-only sweep is named" $( [[ "$OUT" == *theOneInItsOwnBody* ]] && print 1 || print 0 )
+    check "the same-file-helper sweep is named -- the T-1091 shape" \
+        $( [[ "$OUT" == *theOneThroughASameFileHelper* ]] && print 1 || print 0 )
+    check "the fixed-file assertion is NOT named" \
+        $( [[ "$OUT" != *theFixedFileAssertionThatWalksNothing* ]] && print 1 || print 0 )
+    check "a sweep that only appears inside a string literal is NOT named" \
+        $( [[ "$OUT" != *theOneThatOnlyQuotesASweep* ]] && print 1 || print 0 )
+    check "the sweep already on the manifest is NOT named" \
+        $( [[ "$OUT" != *theOneAlreadyOnTheManifest* ]] && print 1 || print 0 )
+    check "the repo path is reported, not the temporary file" \
+        $( [[ "$OUT" == *"CadenceTests/Fixture.swift"* ]] && print 1 || print 0 )
+
+    # And the same source against a manifest that already names all three sweeps must be silent,
+    # which is the only way to tell "it read them" from "it flags whatever it is shown".
+    print -rl -- "SweepPrecheckFixtures/theOneAlreadyOnTheManifest" \
+        "SweepPrecheckFixtures/theOneInItsOwnBody" \
+        "SweepPrecheckFixtures/theOneThroughASameFileHelper" > "$WS/full.txt"
+    OUT2=$(cmd_precheck "$WS/full.txt" "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC2=$?
+    check "a manifest that names them all is accepted (exit 0)" $(( RC2 == 0 ))
+    check "and it says nothing" $( [[ -z "$OUT2" ]] && print 1 || print 0 )
+
+    # Vacuity, both ends: no needles and an empty manifest must refuse rather than report "clean".
+    OUT3=$(CADENCE_SWEEP_NEEDLES="" "$PYTHON_BIN" -c "$PRECHECK_PY" "$WS/manifest.txt" \
+        "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC3=$?
+    check "no walk needles refuses rather than reporting a clean tree" $(( RC3 == 2 ))
+    : > "$WS/empty.txt"
+    OUT4=$(cmd_precheck "$WS/empty.txt" "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC4=$?
+    check "an empty manifest refuses rather than flagging everything" $(( RC4 == 2 ))
+    OUT5=$(cmd_precheck "$WS/manifest.txt" 2>&1); RC5=$?
+    check "precheck with no sources refuses" $(( RC5 == 2 ))
+
+    if (( FAILURES )); then
+        print -r -- "real-tree-sweep-manifest.sh: precheck-selftest FAILED ($FAILURES check(s))" >&2
+        print -r -- "$OUT" >&2
+        exit 1
+    fi
+    print -r -- "real-tree-sweep-manifest.sh: precheck-selftest passed"
+    exit 0
+fi
 
 # Runs the scan once against whatever $MANIFEST currently holds and populates $REGENERATED and
 # $RUN_STATUS. Shared by the normal flow and `selftest` so the corruption below exercises the exact

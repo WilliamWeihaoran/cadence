@@ -1125,6 +1125,58 @@ struct CadenceTestTargetHygieneTests {
         }
     }
 
+    /// **The cheap reader must be looking for the same things this one is (T-1092).**
+    ///
+    /// The scan above is the authority and costs a build plus the test-host lock — measured 158s
+    /// wall for this suite alone on warm derived data — so nothing runs it when a test is added, and
+    /// three times in two days a new product-tree sweep landed with no manifest entry and was found
+    /// by whoever next paid for the full 22-minute suite. `scripts/agent-commit.sh` now asks
+    /// `scripts/real-tree-sweep-manifest.sh precheck` at the commit instead: about a second, no
+    /// build, and deliberately **sound rather than complete** — it reads a subset of a test's reach
+    /// (its own body, plus same-file `func`s the body names), and since `entries(inSources:)` starts
+    /// each test's markers at its own body and only ever unions more in, a subset that already holds
+    /// all three markers proves the whole reach does. So it cannot say "sweep" about a test this
+    /// scan would not; it can only miss ones, and those this suite still catches.
+    ///
+    /// What it *can* do is go blind. It cannot ask Swift for `walkNeedles` — it runs before any
+    /// build — so it carries a second spelling of them, and a needle added here and not there is a
+    /// whole family of sweeps the precheck stops seeing while still reporting a clean tree. That is
+    /// the shape this repository keeps re-finding, so the two lists are compared rather than
+    /// trusted.
+    @Test func theCheapPrecheckLooksForExactlyTheWalkNeedlesTheScanDoes() throws {
+        let script = try CadenceSourceScan.sourceFile("scripts/real-tree-sweep-manifest.sh")
+        #expect(script.contains("precheck"), "scripts/real-tree-sweep-manifest.sh has no precheck any more")
+
+        // `precheck_needles=(` … one single-quoted needle per line … a line that is just `)`. The
+        // needles themselves contain `(`, so the array cannot be closed by "the next `)`".
+        let lines = script.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard let open = lines.firstIndex(where: { $0.hasPrefix("precheck_needles=(") }) else {
+            Issue.record("scripts/real-tree-sweep-manifest.sh declares no precheck_needles array")
+            return
+        }
+        var spelled: [String] = []
+        for line in lines.dropFirst(open + 1) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == ")" { break }
+            guard trimmed.hasPrefix("'"), trimmed.hasSuffix("'"), trimmed.count >= 2 else {
+                Issue.record("precheck_needles holds a line this reader cannot parse: \(line)")
+                return
+            }
+            spelled.append(String(trimmed.dropFirst().dropLast()))
+        }
+
+        // Non-vacuity first: an empty parse would otherwise "agree" with an emptied Swift list.
+        #expect(spelled.count == CadenceRealTreeSweepScan.walkNeedles.count,
+                "the precheck spells \(spelled.count) walk needle(s); this scan has \(CadenceRealTreeSweepScan.walkNeedles.count)")
+        #expect(!spelled.isEmpty, "the precheck spells no walk needles, so it would flag nothing")
+        #expect(Set(spelled) == Set(CadenceRealTreeSweepScan.walkNeedles), """
+            the cheap precheck and this scan look for different walks, so the precheck is blind to \
+            the difference while still reporting a clean tree.
+            only in the precheck: \(Set(spelled).subtracting(CadenceRealTreeSweepScan.walkNeedles).sorted())
+            only in this scan:    \(Set(CadenceRealTreeSweepScan.walkNeedles).subtracting(spelled).sorted())
+            """)
+    }
+
     // MARK: - The non-product-tree sweep manifest (T-809)
 
     /// **A second, small, HAND-pinned manifest — deliberately not a third copy of

@@ -64,6 +64,22 @@ in one script — rather than one call per step.
 commits through a private index, leaves the shared one clean, and refuses a foreign staged path, a lost
 declined hunk, and a ledger edit that drops ticket ids.
 
+**Build every path on HEAD, not on the worktree copy you happened to open.** Siblings land while you
+work, so read `git show HEAD:<path>` into a file, apply your change to *that*, and pass it as
+`<path>=<content-file>`. Your ledger line belongs in the **same commit as the code it closes**, built
+the same way. `--removes <n>` is not a formality: read every line the refusal lists, satisfy yourself
+that each one is yours to remove, and only then say the number. **Never `--commits-stale`** — it is the
+one override here that discards a sibling's landed work.
+
+**A refused commit means your files are the only copy of your work. Do not delete them.** A refusal —
+`REMOVES-HEAD-LINES`, `HEAD-MOVED`, `WORKTREE-BEHIND-HEAD`, a user-gated flag — says *this commit was
+not taken*, not *this work was no good*. Two batches of finished, mutation-tested work were destroyed
+exactly this way (T-1094): the commit was refused, and the agent then did the standing "delete
+DerivedData and scratch when you are done", which was the only copy. **Cleanup applies to what you
+committed and to nothing else.** If anything you produced is not in `git log`, leave those files where
+they are, do not clean their directory, and end your report with their **absolute paths** and the exact
+refusal text — so the next agent commits your work instead of rebuilding it.
+
 ## Safety
 
 Do not launch the app or touch `/Applications/Cadence.app`. Do not create simulators unless your brief
