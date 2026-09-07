@@ -422,6 +422,133 @@ struct CadenceReorderCommitSurfaceTests {
         #expect(reporting == 7, "expected seven reorder surfaces, checked \(reporting)")
     }
 
+    // MARK: - T-996: the answer cannot be dropped on the floor
+
+    /// **The four reorder surfaces carry no `@discardableResult`, and nothing under `Cadence/`
+    /// discards their answer with `_ =`.**
+    ///
+    /// **Why this is here and not a wider needle in `CadenceSaveCommitDisciplineTests`.** T-871's
+    /// half 2b fires on a hand-rolled `\.order` renumber inside a `for` loop, and [[T-996]] filed
+    /// its three measured blind spots. Two of them — [[T-870]]'s blob-stored column ordering, and a
+    /// renumber delegated to `CadenceOrderCommit.commit` — have the same cause, and it is not that
+    /// the needle is too narrow. **The loop is not in the caller.** `commit(_:readOrder:writeOrder:
+    /// in:commit:)` owns the `for (index, item) in ordered.enumerated()`, which is now the *correct*
+    /// way to write a renumber, so no `\.order` scan of the caller can reach either one however
+    /// wide it is spelled. Widening the needle to catch them would mean un-recommending the helper.
+    ///
+    /// **So the anchor moved rather than the needle.** All four previously-invisible sites reach the
+    /// store through a surface that answers `Bool`, and all four of those surfaces were
+    /// `@discardableResult` — the one annotation whose entire job is to switch off Swift's own
+    /// unused-result diagnostic. Remove it and the **compiler** asks the question the regex could
+    /// not: a renumber whose refusal is ignored no longer compiles. That covers the delegated
+    /// renumber and the blob equally, because it keys on the answer rather than on the loop.
+    ///
+    /// **Measured before it landed:** every call site in `Cadence/` already consumed its answer, so
+    /// removing the annotation from all four cost the app target zero errors and zero warnings. The
+    /// annotation was not paying for anything; it was only standing ready to hide the next one.
+    ///
+    /// **`_ =` is the remaining hole, and the sweep below closes the direct form of it.** An
+    /// explicit discard still satisfies the compiler, so removing the annotation is necessary and
+    /// not sufficient. `CadenceTests/` is deliberately not swept — a test provoking a refusal may
+    /// legitimately drop the answer — though as it happens the two the removal surfaced, in
+    /// `SectionConfigRoundTripTests`, both turned out to want it: a merge test layered on a reorder
+    /// the store refused is asking its question of the wrong array, and now says so where it
+    /// happens.
+    ///
+    /// **What the `_ =` half cannot see, stated rather than implied.** It matches a discard written
+    /// *directly* onto one of the four calls. Six of the seven surfaces wrap theirs in
+    /// `withAnimation(…) { … }`, so a discard of the wrapper — `_ = withAnimation { … reorder … }` —
+    /// is a shape this needle does not reach, and making it reach would mean parsing the statement
+    /// rather than matching it. That form is not an accident anybody has, which is the whole
+    /// difference: this half exists to catch the discard somebody types to silence a new compiler
+    /// diagnostic, and that one is always written directly onto the call. The wrapped form is a
+    /// deliberate act, and the annotation check above plus review is what stands against it. Named
+    /// here so a green run is not read as `_ =` being impossible.
+    @Test func noReorderCommitSurfaceLetsItsAnswerBeDiscarded() throws {
+        // Non-vacuity for the reader itself, both polarities. A reader that answered "absent" for
+        // everything would pass the four assertions below over a tree that had re-annotated all of
+        // them, which is exactly the regression this test exists to catch.
+        #expect(Self.annotatedDiscardable("static func f(", in: """
+        @discardableResult
+        static func f() -> Bool { true }
+        """))
+        #expect(!Self.annotatedDiscardable("static func f(", in: """
+        @inlinable
+        static func f() -> Bool { true }
+        """))
+
+        for (path, declaration) in Self.reorderAnswerSurfaces {
+            let source = try CadenceCommitSurfaceScan.scanned(path)
+            #expect(source.contains(declaration), "non-vacuity: \(path) no longer declares \(declaration)")
+            #expect(
+                !Self.annotatedDiscardable(declaration, in: source),
+                "\(path) `\(declaration)` is @discardableResult again — a refused rearrangement can go unread"
+            )
+        }
+
+        var discards: [String] = []
+        let read = CadenceSourceScan.strippedSourceReader()
+        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        #expect(paths.count >= 300, "the app sweep read \(paths.count) files")
+        for path in paths {
+            let source = try read(path)
+            for name in Self.reorderAnswerNames
+            where CadenceSourceScan.matchCount("_\\s*=\\s*[\\w.]*\\b\(name)\\s*\\(", in: source) > 0 {
+                discards.append("\(path) `\(name)`")
+            }
+        }
+        #expect(
+            discards.isEmpty,
+            "a screen discards the answer to a rearrangement the user can see: \(discards.sorted())"
+        )
+    }
+
+    /// The four surfaces whose `Bool` is the only evidence a rearrangement reached the store.
+    private static let reorderAnswerSurfaces = [
+        ("Cadence/Shared/CadenceOrderCommit.swift", "static func commit<Item>("),
+        ("Cadence/Shared/CadenceSectionConfigMerge.swift", "func reorderSectionConfigs("),
+        ("Cadence/macOS/Views/KanbanBoardSupport.swift", "static func reorder("),
+        ("Cadence/macOS/Views/TasksPanelSupport.swift", "static func reorderTask(")
+    ]
+
+    private static let reorderAnswerNames = [
+        "CadenceOrderCommit.commit",
+        "reorderSectionConfigs",
+        "KanbanBoardSupport.reorder",
+        "TasksPanelSupport.reorderTask"
+    ]
+
+    /// Whether `@discardableResult` sits on the declaration `declaration` opens.
+    ///
+    /// Read backwards from the declaration over whitespace and any other attributes, so
+    /// `@MainActor` or an access modifier between the two does not hide it, and so an annotation on
+    /// some *earlier* declaration in the file is not attributed to this one.
+    private static func annotatedDiscardable(_ declaration: String, in source: String) -> Bool {
+        guard let range = source.range(of: declaration) else { return false }
+        var head = String(source[source.startIndex..<range.lowerBound])
+        var shrinking = true
+        while shrinking {
+            shrinking = false
+            while let last = head.last, last.isWhitespace {
+                head.removeLast()
+                shrinking = true
+            }
+            for modifier in Self.declarationModifiers where head.hasSuffix(modifier) {
+                head.removeLast(modifier.count)
+                shrinking = true
+                break
+            }
+        }
+        return head.hasSuffix("@discardableResult")
+    }
+
+    /// Everything that may legally sit between `@discardableResult` and the `func`. `@MainActor` is
+    /// in the list because `KanbanBoardSupport.reorder` carries one, and a reader that stopped there
+    /// would report that site clean whatever it was annotated with.
+    private static let declarationModifiers = [
+        "static", "private", "fileprivate", "internal", "public", "final", "nonisolated", "@MainActor"
+    ]
+
     // MARK: - Helpers
 
     private func storedOrder(in modelContainer: ModelContainer) throws -> [String] {

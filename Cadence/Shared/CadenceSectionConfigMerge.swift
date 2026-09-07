@@ -523,7 +523,6 @@ extension CadenceSectionConfigContainer {
     ///   then nothing pending and the board is drawing what the store holds. `false` means the
     ///   columns are back as they were found and the caller must show
     ///   `CadenceOrderCommit.failureNotice`.
-    @discardableResult
     func reorderSectionConfigs(
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() },

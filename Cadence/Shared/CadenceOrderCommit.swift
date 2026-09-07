@@ -63,7 +63,15 @@ enum CadenceOrderCommit {
     ///   undo path no test can reach is an undo path no test can prove.
     /// - Returns: Whether the new order is in the store. `false` means every row is back exactly
     ///   as it was found, so the caller must show `failureNotice` rather than report a move.
-    @discardableResult
+    ///
+    /// **Not `@discardableResult`, deliberately ([[T-996]]).** It was, until the sweep that is
+    /// supposed to catch an unreported rearrangement was measured against the sites it cannot see.
+    /// Two of its three stated blind spots — the blob ordering below, and a renumber delegated to
+    /// this function — are invisible for one reason: the `for` loop is *here*, so no `\.order` scan
+    /// of the caller reaches it. Dropping the annotation makes the compiler ask instead, and it asks
+    /// the better question, because the answer is the whole point of the function. Measured when it
+    /// was removed: every call site in the app already read it, so this cost nothing and only ever
+    /// stood ready to hide the next site that did not.
     static func commit<Item>(
         _ ordered: [Item],
         readOrder: (Item) -> Int,

@@ -107,11 +107,11 @@ breaks the rule if any of three halves is true:
    change travels up through every frame *handed* a `ModelContext` and stops at the first that was not.
 2. **Report** — something **anywhere in the swallowed commit's own block** says it worked: `dismiss…()`,
    `is/show<X> = false`, `editing/selected/pending<X> = nil`, `presentedX = …`, `onSave(…)`, an
-   `@AppStorage` write, a write through a **collection `@Binding`** (the surface stays open and fills
-   itself in, T-664), **the answer itself** (`return true` from a `-> Bool`, non-`nil` from a `-> X?`),
-   or **a rearrangement the user can see** (T-614) — a row that stays where you dropped it outclaims a
-   dismissed sheet. **The last two are only partly mechanised and the sweep says so: read T-996 and
-   T-997 before trusting a green run on either, and keep pinning reorder sites individually.**
+   `@AppStorage` write, a write through **any `@Binding`** (the surface stays open and fills itself
+   in — T-664, scalars too since T-997), **the answer itself** (`return true` from a `-> Bool`,
+   non-`nil` from a `-> X?`), or **a rearrangement the user can see** (T-614) — a row that stays
+   where you dropped it outclaims a dismissed sheet. **A reorder surface answering `Bool` is never
+   `@discardableResult`** (T-996): no `\.order` sweep sees a renumber delegated to a helper.
    A "swallowed commit" is `try?` on a `save()` **or** a `Cadence*Persistence` helper — the commit
    surface, not the method name — **one frame down included**.
 3. **Commit reach** — the function inserts **or deletes** and reaches no commit at all. A declaration

@@ -300,7 +300,6 @@ enum TasksPanelSupport {
     ///   because a `save()` that throws cannot be provoked out of an in-memory container.
     /// - Returns: Whether the new order is in the store. `false` means every row is back where it
     ///   was, and the panel must show `CadenceOrderCommit.failureNotice`.
-    @discardableResult
     static func reorderTask(
         droppedID: UUID,
         targetID: UUID,

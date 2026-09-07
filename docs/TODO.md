@@ -1167,35 +1167,70 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   rank loop it guards can be dropped — there is nothing left to drift. Both files are under
   `Cadence/Shared/`, so `CadenceWidgets` and `CadenceMCPServer` must be built explicitly.
 
-- [T-999] **Four SDK names in the unqualified ledger are the residual framework allowlist, and it
-  will grow.** `reloadInputViews()`, `validateMenuItem(_:)`, `unregisterForRemoteNotifications()`
-  and `ranges(of:options:)` are AppKit/UIKit/Foundation members this repository *mentions* but never
-  *calls*, so `calledNames(inCode:)` cannot resolve them. This is the allowlist [[T-718]] feared,
-  reduced from "a list of AppKit" to four lines — because every framework name the app actually
-  calls resolves for free. Each new mention costs one ledger line naming its file and reason, which
-  beats a bare allowlist. **Watch the count:** past roughly a dozen the trade has changed.
-- [T-998] **The unqualified comment-claim half cannot see [[T-647]]'s own spelling.** [[T-718]]
-  landed on the question *is this name called anywhere in the tree*, which has one reading and needs
-  no SDK allowlist. What it gives up is exactly T-647's defect: `insertSubtask`/`deleteSubtask` named
-  in a comment about a file that has neither **and declared elsewhere in the tree**. Those resolve
-  here and always will. Catching them needs *the scope the sentence implies*, which is a third rule,
-  not a widening of this one. Filed so nobody reads a green sweep as proof that a comment's pointer
-  was checked against the file it is about.
-- [T-997] **"The surface filled itself in" is guarded for one spelling and no more.** [[T-664]] added
-  a write through a **collection `@Binding`** to `successReport` — 11 declarations in 8 files, of
-  which 3 hold a swallowed commit, zero false positives. The other half of
-  `TagPickerPopoverViews.restore`'s own report — `query = ""`, the search field blanking — has no
-  spelling and **should not get the obvious one**: `= ""` on view state is ordinary field clearing
-  and would cost far more than it finds. A **scalar** `@Binding` write is also uncovered; measure its
-  false-positive count before widening, the way T-664 measured this one.
-- [T-996] **"A rearrangement the user can see" is guarded for one spelling and no more.** [[T-871]]
-  landed half 2b: a hand-rolled `\.order` renumber inside a `for` loop, in a declaration that owns
-  its unit of work and swallows its commit or reaches none. That is **a proxy for the clause, not
-  the clause** — sound, and incomplete in three measured ways: a **blob-stored ordering** is
-  invisible ([[T-870]]); a renumber **delegated to `CadenceOrderCommit`** is invisible, and that is
-  now the *correct* way to write one, so the half sees the wrong spelling and not the right one; and
-  a bare **`move(fromOffsets:toOffset:)`** never writes a field at all. Measured: six declarations
-  renumber `\.order` in a loop and all six commit. **This is the stated exemption, not a defect.**
+- [T-999] **CLOSED 2026-09-07 (agent `sweeps2`) — the count is watched by an assertion, and the
+  arithmetic that framed it was wrong.** *"Watch the count"* was an instruction to a reader, which
+  is the shape this repository keeps finding stale, so the group is a named list —
+  `CadenceCommentSymbolClaim.unqualifiedSDKMentions` — and
+  `theUnqualifiedLedgerSplitsIntoItsThreeGroups` fails at 13 with the decision written into the
+  message rather than left to whoever notices. **The finding worth keeping is the miscount.** The
+  doc's own tally read "21 + 4 + 2 = 27" and sums only by counting one group in *distinct names*
+  and the other two in *ledger lines*: `ranges(of:options:)` is mentioned by two different test
+  files for two different reasons, so the SDK group is **5 lines naming 4 members** and the
+  tombstone remainder is **20**, not 21. Measured at this revision: 27 = 20 + 5 + 2, one reading
+  throughout. The classification is now derived — two named lists and a subtraction — so the next
+  entry cannot be described in prose and left out of the total, which is exactly how the wrong
+  number got typed. **Originally:** **Four SDK names in the unqualified ledger are the residual
+  framework allowlist, and it will grow.**
+- [T-998] **CLOSED 2026-09-07 (agent `sweeps2`) — the decline stands, and it is a number now
+  instead of a paragraph.** Nothing changed about the rule: the scoped reading is still not landed,
+  and a green unqualified sweep still does not mean a comment's pointer was checked against the file
+  it is about. What changed is that the reason is measured every run.
+  `unresolvedUnqualifiedSpans(in:against:)` already unions the file's own calls into its world, so
+  handing it an empty index **is** the file-scoped reading exactly — no second detector needed — and
+  `theScopedReadingIsAnOrderOfMagnitudeMoreLedgerThanTheTreeScopedOne` runs both over the same five
+  roots and asserts the ratio. **Measured at this revision: 1064 selector-shaped spans, 27
+  unresolved tree-scoped — the ledger exactly — and 389 unresolved file-scoped, a ratio of 14.4.**
+  **Landed as a ratio and not the counts, deliberately:** a pinned count
+  rots on the next commit that adds a comment and gets bumped without being read, whereas the ratio
+  *is* the argument — the scoped reading costs an order of magnitude more ledger — and it re-prices
+  itself as the tree changes. If it ever falls under 5x, the trade has changed and this ticket should
+  be reopened rather than the floor relaxed; the failure message says so. **Originally:** **The
+  unqualified comment-claim half cannot see [[T-647]]'s own spelling.**
+- [T-997] **CLOSED 2026-09-07 (agent `sweeps2`) — the restriction to collections was never the
+  principle, and the false-positive count the ticket asked for is zero.** `filledInReport` keys on
+  `@Binding var <name>:` now, not `@Binding var <name>: [`. **The argument was already in T-664's own
+  doc and did not mention collection-ness:** a write through a binding is a report *outward* because
+  the value lands in state this view does not own, in a parent redrawn from it that has no idea the
+  commit was refused — and that is as true of one finished `Tag` as of a list of them. Measured at
+  this revision: dropping the `: [` takes the declaration population from **11 in 8 files to 336 in
+  115 files**, a thirty-fold wider net, and the sweep over `Cadence/` stays green with the exemption
+  list unchanged — **zero** false positives, so the population T-664 feared ("mostly scalar draft
+  fields a sheet edits as its ordinary job") does not sit over a swallowed commit anywhere.
+  `halfTwoReadsAWriteThroughAScalarBindingAsAReport` is the counterexample, with the three nearest
+  misses the wider net could have bought and does not: the view's own `@State` spelled identically, a
+  *read* of the binding, and a write to a member of the bound object. The `query = ""` half stays
+  unspelled for the reason the ticket gives. **Originally:** **"The surface filled itself in" is
+  guarded for one spelling and no more.**
+- [T-996] **CLOSED 2026-09-07 (agent `sweeps2`) — the honest fix was a different anchor, not a
+  wider needle.** Two of the three blind spots ([[T-870]]'s blob ordering, and a renumber delegated
+  to `CadenceOrderCommit.commit`) have one cause, and it is **not** that the needle is too narrow:
+  *the loop is not in the caller.* No `\.order` scan of a delegating declaration can reach a `for`
+  loop living inside the helper, however wide it is spelled — and widening one to try would mean
+  un-recommending the helper that is now the right way to write a renumber. **What all four
+  invisible sites do share is that they answer `Bool`, and all four of those surfaces carried
+  `@discardableResult`** — the one annotation whose entire job is to switch off Swift's own
+  unused-result diagnostic. It is gone from `CadenceOrderCommit.commit`,
+  `CadenceSectionConfigContainer.reorderSectionConfigs`, `KanbanBoardSupport.reorder` and
+  `TasksPanelSupport.reorderTask`, so the **compiler** now asks the question the regex could not,
+  keying on the answer rather than on the loop. **Measured: removing all four cost the app target
+  zero errors and zero warnings** — every call site in `Cadence/` already read its answer, so the
+  annotation was paying for nothing and only standing ready to hide the next site that did not. The
+  two it did surface were both in `SectionConfigRoundTripTests`, and both wanted the answer: a merge
+  test layered on a reorder the store refused is asking its question of the wrong array.
+  `noReorderCommitSurfaceLetsItsAnswerBeDiscarded` pins the absence of the annotation and sweeps
+  `Cadence/` for the `_ =` escape hatch, since removal is necessary and not sufficient. Blind spot 3
+  stays open and is now the only one: a `move(fromOffsets:toOffset:)` returns nothing to ignore.
+  **Originally:** **"A rearrangement the user can see" is guarded for one spelling and no more.**
 
 - [T-992] **The `=` content file is never asked where it was built, and that is the commonest way
   staleness propagates.** [[T-982]] deliberately checks only the bare form, on instruction: the `=`

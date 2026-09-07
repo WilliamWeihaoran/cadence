@@ -1387,6 +1387,79 @@ struct CadenceSaveCommitDisciplineTests {
         #expect(CadenceSaveCommitRule.reportOffenders(in: onlyReadsTheBinding).isEmpty)
     }
 
+    /// [[T-997]]: the same report through a **scalar** binding, which the collection-only needle
+    /// could not see.
+    ///
+    /// This is the counterexample the widening was written for, and it is deliberately the *nearest*
+    /// one: the same popover, the same swallowed `save()`, the same write outward to a parent that
+    /// is redrawn from it — differing from `halfTwoReadsAWriteThroughACollectionBindingAsAReport`
+    /// only in that the finished thing handed back is one `Tag` rather than a list of them. T-664
+    /// scoped its needle to collections on a guess about false positives and never argued that a
+    /// scalar is a weaker claim. It is not: the sheet's parent believes the un-archive happened
+    /// either way.
+    ///
+    /// The three misses below are the ones the thirty-fold wider net could plausibly have bought,
+    /// and none of them fires: a write to the view's own `@State`, a *read* of the binding, and an
+    /// assignment to a member of something the binding names rather than to the binding itself.
+    @Test func halfTwoReadsAWriteThroughAScalarBindingAsAReport() throws {
+        let fillsInAScalar = """
+        struct TagPickerPopover: View {
+            @Binding var restoredTag: Tag?
+
+            private func restore(_ tag: Tag) {
+                tag.isArchived = false
+                try? modelContext.save()
+                restoredTag = tag
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: fillsInAScalar) == ["restore"])
+
+        // The view's own scratch field, spelled exactly like the binding above. Nobody outside the
+        // frame is told anything, and this is the population T-664 feared the widening would sweep
+        // up — it does not, because the anchor is the declaration and not the name.
+        let writesItsOwnState = """
+        struct TagPickerPopover: View {
+            @State private var restoredTag: Tag?
+
+            private func restore(_ tag: Tag) {
+                tag.isArchived = false
+                try? modelContext.save()
+                restoredTag = tag
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: writesItsOwnState).isEmpty)
+
+        // Reading a scalar binding is not writing it.
+        let onlyReadsTheScalarBinding = """
+        struct TagPickerPopover: View {
+            @Binding var restoredTag: Tag?
+
+            private func refresh(_ tag: Tag) {
+                tag.isArchived = false
+                try? modelContext.save()
+                if restoredTag == tag { highlight(tag) }
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: onlyReadsTheScalarBinding).isEmpty)
+
+        // A field *on* the bound object is a model write, not a report outward — the same
+        // distinction `viewState` draws for `context.isArchived = false`.
+        let writesAMemberOfTheBoundObject = """
+        struct TagPickerPopover: View {
+            @Binding var restoredTag: Tag?
+
+            private func refresh(_ tag: Tag) {
+                try? modelContext.save()
+                restoredTag.isArchived = false
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: writesAMemberOfTheBoundObject).isEmpty)
+    }
+
     // MARK: - Exemptions rot
 
     /// Each exemption claims a specific file still breaks the rule in a specific named function for
@@ -1929,6 +2002,17 @@ enum CadenceSaveCommitRule {
     ///    not the count of reorder surfaces.
     /// 3. **`move(fromOffsets:toOffset:)` on a bound array is invisible.** SwiftUI's own reorder
     ///    gesture rearranges the array and never writes a field.
+    ///
+    /// **[[T-996]] closed 1 and 2, and not by widening this.** Both have one cause and it is not
+    /// that the needle is too narrow: **the loop is not in the caller.** No `\.order` scan of a
+    /// delegating declaration can reach a `for` loop that lives inside `CadenceOrderCommit.commit`,
+    /// however wide the scan is spelled, and widening one to try would mean un-recommending the
+    /// helper that is now the right way to write a renumber. So the anchor moved instead: all four
+    /// invisible spellings reach the store through a surface answering `Bool`, all four of those
+    /// surfaces were `@discardableResult`, and dropping that annotation hands the question to the
+    /// **compiler**, which keys on the answer rather than on the loop.
+    /// `CadenceReorderCommitSurfaceTests` pins the absence of that annotation, and 3 is still
+    /// open — a `move(fromOffsets:toOffset:)` returns nothing to ignore.
     ///
     /// **Why it is not `!disclaimsOwnership` by accident.** `TagSupport.seedDefaultTags(in:…)`
     /// writes `tag.order = index` in an `.enumerated()` loop and ends `try? context.save()`, and it
@@ -2842,8 +2926,8 @@ enum CadenceSaveCommitRule {
         return viewState + "(" + Set(names).sorted().joined(separator: "|") + ")\\s*=(?!=)"
     }
 
-    /// Writing a **collection `@Binding`** — [[T-664]], and the vocabulary's first spelling for a
-    /// surface that reports by *filling in* rather than by closing.
+    /// Writing **any `@Binding`** — [[T-664]] for the spelling, [[T-997]] for the scope — and the
+    /// vocabulary's only spelling for a surface that reports by *filling in* rather than by closing.
     ///
     /// Every other member of `successReport` is a **dismissal**: the sheet closes, the flag goes
     /// `false`, the completion handler runs. [[T-497]] caught `TagPickerPopoverViews.saveEdits` and
@@ -2852,28 +2936,34 @@ enum CadenceSaveCommitRule {
     /// `selectedTags.append(tag)`, then `query = ""`. The popover made the strongest claim it makes
     /// — *the tag is back and it is on this task* — over a store that had refused the un-archive.
     ///
-    /// **Why a collection `@Binding` and not `.append(` generally.** `.append(` alone is one of the
-    /// commonest lines in the app and says nothing about who is being told. A write **through a
-    /// binding** is by definition a report *outward*: the value lands in state this view does not
-    /// own, in a parent that is redrawn from it and has no idea a commit was refused. That is the
-    /// same argument `viewState`'s anchor makes in the other direction — `context.isArchived =
-    /// false` is a model field and is left alone, `isPresented = false` is the screen moving on.
+    /// **Why a `@Binding` and not `.append(` generally.** `.append(` alone is one of the commonest
+    /// lines in the app and says nothing about who is being told. A write **through a binding** is
+    /// by definition a report *outward*: the value lands in state this view does not own, in a
+    /// parent that is redrawn from it and has no idea a commit was refused. That is the same
+    /// argument `viewState`'s anchor makes in the other direction — `context.isArchived = false` is
+    /// a model field and is left alone, `isPresented = false` is the screen moving on.
     ///
-    /// **Measured, and the scope is the measurement.** `@Binding var <name>: [...]` is **11**
-    /// declarations across 8 files under `Cadence/`, of which three hold a swallowed commit at all;
-    /// `@Binding var` unrestricted is far larger and mostly scalar draft fields a sheet edits as its
-    /// ordinary job, which is a different thing from handing a parent a finished row. Widening past
-    /// collections needs its own false-positive count before it is worth having.
+    /// **[[T-997]]: the restriction to collections was never the principle.** [[T-664]] measured
+    /// `@Binding var <name>: [...]` — **11** declarations across 8 files under `Cadence/` — and
+    /// scoped the needle to what it had measured, guessing that unrestricted `@Binding var` would be
+    /// "mostly scalar draft fields a sheet edits as its ordinary job". The guess was never argued
+    /// for: nothing in the paragraph above mentions collection-ness, and a sheet handing its parent
+    /// a finished *scalar* over a refused commit is the same defect as handing it a finished row.
+    /// Measured at [[T-996]]'s revision: dropping the `: [` restriction takes the declaration count
+    /// from **11 in 8 files** to **336 in 115 files**, a thirty-fold wider net, and the sweep over
+    /// `Cadence/` stays green with the exemption list unchanged — **zero** false positives. The
+    /// false-positive count T-997 asked for was taken, and it was zero.
     ///
     /// **What it still cannot see.** The other half of `restore`'s report — `query = ""`, the search
-    /// field blanking — has no spelling here and is not one this scan should try to grow: `= ""` on
-    /// view state is ordinary field clearing. This covers the append; it does not cover "the surface
-    /// filled itself in" in general, which stays a rule a reader enforces. See [[T-996]].
+    /// field blanking — has no spelling here and is not one this scan should try to grow: `query` is
+    /// the view's own `@State`, and `= ""` on view state is ordinary field clearing. This covers
+    /// every write *out through a binding*; it does not cover "the surface filled itself in" in
+    /// general, which stays a rule a reader enforces. See [[T-996]].
     ///
     /// `nil` when the file declares none, so the needle is never an empty alternation.
     private static func filledInReport(in source: String) -> String? {
         let names = CadenceSourceScan
-            .captures("@Binding\\s+var\\s+(\\w+)\\s*:\\s*\\[", in: source)
+            .captures("@Binding\\s+var\\s+(\\w+)\\s*:", in: source)
             .map(\.text)
         guard !names.isEmpty else { return nil }
         return viewState

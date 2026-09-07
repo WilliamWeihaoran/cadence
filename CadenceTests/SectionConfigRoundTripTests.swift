@@ -345,13 +345,16 @@ struct SectionConfigRoundTripTests {
         area.sectionConfigs = seededConfigs()
         let snapshot = area.sectionConfigs
 
-        // The Mac drags "Shipped" ahead of "Research".
-        area.reorderSectionConfigs(in: modelContext) { configs in
+        // The Mac drags "Shipped" ahead of "Research". The answer is read rather than discarded
+        // (T-996): a merge test that opens with a reorder the store refused is asking its question
+        // of the wrong array, and would say so here instead of failing three lines later.
+        let macReordered = area.reorderSectionConfigs(in: modelContext) { configs in
             var moved = configs
             let shipped = moved.remove(at: 2)
             moved.insert(shipped, at: 1)
             return moved
         }
+        #expect(macReordered, "the store refused the reorder this merge is layered on")
         #expect(area.sectionConfigs.map(\.name) == [TaskSectionDefaults.defaultName, "Shipped", "Research"])
 
         // The iPhone recolours a column from its pre-drag snapshot. It never touched order.
@@ -375,12 +378,13 @@ struct SectionConfigRoundTripTests {
         #expect(snapshot.map(\.name) == [TaskSectionDefaults.defaultName, "Research", "Shipped", "Backlog"])
 
         // The Mac pulls "Backlog" to the front.
-        area.reorderSectionConfigs(in: modelContext) { configs in
+        let macReordered = area.reorderSectionConfigs(in: modelContext) { configs in
             var moved = configs
             let backlog = moved.remove(at: 3)
             moved.insert(backlog, at: 1)
             return moved
         }
+        #expect(macReordered, "the store refused the reorder this merge is layered on")
         #expect(
             area.sectionConfigs.map(\.name)
                 == [TaskSectionDefaults.defaultName, "Backlog", "Research", "Shipped"]

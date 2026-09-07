@@ -237,7 +237,6 @@ enum KanbanBoardSupport {
     /// - Returns: Whether the drop is in the store. `false` means every card is back where it was
     ///   and the column must show `CadenceOrderCommit.failureNotice` rather than accept the drop.
     @MainActor
-    @discardableResult
     static func reorder(
         _ columnTasks: [AppTask],
         moving task: AppTask,

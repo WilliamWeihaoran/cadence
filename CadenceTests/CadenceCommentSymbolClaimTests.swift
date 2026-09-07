@@ -692,21 +692,32 @@ enum CadenceCommentSymbolClaim {
     /// by hand when the half landed and every one falls into three groups, none of which misleads
     /// a reader:
     ///
-    /// - **Tombstones and counterfactuals**, 21 of them, the same class the qualified ledger is
+    /// - **Tombstones and counterfactuals**, 20 of them, the same class the qualified ledger is
     ///   mostly made of. Their sentences read *"There is no noteLinks(in:)"*, *"moveAnchor(by:) …
     ///   are gone with the ‹ ➤ › cluster"*, *"a shared splits(width:sides:) would trade five
     ///   readable domain expressions for one generic"*, *"a property rather than
     ///   isEmptyState(for:)"*. A sentence whose whole subject is a symbol's **absence** names an
     ///   absent symbol on purpose. (Quoted without backticks here on purpose: this file is swept
     ///   too, and prose about a ledger must not add rows to it.)
-    /// - **SDK members this app mentions but never calls**, 4 — reloadInputViews,
-    ///   validateMenuItem, unregisterForRemoteNotifications, ranges(of:options:). This is the
-    ///   residue of the framework allowlist [[T-718]] feared, and it is four lines rather than a
-    ///   list of AppKit, because `calledNames(inCode:)` resolves every framework name the app
-    ///   actually calls without being told about it. A ledger line names its file and its reason,
-    ///   which an allowlist of bare SDK names cannot.
-    /// - **Illustrative spans in these detectors' own prose**, 2: ``foo(_:)`` in the header above,
-    ///   and the one in the sentence about what `#function` hands back.
+    /// - **SDK members this app mentions but never calls**, **5 lines** naming **4 distinct
+    ///   members** — reloadInputViews, validateMenuItem, unregisterForRemoteNotifications, and
+    ///   ranges(of:options:), which two different test files mention. This is the residue of the
+    ///   framework allowlist [[T-718]] feared, and it is five lines rather than a list of AppKit,
+    ///   because `calledNames(inCode:)` resolves every framework name the app actually calls
+    ///   without being told about it. A ledger line names its file and its reason, which an
+    ///   allowlist of bare SDK names cannot.
+    /// - **Illustrative spans in these detectors' own prose**, 2: foo(_:) in the header above, and
+    ///   the one in the sentence about what `#function` hands back.
+    ///
+    /// **[[T-999]]: the arithmetic above is now derived, because it was wrong when it was typed.**
+    /// It read "21 + 4 + 2 = 27", which sums only if the first two groups are counted in different
+    /// units — 4 is the number of *distinct SDK members*, and the group occupies 5 ledger *lines*,
+    /// so the tombstone remainder is 20 and not 21. One reading throughout, and it is lines:
+    /// **20 + 5 + 2 = 27**. `unqualifiedSDKMentions` and `unqualifiedIllustrativeSpans` below name
+    /// their lines exactly and `theUnqualifiedLedgerSplitsIntoItsThreeGroups` sums them against the
+    /// ledger, so the next entry cannot be classified in prose and left out of the total. T-999's
+    /// standing instruction — *watch the SDK count; past roughly a dozen the trade has changed* —
+    /// is asserted there too, rather than being a sentence for a reader to remember.
     ///
     /// **Zero stale claims.** No comment in the tree points a present-tense reader at an unqualified
     /// call that was supposed to exist, which is a finding in itself: the defect [[T-647]] found was
@@ -856,6 +867,72 @@ enum CadenceCommentSymbolClaim {
         #expect(found == Self.unqualifiedLedger)
     }
 
+    /// The lines of the unqualified ledger that are **framework members this repository mentions
+    /// but never calls** — [[T-999]]'s residual allowlist, made countable.
+    ///
+    /// Five lines, four distinct members: two different test files quote the same Foundation
+    /// selector for two different reasons, and each states its own, which is the whole argument for
+    /// a ledger over a list of bare names.
+    ///
+    /// **The threshold is asserted, not remembered.** T-999's finding was that this list will grow
+    /// — one line per framework name the repo mentions without calling — and that the trade stops
+    /// paying somewhere around a dozen, at which point an explicit SDK allowlist is cheaper than
+    /// per-line reasons. A sentence saying so is the kind of instruction this repository keeps
+    /// finding stale, so `theUnqualifiedLedgerSplitsIntoItsThreeGroups` fails at 13 and says what
+    /// the decision is rather than leaving it to whoever notices.
+    static let unqualifiedSDKMentions = [
+        "Cadence/Services/MarkdownProgrammaticEditSupport.swift `reloadInputViews()`",
+        "Cadence/macOS/Editor/MarkdownTableInteractionSupport.swift `validateMenuItem(_:)`",
+        "CadenceTests/CadenceColorPaletteTests.swift `ranges(of:options:)`",
+        "CadenceTests/CadenceLaunchWiringTests.swift `unregisterForRemoteNotifications()`",
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `ranges(of:options:)`"
+    ]
+
+    /// The lines that are these detectors' own worked examples, quoted in their own prose.
+    static let unqualifiedIllustrativeSpans = [
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `foo(_:)`",
+        "CadenceTests/TemporaryDefaultsSupport.swift `someTestName()`"
+    ]
+
+    /// [[T-999]]: every ledger line belongs to exactly one of the three groups, and the two named
+    /// groups plus the remainder sum to the whole.
+    ///
+    /// **What this replaces.** The doc above used to assert its classification in prose and its
+    /// total by hand, and the hand total was wrong — it counted one group in distinct names and the
+    /// rest in lines. A miscount in a comment about a ledger is the same failure as a stale ledger
+    /// entry: it tells a reader the population has been accounted for when it has not. Named lines
+    /// and a subtraction cannot drift apart.
+    @Test func theUnqualifiedLedgerSplitsIntoItsThreeGroups() {
+        let ledger = Set(Self.unqualifiedLedger)
+        let sdk = Self.unqualifiedSDKMentions
+        let illustrative = Self.unqualifiedIllustrativeSpans
+
+        #expect(Set(sdk).isSubset(of: ledger), "an SDK line is not in the ledger: \(Set(sdk).subtracting(ledger))")
+        #expect(Set(illustrative).isSubset(of: ledger))
+        #expect(Set(sdk).isDisjoint(with: Set(illustrative)))
+        #expect(sdk == sdk.sorted())
+        #expect(illustrative == illustrative.sorted())
+
+        let tombstones = ledger.subtracting(sdk).subtracting(illustrative)
+        #expect(tombstones.count == 20, "the tombstone remainder is \(tombstones.count), not 20")
+        #expect(sdk.count == 5)
+        #expect(illustrative.count == 2)
+        #expect(tombstones.count + sdk.count + illustrative.count == Self.unqualifiedLedger.count)
+
+        // Four distinct members across five lines: the duplication is the point of the line count.
+        let members = Set(sdk.compactMap { $0.split(separator: " ").last.map(String.init) })
+        #expect(members.count == 4, "the SDK group names \(members.count) distinct members")
+
+        #expect(
+            sdk.count <= 12,
+            """
+            the residual SDK allowlist is \(sdk.count) lines. T-999 set the threshold at roughly a \
+            dozen: past it, one explicit allowlist of framework names costs less than a per-line \
+            reason for each, and this half should take that trade rather than keep adding lines.
+            """
+        )
+    }
+
     /// The unqualified ledger is sorted, unique, and does not overlap the qualified one.
     @Test func theUnqualifiedLedgerIsWellFormed() {
         let ledger = Self.unqualifiedLedger
@@ -863,6 +940,70 @@ enum CadenceCommentSymbolClaim {
         #expect(ledger == ledger.sorted())
         #expect(ledger.count == 27)
         #expect(Set(ledger).isDisjoint(with: Set(Self.ledger)))
+    }
+
+    /// [[T-998]]: **the scoped reading stays declined, and the decline is now a number that
+    /// re-prices itself.**
+    ///
+    /// **The question.** [[T-718]] landed on *is this base name called anywhere in the tree*, which
+    /// has one reading and needs no SDK allowlist. What it gives up is exactly [[T-647]]'s defect: a
+    /// comment naming insertSubtask and deleteSubtask, about a file that has neither, in a tree that
+    /// declares both elsewhere. That resolves here and always will. Catching it needs *the scope the
+    /// sentence implies* — roughly, does the file this comment sits in make the call — which is a
+    /// third rule and not a widening of this one.
+    ///
+    /// **Why it is declined, measured rather than argued.** `unresolvedUnqualifiedSpans(in:against:)`
+    /// already unions the file's own calls into its world, so handing it an empty index *is* the
+    /// file-scoped reading, exactly. Run both over the same five roots and the file-scoped one is an
+    /// order of magnitude noisier: a comment in a view that names a helper the view calls through a
+    /// support file is not a stale claim, and there are hundreds of them. Every one would need a
+    /// ledger line saying so, and a ledger that large stops being read — which is the failure mode
+    /// this whole family exists to avoid.
+    ///
+    /// **Why a ratio and not the counts.** A pinned count rots on the next commit that adds a
+    /// comment, and gets bumped without being read, which is how a measurement turns into a number
+    /// nobody believes. The ratio is the actual argument — *the scoped reading costs this much more
+    /// ledger than the tree-scoped one* — and it re-prices itself as the tree changes. If it ever
+    /// falls below the floor here, the trade has changed and T-998 should be reopened rather than
+    /// this line relaxed. **That is what a failure here means; it is not a number to bump.**
+    @Test func theScopedReadingIsAnOrderOfMagnitudeMoreLedgerThanTheTreeScopedOne() throws {
+        let sources = try Self.allSources()
+
+        let called = sources.reduce(into: Set<String>()) { names, source in
+            names.formUnion(
+                CadenceCommentSymbolClaim.calledNames(
+                    inCode: CadenceCommentSymbolClaim.partition(source.text).code
+                )
+            )
+        }
+        #expect(called.count >= 2000, "the call index read \(called.count) names")
+
+        var population = 0
+        var treeScoped = 0
+        var fileScoped = 0
+        for source in sources {
+            let regions = CadenceCommentSymbolClaim.partition(source.text)
+            population += CadenceCommentSymbolClaim.unqualifiedClaims(inComments: regions.comments).count
+            treeScoped += CadenceCommentSymbolClaim
+                .unresolvedUnqualifiedSpans(in: source.text, against: called).count
+            fileScoped += CadenceCommentSymbolClaim
+                .unresolvedUnqualifiedSpans(in: source.text, against: []).count
+        }
+
+        // Non-vacuity in all three directions. A population of zero, or two readings that agree,
+        // would make the ratio below meaningless while leaving it green.
+        #expect(population >= 700, "the sweep found \(population) selector-shaped spans")
+        #expect(treeScoped >= Self.unqualifiedLedger.count, "the tree-scoped reading found \(treeScoped)")
+        #expect(fileScoped > treeScoped, "the two readings agree, so one of them is not being computed")
+
+        #expect(
+            fileScoped >= treeScoped * 5,
+            """
+            the scoped reading now costs \(fileScoped) ledger lines against the tree-scoped \
+            \(treeScoped), out of \(population) spans — under 5x, so T-998's decline is no longer \
+            obviously right and the ticket should be reopened. Do not raise this floor to pass.
+            """
+        )
     }
 
     /// The selector spelling is the exclusion, and these are the three spans it subtracts.
