@@ -29,7 +29,43 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-_Nothing in flight._
+- [T-1115] **`DateFormatters.weekKey(from:)` reads the *device's* time zone while
+  `weekStartDate(forWeekKey:calendar:)` reads the *caller's*, so the pair only round-trips east of
+  UTC.** Filed by `weekkeytz` 2026-09-08 at `8c45c91`, where a full `-only-testing:CadenceTests` run
+  is RED — `XCODEBUILD_EXIT=65`, 400 issues, every one of them
+  `WeekKeyResolutionTests.everyWeekKeyRoundTripsBackIntoItsOwnWeek`, and every one the same shape:
+  `(DateFormatters.weekKey(from: monday) → "2025-W52") == (key → "2026-W01")`. Off by exactly one
+  week, all 400 iterations. Two findings, and the second is the more expensive one.
+  **1. The API asymmetry.** `weekStartDate(forWeekKey:calendar:)` sets `iso.timeZone =
+  calendar.timeZone` — deliberate, and the whole point of `c424f42`. `weekKey(from:)` builds its own
+  `Calendar(identifier: .iso8601)` two declarations above and **never sets a time zone**, so it
+  silently takes the device's. Hand it the Monday-00:00-**UTC** that `weekStartDate` just returned
+  for a UTC calendar and a Mac west of UTC calls that instant *Sunday*, i.e. the previous ISO week.
+  Measured here by direct computation outside the test host, mirroring both helpers: 400/400
+  mismatches under `America/Los_Angeles` and `America/New_York`, **0/400** under `Asia/Shanghai`,
+  `Europe/London` (BST) and `Pacific/Auckland`.
+  **2. The suite's greenness has been a property of the machine's location.** Nothing about the code
+  changed between the green runs and this red one; the Mac's time zone did. `c424f42` was authored
+  at `+0800`, where the round-trip is exact, so the test recorded the sum of a real API asymmetry and
+  the author's longitude and reported it as a pass. A test that only passes east of UTC is an
+  instrument blind to its own environment — it was never measuring the property it names. Note also
+  that `TZ=…` does **not** reach the spawned macOS test host: `TZ=Asia/Shanghai` and
+  `TZ=America/Los_Angeles` produce byte-identical 400-failure runs, so the zone cannot be varied
+  from the outside and the correction has to be that both halves take a calendar.
+  **Not a user-facing defect, verified rather than assumed.** `DateFormatters.ymd` pins a locale and
+  no time zone, so `date(from:)` parses to *local* midnight; every shipping caller of the week
+  helpers therefore stands in the device zone on both sides and agrees with itself. Enumerated at
+  `8c45c91`: `NotesView.swift:262`, `CadenceNoteDateNavigation.weekRangeLabel`/`weekKey(forDayKey:)`,
+  `CadenceNotesListSupport:356`, `CadenceMCPServiceSupport:40`, and `currentWeekKey()` — every one
+  takes the `.current` default, and the two declarations that *do* accept a `calendar:`
+  (`CadenceNoteDateNavigation.title`, `weekRangeLabel`) are never handed a non-current one outside
+  the tests. **This matters because `weekKey` output is persisted** (`Note.weekKey`,
+  `WeeklyNote.weekKey`) and syncs through CloudKit, in Production since 2026-09-05: no stored key may
+  change meaning, so the fix must be default-preserving.
+  **The fix:** give `weekKey` the courtesy `weekStartDate` already has —
+  `weekKey(from:calendar: Calendar = .current)` setting `cal.timeZone = calendar.timeZone` — and have
+  the test pass its `utc` calendar to both halves of the round-trip.
+
 
 ## Where findings come from
 
