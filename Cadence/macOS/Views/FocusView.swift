@@ -12,6 +12,15 @@ struct FocusView: View {
     @State private var showLogSheet = false
     @State private var idleSearchText = ""
 
+    /// **T-1103.** The instant the clock face is drawn for, and the whole of what this view's timer
+    /// does now. It used to be an accumulator — `focusManager.elapsed += 1` per delivery — which
+    /// made a view the accounting authority for a session the manager owns: `RootDetailContent`
+    /// builds `FocusView` only for `selection == .focus`, so a walk to Notes and back deleted the
+    /// only thing counting, and the minutes spent away never reached `actualMinutes`. Now the
+    /// manager derives elapsed time from when the session started, and a missed tick costs a
+    /// redraw rather than a minute.
+    @State private var displayTick = Date()
+
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -26,10 +35,12 @@ struct FocusView: View {
             }
         }
         .background(Theme.bg)
-        .onAppear { } // timer only starts via startFocus(task:) from the hover ▶ button
-        .onReceive(timer) { _ in
+        // Arriving on a session that ran while this screen was gone must show its real reading
+        // immediately, not the one it had when the view was last torn down.
+        .onAppear { displayTick = Date() }
+        .onReceive(timer) { instant in
             guard focusManager.isRunning else { return }
-            focusManager.elapsed += 1
+            displayTick = instant
         }
     }
 
@@ -331,7 +342,7 @@ struct FocusView: View {
     // MARK: - Helpers
 
     private var clockDisplay: String {
-        FocusSessionSupport.clockDisplay(elapsedSeconds: focusManager.elapsed)
+        FocusSessionSupport.clockDisplay(elapsedSeconds: focusManager.elapsedSeconds(at: displayTick))
     }
 
     private func durationLabel(for task: AppTask) -> String? {

@@ -1,4 +1,6 @@
 #if os(macOS)
+import AppKit
+import Foundation
 import SwiftData
 import SwiftUI
 
@@ -13,11 +15,66 @@ final class FocusManager {
 
     var activeSession: ActiveSession? = nil
     var selectedBundleTaskIDs: Set<UUID> = []
-    var isRunning: Bool = false
-    var elapsed: Int = 0            // seconds in current session
     var wantsNavToFocus: Bool = false
 
-    private init() {}
+    /// **T-1103.** The stopwatch itself, and the only copy of it.
+    ///
+    /// `isRunning` and `elapsed` used to be stored here and *incremented from a view*: the whole
+    /// product's single `elapsed +=` was a one-second `onReceive` closure inside `FocusView`,
+    /// adding exactly one second per delivery and ignoring the delivery's own timestamp.
+    /// `RootDetailContent` builds `FocusView` only for `selection == .focus`,
+    /// so navigating to Notes or Calendar tore down the subscriber while this manager still said
+    /// `isRunning == true` — the session kept "running" with nothing counting for it, and the
+    /// minutes spent away were simply absent from the number `commitElapsed` later banked into
+    /// `actualMinutes` and the list's `loggedMinutes`. No failure condition and no unusual data
+    /// were needed: leaving the screen and coming back was enough.
+    ///
+    /// It is a `CadenceFocusTimerState` — the same shape iOS's focus screen has always used —
+    /// so elapsed time is *derived* from a start instant rather than accumulated one tick at a
+    /// time. A view timer can now only ask for a redraw; it has nothing to add to.
+    private var timerState = CadenceFocusTimerState()
+
+    /// The clock `timerState` is read against. Injectable so a test can advance time by 90 seconds
+    /// with zero display ticks and see the session bank 90 seconds — which is the whole claim.
+    @ObservationIgnored var clock: () -> Date = { Date() }
+
+    @ObservationIgnored private var sleepObserver: NSObjectProtocol?
+    @ObservationIgnored private var wakeObserver: NSObjectProtocol?
+
+    /// Whether system sleep is what stopped the clock, so waking may start it again. A clock the
+    /// *user* paused must stay paused across a sleep.
+    @ObservationIgnored private var resumesOnWake = false
+
+    private init() {
+        startObservingSystemSleep()
+    }
+
+    /// Seconds on the stopwatch now.
+    ///
+    /// Read-only on purpose. The defect this replaced was a caller *writing* to it once a second;
+    /// with no setter there is no second counter for a view to drive, and every reading in the app
+    /// comes from one start instant. Tests move `clock`, not this.
+    var elapsed: Int {
+        elapsedSeconds(at: clock())
+    }
+
+    /// The same reading taken at a supplied instant, for a display that refreshes on a tick: the
+    /// tick decides *when* to redraw, this decides what the number is. A tick that never arrives
+    /// (the screen is not on stage, the main run loop is late) costs a redraw, not a minute.
+    func elapsedSeconds(at instant: Date) -> Int {
+        timerState.elapsedSeconds(now: instant)
+    }
+
+    /// Running or paused. Assigning banks or resumes through `CadenceFocusTimerState.toggle`, so
+    /// the play/pause button keeps working as `focusManager.isRunning.toggle()`.
+    var isRunning: Bool {
+        get { timerState.isRunning }
+        set {
+            guard newValue != timerState.isRunning else { return }
+            timerState.toggle(now: clock())
+            resumesOnWake = false
+        }
+    }
 
     var activeTask: AppTask? {
         get {
@@ -50,12 +107,14 @@ final class FocusManager {
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
-        if activeTask?.id != task.id || activeBundle != nil {
+        let isSameSession = activeTask?.id == task.id
+        if !isSameSession {
             try commitElapsed(in: modelContext, commit: commit)
         }
         activeSession = .task(task)
         selectedBundleTaskIDs.removeAll()
-        isRunning = true        // start immediately
+        // A different task gets a fresh stopwatch; the one already being focused gets its own back.
+        if isSameSession { resumeClock() } else { startClock() }
         wantsNavToFocus = true
     }
 
@@ -64,12 +123,13 @@ final class FocusManager {
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
-        if activeBundle?.id != bundle.id || activeTask != nil {
+        let isSameSession = activeBundle?.id == bundle.id
+        if !isSameSession {
             try commitElapsed(in: modelContext, commit: commit)
         }
         activeSession = .bundle(bundle)
         selectedBundleTaskIDs = CadenceFocusSupport.defaultSelectedTaskIDs(for: bundle)
-        isRunning = true
+        if isSameSession { resumeClock() } else { startClock() }
         wantsNavToFocus = true
     }
 
@@ -100,7 +160,10 @@ final class FocusManager {
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
-        guard elapsed > 0 else { return }
+        // One reading, taken once. `elapsed` is derived from the clock now, so asking twice — once
+        // for the guard and once for the amount — could bank a different number than it checked.
+        let seconds = elapsed
+        guard seconds > 0 else { return }
         let creditedTasks: [AppTask]
         switch activeSession {
         case .task(let task):
@@ -110,9 +173,8 @@ final class FocusManager {
         case nil:
             return
         }
-        try CadenceFocusSupport.logElapsedSeconds(elapsed, across: creditedTasks, in: modelContext, commit: commit)
-        isRunning = false
-        elapsed = 0
+        try CadenceFocusSupport.logElapsedSeconds(seconds, across: creditedTasks, in: modelContext, commit: commit)
+        reset()
     }
 
     /// Leave the current session the way switching to another one leaves it: bank the elapsed
@@ -140,8 +202,75 @@ final class FocusManager {
     }
 
     func reset() {
-        isRunning = false
-        elapsed = 0
+        timerState.reset()
+        resumesOnWake = false
+    }
+
+    /// Put the stopwatch back to zero and start it from now, for a session that is genuinely a
+    /// *different* one. `commitElapsed` has already reset the clock on every path that banked
+    /// anything, so the `reset()` here is the defensive half: it is what stops a new session
+    /// inheriting the previous one's start instant on the `elapsed == 0` path, where `commitElapsed`
+    /// had nothing to bank and returned early.
+    private func startClock() {
+        timerState.reset()
+        timerState.toggle(now: clock())
+        resumesOnWake = false
+    }
+
+    /// Start the clock again **without** zeroing it.
+    ///
+    /// The hover ▶ on a task row calls `startFocus` for whatever task it belongs to, including the
+    /// one already being focused (`FocusSidebar` filters the current task out of its list;
+    /// `MacTaskRow.focusButtonSlot` does not). Before this ticket that path read
+    /// `isRunning = true` on an unchanged session and left `elapsed` alone, so pressing ▶ on the
+    /// task you were already focusing resumed a paused clock and did nothing to a running one.
+    /// Zeroing it here instead would discard minutes that were never banked — a data loss T-1103
+    /// had no business introducing while fixing a different one.
+    private func resumeClock() {
+        guard !timerState.isRunning else { return }
+        timerState.toggle(now: clock())
+        resumesOnWake = false
+    }
+
+    // MARK: - System sleep
+
+    /// **T-1103, the other half of the policy.** Navigating away no longer stops the clock — but
+    /// the clock is wall-clock now, so without this a lid closed overnight would come back reading
+    /// fourteen hours of "focus" and offer to log it. The view-owned tick never did that, because
+    /// a `Timer` does not fire while the machine is asleep, and preserving that is not a new rule:
+    /// it is the behaviour the fix would otherwise have quietly changed.
+    ///
+    /// Sleeping banks what the session has earned and stops it; waking starts it again, and only
+    /// if sleep is what stopped it.
+    func startObservingSystemSleep() {
+        guard sleepObserver == nil else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        sleepObserver = center.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleSystemWillSleep()
+        }
+        wakeObserver = center.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleSystemDidWake()
+        }
+    }
+
+    func handleSystemWillSleep() {
+        guard timerState.isRunning else { return }
+        timerState.toggle(now: clock())
+        resumesOnWake = true
+    }
+
+    func handleSystemDidWake() {
+        guard resumesOnWake, !timerState.isRunning else { return }
+        timerState.toggle(now: clock())
+        resumesOnWake = false
     }
 }
 #endif

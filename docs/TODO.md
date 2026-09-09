@@ -159,8 +159,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1102] **A failed privacy reset leaves rows marked deleted in the shared context for someone else's save to commit.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/privacy-reset.md` (PR-2).
 
-- [T-1103] **macOS focus time is counted by a view's timer, so leaving the Focus screen stops the clock the manager says is running.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/focus-continuity.md` (FC-1).
-
+- [T-1103] **CLOSED 2026-09-09 (agent `focusland`) — focus time is derived from when the session started, so walking away from the Focus screen no longer stops the clock the manager says is running.** From `docs/audits/2026-09-05/batch-02/focus-continuity.md` (FC-1), re-ranked up because it needs only ordinary navigation.
+  **The mechanism.** `FocusView` was an *accumulator*: `focusManager.elapsed += 1` on every timer
+  delivery, which made a view the accounting authority for a session the manager owns. `RootDetailContent`
+  builds `FocusView` only for `selection == .focus`, so a walk to Notes and back destroyed the only thing
+  counting — and the minutes spent away never reached `actualMinutes`. No failure condition, no unusual
+  data: a user starts a timer, goes to read a note, and the app quietly under-reports the session.
+  **The fix.** `FocusManager` derives elapsed time from the session's start instant (`elapsedSeconds(at:)`,
+  over an injectable `clock`), and the view keeps only a `displayTick` it redraws from. A missed tick now
+  costs a redraw rather than a minute, and `.onAppear` re-reads the real elapsed value so arriving on a
+  session that ran while the screen was gone shows its true reading rather than a stale one. Sleep and wake
+  observers were added for the same class of gap — a sleeping Mac is another way for ticks to stop arriving.
 - [T-1104] **The iOS photo import inserts asset rows between `await`s and calls the whole batch its own.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/image-import-transaction.md` (IM-1).
 
 - [T-1105] **A late Reminders fetch publishes unconditionally, so it can restore a stale list or resurrect a completed reminder.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/reminders-refresh-ordering.md` (RM-1).
@@ -3257,18 +3266,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **file**, so today it is asserting over the copy that may not be the one that ships.
 
 
-- [T-688] **`TimelineDayCanvas.swift:247` names a blank quick-created task `"New Task"`, against
-  `CadenceEventTitleSupport`'s own argument for the opposite word.** Found while sweeping [[T-609]]
-  and deliberately left, because T-609's rule was "route through the trim, change no copy".
-  `CadenceEventTitleSupport`'s header already argues the opposite case in writing: `"New Event"` was
-  retired for `"Untitled Event"` because an event created last year is not new but is still
-  untitled. The argument applies here unchanged, and this one is **stored**, not drawn. A copy
-  decision, not a de-duplication.
-  **Split 2026-09-04.** This ticket used to carry a second, unrelated pair —
-  `iOSTaskRowActionViews.swift`'s two disagreeing blank-goal fallbacks, both in the same file as
-  each other but nothing to do with this one — closed separately as [[T-924]] once T-609's freeze
-  was lifted for that pair specifically.
-
+- [T-688] **CLOSED 2026-09-09 (agent `focusland`) — the blank quick-created task takes the shared task placeholder, because that fallback is stored rather than drawn.** Originally deferred by [[T-609]] under a "route through the trim, change no copy" rule that has since expired.
+  **The reason it mattered more than a copy fix.** The fallback at `TimelineDayCanvas` is not a display
+  string: the Calendar page hands it straight to `SchedulingActions.insertTask`, and `SchedulePanel` seeds
+  the create sheet's title field with it, where confirming without typing stores it unchanged. So `"New Task"`
+  became a real task's real name. `CadenceEventTitleSupport`'s own header already argued the sibling case —
+  `"New Event"` was retired for `"Untitled Event"` because a thing created last year is not new but is still
+  untitled — and that argument is stronger for a stored name than a drawn one. It now uses
+  `TaskTitleSupport.defaultDisplayTitle`, the same word every other task surface shows.
+  **Split 2026-09-04, preserved here.** This ticket used to carry a second, unrelated pair —
+  `iOSTaskRowActionViews.swift`'s two disagreeing blank-goal fallbacks, in the same file as each
+  other but nothing to do with this one — closed separately as [[T-924]] once T-609's freeze was
+  lifted for that pair specifically.
 - [T-703] **CLOSED 2026-09-04, declined — no code change.** Re-opened the composer question this
   ticket asked (compose only if it reads as well as the six/eight literals) and found it already
   answered, in code, by `663bc139` (T-690, 2026-09-03): that commit tried building the composer

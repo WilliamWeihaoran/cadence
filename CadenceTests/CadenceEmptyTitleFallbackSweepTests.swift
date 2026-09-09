@@ -23,10 +23,14 @@ import Testing
 /// wording and this sweep holds it: what changed is the trim and nothing else. Re-wording any of
 /// them is a copy decision, not a de-duplication, and belongs in its own ticket.
 ///
-/// **"Goal" left this list under T-688.** It was `iOSTaskRowGoalChip`'s literal, and it disagreed
-/// with the picker beside it — the copy freeze this paragraph describes was T-609's own scope, not
-/// a permanent rule, and T-688 is the ticket that lifted it for that one pair. See
-/// `theTaskRowsGoalChipAndItsPickerAgreeOnTheBlankGoalFallback` below.
+/// **"Goal" and "New Task" have both left that list, under T-688.** "Goal" was
+/// `iOSTaskRowGoalChip`'s literal, and it disagreed with the picker beside it. "New Task" was
+/// `TimelineDayCanvas`'s, and it is *stored* rather than drawn — a blank quick-create wrote it to
+/// `AppTask.title` — against `CadenceEventTitleSupport`'s own written argument for the opposite
+/// word. The copy freeze this paragraph describes was T-609's own scope, not a permanent rule, and
+/// T-688 is the ticket that lifted it for those two. See
+/// `theTaskRowsGoalChipAndItsPickerAgreeOnTheBlankGoalFallback` and
+/// `theTimelineQuickCreateStoresTheSharedUntitledTaskName` below.
 ///
 /// **What these instruments deliberately do not see, measured rather than assumed.** Both needles
 /// require the fallback to be a **string literal**, because that is the shape T-569 measured and
@@ -148,6 +152,35 @@ struct CadenceEmptyTitleFallbackSweepTests {
             "the picker row does not read the converged fallback"
         )
         #expect(CadenceTitleNormalization.defaultGoalTitle == "Untitled Goal")
+    }
+
+    /// **T-688, the other half.** Drag a range on the Mac timeline, press create without typing a
+    /// title, and the string chosen here becomes the task's name in the store — this is the one
+    /// swept fallback that is *stored* rather than drawn. It said `"New Task"`.
+    ///
+    /// `CadenceEventTitleSupport`'s header already argues the case against that word in writing,
+    /// for the sibling surface: `"New Event"` was retired for `"Untitled Event"` because a thing
+    /// created last year is not new, but is still untitled. A stored name is exactly the one that
+    /// goes stale, so the argument is stronger here than where it was first made — and the shared
+    /// task placeholder is the word every other task surface already shows.
+    @Test func theTimelineQuickCreateStoresTheSharedUntitledTaskName() throws {
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvas.swift")
+        )
+        #expect(code.contains("struct TimelineDayCanvas: View"), "non-vacuity: file unread")
+        #expect(code.contains("onCreateTask("), "non-vacuity: the quick-create hand-off moved")
+
+        // The pre-T-688 spelling.
+        #expect(code.contains("fallback: \"New Task\"") == false, "the quick create still stores \"New Task\"")
+
+        #expect(
+            CadenceSourceScan.matchCount(
+                "TaskTitleSupport\\.displayTitle\\(title, fallback: TaskTitleSupport\\.defaultDisplayTitle\\)",
+                in: code
+            ) == 1,
+            "the quick create does not store the shared task placeholder"
+        )
+        #expect(TaskTitleSupport.defaultDisplayTitle == "Untitled Task")
     }
 
     // MARK: - The sweep

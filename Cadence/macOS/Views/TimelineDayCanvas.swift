@@ -278,9 +278,20 @@ struct TimelineDayCanvas: View {
                 startMin: start,
                 endMin: end,
                 dateKey: dateKey,
+                // **T-688.** The fallback here is *stored*, not drawn. Both hosts of this canvas
+                // take the string as a task's actual name: the Calendar page hands it straight to
+                // `SchedulingActions.insertTask`, and `SchedulePanel` seeds the create sheet's
+                // title field with it, where confirming without typing stores it unchanged. It
+                // read `"New Task"`, which `CadenceEventTitleSupport`'s own header already argues
+                // against for the sibling case — `"New Event"` was retired for `"Untitled Event"`
+                // because a thing created last year is not new but is still untitled — and the
+                // argument is stronger for a stored name than for a drawn one. It now reads the
+                // shared task placeholder, the same word every other task surface shows.
+                // [[T-609]] left it deliberately, under a "route through the trim, change no copy"
+                // rule that has since expired.
                 onCreateTask: { title, containerSelection, sectionName, notes, subtaskTitles in
                     onCreateTask(
-                        TaskTitleSupport.displayTitle(title, fallback: "New Task"),
+                        TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultDisplayTitle),
                         start,
                         end,
                         containerSelection,
