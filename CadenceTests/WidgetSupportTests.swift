@@ -288,7 +288,7 @@ struct WidgetSupportTests {
             Issue.record("Expected the spawned next occurrence to be persisted")
             return
         }
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        let tomorrow = CadenceTestTimeZones.pinnedCalendar().date(byAdding: .day, value: 1, to: Date())!
         #expect(next.scheduledDate == DateFormatters.dateKey(from: tomorrow))
         #expect(next.recurrenceRule == .daily)
         #expect(next.recurrenceSeriesID == recurring.recurrenceSeriesID)

@@ -31,10 +31,10 @@ Tests must be scoped to `CadenceTests`:
 ```
 
 Scope unit runs to `CadenceTests` to keep them fast and deterministic — **not** because the UI target
-cannot run. `CadenceUITests` **does** run on macOS since the one-time automation grant on 2026-08-31
-(4 tests, 2 skipped behind `CADENCE_RUN_INTERACTIVE_UI_TESTS=1`). It launches a real `Cadence.app`, so
-it MUST hold the test-host lock: run `scripts/xcb.sh <id> test -only-testing:CadenceUITests`, never a
-bare `xcodebuild`. Warning baseline is zero; any new warning is a regression.
+cannot run. `CadenceUITests` **does** run on macOS since the automation grant of 2026-08-31. It
+launches a real `Cadence.app`, so it MUST hold the test-host lock: `scripts/xcb.sh <id> test`
+`-only-testing:CadenceUITests`, never a bare `xcodebuild`. Warning baseline is zero. The `TestAction`
+pins **`TZ=UTC`** (T-1116): state zones with `CadenceTestTimeZones`, never a shell `TZ=`.
 
 ## Where Things Live
 

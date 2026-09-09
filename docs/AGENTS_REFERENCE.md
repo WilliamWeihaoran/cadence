@@ -508,3 +508,41 @@ than a false green.
 
 Companion rule, same section: a crashed `swift-frontend` emits **no** `error:` lines at all, so a
 strict count of 0 does not mean success. Also grep for `please submit a bug report`.
+
+## Why the test host is pinned to UTC (moved out of AGENTS.md, 2026-09-08)
+
+[[T-1116]]. A full `CadenceTests` run went red on 2026-09-08 with no code change: the Mac's zone had
+become `America/Los_Angeles`, and the failing test had been authored at `+0800`. The finding worth
+keeping is not that test — it is that *a green run had been carrying an unstated dependency on where
+the machine was sitting*, and nothing in the repository said so.
+
+**The mechanism.** `Cadence.xcscheme`'s `<TestAction>` had no `<EnvironmentVariables>` of its own and
+carried `shouldUseLaunchSchemeArgsEnv = "YES"`, so it inherited the Launch action's environment,
+which pinned nothing but `OS_ACTIVITY_MODE`. It now has its own block with `TZ=UTC` and stops
+inheriting. **Not** the LaunchAction, which was the shorter edit: that would also pin the app a human
+runs from Xcode to UTC, so every date on screen in a debugging session would be hours off the wall
+clock — a change to the product surface made in service of the test suite. Not inheriting costs the
+Launch action's `OS_ACTIVITY_MODE=disable` and its three CoreData logging arguments, so those are
+re-spelled in the `TestAction`; `CadenceTimeZoneIndependenceTests` asserts all of it.
+
+**Measured, and both halves matter.** `TZ` in a process's environment *does* reach Foundation —
+`TZ=UTC` yields a `TimeZone.current` whose identifier is spelled **`GMT`**, which is why every
+assertion about the pin reads the *offset* rather than the identifier. But a **shell-level** `TZ=`
+does not reach the spawned macOS test host: two full runs under `TZ=Asia/Shanghai` and
+`TZ=America/Los_Angeles` produced byte-identical failures. So the scheme is the only place the host
+can be pinned from, and a test inside the host is the only place that can confirm it landed. Do not
+try to vary a zone by exporting one; pass a `Calendar`.
+
+**Pinning alone would have hidden the bug it came from.** A suite read only in UTC can never catch
+"this breaks west of UTC". So the zone-sensitive shared date surfaces are exercised in three stated
+zones — UTC, `Asia/Tokyo` (positive, no DST) and `America/Los_Angeles` (negative, with DST, where two
+days a year are 23 and 25 hours long) — through `CadenceTestTimeZones`.
+
+**And the rule that keeps it from coming back.** `CadenceTimeZoneIndependenceTests` fails any `@Test`
+whose body both reads the ambient zone and derives a calendar day from it. The conjunction is the
+rule, not a ban on `Calendar.current`: measured over 315 files on 2026-09-08, the ambient needles
+alone appear in 50 tests across 14 files — most adding an hour to a timed event, where the answer is
+the same everywhere — while ambient *and* a day-boundary derivation is 22 across 11. Bare `Date()` is
+a weaker, separate finding (a clock race, which the pin does not fix) and is ledgered per file rather
+than banned. `WeekKeyResolutionTests` is exempt by file: its subject *is* the parameterless helpers'
+device-zone default, so it cannot state a zone instead.

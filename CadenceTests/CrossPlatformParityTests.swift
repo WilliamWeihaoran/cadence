@@ -19,17 +19,28 @@ struct CrossPlatformParityTests {
     /// Japanese and Islamic calendars are one Settings tap away. For 2026-08-11 those produce
     /// `2569-08-11`, `0008-08-11` (the year is era-relative) and `1448-02-27`.
     @Test func everyStorageKeyDerivationAgreesUnderNonGregorianCalendars() throws {
-        let reference = try #require(DateFormatters.date(from: "2026-08-11"))
-        let expected = DateFormatters.dateKey(from: reference)
+        // The parameterless pair, in whatever zone the host is in. It is the claim the injectable
+        // one has to match, and it is the only assertion here that can read the ambient zone.
+        let ambient = try #require(DateFormatters.date(from: "2026-08-11"))
+        #expect(DateFormatters.dateKey(from: ambient) == "2026-08-11")
 
-        for identifier in [Calendar.Identifier.gregorian, .buddhist, .japanese, .islamicUmmAlQura] {
-            var calendar = Calendar(identifier: identifier)
-            calendar.timeZone = TimeZone.current
-
-            #expect(
-                DateFormatters.dateKey(from: reference, calendar: calendar) == expected,
-                "dateKey(from:calendar:) diverged under \(identifier)"
+        // The injectable one, in three stated zones rather than in the host's. `TimeZone.current`
+        // used to stand here, which on a test host pinned to UTC (T-1116) is one zone wearing the
+        // costume of "wherever this ran" — the calendar identifier varied and the offset never did.
+        for zone in CadenceTestTimeZones.identifiers {
+            let reference = try #require(
+                DateFormatters.date(from: "2026-08-11", in: CadenceTestTimeZones.calendar(zone))
             )
+
+            for identifier in [Calendar.Identifier.gregorian, .buddhist, .japanese, .islamicUmmAlQura] {
+                var calendar = Calendar(identifier: identifier)
+                calendar.timeZone = try CadenceTestTimeZones.calendar(zone).timeZone
+
+                #expect(
+                    DateFormatters.dateKey(from: reference, calendar: calendar) == "2026-08-11",
+                    "dateKey(from:calendar:) diverged under \(identifier) in \(zone)"
+                )
+            }
         }
     }
 
@@ -66,12 +77,17 @@ struct CrossPlatformParityTests {
     /// The key must round-trip: the parse side is what resolves a stored key back to a day, and it
     /// had the same `Calendar.current` dependency.
     @Test func storageKeysRoundTripUnderNonGregorianCalendars() throws {
-        for identifier in [Calendar.Identifier.gregorian, .buddhist, .japanese] {
-            var calendar = Calendar(identifier: identifier)
-            calendar.timeZone = TimeZone.current
+        for zone in CadenceTestTimeZones.identifiers {
+            for identifier in [Calendar.Identifier.gregorian, .buddhist, .japanese] {
+                var calendar = Calendar(identifier: identifier)
+                calendar.timeZone = try CadenceTestTimeZones.calendar(zone).timeZone
 
-            let parsed = try #require(DateFormatters.date(from: "2026-08-11", in: calendar))
-            #expect(DateFormatters.dateKey(from: parsed, calendar: calendar) == "2026-08-11")
+                let parsed = try #require(DateFormatters.date(from: "2026-08-11", in: calendar))
+                #expect(
+                    DateFormatters.dateKey(from: parsed, calendar: calendar) == "2026-08-11",
+                    "the key did not round-trip under \(identifier) in \(zone)"
+                )
+            }
         }
     }
 
@@ -86,16 +102,22 @@ struct CrossPlatformParityTests {
         let expected = DateFormatters.dateKey(from: reference)
         #expect(CadenceWidgetDateSupport.dateKey(from: reference) == expected)
 
-        // A test host's `Calendar.current` is always Gregorian, so the convenience spelling above
-        // cannot distinguish a correct implementation from one reading `Calendar.current`'s own
-        // components. The injectable form can.
-        for identifier in [Calendar.Identifier.gregorian, .buddhist, .japanese, .islamicUmmAlQura] {
-            var calendar = Calendar(identifier: identifier)
-            calendar.timeZone = TimeZone.current
-            #expect(
-                CadenceWidgetDateSupport.dateKey(from: reference, calendar: calendar) == expected,
-                "widget dateKey diverged under \(identifier)"
+        // A test host's ambient calendar is always Gregorian, so the convenience spelling above
+        // cannot distinguish a correct implementation from one reading the ambient components. The
+        // injectable form can — and since T-1116 pins the host to UTC, the zone has to be stated
+        // here too, or this loop would vary the calendar identifier against a single fixed offset.
+        for zone in CadenceTestTimeZones.identifiers {
+            let zoned = try #require(
+                DateFormatters.date(from: "2026-08-11", in: CadenceTestTimeZones.calendar(zone))
             )
+            for identifier in [Calendar.Identifier.gregorian, .buddhist, .japanese, .islamicUmmAlQura] {
+                var calendar = Calendar(identifier: identifier)
+                calendar.timeZone = try CadenceTestTimeZones.calendar(zone).timeZone
+                #expect(
+                    CadenceWidgetDateSupport.dateKey(from: zoned, calendar: calendar) == "2026-08-11",
+                    "widget dateKey diverged under \(identifier) in \(zone)"
+                )
+            }
         }
 
         let parsed = try #require(CadenceWidgetDateSupport.parsedDate(fromKey: "2026-08-11"))

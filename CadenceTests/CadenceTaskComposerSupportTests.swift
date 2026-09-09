@@ -230,9 +230,10 @@ struct CadenceTaskComposerSupportTests {
 
     @Test
     func theTwoFixedButtonsProduceTheirOwnDays() {
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let reference = Date()
         let today = DateFormatters.dateKey(from: reference)
-        let tomorrow = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 1, to: reference)!)
+        let tomorrow = DateFormatters.dateKey(from: calendar.date(byAdding: .day, value: 1, to: reference)!)
 
         #expect(CadenceTaskComposerSupport.dateKey(for: .today, from: reference) == today)
         #expect(CadenceTaskComposerSupport.dateKey(for: .tomorrow, from: reference) == tomorrow)
@@ -240,8 +241,9 @@ struct CadenceTaskComposerSupportTests {
 
     @Test
     func aButtonIsSelectedOnlyForItsOwnDay() {
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let today = DateFormatters.todayKey()
-        let tomorrow = DateFormatters.dateKey(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+        let tomorrow = DateFormatters.dateKey(from: calendar.date(byAdding: .day, value: 1, to: Date())!)
 
         #expect(CadenceTaskComposerSupport.isSelected(.today, doDateKey: today))
         #expect(CadenceTaskComposerSupport.isSelected(.tomorrow, doDateKey: today) == false)

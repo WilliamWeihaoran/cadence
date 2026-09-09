@@ -38,7 +38,7 @@ struct HabitInsightsAuditTests {
         // 2026-04-27 is a Monday. Eight weeks of Mon/Wed/Fri, ending Friday 2026-06-19.
         let habit = makeHabit(frequency: .daysOfWeek, days: [1, 3, 5])
         var keys: [String] = []
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         var cursor = try #require(DateFormatters.date(from: "2026-04-27"))
         for _ in 0..<8 {
             for offset in [0, 2, 4] {
@@ -63,7 +63,7 @@ struct HabitInsightsAuditTests {
     /// a longer daily streak reported a "best" *below* its own "current".
     @Test func bestStreakIsNeverLessThanCurrentStreakBeyondAYear() throws {
         let habit = makeHabit(frequency: .daily)
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let end = try #require(DateFormatters.date(from: "2026-06-19"))
         var keys: [String] = []
         for offset in 0..<500 {
@@ -121,7 +121,7 @@ struct HabitInsightsAuditTests {
     /// reported a "best" of 1, which is worse than the 366-day cap this replaced.
     @Test func aVeryOldStrayCompletionDoesNotPushRecentHistoryOutOfTheWindow() throws {
         let habit = makeHabit(frequency: .daily)
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let today = try #require(DateFormatters.date(from: "2026-06-19"))
 
         var keys: [String] = []
@@ -179,7 +179,7 @@ struct HabitInsightsAuditTests {
     /// calendar-day scan left the whole suite green while the shipped tile stayed wrong.
     @Test func theBestStreakPropertyTheUIReadsUsesTheFrequencyAwareWalk() {
         let habit = makeHabit(frequency: .daysOfWeek, days: [1, 3, 5])
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let today = calendar.startOfDay(for: Date())
 
         // Six weeks of this habit's *own* due days, counted back from today, so the property's
@@ -209,7 +209,7 @@ struct HabitInsightsAuditTests {
     /// it. The percentage is over *due* days, not calendar days, which is the whole reason a
     /// Mon/Wed/Fri habit can read 100%.
     @Test func thirtyDayRateIsOverDueDaysNotCalendarDays() throws {
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let today = try #require(DateFormatters.date(from: "2026-06-19"))
 
         // Every due day in the window, kept. A calendar-day denominator would read 43%.
@@ -483,7 +483,7 @@ struct HabitInsightsAuditTests {
     /// start, so its last cell landed one to seven days before today. Today's check-in was never
     /// drawn, on any day of the week.
     @Test func heatmapGridRunsThroughTodayOnEveryWeekday() throws {
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         // Walk a full week of "todays" so no single weekday can pass by luck.
         for offset in 0..<7 {
             guard let today = calendar.date(
@@ -596,7 +596,7 @@ struct HabitInsightsAuditTests {
 
         // And the unit has to match the number actually produced: eight satisfied weeks of a
         // 3x/week habit is "8w", not "8d".
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let habit = makeHabit(frequency: .timesPerWeek, targetCount: 3)
         var keys: [String] = []
         var weekStart = try #require(DateFormatters.date(from: "2026-04-27"))
@@ -617,7 +617,7 @@ struct HabitInsightsAuditTests {
 
     /// The grid should end on the week containing today, not run arbitrarily far past it.
     @Test func heatmapGridStopsAtTheEndOfTheCurrentWeek() throws {
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let today = try #require(DateFormatters.date(from: "2026-04-29"))
         let keys = HabitHeatmap.HabitHeatmapGrid.cells(weeks: 52, today: today, calendar: calendar).map(\.key)
 

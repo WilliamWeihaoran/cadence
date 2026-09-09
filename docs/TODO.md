@@ -29,7 +29,36 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-- [T-1115] **`DateFormatters.weekKey(from:)` reads the *device's* time zone while
+- [T-1116] **A green `CadenceTests` run has been carrying an unstated dependency on where the Mac is
+  sitting, and nothing in the repo said so or guarded it.** Filed by `tzindep` 2026-09-08, out of the
+  same red run as [[T-1115]]: nothing in the code changed, the machine's zone did. Three layers,
+  because any one of them alone is wrong.
+  **1. The run is now reproducible.** The scheme's `TestAction` had **no** `EnvironmentVariables`
+  block and carried `shouldUseLaunchSchemeArgsEnv = "YES"`, so it inherited the Launch action's
+  environment and pinned nothing. It now has its own block with `TZ=UTC` and stops inheriting.
+  Deliberately **not** the LaunchAction, which would also have pinned the app a human runs from
+  Xcode to UTC — a product-surface change made in service of the suite. Not inheriting costs the
+  Launch action's `OS_ACTIVITY_MODE=disable` and its three CoreData logging arguments, so those are
+  re-spelled in the TestAction and asserted.
+  **2. Pinning alone would have HIDDEN the bug it came from.** A suite pinned to UTC can never catch
+  "this breaks west of UTC". So the zone-sensitive shared date surfaces are exercised across an
+  explicit set — UTC, `Asia/Tokyo` (positive, no DST), `America/Los_Angeles` (negative, with DST) —
+  including both 2026 US transitions, where a day is 23 or 25 hours long.
+  **3. Nothing re-acquires the dependency the pin now hides.** A sweep over this target's own
+  `@Test` bodies fails on any test that derives a calendar day from the ambient zone instead of
+  stating one. **The inclusion rule is a conjunction, and that is the point**: measured over 315
+  files on 2026-09-08, the ambient needles alone appear in **50** tests across 14 files — most
+  reading a `Calendar` only to add an hour to an event — while ambient **and** a day-boundary
+  derivation is **22** across 11, which is the family T-1115 came out of. Bare `Date()` is the
+  weaker, separate finding (a clock race, which the pin does not fix): 40 files hold one, so it is
+  ledgered per file and may only shrink, rather than mass-rewritten.
+  **Measured, not reasoned**: `TZ` in the environment does reach Foundation (`TZ=UTC` →
+  `TimeZone.current` spelled **`GMT`**, so the assertions read the offset, not the identifier), and
+  a *shell-level* `TZ=` does not reach the spawned test host — which is why the pin is asserted from
+  inside a test rather than assumed. `WeekKeyResolutionTests` is the one exemption, by file: its
+  subject **is** the parameterless helpers' device-zone default, so it cannot state a zone instead.
+
+- [T-1115] **CLOSED 2026-09-09 (agent `weekkeytz`, landed by the coordinator) — `weekKey` reads the caller's time zone, so the pair round-trips at every longitude.** Originally filed as: `DateFormatters.weekKey(from:)` reads the *device's* time zone while
   `weekStartDate(forWeekKey:calendar:)` reads the *caller's*, so the pair only round-trips east of
   UTC.** Filed by `weekkeytz` 2026-09-08 at `8c45c91`, where a full `-only-testing:CadenceTests` run
   is RED — `XCODEBUILD_EXIT=65`, 400 issues, every one of them
@@ -83,6 +112,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 <!-- importgraph 2026-09-07: T-1109..T-1110 reserved from docs/audits/2026-09-07/. -->
 
+  **The fix, and why it is additive.** `weekKey(from:calendar: Calendar = .current)` now sets
+  `cal.timeZone = calendar.timeZone`, exactly as `weekStartDate(forWeekKey:calendar:)` already did.
+  The default is what the parameterless version always used, so **no existing caller changes what it
+  computes** — load-bearing rather than decorative, because this output is persisted as `Note.weekKey`
+  and `WeeklyNote.weekKey` and syncs through CloudKit, which has been in Production since 2026-09-05.
+  A key whose meaning shifted would re-address a stored note on someone's Mac.
+  **Not a user-facing defect, and the coordinator said otherwise before checking.** `DateFormatters.ymd`
+  sets no time zone, so `date(from:)` parses to *local* midnight; every shipping caller therefore uses
+  device-zone values on both sides and agrees with itself. The asymmetry only bites a caller that hands
+  one half a non-current calendar, which until now was only the test. The `timeZone = TimeZone(secondsFromGMT: 0)`
+  that prompted the wrong call belongs to `archiveTimestamp`, a different formatter.
+  Measured: `-only-testing:CadenceTests` green, **4682 tests in 396 suites, `XCODEBUILD_EXIT=0`**, 0 compile
+  errors, 0 Swift warnings (the lone log `warning:` is `appintentsmetadataprocessor`'s AppIntents line), with
+  `DateFormatters.swift` confirmed recompiled in that run so the count is not vacuous. See [[T-1116]] for the
+  half of this that outlived the fix: the suite's greenness had been resting on the machine's longitude.
 - [T-1109] **An import can accept a goal cycle that has no root, so the goals exist and the Goals page can never show them.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/import-graph.md` (ROI-02).
 
 - [T-1110] **A newly minted tag survives behind "Nothing was changed" when attaching it to the task is refused.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/recent-fix-claims.md` (ROI-05).

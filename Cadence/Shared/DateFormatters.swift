@@ -304,10 +304,23 @@ nonisolated enum DateFormatters {
     /// Returns the current ISO week key: "2026-W13"
     static func currentWeekKey() -> String { weekKey(from: Date()) }
 
-    /// Converts a Date to an ISO week key: "2026-W13"
-    static func weekKey(from date: Date) -> String {
+    /// Converts a Date to an ISO week key: "2026-W13", read in `calendar`'s time zone.
+    ///
+    /// The time zone is the caller's for the same reason `weekStartDate(forWeekKey:calendar:)`
+    /// below takes one, and the two must agree or they do not round-trip: `weekStartDate` returned
+    /// Monday-00:00 in the calendar it was handed, and this used to name that instant in whatever
+    /// zone the *device* happened to be in. West of UTC that instant is still Sunday, so the pair
+    /// disagreed by a whole ISO week — on every date, silently, and only on machines west of UTC
+    /// (T-1115). `WeekKeyResolutionTests.everyWeekKeyRoundTripsBackIntoItsOwnWeek` had been passing
+    /// on the author's longitude rather than on the arithmetic.
+    ///
+    /// The default is `.current`, which is what this always used, so **no existing caller changes
+    /// what it computes** — load-bearing, because this output is persisted as `Note.weekKey` and
+    /// syncs through CloudKit, and a key whose meaning shifted would re-address a stored note.
+    static func weekKey(from date: Date, calendar: Calendar = .current) -> String {
         var cal = Calendar(identifier: .iso8601)
         cal.locale = Locale(identifier: "en_US_POSIX")
+        cal.timeZone = calendar.timeZone
         let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         let year = comps.yearForWeekOfYear ?? cal.component(.year, from: date)
         let week = comps.weekOfYear ?? 1

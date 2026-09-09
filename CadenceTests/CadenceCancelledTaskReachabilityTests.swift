@@ -617,7 +617,7 @@ struct CadenceCancelledTaskReachabilityTests {
             task("still open", doDate: todayKey)
         ]
 
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let todayRange: Range<Date>? = {
             guard let parsedToday = DateFormatters.date(from: todayKey) else { return nil }
             let dayStart = calendar.startOfDay(for: parsedToday)

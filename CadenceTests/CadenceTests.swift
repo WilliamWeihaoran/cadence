@@ -387,7 +387,7 @@ struct CadenceTests {
 #endif
 
     @Test func calendarBoardUsesMonthTitleAndNavigationSemantics() throws {
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let date = try #require(calendar.date(from: DateComponents(year: 2026, month: 5, day: 27, hour: 12)))
         let nextMonth = CadenceScheduleSupport.shiftedDate(date, mode: .month, by: 1, calendar: calendar)
 

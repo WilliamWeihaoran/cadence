@@ -15,7 +15,7 @@ struct DateFormatterSupportTests {
     }
 
     @Test func relativeDateAndDurationLabelsFollowTaskFriendlyDisplayRules() throws {
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let today = calendar.startOfDay(for: Date())
         let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: today))
         let yesterday = try #require(calendar.date(byAdding: .day, value: -1, to: today))

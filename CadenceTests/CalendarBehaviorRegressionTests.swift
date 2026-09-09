@@ -398,7 +398,7 @@ struct CalendarBehaviorRegressionTests {
         let next = try #require(tasks.first { $0.id == spawnedID })
 
         let expectedNextDate = DateFormatters.dateKey(
-            from: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            from: CadenceTestTimeZones.pinnedCalendar().date(byAdding: .day, value: 1, to: Date()) ?? Date()
         )
 
         #expect(task.recurrenceSeriesID == task.id)

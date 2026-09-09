@@ -346,7 +346,7 @@ struct TaskWorkflowRecurrenceTests {
             Issue.record("Completing a recurring task in the focus timer must still spawn the next occurrence")
             return
         }
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        let tomorrow = CadenceTestTimeZones.pinnedCalendar().date(byAdding: .day, value: 1, to: Date())!
         #expect(next.scheduledDate == DateFormatters.dateKey(from: tomorrow))
         #expect(next.recurrenceRule == .daily)
         #expect(next.recurrenceSeriesID == task.recurrenceSeriesID)

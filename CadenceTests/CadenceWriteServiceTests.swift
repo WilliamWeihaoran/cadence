@@ -164,7 +164,7 @@ struct CadenceWriteServiceTests {
         let result = try fixture.writeService.completeTask(taskID: task.id.uuidString)
 
         let expectedNextDate = DateFormatters.dateKey(
-            from: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            from: CadenceTestTimeZones.pinnedCalendar().date(byAdding: .day, value: 1, to: Date()) ?? Date()
         )
 
         #expect(result.task.summary.isDone)
@@ -279,7 +279,8 @@ struct CadenceWriteServiceTests {
 
     @Test func writeServiceAcceptsNormalizedDateAndDurationInputs() throws {
         let fixture = try Fixture()
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
         let tomorrowKey = DateFormatters.dateKey(from: tomorrow)
         let task = try fixture.writeService.createTask(options: .init(
             title: "Natural-ish service inputs",
