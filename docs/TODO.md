@@ -127,12 +127,38 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   errors, 0 Swift warnings (the lone log `warning:` is `appintentsmetadataprocessor`'s AppIntents line), with
   `DateFormatters.swift` confirmed recompiled in that run so the count is not vacuous. See [[T-1116]] for the
   half of this that outlived the fix: the suite's greenness had been resting on the machine's longitude.
-- [T-1109] **An import can accept a goal cycle that has no root, so the goals exist and the Goals page can never show them.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/import-graph.md` (ROI-02).
-
-- [T-1110] **A newly minted tag survives behind "Nothing was changed" when attaching it to the task is refused.** Reserved by `importgraph` 2026-09-07 from `docs/audits/2026-09-07/recent-fix-claims.md` (ROI-05).
-
+- [T-1109] **CLOSED 2026-09-09 — an import is refused when it would leave a goal cycle with no root, rather than importing goals no screen can show.** From `docs/audits/2026-09-07/import-graph.md` (ROI-02); the finding was reasoned rather than measured, and the mechanism was confirmed against source before the fix.
+  **Why no existing check caught it.** A resolvable `parentGoalID` is not an acyclic one. A goal that
+  is its own parent, or a pair pointing at each other, satisfies every check already there: no id is
+  repeated, every reference names a row that exists. What it produces is a component with **no root**,
+  and the Goals page has no other way in — `GoalMissionGrouping.groups` starts at
+  `GoalAssignmentRules.topLevelGoals`, which is `parentGoal == nil`. The goals import, sync to every
+  device, and appear on no screen. `aRootlessGoalCycleIsInTheStoreAndOnNoGoalsRow` measures that
+  consequence on its own, built by hand rather than through an import, so it stands if the guard moves.
+  **The graph checked is the one the import leaves behind, not the archive's own edges.** A cycle can
+  close through a row the archive never carries: overwrite one goal's parent edge and an untouched
+  destination row on the other side completes it. So the map starts as the destination's and has this
+  import's edges written over it, exactly as `upsert` and `wire` will write them.
+  **A pre-existing cycle is not this import's to refuse.** Every goal has a single optional parent, so
+  the graph is functional: each component holds at most one cycle and cycles are node-disjoint. "Is
+  this cycle new" is therefore answerable *exactly* — it is new iff it contains an edge this import
+  writes — rather than approximated by a depth limit, which answers a different question and would
+  refuse valid archives. macOS deliberately *flattens* deeper descendants
+  (`GoalMissionGrouping.nestedGoals`); it does not forbid them.
+- [T-1110] **CLOSED 2026-09-09 — a refused tag attachment says what actually happened, instead of "Nothing was changed" over a tag that is on screen.** From `docs/audits/2026-09-07/recent-fix-claims.md` (ROI-05).
+  **The mechanism.** `iOSTaskTagPickerPopover.addTag` is two commits, not one. The mint goes through
+  `committedTag` and is durable the moment it returns — deliberately, since [[T-631]]: the moment the
+  tag exists is the moment the user asked for it. Attaching it to the task is a *second* commit, and
+  its refusal was reported with `CadencePendingChangePersistence.editFailureNotice`, whose second
+  sentence is "Nothing was changed". On this path something was: the tag is in the catalogue, and the
+  popover is still open over a live tag list, so the row is drawn directly above a notice denying it.
+  **Both clauses of the replacement are true whichever branch `committedTag` took.** It returns
+  non-`nil` only for a tag the store holds — one it minted and committed, or one that already existed
+  — so "it's in your tag list" is not a guess about provenance. It deliberately does **not** say the
+  tag was *created*: `committedTag` does not report that, and a sentence inferring it would be the
+  same overclaim in the other direction. The second clause promises exactly what
+  `iOSTaskTagStrip.commitTags(restoring:)` undoes, and nothing wider.
 <!-- rescue-import 2026-09-07: T-1114 filed for the one finding in that batch nobody reserved. -->
-
 - [T-1114] **A merge import restores a task's missing focus sessions and leaves the task's cached
   minutes where they were.** Filed by `rescue-import` 2026-09-07 from
   `docs/audits/2026-09-07/import-reconciliation.md` (ROI-04) — the **fifth** finding of that batch,
@@ -155,10 +181,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1100] **A failed restore rollback still deletes the displaced originals it failed to put back.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/backup-replacement.md` (BR-1).
 
-- [T-1101] **"Delete my data" reports success over a Keychain deletion that threw, leaving the OpenAI key.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/privacy-reset.md` (PR-1).
-
-- [T-1102] **A failed privacy reset leaves rows marked deleted in the shared context for someone else's save to commit.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/privacy-reset.md` (PR-2).
-
+- [T-1101] **CLOSED 2026-09-09 — a refused Keychain deletion is named on the same line that reports the reset, instead of being swallowed.** From `docs/audits/2026-09-05/batch-02/privacy-reset.md` (PR-1).
+  **The mechanism.** `try? aiSettingsManager.removeAPIKey()`. `KeychainCredentialStore.deleteSecret`
+  throws on any `OSStatus` other than success or not-found, and `removeAPIKey` clears `hasAPIKey`
+  only after that call returns — so a refusal left the key in the Keychain while the reset handed
+  back an outcome whose sentence said the data was deleted. `docs/privacy.html` and the Data Safety
+  pane both promise the saved key is removed, which is what makes this a claim rather than a lapse.
+  **The shape of the fix matters.** The store deletion has already committed by the time the
+  credential is reached, so a refused key deletion *cannot* fail the whole reset — it can only fail
+  to be mentioned. `PrivacyDataResetOutcome` now carries `retainedAPIKeyReason` and the sentence
+  names the key, the cause, and where to finish the job. The sentence is written from the
+  **presence** of a reason rather than from its text, so an error with an empty description still
+  falls back to naming the Keychain and never to the wording that says the key is gone.
+- [T-1102] **CLOSED 2026-09-09 — a refused privacy reset leaves the store where it found it, instead of leaving rows marked deleted for someone else's save.** From `docs/audits/2026-09-05/batch-02/privacy-reset.md` (PR-2).
+  **The mechanism.** Twenty-one fetch-and-delete passes followed by a bare `try modelContext.save()`.
+  A throw from pass twelve — or from the save — propagated to Settings, which printed it, while the
+  rows from passes one through eleven stayed marked deleted in the app's **single `ModelContext`**.
+  Nothing undid them, so the next unrelated `save()` anywhere in the app would have committed part
+  of a reset the user had been told failed, and a `rollback()` anywhere would have discarded it.
+  This is exactly the hazard `AGENTS.md`'s `try? save()` rule exists for, reached from the other side.
+  **The construction is enclosed, not just the save.** A new third shape on
+  `CadencePendingChangePersistence` — `commitDelete(in:commit:building:)` — rolls back and rethrows
+  when the *building* closure throws, alongside the existing `commitDelete` (fully marked before
+  anyone saves) and `commitCascade` (reports failure by answering `false`). `rollback()` is the only
+  undo available for a delete, and it costs any unrelated pending edit in the shared context: the
+  documented price `commitDelete` already pays, and the reason this is not the default shape for an
+  edit. The original error is rethrown rather than replaced, because the surface has to name it.
+  The notification cancellation stays *below* the commit deliberately — cancelling reminders for
+  data the store still holds is the one step a refused deletion must not take.
 - [T-1103] **CLOSED 2026-09-09 (agent `focusland`) — focus time is derived from when the session started, so walking away from the Focus screen no longer stops the clock the manager says is running.** From `docs/audits/2026-09-05/batch-02/focus-continuity.md` (FC-1), re-ranked up because it needs only ordinary navigation.
   **The mechanism.** `FocusView` was an *accumulator*: `focusManager.elapsed += 1` on every timer
   delivery, which made a view the accounting authority for a session the manager owns. `RootDetailContent`

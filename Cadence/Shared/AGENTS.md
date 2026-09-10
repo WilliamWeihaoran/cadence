@@ -109,8 +109,11 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   `CadenceCompactTab` live here because both platforms need them.
 - `CompactTagStrip` is declared inside `Components/CadenceTagChip.swift`; there is no
   `CompactTagStrip.swift`.
-- **`ModelContext.rollback()` is for deletes, not edits.** Both app call sites are in
-  `CadencePendingChangePersistence` — `commitDelete` and `commitCascade` — and both are correct.
+- **`ModelContext.rollback()` is for deletes, not edits.** All three app call sites are in
+  `CadencePendingChangePersistence` — `commitDelete`, its `building:` form, and `commitCascade` —
+  and all three are correct. The `building:` form (T-1102) is for a delete whose *construction*
+  can throw part-way, the privacy reset being the one that does: twenty-one fetch-and-delete
+  passes, so wrapping only the save would leave a half-marked delete pending.
   Edit undo is a field snapshot (`CadenceTaskFieldSnapshot`, `CadenceListEditSnapshot`). The
   **load-bearing** reason, and the one to lead with: this app has a single `ModelContext`, so a
   rollback discards pending work the editor knows nothing about. Pinned by

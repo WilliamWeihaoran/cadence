@@ -226,6 +226,7 @@ nonisolated enum CadenceArchiveImportService {
     ///    absorb input nobody validated.
     private nonisolated static func validate(
         _ archive: CadenceArchive,
+        mode: CadenceArchiveImportMode,
         against destination: DestinationIndex
     ) throws -> [String: Set<UUID>] {
         guard archive.formatVersion <= readableFormatVersion else {
@@ -344,7 +345,92 @@ nonisolated enum CadenceArchiveImportService {
             try check(record.projectID, "Project", table: "Document", record: record.id, field: "projectID")
         }
 
+        try validateGoalHierarchy(archive, mode: mode, against: destination)
+
         return archiveIDs
+    }
+
+    /// **[[T-1109]]. The one property of the goal tree that no existence check implies.**
+    ///
+    /// A resolvable `parentGoalID` is not an acyclic one. A goal that is its own parent, or a pair
+    /// pointing at each other, satisfies every check above: no id is repeated and every reference
+    /// names a row that exists. What it produces is a component with **no root**, and the Goals
+    /// page has no other way in — `GoalMissionGrouping.groups` starts at
+    /// `GoalAssignmentRules.topLevelGoals`, which is `parentGoal == nil`. So the goals import,
+    /// sync to every other device, and appear on no screen.
+    /// `aRootlessGoalCycleIsInTheStoreAndOnNoGoalsRow` measures that consequence on its own, built
+    /// by hand rather than through an import, so it still stands if this guard ever moves.
+    ///
+    /// **The graph checked is the one the import will leave behind, not the archive's own edges.**
+    /// A cycle can close through a row the archive never carries: overwrite one goal's parent edge
+    /// and the untouched destination row on the other side completes it. So the map starts as the
+    /// destination's and then has this import's edges written over it, exactly as `upsert` and
+    /// `wire` will write them.
+    ///
+    /// **A cycle that was already there is not this import's to refuse.** Every goal has a single
+    /// optional parent, so this is a functional graph: each component holds at most one cycle and
+    /// cycles are node-disjoint. "Is this cycle new" is therefore answerable exactly — a cycle is
+    /// new if and only if it contains an edge this import writes — rather than approximated by a
+    /// depth limit, which would decide a different question. macOS deliberately *flattens* deeper
+    /// descendants (`GoalMissionGrouping.nestedGoals`); it does not forbid them, and a validator
+    /// that did would refuse valid archives.
+    private nonisolated static func validateGoalHierarchy(
+        _ archive: CadenceArchive,
+        mode: CadenceArchiveImportMode,
+        against destination: DestinationIndex
+    ) throws {
+        var parents: [UUID: UUID] = [:]
+        for (id, goal) in destination.goals {
+            if let parentID = goal.parentGoal?.id { parents[id] = parentID }
+        }
+
+        // The edges this import actually writes. A matched row in merge mode is skipped, so its
+        // parent stays whatever the destination holds and nothing here changes.
+        var changed: Set<UUID> = []
+        for record in archive.goals {
+            let existing = destination.goals[record.id]
+            guard existing == nil || mode == .restoreOverwritingExistingRows else { continue }
+            guard record.parentGoalID != existing?.parentGoal?.id else { continue }
+            if let parentID = record.parentGoalID {
+                parents[record.id] = parentID
+                changed.insert(record.id)
+            } else {
+                parents.removeValue(forKey: record.id)
+            }
+        }
+
+        // Walking from a changed row alone is sufficient and not merely cheaper: a new cycle
+        // contains a changed row by definition, and from any node in a cycle the only path is
+        // around it. Sorted so a document with two new cycles names the same one every time.
+        var settled: Set<UUID> = []
+        for start in changed.sorted(by: { $0.uuidString < $1.uuidString }) {
+            guard !settled.contains(start) else { continue }
+            var path: [UUID] = []
+            var position: [UUID: Int] = [:]
+            var node: UUID? = start
+            while let current = node {
+                if let index = position[current] {
+                    let cycle = Array(path[index...])
+                    if let offender = cycle
+                        .filter(changed.contains)
+                        .min(by: { $0.uuidString < $1.uuidString }) {
+                        let rotation = cycle.firstIndex(of: offender) ?? 0
+                        throw CadenceArchiveImportFailure.parentCycle(
+                            table: "Goal",
+                            record: offender,
+                            field: "parentGoalID",
+                            cycle: Array(cycle[rotation...]) + Array(cycle[..<rotation])
+                        )
+                    }
+                    break
+                }
+                if settled.contains(current) { break }
+                position[current] = path.count
+                path.append(current)
+                node = parents[current]
+            }
+            settled.formUnion(path)
+        }
     }
 
     private nonisolated static func uniqueIDs<Record: Identifiable>(
@@ -363,7 +449,7 @@ nonisolated enum CadenceArchiveImportService {
         mode: CadenceArchiveImportMode,
         against destination: DestinationIndex
     ) throws -> CadenceArchiveImportPlan {
-        let archiveIDs = try validate(archive, against: destination)
+        let archiveIDs = try validate(archive, mode: mode, against: destination)
         let destinationIDs = destination.idsByEntityName
 
         var inserts: [String: Int] = [:]
@@ -1132,6 +1218,10 @@ nonisolated enum CadenceArchiveImportFailure: LocalizedError, Equatable, Sendabl
     case duplicateRecordID(table: String, id: UUID)
     /// A relationship names a row that is in neither the archive nor the destination store.
     case danglingReference(table: String, record: UUID, field: String, missing: UUID)
+    /// A parent chain this import would write leads back to itself ([[T-1109]]). Every reference in
+    /// it resolves, so the checks above pass; what it produces is a component with no root, which
+    /// the Goals page has no way to draw. `cycle` starts at `record` and is in parent order.
+    case parentCycle(table: String, record: UUID, field: String, cycle: [UUID])
 
     var errorDescription: String? { message }
 
@@ -1148,6 +1238,12 @@ nonisolated enum CadenceArchiveImportFailure: LocalizedError, Equatable, Sendabl
             return """
                 \(table) \(record.uuidString) refers to \(missing.uuidString) in \(field), which is \
                 in neither this archive nor your data. Nothing was imported.
+                """
+        case let .parentCycle(table, record, field, cycle):
+            let chain = (cycle + [record]).map(\.uuidString).joined(separator: " -> ")
+            return """
+                \(table) \(record.uuidString) would end up as its own ancestor through \(field) \
+                (\(chain)), so nothing in that chain could ever be shown. Nothing was imported.
                 """
         }
     }

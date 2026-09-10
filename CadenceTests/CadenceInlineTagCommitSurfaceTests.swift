@@ -178,6 +178,113 @@ struct CadenceInlineTagCommitSurfaceTests {
         #expect(!modelContext.hasChanges)
     }
 
+    // MARK: - T-1110: the sentence the two-step create-and-select tells
+
+    /// **Behavioural, MEASURED.** `addTag` is two commits, and the second one's refusal used to be
+    /// reported with a sentence that speaks for both.
+    ///
+    /// Step one mints the tag through `TagSupport.committedTag`, which commits it — deliberately,
+    /// since T-631: the moment the tag exists is the moment the user asked for it. Step two
+    /// attaches it to the task through the popover's `onCommit`, which is
+    /// `iOSTaskTagStrip.commitTags(restoring:)` and therefore
+    /// `CadencePendingChangePersistence.commitEdit(in:undo:)`. A refusal there restores
+    /// `task.tags` and nothing else, so the tag is still in the catalogue — and the popover is
+    /// still open over a live tag list, which is where the user sees it.
+    ///
+    /// So `editFailureNotice`'s "Nothing was changed" is false on this path: something was, and it
+    /// is on screen. This replays both steps against a real container with the second commit
+    /// refused, and pins the sentence that branch is allowed to say.
+    @Test func aMintedTagOutlivesARefusedAttachmentAndTheNoticeSaysSo() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let task = AppTask(title: "Buy milk")
+        modelContext.insert(task)
+        try modelContext.save()
+
+        // Step one: the mint, committed.
+        let tag = try #require(TagSupport.committedTag(named: "urgent", in: modelContext))
+        #expect(!modelContext.hasChanges, "the mint left the tag pending")
+
+        // Step two: the attachment, refused, with the popover's own undo.
+        let previous = task.tags ?? []
+        task.tags = TagSupport.sorted(previous + [tag])
+        var refused = false
+        do {
+            try CadencePendingChangePersistence.commitEdit(
+                in: modelContext,
+                commit: { _ in throw CommitRefused() },
+                undo: { task.tags = TagSupport.sorted(previous) }
+            )
+        } catch {
+            refused = true
+        }
+
+        #expect(refused)
+        #expect(task.tags?.isEmpty ?? true, "the refused attachment was left on the task")
+
+        let observer = ModelContext(modelContainer)
+        #expect(
+            try observer.fetch(FetchDescriptor<Cadence.Tag>()).map(\.name) == ["urgent"],
+            "the mint did not survive, so there is nothing for the sentence to be wrong about"
+        )
+        #expect(
+            try #require(try observer.fetch(FetchDescriptor<AppTask>()).first).tags?.isEmpty ?? true,
+            "the store took the attachment after all"
+        )
+
+        // The measurement that made this a ticket: the shared sentence is false over a store in
+        // exactly this state, and the sentence `addTag` says now is true of it.
+        #expect(CadencePendingChangePersistence.editFailureNotice.contains("Nothing was changed"))
+        #expect(!TagSupport.attachmentFailureNotice.contains("Nothing was changed"))
+        #expect(TagSupport.attachmentFailureNotice != CadencePendingChangePersistence.editFailureNotice)
+        #expect(TagSupport.attachmentFailureNotice.contains("tag list"), "the surviving row is not named")
+        #expect(
+            TagSupport.attachmentFailureNotice.contains("task's tags weren't changed"),
+            "the sentence does not say what commitTags(restoring:) actually put back"
+        )
+    }
+
+    /// **Source shape.** The two halves of `addTag` say different things, because they leave the
+    /// store in different states.
+    ///
+    /// The mint's refusal keeps `editFailureNotice`: `commitInsert` un-inserts the row it made, so
+    /// "Nothing was changed" is true there. The attachment's refusal cannot borrow that sentence —
+    /// the mint above it has already committed. `toggle` and `remove` keep the shared sentence
+    /// because neither mints anything, and their undo really does put everything back.
+    @Test func onlyTheAttachmentHalfOfAddTagClaimsTheNarrowerRefusal() throws {
+        let components = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskDetailComponents.swift")
+        let add = try CadenceCommitSurfaceScan.declarationBody(named: "addTag", in: components)
+
+        #expect(
+            add.contains("tagFailureNotice = CadencePendingChangePersistence.editFailureNotice"),
+            "the mint's refusal no longer uses the shared sentence"
+        )
+        #expect(
+            add.contains("tagFailureNotice = TagSupport.attachmentFailureNotice"),
+            "the attachment's refusal still speaks for the mint as well"
+        )
+        #expect(
+            reportFollowsTheRefusal(
+                marker: "tagFailureNotice = CadencePendingChangePersistence.editFailureNotice",
+                report: "tagFailureNotice = TagSupport.attachmentFailureNotice",
+                in: add
+            ),
+            "the two branches are the wrong way round"
+        )
+
+        for name in ["toggle", "remove"] {
+            let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: components)
+            #expect(
+                body.contains("tagFailureNotice = CadencePendingChangePersistence.editFailureNotice"),
+                "\(name) narrowed a sentence that was already true"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"attachmentFailureNotice"#, in: body) == 0,
+                "\(name) mints nothing, so it has nothing to exempt from the shared sentence"
+            )
+        }
+    }
+
     // MARK: - Source shape: the six surfaces
 
     /// **Source shape.** Every one of the six creators reaches the commit, names the refusal with

@@ -1086,23 +1086,33 @@ struct CadenceEditorSaveCommitSurfaceTests {
             "the post-commit fold rollback no longer records its failure — a committed import would report a refusal"
         )
 
+        // **Three since T-1102**, and the third is the same sentence as the first: the privacy
+        // reset builds its delete out of twenty-one *fetches*, so it can throw with rows already
+        // marked and the save never reached. `commitDelete(in:commit:building:)` encloses that
+        // half too, and `rollback()` is the only undo a delete has.
         #expect(
-            callSites == ["Cadence/Shared/CadencePendingChangePersistence.swift": 2],
+            callSites == ["Cadence/Shared/CadencePendingChangePersistence.swift": 3],
             "rollback() moved or gained a call site: \(callSites)"
         )
 
-        // And both of them are the delete commits, not something that grew inside the file.
+        // And all three of them are the delete commits, not something that grew inside the file.
         // Split on the declaration keyword rather than using `functionBody(named:)`: every commit
         // here takes a **defaulted closure parameter**, which that reader would mistake for the
         // body (`Cadence/Shared/AGENTS.md`).
         let persistence = try scanned("Cadence/Shared/CadencePendingChangePersistence.swift")
         let declarations = persistence.components(separatedBy: "static func ").dropFirst()
-        #expect(declarations.count >= 4, "found \(declarations.count) declarations, expected all four commits")
+        #expect(declarations.count >= 5, "found \(declarations.count) declarations, expected all five commits")
         let owners = declarations
             .filter { CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: $0) > 0 }
             .map { String($0.prefix { $0 != "(" }) }
             .sorted()
-        #expect(owners == ["commitCascade", "commitDelete"], "rollback() is owned by \(owners)")
+        // `commitDelete` twice: the plain commit, and the form that also encloses the delete's
+        // construction. Spelled with the duplicate rather than as a `Set`, so a rollback appearing
+        // in a *third* declaration of that name would still be visible here.
+        #expect(
+            owners == ["commitCascade", "commitDelete", "commitDelete"],
+            "rollback() is owned by \(owners)"
+        )
     }
 
     /// Non-vacuity for every scan above: the reader really opened these files and really read

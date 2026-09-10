@@ -129,6 +129,40 @@ enum CadencePendingChangePersistence {
         }
     }
 
+    /// A delete whose construction can **throw** part-way through, and then commits.
+    ///
+    /// The third shape of a delete, after `commitDelete` (fully marked before anyone saves) and
+    /// `commitCascade` (a construction that reports failure by answering `false`). The privacy
+    /// reset is this one (T-1102): it walks twenty-one model types, and each pass is a *fetch* —
+    /// so the failure it can hit mid-way arrives as a thrown error with rows from the earlier
+    /// passes already marked deleted in the context. Nothing about that error tells the caller to
+    /// undo them, and this app has **one `ModelContext`**, so the pending delete simply waits for
+    /// the next unrelated `save()` anywhere in the app to commit it — a refused "delete my data"
+    /// that deletes the user's tasks a minute later, from a screen that never mentioned it.
+    ///
+    /// So the construction is enclosed too, not just the save. `rollback()` is the only undo
+    /// available for a delete — the rows are already marked, and there is no object to hand back —
+    /// and it costs any *unrelated* pending edit in the shared context, which is the documented
+    /// price `commitDelete` already pays and the reason this is not the default shape for an edit.
+    ///
+    /// The original error is rethrown rather than replaced: unlike `commitCascade`'s `false`, a
+    /// throwing construction already says what went wrong, and the surface has to name it.
+    ///
+    /// - Parameter building: Marks the rows deleted. Commits nothing.
+    static func commitDelete(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        building: () throws -> Void
+    ) throws {
+        do {
+            try building()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+        try commitDelete(in: modelContext, commit: commit)
+    }
+
     /// A delete that can fail **while it is still being built**, and then commits.
     ///
     /// `commitDelete` covers the delete that is fully marked by the time anyone tries to save it.

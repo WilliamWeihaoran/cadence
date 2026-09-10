@@ -400,6 +400,18 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(duplicate.message.contains("Note"))
         #expect(duplicate.message.contains(record.uuidString))
 
+        let cycle = CadenceArchiveImportFailure.parentCycle(
+            table: "Goal",
+            record: record,
+            field: "parentGoalID",
+            cycle: [record, missing]
+        )
+        #expect(cycle.message.contains(record.uuidString))
+        #expect(cycle.message.contains(missing.uuidString))
+        #expect(cycle.message.contains("parentGoalID"))
+        #expect(cycle.message.contains("Nothing was imported."))
+        #expect(cycle.errorDescription == cycle.message)
+
         let version = CadenceArchiveImportFailure.unsupportedFormatVersion(found: 9, readableUpTo: 1)
         #expect(version.message.contains("9"))
         #expect(version.message.contains("1"))
@@ -562,6 +574,247 @@ struct CadenceArchiveImportSurfaceTests {
 
         let observer = ModelContext(container)
         #expect(try observer.fetchCount(FetchDescriptor<AppTask>()) == 0)
+    }
+
+    // MARK: - T-1109: a goal cycle the Goals page can never show
+
+    /// **The consequence half, measured against the real grouping rather than reasoned about.**
+    ///
+    /// `GoalMissionGrouping.groups` — the Goals page's only source of rows — starts at
+    /// `GoalAssignmentRules.topLevelGoals`, which is `parentGoal == nil`. A cycle has no member
+    /// with a `nil` parent, so it contributes no group and no milestone row: the goals are in the
+    /// store, on every device, and on no screen. This is why the importer has to refuse one, and it
+    /// is deliberately built by hand here rather than through an import, so the invisibility claim
+    /// stands on its own if the importer's guard is ever moved.
+    @Test func aRootlessGoalCycleIsInTheStoreAndOnNoGoalsRow() throws {
+        let modelContext = ModelContext(try CadenceTestStore.container())
+        let first = Goal(title: "Ship the thing")
+        let second = Goal(title: "Ship the other thing")
+        modelContext.insert(first)
+        modelContext.insert(second)
+        first.parentGoal = second
+        second.parentGoal = first
+        try modelContext.save()
+
+        let live = try modelContext.fetch(FetchDescriptor<Goal>())
+
+        #expect(live.count == 2, "the rows are not in the store, so this measures nothing")
+        #expect(GoalAssignmentRules.topLevelGoals(from: live).isEmpty, "the cycle has a root after all")
+        #expect(GoalAssignmentRules.activeTopLevelGoals(from: live).isEmpty)
+        #expect(
+            GoalMissionGrouping.groups(from: live) { _ in true }.isEmpty,
+            "the Goals page can show the cycle, so there is nothing to refuse"
+        )
+    }
+
+    /// A goal that is its own parent is refused, and the store is left exactly as it was.
+    ///
+    /// The minimal witness: one record, no repeated id, and a `parentGoalID` that resolves. Every
+    /// existence check passes and the hierarchy check is the only thing standing between it and a
+    /// goal nothing can show.
+    @Test func aGoalThatIsItsOwnParentIsRefused() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let goal = Goal(title: "Ship the thing")
+        source.insert(goal)
+        try source.save()
+        var archive = try CadenceDataExportService.makeArchive(in: source)
+        archive.goals[0].parentGoalID = archive.goals[0].id
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        #expect(throws: CadenceArchiveImportFailure.parentCycle(
+            table: "Goal",
+            record: goal.id,
+            field: "parentGoalID",
+            cycle: [goal.id]
+        )) {
+            try CadenceArchiveImportService.apply(archive, in: destination)
+        }
+
+        #expect(try CadenceDataExportService.makeArchive(in: destination).totalRecordCount == 0)
+        #expect(destination.hasChanges == false)
+
+        // The preview refuses it too, so no surface can offer an import that would then fail.
+        #expect(throws: CadenceArchiveImportFailure.self) {
+            try CadenceArchiveImportService.plan(archive, in: destination)
+        }
+    }
+
+    /// Two goals pointing at each other clear every existence check as well, and are refused for
+    /// the same reason: the pair has no root.
+    @Test func aTwoGoalCycleIsRefused() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let first = Goal(title: "Ship the thing")
+        let second = Goal(title: "Ship the other thing")
+        source.insert(first)
+        source.insert(second)
+        try source.save()
+        var archive = try CadenceDataExportService.makeArchive(in: source)
+        let firstID = archive.goals[0].id
+        let secondID = archive.goals[1].id
+        archive.goals[0].parentGoalID = secondID
+        archive.goals[1].parentGoalID = firstID
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        var thrown: CadenceArchiveImportFailure?
+        do {
+            try CadenceArchiveImportService.apply(archive, in: destination)
+        } catch let failure as CadenceArchiveImportFailure {
+            thrown = failure
+        }
+
+        let failure = try #require(thrown)
+        guard case let .parentCycle(_, record, _, cycle) = failure else {
+            Issue.record("refused with \(failure) rather than a cycle")
+            return
+        }
+        #expect(Set(cycle) == [firstID, secondID])
+        #expect(cycle.first == record, "the reported chain does not start at the row it names")
+        #expect(try destination.fetchCount(FetchDescriptor<Goal>()) == 0)
+    }
+
+    /// **The cycle can close through a row the archive never carries**, which is why checking the
+    /// archive's own edges in isolation would not be enough.
+    ///
+    /// Destination: `first` (no parent) and `second` (parent `first`). The archive holds `first`
+    /// alone, with its parent set to `second`. In `.restoreOverwritingExistingRows` that edge is
+    /// written and `second`'s is left alone, so the pair closes on a row that is in neither the
+    /// archive nor the changed set.
+    @Test func aCycleClosedThroughARowTheArchiveDoesNotCarryIsRefused() throws {
+        let destination = ModelContext(try CadenceTestStore.container())
+        let first = Goal(title: "Ship the thing")
+        let second = Goal(title: "Ship the other thing")
+        destination.insert(first)
+        destination.insert(second)
+        second.parentGoal = first
+        try destination.save()
+
+        let source = ModelContext(try CadenceTestStore.container())
+        let incoming = Goal(title: "Ship the thing")
+        incoming.id = first.id
+        source.insert(incoming)
+        try source.save()
+        var archive = try CadenceDataExportService.makeArchive(in: source)
+        archive.goals[0].parentGoalID = second.id
+
+        #expect(throws: CadenceArchiveImportFailure.parentCycle(
+            table: "Goal",
+            record: first.id,
+            field: "parentGoalID",
+            cycle: [first.id, second.id]
+        )) {
+            try CadenceArchiveImportService.apply(
+                archive,
+                mode: .restoreOverwritingExistingRows,
+                in: destination
+            )
+        }
+
+        #expect(first.parentGoal == nil, "the refused edge was written anyway")
+        #expect(second.parentGoal?.id == first.id)
+        let live = try destination.fetch(FetchDescriptor<Goal>())
+        #expect(GoalMissionGrouping.groups(from: live) { _ in true }.count == 1)
+    }
+
+    /// **The same document is accepted in merge mode**, because merge never writes the edge.
+    ///
+    /// A matched row keeps the destination's copy, relationships included, so the incoming parent
+    /// edge is not applied and no cycle exists to refuse. Refusing here would refuse an import that
+    /// does nothing wrong — the pair against which the check above is not merely "reject anything
+    /// that looks circular in the file".
+    @Test func aMergeIgnoresAMatchedIncomingEdgeThatWouldHaveCycled() throws {
+        let destination = ModelContext(try CadenceTestStore.container())
+        let first = Goal(title: "Ship the thing")
+        let second = Goal(title: "Ship the other thing")
+        destination.insert(first)
+        destination.insert(second)
+        second.parentGoal = first
+        try destination.save()
+
+        let source = ModelContext(try CadenceTestStore.container())
+        let incoming = Goal(title: "Ship the thing")
+        incoming.id = first.id
+        source.insert(incoming)
+        try source.save()
+        var archive = try CadenceDataExportService.makeArchive(in: source)
+        archive.goals[0].parentGoalID = second.id
+
+        let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
+
+        #expect(outcome.skippedRecordCount == 1)
+        #expect(first.parentGoal == nil, "a merge overwrote a matched row's relationship")
+        let live = try destination.fetch(FetchDescriptor<Goal>())
+        #expect(GoalMissionGrouping.groups(from: live) { _ in true }.count == 1)
+    }
+
+    /// A component of the destination that was already circular is not this import's to refuse.
+    ///
+    /// The check names edges the import *writes*. A store that is already corrupt stays importable,
+    /// which is the difference between validating input and demanding the destination be clean.
+    @Test func anImportIsNotBlockedByADestinationComponentThatWasAlreadyCircular() throws {
+        let destination = ModelContext(try CadenceTestStore.container())
+        let left = Goal(title: "Already circular")
+        let right = Goal(title: "Also already circular")
+        destination.insert(left)
+        destination.insert(right)
+        left.parentGoal = right
+        right.parentGoal = left
+        try destination.save()
+
+        let source = ModelContext(try CadenceTestStore.container())
+        let root = Goal(title: "A direction")
+        let milestone = Goal(title: "A milestone")
+        let attached = Goal(title: "Hung off the corrupt component")
+        source.insert(root)
+        source.insert(milestone)
+        source.insert(attached)
+        milestone.parentGoal = root
+        try source.save()
+        var archive = try CadenceDataExportService.makeArchive(in: source)
+
+        // **The arriving row is parented straight into the pre-existing cycle.** The walk therefore
+        // *reaches* that cycle from a changed edge, which is the case a check that refused any
+        // cycle it could see would get wrong: the cycle is still not one this import created.
+        let index = try #require(archive.goals.firstIndex { $0.id == attached.id })
+        archive.goals[index].parentGoalID = left.id
+
+        let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
+
+        #expect(outcome.insertedRecordCount == 3)
+        let live = try destination.fetch(FetchDescriptor<Goal>())
+        #expect(live.count == 5)
+        // The one importable direction draws its group; the pre-existing cycle still draws nothing,
+        // which is what T-1109 is about and not something an import can repair.
+        let groups = GoalMissionGrouping.groups(from: live) { _ in true }
+        #expect(groups.map(\.title) == ["A direction"])
+        #expect(groups.first?.goals.map(\.title) == ["A milestone"])
+    }
+
+    /// A deep but acyclic hierarchy is untouched by the check and still arrives whole.
+    ///
+    /// The guard rejects cycles, not depth. macOS flattens a third level into the top group's
+    /// milestones deliberately; a depth limit dressed up as referential integrity would have
+    /// decided that question here instead.
+    @Test func aDeepAcyclicGoalHierarchyStillImportsAndStillDraws() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let root = Goal(title: "A direction")
+        let mid = Goal(title: "A milestone")
+        let leaf = Goal(title: "A sub-milestone")
+        source.insert(root)
+        source.insert(mid)
+        source.insert(leaf)
+        mid.parentGoal = root
+        leaf.parentGoal = mid
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(archive, in: destination)
+
+        let live = try destination.fetch(FetchDescriptor<Goal>())
+        #expect(live.count == 3)
+        let groups = GoalMissionGrouping.groups(from: live) { _ in true }
+        #expect(groups.map(\.title) == ["A direction"])
+        #expect(Set(groups.first?.goals.map(\.title) ?? []) == ["A milestone", "A sub-milestone"])
     }
 
     /// The injected failure, so the tests above are not depending on some real error's wording.

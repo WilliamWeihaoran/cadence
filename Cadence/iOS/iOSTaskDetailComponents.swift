@@ -619,8 +619,11 @@ struct iOSTaskTagPickerPopover: View {
         if !isSelected(tag) {
             selectedTags = TagSupport.sorted(selectedTags + [tag])
         }
+        // **T-1110.** Not `editFailureNotice`. The mint above already committed, so "Nothing was
+        // changed" is false here by two lines — and the tag it denies is drawn in the list right
+        // above this sentence. Only the attachment failed, and only that is claimed.
         guard onCommit(previous) else {
-            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            tagFailureNotice = TagSupport.attachmentFailureNotice
             return
         }
         tagFailureNotice = nil

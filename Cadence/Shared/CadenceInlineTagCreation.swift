@@ -10,6 +10,25 @@ import SwiftData
 /// the line and this is where the line is.
 extension TagSupport {
 
+    /// The sentence the **attachment** half of an inline create-and-select may say ([[T-1110]]).
+    ///
+    /// `iOSTaskTagPickerPopover.addTag` is two commits and not one. The mint goes through
+    /// `committedTag` below and is durable the moment it returns — deliberately, since T-631: the
+    /// moment the tag exists is the moment the user asked for it. Attaching it to the task is a
+    /// *second* commit, through the popover's `onCommit`, and its refusal used to be reported with
+    /// `CadencePendingChangePersistence.editFailureNotice`, whose second sentence is "Nothing was
+    /// changed". On this path something was: the tag is in the catalogue, and the popover is still
+    /// open over a live tag list, so the row is on screen while the notice under it denies it.
+    ///
+    /// **Both clauses are true whichever branch `committedTag` took.** It returns non-`nil` only
+    /// for a tag the store holds — one it minted and committed, or one that already existed — so
+    /// "it's in your tag list" is not a guess about provenance. It deliberately does not say the
+    /// tag was *created*: `committedTag` does not report that, and a sentence that inferred it
+    /// would be the same overclaim in the other direction. The second clause promises exactly what
+    /// `iOSTaskTagStrip.commitTags(restoring:)` actually undoes, and nothing wider.
+    static let attachmentFailureNotice =
+        "Couldn't add this tag to the task. It's in your tag list, but the task's tags weren't changed."
+
     /// `resolveTags`, **plus the commit for the rows it had to mint** (T-631).
     ///
     /// Every inline "create tag" affordance in the app called `resolveTags` from a view's ambient

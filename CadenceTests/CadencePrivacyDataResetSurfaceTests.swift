@@ -580,6 +580,249 @@ struct CadencePrivacyDataResetSurfaceTests {
         #expect(try repositoryFile("docs/privacy.html").contains("Account and Data Deletion"))
     }
 
+    // MARK: - A refused reset deletes nothing (T-1102)
+
+    /// **The hazard the `try? save()` rule exists for, in its other spelling.**
+    ///
+    /// The reset marked twenty-one model types deleted and then saved. The save is `try`, not
+    /// `try?`, so a refusal really did reach Settings — and nothing undid the rows. This app has
+    /// **one `ModelContext`**, so those rows sat pending for the next unrelated `save()` anywhere
+    /// in the app to commit: a "delete my data" the user was told had failed, deleting their data
+    /// a minute later from a screen that never mentioned it.
+    ///
+    /// The unrelated save is the assertion. Fetching straight after the throw would pass against
+    /// the *old* code too — the rows are marked deleted, not gone — so the only honest question is
+    /// what the next commit takes.
+    @Test func aRefusedResetCommitLeavesNothingPendingForTheNextUnrelatedSave() async throws {
+        let context = ModelContext(try makeContainer())
+        context.insert(AppTask(title: "Buy milk"))
+        context.insert(Habit(title: "Stretch"))
+        try context.save()
+        #expect(try context.fetchCount(FetchDescriptor<AppTask>()) == 1)
+
+        await #expect(throws: RefusedCommit.self) {
+            try await PrivacyDataResetService.deleteCadenceData(
+                in: context,
+                canceller: .inert,
+                commit: { _ in throw RefusedCommit() }
+            )
+        }
+
+        // Somebody else's save, on a context the refused reset had been holding rows in.
+        context.insert(Cadence.Tag(name: "errand"))
+        try context.save()
+
+        #expect(
+            try context.fetchCount(FetchDescriptor<AppTask>()) == 1,
+            "a refused reset left the task pending for an unrelated save to commit (T-1102)"
+        )
+        #expect(try context.fetchCount(FetchDescriptor<Habit>()) == 1)
+        // Non-vacuity: the unrelated write really did commit, so the counts above are what the
+        // store holds rather than a save that never ran.
+        #expect(try context.fetchCount(FetchDescriptor<Cadence.Tag>()) == 1)
+    }
+
+    /// The other end of the same window: each pass is a **fetch**, so the sweep can throw with a
+    /// dozen types already marked deleted and the save never reached at all. `commitDelete`'s
+    /// `building:` form is what encloses that half; wrapping only the save would leave this case
+    /// exactly as it was.
+    @Test func aResetThatThrowsMidSweepUndoesTheRowsItAlreadyMarked() async throws {
+        let context = ModelContext(try makeContainer())
+        context.insert(AppTask(title: "Buy milk"))
+        context.insert(Habit(title: "Stretch"))
+        try context.save()
+
+        await #expect(throws: RefusedCommit.self) {
+            try await PrivacyDataResetService.deleteCadenceData(
+                in: context,
+                canceller: .inert,
+                // A sweep that gets partway and then cannot read the next type.
+                markDeleted: { modelContext in
+                    for task in try modelContext.fetch(FetchDescriptor<AppTask>()) {
+                        modelContext.delete(task)
+                    }
+                    throw RefusedCommit()
+                },
+                commit: { _ in
+                    Issue.record("the commit ran after the sweep threw")
+                    throw RefusedCommit()
+                }
+            )
+        }
+
+        context.insert(Cadence.Tag(name: "errand"))
+        try context.save()
+
+        #expect(
+            try context.fetchCount(FetchDescriptor<AppTask>()) == 1,
+            "a sweep that threw mid-way left its marked rows pending (T-1102)"
+        )
+        #expect(try context.fetchCount(FetchDescriptor<Habit>()) == 1)
+        #expect(try context.fetchCount(FetchDescriptor<Cadence.Tag>()) == 1)
+    }
+
+    /// A reset that deleted nothing must not cancel the reminders for the data it did not delete.
+    /// The cancellation is below the commit for that reason, and the ordering is the assertion.
+    @Test func aRefusedResetDoesNotCancelTheNotificationsForDataItStillHolds() async throws {
+        let recorder = CancellationRecorder()
+        let context = ModelContext(try makeContainer())
+        context.insert(Habit(title: "Stretch"))
+        try context.save()
+
+        await #expect(throws: RefusedCommit.self) {
+            try await PrivacyDataResetService.deleteCadenceData(
+                in: context,
+                canceller: recorder.canceller(suspendingFor: .zero),
+                commit: { _ in throw RefusedCommit() }
+            )
+        }
+
+        #expect(recorder.runs == 0, "a refused reset cancelled the reminders for data it kept")
+        #expect(try context.fetchCount(FetchDescriptor<Habit>()) == 1)
+    }
+
+    /// The sweep and the commit are one boundary in the source, not two steps that happen to be
+    /// adjacent. Read as text because the defaulted closure parameters make the declaration
+    /// unreadable to `CadenceSourceScan.functionBody(named:)`.
+    @Test func theResetCommitsItsDeletionThroughTheRollbackBoundary() throws {
+        let live = try strippingComments(sourceFile("Cadence/Services/CadencePrivacyDataResetService.swift"))
+
+        #expect(live.contains("enum PrivacyDataResetService"), "non-vacuity: wrong file")
+        #expect(
+            live.contains("CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)"),
+            "the reset commits its deletion outside a rollback boundary again (T-1102)"
+        )
+        #expect(
+            !live.contains("try modelContext.save()"),
+            "the reset saves directly again, so a refusal leaves the deletion pending (T-1102)"
+        )
+        // And the boundary encloses the sweep rather than only the save: the sweep runs inside
+        // the helper's `building:` closure, which is the frame that rolls back.
+        #expect(live.contains("try markDeleted(modelContext)"))
+
+        let helper = try strippingComments(sourceFile("Cadence/Shared/CadencePendingChangePersistence.swift"))
+        #expect(helper.contains("building: () throws -> Void"), "the building form of commitDelete is gone")
+        #expect(helper.contains("modelContext.rollback()"), "non-vacuity: the helper undoes nothing")
+    }
+
+    // MARK: - A key the Keychain refused to delete is named (T-1101)
+
+    /// **The claim the app makes to the user, over a deletion that threw.**
+    ///
+    /// `try? aiSettingsManager.removeAPIKey()`. `KeychainCredentialStore.deleteSecret` throws on
+    /// any `OSStatus` other than success or not-found, `removeAPIKey` clears `hasAPIKey` only
+    /// after it returns — so the key stayed, the manager knew it had stayed, and the reset handed
+    /// back an outcome whose sentence said the data was deleted.
+    @Test func aRefusedKeychainDeletionIsReportedRatherThanSwallowed() throws {
+        try withTemporaryDefaults("CadenceTests.privacy-reset.key") { defaults in
+            let store = RefusingSecretStore()
+            store.values["openai.apiKey"] = "sk-live"
+            let manager = AISettingsManager(secretStore: store, defaults: defaults)
+            #expect(manager.hasAPIKey, "non-vacuity: there was no key to fail to delete")
+
+            store.deleteFailure = AIKeychainError.unexpectedStatus(-34018)
+            let reason = try #require(
+                PrivacyDataResetService.removeStoredAPIKey(using: manager),
+                "the reset still swallows a refused Keychain deletion (T-1101)"
+            )
+
+            #expect(reason == "Keychain returned status -34018.")
+            // The key is still there, and the app still says so — which is what makes Settings →
+            // AI's Delete API Key button a retry rather than a no-op.
+            #expect(try manager.loadAPIKey() == "sk-live")
+            #expect(manager.hasAPIKey)
+
+            // Retry finishes it.
+            store.deleteFailure = nil
+            try manager.removeAPIKey()
+            let removed = try manager.loadAPIKey()
+            #expect(removed == nil)
+            #expect(manager.hasAPIKey == false)
+        }
+    }
+
+    /// The success and no-key cases answer `nil`, so the sentence only changes when something
+    /// really was retained. `deleteSecret` treats `errSecItemNotFound` as success, which is why
+    /// "there was no key" and "the key was removed" are the same answer here.
+    @Test func removingAKeyThatIsAbsentOrDeletableReportsNothingRetained() throws {
+        try withTemporaryDefaults("CadenceTests.privacy-reset.key-ok") { defaults in
+            let store = RefusingSecretStore()
+            let empty = AISettingsManager(secretStore: store, defaults: defaults)
+            #expect(PrivacyDataResetService.removeStoredAPIKey(using: empty) == nil)
+
+            store.values["openai.apiKey"] = "sk-live"
+            let stocked = AISettingsManager(secretStore: store, defaults: defaults)
+            #expect(stocked.hasAPIKey)
+            #expect(PrivacyDataResetService.removeStoredAPIKey(using: stocked) == nil)
+            let remaining = try stocked.loadAPIKey()
+            #expect(remaining == nil)
+        }
+    }
+
+    /// The sentence itself, on both platforms. It may not claim the key was removed, it has to say
+    /// where the key still is, and it has to name the control that finishes the job — the store is
+    /// already gone by then, so the sentence is the entire report.
+    @Test func neitherPlatformsSentenceClaimsARetainedKeyWasRemoved() {
+        for count in [0, 1, 4] {
+            let outcome = PrivacyDataResetOutcome(
+                removedBackupCount: count,
+                retainedAPIKeyReason: "Keychain returned status -34018."
+            )
+
+            for message in [outcome.accountAndDataStatusMessage, outcome.dataOnlyStatusMessage] {
+                #expect(message.contains("The saved OpenAI key was not removed and is still in the Keychain"))
+                #expect(message.contains("Keychain returned status -34018"))
+                #expect(message.contains("Delete it in Settings → AI."))
+                // The deletion that *did* happen is still reported, because it did happen.
+                #expect(message.hasPrefix("Cadence "))
+            }
+            // T-474 still holds of the longer sentence: iOS names no account, at any count.
+            #expect(!outcome.dataOnlyStatusMessage.lowercased().contains("account"))
+            #expect(outcome.accountAndDataStatusMessage.lowercased().contains("account"))
+        }
+
+        // A blank reason is still a retained key. Read from the presence of the value, never from
+        // its text, so an error with no description cannot fall back to the wording that says the
+        // key is gone.
+        let blank = PrivacyDataResetOutcome(removedBackupCount: 0, retainedAPIKeyReason: "  ")
+        #expect(blank.dataOnlyStatusMessage.contains("was not removed"))
+        #expect(blank.dataOnlyStatusMessage.contains("the Keychain refused the deletion"))
+
+        // And a reset that removed the key says nothing about one, at either sentence.
+        let clean = PrivacyDataResetOutcome(removedBackupCount: 2)
+        #expect(clean.accountAndDataStatusMessage == "Cadence account, data, and 2 backups were deleted.")
+        #expect(clean.dataOnlyStatusMessage == "Cadence data and 2 backups were deleted.")
+    }
+
+    /// The report is worth nothing if the reset does not feed it. Read as text for this file's
+    /// usual reason, and because `deleteCadenceDataAndLocalArtifacts` deletes the real backups
+    /// directory inside the app's container, so no test may call it.
+    @Test func theWholeResetCarriesTheRetainedKeyIntoItsOutcome() throws {
+        let live = try strippingComments(sourceFile("Cadence/Services/CadencePrivacyDataResetService.swift"))
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "deleteCadenceDataAndLocalArtifacts", in: live),
+            "the whole-reset entry point is gone"
+        )
+
+        #expect(
+            body.contains("removeStoredAPIKey(using: aiSettingsManager)"),
+            "the reset no longer routes the key deletion through the reporting seam (T-1101)"
+        )
+        #expect(
+            body.contains("retainedAPIKeyReason: retainedAPIKeyReason"),
+            "the reset drops the retained key on the floor before the outcome (T-1101)"
+        )
+        #expect(
+            !live.contains("try? aiSettingsManager"),
+            "the reset swallows the Keychain deletion again (T-1101)"
+        )
+        // The remaining artifacts are still cleaned up after a refused key deletion: the store is
+        // already gone, so stopping there would leave more behind, not less.
+        for step in ["clearWidgetState()", "StoreBackupManager.deleteAllBackups()"] {
+            #expect(body.contains(step), "the reset stopped performing \(step)")
+        }
+    }
+
     // MARK: - Fixtures
 
     private func makeContainer() throws -> ModelContainer {
@@ -649,6 +892,35 @@ private final class CancellationRecorder {
             try? await Task.sleep(for: duration)
             self.didFinish = true
         }
+    }
+}
+
+// MARK: - The refusals a real store cannot be asked for
+
+/// A commit, or a sweep, that the store refused. Its own type so the tests can assert *which*
+/// error came back out, which is what proves the boundary rethrows rather than substituting one.
+private struct RefusedCommit: Error {}
+
+/// A secret store that can be told to refuse a deletion.
+///
+/// `KeychainCredentialStore` throws on any `OSStatus` other than success or not-found, and there
+/// is no way to make the real Keychain return one on demand — which is exactly why the swallowed
+/// failure survived: the path had no test because it had no fixture.
+private final class RefusingSecretStore: AISecretStore {
+    var values: [String: String] = [:]
+    var deleteFailure: Error?
+
+    func loadSecret(account: String) throws -> String? {
+        values[account]
+    }
+
+    func saveSecret(_ secret: String, account: String) throws {
+        values[account] = secret
+    }
+
+    func deleteSecret(account: String) throws {
+        if let deleteFailure { throw deleteFailure }
+        values.removeValue(forKey: account)
     }
 }
 
