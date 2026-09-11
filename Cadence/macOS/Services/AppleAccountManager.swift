@@ -38,7 +38,7 @@ struct AppleAccountDefaultsStorage: AppleAccountStorage {
         static let signedInAt = "appleAccount.signedInAt"
     }
 
-    var defaults: UserDefaults = .standard
+    var defaults: UserDefaults = CadenceDefaults.store
 
     func loadProfile() -> AppleAccountProfile? {
         guard let userIdentifier = defaults.string(forKey: Key.userIdentifier),

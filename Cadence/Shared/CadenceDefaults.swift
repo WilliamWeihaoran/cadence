@@ -25,11 +25,34 @@ import Foundation
 /// about this reaches a user's device: with no such argument `store` **is** `UserDefaults.standard`
 /// and every call site behaves exactly as it did.
 ///
-/// **What it does not cover**, deliberately, so nobody reads more into it than it says: an app
-/// launched by *tapping its icon* on the simulator carries no launch arguments and so shares the
-/// device-wide domain again, and the direct `UserDefaults.standard` reads in the service layer
-/// (notifications, integrity reports, restores) are not routed through here.
-enum CadenceDefaults {
+/// **The service layer routes through here now (T-745, of which T-949 is the same ticket
+/// re-counted).** It used to read the device-wide domain directly at **27** sites the app target
+/// alone compiles — 15 literal `UserDefaults.standard` calls, and 12 parameters defaulted to
+/// `.standard`, which T-949's census did not count because it greps one spelling. Six keys were
+/// reachable through two stores at once: `notificationsEnabled`, `noteTemplateOverrides`, the
+/// hidden- and observed-calendar lists, the four `CadencePreferenceKeys` the UI-test reset clears,
+/// and the retired key `purgeRetiredKeys` drops. They agreed only because no launch argument was
+/// present, which is the sense in which there was no invariant here at all — and the reason this is
+/// now a rule rather than a header: `CadenceDefaultsRoutingSweepTests`.
+///
+/// **What it still does not cover**, deliberately, so nobody reads more into it than it says.
+///
+/// 1. An app launched by *tapping its icon* on the simulator carries no launch arguments and so
+///    shares the device-wide domain again.
+/// 2. Four files keep an unrouted store because a target that cannot compile *this* file also
+///    compiles them. `Theme` and `CadenceWidgetRefreshCenter` reach the **app-group** suite on
+///    purpose — the widget is a separate process, and the accent id and the reload state are the
+///    two facts both processes must agree about — while `DataIntegrityRepairService` and
+///    `NoteMigrationService` are in `CadenceMCPServer`'s explicit source list, which has no
+///    `CadenceDefaults` in it to route through.
+/// `nonisolated`, and it has to be: three of the sites routed through it — `NoteTemplateLibrary`,
+/// `PursuitToGoalMigration` and `CadenceCalendarLinkObservations` — are themselves `nonisolated`,
+/// and under this project's main-actor default isolation a `static let` here is main-actor-bound.
+/// Measured: routing them at an isolated `CadenceDefaults` produced seven
+/// *"main actor-isolated static property 'store' can not be referenced from a nonisolated context"*
+/// warnings against a zero baseline, and no error — a preference store is per-process state, not
+/// UI state, so the isolation was never load-bearing.
+nonisolated enum CadenceDefaults {
     /// The launch-argument key. Spelled once: the script that passes it is scanned for this exact
     /// text by `CadenceAgentDefaultsIsolationTests`.
     static let suiteNameArgumentKey = "CadenceSuiteName"

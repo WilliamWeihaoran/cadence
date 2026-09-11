@@ -58,7 +58,7 @@ enum CadenceUITestSupport {
         ]
 
         for key in keys {
-            UserDefaults.standard.removeObject(forKey: key)
+            CadenceDefaults.store.removeObject(forKey: key)
         }
     }
 }

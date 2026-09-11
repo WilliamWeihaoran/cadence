@@ -786,7 +786,7 @@ enum StoreBackupManager {
     ///   would write (T-311).
     static func scheduleRestore(
         from backupURL: URL,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = CadenceDefaults.store,
         storeDirectoryURL: URL? = nil
     ) throws {
         guard isBackupDirectory(backupURL) else {
@@ -799,7 +799,7 @@ enum StoreBackupManager {
         setSharedRestorePendingMarker(true, storeDirectoryURL: storeDirectoryURL)
     }
 
-    static func clearPendingRestore(defaults: UserDefaults = .standard, storeDirectoryURL: URL? = nil) {
+    static func clearPendingRestore(defaults: UserDefaults = CadenceDefaults.store, storeDirectoryURL: URL? = nil) {
         defaults.removeObject(forKey: pendingRestoreDefaultsKey)
         setSharedRestorePendingMarker(false, storeDirectoryURL: storeDirectoryURL)
     }
@@ -812,7 +812,7 @@ enum StoreBackupManager {
         CadenceStoreSupport.setRestorePending(pending, inStoreDirectory: directoryURL)
     }
 
-    static func pendingRestoreURL(defaults: UserDefaults = .standard) -> URL? {
+    static func pendingRestoreURL(defaults: UserDefaults = CadenceDefaults.store) -> URL? {
         guard let storedPath = defaults.string(forKey: pendingRestoreDefaultsKey), !storedPath.isEmpty else {
             return nil
         }
@@ -820,12 +820,12 @@ enum StoreBackupManager {
     }
 
     /// The restore Cadence tried, failed at, and refused to try again on its own.
-    static func lastFailedRestore(defaults: UserDefaults = .standard) -> FailedRestoreRecord? {
+    static func lastFailedRestore(defaults: UserDefaults = CadenceDefaults.store) -> FailedRestoreRecord? {
         guard let data = defaults.data(forKey: failedRestoreDefaultsKey) else { return nil }
         return try? JSONDecoder.cadenceBackupDecoder.decode(FailedRestoreRecord.self, from: data)
     }
 
-    static func clearFailedRestore(defaults: UserDefaults = .standard) {
+    static func clearFailedRestore(defaults: UserDefaults = CadenceDefaults.store) {
         defaults.removeObject(forKey: failedRestoreDefaultsKey)
     }
 
@@ -851,7 +851,7 @@ enum StoreBackupManager {
     static func performPendingRestoreIfNeeded(
         storeDirectoryURL: URL,
         fileManager: FileManager = .default,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = CadenceDefaults.store
     ) throws {
         guard let backupURL = pendingRestoreURL(defaults: defaults) else {
             // The launch is also where a stale app-group marker gets reconciled against the key it

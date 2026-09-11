@@ -17,7 +17,7 @@ nonisolated enum NoteTemplateLibrary {
     static let storageKey = "noteTemplateOverrides"
 
     static func templates(for kind: NoteKind, overridesRaw: String? = nil) -> [NoteTemplate] {
-        let overrides = overrides(from: overridesRaw ?? UserDefaults.standard.string(forKey: storageKey) ?? "")
+        let overrides = overrides(from: overridesRaw ?? CadenceDefaults.store.string(forKey: storageKey) ?? "")
         switch kind {
         case .daily:
             return merged([dailyPlan, dailyReview], with: overrides)

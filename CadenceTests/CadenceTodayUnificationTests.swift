@@ -1416,7 +1416,7 @@ struct CadenceTodaySortVocabularyTests {
         let code = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
         #expect(code.contains("legacySortFieldDefaultsKey"))
         #expect(!code.contains("removeObject"))
-        #expect(code.components(separatedBy: "UserDefaults.standard.set").count - 1 == 1)
+        #expect(code.components(separatedBy: "CadenceDefaults.store.set").count - 1 == 1)
     }
 
     // MARK: - The chips themselves

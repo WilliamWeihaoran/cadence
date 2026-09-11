@@ -46,7 +46,7 @@ struct TasksPanel: View {
         self.sortMode = sortMode
         self.enableControls = enableControls
         self.useStandardHeaderHeight = useStandardHeaderHeight
-        _localSortMode = State(initialValue: Self.storedSortMode(in: .standard, fallback: sortMode))
+        _localSortMode = State(initialValue: Self.storedSortMode(in: CadenceDefaults.store, fallback: sortMode))
     }
 
     /// Which `CadenceTaskSurface` this panel is drawing, so the chrome answers come from the
@@ -181,7 +181,7 @@ struct TasksPanel: View {
                 isCompletedCollapsed = true
             }
             .onChange(of: localSortMode) { _, v in
-                UserDefaults.standard.set(v.rawValue, forKey: Self.sortModeDefaultsKey)
+                CadenceDefaults.store.set(v.rawValue, forKey: Self.sortModeDefaultsKey)
             }
     }
 

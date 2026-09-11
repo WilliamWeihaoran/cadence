@@ -155,7 +155,7 @@ private struct ListDetailView: View {
 
     private func restoreRememberedTab() {
         tab = ListDetailPage.rememberedPage(
-            storedRawValue: UserDefaults.standard.string(forKey: tabDefaultsKey),
+            storedRawValue: CadenceDefaults.store.string(forKey: tabDefaultsKey),
             defaultPageRawValue: defaultPageRawValue
         )
     }
@@ -171,7 +171,7 @@ private struct ListDetailView: View {
     }
 
     private func restoreTaskAndKanbanControls() {
-        let ud = UserDefaults.standard
+        let ud = CadenceDefaults.store
         if let raw = ud.string(forKey: "\(kanbanUDKey)_sortField"), let v = TaskSortField(rawValue: raw) {
             kanbanSortField = v
         }
@@ -388,13 +388,13 @@ private struct ListDetailTabAndKanbanPersistenceModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: tab) { _, newValue in
-                UserDefaults.standard.set(newValue.rawValue, forKey: tabDefaultsKey)
+                CadenceDefaults.store.set(newValue.rawValue, forKey: tabDefaultsKey)
             }
             .onChange(of: kanbanSortField) { _, value in
-                UserDefaults.standard.set(value.rawValue, forKey: "\(kanbanUDKey)_sortField")
+                CadenceDefaults.store.set(value.rawValue, forKey: "\(kanbanUDKey)_sortField")
             }
             .onChange(of: kanbanSortDirection) { _, value in
-                UserDefaults.standard.set(value.rawValue, forKey: "\(kanbanUDKey)_sortDir")
+                CadenceDefaults.store.set(value.rawValue, forKey: "\(kanbanUDKey)_sortDir")
             }
     }
 }
@@ -409,13 +409,13 @@ private struct ListDetailTaskPreferencePersistenceModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: taskSortField) { _, value in
-                UserDefaults.standard.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_sortField")
+                CadenceDefaults.store.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_sortField")
             }
             .onChange(of: taskSortDirection) { _, value in
-                UserDefaults.standard.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_sortDir")
+                CadenceDefaults.store.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_sortDir")
             }
             .onChange(of: taskGroupingMode) { _, value in
-                UserDefaults.standard.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_grouping")
+                CadenceDefaults.store.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_grouping")
             }
     }
 }

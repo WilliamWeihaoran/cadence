@@ -42,7 +42,7 @@ enum CadenceNotesEditorPreferences {
     /// Idempotent, so it is safe to call from every cold launch: the second run finds nothing and
     /// returns an empty array.
     @discardableResult
-    static func purgeRetiredKeys(in defaults: UserDefaults = .standard) -> [String] {
+    static func purgeRetiredKeys(in defaults: UserDefaults = CadenceDefaults.store) -> [String] {
         let present = retiredKeys.filter { defaults.object(forKey: $0) != nil }
         for key in present {
             defaults.removeObject(forKey: key)

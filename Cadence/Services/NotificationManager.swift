@@ -80,7 +80,7 @@ final class NotificationManager: NSObject {
     ) async {
         guard !Self.isTestEnvironment else { return }
 
-        let notificationsEnabled = UserDefaults.standard.bool(forKey: Self.notificationsEnabledDefaultsKey)
+        let notificationsEnabled = CadenceDefaults.store.bool(forKey: Self.notificationsEnabledDefaultsKey)
         guard notificationsEnabled, isAuthorized else {
             await cancelAll()
             return

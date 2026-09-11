@@ -39,7 +39,7 @@ nonisolated enum PursuitToGoalMigration {
     /// `fetchLimit: 1` probe rather than a full pass. T-393.
     static func runIfNeeded(
         modelContext: ModelContext,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = CadenceDefaults.store
     ) {
         if defaults.bool(forKey: completionKey), !hasSurvivingPursuits(in: modelContext) {
             return

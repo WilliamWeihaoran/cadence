@@ -110,7 +110,7 @@ final class AISettingsManager {
     var statusMessage: String?
     var isTestingConnection = false
 
-    init(secretStore: AISecretStore = KeychainCredentialStore(), defaults: UserDefaults = .standard) {
+    init(secretStore: AISecretStore = KeychainCredentialStore(), defaults: UserDefaults = CadenceDefaults.store) {
         self.secretStore = secretStore
         self.defaults = defaults
         let storedModel = defaults.string(forKey: Key.model)?.trimmingCharacters(in: .whitespacesAndNewlines)

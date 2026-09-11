@@ -103,7 +103,7 @@ nonisolated enum CadenceCalendarLinkObservations {
     static func recordPick(
         _ calendarID: String,
         replacing storedCalendarID: String,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = CadenceDefaults.store
     ) {
         guard !calendarID.isEmpty, calendarID != storedCalendarID else { return }
         let raw = defaults.string(forKey: observedCalendarIDsKey) ?? ""
