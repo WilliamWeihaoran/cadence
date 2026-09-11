@@ -176,40 +176,21 @@ than naming a build.
   twice more over the same context, against a live store, before any tool call. Do not add a guard
   inside `prepare` instead: the flag is readable at the call site, which is where the mistake was.
 - **The write surface can mint a context and a list and re-shape a board, and nothing else**
-  (T-799, T-1095). `create_context` and `create_container` exist because `create_task` took a
-  `containerId` the surface had no way to produce, and `create_task`'s `sectionName` is refused
-  unless the column already exists — so a kanban board could not be seeded at all, and the App
-  Store screenshot run had to click one. `update_container_columns` then adds, renames, recolours,
-  redates, archives, completes and reorders the columns of a list that already exists.
-  **Still nothing creates a goal, a habit, a tag, a saved link, a list note or a task bundle
-  ([[T-1119]]), nothing renames or archives a list or a context ([[T-1120]]), and nothing deletes
-  anything at all** — deletion is refused pending its own decision, because this path has no undo,
-  no confirmation, and `mcp-audit.log` for a record.
-- **Three `Cadence/Shared/` files joined the Sources phase for `update_container_columns`, and the
-  reason is not the one the ticket predicted** (T-1095). `CadenceSectionConfigMerge`,
-  `CadencePendingChangePersistence` and `CadenceSectionEditingSupport`. The merge's
-  `base`/`edited`/`current` is *not* what earns them: this call reads and writes inside one frame,
-  so `base == current` and the merge degenerates exactly as it does for `create_container`, and a
-  caller could not supply a real `base` anyway — `CadenceSectionSummary` has never carried a column
-  `uuid`, so columns are addressed by name. What earns them is
-  `CadenceSectionEditingSupport.applySectionNameChanges` (without it a rename strands every card on
-  a name no column has, and `CadenceReadService.sectionSummaries` answers the orphan back as a
-  phantom column), `mutateSectionConfigs`' T-915 guard (no byte-identical re-serialisation, no
-  spurious CloudKit record pushed at a store the running app has open), and
-  `CadencePendingChangePersistence.commitEdit`, which is the undo this side of the boundary never
-  had. Adding a file here is still not casual: it is another path by which an app-side edit breaks
-  a target no scheme builds.
+  (T-799, T-1095). The create arms exist because `create_task` took a `containerId` the surface
+  could not produce and a `sectionName` it refused unless the column already existed, so a kanban
+  board could not be seeded at all. **Nothing creates a goal, habit, tag, saved link, list note or
+  bundle ([[T-1122]]), nothing renames or archives a list or context ([[T-1120]]), and nothing
+  deletes anything** — deletion is refused pending its own decision: no undo, no confirmation.
+- **Three `Cadence/Shared/` files joined the Sources phase for `update_container_columns`, and not
+  for the reason T-1095 predicted** — the merge's `base`/`edited`/`current` is *not* what earns
+  them. What does: `CadenceSectionEditingSupport.applySectionNameChanges` (without it a rename
+  strands every card on a name no column has, and `sectionSummaries` answers the orphan back as a
+  phantom column), `mutateSectionConfigs`' T-915 guard, and `CadencePendingChangePersistence`.
+  Full reasoning in T-1095's ledger entry. Adding a file here is still not casual: it is another
+  path by which an app-side edit breaks a target no scheme builds.
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
-  renders as `isError`, plus an undo.** The first half it always had. The second it did not:
+  renders as `isError`, plus an undo.** The first half it always had; the second it did not.
   `CadenceWriteService` holds one long-lived `ModelContext`, so a refused `save()` left the
   mutation *pending* for the next tool call's `save()` to commit — a write the caller was told had
-  failed, landing later, from a call that never mentioned it. `updateContainerColumns` commits
-  through `CadencePendingChangePersistence.commitEdit` and puts the columns *and* the re-filed
-  cards back. **Every other write arm still inserts and still has no undo** ([[T-1121]]); the
-  `commit:` seam and the `undo:` parameter that close it are already on `saveNotifyAndAudit`.
-- Keep MCP behavior read-oriented unless the requested change clearly adds write capability.
-- Prefer stable response schemas over exposing raw SwiftData models. If a model change forces a DTO
-  change, make it deliberately and update the smoke test's expectations in the same commit.
-- Avoid coupling MCP server code to macOS-only UI concepts.
-- Do not add app source to this target's Sources phase casually; every file added is another path
-  by which a UI-side edit can break a target the app scheme does not build.
+  failed, landing later from a call that never mentioned it. Only `updateContainerColumns` commits
+  through `commitEdit` today; **every other arm still inserts with no undo** ([[T-1121]]).

@@ -934,7 +934,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
   **Scope, and why the other two legs are not in it.** (b) — constructors for goal, habit, tag,
   saved link, list note and task bundle — is six unrelated write paths, six DTO decisions and six
-  smoke-test fixtures, and the ticket itself says nothing measured needs them: filed as [[T-1119]].
+  smoke-test fixtures, and the ticket itself says nothing measured needs them: filed as [[T-1122]].
   (c) — `update_container` / `update_context` for a list's own name, colour, context and archived
   flag — is a different noun with a different refusal set, and the deletion half of it is a
   data-safety decision the ticket explicitly asks be taken separately: filed as [[T-1120]]. (a) is
@@ -1017,7 +1017,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
   **Originally:** **The MCP write surface can now create a list but still cannot change one, and six model types have no constructor at all.** [[T-799]] added `create_context` and `create_container`; what is still missing, in rough order of how often it bites: (a) **no tool mutates an existing list's kanban columns** — add, rename, recolour, archive, reorder. This is the case `Cadence/Shared/CadenceSectionConfigMerge` exists for, so unlike the create path it genuinely needs `base`/`edited`/`current`, and that file is **not** in `CadenceMCPServer`'s explicit Sources phase; adding it there is the decision, and `KanbanColumnRenameRefusal`'s two refusals are the vocabulary. (b) No tool creates a **goal, habit, tag, saved link, list note or task bundle**, which is exactly the set `CadenceMCPToolContractTests.listToolDTOSpecs` still pins by source scan because the smoke test can never see a row of them. (c) Nothing **renames, archives or deletes** anything — `update_task` is the only editor on the surface, and there is no `update_container` / `update_context`. Deletion is the one that should stay refused without a separate decision: this path has no undo and no confirmation, and `mcp-audit.log` is its only record. Not urgent — nothing measured needs it — but it is the honest shape of the gap, and (a) is what a second seeding job will hit first.
 
-- [T-1119] **The MCP write surface can create a context, a list and a task, and none of the other
+- [T-1122] **The MCP write surface can create a context, a list and a task, and none of the other
   six model types.** [[T-1095]] leg (b), unchanged: no tool creates a **goal, habit, tag, saved
   link, list note or task bundle**. That is exactly the set
   `CadenceMCPToolContractTests.listToolDTOSpecs` still pins by **source scan** rather than by
