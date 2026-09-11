@@ -464,6 +464,53 @@ nonisolated struct RemindersReconcileLedger: Equatable, Sendable {
     var reloadRequests = 0
 }
 
+/// **T-1105.** Which asynchronous reminder fetch `RemindersManager` is still willing to publish.
+///
+/// EventKit's `fetchReminders` is asynchronous and the order its callbacks land in is EventKit's
+/// choice, not ours. Two reloads overlap routinely — `refreshAuthorizationState()` starts one, the
+/// `.EKEventStoreChanged` observer starts another, `reconcile(after:)` starts a third — and the
+/// callback used to assign whatever array it had captured, unconditionally. So the *slower* fetch
+/// won, regardless of which one was asked for last, and two of the interleavings are visible:
+///
+/// 1. Fetch A captures the older rows, fetch B captures the newer ones and publishes first, then A
+///    lands and puts the older list back.
+/// 2. Fetch A captures a reminder, the user ticks it off, EventKit accepts the completion and the
+///    row is removed — and then A lands and the reminder they just completed is on screen again.
+///
+/// The guard is one monotonic counter, and the second case is why it is not merely "cancel the
+/// previous fetch": the event that makes a fetch stale is not always another fetch. Every reload
+/// `issue()`s a generation; every authoritative local change — an accepted completion, a lost
+/// grant — calls `retireInFlight()`, which makes the same increment without asking for anything
+/// new. A callback is published only while `accepts(_:)` still recognises the generation it was
+/// issued under.
+///
+/// Lives here rather than beside the manager for the reason `RemindersReconcileLedger` does:
+/// everything in this file is reachable from `CadenceTests` without an EventKit grant.
+nonisolated struct RemindersPublicationGuard: Equatable, Sendable {
+    /// The only generation whose result may still be published. `issue()` pre-increments, so no
+    /// request ever holds the zero this starts at.
+    private(set) var current: UInt64 = 0
+
+    /// Issue the next request, and retire every request already in flight: only the newest one
+    /// answers the question the user last asked.
+    mutating func issue() -> UInt64 {
+        current &+= 1
+        return current
+    }
+
+    /// Retire every request in flight without issuing one. An accepted completion or a lost grant
+    /// already knows something no fetch older than it can know, so nothing still on its way in is
+    /// allowed to overwrite it.
+    mutating func retireInFlight() {
+        _ = issue()
+    }
+
+    /// Whether a result issued under `generation` is still the current answer.
+    func accepts(_ generation: UInt64) -> Bool {
+        generation == current
+    }
+}
+
 /// What `RemindersManager.requestAccess()` can do before it ever prompts, given EventKit's cached
 /// status.
 ///

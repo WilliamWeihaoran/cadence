@@ -499,6 +499,13 @@ struct CadenceDataExportSurfaceTests {
                 // It is not a *second* export: `CadenceArchiveImportService` never encodes.
                 "Cadence/Services/CadenceArchiveImportService.swift",
                 "Cadence/Services/CadenceDataExportService.swift",
+                // T-1099: the recovery search's default `export:` argument. The terminal screen's
+                // button has to keep trying candidates *past* an export failure, so open-and-export
+                // is one loop next to the candidate list rather than two steps in a view — which
+                // makes the search a caller of the exporter, and the view a caller of the search.
+                // Still not a second exporter: `PersistenceController` names it once, in a default
+                // argument, and encodes nothing itself.
+                "Cadence/Services/PersistenceController.swift",
                 "Cadence/Shared/CadenceDataExportPresentation.swift",
                 // T-813/T-817: the terminal recovery screen is a *third* export caller, deliberately
                 // outside the loop below — it is not a Settings surface and does not show
@@ -509,6 +516,24 @@ struct CadenceDataExportSurfaceTests {
                 "Cadence/macOS/Views/SettingsDataSafetySection.swift",
             ],
             "the exporter is reached from \(mentions.sorted())"
+        )
+
+        // The recovery screen is not a Settings surface and keeps its own copy, but it is still
+        // held to the one claim this test's title makes: it does not re-spell the encoding.
+        let recoveryScreen = try strippingExportComments(
+            exportSourceFile("Cadence/Shared/Components/CadenceTerminalRecoveryView.swift")
+        )
+        #expect(!recoveryScreen.contains("JSONEncoder"), "the recovery screen encodes the archive itself")
+        #expect(!recoveryScreen.contains("makeArchive"), "the recovery screen builds the archive itself")
+        // `PersistenceController` names the exporter in one default argument and nowhere else: its
+        // own `JSONEncoder` is the backup manifest's, which is a different document entirely.
+        let search = try strippingExportComments(
+            exportSourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        #expect(!search.contains("makeArchive"), "the recovery search builds the archive itself")
+        #expect(
+            CadenceSourceScan.matchCount("CadenceDataExportService\\.", in: search) == 1,
+            "the recovery search reaches the exporter more than once"
         )
 
         for path in [

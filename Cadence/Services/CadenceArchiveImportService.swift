@@ -467,7 +467,9 @@ nonisolated enum CadenceArchiveImportService {
             matchedCountsByEntityName: matches,
             entityNamesOnlyInTheArchive: archive.schemaEntityNames
                 .filter { !buildEntities.contains($0) }
-                .sorted()
+                .sorted(),
+            linkedCalendarCount: archive.areas.filter { !$0.linkedCalendarID.isEmpty }.count
+                + archive.projects.filter { !$0.linkedCalendarID.isEmpty }.count
         )
     }
 
@@ -1153,6 +1155,20 @@ nonisolated struct CadenceArchiveImportPlan: Equatable, Sendable {
     /// rest of the document is still importable, and a refusal would strand the user's only copy of
     /// everything else.
     let entityNamesOnlyInTheArchive: [String]
+    /// Lists in the archive that carry an Apple Calendar link.
+    ///
+    /// **T-1084.** `CadenceArchiveArea.linkedCalendarID` / `CadenceArchiveProject.linkedCalendarID`
+    /// hold an `EKCalendar.calendarIdentifier`, which Apple documents as local to the device that
+    /// issued it. An archive taken on one Mac and imported on another therefore restores lists
+    /// pointing at a calendar the importing machine never issued. [[T-624]]'s evidence gate keeps
+    /// that *inert* — such a link reads as `.unverified` rather than as a break with a repair
+    /// beside it — so the whole of the exposure is that the user is not told, which is what
+    /// `CadenceArchiveImportPresentation.calendarLinksNote` says in the preview.
+    ///
+    /// Counted over the archive rather than over the rows this mode would write, exactly as
+    /// `entityNamesOnlyInTheArchive` is: the sentence is a fact about the file the reader chose,
+    /// and both are worded that way.
+    let linkedCalendarCount: Int
 
     var totalInsertCount: Int { insertCountsByEntityName.values.reduce(0, +) }
     var totalMatchedCount: Int { matchedCountsByEntityName.values.reduce(0, +) }

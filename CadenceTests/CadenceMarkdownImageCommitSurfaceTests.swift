@@ -196,6 +196,58 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         #expect(resize.contains("try? modelContext.save()"))
     }
 
+    /// **T-1104. No asset row exists while this function is still suspended.**
+    ///
+    /// The loop used to load one photo, insert its asset into the app's single `ModelContext`, and
+    /// then suspend on the next photo with that row still pending — where anything else running on
+    /// the main actor decided its fate. An unrelated `save()` persisted a picture the user could
+    /// still lose to a refused commit; an unrelated `rollback()`, which is what every refused
+    /// delete in the app performs, discarded the pending rows while `insertedAssets` went on
+    /// treating the whole batch as its own, leaving the commit below nothing to write, reporting
+    /// success, and inserting markdown that points at assets the store does not hold.
+    ///
+    /// An offset comparison — the same crude, checkable shape `reportFollowsTheCatch` uses: the
+    /// **last** `await` in the body must come before the **first** `createAsset`, so no ordering of
+    /// the two halves other than "load everything, then create everything" can satisfy it.
+    @Test func theIOSPhotoImportCreatesNoAssetRowWhileItIsStillSuspended() throws {
+        let source = try CadenceCommitSurfaceScan.scanned(Self.iosSurface)
+        let picked = try CadenceCommitSurfaceScan.declarationBody(named: "insertPickedImages", in: source)
+
+        #expect(picked.contains("loadTransferable"), "the picker no longer loads the photos it was handed")
+        let lastAwait = try #require(
+            picked.range(of: "await ", options: .backwards),
+            "the picker awaits nothing at all, so this test is about a function that no longer exists"
+        )
+        let firstCreate = try #require(
+            picked.range(of: "MarkdownImageAssetService.createAsset"),
+            "the picker no longer creates any asset"
+        )
+        #expect(
+            lastAwait.upperBound < firstCreate.lowerBound,
+            "the iOS photo import suspends with asset rows already inserted in the shared context"
+        )
+
+        // The other half of the same ownership question: a load that outlived its editor must stop
+        // before it creates anything, rather than writing rows and markdown into a draft that is
+        // gone.
+        #expect(
+            picked.contains("guard !Task.isCancelled else { return }"),
+            "a cancelled photo import goes on to create rows for an editor that has gone"
+        )
+        #expect(
+            picked.contains("defer { if !Task.isCancelled { selectedImageItems = [] } }"),
+            "a cancelled import clears a picker selection that belongs to the run after it"
+        )
+        #expect(
+            source.contains(".task(id: selectedImageItems)"),
+            "the photo import is no longer a job SwiftUI can cancel"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"Task\s*\{"#, in: source) == 0,
+            "the iOS editor launched an unstructured Task nobody can cancel again"
+        )
+    }
+
     // MARK: - T-649: the items lost before the commit ever happens
 
     /// **The sentence, on its own.** `CadenceMarkdownImageInsertionNotice` is shared and

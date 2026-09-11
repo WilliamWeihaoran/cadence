@@ -11,6 +11,35 @@ Each section says the same four things: **what you would notice**, **what fixing
 **what leaving it costs**, and **what I would do**. Where a claim was measured today it says so;
 where it is inference it says that too.
 
+---
+
+## Status update, 2026-09-10 — three of the four are now closed
+
+This memo was written on 2026-09-06 and every measurement in it still holds. Three of its four
+questions have since been answered, and only one is still yours.
+
+- **T-899 + T-1043 — done.** You were asked whether to merge them and schedule one session. They were
+  merged and the session ran: one new test file,
+  `CadenceTests/CadenceCalendarLinkProvenanceSweepTests.swift`. No model change, no database change,
+  nothing a user sees — exactly the cost quoted below. The correction this memo warned about (the
+  rule would have failed on four correct call sites) was needed; a second correction was found while
+  writing it, in the opposite direction — the *unlink* allowance the rule proposed turned out to have
+  no site behind it at all, so it was left out rather than shipped unexercised.
+- **T-1084 — done, and it is the one line of copy this memo recommends for T-624 as well.** The
+  archive-import preview now says, only when the file actually carries calendar links, that a
+  calendar connection belongs to the device that made it. One conditional sentence, no new stored
+  field, on both platforms.
+- **T-624 — closed as a decision, and the question below is now T-1117.** Every part of it an
+  engineer could act on has landed. **The five-minute experiment in the next section is still
+  yours, and it is still the only thing that would change anything.** It was moved to its own ticket
+  so it stays addressed to you rather than sitting under an entry that has now been re-verified four
+  times without moving.
+- **T-623 — unchanged.** Still parked, still recommended parked, and nothing in the work above
+  touches it. The one thing still worth a decision from you is **T-752**'s sentence.
+
+Where a section below says a ticket is open, read it as the reasoning that led to the decision above
+rather than as the current state.
+
 *One naming note before you search the ledger:* the id `T-1043` was accidentally handed out twice
 (recorded in T-1072). The one this memo is about is the calendar-link ticket. The other one — text
 sitting on top of an image in a note — was fixed and closed on 2026-09-05 and has nothing to do with

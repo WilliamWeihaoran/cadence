@@ -182,6 +182,16 @@ private struct iOSArchiveImportPreviewSheet: View {
                                     .foregroundStyle(Theme.amber)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
+
+                            // **T-1084.** Dim rather than amber, for the reason the Mac card
+                            // records: a calendar link the importing device cannot resolve is
+                            // inert, not lost.
+                            if let note = CadenceArchiveImportPresentation.calendarLinksNote(plan) {
+                                Text(note)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.dim)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
 

@@ -5,9 +5,9 @@ struct PersistenceController {
     static let shared = PersistenceController()
     /// The one startup problem this launch hit, if any.
     ///
-    /// Structured rather than a bare `String` since T-153: two of the three things that can be
-    /// recorded here leave the store with `cloudKitDatabase: .none`, and the third does not touch
-    /// sync at all. Every surface that showed this used to have to guess which from the prose.
+    /// Structured rather than a bare `String` since T-153: two of the things that can be recorded
+    /// here leave the store with `cloudKitDatabase: .none`, and the rest do not touch sync at all.
+    /// Every surface that showed this used to have to guess which from the prose.
     private(set) static var startupIssue: CadenceStartupIssue?
 
     /// Set only when `container` is `nil` — the CloudKit store, the on-disk recovery store, and a
@@ -21,7 +21,7 @@ struct PersistenceController {
     /// the app has: a crash on launch with no explanation and no way to recover anything. This is
     /// the honest alternative: say plainly that nothing could be opened, and try, once, to read
     /// whatever *is* still on disk well enough to export it — see
-    /// `attemptReadOnlyStoreForRecoveryExport()`.
+    /// `attemptRecoveryExport()`.
     private(set) static var terminalFailure: CadenceStartupTerminalFailure?
 
     /// `nil` exactly when `terminalFailure` is set. `CadenceApp` reads this to decide whether it
@@ -89,7 +89,7 @@ struct PersistenceController {
             container = c
             if let failedRestore {
                 Self.startupIssue = CadenceStartupIssue(
-                    kind: .restoreFailed,
+                    kind: failedRestore.startupIssueKind,
                     message: failedRestore.startupMessage
                 )
             }
@@ -236,12 +236,13 @@ struct PersistenceController {
     /// behind a launch-time crash. If the primary store's file cannot be read at all, this falls
     /// back to whatever on-disk recovery stores exist from a previous launch.
     ///
-    /// Resolving the real URLs and opening a container are two different functions —
-    /// `recoveryExportCandidateStoreURLs` and `openFirstAvailableReadOnlyStore` below — for the
-    /// same reason `recoveryStoreDirectoryURL` is built on the already-pure
-    /// `recoveryStoreDirectoryCandidates`: a test can hand the open logic real, isolated temporary
-    /// files without ever touching this device's actual app-group container.
-    static func attemptReadOnlyStoreForRecoveryExport(fileManager: FileManager = .default) -> ModelContainer? {
+    /// Resolving the real URLs, opening a container and building the archive are three different
+    /// functions — `recoveryExportCandidateStoreURLs`, `openReadOnlyStore(at:)` and
+    /// `recoverFirstExportableStore` below — for the same reason `recoveryStoreDirectoryURL` is
+    /// built on the already-pure `recoveryStoreDirectoryCandidates`: a test can hand the search
+    /// real, isolated temporary files, or an injected open and export, without ever touching this
+    /// device's actual app-group container.
+    static func attemptRecoveryExport(fileManager: FileManager = .default) -> RecoveryExportResult {
         let primaryStoreURL = try? CadenceStoreSupport.primaryStoreURL(fileManager: fileManager)
         let primaryStoreDirectoryURL = try? CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
         let applicationSupportDirectoryURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -254,10 +255,10 @@ struct PersistenceController {
                 temporaryDirectoryURL: fileManager.temporaryDirectory
             )
         )
-        return openFirstAvailableReadOnlyStore(from: candidateStoreURLs)
+        return recoverFirstExportableStore(from: candidateStoreURLs)
     }
 
-    /// The ordered list of store files `attemptReadOnlyStoreForRecoveryExport` will try: the
+    /// The ordered list of store files `attemptRecoveryExport` will try: the
     /// primary store first (if one was resolved at all — a `nil` is dropped, not passed through as
     /// a URL that cannot exist), then each recovery directory's `recovery.store`, in the order
     /// `recoveryStoreDirectoryCandidates` already ranks them.
@@ -278,8 +279,81 @@ struct PersistenceController {
         return candidateStoreURLs
     }
 
-    /// Opens the first URL in `candidateStoreURLs` that opens successfully, read-only and with
-    /// CloudKit switched off. `nil` if none do.
+    /// One candidate that opened and then could not be turned into an archive.
+    ///
+    /// A candidate that did not open at all is **not** one of these: most launches have no recovery
+    /// directory, so an absent store is the ordinary case and reporting it as a failure would bury
+    /// the one that matters under noise. What this records is the case T-1099 is about — a store
+    /// that is really there, really opened, and still gave nothing back.
+    nonisolated struct RecoveryExportFailure: Equatable {
+        let storeURL: URL
+        let reason: String
+    }
+
+    /// An archive, the store it came from, and what was tried before it.
+    nonisolated struct RecoveryExport: Equatable {
+        let storeURL: URL
+        let data: Data
+        let recordCount: Int
+        /// Stores that opened ahead of this one and failed to export. Non-empty means the screen
+        /// has to say so: something on this device was reachable and did not make it into the file.
+        let precedingFailures: [RecoveryExportFailure]
+    }
+
+    /// What one press of the recovery screen's export button found.
+    nonisolated enum RecoveryExportResult: Equatable {
+        /// No candidate opened at all.
+        case noStoreOpened
+        /// Every store that opened refused to export, in the order they were tried.
+        case everyOpenedStoreFailed([RecoveryExportFailure])
+        case exported(RecoveryExport)
+    }
+
+    /// Open each candidate in turn and try to build an archive from it, answering the first one
+    /// that produces bytes.
+    ///
+    /// **T-1099 — this used to stop at the first store that *opened*.** Opening and exporting are
+    /// two different failures: `CadenceDataExportService.makeArchive` runs twenty-one throwing
+    /// fetches after the open, so a store that is intact enough for SwiftData to attach to and
+    /// damaged enough to refuse a fetch ended the search — the second candidate was never reached,
+    /// and pressing the button again repeated the same candidate order to the same dead end. The
+    /// user was on the one screen in the app that exists because everything else already failed,
+    /// and got less of their data out than the device was holding.
+    ///
+    /// `open` and `export` are parameters so the pair can be driven independently in a test:
+    /// producing a store that genuinely opens and genuinely fails to export is not something a
+    /// fixture can arrange with a file. Their defaults are the real thing, so the shipped path has
+    /// no seam in it.
+    ///
+    /// What it deliberately does not do: merge stores, or prefer the largest archive. The candidate
+    /// order is a ranking — the primary store first — and the first one that can answer wins, the
+    /// same contract as before for every case that used to work.
+    static func recoverFirstExportableStore(
+        from candidateStoreURLs: [URL],
+        open: (URL) -> ModelContainer? = { PersistenceController.openReadOnlyStore(at: $0) },
+        export: (ModelContainer) throws -> CadenceDataExportOutcome = {
+            try CadenceDataExportService.exportArchive(in: ModelContext($0))
+        }
+    ) -> RecoveryExportResult {
+        var failures: [RecoveryExportFailure] = []
+        for storeURL in candidateStoreURLs {
+            guard let container = open(storeURL) else { continue }
+            do {
+                let outcome = try export(container)
+                return .exported(RecoveryExport(
+                    storeURL: storeURL,
+                    data: outcome.data,
+                    recordCount: outcome.recordCount,
+                    precedingFailures: failures
+                ))
+            } catch {
+                failures.append(RecoveryExportFailure(storeURL: storeURL, reason: error.localizedDescription))
+            }
+        }
+        return failures.isEmpty ? .noStoreOpened : .everyOpenedStoreFailed(failures)
+    }
+
+    /// Opens one store file read-only, with CloudKit switched off. `nil` if it does not open.
     ///
     /// No explicit existence check runs before the open, and that absence is measured rather than
     /// assumed: a `FileManager.fileExists` guard sat here first, a mutation dropped it, and every
@@ -292,20 +366,15 @@ struct PersistenceController {
     /// this recovery path and writing into a store it did not create — and a "successful" open of
     /// an empty store it *did* just create would tell someone their data was recovered when
     /// nothing was, the opposite of what this screen exists to be honest about.
-    static func openFirstAvailableReadOnlyStore(from candidateStoreURLs: [URL]) -> ModelContainer? {
-        for storeURL in candidateStoreURLs {
-            let configuration = ModelConfiguration(
-                "Cadence Recovery Export",
-                schema: schema,
-                url: storeURL,
-                allowsSave: false,
-                cloudKitDatabase: .none
-            )
-            if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
-                return container
-            }
-        }
-        return nil
+    static func openReadOnlyStore(at storeURL: URL) -> ModelContainer? {
+        let configuration = ModelConfiguration(
+            "Cadence Recovery Export",
+            schema: schema,
+            url: storeURL,
+            allowsSave: false,
+            cloudKitDatabase: .none
+        )
+        return try? ModelContainer(for: schema, configurations: [configuration])
     }
 
     static func recoveryStoreDirectoryCandidates(
@@ -450,10 +519,41 @@ enum StoreBackupManager {
     /// part of the store.
     private static let restoreStagingDirectoryName = ".cadence-restore-staging.tmp"
     private static let restoreDisplacedDirectoryName = ".cadence-restore-previous.tmp"
+    /// Where originals a rollback could **not** put back are kept (T-1100), and the one directory
+    /// in this file nothing ever deletes.
+    ///
+    /// Deliberately not a `.tmp` sibling of the two above: those two are scratch, and every path
+    /// here is entitled to remove scratch. This is the user's own store files, held because the
+    /// only other option is destroying them, and the name is what makes "scratch" and "the last
+    /// copy of your data" two different things a later restore can tell apart. Visible rather than
+    /// dotted, because `FailedRestoreRecord` names the path in a banner and a hidden folder is a
+    /// worse answer to "where is my data" than a visible one.
+    private static let unrestoredOriginalsDirectoryPrefix = "Cadence Unrestored Store Files"
     private static let denseStartupBackupCount = 5
     private static let dailyStartupRetentionDays = 7
     private static let weeklyStartupRetentionWeeks = 4
     private static let maxPreRestoreBackups = 5
+
+    /// A restore that failed **and** could not be completely undone (T-1100).
+    ///
+    /// Its own type rather than a `CocoaError`, because the two facts a caller has to act on —
+    /// that the store directory is no longer what it was, and where the originals went — cannot be
+    /// recovered from a string. `performPendingRestoreIfNeeded` reads `retainedOriginalsPath` off
+    /// it to build the record the banner shows; `errorDescription` is what a caller that only
+    /// prints `localizedDescription` gets, so it has to carry the same three facts in prose.
+    nonisolated struct RestoreRollbackFailure: LocalizedError, Equatable {
+        /// The failure that started the rollback.
+        let underlyingReason: String
+        /// The store items the rollback could not put back, sorted.
+        let unrestoredItemNames: [String]
+        /// Where those items are now. Never empty, and never deleted by this app.
+        let retainedOriginalsPath: String
+
+        var errorDescription: String? {
+            let items = unrestoredItemNames.joined(separator: ", ")
+            return "\(underlyingReason) Undoing the restore then failed as well: \(items) could not be put back, so \(unrestoredItemNames.count == 1 ? "it was" : "they were") kept in \(retainedOriginalsPath) rather than deleted."
+        }
+    }
 
     /// A restore that was scheduled, attempted, and failed — kept instead of the pending key so
     /// the next launch reads it as history rather than as an instruction.
@@ -462,6 +562,29 @@ enum StoreBackupManager {
         let backupName: String
         let failedAt: Date
         let reason: String
+        /// Set **only** when the rollback could not put every displaced original back (T-1100):
+        /// the folder those originals were kept in instead. `nil` — the ordinary failed restore —
+        /// means the store directory holds exactly what it held before the attempt.
+        ///
+        /// Optional so a record written before this field existed still decodes: a synthesized
+        /// `init(from:)` reads a missing key for an `Optional` as `nil` rather than throwing, and
+        /// a launch that threw away its own failure record would be a second defect on top of the
+        /// first.
+        let retainedOriginalsPath: String?
+
+        init(
+            backupPath: String,
+            backupName: String,
+            failedAt: Date,
+            reason: String,
+            retainedOriginalsPath: String? = nil
+        ) {
+            self.backupPath = backupPath
+            self.backupName = backupName
+            self.failedAt = failedAt
+            self.reason = reason
+            self.retainedOriginalsPath = retainedOriginalsPath
+        }
 
         var backupURL: URL { URL(fileURLWithPath: backupPath, isDirectory: true) }
 
@@ -469,8 +592,24 @@ enum StoreBackupManager {
         /// themselves — that their existing data is still there — because the visible evidence of
         /// a failed restore is that nothing changed, which is indistinguishable from nothing
         /// having been asked for.
+        ///
+        /// **T-1100: exactly one of these two sentences is true, and the record is what knows
+        /// which.** "It kept the data already on this device" is a claim about the store directory,
+        /// and a rollback that could not replace every original it moved aside has not earned it —
+        /// the store there is part backup, part original, and the rest is in the retained folder.
+        /// The second sentence says that, and says where, because the path is the only thing that
+        /// makes those files findable.
         var startupMessage: String {
-            "Cadence could not restore the backup \(backupName), so it kept the data already on this device: \(reason) The restore was not applied and will not be retried on its own."
+            guard let retainedOriginalsPath else {
+                return "Cadence could not restore the backup \(backupName), so it kept the data already on this device: \(reason) The restore was not applied and will not be retried on its own."
+            }
+            return "Cadence could not restore the backup \(backupName), and could not put every file it had moved aside back where it found it: \(reason) Nothing was deleted — those files were kept in \(retainedOriginalsPath). The restore will not be retried on its own."
+        }
+
+        /// Which banner this record earns. The two differ in what they promise about the store, so
+        /// the choice belongs with the fact that decides it rather than at the call site.
+        var startupIssueKind: CadenceStartupIssueKind {
+            retainedOriginalsPath == nil ? .restoreFailed : .restoreIncomplete
         }
     }
 
@@ -592,6 +731,42 @@ enum StoreBackupManager {
         try deleteAllBackups(storeDirectoryURL: defaultStoreDirectoryURL())
     }
 
+    /// Every folder of originals a failed rollback retained, oldest name first (T-1100).
+    static func retainedUnrestoredOriginalDirectories(
+        in storeDirectoryURL: URL,
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        ((try? fileManager.contentsOfDirectory(atPath: storeDirectoryURL.path)) ?? [])
+            .filter { $0.hasPrefix(unrestoredOriginalsDirectoryPrefix) }
+            .sorted()
+            .map { storeDirectoryURL.appendingPathComponent($0, isDirectory: true) }
+    }
+
+    /// Delete them.
+    ///
+    /// Reached from the privacy reset, and deliberately **not** from `deleteAllBackups`: a user
+    /// clearing backups in Settings is managing disk space, and this folder is the last copy of
+    /// store files a restore could not put back. A user who asks Cadence to delete *their data* is
+    /// asking for it, though — leaving a copy of the store inside the app's own container would be
+    /// the reset claiming more than it did, which is the same promise `docs/privacy.html` makes and
+    /// T-1101 had to repair for the Keychain.
+    @discardableResult
+    static func deleteRetainedUnrestoredOriginals() throws -> Int {
+        try deleteRetainedUnrestoredOriginals(storeDirectoryURL: defaultStoreDirectoryURL())
+    }
+
+    @discardableResult
+    static func deleteRetainedUnrestoredOriginals(
+        storeDirectoryURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> Int {
+        let retained = retainedUnrestoredOriginalDirectories(in: storeDirectoryURL, fileManager: fileManager)
+        for directoryURL in retained {
+            try fileManager.removeItem(at: directoryURL)
+        }
+        return retained.count
+    }
+
     @discardableResult
     static func deleteAllBackups(storeDirectoryURL: URL) throws -> Int {
         let snapshots = listBackups(storeDirectoryURL: storeDirectoryURL)
@@ -701,6 +876,9 @@ enum StoreBackupManager {
             quarantinePendingRestore(
                 backupURL: backupURL,
                 reason: error.localizedDescription,
+                // The one thing the banner cannot infer from prose: this failure left files
+                // somewhere other than where the user's store lives (T-1100).
+                retainedOriginalsPath: (error as? RestoreRollbackFailure)?.retainedOriginalsPath,
                 defaults: defaults,
                 storeDirectoryURL: storeDirectoryURL
             )
@@ -802,6 +980,19 @@ enum StoreBackupManager {
     /// Several files have to change together and no single rename covers all of them, so this is
     /// the one window that cannot be made atomic outright. The displaced directory is what closes
     /// it: anything that throws part-way puts every displaced item back where it was.
+    ///
+    /// **T-1100 — the rollback used to delete the displaced directory whether or not it had
+    /// emptied it.** Both compensating operations were `try?`, and the removal beneath them was
+    /// unconditional, so a rollback that could not move an original back deleted that original a
+    /// line later: the one outcome this whole staged design exists to prevent, reached through the
+    /// code written to prevent it. A single filesystem fault is not the case that needs
+    /// arguing — the forward move and the compensating move are the same operation on the same
+    /// volume, so whatever refused one is available to refuse the other.
+    ///
+    /// The rule now: **nothing here removes a directory it did not empty.** A rollback that leaves
+    /// anything behind retains that folder under `unrestoredOriginalsDirectoryPrefix` and reports
+    /// where, and both the removal *and* the move-back stop being swallowed — a removal that fails
+    /// makes the move-back onto the same path fail, which is now recorded rather than lost.
     private static func swapStagedRestore(
         at stagingURL: URL,
         names: [String],
@@ -809,8 +1000,13 @@ enum StoreBackupManager {
         fileManager: FileManager
     ) throws {
         let displacedURL = storeDirectoryURL.appendingPathComponent(restoreDisplacedDirectoryName, isDirectory: true)
+        // A displaced directory that is already here is not this call's scratch: it is the
+        // originals of a swap that never finished — the process killed mid-move, or a rollback
+        // that could not complete. Removing it to reuse the path is the same deletion the catch
+        // below refuses to make, one launch later. Retaining it first `throw`s if it cannot,
+        // before anything live has been touched.
         if fileManager.fileExists(atPath: displacedURL.path) {
-            try fileManager.removeItem(at: displacedURL)
+            _ = try retainUnrestoredOriginals(at: displacedURL, in: storeDirectoryURL, fileManager: fileManager)
         }
         try fileManager.createDirectory(at: displacedURL, withIntermediateDirectories: true)
 
@@ -835,17 +1031,62 @@ enum StoreBackupManager {
             for name in installedNames {
                 try? fileManager.removeItem(at: storeDirectoryURL.appendingPathComponent(name))
             }
+            var unrestoredNames: [String] = []
             for name in displacedNames {
-                try? fileManager.moveItem(
-                    at: displacedURL.appendingPathComponent(name),
-                    to: storeDirectoryURL.appendingPathComponent(name)
+                do {
+                    try fileManager.moveItem(
+                        at: displacedURL.appendingPathComponent(name),
+                        to: storeDirectoryURL.appendingPathComponent(name)
+                    )
+                } catch {
+                    unrestoredNames.append(name)
+                }
+            }
+            guard unrestoredNames.isEmpty else {
+                // The originals still in there are the only copy of themselves. If even the
+                // retaining move fails, the displaced directory keeps its own name and is reported
+                // under it — still not deleted, which is the whole promise.
+                let retainedURL = (try? retainUnrestoredOriginals(
+                    at: displacedURL,
+                    in: storeDirectoryURL,
+                    fileManager: fileManager
+                )) ?? displacedURL
+                throw RestoreRollbackFailure(
+                    underlyingReason: error.localizedDescription,
+                    unrestoredItemNames: unrestoredNames.sorted(),
+                    retainedOriginalsPath: retainedURL.path
                 )
             }
+            // Empty by the loop above, and only then removed.
             try? fileManager.removeItem(at: displacedURL)
             throw error
         }
 
         try? fileManager.removeItem(at: displacedURL)
+    }
+
+    /// Move a folder of originals somewhere no restore will reuse, and answer where it went.
+    ///
+    /// The timestamped name is the point: two failures a week apart are two folders, not one
+    /// overwriting the other, and `-2` suffixes settle the same-second collision the way
+    /// `uniqueBackupDirectory` already does for backups. The prefix is not in
+    /// `CadenceStoreSupport.managedStoreItemNames`, so no store scan, backup or migration reads
+    /// what is inside it as part of the store.
+    private static func retainUnrestoredOriginals(
+        at displacedURL: URL,
+        in storeDirectoryURL: URL,
+        now: Date = Date(),
+        fileManager: FileManager
+    ) throws -> URL {
+        let baseName = "\(unrestoredOriginalsDirectoryPrefix) \(DateFormatters.backupFolderTimestamp.string(from: now))"
+        var candidate = storeDirectoryURL.appendingPathComponent(baseName, isDirectory: true)
+        var suffix = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = storeDirectoryURL.appendingPathComponent("\(baseName)-\(suffix)", isDirectory: true)
+            suffix += 1
+        }
+        try fileManager.moveItem(at: displacedURL, to: candidate)
+        return candidate
     }
 
     /// Take a failing restore off the launch path without throwing away what it was.
@@ -858,6 +1099,7 @@ enum StoreBackupManager {
     private static func quarantinePendingRestore(
         backupURL: URL,
         reason: String,
+        retainedOriginalsPath: String? = nil,
         defaults: UserDefaults,
         storeDirectoryURL: URL? = nil
     ) {
@@ -865,7 +1107,8 @@ enum StoreBackupManager {
             backupPath: backupURL.path,
             backupName: backupURL.lastPathComponent,
             failedAt: Date(),
-            reason: reason
+            reason: reason,
+            retainedOriginalsPath: retainedOriginalsPath
         )
         if let data = try? JSONEncoder.cadenceBackupEncoder.encode(record) {
             defaults.set(data, forKey: failedRestoreDefaultsKey)

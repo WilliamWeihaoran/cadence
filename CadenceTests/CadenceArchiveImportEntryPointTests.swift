@@ -259,6 +259,59 @@ struct CadenceArchiveImportEntryPointTests {
         }
     }
 
+    /// **T-1084.** The calendar caveat is one sentence, it counts, and it is worded about the file.
+    ///
+    /// The two things it must not say are pinned as well as the thing it must: it must not call the
+    /// link broken — [[T-624]] made a foreign identifier read `.unverified` precisely so nothing
+    /// would — and it must not promise the link fails, because re-importing your own archive onto
+    /// the machine that wrote it resolves every identifier in it.
+    @Test func theCalendarLinkCaveatCountsAndDoesNotCallTheLinkBroken() throws {
+        let none = Self.plan(mode: .mergeKeepingExistingRows, inserts: ["Area": 1], matches: [:])
+        #expect(CadenceArchiveImportPresentation.calendarLinksNote(none) == nil)
+
+        let one = Self.plan(
+            mode: .mergeKeepingExistingRows,
+            inserts: ["Area": 1],
+            matches: [:],
+            linkedCalendars: 1
+        )
+        let singular = try #require(CadenceArchiveImportPresentation.calendarLinksNote(one))
+        #expect(singular.contains("1 list is connected to"))
+        #expect(singular.contains("that list will read"))
+
+        let many = Self.plan(
+            mode: .restoreOverwritingExistingRows,
+            inserts: ["Area": 4],
+            matches: [:],
+            linkedCalendars: 4
+        )
+        let plural = try #require(CadenceArchiveImportPresentation.calendarLinksNote(many))
+        #expect(plural.contains("4 lists are connected to"))
+        #expect(plural.contains("those lists will read"))
+
+        for note in [singular, plural] {
+            #expect(!note.contains(CadenceCalendarLinkHealth.missingLinkTitle),
+                    "the caveat borrows the breakage sentence T-624 stopped showing for this case")
+            #expect(!note.lowercased().contains("lost"),
+                    "the caveat claims data loss; nothing is lost and the link is inert, not broken")
+        }
+    }
+
+    /// Both previews draw it, and neither retypes it. The whole reason
+    /// `CadenceArchiveImportPresentation` exists is that copy written twice comes to say two things.
+    @Test func bothImportPreviewsDrawTheCalendarCaveatWithoutRetypingIt() throws {
+        for path in [
+            "Cadence/macOS/Views/SettingsArchiveImportCard.swift",
+            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("CadenceArchiveImportPresentation.calendarLinksNote(plan)"),
+                    "\(path) shows a preview that never mentions the archive's calendar links")
+            #expect(!code.contains("belongs to the device that made it"),
+                    "\(path) retypes the caveat instead of reading it")
+        }
+    }
+
     /// Each mode says what happens to a row that already exists, in the words the counts use.
     @Test func eachImportModeSaysWhatHappensToARowTheStoreAlreadyHas() {
         #expect(CadenceArchiveImportPresentation.modeTitle(.mergeKeepingExistingRows) == "Add what's missing")
@@ -506,7 +559,8 @@ struct CadenceArchiveImportEntryPointTests {
             mode: .mergeKeepingExistingRows,
             insertCountsByEntityName: ["AppTask": 1],
             matchedCountsByEntityName: [:],
-            entityNamesOnlyInTheArchive: ["MoodEntry"]
+            entityNamesOnlyInTheArchive: ["MoodEntry"],
+            linkedCalendarCount: 0
         )
         let note = try #require(CadenceArchiveImportPresentation.unreadableKindsNote(stranger))
         #expect(note.contains("Mood entries"))
@@ -609,13 +663,15 @@ struct CadenceArchiveImportEntryPointTests {
     private static func plan(
         mode: CadenceArchiveImportMode,
         inserts: [String: Int],
-        matches: [String: Int]
+        matches: [String: Int],
+        linkedCalendars: Int = 0
     ) -> CadenceArchiveImportPlan {
         CadenceArchiveImportPlan(
             mode: mode,
             insertCountsByEntityName: inserts,
             matchedCountsByEntityName: matches,
-            entityNamesOnlyInTheArchive: []
+            entityNamesOnlyInTheArchive: [],
+            linkedCalendarCount: linkedCalendars
         )
     }
 

@@ -192,6 +192,43 @@ nonisolated enum CadenceArchiveImportPresentation {
             """
     }
 
+    /// **T-1084.** The archive records which Apple Calendar each list was connected to, and that
+    /// connection does not travel with the file.
+    ///
+    /// `linkedCalendarID` holds an `EKCalendar.calendarIdentifier`, which Apple documents as local
+    /// to the device that issued it. [[T-661]] kept the field in the archive and deliberately
+    /// shipped no copy about it, on the stated ground that the export's own description already
+    /// ended *"Cadence cannot read an archive back in yet"* — so there was no restore for a caveat
+    /// to qualify. [[T-1082]] shipped the import on both platforms and that ground went with it.
+    ///
+    /// The consequence is inert rather than destructive, which is why this is one sentence and not
+    /// a fix: [[T-624]]'s evidence gate means an identifier this device has never seen alive reads
+    /// as `CadenceCalendarLinkRowState.unverified` — stored, not called broken, and offered no
+    /// repair that would overwrite the device that made it. What was missing is that nobody said
+    /// so, and the preview is the one place a user reads before choosing.
+    ///
+    /// Conditional, and worded about the **archive** rather than about the write, for the same two
+    /// reasons as `unreadableKindsNote` directly above: a reader whose file carries no link should
+    /// not be handed a caveat about a feature they are not using, and a claim about the file is
+    /// true under both modes without the note having to re-derive which rows this one would touch.
+    ///
+    /// It does **not** say the link will not work. Re-importing your own archive onto the machine
+    /// that wrote it resolves every identifier in it, and that is a normal thing to do — the honest
+    /// form of the fact is that the connection belongs to the device that made it.
+    static func calendarLinksNote(_ plan: CadenceArchiveImportPlan) -> String? {
+        let count = plan.linkedCalendarCount
+        guard count > 0 else { return nil }
+        let one = count == 1
+        let lists = one ? "list is" : "lists are"
+        let subject = one ? "that list will read" : "those lists will read"
+        let object = one ? "it" : "them"
+        return """
+            This archive also records the Apple Calendar \(count) \(lists) connected to. A calendar \
+            connection belongs to the device that made it, so if this archive came from another Mac \
+            or iPhone \(subject) as not connected on this device until you connect \(object) again.
+            """
+    }
+
     // MARK: - Outcomes
 
     /// The sentence for an import that **committed** — which is every `CadenceArchiveImportOutcome`,

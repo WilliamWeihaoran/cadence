@@ -818,7 +818,13 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
         // The remaining artifacts are still cleaned up after a refused key deletion: the store is
         // already gone, so stopping there would leave more behind, not less.
-        for step in ["clearWidgetState()", "StoreBackupManager.deleteAllBackups()"] {
+        for step in [
+            "clearWidgetState()",
+            "StoreBackupManager.deleteAllBackups()",
+            // T-1100: the store files a failed rollback retained are store data, and a reset that
+            // left them behind would leave a copy of the database inside the emptied container.
+            "StoreBackupManager.deleteRetainedUnrestoredOriginals()",
+        ] {
             #expect(body.contains(step), "the reset stopped performing \(step)")
         }
     }

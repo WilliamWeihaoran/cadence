@@ -230,6 +230,224 @@ struct CadenceStoreRestoreTests {
         }
     }
 
+    // MARK: - T-1100: a rollback that cannot finish keeps what it moved
+
+    /// Where a failed rollback put the originals it could not replace, if it made one. Asked
+    /// through the same enumeration the privacy reset uses, so a rename that hid the folder from
+    /// the reset would also fail these.
+    private func retainedOriginalsDirectory(in directory: URL) -> URL? {
+        StoreBackupManager.retainedUnrestoredOriginalDirectories(in: directory).first
+    }
+
+    /// **The defect.** Two faults, not one: the staged `default.store-wal` refuses to move in, and
+    /// the displaced `default.store` refuses to move back. Both are the same operation on the same
+    /// volume, so whatever refuses the first is available to refuse the second.
+    ///
+    /// The old catch swallowed the failed move-back with `try?` and then removed the displaced
+    /// directory unconditionally, one line later — deleting the user's live store from inside the
+    /// code written to protect it. Nothing said so: the throw named the *first* failure, and the
+    /// banner went on claiming the existing data was intact.
+    @Test func aRollbackThatCannotPutAnOriginalBackKeepsItInsteadOfDeletingIt() throws {
+        try withTemporaryDefaults("CadenceTests.storeRestore") { defaults in
+            let storeDirectory = try makeStoreDirectory()
+            defer { try? FileManager.default.removeItem(at: storeDirectory) }
+
+            try seedStoreItems(in: storeDirectory, marker: "the-backup")
+            let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
+                reason: .manual,
+                storeDirectoryURL: storeDirectory
+            ))
+
+            try removeStoreItems(in: storeDirectory)
+            try seedStoreItems(in: storeDirectory, marker: "what-is-live")
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
+
+            let interrupting = InterruptingFileManager(
+                failMove: { source, destination in
+                    // The forward swap fails on the second item...
+                    (source.path.contains("restore-staging") && destination.lastPathComponent == "default.store-wal")
+                        // ...and the compensating move of the live store fails too.
+                        || (source.path.contains("restore-previous") && destination.lastPathComponent == "default.store")
+                }
+            )
+
+            #expect(throws: (any Error).self) {
+                try StoreBackupManager.performPendingRestoreIfNeeded(
+                    storeDirectoryURL: storeDirectory,
+                    fileManager: interrupting,
+                    defaults: defaults
+                )
+            }
+
+            // The point of the ticket: the live store file is not in the store directory, and it is
+            // not deleted either — it is in the retained folder, byte for byte.
+            let retained = try #require(
+                retainedOriginalsDirectory(in: storeDirectory),
+                "the originals the rollback could not replace were destroyed"
+            )
+            let retainedStore = retained.appendingPathComponent("default.store")
+            #expect(FileManager.default.fileExists(atPath: retainedStore.path))
+            #expect(String(data: try Data(contentsOf: retainedStore), encoding: .utf8) == "what-is-live")
+
+            // Everything the rollback *could* put back is back, and nothing of the restore is
+            // installed over it.
+            #expect(marker(in: storeDirectory) == nil)
+            #expect(storeItemNames(in: storeDirectory) == ["default.store-wal", ".default_SUPPORT"])
+            // The retained folder is not mistaken for part of the store by any store-item scan.
+            expectNoRestoreScratchLeftBehind(in: storeDirectory)
+
+            // And the store as it was is still recoverable from the pre-restore backup.
+            #expect(StoreBackupManager.listBackups(storeDirectoryURL: storeDirectory)
+                .contains { $0.reason == StoreBackupReason.preRestore.displayName })
+        }
+    }
+
+    /// The same failure, read from the banner. `.restoreFailed`'s copy says the existing data is
+    /// intact and the restore simply did not run; neither sentence is true here, so this record
+    /// does not get to use them.
+    @Test func aRollbackThatKeptFilesSaysSoInsteadOfClaimingTheStoreIsUntouched() throws {
+        try withTemporaryDefaults("CadenceTests.storeRestore") { defaults in
+            let storeDirectory = try makeStoreDirectory()
+            defer { try? FileManager.default.removeItem(at: storeDirectory) }
+
+            try seedStoreItems(in: storeDirectory, marker: "the-backup")
+            let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
+                reason: .manual,
+                storeDirectoryURL: storeDirectory
+            ))
+            try removeStoreItems(in: storeDirectory)
+            try seedStoreItems(in: storeDirectory, marker: "what-is-live")
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
+
+            let interrupting = InterruptingFileManager(
+                failMove: { source, destination in
+                    (source.path.contains("restore-staging") && destination.lastPathComponent == "default.store-wal")
+                        || (source.path.contains("restore-previous") && destination.lastPathComponent == "default.store")
+                }
+            )
+            #expect(throws: (any Error).self) {
+                try StoreBackupManager.performPendingRestoreIfNeeded(
+                    storeDirectoryURL: storeDirectory,
+                    fileManager: interrupting,
+                    defaults: defaults
+                )
+            }
+
+            let retained = try #require(retainedOriginalsDirectory(in: storeDirectory))
+            let record = try #require(StoreBackupManager.lastFailedRestore(defaults: defaults))
+            #expect(record.retainedOriginalsPath == retained.path)
+            #expect(record.startupIssueKind == .restoreIncomplete)
+            #expect(record.startupMessage.contains(retained.path))
+            #expect(!record.startupMessage.contains("kept the data already on this device"))
+
+            let issue = CadenceStartupIssue(kind: record.startupIssueKind, message: record.startupMessage)
+            #expect(!issue.bannerDetail.contains("Your existing data is intact"))
+            #expect(issue.bannerDetail.contains("Nothing was deleted"))
+            // Still not a sync failure: the store that opened is CloudKit-backed either way.
+            #expect(CadenceSyncHealth.resolve(startupIssue: issue, account: .available).level == .syncing)
+        }
+    }
+
+    /// The discriminator. An ordinary swap failure whose rollback *succeeds* keeps none of this
+    /// machinery: no retained folder, no changed banner. Without this, retaining unconditionally
+    /// would also pass the test above.
+    @Test func aRollbackThatSucceedsLeavesNoRetainedFolderAndTheOrdinaryMessage() throws {
+        try withTemporaryDefaults("CadenceTests.storeRestore") { defaults in
+            let storeDirectory = try makeStoreDirectory()
+            defer { try? FileManager.default.removeItem(at: storeDirectory) }
+
+            try seedStoreItems(in: storeDirectory, marker: "the-backup")
+            let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
+                reason: .manual,
+                storeDirectoryURL: storeDirectory
+            ))
+            try removeStoreItems(in: storeDirectory)
+            try seedStoreItems(in: storeDirectory, marker: "what-is-live")
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
+
+            let interrupting = InterruptingFileManager(
+                failMove: { source, destination in
+                    source.path.contains("restore-staging") && destination.lastPathComponent == "default.store-wal"
+                }
+            )
+            #expect(throws: (any Error).self) {
+                try StoreBackupManager.performPendingRestoreIfNeeded(
+                    storeDirectoryURL: storeDirectory,
+                    fileManager: interrupting,
+                    defaults: defaults
+                )
+            }
+
+            #expect(retainedOriginalsDirectory(in: storeDirectory) == nil)
+            #expect(marker(in: storeDirectory) == "what-is-live")
+            let record = try #require(StoreBackupManager.lastFailedRestore(defaults: defaults))
+            #expect(record.retainedOriginalsPath == nil)
+            #expect(record.startupIssueKind == .restoreFailed)
+            #expect(record.startupMessage.contains("kept the data already on this device"))
+        }
+    }
+
+    /// The other half of BR-1: the *next* restore used to delete a displaced directory it found
+    /// lying there. A process killed between the two move loops leaves exactly that — the only copy
+    /// of the store items it had moved aside — and a later restore reused the path by removing it.
+    @Test func aLaterRestoreDoesNotEraseOriginalsAnEarlierSwapLeftBehind() throws {
+        try withTemporaryDefaults("CadenceTests.storeRestore") { defaults in
+            let storeDirectory = try makeStoreDirectory()
+            defer { try? FileManager.default.removeItem(at: storeDirectory) }
+
+            try seedStoreItems(in: storeDirectory, marker: "the-backup")
+            let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
+                reason: .manual,
+                storeDirectoryURL: storeDirectory
+            ))
+            try removeStoreItems(in: storeDirectory)
+            try seedStoreItems(in: storeDirectory, marker: "what-is-live")
+
+            // What a killed swap leaves behind, under the working name the next swap wants.
+            let strandedURL = storeDirectory.appendingPathComponent(".cadence-restore-previous.tmp", isDirectory: true)
+            try FileManager.default.createDirectory(at: strandedURL, withIntermediateDirectories: true)
+            try Data("from-an-interrupted-swap".utf8)
+                .write(to: strandedURL.appendingPathComponent("default.store"))
+
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
+            try StoreBackupManager.performPendingRestoreIfNeeded(
+                storeDirectoryURL: storeDirectory,
+                defaults: defaults
+            )
+
+            // The restore still ran...
+            #expect(marker(in: storeDirectory) == "the-backup")
+            // ...and the stranded originals were moved out of the way rather than deleted.
+            let retained = try #require(
+                retainedOriginalsDirectory(in: storeDirectory),
+                "a later restore destroyed the originals an interrupted swap left behind"
+            )
+            let strandedStore = retained.appendingPathComponent("default.store")
+            #expect(String(data: try Data(contentsOf: strandedStore), encoding: .utf8) == "from-an-interrupted-swap")
+            expectNoRestoreScratchLeftBehind(in: storeDirectory)
+        }
+    }
+
+    /// The privacy reset's half of the same folder: it is store data, and "delete my Cadence data"
+    /// has to include it. Exercised on a temporary directory — the real entry point deletes inside
+    /// the app's own container, so no test may call that one.
+    @Test func aRetainedFolderIsDeletedByTheDataResetRatherThanOutlivingIt() throws {
+        let storeDirectory = try makeStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: storeDirectory) }
+
+        try seedStoreItems(in: storeDirectory, marker: "what-is-live")
+        let retainedURL = storeDirectory
+            .appendingPathComponent("Cadence Unrestored Store Files 20260910-101500", isDirectory: true)
+        try FileManager.default.createDirectory(at: retainedURL, withIntermediateDirectories: true)
+        try Data("kept".utf8).write(to: retainedURL.appendingPathComponent("default.store"))
+
+        #expect(StoreBackupManager.retainedUnrestoredOriginalDirectories(in: storeDirectory) == [retainedURL])
+        #expect(try StoreBackupManager.deleteRetainedUnrestoredOriginals(storeDirectoryURL: storeDirectory) == 1)
+        #expect(!FileManager.default.fileExists(atPath: retainedURL.path))
+        // ...and it took nothing else with it.
+        #expect(storeItemNames(in: storeDirectory) == ["default.store", "default.store-wal", ".default_SUPPORT"])
+    }
+
     // MARK: - The launch cannot wedge
 
     @Test func aFailedRestoreIsQuarantinedSoTheNextLaunchDoesNotAttemptItAgain() throws {

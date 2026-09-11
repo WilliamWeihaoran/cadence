@@ -21,6 +21,16 @@ struct AppleReminderItem: Identifiable {
     let allowsCompletion: Bool
 }
 
+/// How `RemindersManager` gets the incomplete reminders it publishes: it hands in a closure and the
+/// fetch calls that closure once, on whatever queue the fetch finished on.
+///
+/// **T-1105.** The app has exactly one implementation and it is built in `init()`, straight out of
+/// `predicateForIncompleteReminders` and `fetchReminders`. It is a stored closure rather than a
+/// direct call so the out-of-order publish this manager now refuses is reachable from a test:
+/// EventKit chooses when each callback lands, a unit-test host has no Reminders grant, and a defect
+/// nothing can deliver twice is a defect nothing can pin. See `RemindersPublicationGuard`.
+typealias RemindersFetch = (@escaping ([AppleReminderItem]) -> Void) -> Void
+
 @Observable
 final class RemindersManager {
     static let shared = RemindersManager()
@@ -86,11 +96,53 @@ final class RemindersManager {
     /// reload has no business invalidating anything.
     @ObservationIgnored private(set) var reconcileLedger = RemindersReconcileLedger()
 
-    private let store = EKEventStore()
+    /// **T-1105.** Which fetch this manager is still willing to hear from.
+    ///
+    /// `reload()` used to assign whatever array its callback had captured, unconditionally, so two
+    /// overlapping reloads resolved in EventKit's order rather than the user's: the slower fetch
+    /// won even when a newer one had already published, and a fetch that had captured a reminder
+    /// before the user completed it put that reminder back on screen. `RemindersPublicationGuard`
+    /// carries the whole rule and the reasoning; here it is only asked.
+    ///
+    /// `@ObservationIgnored` for the reason `reconcileLedger` is: no view reads it, and a counter
+    /// that bumps on every fetch has no business invalidating anything.
+    @ObservationIgnored private var publication = RemindersPublicationGuard()
+
+    private let store: EKEventStore
+    private let fetchIncompleteReminders: RemindersFetch
     private var storeObserver: NSObjectProtocol?
 
     private init() {
+        let store = EKEventStore()
+        self.store = store
+        self.fetchIncompleteReminders = { publish in
+            let predicate = store.predicateForIncompleteReminders(
+                withDueDateStarting: nil,
+                ending: nil,
+                calendars: nil
+            )
+            store.fetchReminders(matching: predicate) { reminders in
+                publish((reminders ?? []).map(RemindersManager.makeItem).sorted(by: RemindersManager.sortItems))
+            }
+        }
         refreshAuthorizationState()
+    }
+
+    /// **T-1105's seam, and the only reason this type has a second initializer.**
+    ///
+    /// The app uses `shared` and nothing else. This one exists so `CadenceTests` can deliver two
+    /// fetches in a chosen order and watch which one survives — the defect itself, rather than a
+    /// structural claim about the code that produces it, which is the shape T-268 already caught
+    /// this file in once.
+    ///
+    /// It deliberately does **not** call `refreshAuthorizationState()`: a unit-test host has no
+    /// Reminders grant, so re-deriving would clear `isAuthorized` before the first fetch could ever
+    /// be issued. Calling `refreshAuthorizationState()` on such an instance is therefore a faithful
+    /// way to test what losing the grant does to a fetch already in flight.
+    init(fetchIncompleteReminders: @escaping RemindersFetch, startsAuthorized: Bool) {
+        self.store = EKEventStore()
+        self.fetchIncompleteReminders = fetchIncompleteReminders
+        self.isAuthorized = startsAuthorized
     }
 
     /// `.authorized` is the pre-macOS-14 spelling of `.fullAccess` — the same enum case with
@@ -109,8 +161,7 @@ final class RemindersManager {
             reload()
         } else {
             stopObserving()
-            reminders = []
-            isLoading = false
+            adopt([])
         }
     }
 
@@ -182,25 +233,41 @@ final class RemindersManager {
     func reload() {
         reconcileLedger.reloadRequests += 1
         guard isAuthorized else {
-            reminders = []
-            isLoading = false
+            adopt([])
             return
         }
 
+        let generation = publication.issue()
         isLoading = true
-        let predicate = store.predicateForIncompleteReminders(
-            withDueDateStarting: nil,
-            ending: nil,
-            calendars: nil
-        )
-        store.fetchReminders(matching: predicate) { [weak self] reminders in
-            let items = (reminders ?? []).map(Self.makeItem).sorted(by: Self.sortItems)
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.reminders = items
-                self.isLoading = false
+        fetchIncompleteReminders { [weak self] items in
+            let publish = {
+                guard let self, self.publication.accepts(generation) else { return }
+                self.adopt(items)
+            }
+            // EventKit answers on its own queue, so the hop is real in the app. When the fetch has
+            // already finished on the main thread there is nothing to hop to, and publishing inline
+            // rather than a run loop turn later is also what lets a test deliver two fetches in a
+            // chosen order and read the answer without waiting on anything.
+            if Thread.isMainThread {
+                publish()
+            } else {
+                DispatchQueue.main.async(execute: publish)
             }
         }
+    }
+
+    /// **T-1105.** The one way `reminders` ever changes, and the reason a late fetch cannot restore
+    /// a stale list or resurrect a completed reminder: every authoritative change retires the
+    /// fetches in flight, so a callback still on its way in is refused when it arrives.
+    ///
+    /// Clearing `isLoading` here is honest rather than optimistic. After this call there is no
+    /// request left whose result this manager would accept, so there is nothing to wait for — which
+    /// is also what stops the spinner sticking when a completion or a lost grant retires a reload
+    /// mid-flight.
+    private func adopt(_ items: [AppleReminderItem]) {
+        publication.retireInFlight()
+        reminders = items
+        isLoading = false
     }
 
     /// **T-255.** This returned `Void` and had four ways to do nothing — not authorized, the
@@ -239,7 +306,9 @@ final class RemindersManager {
         reminder.completionDate = Date()
         do {
             try store.save(reminder, commit: true)
-            reminders.removeAll { $0.id == id }
+            // Through `adopt` rather than a bare `removeAll`: EventKit accepted this write, so any
+            // fetch issued before it captured a world in which this reminder was still open.
+            adopt(reminders.filter { $0.id != id })
             return .completed
         } catch {
             print("RemindersManager: failed to complete reminder: \(error)")

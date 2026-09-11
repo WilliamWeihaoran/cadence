@@ -185,6 +185,17 @@ private struct SettingsArchiveImportPreviewSheet: View {
                                 .foregroundStyle(Theme.amber)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+
+                        // **T-1084.** Dim rather than amber: an archive's calendar links are not a
+                        // kind of record this build cannot store, they are one whose meaning is
+                        // local to the device that wrote them. Nothing is lost and nothing needs
+                        // acting on, so it reads as a fact about the file and not as a warning.
+                        if let note = CadenceArchiveImportPresentation.calendarLinksNote(plan) {
+                            Text(note)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
 

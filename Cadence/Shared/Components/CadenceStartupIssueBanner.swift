@@ -49,6 +49,7 @@ struct CadenceStartupIssueBannerModel: Equatable {
         case .inMemoryStore: return "Changes Are Not Saved"
         case .maintenanceSaveFailed: return "Maintenance Failed"
         case .restoreFailed: return "Restore Did Not Run"
+        case .restoreIncomplete: return "Restore Left Files Aside"
         }
     }
 
@@ -82,8 +83,8 @@ struct CadenceStartupIssueBannerModel: Equatable {
     /// **One: the pane only sees half the kinds.** `resolve` reacts to a kind whose
     /// `disablesCloudSync` is true, and that gate is deliberate — reporting a maintenance-save
     /// failure as a sync failure "would be its own lie", per `CadenceStartupIssueKind`. So
-    /// `.maintenanceSaveFailed` and `.restoreFailed` reach no Settings pane on *either* platform, and
-    /// for those two this banner is still the only durable indicator in the app.
+    /// `.maintenanceSaveFailed`, `.restoreFailed` and `.restoreIncomplete` reach no Settings pane on
+    /// *either* platform, and for those three this banner is still the only durable indicator in the app.
     ///
     /// **Two: one kind cannot safely be hidden at all.** `.inMemoryStore` has `losesDataOnQuit`, so a
     /// dismiss would let someone hide the warning and then quit, losing everything written this

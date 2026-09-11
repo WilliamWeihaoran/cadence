@@ -922,6 +922,162 @@ struct CadenceInboxRemindersSurfaceTests {
         }
     }
 
+    // MARK: - T-1105: a late fetch publishes nothing
+
+    /// **The rule as a value.** One monotonic counter: only the newest generation issued is still
+    /// the answer, and an authoritative local change makes the same increment without asking for
+    /// anything new, so the fetch already in flight stops being current too.
+    @Test func onlyTheNewestGenerationIssuedIsStillAccepted() {
+        var publication = RemindersPublicationGuard()
+
+        let first = publication.issue()
+        #expect(publication.accepts(first))
+
+        let second = publication.issue()
+        #expect(second != first, "two reloads were issued the same generation")
+        #expect(publication.accepts(second))
+        #expect(!publication.accepts(first), "the older of two overlapping fetches is still current")
+
+        publication.retireInFlight()
+        #expect(
+            !publication.accepts(second),
+            "an authoritative local change left a fetch it has already outlived able to publish"
+        )
+    }
+
+    /// **The defect itself, delivered in the order that produced it.** Fetch A captures the older
+    /// rows, fetch B captures the newer ones and lands first, then A lands. Before T-1105 the
+    /// callback assigned unconditionally and A won, because EventKit decides when each callback
+    /// arrives and the slower one arrives last.
+    ///
+    /// Driven through the real `reload()` rather than through a split-out publisher: T-268 already
+    /// caught this file shipping a decision that was correct and unobserved, and a structural claim
+    /// that `reload()` consults the guard would be the same shape again.
+    @MainActor
+    @Test func theSlowerOfTwoOverlappingReloadsDoesNotWin() {
+        var publishers: [([AppleReminderItem]) -> Void] = []
+        let manager = RemindersManager(
+            fetchIncompleteReminders: { publish in publishers.append(publish) },
+            startsAuthorized: true
+        )
+
+        manager.reload()
+        manager.reload()
+        #expect(publishers.count == 2, "two reloads issued \(publishers.count) fetches")
+
+        let older = [makeReminderItem(id: "stale", title: "Older world")]
+        let newer = [makeReminderItem(id: "fresh", title: "Newer world")]
+
+        publishers[1](newer)
+        #expect(manager.reminders.map(\.id) == ["fresh"])
+
+        publishers[0](older)
+        #expect(
+            manager.reminders.map(\.id) == ["fresh"],
+            "a late fetch restored the list a newer one had already replaced"
+        )
+        #expect(!manager.isLoading, "the current fetch landed and the list is still loading")
+    }
+
+    /// **The `isLoading` half.** A stale callback must not end the current request's wait either —
+    /// otherwise the spinner clears while the list on screen is still the one before last.
+    @MainActor
+    @Test func aLateFetchCannotEndTheCurrentRequestsWait() {
+        var publishers: [([AppleReminderItem]) -> Void] = []
+        let manager = RemindersManager(
+            fetchIncompleteReminders: { publish in publishers.append(publish) },
+            startsAuthorized: true
+        )
+
+        manager.reload()
+        manager.reload()
+        #expect(manager.isLoading)
+
+        publishers[0]([makeReminderItem(id: "stale", title: "Older world")])
+        #expect(manager.isLoading, "a late fetch ended the current request's wait")
+        #expect(manager.reminders.isEmpty, "a late fetch published its rows")
+
+        publishers[1]([])
+        #expect(!manager.isLoading, "the current fetch landed and nothing cleared the wait")
+    }
+
+    /// **A current result still wins, including an empty one.** The guard refuses stale callbacks,
+    /// not every callback: a reminders list the user emptied has to empty on screen.
+    @MainActor
+    @Test func theCurrentFetchStillPublishesAndAnEmptyResultStillClearsTheList() {
+        var publishers: [([AppleReminderItem]) -> Void] = []
+        let manager = RemindersManager(
+            fetchIncompleteReminders: { publish in publishers.append(publish) },
+            startsAuthorized: true
+        )
+
+        manager.reload()
+        publishers[0]([makeReminderItem(id: "one", title: "Pay rent")])
+        #expect(manager.reminders.map(\.id) == ["one"])
+
+        manager.reload()
+        publishers[1]([])
+        #expect(manager.reminders.isEmpty, "a current empty result did not clear the list")
+        #expect(!manager.isLoading)
+    }
+
+    /// **A fetch that was in flight when authorization was re-derived publishes nothing.**
+    ///
+    /// Deliberately host-agnostic: whether the machine running this holds a Reminders grant decides
+    /// which half of `refreshAuthorizationState()` runs, and *both* halves retire the fetch issued
+    /// above. A lost grant clears the list through the one mutator — the revocation-from-System-
+    /// Settings path, which used to leave an already-issued callback able to refill the array behind
+    /// the access card — and a kept one starts a newer reload. The delivery below is neither.
+    @MainActor
+    @Test func aFetchInFlightWhenAuthorizationIsRederivedPublishesNothing() {
+        var publishers: [([AppleReminderItem]) -> Void] = []
+        let manager = RemindersManager(
+            fetchIncompleteReminders: { publish in publishers.append(publish) },
+            startsAuthorized: true
+        )
+
+        manager.reload()
+        manager.refreshAuthorizationState()
+
+        publishers[0]([makeReminderItem(id: "leaked", title: "Should not be read")])
+        #expect(
+            manager.reminders.isEmpty,
+            "a fetch issued before authorization was re-derived published its rows afterwards"
+        )
+    }
+
+    /// **And the completion half, which no test can drive end to end.** EventKit has to accept the
+    /// save for the resurrection interleaving to exist at all, so the guarantee is pinned where it
+    /// is actually made: `reminders` is replaced in exactly one place, and that place retires the
+    /// fetches in flight. A `removeAll` written back into `completeReminder(id:)` — the original
+    /// spelling — fails this, and so does a bare assignment anywhere else.
+    @Test func theManagerReplacesItsReminderListInExactlyOnePlaceAndThatPlaceRetiresTheFetchesInFlight() throws {
+        let source = try strippingComments(sourceFile("Cadence/Services/CadenceRemindersManager.swift"))
+        let adopt = try cadenceFunctionBody("private func adopt(_ items: [AppleReminderItem])", in: source)
+
+        #expect(adopt.contains("publication.retireInFlight()"), "the one mutator stopped retiring fetches in flight")
+        #expect(adopt.contains("reminders = items"), "the one mutator stopped replacing the list")
+        #expect(adopt.contains("isLoading = false"), "the one mutator stopped ending the wait")
+
+        try expectOccurrences(
+            of: "reminders = ",
+            at: ["Cadence/Services/CadenceRemindersManager.swift": 1]
+        )
+        #expect(
+            !source.contains("reminders.removeAll"),
+            "the manager edits its reminder list around the one mutator again"
+        )
+
+        let complete = try cadenceFunctionBody(
+            "func completeReminder(id: String) -> AppleReminderCompletionOutcome",
+            in: source
+        )
+        #expect(
+            complete.contains("adopt(reminders.filter"),
+            "an accepted completion no longer retires the fetches that predate it"
+        )
+    }
+
     // MARK: - The scan itself
 
     /// The absence assertions above are worth nothing if the scan reads no files, and a scan that
@@ -945,6 +1101,21 @@ struct CadenceInboxRemindersSurfaceTests {
             .contains("func completeReminder"))
         #expect(try !filesMentioning("completeReminder").isEmpty)
     }
+}
+
+// MARK: - T-1105 fixtures
+
+/// A minimal `AppleReminderItem`; only `id` is read by the ordering tests above.
+private func makeReminderItem(id: String, title: String) -> AppleReminderItem {
+    AppleReminderItem(
+        id: id,
+        title: title,
+        notes: "",
+        listTitle: "Reminders",
+        dueDate: nil,
+        priority: 0,
+        allowsCompletion: true
+    )
 }
 
 // MARK: - Source-reading helpers

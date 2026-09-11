@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 import UniformTypeIdentifiers
 
 /// What `CadenceApp` shows instead of the normal window group when
@@ -19,8 +18,9 @@ import UniformTypeIdentifiers
 ///   read-only, with CloudKit switched off. If the boot failure was CloudKit's — unreachable
 ///   network, a bad container entitlement, a rejected schema push, all common and all outside this
 ///   app's control — the user's real data is sitting on disk untouched, and
-///   `PersistenceController.attemptReadOnlyStoreForRecoveryExport()` is what gets it into an
-///   export instead of behind a crash.
+///   `PersistenceController.attemptRecoveryExport()` is what gets it into an export instead of
+///   behind a crash. It keeps going past a store that opens and then fails to export (T-1099), and
+///   says so when one did.
 /// - If that also fails, it says so plainly rather than hiding an empty result behind a spinner
 ///   that never resolves.
 ///
@@ -34,6 +34,8 @@ struct CadenceTerminalRecoveryView: View {
         case idle
         case notFound
         case failed(String)
+        /// An archive was built, and something else on this device was not in it (T-1099).
+        case exportedWithUnreadableStores(String)
     }
 
     @State private var exportOutcome: ExportOutcome = .idle
@@ -80,7 +82,10 @@ struct CadenceTerminalRecoveryView: View {
             defaultFilename: CadenceDataExportService.suggestedFilename()
         ) { result in
             if case .failure(let error) = result {
-                exportOutcome = .failed(error.localizedDescription)
+                // A destination failure, not a source one: the archive was built and this is the
+                // save refusing. Named as such rather than left to read as "exporting failed",
+                // which would send someone looking for another store when the data is in hand.
+                exportOutcome = .failed("The data was read, but saving the file failed: \(error.localizedDescription)")
             }
             exportDocument = nil
         }
@@ -160,8 +165,13 @@ struct CadenceTerminalRecoveryView: View {
                 EmptyView()
             case .notFound:
                 CadenceInlineFailureNotice(text: "Cadence could not open any store on this device. If you use iCloud Backup or Time Machine, a backup made before today may still have your data.")
-            case .failed(let reason):
-                CadenceInlineFailureNotice(text: "Found a store, but exporting failed: \(reason)")
+            // One notice for both, deliberately. `.exportedWithUnreadableStores` follows a press
+            // that produced a file, and it is still a failure sentence: part of what is on this
+            // device is not in that file, and this screen's whole job is to be exact about how
+            // much was recovered. Two arms drawing the same component is a second call site of a
+            // notice that means one thing.
+            case .failed(let reason), .exportedWithUnreadableStores(let reason):
+                CadenceInlineFailureNotice(text: reason)
             }
         }
         .padding(16)
@@ -186,27 +196,60 @@ struct CadenceTerminalRecoveryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Not a retry of the boot sequence — see the type's doc comment. Every step is optional or
-    /// `try?`, so a second, third or hundredth failure here only ever updates `exportOutcome`.
+    /// Not a retry of the boot sequence — see the type's doc comment. Every branch below is a
+    /// `case` of a returned result, so a second, third or hundredth failure here only ever updates
+    /// `exportOutcome`.
+    ///
+    /// The search itself lives in `PersistenceController.attemptRecoveryExport()`, not here: this
+    /// used to take a container back and export it, which is what made the *first store that
+    /// opened* the last store anyone tried (T-1099). Deciding which candidate to try is one
+    /// decision and it belongs in one place, with the candidate list.
     private func attemptExport() {
         guard !isAttemptingExport else { return }
         isAttemptingExport = true
         exportOutcome = .idle
 
-        guard let container = PersistenceController.attemptReadOnlyStoreForRecoveryExport() else {
+        switch PersistenceController.attemptRecoveryExport() {
+        case .noStoreOpened:
             exportOutcome = .notFound
-            isAttemptingExport = false
-            return
-        }
-
-        let context = ModelContext(container)
-        do {
-            let outcome = try CadenceDataExportService.exportArchive(in: context)
-            exportDocument = CadenceArchiveDocument(data: outcome.data)
+        case .everyOpenedStoreFailed(let failures):
+            exportOutcome = .failed(Self.everyStoreFailedSentence(failures))
+        case .exported(let export):
+            exportDocument = CadenceArchiveDocument(data: export.data)
             isPresentingExporter = true
-        } catch {
-            exportOutcome = .failed(error.localizedDescription)
+            if !export.precedingFailures.isEmpty {
+                exportOutcome = .exportedWithUnreadableStores(
+                    Self.partialRecoverySentence(export)
+                )
+            }
         }
         isAttemptingExport = false
+    }
+
+    /// Every store that opened refused to export. Each one is named with its own reason, because
+    /// "exporting failed" without which store or why is the sentence a user can do nothing with.
+    static func everyStoreFailedSentence(
+        _ failures: [PersistenceController.RecoveryExportFailure]
+    ) -> String {
+        let reasons = failures
+            .map { "\($0.storeURL.path): \($0.reason)" }
+            .joined(separator: " ")
+        let count = failures.count
+        return count == 1
+            ? "Found a store, but exporting failed. \(reasons)"
+            : "Found \(count) stores on this device and none of them could be exported. \(reasons)"
+    }
+
+    /// The export worked, and it is not everything. Says the count that *was* saved first, so the
+    /// sentence cannot be read as "nothing was recovered", then names what was left out.
+    static func partialRecoverySentence(_ export: PersistenceController.RecoveryExport) -> String {
+        let skipped = export.precedingFailures
+            .map { "\($0.storeURL.path): \($0.reason)" }
+            .joined(separator: " ")
+        let count = export.precedingFailures.count
+        let records = export.recordCount == 1 ? "1 record" : "\(export.recordCount) records"
+        return count == 1
+            ? "Saved \(records) from \(export.storeURL.path). One other store on this device could not be exported and is not in this file. \(skipped)"
+            : "Saved \(records) from \(export.storeURL.path). \(count) other stores on this device could not be exported and are not in this file. \(skipped)"
     }
 }

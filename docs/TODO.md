@@ -177,9 +177,61 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Note the interaction with [[T-1112]]: the import now has a post-commit seam, but it reconciles
   *notifications*, not focus totals, and widening it is a decision rather than an obvious extension.
 
-- [T-1099] **Terminal recovery export stops at the first store that opens, even when a later one could actually export.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/recovery-export.md` (RE-1).
+- [T-1099] **CLOSED 2026-09-10 (agent `restoresafe`) — the terminal recovery export keeps looking
+  past a store that opens and then refuses to export.** From `docs/audits/2026-09-05/recovery-export.md`
+  (RE-1).
+  **The mechanism.** `openFirstAvailableReadOnlyStore` answered the first candidate that *opened*,
+  and `CadenceTerminalRecoveryView` exported it — so the search ended one step before the step that
+  fails. `CadenceDataExportService.makeArchive` runs twenty-one throwing fetches **after** the open,
+  so a store SwiftData can attach to and cannot read ended the whole search; the recovery store
+  behind it was never asked, and pressing the button again walked the same candidate order to the
+  same dead end. The screen reported the failure honestly. It just stopped looking, on the one
+  screen in the app that exists because everything else already failed.
+  **The fix is one function that does both halves.** `recoverFirstExportableStore(from:open:export:)`
+  tries **open plus archive construction** per candidate and answers the first that produces bytes,
+  carrying provenance, the record count, and every store that opened and refused ahead of it.
+  `open` and `export` are parameters because no file fixture can arrange "opens, then throws" on
+  demand; both defaults are the real functions, so the shipped path has no seam. Candidate order,
+  `allowsSave: false` and `cloudKitDatabase: .none` are unchanged, and nothing merges stores or
+  prefers the largest archive.
+  **A candidate that never opened is not a failure**, deliberately: most launches have no recovery
+  directory at all, so reporting an absent store would bury the one that matters. That is what
+  keeps "nothing is on this device" and "everything on this device refused" two different sentences,
+  which is the difference between `.noStoreOpened` and `.everyOpenedStoreFailed`.
+  **And a partial recovery now says how partial.** A press that produces a file after skipping a
+  store draws a failure notice anyway, naming the record count it saved *first* so the line cannot
+  be read as "nothing was recovered", then the store that is missing from it and why. An export
+  that silently omits a reachable store is how a user concludes the rest of their data is gone.
 
-- [T-1100] **A failed restore rollback still deletes the displaced originals it failed to put back.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/backup-replacement.md` (BR-1).
+- [T-1100] **CLOSED 2026-09-10 (agent `restoresafe`) — a rollback that cannot put an original back
+  keeps it, instead of deleting it a line later.** From
+  `docs/audits/2026-09-05/batch-02/backup-replacement.md` (BR-1). The store at risk is the user's
+  real one, so this is the highest-consequence item the audit batch produced.
+  **The mechanism.** `swapStagedRestore`'s catch compensated with two `try?` loops and then ran
+  `try? removeItem(at: displacedURL)` **unconditionally**. An original the rollback could not move
+  back was still sitting in that directory when the line below deleted it — the exact loss the
+  whole staged design exists to prevent, reached through the code written to prevent it. T-326's
+  single-fault case was already covered; the argument for the second fault is that the forward move
+  and the compensating move are the same operation on the same volume, so whatever refuses one is
+  available to refuse the other. Nothing said so either: the throw named the *first* failure, and
+  the banner went on promising that the existing data was intact.
+  **The rule now: nothing here removes a directory it did not empty.** The move-back stops being
+  swallowed and is counted; a rollback that leaves anything behind retains the folder as
+  `Cadence Unrestored Store Files <timestamp>` and throws a `RestoreRollbackFailure` naming the
+  first failure, the items, and the retained path. The name is **not** `.tmp` on purpose — every
+  path in this file is entitled to delete scratch, and "scratch" and "the last copy of your store"
+  have to be two things a later restore can tell apart. The same refusal covers that later restore:
+  a displaced directory already lying there is an interrupted swap's originals, so it is retained
+  rather than removed to reuse the path.
+  **The banner stops promising intactness it has not got.** `FailedRestoreRecord` carries the
+  retained path, and a record that has one reads `.restoreIncomplete` rather than `.restoreFailed`
+  — a fifth `CadenceStartupIssueKind` whose copy says nothing was deleted, says where the files
+  are, and does not say the store is intact. `.restoreFailed`'s wording is untouched and still
+  correct for the ordinary case, which is what the discriminating test holds it to.
+  **One consequence of retaining anything at all**: the folder is store data inside the app's own
+  container, so `deleteCadenceDataAndLocalArtifacts` deletes it. A privacy reset that emptied the
+  store and left a copy of it next door would be the same shape of over-promise T-1101 repaired for
+  the Keychain.
 
 - [T-1101] **CLOSED 2026-09-09 — a refused Keychain deletion is named on the same line that reports the reset, instead of being swallowed.** From `docs/audits/2026-09-05/batch-02/privacy-reset.md` (PR-1).
   **The mechanism.** `try? aiSettingsManager.removeAPIKey()`. `KeychainCredentialStore.deleteSecret`
@@ -220,9 +272,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   costs a redraw rather than a minute, and `.onAppear` re-reads the real elapsed value so arriving on a
   session that ran while the screen was gone shows its true reading rather than a stale one. Sleep and wake
   observers were added for the same class of gap — a sleeping Mac is another way for ticks to stop arriving.
-- [T-1104] **The iOS photo import inserts asset rows between `await`s and calls the whole batch its own.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/image-import-transaction.md` (IM-1).
+- [T-1104] **CLOSED 2026-09-10 (agent `latebatch`) — every `await` in the iOS photo import happens before the first row exists.** From `docs/audits/2026-09-05/batch-02/image-import-transaction.md` (IM-1); verified against source before fixing.
+  **The mechanism.** The loop loaded one photo and immediately `createAsset(fromImageData:in:)`,
+  which *inserts* into the shared `ModelContext`, then suspended on the next photo with that row
+  still pending. There is one context app-wide, so anything running during the suspension decided
+  the fate of a batch this function still believed it owned: an unrelated `save()` persisted a
+  picture the user might yet lose to a refused commit, and a `rollback()` — which every refused
+  delete in the app performs — discarded the pending rows while `insertedAssets` went on holding
+  them. The commit then had nothing to write, reported success, and wrote markdown pointing at
+  assets the store did not have. Same loss [[T-620]]'s candidate-set delete and [[T-411]]'s
+  inventory exist to prevent, reached from the other end.
+  **Structured, not unstructured.** `.task(id: selectedImageItems)` replaces `.onChange` plus a bare
+  `Task {}` that was stored nowhere and cancelled by nobody — leaving the editor mid-download left a
+  job that would still create rows and write markdown into a draft the surface no longer owned.
+  SwiftUI cancels this one when the selection changes or the editor goes away, and the picker's
+  selection is cleared only `if !Task.isCancelled`, so a superseded run cannot wipe the selection
+  belonging to the run after it.
+  **iOS is built but not distributed**, so this shipped no user-visible defect today; it is closed
+  because the same binary becomes a channel the day iOS ships.
 
-- [T-1105] **A late Reminders fetch publishes unconditionally, so it can restore a stale list or resurrect a completed reminder.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/batch-02/reminders-refresh-ordering.md` (RM-1).
+- [T-1105] **CLOSED 2026-09-10 (agent `latebatch`) — a reminder fetch is published only if it is still the one the user last asked for.** From `docs/audits/2026-09-05/batch-02/reminders-refresh-ordering.md` (RM-1); verified against source before fixing.
+  **The mechanism.** EventKit's `fetchReminders` is asynchronous and the order its callbacks land
+  in is EventKit's choice. Two reloads overlap routinely — `refreshAuthorizationState()` starts one,
+  the `.EKEventStoreChanged` observer another, `reconcile(after:)` a third — and the callback
+  assigned whatever array it had captured, **unconditionally**. So the *slower* fetch won regardless
+  of which was asked for last. Two interleavings are user-visible: a newer list replaced by an older
+  one, and — the bad one — a fetch that captured a reminder before the user ticked it off landing
+  afterwards and putting the completed reminder back on screen. To a user that is not a race, it is
+  the app resurrecting work they finished.
+  **Why a generation counter and not "cancel the previous fetch".** The event that makes a fetch
+  stale is not always another fetch. `RemindersPublicationGuard` (in
+  `CadenceRemindersPresentationSupport.swift`) is one monotonic counter: every reload `issue()`s a
+  generation, and every authoritative *local* change — an accepted completion, a lost grant —
+  calls `retireInFlight()`, which increments without requesting anything new. A callback publishes
+  only while `accepts(_:)` still recognises its generation.
+  **The fetch is an injectable closure** (`RemindersFetch`) with exactly one production
+  implementation, built in `init()`. Not indirection for its own sake: a unit-test host has no
+  Reminders grant and EventKit decides when callbacks land, so without the seam the out-of-order
+  publish is a defect nothing can deliver twice — and a defect nothing can deliver is a defect
+  nothing can pin. The guard lives beside `RemindersReconcileLedger` for the same reason: reachable
+  from `CadenceTests` without a grant.
 
 - [T-1106] **Seven modern ticket ids have commit history and no formal ledger entry, and nothing stops the eighth.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/commit-ledger.md` (CL-1).
 
@@ -2529,8 +2618,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   tag rebuild dropped, the note fold dropped) were each killed by the named test at 0 compile
   errors. **What a user still cannot do is start one** — see [[T-1082]].
 
-- [T-1084] **A cross-device import restores a calendar link the importing device cannot honour, and
-  nothing tells the user.** Found while closing [[T-1082]], and it is the *reopening* of a decision
+- [T-1084] **CLOSED 2026-09-10 (agent `callink`) — the line earns its place: both import previews
+  now say that a calendar connection belongs to the device that made it.**
+  Originally: **A cross-device import restores a calendar link the importing device cannot honour,
+  and nothing tells the user.**
+  **The decision this entry asked for, taken: it earns the line.** [[T-661]] declined the copy on the
+  stated ground that the export description already ended *"Cadence cannot read an archive back in
+  yet"*, so there was no restore for a caveat to qualify. [[T-1082]] shipped the restore on both
+  platforms and took that ground with it. The preview is the one place a user reads before choosing,
+  and it already names the kinds of record an import cannot store.
+  **What landed.** `CadenceArchiveImportPresentation.calendarLinksNote(_:)`, drawn by
+  `SettingsArchiveImportCard` and `iOSArchiveImportSettingsSection` directly under
+  `unreadableKindsNote`, in `Theme.dim` rather than `Theme.amber`: nothing is lost and nothing needs
+  acting on, so it reads as a fact about the file rather than as a warning. Conditional on a new
+  `CadenceArchiveImportPlan.linkedCalendarCount`, counted off the archive's own areas and projects.
+  **Worded about the file rather than about the write, and that is the same choice
+  `unreadableKindsNote` makes one line above it.** A claim about the archive is true under both
+  import modes without the note re-deriving which rows this one would touch, and a reader whose file
+  carries no link is handed no caveat at all.
+  **It also does not claim the link will fail.** Re-importing your own archive onto the machine that
+  wrote it resolves every identifier in it, and that is a normal thing to do. Pinned:
+  `theCalendarLinkCaveatCountsAndDoesNotCallTheLinkBroken` fails if the sentence ever borrows
+  `CadenceCalendarLinkHealth.missingLinkTitle` — the breakage wording [[T-624]] stopped showing for
+  exactly this case — or ever says anything was lost.
+  **Nothing in the schema moved, because nothing could.** CloudKit Production has been deployed since
+  2026-09-05, so `Area.linkedCalendarID` / `Project.linkedCalendarID` may be deprecated but never
+  removed or re-typed, and T-390's companion-metadata branch stays blocked for want of a
+  `SchemaMigrationPlan`. This change adds **no stored property and touches no `@Model`**:
+  `linkedCalendarCount` lives on `CadenceArchiveImportPlan`, a plain `Sendable` struct that never
+  reaches disk, so `CadenceEventKitPlatformParityTests`' guard against a second `linkedCalendar*`
+  property is untouched. The identifier itself is still restored verbatim; this is copy, not a
+  behaviour change, and `anArchivesCalendarLinksAreCountedAndNamedInThePreview` asserts both halves.
+  ---
+  Original entry follows.
+  Found while closing [[T-1082]], and it is the *reopening* of a decision
   rather than a new defect. `CadenceArchiveArea.linkedCalendarID` / `CadenceArchiveProject.linkedCalendarID`
   hold an `EKCalendar.calendarIdentifier`, which Apple documents as local to one device. [[T-661]]
   decided to keep the field and document it rather than drop it, and deliberately shipped **no**
@@ -3023,7 +3144,38 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   functions have each shifted a line — `deleteContext` `:39`, `deleteProject` `:108`, `deleteArea`
   `:133` — and the five import-gate greps still return zero.
 
-- [T-624] **A device-local EventKit calendar identifier is stored in CloudKit.** VERIFIED 2026-09-01
+- [T-624] **CLOSED 2026-09-10 (agent `callink`) — as a decision rather than a repair: every half an
+  agent can act on has landed, and the one question left is a measurement only the user can take.
+  Carried on as [[T-1117]] so it is addressed to the person who can answer it.**
+  Originally: **A device-local EventKit calendar identifier is stored in CloudKit.**
+  **Re-verified at HEAD before closing, and both landed halves are intact.**
+  `CadenceCalendarLinkHealth.missingLink` still gates on `observedCalendarIDs.contains(...)`
+  (`:191-193`) and `CadenceCalendarLinkRowState.forLink` still answers `.unverified` rather than
+  `.missing` when the evidence does not vouch (`:136-137`). `dormantLinks` still asks EventKit
+  nothing, so it still cannot weaken the gate.
+  **All three residues close in the same commit.** [[T-899]] and [[T-1043]] are one source-text sweep
+  over `Cadence/`; [[T-1084]] is one conditional sentence in the archive-import preview. The gate now
+  has a rule behind it in both directions rather than a set of individually-correct call sites.
+  **What is left is two things, and neither is engineering.**
+  **1. The measurement, which is the user's.** Whether the same iCloud calendar carries the same
+  `EKCalendar.calendarIdentifier` on this user's Mac and iPhone has never been established, and
+  nobody here can establish it: it needs an EventKit call on the user's own machine, which raises a
+  TCC prompt addressed to them. Four verification passes have now reported that same sentence without
+  moving it, which is the pattern `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md` asks to stop
+  for [[T-623]]. The question is carried on as [[T-1117]], with the memo's five-minute procedure, so
+  it survives this closure without a ticket re-verifying a fix that is already done.
+  **2. The portable-link branch, which is permanently additive-only and separately blocked.** T-390
+  decided against title/source companion metadata on purpose — auto-rebinding on a name match without
+  a conflict UI is worse than a link the user can see is dead — and `CadenceEventKitPlatformParityTests`
+  is armed against it. Since CloudKit Production shipped 2026-09-05, `linkedCalendarID` can only ever
+  be *joined* by a new field, never replaced or re-typed, so a clean rewrite is off the table for
+  good. Neither this closure nor T-1117 forecloses that branch; adding optional fields to a deployed
+  Production schema stays legal indefinitely.
+  **What a reader should take from this closure:** the *defects* were fixed on 2026-09-01 and
+  2026-09-04, the *guards* on 2026-09-10, and what remains is a product question, not a bug.
+  ---
+  Original entry follows.
+  VERIFIED 2026-09-01
   from CXT-020 — mechanism confirmed; **the ping-pong premise is the one unmeasured link in the set.**
   `Area.swift:39` and `Project.swift:25` persist a bare `EKCalendar.calendarIdentifier` on synced
   models; `CadenceCalendarLinkHealth.swift:130` declares a link dead purely from *this device's* live
@@ -3934,8 +4086,39 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   own, and is a far smaller vocabulary than half 2's. It would not have found [[T-870]], which is the
   argument against believing it. Sibling of [[T-657]] — the same honest limit of a text scan.
 
-- [T-899] **A third reader of a synced `linkedCalendarID` would silently get the pre-[[T-624]] rule
-  back.** Residue of T-624's row-state half, filed 2026-09-04. Not a bug today; a guard that does not
+- [T-899] **CLOSED 2026-09-10 (agent `callink`) — a third reader has to name its provenance and a
+  third writer has to record its pick; one sweep guards both sides of [[T-624]]'s gate.**
+  Originally: **A third reader of a synced `linkedCalendarID` would silently get the pre-T-624 rule
+  back.**
+  **Taken, and it is one test file exactly as costed.**
+  `CadenceTests/CadenceCalendarLinkProvenanceSweepTests.swift` reads `Cadence/` as **text** — the
+  shape this entry and [[T-1043]] both asked for, and the shape `CadenceSharedConstantReuseSweepTests`
+  already uses — and carries both halves, because both wanted the same file.
+  **The reading half.** Every `CadenceCalendarLink(` and `CadenceCalendarLinkRowState.forLink(` in
+  the product tree either passes `evidence:` **inside its own parenthesis-matched argument list** —
+  so an `evidence:` in a neighbouring call cannot vouch for it — or is on a one-entry ledger carrying
+  its call count. The ledger is `Cadence/macOS/Views/TimelineEventBlockSupportViews.swift: 1`, and it
+  is read in both directions: `everyLedgeredDefaultedReaderIsStillThereAndStillDefaulted` fails if
+  that site stops making exactly one call or starts naming its provenance, so an exemption cannot
+  outlive the thing it exempts.
+  **The population is three, not two, and the third needed no exemption.** This entry measured two on
+  2026-09-06 and that count was of *surfaces*; the sweep also sees `CadenceCalendarLink.rowState` in
+  the declaring file, which forwards `evidence: evidence` and therefore satisfies the rule outright.
+  Re-measured at HEAD: `ListEditorSupportViews.swift:414` (`.synced`), `CadenceCalendarLinkRowState
+  .swift:331` (forwards), `TimelineEventBlockSupportViews.swift:218` (the ledgered default).
+  **The two named tests this entry cites stay.** `theListEditorRowDeclaresItsIdentifierSynced` and
+  `theTimelineEventEditorDoesNotClaimASyncedIdentifier` pin *which* provenance each known surface
+  claims; the sweep pins only that there is no unledgered third. They are different assertions and
+  neither subsumes the other.
+  **What the sweep cannot do, stated so nobody reads it as more.** It is a text scan: it cannot tell
+  a `.synced` reading the real observation record from one handed an empty set.
+  `CadenceCalendarLinkRowStateTests` covers that behaviourally, and `CadenceCalendarLinkEvidence` is
+  an **enum** precisely so the no-op is a thing the type system refuses rather than a thing a test
+  has to catch. It also reaches `Cadence/iOS/` only as text — which is the point, since the macOS
+  test target compiles no symbol from that tree and iOS is where the next calendar surface will be.
+  ---
+  Original entry follows.
+  Residue of T-624's row-state half, filed 2026-09-04. Not a bug today; a guard that does not
   exist.
   `CadenceCalendarLink` and `CadenceCalendarLinkRowState.forLink` take a
   `CadenceCalendarLinkEvidence` that **defaults to `.deviceLocal`**. That default is the truthful

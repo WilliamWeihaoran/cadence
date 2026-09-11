@@ -9,8 +9,14 @@ import Testing
 /// literal-backed, and the last-resort trap crashed on launch with no explanation and nothing
 /// offered. This suite pins its replacement: `container` goes `nil`, `terminalFailure` records why,
 /// and `CadenceTerminalRecoveryView`'s "try to export what's there" path
-/// (`recoveryExportCandidateStoreURLs` / `openFirstAvailableReadOnlyStore`) is real logic, not a
-/// screen that always says no.
+/// (`recoveryExportCandidateStoreURLs` / `openReadOnlyStore` / `recoverFirstExportableStore`) is
+/// real logic, not a screen that always says no.
+///
+/// **T-1099 added the second half of that search.** The screen used to stop at the first store that
+/// *opened*, and an open is not an export: the archive runs twenty-one throwing fetches afterwards,
+/// so a store SwiftData could attach to and not read ended the search with a later, readable store
+/// never tried. The tests below inject an open that succeeds and an export that throws, because no
+/// file fixture can arrange that pair on demand.
 @MainActor
 struct PersistenceControllerTerminalRecoveryTests {
     // MARK: - The trap is gone, not moved
@@ -137,7 +143,7 @@ struct PersistenceControllerTerminalRecoveryTests {
     }
 
     /// A `nil` primary store URL is dropped entirely, not turned into a placeholder that
-    /// `openFirstAvailableReadOnlyStore` would then have to filter back out.
+    /// `recoverFirstExportableStore` would then have to filter back out.
     @Test func candidateURLsDropANilPrimaryStoreRatherThanPassingItThrough() {
         let recoveryOne = URL(fileURLWithPath: "/recovery/one", isDirectory: true)
 
@@ -156,7 +162,7 @@ struct PersistenceControllerTerminalRecoveryTests {
         ).isEmpty)
     }
 
-    // MARK: - `openFirstAvailableReadOnlyStore` — real disk I/O, isolated
+    // MARK: - The candidate search — real disk I/O, isolated
 
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
@@ -165,8 +171,8 @@ struct PersistenceControllerTerminalRecoveryTests {
         return url
     }
 
-    /// A real, on-disk, non-in-memory store — the exact shape `openFirstAvailableReadOnlyStore`
-    /// has to open — seeded with one distinguishing task title.
+    /// A real, on-disk, non-in-memory store — the exact shape `openReadOnlyStore(at:)` has to
+    /// open — seeded with one distinguishing task title.
     private func seedRealStore(at storeURL: URL, taskTitle: String) throws {
         let container = try CadenceStoreSupport.makePrimaryContainer(
             allowsSave: true,
@@ -178,29 +184,35 @@ struct PersistenceControllerTerminalRecoveryTests {
         try context.save()
     }
 
-    @Test func noCandidatesOpensNothing() {
-        #expect(PersistenceController.openFirstAvailableReadOnlyStore(from: []) == nil)
+    private func exportedTitles(_ result: PersistenceController.RecoveryExportResult) throws -> [String] {
+        guard case .exported(let export) = result else {
+            Issue.record("expected an export, got \(result)")
+            return []
+        }
+        return try CadenceDataExportService.decode(export.data).tasks.map(\.title)
     }
 
-    @Test func aCandidateListOfOnlyMissingFilesOpensNothing() throws {
+    @Test func noCandidatesRecoversNothing() {
+        #expect(PersistenceController.recoverFirstExportableStore(from: []) == .noStoreOpened)
+    }
+
+    @Test func aCandidateListOfOnlyMissingFilesRecoversNothing() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let missing = directory.appendingPathComponent("never-created.store")
-        #expect(PersistenceController.openFirstAvailableReadOnlyStore(from: [missing]) == nil)
+        #expect(PersistenceController.recoverFirstExportableStore(from: [missing]) == .noStoreOpened)
     }
 
-    /// The core promise: a store that genuinely exists on disk is opened and its rows are
-    /// readable — not an empty container that happens to exist.
+    /// The core promise of the open half: a store that genuinely exists on disk is opened and its
+    /// rows are readable — not an empty container that happens to exist.
     @Test func aRealOnDiskStoreOpensAndItsRowsAreReadable() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let storeURL = directory.appendingPathComponent("default.store")
         try seedRealStore(at: storeURL, taskTitle: "Recovered task")
 
-        let container = try #require(
-            PersistenceController.openFirstAvailableReadOnlyStore(from: [storeURL])
-        )
+        let container = try #require(PersistenceController.openReadOnlyStore(at: storeURL))
         let titles = try ModelContext(container).fetch(FetchDescriptor<AppTask>()).map(\.title)
         #expect(titles == ["Recovered task"])
     }
@@ -214,16 +226,19 @@ struct PersistenceControllerTerminalRecoveryTests {
         let real = directory.appendingPathComponent("real.store")
         try seedRealStore(at: real, taskTitle: "Second candidate")
 
-        let container = try #require(
-            PersistenceController.openFirstAvailableReadOnlyStore(from: [missing, real])
-        )
-        let titles = try ModelContext(container).fetch(FetchDescriptor<AppTask>()).map(\.title)
-        #expect(titles == ["Second candidate"])
+        let result = PersistenceController.recoverFirstExportableStore(from: [missing, real])
+
+        #expect(try exportedTitles(result) == ["Second candidate"])
+        guard case .exported(let export) = result else { return }
+        // A candidate that was never there is not reported as a failure: an absent recovery store
+        // is the ordinary case, and naming it would bury a real one.
+        #expect(export.precedingFailures.isEmpty)
+        #expect(export.storeURL == real)
     }
 
-    /// Given two stores that both exist, the first in the list wins — the primary store, when the
-    /// caller is `attemptReadOnlyStoreForRecoveryExport`, ranked ahead of any recovery directory.
-    @Test func theFirstExistingCandidateWinsOverALaterOne() throws {
+    /// Given two stores that both export, the first in the list wins — the primary store, when the
+    /// caller is `attemptRecoveryExport`, ranked ahead of any recovery directory.
+    @Test func theFirstExportableCandidateWinsOverALaterOne() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = directory.appendingPathComponent("first.store")
@@ -231,11 +246,12 @@ struct PersistenceControllerTerminalRecoveryTests {
         try seedRealStore(at: first, taskTitle: "From the first store")
         try seedRealStore(at: second, taskTitle: "From the second store")
 
-        let container = try #require(
-            PersistenceController.openFirstAvailableReadOnlyStore(from: [first, second])
-        )
-        let titles = try ModelContext(container).fetch(FetchDescriptor<AppTask>()).map(\.title)
-        #expect(titles == ["From the first store"])
+        let result = PersistenceController.recoverFirstExportableStore(from: [first, second])
+
+        #expect(try exportedTitles(result) == ["From the first store"])
+        guard case .exported(let export) = result else { return }
+        #expect(export.storeURL == first)
+        #expect(export.precedingFailures.isEmpty)
     }
 
     /// `allowsSave: false` is not decorative: the returned container refuses a write, so this
@@ -246,9 +262,7 @@ struct PersistenceControllerTerminalRecoveryTests {
         let storeURL = directory.appendingPathComponent("default.store")
         try seedRealStore(at: storeURL, taskTitle: "Existing task")
 
-        let container = try #require(
-            PersistenceController.openFirstAvailableReadOnlyStore(from: [storeURL])
-        )
+        let container = try #require(PersistenceController.openReadOnlyStore(at: storeURL))
         let context = ModelContext(container)
         context.insert(AppTask(title: "Should never be written"))
         #expect(throws: (any Error).self) {
@@ -256,23 +270,137 @@ struct PersistenceControllerTerminalRecoveryTests {
         }
     }
 
+    // MARK: - T-1099: an open is not an export
+
+    /// **The defect.** Both candidates are real stores that open. The first one's export throws —
+    /// the shape `CadenceDataExportService.makeArchive` fails in, a throwing fetch after a
+    /// successful open — and the second holds the row the user still has. Before T-1099 the search
+    /// ended at the first open and this row never reached a file.
+    @Test func aStoreThatOpensAndFailsToExportDoesNotEndTheSearch() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = directory.appendingPathComponent("first.store")
+        let second = directory.appendingPathComponent("second.store")
+        try seedRealStore(at: first, taskTitle: "In the store that will not export")
+        try seedRealStore(at: second, taskTitle: "Sentinel in the later store")
+
+        var exportAttempts = 0
+        let result = PersistenceController.recoverFirstExportableStore(
+            from: [first, second],
+            export: { container in
+                exportAttempts += 1
+                if exportAttempts == 1 {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                return try CadenceDataExportService.exportArchive(in: ModelContext(container))
+            }
+        )
+
+        #expect(exportAttempts == 2, "the second candidate was never asked to export")
+        #expect(try exportedTitles(result) == ["Sentinel in the later store"])
+        guard case .exported(let export) = result else { return }
+        // Provenance, and the failure it stepped over — an archive that silently drops a store is
+        // how a user concludes the rest of their data is gone.
+        #expect(export.storeURL == second)
+        #expect(export.precedingFailures.map(\.storeURL) == [first])
+        #expect(export.precedingFailures.allSatisfy { !$0.reason.isEmpty })
+        #expect(export.recordCount == 1)
+    }
+
+    /// When every store that opens refuses, the result is not `.noStoreOpened`: "nothing is on this
+    /// device" and "everything on this device refused" are different sentences, and the screen says
+    /// different things for them.
+    @Test func everyOpenedStoreFailingIsReportedInOrderRatherThanAsNothingFound() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = directory.appendingPathComponent("first.store")
+        let second = directory.appendingPathComponent("second.store")
+        try seedRealStore(at: first, taskTitle: "One")
+        try seedRealStore(at: second, taskTitle: "Two")
+
+        let result = PersistenceController.recoverFirstExportableStore(
+            from: [first, second],
+            export: { _ in throw CocoaError(.fileReadCorruptFile) }
+        )
+
+        guard case .everyOpenedStoreFailed(let failures) = result else {
+            Issue.record("expected every candidate to be reported, got \(result)")
+            return
+        }
+        #expect(failures.map(\.storeURL) == [first, second])
+    }
+
+    /// The other half of the same distinction, from the other side: candidates that never open
+    /// leave `.noStoreOpened`, so an empty device is never reported as a store that refused.
+    @Test func aStoreThatNeverOpensIsNotReportedAsAFailedExport() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let missing = directory.appendingPathComponent("missing.store")
+
+        let result = PersistenceController.recoverFirstExportableStore(
+            from: [missing],
+            open: { _ in nil },
+            export: { _ in Issue.record("nothing opened, so nothing should have been exported"); throw CocoaError(.fileReadUnknown) }
+        )
+        #expect(result == .noStoreOpened)
+    }
+
+    // MARK: - What the screen says about a partial recovery
+
+    @Test func aPartialRecoverySaysWhatWasSavedBeforeWhatWasNot() {
+        let skipped = URL(fileURLWithPath: "/store/first.store")
+        let sentence = CadenceTerminalRecoveryView.partialRecoverySentence(
+            PersistenceController.RecoveryExport(
+                storeURL: URL(fileURLWithPath: "/store/second.store"),
+                data: Data(),
+                recordCount: 412,
+                precedingFailures: [
+                    PersistenceController.RecoveryExportFailure(storeURL: skipped, reason: "The file is corrupt.")
+                ]
+            )
+        )
+
+        // The count first, so the line cannot be read as "nothing was recovered"...
+        #expect(sentence.hasPrefix("Saved 412 records from /store/second.store."))
+        // ...and then the store that is not in the file, named, with its reason.
+        #expect(sentence.contains("One other store"))
+        #expect(sentence.contains("/store/first.store"))
+        #expect(sentence.contains("The file is corrupt."))
+    }
+
+    @Test func aTotalFailureNamesEveryStoreItTried() {
+        let sentence = CadenceTerminalRecoveryView.everyStoreFailedSentence([
+            PersistenceController.RecoveryExportFailure(
+                storeURL: URL(fileURLWithPath: "/store/first.store"),
+                reason: "Corrupt."
+            ),
+            PersistenceController.RecoveryExportFailure(
+                storeURL: URL(fileURLWithPath: "/store/second.store"),
+                reason: "Also corrupt."
+            ),
+        ])
+
+        #expect(sentence.contains("Found 2 stores"))
+        #expect(sentence.contains("/store/first.store: Corrupt."))
+        #expect(sentence.contains("/store/second.store: Also corrupt."))
+    }
+
     // MARK: - The end-to-end export a user would actually run
 
-    /// The full path `CadenceTerminalRecoveryView`'s button takes once a store is found:
-    /// open it read-only, then hand the resulting context to the same
-    /// `CadenceDataExportService.exportArchive` every other export surface in the app uses.
+    /// The full path `CadenceTerminalRecoveryView`'s button takes: the search's own default
+    /// `export` is the same `CadenceDataExportService.exportArchive` every other export surface in
+    /// the app uses, with no seam left in the shipped path.
     @Test func aRecoveredStoreExportsThroughTheSameServiceEveryOtherExportSurfaceUses() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let storeURL = directory.appendingPathComponent("default.store")
         try seedRealStore(at: storeURL, taskTitle: "Exported from recovery")
 
-        let container = try #require(
-            PersistenceController.openFirstAvailableReadOnlyStore(from: [storeURL])
-        )
-        let outcome = try CadenceDataExportService.exportArchive(in: ModelContext(container))
-        let archive = try CadenceDataExportService.decode(outcome.data)
-        #expect(archive.tasks.map(\.title) == ["Exported from recovery"])
+        let result = PersistenceController.recoverFirstExportableStore(from: [storeURL])
+
+        #expect(try exportedTitles(result) == ["Exported from recovery"])
+        guard case .exported(let export) = result else { return }
+        #expect(export.recordCount == 1)
     }
 
     // MARK: - The screen's diagnosis

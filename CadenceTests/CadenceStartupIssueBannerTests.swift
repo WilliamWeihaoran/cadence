@@ -162,8 +162,9 @@ struct CadenceStartupIssueBannerTests {
     /// it renders `CadenceSyncHealth` built from `PersistenceController.startupIssue`.
     ///
     /// The behaviour is unchanged because two better reasons hold. The pane only reacts to kinds
-    /// whose `disablesCloudSync` is true, so `.maintenanceSaveFailed` and `.restoreFailed` — half of
-    /// `CadenceStartupIssueKind` — still reach no Settings pane on either platform. And
+    /// whose `disablesCloudSync` is true, so `.maintenanceSaveFailed`, `.restoreFailed` and
+    /// `.restoreIncomplete` — three of the five `CadenceStartupIssueKind` cases — still reach no
+    /// Settings pane on either platform. And
     /// `.inMemoryStore` loses data on quit, so a dismissible warning is one a user could hide and
     /// then quit behind.
     ///

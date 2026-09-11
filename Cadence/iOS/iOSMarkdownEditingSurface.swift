@@ -121,11 +121,15 @@ struct iOSMarkdownEditingSurface: View {
             maxSelectionCount: 8,
             matching: .images
         )
-        .onChange(of: selectedImageItems) { _, items in
-            guard !items.isEmpty else { return }
-            Task {
-                await insertPickedImages(items)
-            }
+        // **T-1104.** `.task(id:)` rather than `.onChange` plus an unstructured `Task`. The
+        // unstructured one was stored nowhere and cancelled by nobody: leaving the editor while a
+        // photo was still downloading left a job running that would go on to create rows and write
+        // markdown into a draft the surface no longer owns. SwiftUI cancels this one when the
+        // selection is replaced or the editor goes away, and `insertPickedImages` checks before it
+        // creates anything.
+        .task(id: selectedImageItems) {
+            guard !selectedImageItems.isEmpty else { return }
+            await insertPickedImages(selectedImageItems)
         }
     }
 
@@ -372,15 +376,42 @@ struct iOSMarkdownEditingSurface: View {
     /// door with two notices is a door the user has to look at twice.
     @MainActor
     private func insertPickedImages(_ items: [PhotosPickerItem]) async {
-        defer { selectedImageItems = [] }
+        // Only clear the picker's selection if this run still owns it (T-1104). A cancelled run
+        // was replaced by a newer selection or outlived its editor; clearing in either case would
+        // wipe a selection that belongs to the run after this one.
+        defer { if !Task.isCancelled { selectedImageItems = [] } }
         let attempted = items.count
-        var insertedAssets: [MarkdownImageAsset] = []
+
+        // **T-1104. Every `await` in this function happens before the first row exists.**
+        //
+        // The loop used to load one photo and immediately `createAsset(fromImageData:in:)` it,
+        // which *inserts* into the shared `ModelContext` — and then suspend on the next photo with
+        // that row still pending. There is one context app-wide, so anything else that ran during
+        // the suspension decided the fate of a batch this function still believed it owned: an
+        // unrelated `save()` persisted a picture the user might yet lose to a refused commit, and a
+        // `rollback()` — the one every refused delete in the app performs — discarded the pending
+        // rows while `insertedAssets` went on holding them, after which the commit below had
+        // nothing to write, reported success, and wrote markdown pointing at assets the store did
+        // not have. That is the loss T-620's candidate-set delete and T-411's inventory both exist
+        // to prevent, arrived at from the other end.
+        //
+        // So the awaited half loads bytes and nothing else, and the model half is the same
+        // uninterrupted create-then-commit as the paste door in `createPastedImageAssets`.
+        var payloads: [Data] = []
         for item in items {
-            guard let data = try? await item.loadTransferable(type: Data.self),
-                  let asset = MarkdownImageAssetService.createAsset(fromImageData: data, in: modelContext) else {
-                continue
-            }
-            insertedAssets.append(asset)
+            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            payloads.append(data)
+        }
+
+        // Cancelled: the editor went away, or a newer selection replaced this one. Nothing has been
+        // inserted yet, so there is nothing to undo — and no notice either, because `try? await`
+        // cannot tell a cancelled load from a photo the picker could not vend, and counting a
+        // cancellation as a photo the user lost would be a sentence about something that did not
+        // happen.
+        guard !Task.isCancelled else { return }
+
+        let insertedAssets = payloads.compactMap { data in
+            MarkdownImageAssetService.createAsset(fromImageData: data, in: modelContext)
         }
         guard !insertedAssets.isEmpty else {
             imageFailureNotice = CadenceMarkdownImageInsertionNotice.notice(attempted: attempted, accepted: 0)

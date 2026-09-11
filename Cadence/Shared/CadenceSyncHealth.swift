@@ -7,8 +7,8 @@ import SwiftUI
 /// cannot be opened — the right call, because losing access to your own data because CloudKit is
 /// unavailable is worse than not syncing. What made it a defect is that the fallback was recorded
 /// only as a free-form `String`, so the one surface that rendered it had to decide from prose
-/// whether sync was off. Two of the three issues Cadence can record leave the store local; the
-/// third does not touch sync at all. That distinction is this enum.
+/// whether sync was off. Two of the issues Cadence can record leave the store local; the rest do
+/// not touch sync at all. That distinction is this enum.
 enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     /// The CloudKit store could not be opened, so a local recovery store was used instead.
     case recoveryStore
@@ -23,6 +23,16 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     /// still syncing; what they have lost is the restore, not the database.
     case restoreFailed
 
+    /// The store opened — a restore failed **and** could not be completely undone (T-1100).
+    ///
+    /// Split from `.restoreFailed` because that case's copy makes a promise this one cannot keep.
+    /// A staged restore that throws normally leaves the store exactly as it was, which is why
+    /// `.restoreFailed` can say the existing data is intact. When the rollback itself is refused,
+    /// the store directory holds part of the backup and part of what was there, and the originals
+    /// that could not be replaced are in a retained folder the message names. Saying "intact"
+    /// there would be the app's own reassurance covering the one case where it is false.
+    case restoreIncomplete
+
     /// Whether the store Cadence actually opened has no CloudKit database behind it.
     ///
     /// This is the whole point of the type: a maintenance save failure is a real problem worth a
@@ -30,7 +40,7 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     var disablesCloudSync: Bool {
         switch self {
         case .recoveryStore, .inMemoryStore: return true
-        case .maintenanceSaveFailed, .restoreFailed: return false
+        case .maintenanceSaveFailed, .restoreFailed, .restoreIncomplete: return false
         }
     }
 
@@ -56,6 +66,7 @@ extension CadenceStartupIssue {
         case .inMemoryStore: return "Temporary Store — Changes Will Be Lost"
         case .maintenanceSaveFailed: return "Startup Maintenance Failed"
         case .restoreFailed: return "Backup Was Not Restored"
+        case .restoreIncomplete: return "Restore Left Files Aside"
         }
     }
 
@@ -74,6 +85,8 @@ extension CadenceStartupIssue {
             return "\(message) Your data is intact and still syncing; some startup housekeeping did not complete."
         case .restoreFailed:
             return "\(message) Your existing data is intact and still syncing, and a copy of it was saved as a Before Restore backup. You can try the restore again from Settings."
+        case .restoreIncomplete:
+            return "\(message) Nothing was deleted, but what Cadence is showing you may be incomplete until those files are dealt with. A copy of the store as it was before the restore was saved as a Before Restore backup."
         }
     }
 
@@ -83,6 +96,7 @@ extension CadenceStartupIssue {
         case .inMemoryStore: return "exclamationmark.triangle.fill"
         case .maintenanceSaveFailed: return "wrench.and.screwdriver.fill"
         case .restoreFailed: return "clock.arrow.circlepath"
+        case .restoreIncomplete: return "externaldrive.trianglebadge.exclamationmark"
         }
     }
 

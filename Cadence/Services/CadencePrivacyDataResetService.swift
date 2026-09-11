@@ -228,6 +228,10 @@ enum PrivacyDataResetService {
         StoreBackupManager.clearPendingRestore()
         StoreBackupManager.clearFailedRestore()
         let removedBackupCount = try StoreBackupManager.deleteAllBackups()
+        // The store bytes a failed restore rollback could not put back live in their own retained
+        // folder rather than in the backups directory (T-1100), and they are store data: a reset
+        // that left them would leave a copy of the database inside the container it just emptied.
+        try StoreBackupManager.deleteRetainedUnrestoredOriginals()
         return PrivacyDataResetOutcome(
             removedBackupCount: removedBackupCount,
             retainedAPIKeyReason: retainedAPIKeyReason

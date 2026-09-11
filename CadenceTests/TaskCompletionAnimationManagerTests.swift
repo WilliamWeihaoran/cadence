@@ -143,7 +143,7 @@ struct TaskCompletionAnimationManagerTests {
         manager.toggleCompletion(for: task)
         #expect(manager.isPending(task))
 
-        try await waitOutTheFill()
+        try await waitOutTheFill { task.status == .done }
 
         #expect(task.status == .done)
         #expect(task.completedAt != nil)
@@ -174,7 +174,7 @@ struct TaskCompletionAnimationManagerTests {
         manager.toggleCancellation(for: task)
         #expect(manager.isPendingCancel(task))
 
-        try await waitOutTheFill()
+        try await waitOutTheFill { task.status == .cancelled }
 
         #expect(task.status == .cancelled)
         // T-202: a cancellation records when the task stopped being open, exactly as a completion does.
@@ -186,9 +186,26 @@ struct TaskCompletionAnimationManagerTests {
 
     // MARK: - Helpers
 
-    private func waitOutTheFill() async throws {
-        let seconds = TaskCompletionAnimationManager.animationDuration + 1.0
-        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    /// Waits for the fill's continuation to actually run, rather than for a fixed stretch of wall
+    /// clock.
+    ///
+    /// This was one `Task.sleep(animationDuration + 1.0)`, and that one-second margin was the whole
+    /// of what separated a pass from a failure. Measured 2026-09-11: the suite passes **alone** in
+    /// 3.56s, and this same test failed inside a full run reporting a **1.60s** duration — shorter
+    /// than the sleep it was supposedly performing, so the reading was a distorted clock under load
+    /// rather than a slow continuation. The product path was never implicated: nothing outside this
+    /// file changed, and the isolated run exercises the same code.
+    ///
+    /// Polling for the state the caller is about to assert depends on neither the margin nor the
+    /// clock. It deliberately **returns** at the deadline rather than throwing, so a continuation
+    /// that genuinely never runs still fails on the caller's own `#expect`s, naming the property
+    /// that is wrong — a timeout that swallowed that would be a worse test than the flaky one.
+    private func waitOutTheFill(until isDone: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(TaskCompletionAnimationManager.animationDuration + 30)
+        while !isDone() {
+            if Date() >= deadline { return }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
     }
 
     private func spawnedTask(for task: AppTask, in context: ModelContext) throws -> AppTask? {

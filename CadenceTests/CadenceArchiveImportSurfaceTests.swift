@@ -43,6 +43,61 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(schemaNames.count >= 20, "CadenceSchema reports only \(schemaNames.count) entities")
     }
 
+    // MARK: - The calendar-link caveat (T-1084)
+
+    /// The archive carries a device-local `EKCalendar.calendarIdentifier` per linked list, the plan
+    /// counts them, and the preview says so before the first write.
+    ///
+    /// [[T-661]] kept the field and shipped no copy about it, on the ground that there was no
+    /// restore for a caveat to qualify. [[T-1082]] shipped one. The identifier itself is deliberately
+    /// still restored verbatim — [[T-624]]'s gate makes a foreign one inert rather than a break with
+    /// a repair beside it — so what this pins is the *sentence*, and that the count behind it comes
+    /// off the archive rather than off a guess.
+    @Test func anArchivesCalendarLinksAreCountedAndNamedInThePreview() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let linkedArea = Area(name: "Home")
+        linkedArea.linkedCalendarID = "cal-home"
+        let linkedProject = Project(name: "Move")
+        linkedProject.linkedCalendarID = "cal-move"
+        let unlinkedArea = Area(name: "Work")
+        for model in [linkedArea, linkedProject, unlinkedArea] as [any PersistentModel] {
+            source.insert(model)
+        }
+        try source.save()
+
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let destination = ModelContext(try CadenceTestStore.container())
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+
+        #expect(plan.linkedCalendarCount == 2, "the unlinked list was counted, or a linked one was not")
+        let note = try #require(CadenceArchiveImportPresentation.calendarLinksNote(plan))
+        #expect(note.contains("2 lists are connected to"))
+        #expect(note.contains("belongs to the device that made it"))
+
+        // And the identifiers still arrive verbatim: the note is copy, not a behaviour change.
+        _ = try CadenceArchiveImportService.apply(archive, in: destination)
+        let areas = try destination.fetch(FetchDescriptor<Area>())
+        #expect(areas.first { $0.name == "Home" }?.linkedCalendarID == "cal-home")
+        #expect(areas.first { $0.name == "Work" }?.linkedCalendarID == "")
+    }
+
+    /// An archive with no linked list gets no caveat. The preview already names the kinds of record
+    /// an import cannot store and says nothing when there are none; this is the same shape and must
+    /// stay conditional for the same reason.
+    @Test func anArchiveWithNoCalendarLinkGetsNoCaveat() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(Area(name: "Work"))
+        try source.save()
+
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let plan = try CadenceArchiveImportService.plan(
+            archive,
+            in: ModelContext(try CadenceTestStore.container())
+        )
+        #expect(plan.linkedCalendarCount == 0)
+        #expect(CadenceArchiveImportPresentation.calendarLinksNote(plan) == nil)
+    }
+
     // MARK: - The restore itself
 
     /// Counts equal, table for table, into a store that had nothing.
