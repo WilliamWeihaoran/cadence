@@ -159,23 +159,87 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   same overclaim in the other direction. The second clause promises exactly what
   `iOSTaskTagStrip.commitTags(restoring:)` undoes, and nothing wider.
 <!-- rescue-import 2026-09-07: T-1114 filed for the one finding in that batch nobody reserved. -->
-- [T-1114] **A merge import restores a task's missing focus sessions and leaves the task's cached
-  minutes where they were.** Filed by `rescue-import` 2026-09-07 from
-  `docs/audits/2026-09-07/import-reconciliation.md` (ROI-04) — the **fifth** finding of that batch,
-  and the only one `importgraph` did not reserve a number for before it was cut off. ROI-01 and
-  ROI-03 are [[T-1111]] and [[T-1112]], ROI-02 and ROI-05 are [[T-1109]] and [[T-1110]]; this one
-  had none, so a real finding was one commit away from being lost with the audit directory, which
-  is untracked.
-  **What it is, per the audit, and NOT verified against the code by this agent:** merge mode keeps
-  the matched destination task and skips its matched sessions, but inserts the session rows the
-  destination lacks — and nothing then re-runs `CadenceFocusLedger`'s raise-only reconcile, whose
-  only production caller is `PersistenceController`'s startup. The audit's arithmetic witness:
-  destination `actualMinutes = 10` with session `(previousMinutes: 0, minutes: 10)`, archive adds
-  `(previousMinutes: 10, minutes: 20)`; the stored scalar stays 10 while the ledger rule yields 30.
-  Area/Project `loggedMinutes` is the same shape. Anyone taking this should confirm those line
-  references first — they were read at `4ad2178` and `apply` has changed since ([[T-1111]]).
-  Note the interaction with [[T-1112]]: the import now has a post-commit seam, but it reconciles
-  *notifications*, not focus totals, and widening it is a decision rather than an obvious extension.
+- [T-1114] **CLOSED 2026-09-11 (agent `focusimport`) — an import raises the cached focus totals of
+  the subjects whose sessions it just restored, in the same commit as the rows.** Filed by
+  `rescue-import` 2026-09-07 from `docs/audits/2026-09-07/import-reconciliation.md` (ROI-04) — the
+  fifth finding of that batch, and the only one `importgraph` did not reserve a number for before it
+  was cut off. ROI-01 and ROI-03 are [[T-1111]] and [[T-1112]], ROI-02 and ROI-05 are [[T-1109]] and
+  [[T-1110]]; this one had none, so a real finding was one commit away from being lost with the
+  audit directory, which is untracked.
+  **The audit was right, and its line references were not — checked before fixing, as the entry
+  asked.** Read at `4ad2178`, re-read at `a92b659`: the merge skip it cited at `:837` is at
+  `:974-975`, and the session insert-and-wire at `:788` is at `:660` and `:923` — [[T-1111]]
+  restructured `apply` in between, which is exactly why the entry told the next agent not to trust
+  them. The three the audit hung the *rule* on had not moved at all: `AppTask.actualMinutes` at
+  `:230` (it said `:229`), `CadenceFocusLedger.reconciledTotal` at `:737`, `reconcile(in:)` at
+  `:767`, and its single production caller at `PersistenceController.swift:150`. The mechanism
+  behind them is unchanged and the arithmetic witness reproduces through the real importer.
+  **What it was.** `actualMinutes` / `loggedMinutes` are not fields, they are cached totals over
+  `FocusSessionLog` rows — `FocusSessionLog`'s own note says so, and the ledger is the rule. An
+  import is the one writer in the app that can add a subject's rows **without touching the
+  subject**: merge keeps the matched task, inserts the sessions the destination lacks beside it, and
+  leaves the counter at the number it held before those sessions existed. Destination task at 10
+  with `(previousMinutes: 0, minutes: 10)`, archive adding `(previousMinutes: 10, minutes: 20)`,
+  ends holding 10 while its own rows say 30. `bank` heals only the subject it writes to and the
+  store-wide sweep runs only at launch, so the minutes were in the store, invisible, until the next
+  launch — and an hours-mode `Goal` folding `actualMinutes` into its progress read the low number
+  meanwhile. Area and Project `loggedMinutes` are the same shape and are fixed by the same line.
+  **The fix is one call, in the transaction.** `CadenceArchiveImportService.reconcileFocusCounters`
+  runs after `wire` and before the single `save()`, so the raise is part of the same commit as the
+  rows that caused it: there is no window in which a committed store holds a counter that disagrees
+  with its own rows, and no second commit to fail on its own. It sits below `importArchive` rather
+  than beside it, so a caller reaching for `apply` directly gets it too.
+  **Deliberately *not* [[T-1112]]'s post-commit seam, which is the decision the filing asked for.**
+  That seam reconciles the OS's pending reminders — work outside the store, which must happen after
+  the rows are durable and is injectable because a test host cannot observe it. This is inside the
+  store and must happen before they are. Widening the seam would have made the fix a second write
+  that only the two UI mounts perform.
+  **`reconcile(rows:)` is new and `reconcile(in:)` now delegates to it.** The store-wide pass
+  swallows a failed fetch and answers `false`, which is indistinguishable from "the counters were
+  already right" — tolerable at startup, where the next launch tries again, and not tolerable inside
+  an import whose commit is what the user is told succeeded. The importer has every row in hand
+  already (`DestinationIndex` fetched the destination's before the first insert; the inserted ones
+  were added to it as they were made), so it passes them and there is no second fetch to fail. The
+  rule itself is untouched: `max(counter, min(previousMinutes) + Σ minutes)`, raise-only and
+  idempotent, which is what makes it safe in **both** modes — overwrite writes the archive's scalar
+  over the destination's, and that scalar can be older than sessions this device logged since.
+  **The mode copy now admits it.** Merge said records you already have are "left exactly as they
+  are" and overwrite said they are "replaced by the archive's copy"; both are false for this one
+  number, in opposite directions. `CadenceArchiveImportPresentation.focusMinutesNote` is one
+  sentence appended to both branches rather than a clause written twice.
+  **A stale doc comment is corrected in passing**: `reconcile(in:)` still said its startup call
+  "is not landed yet (`docs/TODO.md` T-742)" long after [[T-742]] landed it, and a sweep documented
+  as unscheduled is one a second caller looks unnecessary beside.
+  Pinned by six `@Test`s in `CadenceArchiveImportSurfaceTests` — the 10 → 30 witness read back
+  through a **second** `ModelContext`, so it is the commit being asserted and not the object the
+  importer happened to hold; three imports of the same archive still 30 with two session rows, since
+  a restore is something people retry; the Area and Project variants; merge not lowering a counter a
+  partial replica cannot account for; and the negative control, a store whose counters already agree
+  and a task with no rows at all, both untouched — plus
+  `bothModesSayThatLoggedFocusTimeFollowsItsSessionRecords` in `CadenceArchiveImportEntryPointTests`.
+  **One of those six was wrong on its first run and the run is what said so**, which is worth
+  recording because it is the only place the two modes genuinely differ here. It asserted that
+  *neither* mode lowers a counter, and overwrite mode does: the destination's bare 100 with no rows
+  behind it is replaced by the archive's 10, which is overwrite doing exactly what its copy says.
+  The property that actually holds is **coherence** —
+  `overwriteTakesTheArchivesScalarAndStillCoversTheSessionsOnlyThisDeviceHas` now gives the
+  destination 90 minutes of session rows the archive never had, and the counter ends at 100 rather
+  than at the archive's 10, so the number on screen is the total of the rows the store holds under
+  either mode.
+  Measured: `-only-testing:CadenceTests` green at 4745 tests in 398 suites,
+  `XCODEBUILD_EXIT=0`, 0 failures, 0 compile errors, 0 warnings, with the edited files' own
+  `SwiftCompile` lines in the log so the warning count is not vacuous; `Cadence`, `CadenceWidgets`
+  and `CadenceMCPServer` all built clean, the last because `Models/` compiles into it on Swift 6.
+  **Mutation-tested 4/4 killed, 0 survived, 0 inconclusive, 0 invalid**, over a baseline green at 68 tests in the two import suites. M1 deletes the `reconcileFocusCounters` call
+  — the defect itself, restoring the un-reconciled cached scalar — and four tests name it, including
+  the overwrite one. M2 lets the ledger lower as well as raise (`total >` becomes `total !=`), killed
+  by `aMergeNeverLowersACounterToATotalThePresentRowsCannotAccountFor`. M3 moves the call above
+  `wire`, so an inserted row still belongs to no subject and contributes to no counter: killed by
+  three, one of them the pre-existing `aSecondImportOfTheSameFileChangesNothing`, which is the
+  cleanest evidence that the ordering is load-bearing rather than stylistic. M4 drops the caveat from
+  the merge copy, killed by the entry-point test. Each run recompiled the file it mutated — the
+  `SwiftCompile` line is in its own log — and each executed 68 tests, so no kill is a mutation that
+  failed to build or a filter that matched nothing.
 
 - [T-1099] **CLOSED 2026-09-10 (agent `restoresafe`) — the terminal recovery export keeps looking
   past a store that opens and then refuses to export.** From `docs/audits/2026-09-05/recovery-export.md`
@@ -318,6 +382,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 - [T-1107] **Two forms put a section label exactly as far from the block above it as from the block it names.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/grouping-spacing.md` (SP-1) and `docs/audits/2026-09-06/request-follow-up.md` (R38).
 
 - [T-1108] **The empty-store startup test replays a startup sequence that is missing one of the operations it asserts production performs.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-06/request-follow-up.md`.
+
+- [T-1117] **Does one iCloud calendar carry the same `EKCalendar.calendarIdentifier` on this user's
+  Mac and iPhone?** Handed out by `callink` 2026-09-10 in [[T-624]]'s closure and used there four
+  times; **the stub is written here 2026-09-11 by `focusimport`, which is [[T-1072]]'s rule and was
+  the one step that closure skipped** — an id that lives only in another entry's prose is invisible
+  to the next agent computing "next free id", and this one was reported as free in a brief. No code
+  is owed. The question is the user's to answer: it needs an EventKit call on their own machine,
+  which raises a TCC prompt addressed to them, and four verification passes have now reported the
+  same unanswered sentence without moving it. The five-minute procedure is in
+  `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`. Whatever the answer, it does not reopen
+  T-624: both halves of that gate landed, and the portable-link branch stays blocked on its own
+  grounds (T-390, plus CloudKit Production since 2026-09-05).
 
 - [T-1081] **CLOSED 2026-09-06 — PDF export painted a note's images on top of its text, and now
   reserves the room for them.** The same defect as [[T-1043]], in the surface that still shipped it.
@@ -4278,41 +4354,38 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   you have, 2. Either way it is one line in one file and the tests that pin it name the sentence
   verbatim, so a change is a two-line diff.
 
-- [T-1043] **Nothing pins that a link write records the evidence [[T-624]]'s gate needs.** Filed
-  2026-09-05 while re-verifying [[T-624]]. Not a bug today; a guard that does not exist. Sibling of
-  [[T-899]] on the other side of the same gate — T-899 guards a third *reader* of a synced
-  `linkedCalendarID`, this guards a third *writer*.
-  Since [[T-624]], a broken link is reported only for an identifier this device has itself seen alive
-  (`CadenceCalendarLinkObservations`). Every path that writes a `linkedCalendarID` therefore has to
-  record the pick, or the link it just made can never be reported broken on the device that made it.
-  Today every path does, and each for a different local reason: `EditListSheet.swift:149` and `:404`
-  call `CadenceCalendarLinkObservations.recordPick` explicitly; both settings surfaces
-  (`SettingsListManagementSections.swift`, `iOSCalendarSettingsSection.swift`) funnel every write
-  through `saveCalendarLinks()`, which ends in `refreshCalendarObservations()`; and
-  `CadenceListEditSnapshot`'s undo restore correctly records nothing, because `observing(...)`'s
-  `.intersection(linkedCalendarIDs)` forgets an identifier no list points at any more. **Three
-  unrelated reasons, no invariant.** A new link-writing surface, or a settings write that skips
-  `saveCalendarLinks()`, silently produces a link this device cannot vouch for, and nothing goes red.
-  The failure is quiet in the worst way: the link works, and only the *report* of its eventual
-  breakage is missing.
-  **What it wants:** the same source-text shape [[T-899]] asks for — every assignment to
-  `.linkedCalendarID` under `Cadence/` is either an unlink (`= ""`), or reaches `recordPick`, or
-  reaches `saveCalendarLinks()`. It has to read `Cadence/iOS/` as **text** for T-899's reason: that
-  tree is inside `#if os(iOS)` and the macOS test target has no symbol for it. Worth folding into
-  T-899's sweep if that lands first — the two want the same file.
-  **Restated for the user 2026-09-06 in `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`, and
-  the rule as worded above is already red at HEAD.** `CadenceArchiveImportService.swift:380` and
-  `:402` write `model.linkedCalendarID = record.linkedCalendarID` and record nothing. They landed
-  with [[T-274]]'s importer on **2026-09-06 — one day after this entry asserted three paths in four
-  files** — so the writer population is now **18 model assignments across five files**, and **four**
-  of them (`CadenceListEditSnapshot.swift:119`/`:131` plus the two above) satisfy none of the three
-  conditions above while being correct. Both pairs *restore a value that was already stored* rather
-  than making a link, and recording nothing is the right answer for both: an imported foreign
-  identifier must read `.unverified`, which is precisely what [[T-1084]] relies on. **The sweep needs
-  a fourth allowance for restore paths**, or it fails on landed, deliberate code. That is worth
-  knowing before the session that writes it starts — and it is the measured argument *for* writing
-  it, since the population grew, in a shape this entry did not anticipate, within 24 hours of being
-  written down as stable.
+- [T-1043] **CLOSED 2026-09-11 (agent `focusimport`) — subsumed: the guard it asked for landed in
+  `a92b659` as the writing half of `CadenceCalendarLinkProvenanceSweepTests`, and nothing is left to
+  build.** Filed 2026-09-05 while re-verifying [[T-624]]: not a bug, a guard that did not exist.
+  Sibling of [[T-899]] on the other side of the same gate — T-899 guards a third *reader* of a
+  synced `linkedCalendarID`, this a third *writer*.
+  **What it asked for, and where each half now lives.** The rule was: every assignment to
+  `.linkedCalendarID` under `Cadence/` either reaches `recordPick`, or reaches
+  `saveCalendarLinks()`, or is an unlink — read as **text**, because `Cadence/iOS/` is inside
+  `#if os(iOS)` and the macOS test target compiles no symbol from it.
+  `everyWriterOfAStoredCalendarLinkRecordsItOrIsALedgeredRestore` is that rule, over a scan of
+  `Cadence/` that attributes each write to its enclosing `func` rather than to the nearest brace —
+  which is the part that makes it work at all, since every settings write sits inside a `switch`
+  whose braces do not contain the `saveCalendarLinks()` that makes it correct.
+  `theSweepReadsTheIOSTreeAsTextAndNotOnlyTheMacOne` pins that the iOS surface was actually reached,
+  `allThreeWriterCategoriesAreStillLoadBearing` that no branch of the rule has lost its last site,
+  and two fixture-only tests pin the detector itself against literal source rather than against repo
+  files. All eight are registered in `CadenceTests/CadenceRealTreeSweepManifest.txt`.
+  **Both of this entry's own corrections were taken, and one was taken by being refused.** The
+  fourth allowance for restore paths that this entry argued for exists —
+  `restoreDeclarations` names `CadenceListEditSnapshot#restore` and
+  `CadenceArchiveImportService#write`, and `everyRestoreAllowanceStillNamesAWriteThatRecordsNothing`
+  fails if either stops being a restore, which is the hole an exemption becomes when it outlives its
+  site. The **unlink** allowance this entry also proposed was measured and left out: every `= ""`
+  write in `Cadence/` is a settings surface already routing through `saveCalendarLinks()`, so that
+  branch would have shipped with no site behind it. A future bare unlink goes red once and is
+  ledgered with its reason, which is cheaper than a permanently unexercised rule. **Do not
+  reintroduce it.**
+  **Nothing else was found open.** Re-read at `a92b659` against the sweep rather than against a
+  report: the rule, the text scan, the iOS reach and the restore allowance are all present and all
+  registered, so there is no residue to carry. Closing an id because the work landed under another
+  one is the correct outcome here; inventing a fourth test to justify the number would be the
+  incorrect one.
   (The memo names this id as *the calendar-link one*; [[T-1072]] records that `T-1043` was handed out
   twice and the other holder is the closed macOS note-image ticket.)
 

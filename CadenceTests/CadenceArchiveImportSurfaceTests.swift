@@ -334,6 +334,226 @@ struct CadenceArchiveImportSurfaceTests {
         }
     }
 
+    // MARK: - The cached focus totals the restored sessions are about (T-1114)
+
+    /// The audit's arithmetic witness, through the real importer and read back from a context that
+    /// has never seen the import: destination task at 10 minutes with one
+    /// `(previousMinutes: 0, minutes: 10)` row, archive adds `(previousMinutes: 10, minutes: 20)`,
+    /// counter ends at 30 rather than at the 10 it was left holding.
+    ///
+    /// **A counter is not an independent field.** `actualMinutes` is a cached total of
+    /// `FocusSessionLog` rows, so an import that restores a task's missing sessions and leaves the
+    /// number alone has restored the minutes into the store and not into anything that shows them
+    /// — including the hours-mode `Goal` progress `GoalContributionResolver` folds them into. The
+    /// merge keeping the destination's *row* is right; keeping its stale derivation is not.
+    @Test func aMergeThatRestoresAMissingFocusSessionRaisesTheTasksCachedTotal() throws {
+        let (archive, container, taskID) = try Self.storeMissingTheArchivesSecondSession()
+
+        try CadenceArchiveImportService.apply(
+            archive,
+            mode: .mergeKeepingExistingRows,
+            in: ModelContext(container)
+        )
+
+        let reader = ModelContext(container)
+        let task = try #require(
+            try reader.fetch(FetchDescriptor<AppTask>()).first { $0.id == taskID }
+        )
+        #expect(task.actualMinutes == 30, "the restored session's minutes are in the store and not on the task")
+        #expect(task.focusSessions?.count == 2)
+        // Merge still means merge: the raise is the derived total, not permission to take the
+        // archive's copy of a field the user has since edited.
+        #expect(task.title == "Renamed after the backup")
+    }
+
+    /// Importing the same archive again lands on the same number. `reconcile(rows:)` is
+    /// `max(counter, min(previousMinutes) + Σminutes)` and therefore idempotent — a restore is
+    /// something people retry, and a second run that added the restored minutes a second time
+    /// would be worse than the defect.
+    @Test func reimportingTheSameArchiveLeavesTheRaisedTotalWhereItIs() throws {
+        let (archive, container, taskID) = try Self.storeMissingTheArchivesSecondSession()
+
+        for _ in 0..<3 {
+            try CadenceArchiveImportService.apply(archive, in: ModelContext(container))
+        }
+
+        let reader = ModelContext(container)
+        let task = try #require(
+            try reader.fetch(FetchDescriptor<AppTask>()).first { $0.id == taskID }
+        )
+        #expect(task.actualMinutes == 30)
+        #expect(task.focusSessions?.count == 2, "a repeat import duplicated the session rows")
+    }
+
+    /// The same shape one level up: a focus session against a list moves `Area.loggedMinutes` and
+    /// `Project.loggedMinutes`, which are the same cached total under a different name.
+    @Test func aRestoredListSessionRaisesTheListsCachedTotalTooForBothKindsOfList() throws {
+        for kind in ["area", "project"] {
+            let source = ModelContext(try CadenceTestStore.container())
+            let area = Area(name: "Home")
+            let project = Project(name: "Kitchen")
+            source.insert(area)
+            source.insert(project)
+            for (index, row) in [(0, 10), (10, 20)].enumerated() {
+                let session = FocusSessionLog(
+                    minutes: row.1,
+                    previousMinutes: row.0,
+                    loggedAt: Date(timeIntervalSince1970: 1_772_000_000 + Double(index)),
+                    dayKey: "2026-02-0\(index + 1)"
+                )
+                if kind == "area" { session.area = area } else { session.project = project }
+                source.insert(session)
+            }
+            area.loggedMinutes = kind == "area" ? 30 : 0
+            project.loggedMinutes = kind == "project" ? 30 : 0
+            try source.save()
+            let archive = try CadenceDataExportService.makeArchive(in: source)
+
+            // The destination holds the first session only, and the counter that matched it.
+            let container = try CadenceTestStore.container()
+            let destination = ModelContext(container)
+            let localArea = Area(name: "Home")
+            localArea.id = area.id
+            let localProject = Project(name: "Kitchen")
+            localProject.id = project.id
+            destination.insert(localArea)
+            destination.insert(localProject)
+            let first = try #require(archive.focusSessions.first { $0.previousMinutes == 0 })
+            let localSession = FocusSessionLog(
+                minutes: first.minutes,
+                previousMinutes: first.previousMinutes,
+                loggedAt: first.loggedAt,
+                dayKey: first.dayKey
+            )
+            localSession.id = first.id
+            if kind == "area" { localSession.area = localArea } else { localSession.project = localProject }
+            destination.insert(localSession)
+            localArea.loggedMinutes = kind == "area" ? 10 : 0
+            localProject.loggedMinutes = kind == "project" ? 10 : 0
+            try destination.save()
+
+            try CadenceArchiveImportService.apply(archive, mode: .mergeKeepingExistingRows, in: destination)
+
+            let reader = ModelContext(container)
+            let raised = kind == "area"
+                ? try #require(try Self.one(Area.self, in: reader)).loggedMinutes
+                : try #require(try Self.one(Project.self, in: reader)).loggedMinutes
+            #expect(raised == 30, "the \(kind)'s cached total did not follow its restored session")
+        }
+    }
+
+    /// **The raise never lowers**, which is what makes it safe to run unattended on a store that
+    /// may be a partial replica. A destination holding more minutes than its own rows can account
+    /// for — a counter raised by a device whose rows have not arrived yet — keeps them, because
+    /// the ledger's total computed from a subset is *too low* and writing it back would destroy
+    /// minutes the counter already had.
+    @Test func aMergeNeverLowersACounterToATotalThePresentRowsCannotAccountFor() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let task = AppTask(title: "Buy milk")
+        task.actualMinutes = 10
+        let session = FocusSessionLog(minutes: 10, previousMinutes: 0, loggedAt: Date(), dayKey: "2026-02-02")
+        session.task = task
+        source.insert(task)
+        source.insert(session)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        // This device's counter says 90 minutes more and it holds no row for them: the shape of a
+        // store still receiving its rows from CloudKit.
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let local = AppTask(title: "Buy milk")
+        local.id = task.id
+        local.actualMinutes = 100
+        destination.insert(local)
+        try destination.save()
+
+        try CadenceArchiveImportService.apply(archive, mode: .mergeKeepingExistingRows, in: destination)
+
+        let reader = ModelContext(container)
+        let after = try #require(try Self.one(AppTask.self, in: reader))
+        #expect(after.actualMinutes == 100, "the import lowered a counter to a partial ledger")
+    }
+
+    /// **Overwrite is where the two rules meet, and neither one is wrong.** Overwrite means the
+    /// archive's copy of a matched row replaces the destination's, counter included — so the
+    /// scalar does go down to the archive's. What it must not do is discard sessions only this
+    /// device has: those rows are not in the archive, are not deleted by any import, and the raise
+    /// puts their minutes back on top of the scalar the archive just wrote.
+    ///
+    /// The property is *coherence*: whatever the mode, the number on screen afterwards is the
+    /// total of the session records the store actually holds. A store left showing the archive's
+    /// 10 beside 100 minutes of retained history would be the "displayed total and retained
+    /// history disagree" case this was asked to rule out.
+    @Test func overwriteTakesTheArchivesScalarAndStillCoversTheSessionsOnlyThisDeviceHas() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let task = AppTask(title: "Buy milk")
+        source.insert(task)
+        CadenceFocusLedger.bank(10, to: task, in: source, now: Date(timeIntervalSince1970: 1_772_000_000))
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        #expect(task.actualMinutes == 10)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let local = AppTask(title: "Buy milk")
+        local.id = task.id
+        destination.insert(local)
+        // The archive's own session, under its own id, so overwrite matches it…
+        let shared = try #require(archive.focusSessions.first)
+        let localShared = FocusSessionLog(
+            minutes: shared.minutes,
+            previousMinutes: shared.previousMinutes,
+            loggedAt: shared.loggedAt,
+            dayKey: shared.dayKey
+        )
+        localShared.id = shared.id
+        localShared.task = local
+        destination.insert(localShared)
+        // …and 90 minutes this device logged afterwards, which the archive has never heard of.
+        CadenceFocusLedger.bank(90, to: local, in: destination, now: Date(timeIntervalSince1970: 1_772_086_400))
+        try destination.save()
+        #expect(local.actualMinutes == 100)
+
+        try CadenceArchiveImportService.apply(
+            archive,
+            mode: .restoreOverwritingExistingRows,
+            in: destination
+        )
+
+        let reader = ModelContext(container)
+        let after = try #require(try Self.one(AppTask.self, in: reader))
+        #expect(after.focusSessions?.count == 2, "an import deleted a session row, which no mode may do")
+        #expect(after.actualMinutes == 100, """
+            overwrite left the archive's scalar standing against 100 minutes of session rows the \
+            store still holds
+            """)
+    }
+
+    /// A store with no focus rows at all is untouched by the pass, and so is a store whose counters
+    /// already agree with their rows. The negative control: a raise that fired on everything would
+    /// satisfy the tests above while being wrong.
+    @Test func anImportOfAStoreWhoseCountersAlreadyAgreeMovesNothing() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let banked = AppTask(title: "Buy milk")
+        source.insert(banked)
+        CadenceFocusLedger.bank(25, to: banked, in: source)
+        let untimed = AppTask(title: "Never focused")
+        untimed.actualMinutes = 7
+        source.insert(untimed)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let container = try CadenceTestStore.container()
+        try CadenceArchiveImportService.apply(archive, in: ModelContext(container))
+
+        let reader = ModelContext(container)
+        let tasks = try reader.fetch(FetchDescriptor<AppTask>())
+        #expect(tasks.first { $0.id == banked.id }?.actualMinutes == 25)
+        #expect(tasks.first { $0.id == untimed.id }?.actualMinutes == 7,
+                "a task with no session rows had its counter rewritten")
+    }
+
     // MARK: - Refusals, and the store they must not touch
 
     /// A reference to a row in neither the archive nor the store is refused, and **nothing is
@@ -886,6 +1106,50 @@ struct CadenceArchiveImportSurfaceTests {
         in modelContext: ModelContext
     ) throws -> Model? {
         try modelContext.fetch(FetchDescriptor<Model>()).first
+    }
+
+    /// The audit's setup, built once for the two tests that read it: a device holding the task and
+    /// its first focus session, and an archive holding a second session it has never seen.
+    ///
+    /// Both stores are consistent with their own rows before the import — the destination's 10 is
+    /// the right answer for the one row it has — so the raise afterwards can only come from the
+    /// row the import restored. The task is also renamed locally, so the same fixture says whether
+    /// the raise leaked into the fields merge mode must leave alone.
+    ///
+    /// Returns the container rather than the context: the assertions read through a second
+    /// `ModelContext` over it, which is the difference between a counter that was committed and
+    /// one that is only correct in the object the importer happened to be holding.
+    private static func storeMissingTheArchivesSecondSession() throws -> (CadenceArchive, ModelContainer, UUID) {
+        let source = ModelContext(try CadenceTestStore.container())
+        let task = AppTask(title: "Buy milk")
+        source.insert(task)
+        CadenceFocusLedger.bank(10, to: task, in: source, now: Date(timeIntervalSince1970: 1_772_000_000))
+        CadenceFocusLedger.bank(20, to: task, in: source, now: Date(timeIntervalSince1970: 1_772_086_400))
+        try source.save()
+        #expect(task.actualMinutes == 30, "the fixture's own source store is not what the ledger says")
+
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let first = try #require(archive.focusSessions.min { $0.loggedAt < $1.loggedAt })
+        #expect(first.previousMinutes == 0 && first.minutes == 10)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let local = AppTask(title: "Renamed after the backup")
+        local.id = task.id
+        local.actualMinutes = 10
+        let localSession = FocusSessionLog(
+            minutes: first.minutes,
+            previousMinutes: first.previousMinutes,
+            loggedAt: first.loggedAt,
+            dayKey: first.dayKey
+        )
+        localSession.id = first.id
+        localSession.task = local
+        destination.insert(local)
+        destination.insert(localSession)
+        try destination.save()
+
+        return (archive, container, task.id)
     }
 
     /// A store that has drifted from its archive: the same task, renamed and moved out of its list.

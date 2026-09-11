@@ -331,6 +331,30 @@ struct CadenceArchiveImportEntryPointTests {
         )
     }
 
+    /// **Both modes carry the one caveat neither of their own sentences covers** ([[T-1114]]).
+    ///
+    /// Logged focus time is a cached total of the individual session records, and the importer
+    /// raises it to match the rows on either side of the import. So merge's "left exactly as they
+    /// are" and overwrite's "replaced by the archive's copy" are both false for that one number,
+    /// in opposite directions, and a chooser that said either without qualification would be
+    /// describing an operation the engine does not perform.
+    ///
+    /// Asserted through the shared constant rather than against a retyped sentence: the point is
+    /// that one fact about the store is spelled once and read by both branches.
+    @Test func bothModesSayThatLoggedFocusTimeFollowsItsSessionRecords() {
+        let note = CadenceArchiveImportPresentation.focusMinutesNote
+        #expect(note.contains("focus"))
+        for mode in CadenceArchiveImportMode.allCases {
+            #expect(CadenceArchiveImportPresentation.modeExplanation(mode).contains(note),
+                    "\(mode.rawValue) does not say what happens to logged focus time")
+        }
+        // The mode sentences still lead; the caveat qualifies them rather than replacing them.
+        #expect(
+            CadenceArchiveImportPresentation.modeExplanation(.mergeKeepingExistingRows)
+                .hasPrefix("Records the archive has and this device does not are added.")
+        )
+    }
+
     /// The summary names the mode's consequence, not one total. Same two counts, two sentences.
     @Test func thePlanSummaryReadsDifferentlyUnderEachImportMode() {
         let merging = Self.plan(mode: .mergeKeepingExistingRows, inserts: ["AppTask": 4], matches: ["AppTask": 9])

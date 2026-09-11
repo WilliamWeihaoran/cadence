@@ -155,6 +155,7 @@ nonisolated enum CadenceArchiveImportService {
         var tally = Tally()
         let wired = write(archive, mode: mode, into: &destination, tally: &tally, in: modelContext)
         wire(wired, using: destination)
+        reconcileFocusCounters(using: destination)
 
         do {
             try modelContext.save()
@@ -953,6 +954,45 @@ nonisolated enum CadenceArchiveImportService {
             model.area = record.areaID.flatMap { destination.areas[$0] }
             model.project = record.projectID.flatMap { destination.projects[$0] }
         }
+    }
+
+    /// Pass three: raise the focus counters the restored session rows have just made too low.
+    ///
+    /// **Why an import has to do this at all** ([[T-1114]]). `AppTask.actualMinutes`,
+    /// `Area.loggedMinutes` and `Project.loggedMinutes` are cached scalars over `FocusSessionLog`
+    /// rows, not independent facts — `FocusSessionLog`'s own note says so and
+    /// `CadenceFocusLedger.reconcile(in:)` is the rule. An import is the one writer that can add a
+    /// subject's rows without touching the subject: in merge mode a matched task keeps the
+    /// destination's copy, sessions it does not have are inserted beside it, and the counter is
+    /// left at the number it held before those sessions existed. A destination task reading 10
+    /// with one `(previousMinutes: 0, minutes: 10)` row, given an archive's second
+    /// `(previousMinutes: 10, minutes: 20)` row, holds 10 while its own ledger says 30 — and
+    /// nothing re-runs the ledger, whose only scheduled caller is
+    /// `PersistenceController.performStartupMaintenance`. The minutes would come back at the next
+    /// launch. Until then a restore has visibly restored less than it restored, and an hours-mode
+    /// `Goal` reading `actualMinutes` is reading the low number.
+    ///
+    /// **In the transaction, not in the post-commit seam.** [[T-1112]] gave the *flow* a
+    /// post-commit effect, but that one exists to reconcile the OS's pending reminders — work that
+    /// is outside the store and must happen after the rows are durable. This is inside the store,
+    /// and a counter that disagrees with its rows should never be committed in the first place:
+    /// running here makes the raise part of the same `save()` as the rows that caused it, so there
+    /// is no window and no second commit to fail on its own. It is also below `importArchive`
+    /// rather than beside it, so a caller reaching for `apply` directly gets it too.
+    ///
+    /// **The rows come from the index, so no fetch can fail here.**
+    /// `CadenceFocusLedger.reconcile(in:)` swallows a failed fetch and answers `false`, which would
+    /// read as "the counters were already right"; `reconcile(rows:)` takes what `DestinationIndex`
+    /// already holds — the destination's rows, fetched before the first insert, plus every row this
+    /// import inserted. Wiring must have happened first: a row whose subject is still `nil`
+    /// belongs to no counter.
+    ///
+    /// Only raising is what makes this safe in **both** modes. Overwrite mode writes the archive's
+    /// scalar over the destination's, and that scalar can be older than sessions this device
+    /// logged since; the raise puts those minutes back rather than letting the archive's number
+    /// stand against the store's own rows.
+    private nonisolated static func reconcileFocusCounters(using destination: DestinationIndex) {
+        CadenceFocusLedger.reconcile(rows: Array(destination.focusSessions.values))
     }
 
     /// One table. Returns the rows pass two still has to wire — always the ones just inserted, and

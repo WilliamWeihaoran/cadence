@@ -744,10 +744,13 @@ nonisolated enum CadenceFocusLedger {
     ///
     /// `bank` already does this for the subject it touches, so a task you focus again heals itself.
     /// This is the pass for the ones you do not — a goal reading `actualMinutes` on a task nobody
-    /// opens again stays wrong until something sweeps the store. Its intended home is
-    /// `PersistenceController.performStartupMaintenance`, beside `DataIntegrityRepairService`; that
-    /// one line is not landed yet (`docs/TODO.md` T-742), so today this is reachable and tested but
-    /// not scheduled.
+    /// opens again stays wrong until something sweeps the store. It runs from
+    /// `PersistenceController.performStartupMaintenance`, beside `DataIntegrityRepairService` —
+    /// this comment said that line "is not landed yet (`docs/TODO.md` T-742)" long after T-742
+    /// landed it, and a stale claim that the sweep is unscheduled is exactly what makes a second
+    /// caller look unnecessary. It is still the *only* scheduled one: nothing re-runs it after a
+    /// write, which is why `CadenceArchiveImportService` reconciles its own rows (see
+    /// `reconcile(rows:)` and [[T-1114]]).
     ///
     /// **Only ever raises**, which is what makes it safe to run at startup with no gate on sync
     /// state — the property `DataIntegrityRepairService`'s doc comment argues every unattended pass
@@ -768,6 +771,26 @@ nonisolated enum CadenceFocusLedger {
         guard let rows = try? context.fetch(FetchDescriptor<FocusSessionLog>()), !rows.isEmpty else {
             return false
         }
+        return reconcile(rows: rows)
+    }
+
+    /// The same raise, over rows the caller already holds.
+    ///
+    /// **Split out for a caller that must not swallow a failed fetch** ([[T-1114]]).
+    /// `reconcile(in:)` answers `false` both for a store whose counters were already right and for
+    /// a store it could not read, which is tolerable at startup — the next launch tries again —
+    /// and is not tolerable inside `CadenceArchiveImportService.apply`, where the rows being
+    /// reconciled are the ones that import is in the middle of inserting and the commit that
+    /// follows is the one the user is told succeeded. That caller has every row in hand already:
+    /// its `DestinationIndex` fetched the destination's rows before the first insert and the
+    /// inserted ones were added to it as they were made. So it passes them, and there is no second
+    /// fetch to fail.
+    ///
+    /// Everything the store-wide pass promises is a property of this function and holds here
+    /// unchanged: it only ever raises, and it is idempotent.
+    @discardableResult
+    static func reconcile(rows: [FocusSessionLog]) -> Bool {
+        guard !rows.isEmpty else { return false }
 
         var tasks: [ObjectIdentifier: (subject: AppTask, rows: [FocusSessionLog])] = [:]
         var areas: [ObjectIdentifier: (subject: Area, rows: [FocusSessionLog])] = [:]

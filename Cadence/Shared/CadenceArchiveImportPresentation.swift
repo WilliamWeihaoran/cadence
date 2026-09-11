@@ -90,19 +90,38 @@ nonisolated enum CadenceArchiveImportPresentation {
         }
     }
 
+    /// The one number neither mode's own sentence describes correctly, said once and appended to
+    /// both ([[T-1114]]).
+    ///
+    /// Logged focus time is not a field an import can leave alone or replace: it is a cached total
+    /// of `FocusSessionLog` rows, and `CadenceArchiveImportService` raises it to match the rows on
+    /// either side of the import. So merge's "left exactly as they are" is false for it — a
+    /// restored session this device was missing adds its minutes to a task the merge otherwise did
+    /// not touch — and so is overwrite's "replaced by the archive's copy", since a session this
+    /// device logged after the archive was written still counts.
+    ///
+    /// One constant rather than a clause in each branch: this is one fact about the store, and a
+    /// consequence spelled twice is one that comes to mean two things — the reason `modeRows`
+    /// reads `modeExplanation` rather than restating it.
+    static let focusMinutesNote = """
+        Logged focus time is a total of the individual focus sessions, so it rises to include \
+        every session either copy has.
+        """
+
     static func modeExplanation(_ mode: CadenceArchiveImportMode) -> String {
         switch mode {
         case .mergeKeepingExistingRows:
             return """
                 Records the archive has and this device does not are added. Records you already \
                 have are left exactly as they are, including every change made since the archive \
-                was written.
+                was written. \(focusMinutesNote)
                 """
         case .restoreOverwritingExistingRows:
             return """
                 Records the archive has and this device does not are added, and records you \
                 already have are replaced by the archive's copy — changes made to them since the \
-                archive was written are lost. Records the archive never had are still kept.
+                archive was written are lost. Records the archive never had are still kept. \
+                \(focusMinutesNote)
                 """
         }
     }
