@@ -20,6 +20,7 @@ LAUNCHER = SCRIPT_DIR / "run-cadence-mcp.sh"
 WRITE_TOOLS = {
     "create_context",
     "create_container",
+    "update_container_columns",
     "create_task",
     "update_task",
     "schedule_task",
@@ -911,6 +912,100 @@ def main() -> int:
         containers_after = page_items(call_ok(98, "list_containers", {"limit": 3}), "list_containers")
         if [container["id"] for container in containers_after] != [board_id]:
             raise AssertionError(f"expected list_containers to see the seeded board, got {containers_after}")
+
+        # --- Re-shaping a board that already exists (T-1095) -------------------------------
+        # T-799 could set a list's columns only at creation. These run on the board seeded just
+        # above, so they must stay between it and the bulk-cancel block that asserts the newest
+        # audit entry.
+        board_target = {"containerKind": "project", "containerId": board_id}
+        call_error(
+            100,
+            "update_container_columns",
+            board_target,
+            "no column change requested",
+            "No valid changes were provided.",
+        )
+        call_error(
+            101,
+            "update_container_columns",
+            board_target | {"columnName": "Nowhere", "colorHex": "#4a9eff"},
+            "unknown column",
+            "No column named Nowhere on this list. Expected one of: Default, Backlog, In Progress, Shipped.",
+        )
+        call_error(
+            102,
+            "update_container_columns",
+            board_target | {"columnName": "Default", "newName": "Inbox"},
+            "renaming Default",
+            "The Default column cannot be renamed",
+        )
+        call_error(
+            103,
+            "update_container_columns",
+            board_target | {"columnName": "Default", "isArchived": True},
+            "archiving Default",
+            "The Default column carries no isCompleted or isArchived",
+        )
+        call_error(
+            104,
+            "update_container_columns",
+            board_target | {"columnName": "Shipped", "newName": "Backlog"},
+            "rename onto a name another column holds",
+            "Duplicate section name: Backlog.",
+        )
+        call_error(
+            105,
+            "update_container_columns",
+            board_target | {"columnOrder": ["Default", "Backlog"]},
+            "partial columnOrder",
+            "columnOrder left out In Progress, Shipped.",
+        )
+
+        # The rename, and the half of it that is not about columns at all: `AppTask.sectionName` is
+        # a plain string, so the card filed into `In Progress` above has to follow the column or it
+        # is left naming one that no longer exists and is drawn nowhere.
+        renamed = call_ok(106, "update_container_columns", board_target | {
+            "columnName": "In Progress",
+            "newName": "Doing",
+            "colorHex": "F2A65A",
+        })
+        check_keys(renamed, CONTAINER_SUMMARY_KEYS, set(), "update_container_columns summary")
+        for section in renamed["sections"]:
+            check_keys(section, SECTION_SUMMARY_KEYS, set(), "update_container_columns section")
+        if [section["name"] for section in renamed["sections"]] != ["Default", "Backlog", "Doing", "Shipped"]:
+            raise AssertionError(f"expected the column renamed in place, got {renamed['sections']}")
+        doing = next(section for section in renamed["sections"] if section["name"] == "Doing")
+        if doing["colorHex"] != "#f2a65a":
+            raise AssertionError(f"expected a normalised column colorHex, got {doing}")
+        if doing["taskCount"] != 1:
+            raise AssertionError(f"expected the card to follow its renamed column, got {doing}")
+        recarded = call_ok(107, "get_task", {"taskId": carded["summary"]["id"]})
+        if recarded["summary"]["sectionName"] != "Doing":
+            raise AssertionError(f"expected the card re-filed under the new name, got {recarded['summary']}")
+
+        reshaped = call_ok(108, "update_container_columns", board_target | {
+            "addColumns": "Blocked",
+            "columnOrder": ["Default", "Blocked", "Doing", "Backlog", "Shipped"],
+        })
+        if [section["name"] for section in reshaped["sections"]] != ["Default", "Blocked", "Doing", "Backlog", "Shipped"]:
+            raise AssertionError(f"expected the requested column order, got {reshaped['sections']}")
+
+        # An archived column keeps its cards and stays in the blob; it drops out of `sectionNames`,
+        # which is what `create_task` validates a `sectionName` against.
+        archived = call_ok(109, "update_container_columns", board_target | {
+            "columnName": "Shipped",
+            "isArchived": True,
+        })
+        shipped = next(section for section in archived["sections"] if section["name"] == "Shipped")
+        if not shipped["isArchived"]:
+            raise AssertionError(f"expected Shipped archived, got {shipped}")
+        call_error(
+            110,
+            "update_container_columns",
+            board_target | {"columnName": "Blocked", "newName": "Blocked"},
+            "a rename to the name the column already holds",
+            "No valid changes were provided.",
+        )
 
         # --- The five write tools that ran nowhere at all (T-259) ------------------------
         # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are

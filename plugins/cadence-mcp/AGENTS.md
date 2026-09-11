@@ -7,7 +7,7 @@ files as text and pins the tool-name and write-gating contracts, but executes no
 
 It dispatched **21 of the router's 30 arms** until T-259 — five of the eight write tools then on
 the surface (`update_task`, `schedule_task`, `complete_task`, `reopen_task`, `cancel_task`) were run
-by nothing at all. It now dispatches all 32, and, more to the point, **it checks that it does**: every
+by nothing at all. It now dispatches all 33, and, more to the point, **it checks that it does**: every
 `tools/call` it sends is recorded in `DISPATCHED`, and the run fails if that set does not cover the
 server's own `tools/list`. Adding a router arm and forgetting to exercise it is now a red smoke
 test rather than a number nobody was counting. Keep that guard — a Swift test pins its presence
@@ -30,6 +30,18 @@ one of them, and the run checks the resulting `CadenceContextRef` / `CadenceCont
 Those two calls sit **after** the empty-store assertions that precede them and **before** the
 bulk-cancel block, which asserts the newest audit entry — moving them breaks both.
 
+T-1095's `update_container_columns` block sits in the same window and for the same reason, and it
+re-shapes *that* seeded board rather than one of its own: six refusals, then a rename, an
+add-plus-reorder and an archive. The rename check is the one worth keeping whole — it asserts the
+full column-name list and that the seeded card now reads `Doing`, because a rename that does not
+re-file its cards does not merely lose the card, it grows a **phantom column** back out of
+`CadenceReadService`'s `extraSections`, which an assertion on "Doing exists" would pass.
+
+`scripts/run-cadence-mcp.sh`'s staleness check now watches `Cadence/Services` and `Cadence/Shared`
+as whole directories. It named three files out of the fourteen-odd the target actually compiles, so
+editing any of the others left the warm binary stale and the next smoke run measuring the previous
+build — the failure mode this plugin's whole value depends on not having.
+
 This file used to say the plugin "should not be touched during unrelated refactors". Read that as
 scope, not as a ban: nothing here needs to change for a UI refactor, but the smoke test is what
 you run to verify one that reached the MCP boundary, and a tool rename lands in its expectations
@@ -40,7 +52,7 @@ too. The boundary's rules live in `CadenceMCPServer/AGENTS.md`.
 - Keep scripts deterministic and safe to run repeatedly.
 - Do not assume the macOS app is open unless the script explicitly checks/launches it.
 - Preserve command-line output that other agents or smoke tests parse.
-- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 32 tool
+- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 33 tool
   names are a contract in three places — the definitions, the router's `case` arms, and this
   smoke test — and the first two can disagree while compiling.
 - A new tool means a new dispatch here, not only a new name in `EXPECTED_TOOLS`. The coverage

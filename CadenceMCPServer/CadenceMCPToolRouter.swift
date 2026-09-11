@@ -210,6 +210,22 @@ struct CadenceMCPToolRouter {
                 sectionNames: try arguments.flexibleStringArray("sectionNames")
             )))
 
+        case "update_container_columns":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.updateContainerColumns(options: CadenceUpdateContainerColumnsOptions(
+                containerKind: try arguments.requiredString("containerKind"),
+                containerId: try arguments.requiredString("containerId"),
+                columnName: arguments.string("columnName"),
+                newName: arguments.string("newName"),
+                colorHex: arguments.string("colorHex"),
+                dueDate: try arguments.dateKey("dueDate"),
+                clearDueDate: arguments.bool("clearDueDate") ?? false,
+                isCompleted: arguments.bool("isCompleted"),
+                isArchived: arguments.bool("isArchived"),
+                addColumns: try arguments.flexibleStringArray("addColumns"),
+                columnOrder: try arguments.flexibleStringArray("columnOrder")
+            )))
+
         case "create_task":
             let writeService = try requireWriteService(for: name)
             return try encode(writeService.createTask(options: CadenceCreateTaskOptions(

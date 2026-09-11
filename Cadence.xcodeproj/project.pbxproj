@@ -51,6 +51,9 @@
 		A10000002FCE00000000022C /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000022B /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift */; };
 		A10000002FCE00000000022D /* Cadence/Services/CadenceHabitCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000118 /* Cadence/Services/CadenceHabitCompletionStore.swift */; };
 		A10000002FCE000000000230 /* Cadence/Models/TaskOrdering.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000130 /* Cadence/Models/TaskOrdering.swift */; };
+		A10000002FCE000000000234 /* Cadence/Shared/CadencePendingChangePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000231 /* Cadence/Shared/CadencePendingChangePersistence.swift */; };
+		A10000002FCE000000000235 /* Cadence/Shared/CadenceSectionConfigMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000232 /* Cadence/Shared/CadenceSectionConfigMerge.swift */; };
+		A10000002FCE000000000236 /* Cadence/Shared/CadenceSectionEditingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000233 /* Cadence/Shared/CadenceSectionEditingSupport.swift */; };
 		B10000002FCE000000000201 /* CadenceWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000101 /* CadenceWidgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B10000002FCE000000000202 /* Cadence/Services/CadenceStoreSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000102 /* Cadence/Services/CadenceStoreSupport.swift */; };
 		B10000002FCE000000000203 /* Cadence/Services/CadenceWidgetRefreshCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000103 /* Cadence/Services/CadenceWidgetRefreshCenter.swift */; };
@@ -177,6 +180,9 @@
 		A10000002FCE000000000130 /* Cadence/Models/TaskOrdering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/TaskOrdering.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000199 /* Cadence/Shared/Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/Theme.swift; sourceTree = "<group>"; };
 		A10000002FCE00000000022B /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000231 /* Cadence/Shared/CadencePendingChangePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadencePendingChangePersistence.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000232 /* Cadence/Shared/CadenceSectionConfigMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceSectionConfigMerge.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000233 /* Cadence/Shared/CadenceSectionEditingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceSectionEditingSupport.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000101 /* CadenceWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CadenceWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000002FCE000000000102 /* Cadence/Services/CadenceStoreSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceStoreSupport.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000103 /* Cadence/Services/CadenceWidgetRefreshCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceWidgetRefreshCenter.swift; sourceTree = "<group>"; };
@@ -338,6 +344,9 @@
 				A10000002FCE000000000117 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift */,
 				A10000002FCE000000000118 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift */,
 				A10000002FCE00000000022B /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift */,
+				A10000002FCE000000000231 /* Cadence/Shared/CadencePendingChangePersistence.swift */,
+				A10000002FCE000000000232 /* Cadence/Shared/CadenceSectionConfigMerge.swift */,
+				A10000002FCE000000000233 /* Cadence/Shared/CadenceSectionEditingSupport.swift */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -643,6 +652,9 @@
 				A10000002FCE000000000217 /* Cadence/Services/MCPReadOnly/CadenceReadService.swift in Sources */,
 				A10000002FCE000000000219 /* Cadence/Services/MCPReadOnly/CadenceWriteService.swift in Sources */,
 				A10000002FCE00000000022C /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift in Sources */,
+				A10000002FCE000000000234 /* Cadence/Shared/CadencePendingChangePersistence.swift in Sources */,
+				A10000002FCE000000000235 /* Cadence/Shared/CadenceSectionConfigMerge.swift in Sources */,
+				A10000002FCE000000000236 /* Cadence/Shared/CadenceSectionEditingSupport.swift in Sources */,
 				A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */,
 				A10000002FCE00000000021B /* CadenceMCPToolDefinitions.swift in Sources */,
 				A10000002FCE00000000021C /* CadenceMCPArgumentParsing.swift in Sources */,

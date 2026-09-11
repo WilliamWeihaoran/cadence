@@ -16,6 +16,7 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case noChanges
     case cannotCompleteCancelledTask(String)
     case sectionNotFound(String, [String])
+    case columnNotFound(String, [String])
     case tagsUnavailable
 
     var errorDescription: String? {
@@ -51,6 +52,8 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
                 return "Invalid sectionName: \(name). An inbox task has no sections."
             }
             return "Invalid sectionName: \(name). Expected one of: \(available.joined(separator: ", "))."
+        case .columnNotFound(let name, let available):
+            return "No column named \(name) on this list. Expected one of: \(available.joined(separator: ", "))."
         case .tagsUnavailable:
             return "Tags could not be read, so nothing was written."
         }
@@ -123,6 +126,38 @@ nonisolated struct CadenceCreateContainerOptions: Sendable {
     var sectionNames: [String]? = nil
 }
 
+/// A change to the kanban columns of a list that already exists (T-1095).
+///
+/// **Columns are addressed by name, because a name is all a caller can see.**
+/// `CadenceSectionSummary` — the only shape `get_container_summary`, `create_container` and this
+/// tool answer columns in — carries `name`, `colorHex`, `dueDate`, `isCompleted`, `isArchived` and
+/// three counts, and no `uuid`. Exposing the stored uuid so a caller could address a column by
+/// identity is a response-schema change with its own version bump; until then, addressing by
+/// anything else would be asking for a value this surface has never returned.
+///
+/// **There is no `removeColumns`, deliberately.** Archiving a column hides it from
+/// `sectionNames` and is reversible from this same tool; removing one destroys its colour, due
+/// date and lifecycle flags with no undo and no confirmation, on a path whose only record is
+/// `mcp-audit.log`. That is the decision `docs/TODO.md` T-1095 asks be taken separately rather
+/// than ridden in on a column editor.
+nonisolated struct CadenceUpdateContainerColumnsOptions: Sendable {
+    var containerKind: String
+    var containerId: String
+    /// The existing column every per-column field below applies to.
+    var columnName: String? = nil
+    var newName: String? = nil
+    var colorHex: String? = nil
+    var dueDate: String? = nil
+    var clearDueDate: Bool = false
+    var isCompleted: Bool? = nil
+    var isArchived: Bool? = nil
+    /// New columns, appended in the order given, after any rename in this same call.
+    var addColumns: [String]? = nil
+    /// The complete new order, by name, as the list reads *after* this call's rename and
+    /// additions. A partial order is refused rather than guessed at.
+    var columnOrder: [String]? = nil
+}
+
 private struct PendingAuditEntry {
     let tool: String
     let entityType: String
@@ -146,6 +181,13 @@ private struct PendingAuditEntry {
     static func container(kind: String, id: UUID, summary: String) -> PendingAuditEntry {
         PendingAuditEntry(tool: "create_container", entityType: kind, entityId: id.uuidString, summary: summary)
     }
+
+    /// Same `entityType` as `container(kind:id:summary:)` — the row that changed is the area or the
+    /// project, not the column, which is not a row at all (`Cadence/Models/AGENTS.md`: "Sections
+    /// Are Not A Model"). Only `tool` distinguishes the two entries in `mcp-audit.log`.
+    static func containerColumns(kind: String, id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "update_container_columns", entityType: kind, entityId: id.uuidString, summary: summary)
+    }
 }
 
 @MainActor
@@ -154,6 +196,12 @@ final class CadenceWriteService {
     private let readService: CadenceReadService
     private let notifiesExternalWrites: Bool
     private let auditLogger: CadenceMCPAuditLogger?
+
+    /// How a write is committed. A parameter for the reason every `commit:` in this repository is
+    /// one: a `save()` that throws cannot be provoked out of an in-memory container, and
+    /// `updateContainerColumns`' undo — the columns and the cards put back — is an undo path no
+    /// test could otherwise reach.
+    private let commit: (ModelContext) throws -> Void
 
     /// Startup steps executed by *this* instance, plus any its private read service ran. `0` once
     /// the caller has said the container factory already prepared the store (T-309).
@@ -167,7 +215,8 @@ final class CadenceWriteService {
         container: ModelContainer,
         notifiesExternalWrites: Bool = false,
         auditLogger: CadenceMCPAuditLogger? = nil,
-        preparesStore: Bool = true
+        preparesStore: Bool = true,
+        commit: @escaping (ModelContext) throws -> Void = { try $0.save() }
     ) {
         let context = ModelContext(container)
         let steps = preparesStore
@@ -177,6 +226,7 @@ final class CadenceWriteService {
         self.readService = CadenceReadService(context: context, performsMigrations: false)
         self.notifiesExternalWrites = notifiesExternalWrites
         self.auditLogger = auditLogger
+        self.commit = commit
         self.executedStartupStepCount = steps + readService.executedStartupStepCount
     }
 
@@ -184,7 +234,8 @@ final class CadenceWriteService {
         context: ModelContext,
         notifiesExternalWrites: Bool = false,
         auditLogger: CadenceMCPAuditLogger? = nil,
-        preparesStore: Bool = true
+        preparesStore: Bool = true,
+        commit: @escaping (ModelContext) throws -> Void = { try $0.save() }
     ) {
         let steps = preparesStore
             ? CadenceMCPStorePreparation.prepare(in: context, source: "mcp-write-service-context")
@@ -193,6 +244,7 @@ final class CadenceWriteService {
         self.readService = CadenceReadService(context: context, performsMigrations: false)
         self.notifiesExternalWrites = notifiesExternalWrites
         self.auditLogger = auditLogger
+        self.commit = commit
         self.executedStartupStepCount = steps + readService.executedStartupStepCount
     }
 
@@ -292,6 +344,228 @@ final class CadenceWriteService {
 
         try saveNotifyAndAudit(.container(kind: kind, id: id, summary: "Created \(kind): \(name)"))
         return try readService.containerSummary(kind: kind, id: id.uuidString)
+    }
+
+    /// Change the kanban columns of a list that already exists: add, rename, recolour, redate,
+    /// archive and reorder (T-1095).
+    ///
+    /// **Why three `Cadence/Shared/` files joined this target's Sources phase for it.**
+    /// `docs/TODO.md` T-1095 predicted one — `CadenceSectionConfigMerge` — on the grounds that
+    /// mutating an existing list "genuinely needs `base`/`edited`/`current`". **That reason is
+    /// wrong, and it is worth writing down why**, because the correct reasons are different and
+    /// stronger. This call reads the columns and writes them inside one synchronous frame, so
+    /// `base == current` and the merge degenerates to "apply this edit" exactly as it does for
+    /// `createContainer` — the case `mutateSectionConfigs`' own comment names. A caller cannot
+    /// supply a real `base` either: `CadenceSectionSummary` has never carried a column `uuid`, so
+    /// an MCP caller addresses a column by name and holds no snapshot this surface could reconcile.
+    ///
+    /// What does justify the coupling:
+    ///
+    /// - **`CadenceSectionEditingSupport.applySectionNameChanges` is not optional.**
+    ///   `AppTask.sectionName` is a plain string, so nothing re-points a card when its column is
+    ///   renamed. Without it a rename here would strand every card in the column on a name no
+    ///   column has — which `CadenceTaskQuerySupport.sectionGroups` draws nowhere at all. That is
+    ///   the defect T-1053 fixed on iOS, and it is not a thing a hand-rolled column editor at this
+    ///   boundary would have remembered.
+    /// - **`mutateSectionConfigs` carries the T-915 guard**: it compares what the *setter would
+    ///   store* against what is stored, so a write whose only effect the container's normaliser
+    ///   discards does not re-serialise `sectionConfigsRaw` and push a CloudKit record. This
+    ///   process writes the store the running app has open; a spurious record here is not free.
+    /// - **`CadencePendingChangePersistence.commitEdit` gives the undo this side of the boundary
+    ///   has never had.** The MCP write path's equivalent of the app's "name the failure on
+    ///   screen" is a thrown error rendered as an `isError` tool response, which it already had.
+    ///   What it lacked is the other half: a refused `save()` used to leave the mutation *pending*
+    ///   on a long-lived `ModelContext` for the next tool call's `save()` to commit. The columns go
+    ///   back, and the cards go back with them, before the caller is told.
+    ///
+    /// **Everything is validated before the model is touched.** `plannedSectionConfigs` builds the
+    /// whole resulting array and throws out of a pure function, so a refusal in the reorder leg
+    /// cannot leave a rename half-applied in the context — the single-write shape the per-operation
+    /// helpers (`addSectionConfig`, `updateSectionConfig`) could not give, since each writes
+    /// separately.
+    ///
+    /// **The refusals are `create_container`'s argument one door along.** The container's
+    /// normaliser silently drops a blank name, a case-insensitive duplicate, and `isCompleted` /
+    /// `isArchived` on Default; every one of those is refused here instead, because a caller who
+    /// only ever reads the word "success" cannot notice a dropped argument.
+    func updateContainerColumns(options: CadenceUpdateContainerColumnsOptions) throws -> CadenceContainerSummary {
+        let kind = try normalizedContainerKind(options.containerKind)
+        guard let resolved = try resolveContainer(kind: kind, id: options.containerId) else {
+            throw CadenceReadError.incompleteContainerFilter
+        }
+        let container: any CadenceSectionConfigContainer
+        let containerID: UUID
+        let containerName: String
+        // The list's own `tasks` edge rather than a filtered fetch of the whole table: a card can
+        // only name a column of the list it is in, and walking the edge is the read this target's
+        // guide asks for (`CadenceMCPServer/AGENTS.md`, "Reads go through fetchAll / fetchFirst").
+        let tasks: [AppTask]
+        switch resolved {
+        case .area(let area):
+            container = area
+            containerID = area.id
+            containerName = area.name
+            tasks = area.tasks ?? []
+        case .project(let project):
+            container = project
+            containerID = project.id
+            containerName = project.name
+            tasks = project.tasks ?? []
+        }
+
+        let previous = container.sectionConfigs
+        let planned = try plannedSectionConfigs(from: previous, options: options)
+
+        container.mutateSectionConfigs { _ in planned }
+        // `mutateSectionConfigs` declines a write that would store what is already stored, so this
+        // is the answer to "you asked for the colour it already has": nothing changed, said as a
+        // refusal rather than as a success with no effect.
+        let stored = container.sectionConfigs
+        guard stored != previous else { throw CadenceWriteError.noChanges }
+
+        let moves = CadenceSectionConfigMerge.sectionNameMoves(base: previous, merged: stored)
+        let movedTaskCount = CadenceSectionEditingSupport.applySectionNameChanges(
+            renames: moves.renames,
+            removedNames: moves.removedNames,
+            to: tasks
+        )
+
+        var summary = "Updated \(kind) columns: \(containerName) — \(stored.map(\.name).joined(separator: ", "))"
+        if movedTaskCount > 0 {
+            summary += " (\(movedTaskCount) re-filed)"
+        }
+        try saveNotifyAndAudit([.containerColumns(kind: kind, id: containerID, summary: summary)]) {
+            container.sectionConfigs = previous
+            _ = CadenceSectionEditingSupport.applySectionNameChanges(
+                renames: moves.renames.map { (from: $0.to, to: $0.from) },
+                removedNames: [],
+                to: tasks
+            )
+        }
+        return try readService.containerSummary(kind: kind, id: containerID.uuidString)
+    }
+
+    /// The columns this request resolves to, or the first refusal it hits. Touches no model.
+    private func plannedSectionConfigs(
+        from current: [TaskSectionConfig],
+        options: CadenceUpdateContainerColumnsOptions
+    ) throws -> [TaskSectionConfig] {
+        let requestedColumn = CadenceMCPServiceSupport.normalizedOptionalText(options.columnName)
+        let newName = try requiredColumnName(options.newName)
+        let colorHex = try normalizedOptionalColorHex(options.colorHex)
+        let dueDate = try validatedOptionalDate(options.dueDate)
+        let addColumns = try CadenceMCPServiceSupport.normalizedSectionNames(options.addColumns)
+        let columnOrder = try CadenceMCPServiceSupport.normalizedSectionNames(options.columnOrder)
+
+        if options.clearDueDate, dueDate != nil {
+            throw CadenceWriteError.invalidCombination(
+                "dueDate and clearDueDate cannot both be sent for one column."
+            )
+        }
+
+        let editsOneColumn = newName != nil || colorHex != nil || dueDate != nil || options.clearDueDate
+            || options.isCompleted != nil || options.isArchived != nil
+        guard editsOneColumn || addColumns != nil || columnOrder != nil else {
+            throw CadenceWriteError.noChanges
+        }
+        if editsOneColumn, requestedColumn == nil {
+            throw CadenceWriteError.invalidCombination(
+                "columnName names the column newName, colorHex, dueDate, clearDueDate, isCompleted and isArchived apply to, and is required whenever one of them is sent."
+            )
+        }
+        if requestedColumn != nil, !editsOneColumn {
+            throw CadenceWriteError.invalidCombination(
+                "columnName was sent with nothing to change on it. Send one of newName, colorHex, dueDate, clearDueDate, isCompleted or isArchived beside it."
+            )
+        }
+
+        var planned = current
+        if let requestedColumn {
+            guard let index = planned.firstIndex(where: {
+                $0.name.caseInsensitiveCompare(requestedColumn) == .orderedSame
+            }) else {
+                // Every column, archived ones included: `sectionNames` hides an archived column,
+                // and un-archiving one is a thing this tool is for.
+                throw CadenceWriteError.columnNotFound(requestedColumn, planned.map(\.name))
+            }
+            var config = planned[index]
+            if config.isDefault {
+                if newName != nil {
+                    throw CadenceWriteError.invalidCombination(
+                        "The \(TaskSectionDefaults.defaultName) column cannot be renamed: every task with no section name lands in it, and the list re-creates it under that name on the very next read, so a rename leaves two columns rather than one."
+                    )
+                }
+                if options.isCompleted != nil || options.isArchived != nil {
+                    throw CadenceWriteError.invalidCombination(
+                        "The \(TaskSectionDefaults.defaultName) column carries no isCompleted or isArchived: it is the bucket every task with no section name falls into, so the list forces both false on every read and every write. See TaskSectionConfig.supportsLifecycle."
+                    )
+                }
+            }
+            if let newName {
+                let taken = planned.contains {
+                    $0.uuid != config.uuid && $0.name.caseInsensitiveCompare(newName) == .orderedSame
+                }
+                guard !taken else { throw CadenceWriteError.duplicateSectionName(newName) }
+                config.name = newName
+            }
+            if let colorHex { config.colorHex = colorHex }
+            if options.clearDueDate {
+                config.dueDate = ""
+            } else if let dueDate {
+                config.dueDate = dueDate
+            }
+            if let isCompleted = options.isCompleted { config.isCompleted = isCompleted }
+            if let isArchived = options.isArchived { config.isArchived = isArchived }
+            planned[index] = config
+        }
+
+        for name in addColumns ?? [] {
+            guard !planned.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+                throw CadenceWriteError.duplicateSectionName(name)
+            }
+            planned.append(TaskSectionConfig(name: name))
+        }
+
+        guard let columnOrder else { return planned }
+        let plannedNames = planned.map(\.name)
+        var remaining = planned
+        var ordered: [TaskSectionConfig] = []
+        for name in columnOrder {
+            guard let index = remaining.firstIndex(where: {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+            }) else {
+                throw CadenceWriteError.invalidCombination(
+                    "columnOrder names \(name), which this list has no column for once this call's rename and additions are applied. It must name every column exactly once: \(plannedNames.joined(separator: ", "))."
+                )
+            }
+            ordered.append(remaining.remove(at: index))
+        }
+        guard remaining.isEmpty else {
+            throw CadenceWriteError.invalidCombination(
+                "columnOrder left out \(remaining.map(\.name).joined(separator: ", ")). It must name every column exactly once: \(plannedNames.joined(separator: ", "))."
+            )
+        }
+        // A partial order is refused above rather than guessed at, and Default is pinned here for
+        // the same reason: the container's normaliser moves it to index 0 on every write, so any
+        // other position the caller asked for would not be what got stored.
+        guard ordered.first?.isDefault == true else {
+            throw CadenceWriteError.invalidCombination(
+                "columnOrder must start with \(TaskSectionDefaults.defaultName): the list forces that column to the front on every read and every write, so any other position for it would not be stored."
+            )
+        }
+        return ordered
+    }
+
+    /// A column name the caller sent, refused rather than dropped when it trims to nothing.
+    ///
+    /// `Area.normalizedSectionConfigs` discards a blank name, which on iOS used to make
+    /// `updateSectionConfig(uuid:) { $0.name = "   " }` a *delete* (T-1053). `CadenceSectionConfigMerge`
+    /// withholds it instead. Neither is the right answer to a request: this surface says so.
+    private func requiredColumnName(_ value: String?) throws -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw CadenceWriteError.emptySectionName }
+        return trimmed
     }
 
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {
@@ -611,8 +885,16 @@ final class CadenceWriteService {
         try saveNotifyAndAudit([entry])
     }
 
-    private func saveNotifyAndAudit(_ entries: [PendingAuditEntry]) throws {
-        try context.save()
+    /// Commit, wake the app, and record what was written.
+    ///
+    /// **`undo` is what a refused commit puts back**, and it defaults to nothing because that is
+    /// the honest description of every caller except `updateContainerColumns`: they *insert*, and
+    /// an insert whose commit throws is still pending on this service's long-lived `ModelContext`
+    /// for the next tool call's `save()` to take. `CadencePendingChangePersistence.commitInsert` is
+    /// the fix for those and it is now compiled into this target; doing the sweep is
+    /// `docs/TODO.md` T-1121 rather than a rider on a column editor.
+    private func saveNotifyAndAudit(_ entries: [PendingAuditEntry], undo: () -> Void = {}) throws {
+        try CadencePendingChangePersistence.commitEdit(in: context, commit: commit, undo: undo)
         if notifiesExternalWrites {
             CadenceModelContainerFactory.notifyExternalWrite()
         }

@@ -37,10 +37,16 @@ enum CadenceMCPToolDefinitions {
     // arrives without a version change is discoverable only by calling a tool and reading the
     // error — and the additive half of semver exists so that a client can tell "older than I need"
     // from "broken" without doing that.
-    private static let serverVersion = "0.7.0"
+    // 0.8.0, on 0.7.0's own argument one tool later: `update_container_columns` can change the
+    // kanban columns of a list that already exists (T-1095), where before this surface could only
+    // set them at creation. Additive again — no field moved, no response shape changed — and taken
+    // for the same reason: "can this server re-shape a board it did not just create?" is a
+    // capability question, and the only way a client can ask one is the version.
+    private static let serverVersion = "0.8.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
+        "update_container_columns",
         "create_task",
         "update_task",
         "schedule_task",
@@ -199,6 +205,19 @@ enum CadenceMCPToolDefinitions {
                 "dueDate": dateProperty("Optional due date, yyyy-MM-dd or natural day. Projects only — an area is ongoing and carries no due date, and sending this with containerKind area is rejected."),
                 "sectionNames": flexibleStringArrayProperty("Optional kanban column names, in order. Each must be non-empty and unique within the list; a blank or repeated name is rejected rather than dropped. A column named Default always exists and is prepended when this list omits it, because every task with no section name lands in it."),
             ], required: ["containerKind", "name"])),
+            Tool(name: "update_container_columns", description: "Change the kanban columns of a Cadence area or project that already exists: add, rename, recolour, redate, archive, complete and reorder. Answers the same summary get_container_summary does. Columns are addressed by name. There is no removal — archive a column instead.", inputSchema: schema([
+                "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
+                "containerId": uuidProperty("Area/project UUID."),
+                "columnName": stringProperty("The existing column every field below it applies to, matched case-insensitively. Archived columns are matchable, which is how one is un-archived. Required whenever newName, colorHex, dueDate, clearDueDate, isCompleted or isArchived is sent."),
+                "newName": stringProperty("Optional new name for columnName. Must be non-empty and not already held by another column; a blank or colliding name is rejected rather than dropped. The Default column cannot be renamed.", minLength: 1),
+                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff for columnName. A value that is not one is rejected, not replaced by a default."),
+                "dueDate": dateProperty("Optional due date for columnName, yyyy-MM-dd or natural day."),
+                "clearDueDate": booleanProperty("Set true to clear columnName's due date."),
+                "isCompleted": booleanProperty("Optional completed flag for columnName. Rejected for the Default column, which carries neither lifecycle flag. Note this sets the flag only; it settles no tasks."),
+                "isArchived": booleanProperty("Optional archived flag for columnName. An archived column stays in the list and keeps its cards but is hidden from the board. Rejected for the Default column."),
+                "addColumns": flexibleStringArrayProperty("Optional new column names, appended in order after any rename in this same call. Each must be non-empty and not already held; a blank, repeated or colliding name is rejected rather than dropped."),
+                "columnOrder": flexibleStringArrayProperty("Optional complete new order, by name, as the list reads after this call's rename and additions. It must name every column exactly once and start with Default, which the list pins to the front on every write. A partial order is rejected rather than guessed at."),
+            ], required: ["containerKind", "containerId"])),
             Tool(name: "create_task", description: "Create a Cadence task without Calendar side effects.", inputSchema: schema([
                 "title": stringProperty("Task title.", minLength: 1),
                 "notes": stringProperty("Optional notes."),

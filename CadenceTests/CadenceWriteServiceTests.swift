@@ -806,6 +806,243 @@ struct CadenceWriteServiceTests {
         #expect(cleared.summary.tags.isEmpty)
     }
 
+    // MARK: - update_container_columns (T-1095)
+
+    /// **A renamed column takes its cards with it, and that is the half of this tool that is not
+    /// about columns at all.** `AppTask.sectionName` is a plain string, so nothing in SwiftData
+    /// re-points a card when the column it names is renamed. Without
+    /// `CadenceSectionEditingSupport.applySectionNameChanges` the card would be left naming a
+    /// column no list has, and `CadenceReadService.sectionSummaries` would answer it back as a
+    /// *phantom* column beside the renamed one — which is why this asserts the whole name list and
+    /// not just that "Doing" appeared.
+    @Test func renamingAColumnReFilesTheCardsThatNameIt() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+        let card = try fixture.writeService.createTask(options: .init(
+            title: "Card",
+            containerKind: "project",
+            containerId: board.container.id,
+            sectionName: "In Progress"
+        ))
+
+        let renamed = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            columnName: "in progress",
+            newName: "  Doing  ",
+            colorHex: "f2a65a"
+        ))
+
+        #expect(renamed.sections.map(\.name) == ["Default", "Backlog", "Doing", "Shipped"])
+        let doing = try #require(renamed.sections.first { $0.name == "Doing" })
+        #expect(doing.colorHex == "#f2a65a")
+        #expect(doing.taskCount == 1)
+        #expect(try fixture.readService.getTask(taskID: card.summary.id).summary.sectionName == "Doing")
+    }
+
+    /// Every one of these is a value `Area.normalizedSectionConfigs` or the merge would have
+    /// swallowed — a blank name dropped, a duplicate dropped, a lifecycle flag on Default
+    /// discarded, a rename to the name already held written as a byte-identical blob. Beside a UI
+    /// that is right; as the answer to an API request it is "success" over nothing done.
+    @Test func theColumnEditsAListWouldHaveSwallowedAreRefusedInstead() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        func refusal(_ options: CadenceUpdateContainerColumnsOptions) -> String? {
+            #expect(throws: CadenceWriteError.self) {
+                try fixture.writeService.updateContainerColumns(options: options)
+            }?.errorDescription
+        }
+        func options(_ mutate: (inout CadenceUpdateContainerColumnsOptions) -> Void) -> CadenceUpdateContainerColumnsOptions {
+            var value = CadenceUpdateContainerColumnsOptions(
+                containerKind: "project",
+                containerId: board.container.id
+            )
+            mutate(&value)
+            return value
+        }
+
+        #expect(refusal(options { _ in }) == "No valid changes were provided.")
+        #expect(refusal(options { $0.columnName = "Backlog" }) != nil)
+        #expect(refusal(options { $0.newName = "Orphan" }) != nil)
+        #expect(
+            refusal(options { $0.columnName = "Backlog"; $0.newName = "   " })
+                == "Section names must not be empty."
+        )
+        #expect(
+            refusal(options { $0.columnName = "Backlog"; $0.newName = "shipped" })
+                == "Duplicate section name: shipped. Section names must be unique within one list."
+        )
+        #expect(
+            refusal(options { $0.columnName = "Nowhere"; $0.newName = "Somewhere" })
+                == "No column named Nowhere on this list. Expected one of: Default, Backlog, In Progress, Shipped."
+        )
+        #expect(refusal(options { $0.addColumns = ["Backlog"] }) != nil)
+        #expect(refusal(options { $0.addColumns = ["Blocked", "blocked"] }) != nil)
+        #expect(refusal(options { $0.addColumns = ["   "] }) == "Section names must not be empty.")
+        #expect(refusal(options { $0.columnName = "Backlog"; $0.colorHex = "#GGGGGG" }) != nil)
+        #expect(
+            refusal(options { $0.columnName = "Backlog"; $0.dueDate = "2026-04-30"; $0.clearDueDate = true })
+                == "dueDate and clearDueDate cannot both be sent for one column."
+        )
+        // A request the list would store byte-identically is not a success with no effect. The
+        // trim happens first, so this is the *same* name and `mutateSectionConfigs` declines it.
+        #expect(
+            refusal(options { $0.columnName = "Backlog"; $0.newName = "  Backlog  " })
+                == "No valid changes were provided."
+        )
+        // Nothing survived any of it.
+        #expect(try fixture.readService.containerSummary(kind: "project", id: board.container.id)
+            .sections.map(\.name) == ["Default", "Backlog", "In Progress", "Shipped"])
+    }
+
+    /// The Default column is not one the user made: the list synthesises it, forces it to index 0,
+    /// forces both lifecycle flags false, and `AppTask.resolvedSectionName` funnels every
+    /// sectionless task into it. So a rename would leave *two* columns and a lifecycle flag would
+    /// be discarded — both refused rather than performed and reported.
+    @Test func theDefaultColumnRefusesTheThreeThingsTheListWouldUndoAnyway() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        func refusal(_ mutate: (inout CadenceUpdateContainerColumnsOptions) -> Void) -> String? {
+            var options = CadenceUpdateContainerColumnsOptions(
+                containerKind: "project",
+                containerId: board.container.id,
+                columnName: TaskSectionDefaults.defaultName
+            )
+            mutate(&options)
+            return #expect(throws: CadenceWriteError.self) {
+                try fixture.writeService.updateContainerColumns(options: options)
+            }?.errorDescription
+        }
+
+        #expect(refusal { $0.newName = "Inbox" }?.contains("cannot be renamed") == true)
+        #expect(refusal { $0.isArchived = true }?.contains("carries no isCompleted or isArchived") == true)
+        #expect(refusal { $0.isCompleted = true }?.contains("carries no isCompleted or isArchived") == true)
+        // A colour is not one of the three: the list keeps it.
+        let recoloured = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            columnName: TaskSectionDefaults.defaultName,
+            colorHex: "#123456"
+        ))
+        #expect(recoloured.sections.first?.colorHex == "#123456")
+    }
+
+    /// Adding and reordering in one call, and the two refusals that keep a reorder from being
+    /// guessed at: a partial order, and a Default the list would move back to the front anyway.
+    @Test func columnsAreAddedAndReorderedInOneWriteOrNotAtAll() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        let reshaped = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            addColumns: ["Blocked"],
+            columnOrder: ["Default", "Blocked", "In Progress", "Backlog", "Shipped"]
+        ))
+        #expect(reshaped.sections.map(\.name) == ["Default", "Blocked", "In Progress", "Backlog", "Shipped"])
+
+        let partial = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContainerColumns(options: .init(
+                containerKind: "project",
+                containerId: board.container.id,
+                columnOrder: ["Default", "Blocked"]
+            ))
+        }
+        #expect(partial?.errorDescription?.contains("left out In Progress, Backlog, Shipped") == true)
+
+        let misplacedDefault = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContainerColumns(options: .init(
+                containerKind: "project",
+                containerId: board.container.id,
+                columnOrder: ["Blocked", "Default", "In Progress", "Backlog", "Shipped"]
+            ))
+        }
+        #expect(misplacedDefault?.errorDescription?.contains("must start with Default") == true)
+        #expect(try fixture.readService.containerSummary(kind: "project", id: board.container.id)
+            .sections.map(\.name) == ["Default", "Blocked", "In Progress", "Backlog", "Shipped"])
+    }
+
+    /// Archiving is the reversible thing this tool offers in place of removal: the column stays in
+    /// the blob with its colour and its cards, and only drops out of `sectionNames` — which is the
+    /// list `create_task` validates a `sectionName` against.
+    @Test func archivingAColumnHidesItFromNewCardsWithoutLosingIt() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+        _ = try fixture.writeService.createTask(options: .init(
+            title: "Shipped card",
+            containerKind: "project",
+            containerId: board.container.id,
+            sectionName: "Shipped"
+        ))
+
+        let archived = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            columnName: "Shipped",
+            isArchived: true
+        ))
+        let shipped = try #require(archived.sections.first { $0.name == "Shipped" })
+        #expect(shipped.isArchived)
+        #expect(shipped.taskCount == 1)
+
+        let refused = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTask(options: .init(
+                title: "Another",
+                containerKind: "project",
+                containerId: board.container.id,
+                sectionName: "Shipped"
+            ))
+        }
+        #expect(refused?.errorDescription == "Invalid sectionName: Shipped. Expected one of: Default, Backlog, In Progress.")
+
+        // An archived column is still addressable, which is the only way back.
+        let restored = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            columnName: "Shipped",
+            isArchived: false
+        ))
+        #expect(try #require(restored.sections.first { $0.name == "Shipped" }).isArchived == false)
+    }
+
+    /// **The undo this side of the MCP boundary has never had.** The write service holds one
+    /// long-lived `ModelContext`, so a refused `save()` used to leave the mutation pending for the
+    /// next tool call's `save()` to commit — a rename the caller was told had failed, landing
+    /// later, from a call that never mentioned it. Both halves go back: the columns, and the cards
+    /// the rename re-filed.
+    @Test func aRefusedCommitPutsTheColumnsAndTheCardsBack() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+        let card = try fixture.writeService.createTask(options: .init(
+            title: "Card",
+            containerKind: "project",
+            containerId: board.container.id,
+            sectionName: "In Progress"
+        ))
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainerColumns(options: .init(
+                containerKind: "project",
+                containerId: board.container.id,
+                columnName: "In Progress",
+                newName: "Doing"
+            ))
+        }
+
+        let after = try fixture.readService.containerSummary(kind: "project", id: board.container.id)
+        #expect(after.sections.map(\.name) == ["Default", "Backlog", "In Progress", "Shipped"])
+        #expect(try fixture.readService.getTask(taskID: card.summary.id).summary.sectionName == "In Progress")
+    }
+
+    private struct CommitRefused: Error {}
+
     private func readAuditEntries(from url: URL) throws -> [TestAuditEntry] {
         let content = try String(contentsOf: url, encoding: .utf8)
         return try content
@@ -844,6 +1081,16 @@ struct CadenceWriteServiceTests {
             modelContext.insert(context)
             modelContext.insert(project)
             try modelContext.save()
+        }
+
+        /// A project with the three named columns plus the synthesised `Default`, minted over the
+        /// same surface a caller would use.
+        func seedBoard() throws -> CadenceContainerSummary {
+            try writeService.createContainer(options: .init(
+                containerKind: "project",
+                name: "Launch board",
+                sectionNames: ["Backlog", "In Progress", "Shipped"]
+            ))
         }
     }
 }

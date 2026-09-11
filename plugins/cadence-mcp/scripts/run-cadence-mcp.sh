@@ -9,13 +9,20 @@ XCODEBUILD="${XCODEBUILD:-/Applications/Xcode.app/Contents/Developer/usr/bin/xco
 # non-negotiable in the root `AGENTS.md`.
 DERIVED_DATA_PATH="${CADENCE_MCP_DERIVED_DATA:-$ROOT_DIR/.codex-build}"
 BINARY="$DERIVED_DATA_PATH/Build/Products/Debug/CadenceMCPServer"
+# Whole directories rather than the handful of files this list used to name (T-1095). It named
+# `CadenceSchema.swift`, `MarkdownMetadataSupport.swift` and `DateFormatters.swift` while the
+# target's Sources phase also compiles `TagSupport`, `NoteMigrationService`,
+# `DataIntegrityRepairService`, `NoteReferenceSupport`, `CadenceStoreSupport`,
+# `CadenceHabitCompletionStore`, `CadenceSearchMatcher`, `CadenceTaskRecurrenceWorkflowSupport` and
+# now three more `Shared/` files — so editing any of those left the warm binary stale and the next
+# smoke test measuring the previous build. Over-rebuilding on an unrelated edit costs time;
+# under-rebuilding costs a measurement nobody can tell is wrong. `Cadence/Models` was already a
+# directory for the same reason.
 SOURCE_PATHS=(
   "$ROOT_DIR/CadenceMCPServer"
   "$ROOT_DIR/Cadence/Models"
-  "$ROOT_DIR/Cadence/Services/CadenceSchema.swift"
-  "$ROOT_DIR/Cadence/Services/MCPReadOnly"
-  "$ROOT_DIR/Cadence/Services/MarkdownMetadataSupport.swift"
-  "$ROOT_DIR/Cadence/Shared/DateFormatters.swift"
+  "$ROOT_DIR/Cadence/Services"
+  "$ROOT_DIR/Cadence/Shared"
   "$ROOT_DIR/Cadence.xcodeproj/project.pbxproj"
 )
 
