@@ -62,6 +62,37 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
         "Couldn't delete this \(noun.lowercased()). Nothing was removed."
     }
 
+    /// Shown **instead of** the enumeration when the walk found nothing else filed here.
+    ///
+    /// **This is the strongest claim on the confirmation, and [[T-752]] is the open question about
+    /// its wording.** The words are unchanged from where they were hand-typed, character for
+    /// character; what moved is where they live. They were the only sentence in this family
+    /// spelled inside a SwiftUI view body on one platform, while `cascadeSentence`,
+    /// `deleteFailureNotice`, `unknownImpactNotice` and `lostItemLines` are all named members of
+    /// the shared types — so the one string the ledger calls the load-bearing claim was also the
+    /// one nothing could find. That is the shape `untitledName` above already records going wrong:
+    /// a sentence assembled from `noun` at a call site is invisible to a sweep over whole literals.
+    ///
+    /// **What is actually in doubt, and what is not.** [[T-623]] measured, cascade by cascade, that
+    /// a hard list delete walks only the local replica: a child row that has not imported is not in
+    /// `area.tasks ?? []`, is not deleted, and arrives later with its owner gone. So the *counts*
+    /// are exactly what the cascade takes and never over-report loss, which is the direction
+    /// [[T-433]]'s rule governs. What this sentence adds on top of them is **completeness** — that
+    /// nothing else exists — and the app has no signal for "this replica may be incomplete".
+    /// `hasUnknownImpact` is the vehicle for such a caveat and is raised at exactly one place, by a
+    /// failed image read, so it cannot carry this one.
+    ///
+    /// **It is not softened here, and that is a decision rather than an omission.** The only
+    /// implementable move is to hedge it *unconditionally*, on every delete, for a race that needs
+    /// a second device and whose residue [[T-623]] measured as recoverable rows in Inbox rather
+    /// than lost work — trading a claim that is true almost always for one that is never false.
+    /// That is a wording judgement about what to tell a user, recorded as the user's in
+    /// `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md` and carried as [[T-1118]]. Changing it
+    /// is now one string here.
+    var nothingElseFiledSentence: String {
+        "Nothing else is filed under this \(noun.lowercased()) — no tasks, notes or saved links will be lost."
+    }
+
     var cascadeSentence: String {
         switch self {
         case .area:

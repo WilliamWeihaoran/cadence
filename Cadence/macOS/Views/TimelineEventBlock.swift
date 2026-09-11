@@ -319,13 +319,20 @@ struct TimelineEventBlock: View {
                 scope: scope
             )
         case .delete:
-            deleteConfirmationManager.present(
+            // `presentRefusable` rather than `present` (T-919). EventKit can refuse this — access
+            // not granted, a read-only calendar, a store error — and it says which. The popover
+            // this block owns is already gone by now (`selectedEventID` was cleared before the
+            // confirmation was ever presented), so the overlay is the only surface left that can
+            // carry the reason.
+            deleteConfirmationManager.presentRefusable(
                 title: "Delete Calendar Event?",
                 message: scope == .futureOccurrences
                     ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
                     : "This will permanently delete \"\(item.title)\" from your calendar."
             ) {
-                calendarManager.deleteEvent(item.ekEvent, scope: scope)
+                calendarManager.deleteOutcome(
+                    for: calendarManager.deleteEvent(item.ekEvent, scope: scope)
+                )
             }
         }
     }

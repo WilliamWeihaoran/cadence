@@ -546,6 +546,79 @@ struct CadenceListDeletionSurfaceTests {
         }
     }
 
+    /// T-752: the empty-state sentence is the strongest claim on the confirmation, and it was the
+    /// only one in this family hand-typed inside a view body.
+    ///
+    /// `cascadeSentence`, `deleteFailureNotice`, `unknownImpactNotice` and `lostItemLines` are all
+    /// named members of the shared types; *"Nothing else is filed under this …"* was a literal in
+    /// `iOSListDeleteConfirmationSheet`, assembled from `noun` at the call site — the one shape a
+    /// whole-literal sweep cannot see, which is exactly how `untitledName` went wrong in T-512.
+    ///
+    /// The words are unchanged. What this pins is that there is now one place to change them,
+    /// because T-752's remaining half is a wording decision (carried as T-1118) and it should be a
+    /// one-line decision rather than a hunt through a platform-specific view body.
+    @Test func theEmptyListDeleteSentenceIsSpelledOnceOnTheSharedKind() throws {
+        // The declaration is on the shared kind; the one surface that draws it reads it.
+        try expectOccurrences(of: "nothingElseFiledSentence", at: [
+            "Cadence/Shared/CadenceListDeletionSummary.swift": 1,
+            "Cadence/iOS/iOSListDeletionSupport.swift": 1
+        ])
+
+        // And nothing anywhere spells the claim itself. The needle is the part that makes the
+        // completeness assertion, not the reassurance after the dash.
+        let handTyped = "Nothing else is filed under this"
+        var scanned = 0
+        for path in try swiftFiles(under: "Cadence")
+        where path != "Cadence/Shared/CadenceListDeletionSummary.swift" {
+            let code = try strippingComments(sourceFile(path))
+            #expect(
+                !code.contains(handTyped),
+                "\(path) spells the empty-state claim itself instead of reading CadenceListDeletionKind"
+            )
+            scanned += 1
+        }
+        #expect(scanned > 200, "the sweep walked \(scanned) files, so it proved nothing")
+
+        // Non-vacuity, on literal fixtures rather than on the tree: the needle fires on the line
+        // this test removed and stays silent on the line that replaced it.
+        #expect(
+            #"Text("Nothing else is filed under this \(target.kind.noun.lowercased()) — no tasks, notes or saved links will be lost.")"#
+                .contains(handTyped)
+        )
+        #expect(!"Text(target.kind.nothingElseFiledSentence)".contains(handTyped))
+    }
+
+    /// The sentence itself, all three kinds, so a refactor of `noun` cannot quietly reword it — and
+    /// so the wording T-1118 asks about is written down somewhere a diff will show.
+    @Test func theEmptyListDeleteSentenceNamesTheKindAndSaysWhatIsNotLost() {
+        #expect(
+            CadenceListDeletionKind.area.nothingElseFiledSentence
+                == "Nothing else is filed under this area — no tasks, notes or saved links will be lost."
+        )
+        #expect(
+            CadenceListDeletionKind.project.nothingElseFiledSentence
+                == "Nothing else is filed under this project — no tasks, notes or saved links will be lost."
+        )
+        #expect(
+            CadenceListDeletionKind.context.nothingElseFiledSentence
+                == "Nothing else is filed under this context — no tasks, notes or saved links will be lost."
+        )
+        #expect(Set(CadenceListDeletionKind.allCases.map(\.nothingElseFiledSentence)).count == 3)
+    }
+
+    /// The gate it is drawn behind, restated where the sentence now lives: an unread image table
+    /// already falsifies "nothing else is filed here", and `isEmpty` refuses to be true while one
+    /// is outstanding. That is the existing caveat channel, and T-752's point is that nothing can
+    /// raise it for an incomplete *replica* — not that the channel is missing.
+    @Test func theEmptyStateSentenceCannotAppearWhileTheImpactIsUnknown() {
+        var summary = CadenceListDeletionSummary()
+        #expect(summary.isEmpty, "a zeroed summary is the case the sentence is for")
+
+        summary.hasUnknownImpact = true
+        #expect(!summary.isEmpty, "the empty-state sentence would show over an unread image table")
+        #expect(summary.unknownImpactLine == CadenceNoteDeletionSummary.unknownImpactNotice)
+    }
+
     /// Without this, every zero and every absence assertion above could be passing because the
     /// reader returned an empty string.
     @Test func theSourceScanActuallyReadsTheseFilesInListDeletionSurface() throws {

@@ -37,6 +37,29 @@ questions have since been answered, and only one is still yours.
 - **T-623 — unchanged.** Still parked, still recommended parked, and nothing in the work above
   touches it. The one thing still worth a decision from you is **T-752**'s sentence.
 
+## Status update, 2026-09-11 — T-752's sentence is now one line, and the question is T-1118
+
+**T-752 is closed and the sentence is unchanged.** No wording was picked for you. What was done is
+the half that was not a decision: that sentence was the only one in the delete-confirmation family
+typed inside a view body, on one platform, assembled from a noun at the call site — so it was also
+the one nothing in the codebase could find. It now lives beside the others, as
+`CadenceListDeletionKind.nothingElseFiledSentence`, with tests naming all three versions of it
+verbatim.
+
+**The question itself is now T-623's last open item and is filed as [[T-1118]]**, with the three
+wordings and what each costs you. It is a two-line diff whichever you pick, and the recommendation
+there is *leave it as it is* unless you have ever seen a stray row turn up in Inbox after deleting a
+list. If you have, the scoped version — *"Nothing else **on this device** is filed under this
+area"* — is the one that is never false.
+
+One correction to what this memo said on 2026-09-06, found while doing the work. The memo quotes the
+sentence and says it "can be false in exactly this scenario". Half of it can. *"Nothing else is filed
+under this"* is the claim about your data and is the one at risk; *"no tasks, notes or saved links
+will be lost"* is a claim about what the delete removes, and the delete genuinely removes nothing it
+cannot see. That does not make it harmless — an orphaned list note is filtered out of every screen
+that would show it, and unreachable is what most people mean by lost — but it is why T-1118 asks
+about the whole sentence rather than proposing to drop a clause.
+
 Where a section below says a ticket is open, read it as the reasoning that led to the decision above
 rather than as the current state.
 
@@ -312,7 +335,7 @@ is a natural next feature.
 
 ## What each of these needs from you, in one line
 
-- **T-623** — say "stay parked" once, so it stops being re-verified. Optionally decide T-752's
-  sentence.
+- **T-623** — say "stay parked" once, so it stops being re-verified. The sentence that was T-752's
+  is now **T-1118**, which states the three options; picking one is a two-line diff.
 - **T-624** — run the five-minute experiment above and report which of the three sentences you saw.
 - **T-899 + T-1043** — say whether to merge them and schedule one session, or leave both open.

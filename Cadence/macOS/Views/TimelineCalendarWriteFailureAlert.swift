@@ -59,5 +59,27 @@ extension CalendarManager {
             lastWriteFailure = nil
         }
     }
+
+    /// Reports one **delete** outcome to the confirmation overlay that asked for it (T-919).
+    ///
+    /// The sibling of `report(_:into:)` for the surface that has no draft and, by the time its
+    /// Delete button is pressed, no popover either (T-768 measured both event-delete sites). What
+    /// it does have is `DeleteConfirmationManager`'s overlay, still on screen, holding the very
+    /// question that was answered — so the typed cause goes there instead of into the window-wide
+    /// alert, which says only that *some* calendar write failed.
+    ///
+    /// Clearing `lastWriteFailure` is part of reporting here for the same reason it is above, and
+    /// with more at stake: `deleteEvent` records the failure on the way out, so leaving it set
+    /// would raise the alert **over** the overlay, say the same thing twice, and — because an
+    /// alert over a popover dismisses it — take the overlay's own notice off screen with it. Only
+    /// a refusal clears, because a committed delete has recorded nothing and any failure still
+    /// sitting there belongs to some earlier write this one must not swallow.
+    func deleteOutcome(for failure: CalendarWriteFailure?) -> DeleteConfirmationManager.Outcome {
+        guard let notice = CadenceCalendarEventEditingSupport.deleteOutcome(for: failure).failureNotice else {
+            return .deleted
+        }
+        lastWriteFailure = nil
+        return .refused(notice: notice)
+    }
 }
 #endif

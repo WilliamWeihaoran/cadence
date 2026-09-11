@@ -11,16 +11,33 @@ final class DeleteConfirmationManager {
         let message: String
         let confirmLabel: String
 
-        /// `false` when the confirmed action was refused and rolled back, so nothing was removed.
+        /// What the confirmed action reports back.
         ///
         /// Most deletes on this manager cannot fail in a way the user could act on and are wrapped
-        /// by `present(…)` to return `true` unconditionally. `presentRefusable(…)` is for the ones
-        /// that can.
-        let action: () -> Bool
+        /// by `present(…)` to answer `.deleted` unconditionally. `presentRefusable(…)` is for the
+        /// ones that can, and the refusal carries its own sentence.
+        let attempt: () -> Outcome
+    }
 
-        /// The sentence to show when `action` returns `false`. `nil` for a request that never
-        /// reports failure.
-        let failureNotice: String?
+    /// What a confirmed delete reports back to the overlay that asked for it.
+    ///
+    /// **Why the sentence travels with the answer (T-919).** `presentRefusable(…)` used to answer
+    /// `Bool` against a `failureNotice: String` fixed at the call site. That is right for a delete
+    /// whose only refusal is a rolled-back store save: there is exactly one thing to say and the
+    /// call site knows it before it asks. A macOS calendar-event delete is not that. It answers a
+    /// typed `CalendarWriteFailure` whose `message` names the actual cause — Calendar access not
+    /// granted, the store's own save error — and a sentence chosen *before* the attempt cannot
+    /// carry any of it, so those two deletes reported through the window-wide
+    /// `.calendarWriteFailureAlert()` instead, which is generic where the manager could be exact.
+    ///
+    /// Deliberately **one** entry point rather than a typed sibling beside the `Bool` one. Two
+    /// `presentRefusable` overloads differing only in their trailing closure's return type is the
+    /// resolution `presentRefusable`'s own doc already refuses for `present`.
+    enum Outcome: Equatable {
+        /// The store took it. The overlay closes.
+        case deleted
+        /// It was refused and nothing was removed. The overlay stays open and says this.
+        case refused(notice: String)
     }
 
     static let shared = DeleteConfirmationManager()
@@ -47,14 +64,13 @@ final class DeleteConfirmationManager {
                 title: title,
                 message: message,
                 confirmLabel: confirmLabel,
-                action: { action(); return true },
-                failureNotice: nil
+                attempt: { action(); return .deleted }
             )
         )
     }
 
-    /// A delete that can be refused. `attempt` returns `false` when the store rolled the delete back
-    /// and nothing was removed; the overlay then stays open and says `failureNotice`.
+    /// A delete that can be refused. `attempt` answers `.refused(notice:)` when nothing was
+    /// removed, and the overlay then stays open carrying that sentence.
     ///
     /// Deliberately a **different base name** rather than an overload of `present`. Both would end in
     /// a trailing closure, and the two candidates differ only in the closure's return type — a
@@ -63,16 +79,14 @@ final class DeleteConfirmationManager {
         title: String,
         message: String,
         confirmLabel: String = "Delete",
-        failureNotice: String,
-        attempt: @escaping () -> Bool
+        attempt: @escaping () -> Outcome
     ) {
         present(
             request: Request(
                 title: title,
                 message: message,
                 confirmLabel: confirmLabel,
-                action: attempt,
-                failureNotice: failureNotice
+                attempt: attempt
             )
         )
     }
@@ -81,20 +95,16 @@ final class DeleteConfirmationManager {
         guard let request else { return }
         failureNotice = nil
 
-        guard request.action() else {
+        switch request.attempt() {
+        case .deleted:
+            self.request = nil
+        case .refused(let notice):
             // The action was refused and rolled back. Dismissing here is what made the failure
             // invisible on macOS (T-376): the row reappears on its own, which reads as the delete
             // never having been asked for. Hold the overlay open and say what happened, the way the
             // list and note sheets already do.
-            guard let notice = request.failureNotice else {
-                self.request = nil
-                return
-            }
             failureNotice = notice
-            return
         }
-
-        self.request = nil
     }
 
     func cancel() {
@@ -145,11 +155,13 @@ extension DeleteConfirmationManager {
         let title = TaskTitleSupport.displayTitle(task.title, fallback: "Untitled")
         presentRefusable(
             title: "Delete Task?",
-            message: "This will permanently delete \"\(title)\".",
-            failureNotice: CadenceTaskMutationSupport.deleteFailureNotice
+            message: "This will permanently delete \"\(title)\"."
         ) {
             willDelete()
-            return modelContext.deleteTask(task, commit: commit)
+            guard modelContext.deleteTask(task, commit: commit) else {
+                return .refused(notice: CadenceTaskMutationSupport.deleteFailureNotice)
+            }
+            return .deleted
         }
     }
 }

@@ -218,22 +218,27 @@ struct CalendarBoardEventCard: View {
                     ) { showPopover = false }
                 },
                 onDelete: { scope in
-                    deleteConfirmationManager.present(
+                    deleteConfirmationManager.presentRefusable(
                         title: "Delete Calendar Event?",
                         message: scope == .futureOccurrences
                             ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
                             : "This will permanently delete \"\(item.title)\" from your calendar."
                     ) {
-                        // Delete deliberately stays on `.calendarWriteFailureAlert()`. Unlike
-                        // `TimelineEventBlock`'s delete (T-768), `showPopover` is not cleared
-                        // until *after* this closure runs — so this is the one call site that
-                        // genuinely depends on the confirmation overlay's Delete button being a
-                        // click outside a still-open `.popover(isPresented: $showPopover)`
-                        // (confirmed: this modifier carries no `.interactiveDismissDisabled()`,
-                        // so the platform's default outside-click dismissal is live). There is
-                        // also no draft to keep here: nothing was typed.
-                        calendarManager.deleteEvent(item.ekEvent, scope: scope)
-                        showPopover = false
+                        // There is no draft to keep here — nothing was typed — and by the time
+                        // this runs there is no popover either: unlike `TimelineEventBlock`, this
+                        // site never clears `showPopover` itself, so it is the one that genuinely
+                        // relies on the overlay's Delete button being a click outside a still-open
+                        // `.popover(isPresented: $showPopover)` (confirmed: this modifier carries
+                        // no `.interactiveDismissDisabled()`, so the platform's default
+                        // outside-click dismissal is live). T-768 stopped there and left the
+                        // refusal on the window-wide alert. What is still on screen is the
+                        // confirmation overlay, so T-919 puts the typed reason in it and closes
+                        // the popover state only on a delete that happened.
+                        let outcome = calendarManager.deleteOutcome(
+                            for: calendarManager.deleteEvent(item.ekEvent, scope: scope)
+                        )
+                        if outcome == .deleted { showPopover = false }
+                        return outcome
                     }
                 },
                 actionFailureNotice: $actionFailureNotice

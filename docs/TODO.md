@@ -761,7 +761,20 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
   Measured, not reasoned: full `-only-testing:CadenceTests` run, zero warnings.
 
-- [T-1085] **The two kanban card drops have no off-screen notice.** [[T-1077]]'s change wires the
+- [T-1085] **CLOSED 2026-09-06 (agent `residue`, landed in `a499f2f`).** Both kanban card drops ask
+  the same off-screen question the three row drops ask, through
+  `CadenceReorderVisibility.cardDropNotice`, and each board hands it the key its own display sorts
+  by. **The first line said nothing of the kind until 2026-09-11**: the closure was written into the
+  body four paragraphs down and the entry stayed in the Open section, so `LEDGER-CLOSURE-LOST` —
+  which anchors on `CLOSED` in the **first** line, the convention [[T-983]] settled and measured —
+  read it as open, and so did the brief that sent `noticetruth2` to fix it. Re-verified against HEAD
+  before restating: `CadenceReorderVisibility.cardDropNotice` is declared at
+  `Cadence/Shared/CadenceReorderVisibility.swift:84` and called from exactly the two card drops,
+  `Cadence/macOS/Views/KanbanListColumnView.swift:177` and
+  `Cadence/macOS/Views/KanbanSectionColumnView.swift:386`, with
+  `KanbanBoardSupport.cardSortKeyOrder` and `CadenceReorderOffScreenNoticeTests` behind them. Nothing
+  was rebuilt; the words below are what landed.
+  **Originally:** **The two kanban card drops have no off-screen notice.** [[T-1077]]'s change wires the
   three row surfaces that renumber `AppTask.order` from a drop — Today, All Tasks/Inbox, and a
   list's Tasks tab — and leaves the two card drops alone. Both can put a card where the board's sort
   will not show it, for exactly the same reason and with the same fix
@@ -2022,7 +2035,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   untitled-row tickets ([[T-505]], [[T-513]], [[T-687]]); the fix is routing both `Text`s through
   the same call the accessibility value already makes.
 
-- [T-919] **macOS calendar-event deletes report through a generic global alert instead of a typed
+- [T-919] **CLOSED 2026-09-11 (agent `noticetruth2`).** A refused macOS event delete now says which
+  EventKit refused it, inside the confirmation that asked. **`presentRefusable` was widened rather
+  than given a typed sibling**, which is the branch the ticket offered second and the one its own
+  doc comment argues for: two overloads differing only in their trailing closure's return type is
+  exactly the resolution that doc already refuses for `present`. `failureNotice: String` is gone
+  from the signature and `attempt` answers `DeleteConfirmationManager.Outcome` —
+  `.deleted` or `.refused(notice:)` — so the sentence travels back **with** the answer instead of
+  being chosen before the attempt. The two fixed-sentence callers (`presentTaskDelete`,
+  `TimelineBundleBlock`) spell their constant inside the closure and are otherwise unchanged.
+  **The surface T-768 did not count is the overlay itself.** T-768 measured, per site, that neither
+  popover survives the confirmation's Delete button and concluded there was nowhere to draw — but
+  the overlay is on screen at that moment and is what asked the question, which is [[T-376]]'s
+  argument for the five task-delete surfaces arriving on a sixth and seventh. So the delete now
+  routes `CalendarManager.deleteEvent`'s `CalendarWriteFailure?` through
+  `CalendarManager.deleteOutcome(for:)`, the sibling of `report(_:into:)`, over the new shared
+  `CadenceCalendarEventEditingSupport.deleteOutcome(for:)`.
+  **Clearing `lastWriteFailure` is load-bearing, not tidy** — and more so here than on the save
+  path: `deleteEvent` records the failure on its way out, so leaving it set would raise
+  `.calendarWriteFailureAlert()` **over** the overlay, say the same thing twice, and take the
+  overlay's own notice off screen doing it (an alert over a popover dismisses it). Only a refusal
+  clears; a committed delete leaves an earlier write's pending report alone.
+  **The test that pinned the old decision was inverted, not deleted.**
+  `CadenceEventKitPlatformParityTests.reportingAWriteFailureInlineTakesItOffTheGlobalAlert` required
+  `deleteOutcome` to appear **zero** times in the two hosts and exactly three `lastWriteFailure = nil`
+  clears; it now requires one `calendarManager.deleteOutcome(` and one
+  `deleteConfirmationManager.presentRefusable(` per host, and four clears. Six new behavioural tests
+  in `MacOSCalendarEventDeleteNoticeTests`, including the property the old signature could not have:
+  **two attempts on one request report their own causes**, where a sentence fixed beside the title
+  would show the first failure's reason for the second — a wrong fact rather than a vague one.
+  **Originally:** **macOS calendar-event deletes report through a generic global alert instead of a typed
   refusal.** Residue of [[T-768]], which measured (rather than assumed) whether the two macOS
   event-delete popovers survive their own confirmation overlay's Delete button. Neither does, by
   two different mechanisms: `TimelineEventBlock` closes its own popover (`selectedEventID = nil`)
@@ -4146,7 +4188,42 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Cadence/iOS/iOSListEditorViews.swift` still contains the string `calendar` **zero** times, which
   is the whole reason there is no third one yet.
 
-- [T-752] **A list-delete confirmation promises completeness it cannot have.** Filed 2026-09-05.
+- [T-752] **CLOSED 2026-09-11 (agent `noticetruth2`) — as a decision, the shape [[T-624]] closed in,
+  not as a repair. The engineering half landed; the wording half is carried as [[T-1118]] because it
+  is the user's and this entry already says so twice.**
+  **What landed.** The sentence is now
+  `CadenceListDeletionKind.nothingElseFiledSentence`, beside `cascadeSentence` and
+  `deleteFailureNotice` on the shared type that owns every other sentence in this family. Its words
+  are unchanged character for character, so **no product decision was made here**; what changed is
+  that it stopped being the one claim on the screen with no findable home. It was a literal inside
+  `iOSListDeleteConfirmationSheet`'s view body, assembled from `noun` at the call site — which is
+  the exact shape `untitledName`'s own doc, four declarations above it, records going wrong in
+  [[T-512]]: an interpolated literal is invisible to `CadenceSharedConstantReuseSweepTests` **by
+  construction**, so the strongest claim the app makes about a delete was also the one no sweep
+  could see. Three tests in `CadenceListDeletionSurfaceTests` pin the single spelling (with a
+  real-tree sweep that no file outside the declaration spells the claim, non-vacuity on literal
+  fixtures rather than on the tree), the three per-kind sentences verbatim, and the gate the
+  sentence is drawn behind — `isEmpty` refuses to be true while `hasUnknownImpact` is set.
+  **Why the wording itself was not touched, stated as a refusal rather than an oversight.** The
+  analysis below still holds at HEAD and the blocker is unchanged: `hasUnknownImpact` is raised at
+  one place by a failed image read, and nothing in the app can say "this replica may be incomplete"
+  — re-measured, [[T-623]]'s five import-gate greps still return zero. So the only implementable
+  move is an *unconditional* hedge, on every delete, for a race that needs a second device and whose
+  residue T-623 measured as recoverable rows in Inbox rather than lost work. This entry's last line
+  is *"Do not land that on a guess"*, and
+  `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md` asks the user for that sentence twice and has
+  not been answered. An agent landing it anyway would be answering a question addressed to someone
+  else. **What this closure buys is that answering it is now a one-line edit in one file**, which
+  it was not on 2026-09-05.
+  **One thing the ticket's framing gets slightly wrong, measured while extracting it.** The sentence
+  has two clauses and they are not equally exposed. *"Nothing else is filed under this area"* is a
+  claim about the store and is the one that can be false. *"no tasks, notes or saved links will be
+  lost"* is a claim about this delete's effect, and T-623 established it separately — the cascade
+  removes only what it can see, so the un-imported child is orphaned rather than deleted. It is not
+  therefore *safe*: five of the six survivor kinds are filtered out at every read site, so an
+  orphaned list note is unreachable, and unreachable is what a user means by lost. That is why
+  T-1118 is a wording question about the whole sentence and not a proposal to delete half of it.
+  **Originally:** **A list-delete confirmation promises completeness it cannot have.** Filed 2026-09-05.
   Named as residue by [[T-623]] on 2026-09-03 and **never actually filed** — the two `[[T-752]]`
   references in this ledger pointed at nothing until now.
   [[T-623]] is parked because a list cascade walks only the local replica: a child row that has not
@@ -4171,6 +4248,35 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   implementable move is to soften the iOS empty-state sentence *unconditionally*, trading a claim
   that is true almost always for one that is never false, on every delete, for a race that needs a
   second device. Do not land that on a guess.
+
+- [T-1118] **For the user: should the empty list-delete confirmation stop claiming completeness?**
+  Filed 2026-09-11 by `noticetruth2`, carrying the half of [[T-752]] that is not engineering — the
+  same move [[T-624]] made into [[T-1117]], and for the same reason: four write-ups have now
+  restated this question without moving it, and every one was addressed to an engineer.
+  **Where you see it.** On iPhone only, deleting an area, project or context that holds nothing:
+  the confirmation reads *"Nothing else is filed under this area — no tasks, notes or saved links
+  will be lost."* It is now one string,
+  `CadenceListDeletionKind.nothingElseFiledSentence` in `Cadence/Shared/CadenceListDeletionSummary.swift`.
+  **What is wrong with it.** Cadence walks only this device's copy when it deletes a list
+  ([[T-623]], parked and recommended parked). If your other device added something to that list and
+  this one has not downloaded it yet, that item is not in the list here, so the sentence's first
+  clause — *nothing else is filed under this* — is false. The counts beside it are exactly right and
+  never over-report; completeness is the one thing the app asserts and cannot check. There is no
+  signal to condition it on: re-measured 2026-09-11, the five things you would grep for still return
+  zero hits in the whole codebase, so this cannot be shown only when it matters.
+  **The three options, with what each costs you.**
+  1. **Leave it.** True unless a delete lands in the window between another device's write and this
+     device's download. When it is false, the cost T-623 measured is a recoverable row in Inbox, not
+     lost work.
+  2. **Scope it** — *"Nothing else on this device is filed under this area."* Never false. Costs a
+     mention of syncing on every empty delete, including the overwhelming majority where there is
+     nothing to warn about.
+  3. **Drop the clause** — keep only *"No tasks, notes or saved links will be lost."* Narrower and
+     quieter, but not clean: an orphaned list note is filtered out at every read site, so it is
+     unreachable, and a user would call unreachable lost.
+  **Recommendation: 1, unless you have ever seen a stray row in Inbox after deleting a list.** If
+  you have, 2. Either way it is one line in one file and the tests that pin it name the sentence
+  verbatim, so a change is a two-line diff.
 
 - [T-1043] **Nothing pins that a link write records the evidence [[T-624]]'s gate needs.** Filed
   2026-09-05 while re-verifying [[T-624]]. Not a bug today; a guard that does not exist. Sibling of

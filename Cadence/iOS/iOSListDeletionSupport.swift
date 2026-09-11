@@ -240,7 +240,7 @@ struct iOSListDeleteConfirmationSheet: View {
                             iOSRowDivider()
 
                             if summary.isEmpty {
-                                Text("Nothing else is filed under this \(target.kind.noun.lowercased()) — no tasks, notes or saved links will be lost.")
+                                Text(target.kind.nothingElseFiledSentence)
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.subdued)
                                     .fixedSize(horizontal: false, vertical: true)

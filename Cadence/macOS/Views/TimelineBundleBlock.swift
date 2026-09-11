@@ -60,13 +60,12 @@ struct TimelineBundleBlock: View {
                         // so — the selection it clears is what closes the block's popover.
                         deleteConfirmationManager.presentRefusable(
                             title: TaskBundle.deleteConfirmationTitle,
-                            message: "This will delete \"\(bundle.displayTitle)\" and keep its tasks on the same day.",
-                            failureNotice: CadenceTaskMutationSupport.bundleDeleteFailureNotice
+                            message: "This will delete \"\(bundle.displayTitle)\" and keep its tasks on the same day."
                         ) {
                             do {
                                 try SchedulingActions.deleteBundle(bundle, in: modelContext)
                             } catch {
-                                return false
+                                return .refused(notice: CadenceTaskMutationSupport.bundleDeleteFailureNotice)
                             }
                             if selectedBundleID == bundle.id {
                                 selectedBundleID = nil
@@ -74,7 +73,7 @@ struct TimelineBundleBlock: View {
                             if activeDragBundleID == bundle.id {
                                 activeDragBundleID = nil
                             }
-                            return true
+                            return .deleted
                         }
                     }
                 } else {

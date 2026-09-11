@@ -752,6 +752,14 @@ struct CadenceEventKitPlatformParityTests {
     /// `CalendarManager.report` is the one place the inline path and the alert path are separated,
     /// and clearing `lastWriteFailure` is load-bearing rather than tidy: an alert raised over a
     /// macOS popover dismisses that popover, which is the draft loss T-658 is about.
+    ///
+    /// **`deleteOutcome` is the second handover and clears for the same reason (T-919).** This test
+    /// used to require `deleteOutcome` to appear **zero** times in the two event-delete hosts,
+    /// because T-768 had measured that neither has a popover left to draw on and concluded the
+    /// window-wide alert was all that was available. The surface it did not count is the
+    /// confirmation overlay itself, which is still on screen and is what asked the question — so
+    /// the two hosts now report the typed cause there, and the count that pinned the old decision
+    /// is inverted rather than deleted.
     @Test func reportingAWriteFailureInlineTakesItOffTheGlobalAlert() throws {
         let path = "Cadence/macOS/Views/TimelineCalendarWriteFailureAlert.swift"
         let raw = try CadenceSourceScan.sourceFile(path)
@@ -763,11 +771,16 @@ struct CadenceEventKitPlatformParityTests {
         #expect(code.contains("notice.wrappedValue = outcome.failureNotice"))
         #expect(code.contains("if outcome.closesEditor {"))
         #expect(
-            CadenceSourceScan.matchCount(#"lastWriteFailure = nil"#, in: code) == 3,
-            "expected exactly three clears: the alert's binding, its OK button, and the inline handover"
+            code.contains("func deleteOutcome(for failure: CalendarWriteFailure?) -> DeleteConfirmationManager.Outcome"),
+            "the delete handover is not declared beside the inline one"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"lastWriteFailure = nil"#, in: code) == 4,
+            "expected exactly four clears: the alert's binding, its OK button, the inline handover, and the delete handover"
         )
 
-        // And the two event deletes stay on the alert, so neither host reports one inline.
+        // And both event deletes hand their answer to the confirmation overlay rather than
+        // dropping it on the floor for the alert to generalise.
         for path in [
             "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift",
             "Cadence/macOS/Views/TimelineEventBlock.swift"
@@ -778,8 +791,12 @@ struct CadenceEventKitPlatformParityTests {
                 "\(path) does not delete the event exactly once"
             )
             #expect(
-                CadenceSourceScan.matchCount(#"deleteOutcome"#, in: host) == 0,
-                "\(path) reports a delete inline, on a popover the confirmation overlay has closed"
+                CadenceSourceScan.matchCount(#"calendarManager\.deleteOutcome\("#, in: host) == 1,
+                "\(path) discards the typed reason its delete was refused (T-919)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"deleteConfirmationManager\.presentRefusable\("#, in: host) == 1,
+                "\(path) confirms the delete through a path that cannot report a refusal"
             )
         }
     }
