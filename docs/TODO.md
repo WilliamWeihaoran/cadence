@@ -1117,7 +1117,50 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`iOSListEditorViews.applySectionConfigEdits`) or the MCP write surface has the same gate; that is
   the first thing to check. If either does not, a user clearing a column's name loses the column and
   strands its cards, and nothing says so.
-- [T-1054] **Should a row drag be offered at all under a non-custom sort?**
+- [T-1054] **CLOSED 2026-09-11 (agent `roworder`) — DECIDED, by measurement and not by preference: the drag stays offered under every sort, and every surface that offers it already says, per drop, when the sort will not show the landing. No code is owed; this entry is the decision record the ticket asked for.**
+  **The outcome that shipped is the first of the three honest ones — offer it and explain it — and
+  it shipped before this ticket was read.** [[T-1077]] wired
+  `CadenceReorderVisibility.offScreenNotice` — *"Moved, but this sort doesn't show it there."* —
+  into the three row drops (`9e96c03`), and [[T-1085]] into the two card drops through
+  `cardDropNotice` (`a499f2f`).
+  **The second outcome, suppression, is closed by measurement rather than by taste, which is why
+  this does not go to the repository owner the way [[T-1117]] and [[T-1118]] did.** The refusal
+  this entry proposed rests on its own premise — "under `.date` or `.priority` the dragged row
+  visibly springs back" — and that premise is false. `TaskOrdering.precedes` falls through to
+  `fallbackPrecedes` on a tie in the sort key, and `fallbackPrecedes`'s first key is `order`, so
+  **inside a tie band the displayed sequence is the `order` sequence** and the dragged row lands
+  exactly where it was dropped, exactly as under `.custom`. Tie bands are the common case and not
+  the edge one: `TaskPriority` has four ranks, and under a date sort every undated task shares one
+  key. A blanket refusal would therefore have deleted a gesture that works more often than it
+  fails. On Today it would have been wrong in the other direction as well —
+  `TasksPanel.compareTasksForCurrentSort` leads with `todayTaskSortRank`, which is
+  `CadenceTaskQuerySupport.todayRank` and which no chip setting removes, so a drop there can be off screen under **every** mode Today offers, `List
+  Order` included, and a per-*sort* rule would have been silent on the app's busiest drop surface.
+  **A fourth option was considered and rejected in the source before this entry was read**:
+  switching the sort to `.custom` on drag. `CadenceReorderVisibility`'s own doc gives the reason,
+  and it is not taste either — the sort field is persisted (`@AppStorage("allTasksSortField")`, the
+  per-list `_sortField` keys, `TasksPanel.sortModeDefaultsKey`), so a drag would silently overwrite
+  a preference the user set on purpose and nothing would put it back.
+  **The cost this entry feared never had to be paid.** It warned that a refused reorder must not be
+  reported as a refused drop, because `TasksPanelDropCoordinator.handleTaskDrop` also *assigns* on
+  the way past, so the answer would have had to become `assigned || reordered` across four
+  surfaces. Nothing is refused, so `handleTaskDrop` still answers the reorder's own `Bool` and
+  still deliberately ignores the assignment half — the four-surface change is not owed and should
+  not be built.
+  **Verified against HEAD, not against the two closures.** All five drop surfaces read the shared
+  vocabulary: `TasksPanel.swift:150`, `TasksListView.swift:432`, `ListDetailComponents.swift:211`,
+  `KanbanListColumnView.swift:177`, `KanbanSectionColumnView.swift:386`. The decision is already
+  pinned without a new test —
+  `CadenceReorderOffScreenNoticeTests.everyRowDropSurfaceReportsAnOffScreenLanding` reads the three
+  row paths and `.everyCardDropSurfaceReportsAnOffScreenLanding` the two card paths, each asserting
+  the set-and-clear expression and the `.informational` tone, so a surface that stops asking goes
+  red.
+  **Not made moot by [[T-1055]], measured in the same batch.** That ticket is about how much of the
+  `order` sequence a renumber spans; this one is about whether the gesture is offered at all. The
+  slice defect is real and user-visible (see that entry's numbers) and it does not change the
+  answer here: the drag is still the only way to author `order`, and refusing it would remove the
+  authoring without fixing the span.
+  **Originally:** **Should a row drag be offered at all under a non-custom sort?**
   Left open deliberately by [[T-884]], which settled *which* sequence a drag rewrites and not
   whether the gesture should exist. Under `.date` or `.priority` the dragged row visibly springs
   back — the list re-sorts the moment the drop lands — so the app accepts a drop, answers `true`,
@@ -1133,7 +1176,75 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the `order` sequence, so the blanket refusal proposed above would refuse a gesture that works.
   [[T-1077]] files the per-drop rule that follows from that and records this premise as false. Left
   open because nobody has answered the product question, and because [[T-1077]]'s code is not in HEAD.
-- [T-1055] **Every row renumber writes 0…n over a visible slice, not over the sequence it spans.**
+- [T-1055] **CLOSED 2026-09-11 (agent `roworder`) — MEASURED, and the answers change the ticket. Orders do collide, inside one container. A later renumber does undo an earlier one. And the user *can* see it, on a screen the drag was not made on. The stated blocker is false, so the fix is better defined than this entry believed — except for the one part of it only the repository owner can settle, split out as [[T-1119]].**
+  `CadenceTests/CadenceRowReorderSliceSpanTests.swift`, 6 behavioural tests, every number below
+  read off the store rather than argued. **Four mutations, all killed** (`scripts/mutate.sh`):
+  `CadenceOrderCommit.commit` writing `index + 100` instead of `index` (four tests red),
+  `TaskCreationService.insertion` starting to allocate an `order`, `CadenceTaskQuerySupport.makeTask`
+  dropping its global allocation, and `KanbanBoardSupport.reorder` numbering its column from 5.
+  The middle two are what stop the re-reading of the blocker being a claim about nothing.
+  **The blocker is false.** This entry says `order` "is allocated per container
+  (`nextTaskOrder(in:)` maxes over one list), so on a cross-list surface there is no 'whole
+  sequence' to renumber". The app has **three** allocation rules at once, and the busiest one is
+  *no allocation*: `TaskCreationService.insertion(from:into:)` — the composer, every sheet, every
+  quick-add that goes through a draft — writes eight fields of the new `AppTask` and applies its
+  container, and `order` is not among them, so the task keeps the model's declared default of **0**, in every container.
+  Measured: three tasks created through `TaskCreationService.createTask` into Inbox, an area and a
+  project, over a store already holding an `order` of 40, all came back `0`. The second rule is
+  *global*: `CadenceTaskQuerySupport.makeTask` takes `nextTaskOrder(in: allTasks)` — the max over
+  every task in the app, not over one list — and answered **41** against the same store;
+  `CadenceWidgetIntents.captureTask` fetches every `AppTask` and does the same. Only the third rule
+  is per container, and it is reached only on the move and duplicate paths
+  (`CadenceTaskMutationSupport.nextContainerOrder`). So collisions are not something slice
+  renumbering introduces into a clean sequence — **they are the resting state**, and a drag is the
+  only thing in the app that ever hands out distinct orders.
+  **Do orders collide? Yes, and inside one container, which is the case `TaskOrdering
+  .fallbackPrecedes` does *not* excuse.** That doc allows cross-list collisions by design. A list
+  with two finished tasks at `order` 0 and 1 and three open ones at 10, 11 and 12 — five distinct
+  orders before the drop — comes out of one Tasks-tab drop with the open rows at 0, 1, 2 and both
+  0 and 1 held **twice each, by rows of the same list**. `ListTasksView.reorderTask` hands
+  `CadenceTaskQuerySupport.openTasks(from: tasks)` and the finished rows are simply not in the
+  array.
+  **Does a later renumber undo an earlier one? Yes, and the two screens do not even have to be
+  sorted differently — only to slice differently.** Four rows in one list; the user drags Delta to
+  the top on the list's Tasks tab, giving `Delta, Alpha, Bravo, Charlie` at 0, 1, 2, 3. Two of the
+  four are on Today, so Today's group is a two-row slice; the user drags Charlie above Bravo there,
+  a one-place move. That slice renumbers to 0, 1 — over the orders Delta and Alpha are holding. The
+  tab now reads **`Charlie, Delta, Alpha, Bravo`**: Delta, which the user deliberately dragged to
+  the top and never touched again, is not at the top, and Charlie, asked to move up one place, has
+  travelled three, past two rows that were not in the slice and not on the screen.
+  **Can the user see it? Yes — and the entry's "rows quietly interleaving" undersells it.** The
+  interleave *is* quiet, because `fallbackPrecedes` is total and deterministic. The displacement is
+  not. One gesture, made on Today, on two rows: the list's Tasks tab goes from `Unscheduled first,
+  Unscheduled second, Today early, Today late` to `Unscheduled first, Today late, Unscheduled
+  second, Today early`. *Unscheduled second* was never dragged, was never displayed on Today, and
+  moved. That answers "confirmed by reading, not observed in use".
+  **The kanban card drop has the same shape through a different commit**, and it is measured too:
+  `KanbanBoardSupport.reorder` over one column of two cards at 5 and 6 renumbers them to 0 and 1,
+  colliding with the neighbouring column's two cards, so the board's columns number from the same
+  base.
+  **What the renumber does *not* do, and it is why the damage is bounded**: it writes nothing
+  outside the array it was handed. A task in another list and a finished task in the same list both
+  came out of the commit holding exactly the order they went in with. That is also why the undo on
+  a refused commit is correct as far as it goes — it restores the slice, which is everything the
+  commit touched.
+  **What the fix is, now that the blocker is gone.** `order` spanning **one container** is already
+  the app's stated model — `TaskOrdering.fallbackPrecedes`'s own doc says so, and treats cross-list
+  ties as expected and closes them with `createdAt`/`title`/`id`. Under that model four of the five
+  drop surfaces have an unambiguous span and want the container's tasks rather than the visible
+  slice: a list's Tasks tab (`tasks`, not `openTasks(from: tasks)` — a one-argument change), Today's
+  group (`CadenceTaskQuerySupport.listGroupKey` groups **by container**, so a Today group is always
+  within one list), and both kanban columns (a list column *is* a container; a section column is one
+  section of one). **The fifth is All Tasks / Inbox and it is not mechanical**: `TasksListView
+  .sections(from:)` groups by date, by priority or not at all under three of its four modes, so a
+  section spans lists and a drag can name two rows in different ones. That is the question this
+  entry could not have asked while it believed the blocker, and it is a question for the user rather
+  than for an engineer — [[T-1119]].
+  **Deliberately not fixed here.** The five-surface change is one coherent diff with its own
+  mutation testing, it is gated on T-1119's answer for the surface that matters most, and landing
+  four of five would put the row surfaces back into exactly the disagreement [[T-884]] spent a
+  ticket removing. The measurements above are what it should be built against.
+  **Originally:** **Every row renumber writes 0…n over a visible slice, not over the sequence it spans.**
   `CadenceOrderCommit.commit`'s own doc says the array "must be the *whole* collection the `order`
   sequence spans rather than the visible slice — renumbering only the visible rows hands them
   indices the hidden rows already hold". No caller obeys it. `TasksPanelSupport.reorderTask` is
@@ -1146,6 +1257,37 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   allocated per container (`nextTaskOrder(in:)` maxes over one list), so on a cross-list surface
   there is no "whole sequence" to renumber. Deciding what `order` means across containers has to
   come first. Noted by z4 under [[T-884]] and left alone under that ticket's scope.
+
+- [T-1119] **For the user: on All Tasks, what should dragging a row above a row in another list do?**
+  Filed 2026-09-11 by `roworder`, carrying the half of [[T-1055]] that is not engineering — the
+  same move [[T-624]] made into [[T-1117]] and [[T-752]] into [[T-1118]], and for the same reason:
+  the other four surfaces have a mechanical answer and this one has a preference where the answer
+  should be.
+  **Where you see it.** On macOS, All Tasks and Inbox, with the grouping chip on *None*, *By Date*
+  or *By Priority* — three of its four modes. Those groups are drawn from every list at once, so a
+  row drag inside one of them can put a task from one list above a task from another.
+  **Why it is a question at all.** `AppTask.order` is a per-list arrangement: two tasks in different
+  lists routinely hold the same `order`, and `TaskOrdering.fallbackPrecedes` settles them by
+  creation date. So "put this row above that one" has no meaning when the two rows are in different
+  lists — there is no single sequence the instruction is about. What the app does today is renumber
+  the whole visible group from 0, which rewrites *several* lists' arrangements from one drag, and
+  T-1055 measured what that costs: a drag on one screen moves rows on another that the user never
+  touched.
+  **The three options, with what each costs you.**
+  1. **Leave it.** A cross-list drag keeps working and keeps rewriting every list represented in
+     the group. Costs exactly what T-1055 measured, and it is the status quo, so nothing changes
+     and nothing new can go wrong.
+  2. **Renumber only the dragged row's own list.** Correct for the rows that share a list with it
+     and silent for the rest — so a drag that crosses lists would visibly do nothing, which is
+     [[T-614]]'s rule inverted and would need a sentence of its own to be honest.
+  3. **Say so at the drop**, the way [[T-1077]] already says *"Moved, but this sort doesn't show it
+     there."* A second sentence for the cross-list case, keeping the gesture. Cheapest to build on
+     what is already there, and adds a second notice to a screen that has one.
+  **Recommendation: 2 plus 3 together, if you ever arrange tasks by hand and then use All Tasks; 1
+  if you do not.** The whole question only exists for people who drag rows into an order they care
+  about. If you never do, `order` is 0 for almost everything you own and none of this is visible.
+  Whichever you pick, [[T-1055]]'s other four surfaces should be fixed with it as one change, not
+  before it.
 - [T-1067] **CLOSED 2026-09-06 (`8a13268`) — one composition model for the sidebar's context-header gaps, read by the layout and by the test.** Reserved 2026-09-06 by agent `gapmodel` from Codex R36's finding that `4c091c1`'s new relationship test composed its gaps without the outer padding, so it asserted on a number no user sees. Nothing was retuned; the corrected figures are 26pt above a context header against 9 below, and what changed is the description.
 - [T-1070] **CLOSED 2026-09-07 (agent `swallow`) — the tag picker returns its refusal instead of swallowing it, and both surfaces say so.** `onCommit` is `([Tag]) -> Bool` now, handed the selection as it stood before the write; `iOSTaskTagStrip.commitTags(restoring:)` commits through `CadencePendingChangePersistence.commitEdit(in:undo:)`, puts that array back on a refusal and answers `false`. All three handles guard on it — `toggle` (tick and untick), `addTag`'s selection, and the chip's `x` in `remove` — and the strip grew a `tagFailureNotice` of its own, because the popover's copy is on a surface that is not up when a chip is removed. `NoteMigrationService.createPermanentNote` is not in this ticket but shares its commit helper; see T-1071. Pinned by `CadenceInlineTagCommitSurfaceTests.theTouchTagPickerReportsARefusedSelectionRatherThanTicking` and `.theTouchTagStripUndoesARemovalTheStoreRefused`. **Filed as:** **`iOSTaskTagPickerPopover.toggle` writes a collection `@Binding` then calls `onCommit()`.** The call site supplies `{ try? modelContext.save() }`. [[T-631]] fixed the insert half and left the selection half; `iOSTaskTagsRow.remove` is the same defect in plain spelling. The save-commit detector cannot see any of them: the report is one frame down through a **closure property**, which a same-file name index does not reach.
   **Found 2026-09-06 while measuring [[T-657]]'s arm**, and it is one of the two sites in that

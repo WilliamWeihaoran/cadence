@@ -286,15 +286,21 @@ enum TasksPanelSupport {
     ///   into `order`". The active sort is the same kind of thing — a view over the tasks, not an
     ///   arrangement anybody made.
     ///
-    /// **What is deliberately *not* decided here.** Whether a row drag should be *offered* at all
-    /// under a non-custom sort is a product question, not this one: refusing the drop would make
-    /// the gesture honest, and it would also change what four surfaces accept, including drops that
-    /// currently do useful assignment work on the way past. Filed as [[T-1054]].
+    /// **Whether the drag should be *offered* at all under a non-custom sort was left open here and
+    /// is settled (T-1054): it is offered, under every sort.** The refusal that ticket proposed
+    /// rests on the premise that the dragged row always springs back, and T-1077 measured that
+    /// false — inside a tie band the displayed sequence *is* the `order` sequence. What each
+    /// surface does instead is ask `CadenceReorderVisibility` per drop and name the minority case.
     ///
     /// **`scopeTasks` is still a slice**, and `CadenceOrderCommit.commit` says a renumber should
     /// span the whole sequence. Every row surface in the app hands it a group or a tab rather than
-    /// a container, and on Today `order` is not even container-wide. Untouched here and filed as
-    /// [[T-1055]]; this ticket is about which *sequence* is rewritten, not about how much of it.
+    /// a container. T-1055 measured what that costs, in `CadenceRowReorderSliceSpanTests`: rows of
+    /// **one list** end up holding the same `order`, and a drag made on Today moves rows on that
+    /// list's Tasks tab the user never touched. The span four of the five surfaces want is the
+    /// **container** — `CadenceTaskQuerySupport.listGroupKey` groups Today by container and both
+    /// kanban columns sit inside one — and the fifth, All Tasks' cross-list sections, is the open
+    /// question [[T-1119]] puts to the user. Untouched here: this function is about which
+    /// *sequence* is rewritten, not about how much of it.
     ///
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
     ///   because a `save()` that throws cannot be provoked out of an in-memory container.
