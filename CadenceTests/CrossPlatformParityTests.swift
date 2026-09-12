@@ -427,8 +427,13 @@ struct CrossPlatformParityTests {
         // The old iOS rendering, kept as the thing that is no longer reached: `timeString` still
         // wraps, because ordinary in-range callers rely on it. The editor just stops feeding it
         // junk.
-        #expect(TimeFormatters.timeString(from: 1440) == "12 AM")
-        #expect(TimeFormatters.timeString(from: CadenceHabitReminderEditing.editorState(for: 1440).minuteOfDay) == "9 AM")
+        #expect(TimeFormatters.timeString(from: 1440, locale: CadenceTestClocks.twelveHour) == "12 AM")
+        #expect(
+            TimeFormatters.timeString(
+                from: CadenceHabitReminderEditing.editorState(for: 1440).minuteOfDay,
+                locale: CadenceTestClocks.twelveHour
+            ) == "9 AM"
+        )
     }
 
 

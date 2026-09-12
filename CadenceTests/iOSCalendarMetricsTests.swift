@@ -519,6 +519,12 @@ struct iOSCalendarMetricsTests {
     /// The strings are equal for every hour of the day and the equality is asserted rather than
     /// asserted-about: `timeString` only appends minutes when they are non-zero, and `hour * 60`
     /// never has any, so the shared function returns the retired spelling byte for byte.
+    ///
+    /// The clock face is stated (T-1135). The retired spelling this compares against is 12-hour by
+    /// construction, so the formatter has to be asked for the same face — without the locale this
+    /// would read the developer's Language & Region setting and go red on a British Mac, which is
+    /// the [[T-1115]] shape. What survives the statement is the claim the test is actually for:
+    /// the shared formatter and the deleted four-liner agree.
     @Test func bothIOSHourRailsFormatTheirLabelsWithTheSharedTimeFormatter() throws {
         for hour in 0..<24 {
             let retired: String
@@ -528,14 +534,14 @@ struct iOSCalendarMetricsTests {
             else { retired = "\(hour - 12) PM" }
 
             #expect(
-                TimeFormatters.timeString(from: hour * 60) == retired,
-                "hour \(hour): \(TimeFormatters.timeString(from: hour * 60)) != \(retired)"
+                TimeFormatters.timeString(from: hour * 60, locale: CadenceTestClocks.twelveHour) == retired,
+                "hour \(hour): \(TimeFormatters.timeString(from: hour * 60, locale: CadenceTestClocks.twelveHour)) != \(retired)"
             )
         }
         // The edges the hand-rolled version existed to special-case.
-        #expect(TimeFormatters.timeString(from: 0) == "12 AM")
-        #expect(TimeFormatters.timeString(from: 12 * 60) == "12 PM")
-        #expect(TimeFormatters.timeString(from: 23 * 60) == "11 PM")
+        #expect(TimeFormatters.timeString(from: 0, locale: CadenceTestClocks.twelveHour) == "12 AM")
+        #expect(TimeFormatters.timeString(from: 12 * 60, locale: CadenceTestClocks.twelveHour) == "12 PM")
+        #expect(TimeFormatters.timeString(from: 23 * 60, locale: CadenceTestClocks.twelveHour) == "11 PM")
 
         let timeline = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")

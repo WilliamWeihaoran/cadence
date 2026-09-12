@@ -350,19 +350,15 @@ struct CalendarEventEditPopover: View {
     }
 
     /// Parses a time string like "4:55 PM", "16:55", "4 PM" → minutes from midnight.
+    ///
+    /// The body moved to `TimeFormatters.minutes(fromTimeString:)` for [[T-1135]], unchanged. These
+    /// two fields are seeded by `TimeFormatters.timeString`, parsed here, and re-seeded by
+    /// `timeString` again, so the parser and the formatter have to stay a pair — and the formatter
+    /// now spells 24-hour time on a 24-hour Mac, which is a spelling this round trip has to accept.
+    /// A test cannot reach a `private` method on a macOS view, so the pair is pinned where the pair
+    /// lives.
     private func parseTime(_ raw: String) -> Int? {
-        let s = raw.trimmingCharacters(in: .whitespaces).lowercased()
-        let isPM = s.contains("pm")
-        let isAM = s.contains("am")
-        let digits = s.replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "").trimmingCharacters(in: .whitespaces)
-        let parts = digits.split(separator: ":").map { Int($0.trimmingCharacters(in: .whitespaces)) }
-        guard let h = parts.first ?? nil else { return nil }
-        let m = parts.count > 1 ? (parts[1] ?? 0) : 0
-        var hour = h
-        if isPM && hour != 12 { hour += 12 }
-        if isAM && hour == 12 { hour = 0 }
-        guard hour >= 0, hour < 24, m >= 0, m < 60 else { return nil }
-        return hour * 60 + m
+        TimeFormatters.minutes(fromTimeString: raw)
     }
 
     /// **T-503, and the macOS twin of the site [[T-497]] fixed on iOS** — one platform behind, and

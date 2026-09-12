@@ -3895,7 +3895,85 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   split the Mac already has is the same choice iOS needs between its grid and Today.
 
 
-- [T-1135] **Every time the app displays is hard-coded 12-hour AM/PM, ignoring the system's 24-hour setting.**
+- [T-1135] **CLOSED 2026-09-12 (agent `clockfmt`) — the clock face is the user's now.**
+  `TimeFormatters.timeString(from:locale:)` asks `Locale.hourCycle` and spells `13:15` where the
+  system is set to a 24-hour clock and the unchanged `1:15 PM` where it is not; `timeRange` follows
+  it; and a population sweep fails any file that answers the question for itself. All 33 call sites
+  already went through these two functions, so **no call site changed** — the defect was one
+  function deciding for everybody, which is also why it was worth fixing in one.
+  **Why `Locale.hourCycle` rather than `Date.FormatStyle`, measured 2026-09-12 on macOS 26.1.** All
+  four candidate APIs — `Locale.hourCycle`, `DateFormatter.dateFormat(fromTemplate: "j", locale:)`,
+  an instance `DateFormatter` with `.timeStyle = .short`, and `Date.FormatStyle` — derive from the
+  same `Locale` and returned the same answer for `en_US`, `en_GB`, `de_DE`, `fr_FR`, `ja_JP` and an
+  explicit `en_US@hours=h23`. So the choice is not about correctness; it is about cost, and the
+  brief was right that several call sites (`MarkdownTaskEmbedDrawingSupport`,
+  `iOSMarkdownTaskEmbedLayoutInfo`) are draw paths. Per call: `Locale.current.hourCycle` **0.048 µs**,
+  `dateFormat(fromTemplate:)` **3.4–5.1 µs**, the old hand-built string **1.561 µs**, the new
+  locale-aware one **1.538 µs**. Reading the locale on every call is free against the string
+  interpolation that was already there, so there is no cache, nothing to invalidate on a locale
+  change, and `DateFormatters`' own header warning about runtime-reconfigured statics stays honest.
+  **And why the app keeps its own two spellings rather than the locale's.** `Date.FormatStyle`
+  renders `ja_JP` as `13時` and `de_DE` as `13 Uhr` — translated chrome beside an English app, which
+  is [[T-18]]'s question and not this one's — and it renders `en_US` with a NARROW NO-BREAK SPACE
+  (U+202F) before AM/PM, so adopting it would have silently rewritten every 12-hour string already
+  on screen and every test asserting one. Both measured. The 12-hour branch is therefore byte-for-byte
+  what shipped; only the 24-hour face is new, always zero-padded `HH:mm` because a bare `13` next to
+  a bare `9` down an hour rail does not read as a clock.
+  **The round trip, which is the part that could have been a different bug.** The brief asked which
+  call sites compare or concatenate the output. Swept: `KanbanCardView` lowercases it for display,
+  several sites interpolate it into a sentence, and exactly **one** reads it back —
+  `CalendarEventEditPopover` seeds Start/End with `timeString`, parses what the user leaves there,
+  and re-seeds with `timeString`. Its `parseTime` was `private` on a macOS view and unreachable from
+  a test, so it moved **verbatim** to `TimeFormatters.minutes(fromTimeString:)`, and the pair is now
+  pinned across every minute of the day on both faces plus the cross terms (a 24-hour user typing
+  `4 PM`, a 12-hour user typing `16:55`; the parser already accepted both). Nothing keyed, nothing
+  persisted, and neither `CadenceMCPServer` nor `CadenceWidgets` calls the formatter at all, so no
+  protocol surface moved either. Display format only — storage is untouched.
+  **The test target's own clock is pinned now, the way [[T-1116]] pinned its zone.** Until this
+  change a test could assert `"1 PM"` and be right on every machine by construction; after it, an
+  unstated assertion reads the developer's Language & Region, which is exactly the [[T-1115]] shape
+  that cost a session. Measured: the per-process **argument** domain does reach `Locale.current`
+  (`-AppleLocale en_GB` yields `hourCycle == .zeroToTwentyThree`), so the `TestAction` now carries
+  `-AppleLocale en_US`, `theTestHostRunsInTheClockTheSchemePins` asserts the pin landed rather than
+  merely being written down, the LaunchAction is asserted **not** to carry it (a human running
+  Cadence from Xcode keeps their own clock), and `CadenceTestClocks` gives a test the two faces to
+  state. Five assertions across four existing files were converted from unstated to stated.
+  **The sweep, proven on a real offender.** `noSourceFileSpellsAClockWithoutAskingTheHourCycle`
+  walks all 587 Swift files under `Cadence/` and fires on one that names a bare `AM`/`PM` token, or
+  an ICU `h:mm a` pattern, **without** consulting `hourCycle`. A conjunction rather than a ban: the
+  formatter has to spell AM somewhere, and it passes on its merits with no exemption — [[T-976]]'s
+  lesson, that a per-file allowlist looks complete and lets a ninth site escape. With comments
+  blanked the token appears in exactly one file today; every other occurrence in the tree is prose.
+  **Mutations: 5 built, 5 killed, 0 survived, 0 invalid** (`scripts/mutate.sh`, one lease, each
+  applied against a byte backup and each confirmed to compile — every run exited 65 on a failing
+  test rather than on a compile error, and the runner refuses a non-compiling mutation as INVALID
+  rather than counting it). Each was aimed at one killer and each was killed by that one:
+  M1 makes the 24-hour branch unreachable, which is the shipped defect —
+  `aClockLabelFollowsTheLocalesHourCycleRatherThanAlwaysSayingAMPM`. M2 hand-rolls an AM/PM clock
+  back into `KanbanCardView`, a real surface no other guard watches — killed by
+  `noSourceFileSpellsAClockWithoutAskingTheHourCycle`, i.e. **the sweep, proven on an offender it
+  alone can see**.
+  M3 makes `usesTwentyFourHourClock` answer 12-hour for every locale —
+  `theTestHostRunsInTheClockTheSchemePins`. M4 removes `-AppleLocale en_US` from the scheme —
+  `theZonePinIsOnTheTestActionAndDoesNotFollowAHumanRunningTheApp`. M5 drops the midnight
+  correction from the moved parser, which changes nothing anyone draws —
+  `aTypedTimeSurvivesTheEditorsFormatParseReformatRoundTrip`, the only test that could see it.
+  **Not measured, and filed as [[T-1163]]:** that the *"24-Hour Time"* switch in System Settings
+  itself reaches `Locale.current`. `AppleICUForce24HourTime` is read from the **global** preferences
+  domain, which a test process cannot write without changing the machine's own settings; the
+  argument domain is visible to `UserDefaults` but is not consulted for that key (it is for
+  `AppleLocale`), and a `HOME` redirect fails because `cfprefsd` owns the path. Every other link
+  **is** measured: `Locale` carries the answer once set (`en_US@hours=h23` → `.zeroToTwentyThree`,
+  `jmm` → `HH:mm`), and `en_GB`, `de_DE`, `fr_FR` and `ja_JP` all report 24-hour. So the fix is
+  proven for every 24-hour *region* regardless; only the US-user-who-flipped-the-switch case rests
+  on that key's documented behaviour.
+  **[[T-1130]] is not closed by this and did not get harder.** The macOS hour rail still spells
+  `Text("\(hour)")` itself, which is the divergence that ticket is about. Two notes for whoever
+  takes it: on a 24-hour system the two rails now nearly agree by accident (`13` against `13:00`
+  rather than against `1 PM`), and the 24-hour label is **narrower** than the one it replaces —
+  measured at 11pt medium, the rail's own size and weight: `12 AM` 32.8pt, `00:00` 32.3pt — so
+  option 2 there is still the one with a measurement behind it.
+  **Filed as:** **Every time the app displays is hard-coded 12-hour AM/PM, ignoring the system's 24-hour setting.**
   Filed 2026-09-12 by the coordinator, from a finding `hourladder` recorded inside [[T-1130]] while
   closing [[T-619]] — pulled out to its own id because it is a defect rather than a question, and a
   finding that lives in another ticket's body is the shape that left [[T-1085]] unnoticed for five days.
@@ -3911,6 +3989,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Date`, so it cannot simply defer to a `Date.FormatStyle` without a reference day; and several
   call sites compare or concatenate its output. Any change needs the same population sweep
   treatment [[T-976]] used, not a per-file allowlist.
+
+- [T-1163] **For the user: turn on "24-Hour Time" on your Mac and tell us whether Cadence follows.**
+  Filed 2026-09-12 by `clockfmt` while closing [[T-1135]], as the one link in that fix which an
+  agent cannot measure. Two minutes, no code owed unless the answer is no.
+  **The procedure.** System Settings → General → Date & Time → **24-Hour Time** on. Relaunch
+  Cadence. Every hour rail, block label, event range and task time should read `13:00` rather than
+  `1 PM`. Turn it back off and they should go back.
+  **Why an agent cannot answer it.** The switch writes `AppleICUForce24HourTime` into the **global**
+  preferences domain. Writing that from a test is changing the machine's own settings, which is out
+  of bounds; and measured 2026-09-12, none of the routes that are in bounds reach it — the
+  per-process argument domain carries the key to `UserDefaults` but `Locale.current` ignores it
+  there (it does honour `-AppleLocale`), and redirecting `HOME` does nothing because `cfprefsd`
+  resolves the path itself. So the chain is proven up to `Locale`: `Locale(identifier:
+  "en_US@hours=h23").hourCycle` is `.zeroToTwentyThree` and formats `HH:mm`, and the app reads
+  `Locale.hourCycle`. The unproven link is whether the switch lands in `Locale.current`.
+  **If the answer is no**, the fix is small and known: read the override directly —
+  `UserDefaults.standard.object(forKey: "AppleICUForce24HourTime")`, or
+  `DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current)?.contains("a")` — in
+  `TimeFormatters.usesTwentyFourHourClock(_:)`, which is the single place that decides. The second
+  form costs 3.4–5.1 µs per call against 0.048 µs and would need a cache with a
+  `NSLocale.currentLocaleDidChangeNotification` invalidation, so it is worth knowing before
+  reaching for it. **If the answer is yes**, nothing is owed and this entry closes as confirmed.
+  **Either way T-1135 already holds for every 24-hour region** — `en_GB`, `de_DE`, `fr_FR`, `ja_JP`
+  all report a 24-hour cycle through the locale alone — so this is about the US user who prefers a
+  24-hour clock, not about the default-24-hour world.
 
 - [T-1139] **Nothing compares the build-free sweep precheck's answer with the authoritative scan's, so today's exact agreement will decay silently.** Filed 2026-09-12 by `sweepderive` while closing [[T-1092]]. **MEASURED at `08c84bc`:** `scripts/real-tree-sweep-manifest.sh <id> precheck` now reproduces all 280 entries of `CadenceTests/CadenceRealTreeSweepManifest.txt` with 0 false positives, in 2.6s, with no build — but that number lives in a comment in the script's header and in a command a human has to type. `CadenceTestTargetHygieneTests.theCheapPrecheckLooksForExactlyTheWalkNeedlesTheScanDoes` compares the two readers' **needles** and nothing compares their **answers**, so the precheck can lose a whole family of sweeps (as it had, silently, for the 46 this ticket's parent recovered) while still reporting a clean tree and still passing every test. The natural home is `CadenceGuardScriptSelftestTests`, which already shells out to a guard script from the test host and already chains `precheck-selftest`; the check is "run the precheck over every file in `CadenceTests/` against the committed manifest, and require it to name exactly the manifest's entries". Note that a strict equality makes the precheck's *incompleteness* a test failure, which is not what [[T-1092]] argues for — the honest assertion is probably "no false positives, and these named shapes are still reached", i.e. positional rather than a recall percentage.
 - [T-1140] **The startup-pass list in `noStartupPassReportsAChangeOnAFirstLaunch` is still hand-maintained, which is the drift [[T-1108]] just closed one layer along.** Filed 2026-09-12 by `sweepderive` while closing [[T-1108]]. That test calls the five launch passes individually on purpose, because it asks each one's **answer** and `PersistenceController.performStartupMaintenance` returns none of them — but a hand-written list of the passes is exactly what the replay was, and it had already drifted once: the focus reconcile was missing from it too, and was added by hand in the same commit. Nothing fails if a sixth pass joins `changedStore` and not this test. The shape of a fix: have `performStartupMaintenance` return the terms `changedStore` is built from (a small struct, or the `Bool` it already computes) so the test reads production's own answer, or derive the expected pass list from the function body the way `theLaunchRunsItsFivePassesInThisOrderAndSeedsNothing` already reads it for ordering and assert the two lists match.

@@ -562,8 +562,10 @@ struct CalendarTimelineRangeTests {
         }
 
         // The two vocabularies, from the formatter itself: 13 is "1 PM" on iOS and "13" on the Mac.
-        #expect(TimeFormatters.timeString(from: 13 * 60) == "1 PM")
-        #expect(TimeFormatters.timeString(from: 0) == "12 AM")
+        // The clock face is stated (T-1135) because the formatter now follows the user's — the
+        // divergence this pins is between the two rails, not between two machines.
+        #expect(TimeFormatters.timeString(from: 13 * 60, locale: CadenceTestClocks.twelveHour) == "1 PM")
+        #expect(TimeFormatters.timeString(from: 0, locale: CadenceTestClocks.twelveHour) == "12 AM")
     }
 }
 

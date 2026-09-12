@@ -359,19 +359,112 @@ nonisolated enum DateFormatters {
 // MARK: - Time Formatters
 
 nonisolated enum TimeFormatters {
-    /// Formats minutes-from-midnight as 12-hour time: 75 → "1:15 AM", 720 → "12 PM"
-    static func timeString(from minutes: Int) -> String {
+    /// Does `locale` name hours `0…23`, rather than `1…12` with AM/PM?
+    ///
+    /// **T-1135.** Every clock face in the app used to be hard-coded 12-hour, so a user whose Mac
+    /// or phone is set to a 24-hour clock read `1 PM` on every timed grid, schedule row, block
+    /// label and task sheet. 24-hour is the default in most of the world — `en_GB`, `de_DE`,
+    /// `fr_FR` and `ja_JP` all report `.zeroToTwentyThree`, measured 2026-09-12 — so this was not a
+    /// minority setting, and it is not covered by the translation backlog in [[T-18]] either: the
+    /// OS answers this question in English, with no localisation work behind it.
+    ///
+    /// `Locale.hourCycle` rather than `DateFormatter.dateFormat(fromTemplate: "j", …)`, and the
+    /// choice is measured rather than assumed. On macOS 26.1 the two agree in every case that was
+    /// reachable from a test process — `Locale.hourCycle`, an instance `DateFormatter` with
+    /// `.timeStyle = .short`, `DateFormatter.dateFormat(fromTemplate:)` and `Date.FormatStyle` all
+    /// derive from the same `Locale` and returned the same answer under `en_US`, `en_GB`, `de_DE`,
+    /// `fr_FR`, `ja_JP` and an explicit `en_US@hours=h23`. They differ only in cost:
+    /// `Locale.current.hourCycle` measured **0.048 µs** and
+    /// `DateFormatter.dateFormat(fromTemplate:)` **3.4–5.1 µs**, which matters because
+    /// several call sites (`MarkdownTaskEmbedDrawingSupport`, `iOSMarkdownTaskEmbedLayoutInfo`) are
+    /// in draw paths.
+    ///
+    /// **Not measured, and worth saying so:** that the macOS/iOS *"24-Hour Time"* switch reaches
+    /// `Locale.current`. `AppleICUForce24HourTime` is read from the **global** preferences domain,
+    /// which a test process cannot write without changing the machine's own settings, and the
+    /// per-process argument domain is not consulted for it (it *is* for `AppleLocale`, which is how
+    /// the test scheme pins this — see `CadenceTestClocks`). What is measured is that `Locale`
+    /// carries the answer once it is set: `Locale(identifier: "en_US@hours=h23").hourCycle` is
+    /// `.zeroToTwentyThree` and formats `HH:mm`. [[T-1163]] asks the repository owner to confirm the
+    /// last link on their own Mac.
+    ///
+    /// A locale parameter rather than a read of `Locale.current` inside the formatter, so a test
+    /// can state the hour cycle the way `CadenceTestTimeZones` lets it state the zone — the
+    /// [[T-1115]] lesson, which cost a session when a suite passed on the host's longitude.
+    static func usesTwentyFourHourClock(_ locale: Locale = .current) -> Bool {
+        switch locale.hourCycle {
+        case .zeroToTwentyThree, .oneToTwentyFour:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Formats minutes-from-midnight for the clock `locale` names: 75 → "1:15 AM" or "01:15",
+    /// 720 → "12 PM" or "12:00".
+    ///
+    /// One canonical spelling per hour cycle, not the locale's own rendering, and that is the line
+    /// between this ticket and [[T-18]]. `Date.FormatStyle` would spell `ja_JP` as `13時` and
+    /// `de_DE` as `13 Uhr` — translated chrome beside an English app — and it renders `en_US` with a
+    /// NARROW NO-BREAK SPACE (U+202F) before AM/PM, so adopting it would have silently changed every
+    /// 12-hour string in the app as well. Both measured 2026-09-12.
+    ///
+    /// The 12-hour branch is byte-for-byte what it was, so nothing that already reads `1:15 AM`
+    /// moves. The 24-hour branch is always zero-padded `HH:mm`, including on the hour: a bare `13`
+    /// beside a bare `9` does not read as a clock, and the hour rails are a column of these. It is
+    /// also what `CalendarEventEditPopover.parseTime` already accepts — `"16:55"` was in that
+    /// parser's doc comment before this change — so the editor's format-parse-reformat round trip
+    /// survives, which is the one call site whose output is read back rather than only drawn.
+    ///
+    /// `.oneToTwentyFour` (`h24`, where midnight is `24:00`) is folded into the `h23` spelling
+    /// deliberately: one 24-hour face for the app, the way there is one 12-hour face.
+    static func timeString(from minutes: Int, locale: Locale = .current) -> String {
         let normalized = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60)
         let h = normalized / 60
         let m = normalized % 60
+        if usesTwentyFourHourClock(locale) {
+            return String(format: "%02d:%02d", h, m)
+        }
         let h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h)
         let ampm = h < 12 ? "AM" : "PM"
         return m == 0 ? "\(h12) \(ampm)" : String(format: "%d:%02d %@", h12, m, ampm)
     }
 
-    /// Formats a start/end minute pair as a range: "1:15 AM – 2:15 AM"
-    static func timeRange(startMin: Int, endMin: Int) -> String {
-        "\(timeString(from: startMin)) – \(timeString(from: endMin))"
+    /// Formats a start/end minute pair as a range: "1:15 AM – 2:15 AM", or "01:15 – 02:15".
+    static func timeRange(startMin: Int, endMin: Int, locale: Locale = .current) -> String {
+        "\(timeString(from: startMin, locale: locale)) – \(timeString(from: endMin, locale: locale))"
+    }
+
+    /// Reads a typed time — "4:55 PM", "16:55", "4 PM", "04:55" — back to minutes from midnight,
+    /// or `nil` when it is not a time at all.
+    ///
+    /// The inverse of `timeString(from:locale:)`, and it lives beside it because of what the one
+    /// surface that uses it does: `CalendarEventEditPopover`'s start and end fields are seeded with
+    /// `timeString`, edited by hand, parsed by this, and then **re-seeded with `timeString`**. That
+    /// is the only call site in the app whose output is read back rather than only drawn, so the
+    /// pair has to agree, and a pair that agrees cannot be a private helper in a view file that no
+    /// test can reach — which is what this was before [[T-1135]] moved it. The body is unchanged;
+    /// the move is what makes `aTypedTimeSurvivesTheEditorsFormatParseReformatRoundTrip` possible.
+    ///
+    /// Locale-free on purpose, and that is the asymmetry worth stating. Display follows the user's
+    /// clock; *input* accepts both faces from everyone, because a 24-hour user who types `4 PM` out
+    /// of habit and a 12-hour user who types `16:55` are both being clear. Nothing here needs the
+    /// hour cycle to decide, since `am`/`pm` is present or it is not.
+    static func minutes(fromTimeString raw: String) -> Int? {
+        let s = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        let isPM = s.contains("pm")
+        let isAM = s.contains("am")
+        let digits = s.replacingOccurrences(of: "am", with: "")
+            .replacingOccurrences(of: "pm", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        let parts = digits.split(separator: ":").map { Int($0.trimmingCharacters(in: .whitespaces)) }
+        guard let h = parts.first ?? nil else { return nil }
+        let m = parts.count > 1 ? (parts[1] ?? 0) : 0
+        var hour = h
+        if isPM && hour != 12 { hour += 12 }
+        if isAM && hour == 12 { hour = 0 }
+        guard hour >= 0, hour < 24, m >= 0, m < 60 else { return nil }
+        return hour * 60 + m
     }
 
     /// Canonical minutes → duration label for the whole app: "45m", "2h", "1h 24m". Never renders

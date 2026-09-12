@@ -75,7 +75,7 @@ struct NonisolatedValueTypeTests {
         let date = try #require(DateFormatters.date(from: "2026-08-18", in: calendar))
         #expect(DateFormatters.dateKey(from: date, calendar: calendar) == "2026-08-18")
         #expect(DateFormatters.date(from: "not-a-date", in: calendar) == nil)
-        #expect(TimeFormatters.timeString(from: 75) == "1:15 AM")
+        #expect(TimeFormatters.timeString(from: 75, locale: CadenceTestClocks.twelveHour) == "1:15 AM")
         #expect(TimeFormatters.durationLabel(minutes: 0, emptyPlaceholder: "-") == "-")
     }
 

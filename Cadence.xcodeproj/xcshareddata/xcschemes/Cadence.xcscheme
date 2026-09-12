@@ -65,6 +65,10 @@
             argument = "-com.apple.CoreData.Logging.stderr 0"
             isEnabled = "YES">
          </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-AppleLocale en_US"
+            isEnabled = "YES">
+         </CommandLineArgument>
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable

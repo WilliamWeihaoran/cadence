@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Cadence
@@ -72,9 +73,22 @@ struct DateFormatterSupportTests {
         #expect(DateFormatters.date(from: raw) == DateFormatters.date(from: canonical))
     }
 
+    /// The locale is stated (T-1135). Before the formatter asked one, `"12 AM"` was right on every
+    /// machine by construction; now an unstated assertion here would be reading the developer's
+    /// Language & Region setting, which is the [[T-1115]] shape. The wrap is the subject, so it is
+    /// asserted on both faces — a modulo that dropped the day would fail on either.
     @Test func timeLabelsWrapEndOfDayToMidnight() throws {
-        #expect(TimeFormatters.timeString(from: 24 * 60) == "12 AM")
-        #expect(TimeFormatters.timeRange(startMin: 18 * 60, endMin: 24 * 60) == "6 PM – 12 AM")
+        #expect(TimeFormatters.timeString(from: 24 * 60, locale: CadenceTestClocks.twelveHour) == "12 AM")
+        #expect(
+            TimeFormatters.timeRange(startMin: 18 * 60, endMin: 24 * 60, locale: CadenceTestClocks.twelveHour)
+                == "6 PM – 12 AM"
+        )
+
+        #expect(TimeFormatters.timeString(from: 24 * 60, locale: CadenceTestClocks.twentyFourHour) == "00:00")
+        #expect(
+            TimeFormatters.timeRange(startMin: 18 * 60, endMin: 24 * 60, locale: CadenceTestClocks.twentyFourHour)
+                == "18:00 – 00:00"
+        )
     }
 
     @Test func estimateLabelSplitsHoursAndMinutesAndNeverRendersADecimalHour() {
@@ -209,5 +223,266 @@ struct DateFormatterSupportTests {
         #expect(stripped.count == raw.count)
         #expect(CadenceSourceScan.matchCount(needle, in: stripped) >= 11)
         #expect(stripped.contains("static let backupFolderTimestamp: DateFormatter"))
+    }
+}
+
+// MARK: - T-1135: the clock face follows the user's, and no file spells its own
+
+/// The detector the population sweep below rests on, at file scope and `nonisolated` so the closure
+/// `CadenceScanInstrument` is built from carries no actor isolation across its escape — the same
+/// reason `CadenceAmbientZoneReadScan` is shaped this way.
+nonisolated enum CadenceHardCodedClockScan {
+
+    /// A bare `AM` or `PM` token. Word-bounded on both sides so `SPM`, `AMPMStyle` or a property
+    /// called `pm` cannot trip it, and deliberately not anchored to a quote: the offender this was
+    /// written against spells `"AM"` directly, but `"12 AM"` and `"\(hour) PM"` are the same defect
+    /// and a quote-anchored needle would have missed both.
+    static let amPmToken = "(?<![A-Za-z0-9_])[AP]M(?![A-Za-z0-9_])"
+
+    /// The other way to hard-code a 12-hour face: an ICU pattern with an `a` field in it, as in
+    /// `dateFormat = "h:mm a"`. Measured over `Cadence/` on 2026-09-12 — zero occurrences, so this
+    /// half is a guard against a future spelling rather than a description of one.
+    static let twelveHourTemplate = "\"[^\"]*h{1,2}:mm[^\"]*\\ba\\b[^\"]*\""
+
+    /// The evidence that the file asked the system instead of deciding for itself.
+    static let hourCycleNeedles = ["hourCycle", "usesTwentyFourHourClock"]
+
+    /// **The conjunction is the rule, not the ban.** A file that names AM or PM is not wrong — the
+    /// 12-hour branch of `TimeFormatters.timeString` has to spell them somewhere. A file that names
+    /// them *without* consulting the hour cycle is, because that is a clock face chosen by the
+    /// programmer rather than by the user. Written this way rather than as a per-file allowlist for
+    /// the reason [[T-976]] closed on: per-file guards let a ninth site escape, and the exempt file
+    /// then passes forever whatever it does.
+    static func spellsAClockWithoutAskingTheHourCycle(_ source: String) -> Bool {
+        let spellsOne = CadenceSourceScan.matchCount(amPmToken, in: source) > 0
+            || CadenceSourceScan.matchCount(twelveHourTemplate, in: source) > 0
+        guard spellsOne else { return false }
+        return !hourCycleNeedles.contains { source.contains($0) }
+    }
+}
+
+struct ClockFaceFollowsTheSystemTests {
+
+    /// **T-1135, the behaviour.** Minutes-from-midnight render on the face the locale names.
+    ///
+    /// Both faces in one walk over the same minutes, because the two ways this regresses are
+    /// opposite: a formatter that ignored the locale again would fail the 24-hour column, and one
+    /// that switched everybody to 24-hour would fail the 12-hour column. The 12-hour expectations
+    /// are the strings the app shipped before this change, character for character, which is the
+    /// claim that nothing already on screen moved.
+    @Test func aClockLabelFollowsTheLocalesHourCycleRatherThanAlwaysSayingAMPM() {
+        let expected: [(minutes: Int, twelve: String, twentyFour: String)] = [
+            (0, "12 AM", "00:00"),
+            (1, "12:01 AM", "00:01"),
+            (75, "1:15 AM", "01:15"),
+            (9 * 60, "9 AM", "09:00"),
+            (11 * 60 + 59, "11:59 AM", "11:59"),
+            (12 * 60, "12 PM", "12:00"),
+            (13 * 60, "1 PM", "13:00"),
+            (13 * 60 + 15, "1:15 PM", "13:15"),
+            (23 * 60 + 59, "11:59 PM", "23:59"),
+            // The wrap, from both sides.
+            (24 * 60, "12 AM", "00:00"),
+            (-15, "11:45 PM", "23:45"),
+        ]
+
+        for probe in expected {
+            #expect(
+                TimeFormatters.timeString(from: probe.minutes, locale: CadenceTestClocks.twelveHour)
+                    == probe.twelve,
+                "\(probe.minutes) minutes did not read \(probe.twelve) on a 12-hour clock"
+            )
+            #expect(
+                TimeFormatters.timeString(from: probe.minutes, locale: CadenceTestClocks.twentyFourHour)
+                    == probe.twentyFour,
+                "\(probe.minutes) minutes did not read \(probe.twentyFour) on a 24-hour clock"
+            )
+            // `h24` is the rarer cycle where midnight is written 24:00. Cadence has one 24-hour
+            // face, so it folds into the `h23` spelling — asserted rather than assumed.
+            #expect(
+                TimeFormatters.timeString(from: probe.minutes, locale: CadenceTestClocks.twentyFourHourFromOne)
+                    == probe.twentyFour
+            )
+        }
+
+        // And a real 24-hour region agrees with the constructed one, so the keyword form above is
+        // not a private dialect of this suite.
+        for identifier in ["en_GB", "de_DE", "fr_FR"] {
+            #expect(
+                TimeFormatters.timeString(from: 13 * 60 + 15, locale: Locale(identifier: identifier)) == "13:15",
+                "\(identifier) did not read as a 24-hour clock"
+            )
+        }
+
+        // The range separator is the formatter's, not the caller's, so it is read on both faces too.
+        #expect(
+            TimeFormatters.timeRange(startMin: 9 * 60, endMin: 17 * 60, locale: CadenceTestClocks.twelveHour)
+                == "9 AM – 5 PM"
+        )
+        #expect(
+            TimeFormatters.timeRange(startMin: 9 * 60, endMin: 17 * 60, locale: CadenceTestClocks.twentyFourHour)
+                == "09:00 – 17:00"
+        )
+    }
+
+    /// The one call site whose output is read back rather than only drawn.
+    ///
+    /// `CalendarEventEditPopover` seeds its Start and End fields with `timeString`, parses what the
+    /// user leaves there, and re-seeds them with `timeString`. Before T-1135 the format was fixed, so
+    /// the parser only ever saw one spelling; now it can be handed `16:55` on a 24-hour Mac. A
+    /// formatter change that altered a string something else reads back is a different bug from the
+    /// one being fixed, which is why this is asserted over every minute of the day on both faces
+    /// rather than sampled.
+    ///
+    /// The cross terms matter as much as the round trip: a 24-hour user who types `4 PM` out of
+    /// habit, and a 12-hour user who types `16:55`, must both land on 16:55.
+    @Test func aTypedTimeSurvivesTheEditorsFormatParseReformatRoundTrip() {
+        for (face, locale) in CadenceTestClocks.all {
+            for minute in 0..<(24 * 60) {
+                let drawn = TimeFormatters.timeString(from: minute, locale: locale)
+                #expect(
+                    TimeFormatters.minutes(fromTimeString: drawn) == minute,
+                    "the \(face) spelling of minute \(minute) — \(drawn) — did not parse back to it"
+                )
+                #expect(
+                    TimeFormatters.timeString(
+                        from: TimeFormatters.minutes(fromTimeString: drawn) ?? -1,
+                        locale: locale
+                    ) == drawn,
+                    "\(drawn) did not survive a second trip through the \(face) editor"
+                )
+            }
+        }
+
+        // Typed by hand, in the other face's vocabulary, with the spacing people actually use.
+        let typed: [(String, Int?)] = [
+            ("4:55 PM", 16 * 60 + 55),
+            ("16:55", 16 * 60 + 55),
+            ("4 PM", 16 * 60),
+            ("04:55", 4 * 60 + 55),
+            ("  9:30 am  ", 9 * 60 + 30),
+            ("12 AM", 0),
+            ("00:00", 0),
+            ("24:00", nil),
+            ("noon", nil),
+            ("", nil),
+        ]
+        for probe in typed {
+            #expect(
+                TimeFormatters.minutes(fromTimeString: probe.0) == probe.1,
+                "\"\(probe.0)\" parsed to \(String(describing: TimeFormatters.minutes(fromTimeString: probe.0)))"
+            )
+        }
+    }
+
+    /// **T-1130 asked for a measurement rather than a hope, and this is the 24-hour half of it.**
+    ///
+    /// The hour rails are a fixed-width column of these labels, so the widest one decides whether
+    /// the rail fits. `theHourLabelFitsTheNarrowRail` measures the 12-hour label against the narrow
+    /// iOS rail; this asserts the 24-hour face does not make it worse, which is the only way T-1135
+    /// could have broken a layout. Measured 2026-09-12 at 11pt medium, the rail's own size and
+    /// weight: `12 AM` 32.8pt, `00:00` 32.3pt.
+    @Test func theTwentyFourHourHourRailLabelIsNoWiderThanTheTwelveHourOne() {
+        let font = NSFont.systemFont(ofSize: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium)
+        func width(_ text: String) -> CGFloat {
+            (text as NSString).size(withAttributes: [.font: font]).width
+        }
+
+        var widestTwelve: CGFloat = 0
+        var widestTwentyFour: CGFloat = 0
+        for hour in CadenceScheduleSupport.calendarHours {
+            widestTwelve = max(
+                widestTwelve,
+                width(TimeFormatters.timeString(from: hour * 60, locale: CadenceTestClocks.twelveHour))
+            )
+            widestTwentyFour = max(
+                widestTwentyFour,
+                width(TimeFormatters.timeString(from: hour * 60, locale: CadenceTestClocks.twentyFourHour))
+            )
+        }
+
+        #expect(widestTwelve > 0, "the rail walked no hours, so this comparison would be vacuous")
+        #expect(
+            widestTwentyFour <= widestTwelve,
+            """
+            the widest 24-hour rail label is \(widestTwentyFour)pt against the 12-hour \
+            \(widestTwelve)pt; re-measure CadenceCalendarWeekGridLayout.timeRailWidth before \
+            shipping it
+            """
+        )
+    }
+
+    /// **The population sweep.** No file in the app spells a clock face without asking the system
+    /// which one the user reads.
+    ///
+    /// A population rather than a list of the 33 known call sites, and a conjunction rather than a
+    /// ban on the letters `AM`: the rule is "decide this from the locale", so the file that *does*
+    /// consult the hour cycle passes on its merits and needs no exemption. [[T-976]] is the argument
+    /// — its per-file guards let a ninth site escape, and the escape was invisible because the
+    /// guard list looked complete.
+    ///
+    /// Measured over `Cadence/` on 2026-09-12: with comments blanked, the token appears in exactly
+    /// one file, `Cadence/Shared/DateFormatters.swift`, which is the formatter itself. Every other
+    /// occurrence in the tree is prose in a doc comment, which is why the sweep reads
+    /// `strippingComments` rather than raw text — and why it reads `strippingComments` rather than
+    /// `codeOnly`, which would blank the string literals the needle is looking for.
+    @Test func noSourceFileSpellsAClockWithoutAskingTheHourCycle() throws {
+        let instrument = try CadenceScanInstrument(
+            "hard-coded 12-hour clock face",
+            fires: """
+                let h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h)
+                let ampm = h < 12 ? "AM" : "PM"
+                return m == 0 ? "\\(h12) \\(ampm)" : String(format: "%d:%02d %@", h12, m, ampm)
+                """,
+            andNotOn: """
+                if usesTwentyFourHourClock(locale) { return String(format: "%02d:%02d", h, m) }
+                let ampm = h < 12 ? "AM" : "PM"
+                return m == 0 ? "\\(h12) \\(ampm)" : String(format: "%d:%02d %@", h12, m, ampm)
+                """,
+            by: CadenceHardCodedClockScan.spellsAClockWithoutAskingTheHourCycle
+        )
+
+        // The nearest misses, each one a way the detector could stop discriminating.
+        // The detector is deliberately **not** comment-aware — the sweep hands it stripped source,
+        // which is the layer that has to ignore prose. `Cadence/` is full of doc comments that
+        // discuss `12 AM`, so this pair is what stops the sweep reporting all of them: the raw
+        // sentence fires, the stripped one does not.
+        let prose = "/// at 11pt `12 AM` measures roughly 32.8pt\nlet width = railWidth"
+        #expect(instrument.fires(on: prose))
+        #expect(
+            !instrument.fires(on: CadenceSourceScan.strippingComments(prose)),
+            """
+            a comment that merely discusses a clock reports its file — the sweep reads \
+            strippingComments precisely so that prose cannot
+            """
+        )
+        #expect(
+            !instrument.fires(on: "let spm = SPM(rawValue: \"amplitude\") ?? .pm0"),
+            "the detector fires on identifiers that merely contain the letters"
+        )
+        #expect(
+            instrument.fires(on: "Text(\"\\(hour < 12 ? hour : hour - 12) \\(hour < 12 ? \"AM\" : \"PM\")\")"),
+            "the detector misses a clock spelled inline in a view body, which is how the rails do it"
+        )
+        #expect(
+            instrument.fires(on: "formatter.dateFormat = \"h:mm a\""),
+            "the detector misses the ICU spelling of the same hard-coded face"
+        )
+
+        let offenders = try instrument.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence"),
+            atLeast: 500,
+            including: "Cadence/Shared/DateFormatters.swift",
+            read: CadenceSourceScan.strippedSourceReader()
+        )
+
+        #expect(
+            offenders.isEmpty,
+            """
+            these files decide the clock face themselves instead of reading the user's — route them \
+            through TimeFormatters.timeString(from:locale:), which asks Locale.hourCycle: \
+            \(offenders.joined(separator: ", "))
+            """
+        )
     }
 }

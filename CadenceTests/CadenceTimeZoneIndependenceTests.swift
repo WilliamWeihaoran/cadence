@@ -89,6 +89,59 @@ nonisolated enum CadenceTestTimeZones {
     }
 }
 
+// MARK: - The other ambient input a clock label reads: 12-hour or 24-hour
+
+/// The hour cycles a clock-shaped assertion is read in, and the pin that keeps an unstated one from
+/// meaning whatever the developer's Mac is set to.
+///
+/// **T-1135 made this necessary and [[T-1115]] is why it is a helper rather than a literal.** Until
+/// then `TimeFormatters.timeString(from:)` spelled 12-hour AM/PM unconditionally, so a test could
+/// assert `"1 PM"` and be right on every machine by accident. Now the formatter asks the locale, and
+/// an assertion that does not state one is exactly the shape that cost a session: green here,
+/// red on a German or British Mac, with nothing in the test saying which input moved.
+///
+/// Two zones of defence, the same two T-1116 built for the time zone:
+///
+/// - the scheme's `TestAction` pins **`-AppleLocale en_US`** so the whole target has a stated hour
+///   cycle rather than the host's, and `theTestHostRunsInTheClockTheSchemePins` asserts the pin
+///   landed rather than merely being written down;
+/// - a test whose *subject* is the clock format states its locale outright, with these.
+///
+/// A launch argument rather than an environment variable, and that is measured rather than a style
+/// choice (2026-09-12, macOS 26.1): `AppleLocale` set in the per-process **argument** domain does
+/// reach `Locale.current` — `-AppleLocale en_GB` yields `hourCycle == .zeroToTwentyThree` — while
+/// `AppleICUForce24HourTime`, the key the System Settings switch writes, is read only from the
+/// global domain and ignores the argument domain entirely. So the locale is pinnable from a scheme
+/// and the 24-hour *switch* is not; `twentyFourHour` below states the cycle through the locale
+/// identifier instead, which is the same channel the switch uses once it is set.
+nonisolated enum CadenceTestClocks {
+
+    /// The locale the scheme's `TestAction` pins the host to.
+    static let pinnedIdentifier = "en_US"
+
+    /// A 12-hour clock, stated. `en_US` is the pinned identifier, so this is what an unstated
+    /// assertion *should* be reading — naming it makes that a claim rather than a coincidence.
+    static let twelveHour = Locale(identifier: "en_US")
+
+    /// A 24-hour clock, stated, without changing the language with it.
+    ///
+    /// `en_US@hours=h23` rather than `en_GB`: it isolates the hour cycle from every other locale
+    /// difference, so a failure cannot be blamed on British date order or spelling. Measured
+    /// 2026-09-12 — Foundation honours the keyword: `hourCycle` is `.zeroToTwentyThree` and the
+    /// `jmm` template is `HH:mm`, the same answers `en_GB`, `de_DE` and `fr_FR` give.
+    static let twentyFourHour = Locale(identifier: "en_US@hours=h23")
+
+    /// `h24`, the rarer 24-hour cycle in which midnight is `24:00`. Present so the app's choice to
+    /// fold it into the `h23` spelling is asserted rather than assumed.
+    static let twentyFourHourFromOne = Locale(identifier: "en_US@hours=h24")
+
+    /// Both faces, for a test that has to be read in each.
+    static let all: [(name: String, locale: Locale)] = [
+        ("12-hour", twelveHour),
+        ("24-hour", twentyFourHour),
+    ]
+}
+
 // MARK: - The detectors
 
 /// The two source-text detectors the sweeps rest on, at file scope and `nonisolated` so the
@@ -176,6 +229,44 @@ struct CadenceTimeZoneIndependenceTests {
         #expect(Calendar.current.timeZone.secondsFromGMT() == 0)
     }
 
+    /// **T-1135.** The second ambient input, and the same claim made about it: the host's clock
+    /// face is pinned, and the pin reached the process.
+    ///
+    /// Worth its own assertion rather than a line in the zone one because it fails for a different
+    /// reason and says so. `TZ` is an environment variable and `AppleLocale` is a launch argument —
+    /// different blocks of the scheme, different delivery mechanisms — so a change that drops one
+    /// need not drop the other, and a suite that lost this pin would go red on a British Mac with
+    /// nothing pointing at the scheme.
+    ///
+    /// The assertion is on the **hour cycle**, not on the identifier. `en_US` is one of several
+    /// identifiers that would satisfy this suite, and the identifier is not what any assertion in
+    /// the target actually turns on; a test pinned to the spelling would fail on a correct change
+    /// to `en_US_POSIX`. The identifier check underneath it is a separate, weaker claim about
+    /// *which* locale arrived, phrased as a prefix so a region or keyword suffix does not break it.
+    @Test func theTestHostRunsInTheClockTheSchemePins() {
+        #expect(
+            !TimeFormatters.usesTwentyFourHourClock(),
+            """
+            the test host reads a 24-hour clock (Locale.current = \(Locale.current.identifier), \
+            hourCycle = \(Locale.current.hourCycle)), so every clock-shaped assertion in this target \
+            that did not state a locale is measuring this machine. The TestAction pins \
+            -AppleLocale \(CadenceTestClocks.pinnedIdentifier); either that argument was dropped or \
+            shouldUseLaunchSchemeArgsEnv went back to YES.
+            """
+        )
+        #expect(
+            Locale.current.identifier.hasPrefix(CadenceTestClocks.pinnedIdentifier),
+            "the host locale is \(Locale.current.identifier), not the pinned \(CadenceTestClocks.pinnedIdentifier)"
+        )
+
+        // And the pin is only useful if the helper a stated test uses agrees with it, so the two
+        // faces are separated here as well — otherwise a `usesTwentyFourHourClock` that returned
+        // `false` for everything would satisfy the assertion above.
+        #expect(!TimeFormatters.usesTwentyFourHourClock(CadenceTestClocks.twelveHour))
+        #expect(TimeFormatters.usesTwentyFourHourClock(CadenceTestClocks.twentyFourHour))
+        #expect(TimeFormatters.usesTwentyFourHourClock(CadenceTestClocks.twentyFourHourFromOne))
+    }
+
     /// The pin lives on the **TestAction**, not on the LaunchAction, and this is the assertion that
     /// keeps it there.
     ///
@@ -224,12 +315,27 @@ struct CadenceTimeZoneIndependenceTests {
             testAction.contains("-com.apple.CoreData.Logging.stderr 0"),
             "the TestAction stopped inheriting the Launch arguments and did not re-declare the CoreData logging ones"
         )
+        // T-1135's pin, in the same block and for the same reason.
+        #expect(
+            testAction.contains("-AppleLocale \(CadenceTestClocks.pinnedIdentifier)"),
+            """
+            the TestAction declares no AppleLocale, so a clock-shaped assertion means whatever \
+            hour cycle the machine's Language & Region happens to be set to
+            """
+        )
 
         #expect(
             !launchAction.contains("key = \"TZ\""),
             """
             the LaunchAction pins TZ, so running Cadence from Xcode now shows a human dates in \
             the test suite's zone rather than their own
+            """
+        )
+        #expect(
+            !launchAction.contains("-AppleLocale"),
+            """
+            the LaunchAction pins AppleLocale, so running Cadence from Xcode now shows a human a \
+            clock face chosen by the test suite rather than the one their Mac is set to
             """
         )
     }
