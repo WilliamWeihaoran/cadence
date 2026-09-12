@@ -755,8 +755,43 @@ private struct iOSCalendarTimelineDayColumn: View {
                 .frame(width: colWidth - 18, height: blockHeight(start: range.start, end: range.end))
                 .offset(x: 9, y: yOffset(for: range.start))
             }
+
+            nowLine
         }
         .frame(width: colWidth, height: timelineHeight, alignment: .topLeading)
+    }
+
+    /// The red rule at the current minute, the same one macOS has always drawn ([[T-1131]]).
+    ///
+    /// `CadenceTimelineNowLine` rather than a second copy of the Mac's overlay: the mark, the
+    /// colour, the 1pt weight and the 15-second tick are all that component's, and the only thing
+    /// this column supplies is its own minute-to-Y — the `yOffset` every block above already uses,
+    /// so the rule cannot drift away from the blocks it crosses or fall behind the `1×`–`3×` pinch
+    /// that `hourHeight` carries.
+    ///
+    /// **Built only on today's column, which is what keeps this grid to one timer.** The component
+    /// would decline to draw on any other day anyway — `isVisible` asks the same question — but the
+    /// gate is here as well because this grid windows a scrolling range of days, so without it
+    /// every column on screen would run a `TimelineView(.periodic)` schedule to draw nothing. The
+    /// predicate is a *day* boundary rather than an hour, so the once-a-day staleness it can carry
+    /// is the midnight rollover, which this surface already redraws for `dayWash` on the same test.
+    ///
+    /// No dot: the Mac's Calendar page has none either, and one dot per visible column would be a
+    /// row of them across a week.
+    @ViewBuilder
+    private var nowLine: some View {
+        if Calendar.current.isDateInToday(date) {
+            CadenceTimelineNowLine(
+                day: date,
+                totalWidth: colWidth,
+                startHour: CadenceScheduleSupport.calendarStartHour,
+                endHour: CadenceScheduleSupport.calendarEndHour,
+                leadingInset: iOSCalendarTimelineMetrics.nowLineInset,
+                trailingInset: iOSCalendarTimelineMetrics.nowLineInset,
+                showDot: false,
+                yOffset: { yOffset(for: $0) }
+            )
+        }
     }
 
     /// The same guard the Calendar Board's card makes, for the same reason and against the same

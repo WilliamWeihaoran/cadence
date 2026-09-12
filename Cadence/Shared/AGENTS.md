@@ -145,6 +145,11 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
 - Use one hover/selection layer at one radius.
 - The shared board header is `CadenceBoardColumnHeader` in `Shared/Components/`.
 - The shared estimate popover is `EstimatePickerPopoverContent`; platform wrappers should delegate.
+- The now-line on a timed grid is `CadenceTimelineNowLine` (T-1131), drawn by macOS's
+  `TimelineCurrentTimeOverlay` adapter and by both iOS timed surfaces. It takes a
+  **minute-to-Y closure**, not an hour height: each canvas passes the same function its own
+  blocks use, so the rule cannot drift away from them. The tick is stated once as
+  `CadenceTimelineNowLineSupport.tickInterval` and swept for.
 - Habit detail chrome lives in `Components/HabitProgressViews.swift` and is shared.
 - `CadenceChoicePicker`, field rows, empty states, tag chips, value tiles, and today rollover/overdue
   components should be reused before introducing new row chrome.

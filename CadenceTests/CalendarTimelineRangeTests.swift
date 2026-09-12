@@ -532,40 +532,75 @@ struct CalendarTimelineRangeTests {
         #expect(macHour / iOSOrdinary > 3.4)
     }
 
-    /// **The rails name the same hour differently**, which is the part of the divergence a user
-    /// holding both devices reads rather than squints at: the Mac prints a bare 24-hour integer and
-    /// iOS prints the app's 12-hour label. Both macOS rails spell it themselves; both iOS rails go
-    /// through `TimeFormatters`.
-    @Test func theHourRailsLabelTheSameHourInTwoDifferentVocabularies() throws {
-        for relativePath in [
-            "Cadence/macOS/Views/CalendarPageComponents.swift",
-            "Cadence/macOS/Views/SchedulePanelSupportViews.swift"
-        ] {
-            let source = CadenceSourceScan.strippingComments(
-                try CadenceSourceScan.sourceFile(relativePath)
-            )
-            #expect(CadenceSourceScan.matchCount("TimeFormatters\\.timeString", in: source) == 0)
-        }
-        let schedule = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelSupportViews.swift")
+    /// **All four hour rails name the hour the same way, and it is the user's way ([[T-1130]]).**
+    ///
+    /// This test used to pin the opposite: the Mac spelled `Text("\(hour)")` — a bare 24-hour
+    /// integer — at both of its rails, while both iOS rails asked `TimeFormatters`, so the same
+    /// hour of the same day was called `13` on one device and `1 PM` on the other. That was the
+    /// only place in the app naming a time without going through the shared formatter. The
+    /// repository owner's answer to the filed question was *"Both follow the system clock"*, so the
+    /// Mac rails now route through `TimeFormatters.timeString(from:)` too and, since [[T-1135]],
+    /// that function reads `Locale.hourCycle` — one clock face across four rails and two platforms,
+    /// chosen by the user's *24-Hour Time* setting rather than by which window they are in.
+    ///
+    /// A positive assertion on all four, not an absence check on two: the failure this has to catch
+    /// is a fifth rail, or one of these four going back to spelling its own label, and "no file
+    /// contains the old string" would pass on a file that had simply been renamed.
+    @Test func everyHourRailInTheAppNamesItsHourThroughTimeFormatters() throws {
+        // The two spellings the four rails have been retired from, as regexes, each checked
+        // against a string that must match and one that must not before it is trusted over the
+        // tree. `bareHourText` is what both Mac rails drew; `bareHourLabel` is the computed
+        // property the Schedule panel wrapped its copy in.
+        let bareHourText = #"Text\("\\\(hour\)"\)"#
+        let bareHourLabel = #"hourLabel: String \{ "\\\(hour\)" \}"#
+        #expect(CadenceSourceScan.matchCount(bareHourText, in: ##"Text("\(hour)")"##) == 1)
+        #expect(CadenceSourceScan.matchCount(bareHourText, in: #"Text(TimeFormatters.timeString(from: hour * 60))"#) == 0)
+        #expect(CadenceSourceScan.matchCount(bareHourLabel, in: ##"private var hourLabel: String { "\(hour)" }"##) == 1)
+        #expect(
+            CadenceSourceScan.matchCount(
+                bareHourLabel,
+                in: #"private var hourLabel: String { TimeFormatters.timeString(from: hour * 60) }"#
+            ) == 0
         )
-        #expect(schedule.contains("private var hourLabel: String { \"\\(hour)\" }"))
 
-        for relativePath in [
-            "Cadence/iOS/iOSCalendarTimelineViews.swift",
-            "Cadence/iOS/iOSTodaySchedulePanel.swift"
-        ] {
+        // Each rail's declaring type, so a read that landed on the wrong file — or on a file that
+        // no longer holds the rail — fails rather than passing on an absence.
+        let rails: [(path: String, declaration: String)] = [
+            ("Cadence/macOS/Views/CalendarPageComponents.swift", "struct CalTimeRailLabel: View {"),
+            ("Cadence/macOS/Views/SchedulePanelSupportViews.swift", "struct ScheduleTimeRailRow: View {"),
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", "struct iOSCalendarTimeRail: View {"),
+            ("Cadence/iOS/iOSTodaySchedulePanel.swift", "struct iOSScheduleHourRow: View {")
+        ]
+
+        for rail in rails {
             let source = CadenceSourceScan.strippingComments(
-                try CadenceSourceScan.sourceFile(relativePath)
+                try CadenceSourceScan.sourceFile(rail.path)
             )
-            #expect(source.contains("TimeFormatters.timeString(from: hour * 60)"))
+            #expect(
+                source.contains(rail.declaration),
+                "\(rail.path) no longer declares \(rail.declaration), so this read proves nothing"
+            )
+            #expect(
+                source.contains("TimeFormatters.timeString(from: hour * 60)"),
+                "\(rail.path) names an hour without going through TimeFormatters"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(bareHourText, in: source) == 0,
+                "\(rail.path) spells a bare hour integer again"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(bareHourLabel, in: source) == 0,
+                "\(rail.path) spells its own hour label again"
+            )
         }
 
-        // The two vocabularies, from the formatter itself: 13 is "1 PM" on iOS and "13" on the Mac.
-        // The clock face is stated (T-1135) because the formatter now follows the user's — the
-        // divergence this pins is between the two rails, not between two machines.
+        // And the face itself, from the formatter the four of them now share. 13:00 is `1 PM` or
+        // `13:00` according to the clock the locale names — the two readings that used to be a
+        // difference between two devices and are now a difference between two settings.
         #expect(TimeFormatters.timeString(from: 13 * 60, locale: CadenceTestClocks.twelveHour) == "1 PM")
+        #expect(TimeFormatters.timeString(from: 13 * 60, locale: CadenceTestClocks.twentyFourHour) == "13:00")
         #expect(TimeFormatters.timeString(from: 0, locale: CadenceTestClocks.twelveHour) == "12 AM")
+        #expect(TimeFormatters.timeString(from: 0, locale: CadenceTestClocks.twentyFourHour) == "00:00")
     }
 }
 

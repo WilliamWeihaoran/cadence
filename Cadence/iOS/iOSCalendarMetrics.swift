@@ -78,6 +78,19 @@ nonisolated enum iOSCalendarTimelineMetrics {
     /// splitting them is how one of the two got copied without the other.
     static let hourEmphasisInterval: Int = 3
 
+    /// How far the now-line is held off each edge of a day column ([[T-1131]]).
+    ///
+    /// 4, which is `TimelineBlockStyle.calendar`'s `leadingInset`/`trailingInset` — the pair the
+    /// Mac's Calendar page already draws the same rule between. The rule is the one mark on a timed
+    /// grid allowed to be louder than the grid, so what it must not do is run edge to edge into the
+    /// column hairline beside it and read as a border.
+    ///
+    /// Today's timeline passes 0 instead, and that is a layout difference rather than a second
+    /// vocabulary: its lane already begins past a 50pt rail, and the hour hairline directly above
+    /// the rule spans that lane exactly, so an inset here would leave the two lines starting at
+    /// different x on the same row.
+    static let nowLineInset: CGFloat = 4
+
     /// The `12 AM` label on an emphasised hour, and on the two between.
     ///
     /// The one part of the ladder the two surfaces already agreed on, to the digit. Named so the

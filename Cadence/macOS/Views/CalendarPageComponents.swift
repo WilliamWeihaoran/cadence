@@ -4,6 +4,22 @@ import SwiftData
 import EventKit
 import Foundation
 
+/// One rung of the Calendar page's hour rail.
+///
+/// **The label is `TimeFormatters`', not this view's ([[T-1130]]).** It used to be `Text("\(hour)")`
+/// — a bare 24-hour integer, `13` — while both iOS rails already asked the shared formatter, so the
+/// same hour of the same day was called `13` on the Mac and `1 PM` on the phone, and this rail plus
+/// `ScheduleTimeRailRow` were the only two places in the app that named a time without going
+/// through `TimeFormatters`. Since [[T-1135]] that formatter follows the system clock, so the rail
+/// now reads `1 PM` or `13:00` according to the user's own *24-Hour Time* setting rather than
+/// according to which window they are looking at.
+///
+/// **Measured before changing it, because the rail is a fixed-width column** and the widest label
+/// decides whether it fits — the [[T-1130]] brief asked for a measurement rather than a hope. At
+/// 10pt semibold, this rail's own size and weight, the widest 12-hour label is `10 AM` at 30.89pt
+/// and the widest 24-hour one `08:00` at 30.50pt, against `calTimeWidth`'s 44pt box. Both clear it,
+/// and the 24-hour face is the *narrower* of the two, so no clock setting makes the rail tighter.
+/// `theMacHourRailsFitTheWidestLabelOnEitherClockFace` holds both figures.
 struct CalTimeRailLabel: View {
     let hour: Int
     let hourHeight: CGFloat
@@ -14,7 +30,7 @@ struct CalTimeRailLabel: View {
                 .fill(Theme.surface)
                 .frame(height: hourHeight)
 
-            Text("\(hour)")
+            Text(TimeFormatters.timeString(from: hour * 60))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.dim)
                 .frame(width: calTimeWidth, alignment: .topTrailing)

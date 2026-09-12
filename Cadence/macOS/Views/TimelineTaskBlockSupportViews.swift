@@ -78,6 +78,19 @@ struct TimelineDraggedTaskPreview: View {
     }
 }
 
+/// The Mac's adapter onto the app's one now-line.
+///
+/// **The drawing moved to `CadenceTimelineNowLine` in `Shared/Components/` ([[T-1131]]).** It is
+/// byte-for-byte the same mark — same `Theme.red`, same 1pt rule, same 8pt dot, same 15-second
+/// tick — but iOS's two timed surfaces had nothing of the kind, and the repo rule is one shared
+/// component over near-copies. What stays here is the only macOS-shaped part: `TimelineMetrics` and
+/// `TimelineBlockStyle` are macOS types, so something has to read the start/end hours and the two
+/// insets off them and hand over `metrics.yOffset(forFractionalMinute:)` as the canvas's own
+/// minute-to-Y. Passing that function rather than an hour height is what keeps the red line on the
+/// same expression as every block beside it — the drift `yOffset(forFractionalMinute:)`'s own doc
+/// comment exists to record.
+///
+/// `TimelineDayCanvas` is unchanged; this type keeps its name and its five parameters.
 struct TimelineCurrentTimeOverlay: View {
     let date: Date
     let totalWidth: CGFloat
@@ -85,43 +98,17 @@ struct TimelineCurrentTimeOverlay: View {
     let style: TimelineBlockStyle
     let showDot: Bool
 
-    private func minutesFromMidnight(at date: Date, calendar: Calendar) -> CGFloat {
-        let components = calendar.dateComponents([.hour, .minute, .second], from: date)
-        let hour = components.hour ?? 0
-        let minute = components.minute ?? 0
-        let second = components.second ?? 0
-        return CGFloat(hour * 60 + minute) + CGFloat(second) / 60
-    }
-
     var body: some View {
-        TimelineView(.periodic(from: Date(), by: 15)) { context in
-            let calendar = Calendar.current
-            let mins = minutesFromMidnight(at: context.date, calendar: calendar)
-
-            if calendar.isDate(date, inSameDayAs: context.date),
-               mins >= CGFloat(metrics.startHour * 60),
-               mins <= CGFloat(metrics.endHour * 60) {
-                let y = metrics.yOffset(forFractionalMinute: mins)
-
-                ZStack(alignment: .topLeading) {
-                    if showDot {
-                        Circle()
-                            .fill(Theme.red)
-                            .frame(width: 8, height: 8)
-                            .offset(x: style.leadingInset - 4, y: y - 4)
-                    }
-
-                    Rectangle()
-                        .fill(Theme.red)
-                        .frame(
-                            width: max(0, totalWidth - style.leadingInset - style.trailingInset + (showDot ? 4 : 0)),
-                            height: 1
-                        )
-                        .offset(x: showDot ? style.leadingInset - 4 : style.leadingInset, y: y)
-                }
-                .allowsHitTesting(false)
-            }
-        }
+        CadenceTimelineNowLine(
+            day: date,
+            totalWidth: totalWidth,
+            startHour: metrics.startHour,
+            endHour: metrics.endHour,
+            leadingInset: style.leadingInset,
+            trailingInset: style.trailingInset,
+            showDot: showDot,
+            yOffset: { metrics.yOffset(forFractionalMinute: $0) }
+        )
     }
 }
 

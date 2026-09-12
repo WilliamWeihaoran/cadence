@@ -412,6 +412,72 @@ struct ClockFaceFollowsTheSystemTests {
         )
     }
 
+    /// **T-1130's measurement, and the reason the Mac rails could take the shared formatter.**
+    ///
+    /// Both macOS rails drew a bare 24-hour integer — `13`, about 13pt wide — so routing them
+    /// through `TimeFormatters` replaces the narrowest possible label with the widest one the app
+    /// has, and the rail is a fixed-width column. The [[T-1130]] filing said in as many words that
+    /// "probably enough" is what `theHourLabelFitsTheNarrowRail` exists to replace, so this
+    /// measures rather than reformats and hopes.
+    ///
+    /// Measured 2026-09-12, each rail at its own size and weight: the Calendar page's
+    /// `CalTimeRailLabel` at 10pt semibold in `calTimeWidth`'s 44pt box — widest 12-hour `10 AM`
+    /// 30.89pt, widest 24-hour `08:00` 30.50pt; the Schedule panel's `ScheduleTimeRailRow` at 10pt
+    /// medium in `timeLabelWidth`'s 36pt box — `10 AM` 30.44pt, `04:00` 29.81pt. The Schedule
+    /// panel's is the tighter of the two and still clears its box by more than 5pt, and neither
+    /// figure may move without moving `blockInset` with it, which would shift every block on that
+    /// panel.
+    ///
+    /// The inequality against the box is what this asserts; the figures are in the message so a
+    /// failure says by how much rather than merely that. The **24-hour face is the narrower one**
+    /// on both rails, which is the claim that matters for [[T-1135]]: the user's clock setting
+    /// cannot be what makes a rail overflow.
+    @Test func theMacHourRailsFitTheWidestLabelOnEitherClockFace() {
+        func widest(size: CGFloat, weight: NSFont.Weight, locale: Locale) -> CGFloat {
+            let font = NSFont.systemFont(ofSize: size, weight: weight)
+            var widestSoFar: CGFloat = 0
+            for hour in CadenceScheduleSupport.calendarHours {
+                let label = TimeFormatters.timeString(from: hour * 60, locale: locale)
+                let measured = (label as NSString).size(withAttributes: [.font: font]).width
+                widestSoFar = max(widestSoFar, measured)
+            }
+            return widestSoFar
+        }
+
+        let rails: [(name: String, size: CGFloat, weight: NSFont.Weight, box: CGFloat)] = [
+            ("CalTimeRailLabel", 10, .semibold, calTimeWidth),
+            ("ScheduleTimeRailRow", 10, .medium, timeLabelWidth)
+        ]
+
+        for rail in rails {
+            let twelve = widest(size: rail.size, weight: rail.weight, locale: CadenceTestClocks.twelveHour)
+            let twentyFour = widest(size: rail.size, weight: rail.weight, locale: CadenceTestClocks.twentyFourHour)
+
+            // Non-vacuity: a rail that measured nothing would clear any box.
+            #expect(twelve > 0, "\(rail.name) walked no hours, so the comparison below is vacuous")
+            #expect(
+                twelve < rail.box,
+                "\(rail.name)'s widest 12-hour label is \(twelve)pt in a \(rail.box)pt box"
+            )
+            #expect(
+                twentyFour < rail.box,
+                "\(rail.name)'s widest 24-hour label is \(twentyFour)pt in a \(rail.box)pt box"
+            )
+            #expect(
+                twentyFour <= twelve,
+                """
+                \(rail.name): the 24-hour face is \(twentyFour)pt against the 12-hour \(twelve)pt, \
+                so the user's clock setting decides whether the rail fits
+                """
+            )
+        }
+
+        // The panel's block inset is derived from the rail, not typed beside it — so a rail that
+        // had to be widened would have moved every block on the Schedule panel with it.
+        let derivedInset: CGFloat = timeLabelWidth + timeLabelPad
+        #expect(blockInset == derivedInset)
+    }
+
     /// **The population sweep.** No file in the app spells a clock face without asking the system
     /// which one the user reads.
     ///

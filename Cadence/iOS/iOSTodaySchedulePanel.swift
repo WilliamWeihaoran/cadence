@@ -484,9 +484,52 @@ private struct iOSScheduleHourRow: View {
                     .accessibilityLabel("Create timed task at \(hourLabel)")
                 }
             }
+            .overlay(alignment: .topLeading) { nowLine }
         }
         .frame(minHeight: rowHeight, alignment: .top)
         .padding(.leading, 4)
+    }
+
+    /// The red rule at the current minute, the same one macOS's Schedule panel has always drawn
+    /// ([[T-1131]]) — `CadenceTimelineNowLine`, not a second copy of it.
+    ///
+    /// **It is per hour row rather than one rule over the pane, because this grid is a flow.** The
+    /// Calendar's day column is a `ZStack` of absolutely placed blocks over a ladder of fixed
+    /// 58pt hours, so one overlay can place itself anywhere on it. Here a row is
+    /// `minHeight: rowHeight` and *grows* with the blocks in it, so no expression over `rowHeight`
+    /// locates 13:30 once any hour above 13:00 has something in it. Scoping the rule to the row
+    /// that owns the hour makes the question local: the row is the hour, so the fraction is of this
+    /// row's own measured height, whatever it grew to.
+    ///
+    /// The window is this one hour, which is what keeps 24 rows from drawing 24 rules: every other
+    /// row's `isVisible` is false all day. They each still carry the schedule — one
+    /// `TimelineView(.periodic)` per row, at `CadenceTimelineNowLineSupport.tickInterval`, the
+    /// Mac's own 15 seconds and not a tighter one. That is deliberate, and the alternative is
+    /// worse rather than better: a single pane-level clock would have to invalidate the `ForEach`
+    /// that owns all 24 rows, redrawing every block, gesture and lane on the pane every 15
+    /// seconds, where this redraws 24 leaves that compute one `dateComponents` and return
+    /// `EmptyView`. The schedules are all minted in the same pass with the same period, so they
+    /// share a phase and the OS coalesces them into one wakeup rather than 24.
+    ///
+    /// `showDot: true` and a zero inset: the dot is the split macOS already has between its
+    /// Schedule panel and its Calendar page, and this pane is the Schedule panel's opposite number.
+    /// See `iOSCalendarTimelineMetrics.nowLineInset` for why the inset differs from the grid's.
+    @ViewBuilder
+    private var nowLine: some View {
+        GeometryReader { proxy in
+            CadenceTimelineNowLine(
+                day: Date(),
+                totalWidth: proxy.size.width,
+                startHour: hour,
+                endHour: hour + 1,
+                leadingInset: 0,
+                trailingInset: 0,
+                showDot: true,
+                yOffset: { minute in
+                    (minute - CGFloat(hour * 60)) / 60 * proxy.size.height
+                }
+            )
+        }
     }
 
     /// The lane fills the row: rule, the `VStack`'s own 5pt gap, then everything left. Floored at
