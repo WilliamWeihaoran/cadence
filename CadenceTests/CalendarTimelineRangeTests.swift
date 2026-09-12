@@ -450,6 +450,121 @@ struct CalendarTimelineRangeTests {
     @Test func theScrollOffsetNeverGoesNegative() {
         #expect(CadenceScheduleSupport.timelineScrollOffset(forHour: 0, hourHeight: 58) == CGFloat(0))
     }
+
+    // MARK: - The hour ladder each platform draws (T-619)
+
+    /// **The two ladders' "major" and "minor" are not the same two lines**, which is why the ratio
+    /// [[T-619]] filed — macOS `0.36×0.95 / 0.30×0.85` against iOS `0.46×0.5 / 0.20×0.5`, and the
+    /// `0.684 / 0.510` an equal-ink derivation came back with — was answering a question neither
+    /// screen asks. macOS's pair is *hour against half-hour*; iOS's is *every third hour against
+    /// the two between*. Equalising them would have made a half-hour tick agree with an ordinary
+    /// hour line.
+    ///
+    /// Pinned positionally rather than by count: what matters is **which** weight sits with the
+    /// half-hour offset and **which** sits behind the `% interval` selection, and a count survives
+    /// a swap that keeps both names in the file.
+    @Test func theTwoPlatformsMinorHourLineMeansDifferentThings() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvasSupportViews.swift")
+        )
+        let ladder = try #require(
+            CadenceSourceScan.declarationBody("struct TimelineHourGridLines: View", in: mac),
+            "could not find TimelineHourGridLines"
+        )
+
+        // macOS: one line per hour row, and the *only* thing that selects the lighter weight is the
+        // half-hour tick — there is no every-Nth-hour emphasis on this platform at all.
+        #expect(ladder.contains("ForEach(metrics.startHour..<metrics.endHour"))
+        #expect(ladder.contains("CalendarVisualStyle.majorGridOpacity"))
+        #expect(CadenceSourceScan.matchCount("hourEmphasisInterval", in: ladder) == 0)
+        #expect(CadenceSourceScan.matchCount("%\\s*\\d+\\s*==\\s*0", in: ladder) == 0)
+
+        let minor = try #require(
+            ladder.range(of: "CalendarVisualStyle.minorGridOpacity"),
+            "the half-hour tick no longer reads the minor weight"
+        )
+        let halfHour = try #require(
+            ladder.range(of: "metrics.hourHeight / 2"),
+            "the half-hour tick no longer offsets by half an hour"
+        )
+        // The minor weight is the half-hour tick's, not a second hour line's: the offset follows it
+        // inside the same overlay, and the gate that hides it is `showHalfHourMarks`.
+        #expect(minor.upperBound < halfHour.lowerBound)
+        #expect(ladder.contains("if showHalfHourMarks {"))
+
+        // iOS: the lighter weight is an ordinary *hour*, chosen by the shared cadence, and no iOS
+        // timed surface draws a half-hour line at all.
+        for relativePath in [
+            "Cadence/iOS/iOSCalendarTimelineViews.swift",
+            "Cadence/iOS/iOSTodaySchedulePanel.swift"
+        ] {
+            let source = CadenceSourceScan.strippingComments(
+                try CadenceSourceScan.sourceFile(relativePath)
+            )
+            #expect(source.contains("iOSCalendarTimelineMetrics.hourEmphasisInterval"))
+            #expect(source.contains("iOSCalendarHairlineMetrics.hourMinorOpacity"))
+            #expect(
+                CadenceSourceScan.matchCount("hourHeight / 2", in: source) == 0,
+                "\(relativePath) has grown a half-hour line"
+            )
+        }
+    }
+
+    /// What the ladders weigh, as ink per line — opacity × line width, the proxy [[T-619]] used.
+    ///
+    /// The comparison that *is* like-for-like is the line both platforms draw at every hour, and it
+    /// does not nearly match: macOS's is heavier than iOS's **heaviest** hour. Stated as an
+    /// inequality with the measured multiple beside it so the filed tickets have a number to argue
+    /// from; it is not an assertion that they ought to be equal.
+    @Test func theEveryHourLineIsHeavierOnMacThanOnIOS() {
+        let macHour = CalendarVisualStyle.majorGridOpacity * Double(CalendarVisualStyle.majorGridLineWidth)
+        let macHalfHour = CalendarVisualStyle.minorGridOpacity * Double(CalendarVisualStyle.minorGridLineWidth)
+        let iOSEmphasised = iOSCalendarHairlineMetrics.hourMajorOpacity * Double(iOSCalendarHairlineMetrics.width)
+        let iOSOrdinary = iOSCalendarHairlineMetrics.hourMinorOpacity * Double(iOSCalendarHairlineMetrics.width)
+
+        #expect(abs(macHour - 0.342) < 0.0005)
+        #expect(abs(macHalfHour - 0.255) < 0.0005)
+        #expect(abs(iOSEmphasised - 0.230) < 0.0005)
+        #expect(abs(iOSOrdinary - 0.100) < 0.0005)
+
+        #expect(macHour > iOSEmphasised)
+        #expect(macHour / iOSEmphasised > 1.4)
+        #expect(macHour / iOSOrdinary > 3.4)
+    }
+
+    /// **The rails name the same hour differently**, which is the part of the divergence a user
+    /// holding both devices reads rather than squints at: the Mac prints a bare 24-hour integer and
+    /// iOS prints the app's 12-hour label. Both macOS rails spell it themselves; both iOS rails go
+    /// through `TimeFormatters`.
+    @Test func theHourRailsLabelTheSameHourInTwoDifferentVocabularies() throws {
+        for relativePath in [
+            "Cadence/macOS/Views/CalendarPageComponents.swift",
+            "Cadence/macOS/Views/SchedulePanelSupportViews.swift"
+        ] {
+            let source = CadenceSourceScan.strippingComments(
+                try CadenceSourceScan.sourceFile(relativePath)
+            )
+            #expect(CadenceSourceScan.matchCount("TimeFormatters\\.timeString", in: source) == 0)
+        }
+        let schedule = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelSupportViews.swift")
+        )
+        #expect(schedule.contains("private var hourLabel: String { \"\\(hour)\" }"))
+
+        for relativePath in [
+            "Cadence/iOS/iOSCalendarTimelineViews.swift",
+            "Cadence/iOS/iOSTodaySchedulePanel.swift"
+        ] {
+            let source = CadenceSourceScan.strippingComments(
+                try CadenceSourceScan.sourceFile(relativePath)
+            )
+            #expect(source.contains("TimeFormatters.timeString(from: hour * 60)"))
+        }
+
+        // The two vocabularies, from the formatter itself: 13 is "1 PM" on iOS and "13" on the Mac.
+        #expect(TimeFormatters.timeString(from: 13 * 60) == "1 PM")
+        #expect(TimeFormatters.timeString(from: 0) == "12 AM")
+    }
 }
 
 /// `else {` followed by nothing but `return` — a guard that fails and says nothing. Written with

@@ -3522,30 +3522,142 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Harmless, but it is chrome asserting the container is something it is not, and it is the kind of
   line the next section view copies. Check `TasksPanel`'s overdue card stacks for the same shape.
 
-- [T-619] **The two platforms' timed grids draw different hour ladders.** macOS `CalendarVisualStyle`
-  0.36/0.30 at 0.95/0.85pt against iOS's 0.46/0.20 at 0.5pt. Out of scope for [[T-595]]/[[T-596]], which
-  were iOS-internal and have now made iOS self-consistent. This is the cross-platform half, and it is a
-  design call: near-identical numbers that differ by a hair usually mean nobody chose, but a Mac
-  hairline and a Retina hairline are genuinely different physical things, so do not assume they should
-  match before checking.
+- [T-619] **CLOSED 2026-09-12 (agent `hourladder`) — as a mis-framed premise, not as a repair and
+  not as stale. The two ladders do differ, and by more than this entry said; but the two numbers it
+  set out to reconcile are not the same two lines on the two platforms, so the ink-equalising
+  derivation parked below was answering a question neither screen asks.**
+  **What each platform actually draws, read off HEAD source rather than off this entry.**
+  - macOS, `TimelineHourGridLines` (`Cadence/macOS/Views/TimelineDayCanvasSupportViews.swift:11`):
+    one rule at the top of every hour row at `majorGridOpacity` / `majorGridLineWidth`,
+    **uniform — there is no every-Nth-hour emphasis on this platform at all** — plus a **half-hour**
+    tick at `minorGridOpacity` / `minorGridLineWidth`, offset `metrics.hourHeight / 2` and drawn
+    only under `showHalfHourMarks`, which both call sites gate on `zoomLevel == 3`
+    (`CalendarPageSupportViews.swift:375`, `SchedulePanelShellViews.swift:120`). So the Mac's minor
+    weight is invisible at two of its three zoom levels.
+  - iOS, `iOSCalendarTimelineColumnGridLines` (`Cadence/iOS/iOSCalendarTimelineViews.swift:661`) and
+    `iOSScheduleHourRow` (`Cadence/iOS/iOSTodaySchedulePanel.swift:364`): one rule per hour, at
+    `hourMajorOpacity` on every third and `hourMinorOpacity` on the two between, selected by the
+    shared `iOSCalendarTimelineMetrics.hourEmphasisInterval`. **No iOS timed surface draws a
+    half-hour line at all** — `hourHeight / 2` appears zero times in either file.
+  **So macOS's "minor" is a half-hour and iOS's "minor" is an hour.** The 0.746 against 0.435 this
+  entry called "the actual disagreement" compares *hour-against-half-hour* with
+  *third-hour-against-hour*. Equalising those two ratios would have made a half-hour tick agree with
+  an ordinary hour line, and the 0.684 / 0.510 derived from it would have put that on screen. The
+  Mac-hairline-versus-Retina-hairline caveat was right to stop the landing; it just was not the
+  reason the numbers do not match.
+  **The like-for-like comparison, in this entry's own ink-per-line proxy.** The one line both
+  platforms draw at every hour: macOS 0.36 × 0.95 = **0.342**; iOS's heaviest hour 0.46 × 0.5 =
+  **0.230**; iOS's ordinary hour 0.20 × 0.5 = **0.100**. The Mac's every-hour rule is **1.49×** iOS's
+  heaviest and **3.42×** its ordinary one. That is the real gap, and it is a gap in what the ladder
+  *says*, not a hair between near-identical numbers.
+  **Three things already agree, and are not in question.** The hour range is one shared number —
+  `CadenceScheduleSupport.calendarStartHour`/`calendarEndHour`, `0..<24`, with macOS's
+  `schedStartHour`/`schedEndHour` and `calStartHour`/`calEndHour` as aliases, pinned by
+  `CalendarTimelineRangeTests.everyTimelineOnEveryPlatformDrawsTheSameHours`. The day-header band's
+  vocabulary is shared through `CadenceCalendarWeekdayHeaderMetrics`. And each ladder reads its own
+  figures from one named enum rather than from literals, so neither side is drifting internally.
+  **The hour height is a real platform difference and should stay one.** macOS derives it from the
+  window — `TimelineZoom.hourHeight(viewportHeight:level:)`, `viewportHeight / (12|8|4)` — because a
+  Mac window is resizable; iOS multiplies a fixed 58pt base by a 1×–3× pinch
+  (`CadenceCalendarZoom`). That is layout answering to the host, which the standing iPhone/iPad rule
+  explicitly allows. It is also why macOS's half-hour tick exists at all: at `zoomLevel == 3` an
+  hour can be 200pt tall.
+  **What is left is three product decisions, filed rather than guessed** — the same move [[T-624]]
+  made into [[T-1117]] and [[T-752]] into [[T-1118]]: [[T-1129]] the ladder's vocabulary (the
+  3-hourly rung, and the half-hour tick), [[T-1130]] the hour rail's labels, [[T-1131]] the now-line
+  iOS does not have. Converging any of them means choosing one platform's look over the other's,
+  which is not an agent's call.
+  **The facts above are pinned**, by `CalendarTimelineRangeTests`'
+  `theTwoPlatformsMinorHourLineMeansDifferentThings` (positional: which weight sits with the
+  half-hour offset, which sits behind the `% interval` selection),
+  `theEveryHourLineIsHeavierOnMacThanOnIOS` and
+  `theHourRailsLabelTheSameHourInTwoDifferentVocabularies`. So the gap cannot widen quietly while
+  the three questions wait, and whoever answers them is arguing from measured numbers.
+  **Originally filed as:** **The two platforms' timed grids draw different hour ladders.** macOS
+  `CalendarVisualStyle` 0.36/0.30 at 0.95/0.85pt against iOS's 0.46/0.20 at 0.5pt. Out of scope for
+  [[T-595]]/[[T-596]], which were iOS-internal and have now made iOS self-consistent. This is the
+  cross-platform half, and it is a design call: near-identical numbers that differ by a hair usually
+  mean nobody chose, but a Mac hairline and a Retina hairline are genuinely different physical
+  things, so do not assume they should match before checking. **STOPPED HERE 2026-09-04,
+  deliberately, rather than guessed** — briefed to "match perceived weight, derive the value per
+  platform, pin the derivation", the mechanism was scoped and the anchor was not, and it asked for a
+  rendered comparison or an explicit number from the user. Both halves of that stop hold; what it
+  could not see from arithmetic alone is that the two ratios were not commensurable.
 
-  **STOPPED HERE 2026-09-04, deliberately, rather than guessed.** Briefed to "match perceived
-  weight, derive the value per platform, pin the derivation" — a mechanism, not a target number —
-  and the number is the part still missing. Measured as opacity times line width (a rough
-  ink-per-line proxy, since neither platform varies only one axis): macOS's major/minor ladder is
-  0.36×0.95 / 0.30×0.85 = 0.342 / 0.255, a minor:major ratio of 0.746; iOS's is 0.46×0.5 / 0.20×0.5
-  = 0.230 / 0.100, a ratio of 0.435. Those two ratios are the actual disagreement — not the raw
-  numbers, which were never going to match given `iOSCalendarHairlineMetrics.width`'s own doc names
-  a real reason (a 2x/3x-screen hairline) macOS's 0.95/0.85 does not share.
-  Deriving iOS's opacities from macOS's by holding ink-per-line equal — `opacity_iOS =
-  (opacity_mac × width_mac) / width_iOS` — lands at 0.684 major / 0.510 minor, roughly double and
-  2.5× today's 0.46 / 0.20. That is exactly the kind of large, unverified swing this repo's own
-  filed text warns against ("do not assume they should match before checking"), and checking means
-  looking at a rendered screen, which this agent's brief does not authorize (no app launch, no
-  simulator). So the mechanism is scoped but the anchor is not: whoever closes this needs either a
-  rendered comparison to pick the target ratio, or an explicit number from the user the way T-675
-  got `0.35`. Filing it back rather than landing an arithmetic guess on a screen a user looks at
-  daily.
+- [T-1129] **For the user: should the Mac's hour ladder grow iOS's every-third-hour rung, or should
+  iOS's ladder go flat like the Mac's?** Filed 2026-09-12 by `hourladder`, carrying the half of
+  [[T-619]] that is not engineering.
+  **Where you see it.** Any timed grid: macOS Calendar → Timeline and the Schedule panel; iOS
+  Calendar → the timed grid, and Today's timeline.
+  **What differs.** On iOS every third hour line is drawn heavier than the two between it, and the
+  hour *labels* beside them follow the same cadence (0.9 against 0.45). On macOS every hour line is
+  the same weight and every label is the same weight, and instead a **half-hour** tick appears — but
+  only at the deepest of the three zoom levels. So the two screens use the same ink budget to say
+  two different things: iOS says "here is a three-hour rung", macOS says "here is a half hour".
+  **The three options, with what each costs you.**
+  1. **Leave it.** Costs nothing to build; the app keeps two ladders, and anyone using both devices
+     keeps re-learning which lines mean what.
+  2. **Take iOS's rung to the Mac.** Every third hour reads heavier on both platforms. The Mac's
+     grid gets structure at the two of its three zoom levels where the half-hour tick is hidden and
+     the ladder is currently flat. The half-hour tick can stay at the deepest zoom without
+     conflict, since it is a different line.
+  3. **Drop the rung on iOS.** A flat ladder everywhere. Cheapest visually — it removes a weight
+     rather than adding one — but it throws away the one thing that makes a 24-hour phone grid
+     scannable without labels, and [[T-596]] deliberately settled iOS on it this month.
+  **Recommendation: 2.** It is additive, it keeps everything [[T-595]]/[[T-596]] settled, and the
+  rung is the part of the vocabulary that carries meaning rather than density. If 2 is chosen, the
+  weights should be derived once in `Cadence/Shared/` and read by both, the way
+  `CadenceCalendarWeekdayHeaderMetrics` already does for the day-header band — not copied, since
+  copying the cadence without the weights is exactly how [[T-596]] happened.
+  **Whichever is picked, the raw opacities are downstream of it**, not the question: the pair to
+  match is only decidable once both platforms agree what the pair *means*.
+
+- [T-1130] **For the user: should the two hour rails say "13" and "1 PM", or one of them?** Filed
+  2026-09-12 by `hourladder`, from [[T-619]].
+  **Where you see it.** The column of hour labels down the left of every timed grid.
+  **What differs.** macOS prints a bare 24-hour integer — `Text("\(hour)")`, at 10pt, in
+  `CalTimeRailLabel` (`Cadence/macOS/Views/CalendarPageComponents.swift:7`) and `ScheduleTimeRailRow`
+  (`Cadence/macOS/Views/SchedulePanelSupportViews.swift:4`), both spelling the label themselves. iOS
+  prints the app's own 12-hour label — `TimeFormatters.timeString(from: hour * 60)`, "12 AM",
+  "1 PM" — at 11pt. So the same hour of the same day is called `13` on the Mac and `1 PM` on the
+  phone, and every other time the app prints anywhere (task times, event ranges, block labels) is
+  the iOS spelling, including on macOS.
+  **This one is not really a taste question.** The Mac rail is the only place in the app that names
+  a time without going through `TimeFormatters`, and the two devices disagree about a number a user
+  reads constantly. But changing it does change a shipped screen, and it is not free: `12 AM` is
+  several times the width of `13`, and the Mac's label frame is `calTimeWidth` 44pt inside a 54pt
+  rail (`calTimeTotalWidth`) — probably enough, since iOS fits the same label in 48pt less an 8pt
+  inset, but "probably" is what `theHourLabelFitsTheNarrowRail` exists to replace. Re-measure, do
+  not re-format and hope.
+  **The options.**
+  1. **Leave it.** Two vocabularies, one app.
+  2. **Take `TimeFormatters.timeString` to the Mac rail**, re-measuring `calTimeWidth`/`calTimeInset`
+     against the widest label the way `theHourLabelFitsTheNarrowRail` already measures iOS's.
+  3. **Take the bare integer to iOS.** Narrower and denser, and wrong in the other direction: it
+     would be the only 24-hour clock face in an app that is 12-hour everywhere else.
+  **Recommendation: 2**, and it is the option with a mechanical argument behind it rather than a
+  preference. **Note the separate, real limitation neither option fixes:**
+  `TimeFormatters.timeString` is hardcoded 12-hour AM/PM (`Cadence/Shared/DateFormatters.swift:363`)
+  and ignores the system's 24-hour setting — worth its own ticket, but not this one's to decide.
+
+- [T-1131] **For the user: should the iOS timed grids get a now-line?** Filed 2026-09-12 by
+  `hourladder`, from [[T-619]].
+  **What differs.** macOS draws one: `TimelineCurrentTimeOverlay`
+  (`Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift:81`) — a 1pt `Theme.red` rule across the
+  canvas at the current minute, with an 8pt dot on the Schedule panel, refreshed every 15 seconds by
+  `TimelineView(.periodic)`, and drawn only on a column that is actually today. **iOS draws nothing
+  of the kind on either timed surface**; the only `TimelineView(.periodic` in `Cadence/iOS/` is the
+  focus timer.
+  **Why it is filed rather than built.** It is a feature the phone does not have, not a weight that
+  drifted — it is the largest of [[T-619]]'s three divergences and the one most likely to read as
+  missing rather than as different, since every other calendar app the user has draws one. But it
+  is new surface area on a screen that is already dense: iOS's grid scrolls horizontally through a
+  windowed day range with columns built on demand, so the line has to be a per-column overlay
+  keyed on today rather than one rule across the canvas, and it has to not fight the `1×`–`3×`
+  pinch.
+  **Recommendation: build it**, reusing the Mac's rule rather than inventing a second — the minute
+  arithmetic is already shared-able (`minutesFromMidnight` plus a `yOffset`), and the dot/no-dot
+  split the Mac already has is the same choice iOS needs between its grid and Today.
 
 - [T-623] **CLOSED 2026-09-11 (agent `deletewalk`) — as a recorded decision to park, the shape
   [[T-624]] and [[T-752]] closed in, not as a repair. Re-measured against HEAD a fourth time and
