@@ -34,6 +34,24 @@ enum CadenceSettingsRowMetrics {
     static let valueSpacing: CGFloat = 10
 }
 
+/// The gap between a section label and the block it names.
+///
+/// **One value, because it is one relation (T-1107).** A label has to sit closer to what it names
+/// than to whatever precedes it; a form that spells both gaps itself is free to make them equal,
+/// and two did — macOS Settings' Contexts pane put its `Archived Contexts` eyebrow 16pt below the
+/// active-contexts card and 16pt above its own, and `CreateGoalSheet` put every interior label
+/// 20pt below the control above it and 20pt above its own. A label equidistant from what precedes
+/// it and what it labels reads as belonging to neither.
+///
+/// `CadenceFieldSection` below draws its title at this value, so the constant is not a second
+/// opinion about a number that view already owns: it is that number, named, so a hand-stacked
+/// pair can read it instead of choosing again.
+nonisolated enum CadenceSectionLabelMetrics {
+    /// Label to the top of the block it names. The outer spacing between whole sections stays
+    /// larger — 16 in macOS Settings, 20 in the goal sheet — and that difference is the grouping.
+    static let labelToNamedBlock: CGFloat = 10
+}
+
 /// How a field group separates itself from the one above.
 /// `nonisolated` for the same reason as `CadenceCalendarDayBadge.Fill`: default MainActor isolation
 /// makes its synthesised `Equatable` main-actor-isolated, which warns when a test compares two values
@@ -65,7 +83,10 @@ struct CadenceFieldSection<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: title == nil ? 0 : 10) {
+        VStack(
+            alignment: .leading,
+            spacing: title == nil ? 0 : CadenceSectionLabelMetrics.labelToNamedBlock
+        ) {
             if let title {
                 SectionEyebrowLabel(text: title)
             }

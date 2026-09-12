@@ -156,4 +156,71 @@ struct MarkdownFormatCommandTitleTests {
         #expect(!source.contains(#""Indent List""#))
         #expect(!source.contains(#""Outdent List""#))
     }
+
+    /// **The Title Case spellings of every multi-word command title**, plus the two indentation
+    /// rows that have no `MarkdownFormatCommand` case to read one from.
+    ///
+    /// "Ordered List" is here although nothing is titled that today: it is what
+    /// `iOSMarkdownTextView` typed for `.orderedList` before T-976, and the drift this population
+    /// exists to catch is a hand-typed title, not only a currently-reachable one.
+    private static let titleCaseCommandTitles = [
+        "Bulleted List", "Ordered List", "Numbered List", "Inline Code", "Code Block",
+        "Note Link", "Task Reference", "Indent List", "Outdent List",
+    ]
+
+    /// The one file excused from the sweep below, because its Title Case titles are a different
+    /// vocabulary under a different rule (see `doesNotReadTheSlashCommandTitleVerbatim`).
+    private static let slashCommandTableFile = "Cadence/Services/MarkdownSlashCommandCoreSupport.swift"
+
+    /// **The ninth site cannot escape the way the eighth did (T-976).** Each of the three tests
+    /// above is an allowlist: it names one file and asserts that file reads the shared table. The
+    /// key-command table survived T-845 for exactly that reason — it was simply not on the list,
+    /// and no test in the repository could see a fourth surface typing `"Bulleted List"`. This one
+    /// is a population rather than a list: every Swift file the app ships, with one exemption.
+    ///
+    /// **`MarkdownSlashCommand.all` is that exemption, deliberately.** Its rows are picker labels
+    /// under a different rule, and its "bullet" entry is titled "Bullet List" — a different *word*
+    /// from "Bulleted list", not a case drift. The exemption is asserted below to still hold the
+    /// titles it is excused for, so the sweep cannot come back clean because that table quietly
+    /// moved into a file nothing excuses.
+    @Test func noOtherFileInTheAppTypesAMarkdownCommandTitleInTitleCase() throws {
+        let instrument = try CadenceScanInstrument(
+            "markdown command title typed in Title Case (T-976)",
+            fires: """
+            command("8", [.command, .shift], "Bulleted List", #selector(applyUnorderedListCommand))
+            """,
+            // The nearest thing that must be left alone: the same row, reading the shared table.
+            andNotOn: """
+            command("8", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .unorderedList), #selector(applyUnorderedListCommand))
+            """,
+            by: { code in
+                Self.titleCaseCommandTitles.contains { code.contains("\"\($0)\"") }
+            }
+        )
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        let offenders = try instrument.sweep(
+            try cadenceAppSwiftFiles().filter { $0 != Self.slashCommandTableFile },
+            atLeast: 400,
+            // The file the ticket is about is in the walk, so a clean result is a result about it.
+            including: "Cadence/iOS/iOSMarkdownTextView.swift",
+            read: read
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders.joined(separator: ", ")) types a markdown command title in Title Case \
+            instead of reading MarkdownFormatCommandTitle.sentenceCase(for:)
+            """
+        )
+
+        // Non-vacuity of the exemption: the needles really are spelled in the file the sweep
+        // excuses, so the excused set is live rather than nine strings nothing spells any more.
+        let table = try read(Self.slashCommandTableFile)
+        let excused = Self.titleCaseCommandTitles.filter { table.contains("\"\($0)\"") }
+        #expect(
+            excused.count >= 4,
+            "the excused slash-command table no longer spells these titles: \(excused)"
+        )
+    }
 }

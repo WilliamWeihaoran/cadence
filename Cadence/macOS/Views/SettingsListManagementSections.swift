@@ -541,6 +541,12 @@ private struct SettingsCalendarRow: View {
     }
 }
 
+/// **T-1107.** Each eyebrow is grouped with the card it names rather than left as a plain sibling
+/// of it. Before, all four children sat in the one 16pt stack, so `Archived Contexts` was exactly
+/// as far from the active-contexts card above it as from the archived card it labels — a label
+/// equidistant from what precedes it and what it names belongs to neither. The 16 between whole
+/// sections is unchanged; only the inner gap is, and it reads the one constant
+/// `CadenceFieldSection` draws its own title at.
 struct SettingsContextsSection: View {
     let activeContexts: [Context]
     let archivedContexts: [Context]
@@ -552,64 +558,68 @@ struct SettingsContextsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.activeContexts)
-            SettingsCard {
-                VStack(spacing: 0) {
-                    if activeContexts.isEmpty {
-                        // "Create one here" is true on this platform too: the **New Context**
-                        // button is in this same card, directly under the divider below.
-                        CadenceSettingsNoticeRow(
-                            systemImage: "square.stack.3d.up",
-                            title: CadenceSettingsEmptyStateCopy.contextsTitle,
-                            detail: CadenceSettingsEmptyStateCopy.contextsSubtitle
-                        ) {
-                            EmptyView()
+            VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.activeContexts)
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        if activeContexts.isEmpty {
+                            // "Create one here" is true on this platform too: the **New Context**
+                            // button is in this same card, directly under the divider below.
+                            CadenceSettingsNoticeRow(
+                                systemImage: "square.stack.3d.up",
+                                title: CadenceSettingsEmptyStateCopy.contextsTitle,
+                                detail: CadenceSettingsEmptyStateCopy.contextsSubtitle
+                            ) {
+                                EmptyView()
+                            }
+                            CadenceRowDivider()
+                        } else {
+                            ForEach(Array(activeContexts.enumerated()), id: \.element.id) { _, context in
+                                ContextSettingsRow(
+                                    context: context,
+                                    // (dragged, target) — the row hands back the dragged id and *is*
+                                    // the target, matching `SidebarTabSettingsRow`'s wiring. Reversed,
+                                    // dropping C onto A moved A and left C where it was.
+                                    onDropDraggedContext: { draggedID in onMoveContext(draggedID, context.id) },
+                                    onArchive: { onArchiveContext(context) },
+                                    onDelete: { onDeleteContext(context) }
+                                )
+                                CadenceRowDivider(leadingInset: 42)
+                            }
                         }
-                        CadenceRowDivider()
-                    } else {
-                        ForEach(Array(activeContexts.enumerated()), id: \.element.id) { _, context in
-                            ContextSettingsRow(
-                                context: context,
-                                // (dragged, target) — the row hands back the dragged id and *is*
-                                // the target, matching `SidebarTabSettingsRow`'s wiring. Reversed,
-                                // dropping C onto A moved A and left C where it was.
-                                onDropDraggedContext: { draggedID in onMoveContext(draggedID, context.id) },
-                                onArchive: { onArchiveContext(context) },
-                                onDelete: { onDeleteContext(context) }
-                            )
-                            CadenceRowDivider(leadingInset: 42)
-                        }
-                    }
 
-                    Button(action: onCreateContext) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus.circle")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.blue)
-                            Text("New Context")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Theme.blue)
-                            Spacer()
+                        Button(action: onCreateContext) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "plus.circle")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Theme.blue)
+                                Text("New Context")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Theme.blue)
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 2)
                         }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 2)
+                        .buttonStyle(.cadencePlain)
                     }
-                    .buttonStyle(.cadencePlain)
                 }
             }
 
             if !archivedContexts.isEmpty {
-                SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedContexts)
-                SettingsCard {
-                    VStack(spacing: 0) {
-                        ForEach(Array(archivedContexts.enumerated()), id: \.element.id) { index, context in
-                            ArchivedContextRow(
-                                context: context,
-                                onRestore: { onRestoreContext(context) },
-                                onDelete: { onDeleteContext(context) }
-                            )
-                            if index < archivedContexts.count - 1 {
-                                CadenceRowDivider(leadingInset: 42)
+                VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedContexts)
+                    SettingsCard {
+                        VStack(spacing: 0) {
+                            ForEach(Array(archivedContexts.enumerated()), id: \.element.id) { index, context in
+                                ArchivedContextRow(
+                                    context: context,
+                                    onRestore: { onRestoreContext(context) },
+                                    onDelete: { onDeleteContext(context) }
+                                )
+                                if index < archivedContexts.count - 1 {
+                                    CadenceRowDivider(leadingInset: 42)
+                                }
                             }
                         }
                     }

@@ -102,114 +102,75 @@ struct CreateGoalSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Title
-                    fieldLabel("Title")
-                    TextField("e.g. Become more knowledgeable, Pass Exam P", text: $title)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .padding(10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
+                    fieldGroup("Title") {
+                        TextField("e.g. Become more knowledgeable, Pass Exam P", text: $title)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.text)
+                            .padding(10)
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
+                    }
 
-                    fieldLabel("Definition of Done")
-                    TextField("What does done look like?", text: $desc)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .padding(10)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
+                    fieldGroup("Definition of Done") {
+                        TextField("What does done look like?", text: $desc)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.text)
+                            .padding(10)
+                            .background(Theme.surfaceElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
+                    }
 
-                    fieldLabel("Context")
-                    CadenceContextPickerButton(
-                        contexts: allContexts,
-                        selectedID: $selectedContextID
-                    )
+                    fieldGroup("Context") {
+                        CadenceContextPickerButton(
+                            contexts: allContexts,
+                            selectedID: $selectedContextID
+                        )
+                    }
 
-                    fieldLabel("Parent Goal")
-                    GoalLinkPickerButton(
-                        goals: parentGoalChoices,
-                        selectedID: $selectedParentGoalID,
-                        noneTitle: "No parent goal",
-                        noneSubtitle: "Keep as a top-level goal",
-                        searchPlaceholder: "Search goals"
-                    )
+                    fieldGroup("Parent Goal") {
+                        GoalLinkPickerButton(
+                            goals: parentGoalChoices,
+                            selectedID: $selectedParentGoalID,
+                            noneTitle: "No parent goal",
+                            noneSubtitle: "Keep as a top-level goal",
+                            searchPlaceholder: "Search goals"
+                        )
+                    }
 
-                    fieldLabel("Kind")
-                    GoalKindSection(selection: $selectedKind)
+                    fieldGroup("Kind") {
+                        GoalKindSection(selection: $selectedKind)
+                    }
 
                     if isEditing {
-                        fieldLabel("Status")
-                        GoalStatusSection(selection: $selectedStatus)
-                    } else {
-                        fieldLabel("Initial Linked List")
-                        Picker("", selection: $initialListTag) {
-                            Text("None").tag("none")
-                            ForEach(allContexts) { ctx in
-                                Section(ctx.name) {
-                                    ForEach(areas.filter { $0.context?.id == ctx.id }) { area in
-                                        Label(area.name, systemImage: area.icon).tag("area:\(area.id.uuidString)")
-                                    }
-                                    ForEach(projects.filter { $0.context?.id == ctx.id }) { project in
-                                        Label(project.name, systemImage: project.icon).tag("project:\(project.id.uuidString)")
-                                    }
-                                }
-                            }
-                            // **The catch-all is keyed on the offered contexts, not on `nil`
-                            // (T-683).** `context == nil` is right for a list that belongs to no
-                            // context and wrong for one whose context exists and was not offered —
-                            // an archived context is the ordinary way to reach that, and the lists
-                            // inside one do not disappear with it. Sixth instance of the fold
-                            // T-534, T-538 and T-558 each had to correct; the membership question
-                            // is `CadenceSidebarLists.isOffered` so it stays one question.
-                            // Latent today — `allContexts` is an unfiltered `@Query` — which is
-                            // why this is the same rule and not a new one.
-                            let offered = Set(allContexts.map(\.id))
-                            let looseAreas = areas.filter {
-                                !CadenceSidebarLists.isOffered($0.context?.id, among: offered)
-                            }
-                            let looseProjects = projects.filter {
-                                !CadenceSidebarLists.isOffered($0.context?.id, among: offered)
-                            }
-                            if !looseAreas.isEmpty || !looseProjects.isEmpty {
-                                Section(CadenceSidebarLists.ungroupedTitle) {
-                                    ForEach(looseAreas) { area in
-                                        Label(area.name, systemImage: area.icon).tag("area:\(area.id.uuidString)")
-                                    }
-                                    ForEach(looseProjects) { project in
-                                        Label(project.name, systemImage: project.icon).tag("project:\(project.id.uuidString)")
-                                    }
-                                }
-                            }
+                        fieldGroup("Status") {
+                            GoalStatusSection(selection: $selectedStatus)
                         }
-                        .pickerStyle(.menu)
-                        .foregroundStyle(Theme.text)
-                        .padding(8)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
+                    } else {
+                        fieldGroup("Initial Linked List") {
+                            initialLinkedListPicker
+                        }
                     }
 
                     HStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("Start Date")
+                        fieldGroup("Start Date") {
                             CadenceDatePicker(selection: $startDate)
                         }
-                        VStack(alignment: .leading, spacing: 6) {
-                            fieldLabel("End Date")
+                        fieldGroup("End Date") {
                             CadenceDatePicker(selection: $endDate)
                         }
                     }
 
-                    fieldLabel("Icon")
-                    IconGrid(selected: $selectedIcon)
+                    fieldGroup("Icon") {
+                        IconGrid(selected: $selectedIcon)
+                    }
 
-                    // Color
-                    fieldLabel("Color")
-                    ColorGrid(selected: $selectedColor)
+                    fieldGroup("Color") {
+                        ColorGrid(selected: $selectedColor)
+                    }
                 }
                 .padding(24)
             }
@@ -271,9 +232,72 @@ struct CreateGoalSheet: View {
         }
     }
 
-    @ViewBuilder
-    private func fieldLabel(_ text: String) -> some View {
-        SectionEyebrowLabel(text: text)
+    /// A section label and the block it names, at the one gap the app has for that relation.
+    ///
+    /// **T-1107.** Every interior label in this sheet used to be a plain sibling of the control
+    /// under it in the 20pt stack above, so it sat 20pt from the control *above* it and 20pt from
+    /// its own — equidistant from what precedes it and what it names, which is to say attached to
+    /// neither. Only the two date fields were grouped, and they spelled their own `6`. The gap is
+    /// `CadenceSectionLabelMetrics.labelToNamedBlock`, the same constant `CadenceFieldSection`
+    /// draws a titled group with, so the two cannot drift apart.
+    private func fieldGroup<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+            SectionEyebrowLabel(text: title)
+            content()
+        }
+    }
+
+    /// The new-goal branch's list picker, lifted out of `body` so the label above it can be
+    /// grouped with it on one line (T-1107). Nothing inside it changed.
+    private var initialLinkedListPicker: some View {
+        Picker("", selection: $initialListTag) {
+            Text("None").tag("none")
+            ForEach(allContexts) { ctx in
+                Section(ctx.name) {
+                    ForEach(areas.filter { $0.context?.id == ctx.id }) { area in
+                        Label(area.name, systemImage: area.icon).tag("area:\(area.id.uuidString)")
+                    }
+                    ForEach(projects.filter { $0.context?.id == ctx.id }) { project in
+                        Label(project.name, systemImage: project.icon).tag("project:\(project.id.uuidString)")
+                    }
+                }
+            }
+            // **The catch-all is keyed on the offered contexts, not on `nil`
+            // (T-683).** `context == nil` is right for a list that belongs to no
+            // context and wrong for one whose context exists and was not offered —
+            // an archived context is the ordinary way to reach that, and the lists
+            // inside one do not disappear with it. Sixth instance of the fold
+            // T-534, T-538 and T-558 each had to correct; the membership question
+            // is `CadenceSidebarLists.isOffered` so it stays one question.
+            // Latent today — `allContexts` is an unfiltered `@Query` — which is
+            // why this is the same rule and not a new one.
+            let offered = Set(allContexts.map(\.id))
+            let looseAreas = areas.filter {
+                !CadenceSidebarLists.isOffered($0.context?.id, among: offered)
+            }
+            let looseProjects = projects.filter {
+                !CadenceSidebarLists.isOffered($0.context?.id, among: offered)
+            }
+            if !looseAreas.isEmpty || !looseProjects.isEmpty {
+                Section(CadenceSidebarLists.ungroupedTitle) {
+                    ForEach(looseAreas) { area in
+                        Label(area.name, systemImage: area.icon).tag("area:\(area.id.uuidString)")
+                    }
+                    ForEach(looseProjects) { project in
+                        Label(project.name, systemImage: project.icon).tag("project:\(project.id.uuidString)")
+                    }
+                }
+            }
+        }
+        .pickerStyle(.menu)
+        .foregroundStyle(Theme.text)
+        .padding(8)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
     }
 
     /// Dismisses first, then raises the app's confirmation overlay — the sheet is its own window,

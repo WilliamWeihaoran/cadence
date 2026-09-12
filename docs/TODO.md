@@ -437,7 +437,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   coverage-only ticket must not be rewritten as a production bug. Do not guess dates or cite a
   removal commit as the fix sha. Reachable today: `git log --format='%H %s %b' | rg 'T-(734|768|849|879|880|1039|1064|1079)'`.
 
-- [T-1107] **Two forms put a section label exactly as far from the block above it as from the block it names.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/grouping-spacing.md` (SP-1) and `docs/audits/2026-09-06/request-follow-up.md` (R38).
+- [T-1107] **CLOSED 2026-09-11 (agent `copyfit`) — each of the two labels is grouped with the block it names, at one shared gap.** From `docs/audits/2026-09-05/grouping-spacing.md` (SP-1) and `docs/audits/2026-09-06/request-follow-up.md` (R38); both claims were re-read against the source before anything moved, not taken from the reports. Originally filed as: **Two forms put a section label exactly as far from the block above it as from the block it names.**
+  **What was true.** `SettingsContextsSection` put all four children — eyebrow, card, eyebrow, card —
+  in one `VStack(spacing: 16)`, so `Archived Contexts` sat 16pt from the card above it and 16pt from
+  the card it names. `CreateGoalSheet` did the same at 20 for every interior label; the only grouped
+  pair in that sheet was its two date fields, which spelled their own `6`.
+  **One value, not two edits.** `Theme` has **no** spacing tokens at all — checked before inventing
+  one — and `CadenceFieldSection` already drew a titled group's own gap at a bare `10`. That literal
+  is now `CadenceSectionLabelMetrics.labelToNamedBlock` in `CadenceFieldRows.swift`, read by that
+  view and by both call sites, so the relation has one definition rather than one per form. The
+  outer spacings (16 in Settings, 20 in the sheet) are deliberately unchanged: the difference
+  between them and the inner gap *is* the grouping, and the audit's "do not blindly replace every
+  16 with 10" is the reason nothing else moved.
+  **Also in the goal sheet:** `fieldLabel` is gone and cannot be typed again — every field is
+  `fieldGroup(_:content:)` — and the 45-line initial-list `Picker` moved out of `body` into
+  `initialLinkedListPicker` so its label could group with it on one line. Nothing inside the picker
+  changed.
+  `CadenceTests/CadenceSectionLabelGroupingTests.swift`, 4 tests. The composition assertion is
+  **positional**, not a count: M4 below moves the eyebrow out of its group while leaving both the
+  number of eyebrows and the number of grouping stacks identical, which a count-only assertion
+  survives. 3/3 mutations killed (M3 the shared constant, M4 the Settings pane, M5 the sheet).
+  **Not done here, and filed as [[T-1126]]:** the same pair is hand-stacked at up to eleven more
+  macOS settings sites.
+
+- [T-1126] **Up to eleven more macOS settings section labels sit as far from the block above them as
+  from the block they name.** Found by `copyfit` 2026-09-11 while closing [[T-1107]], which fixed
+  only the two forms the two audits named. The same `SettingsSectionLabel` + `SettingsCard` pair is
+  stacked as plain siblings of a `VStack(alignment: .leading, spacing: 16)` in
+  `SettingsCalendarSection` (3 eyebrows), `SettingsListsSection` (6, in its populated branch),
+  `SettingsDataSafetySection` (`Available Backups`) and `SettingsAboutSection` (the
+  reference-links eyebrow). **An eyebrow that is its stack's first child has nothing above it and
+  is not an offender** — `SettingsSidebarSection`'s single label and `SettingsListsSection`'s
+  empty-branch label are that case, which is why the count is a range and not a number.
+  The gap to use already exists: `CadenceSectionLabelMetrics.labelToNamedBlock`.
+  **Three things to know before starting.** (1) The audit's caution stands: decide it visually
+  first, pane by pane. (2) Extend `CadenceSectionLabelGroupingTests`' positional check to each pane
+  converted; a count of grouping stacks equal to the count of labels is satisfied by two labels in
+  one group. (3) The tidiest form is probably not a wrapper at all but `CadenceFieldSection`, which
+  is the same two components (`SectionEyebrowLabel` over `CadenceSettingsCard`) at the right gap —
+  but four of those call sites hand in a computed `SettingsCard { … }` property rather than its
+  contents, and converting *every* site would leave `SettingsSectionLabel` with no callers, which
+  `SettingsSharedVocabularyTests.noneOfTheSevenStacksTheOlderTitledGroupSpelling` currently anchors
+  its non-vacuity assertion on.
 
 - [T-1108] **The empty-store startup test replays a startup sequence that is missing one of the operations it asserts production performs.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-06/request-follow-up.md`.
 
@@ -2134,7 +2175,28 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Same decision as [[T-954]] and probably the same answer: pick a caller, or say in the script's
   header that it is a manual check and why.
 
-- [T-976] **One markdown command title is still Title Case, in the one place [[T-845]]'s table does not
+- [T-976] **CLOSED 2026-09-11 (agent `copyfit`) — the string landed at `7e823e5`; this commit adds the
+  population that stops a ninth site.** The code fix was already in HEAD and the ledger never said
+  so, which is why this entry read open for five days ([[T-1072]]'s rule, skipped): every row of
+  `iOSMarkdownTextView.keyCommands` whose action calls `apply(_:)` reads
+  `MarkdownFormatCommandTitle.sentenceCase(for:)`, and `Indent list` / `Outdent list` — which have
+  no `MarkdownFormatCommand` case to read one from — were hand-corrected. The whole `command(...)`
+  table was converted, not only the row this entry named.
+  **What was still owed.** All three guards on this vocabulary are allowlists: each names one file
+  and asserts *that* file reads the shared table. A fourth surface typing `"Bulleted List"` is
+  invisible to all three, which is exactly how this key-command table survived T-845 — it was
+  simply not on the list. `noOtherFileInTheAppTypesAMarkdownCommandTitleInTitleCase` is a
+  population instead: every Swift file the app ships, swept for the nine Title Case spellings,
+  exempting only `MarkdownSlashCommandCoreSupport.swift`'s deliberately Title Case picker table
+  ("Bullet List" there is a different *word* from "Bulleted list", not a case drift) and asserting
+  that one exemption still spells four of them, so the sweep cannot come back clean because the
+  table moved somewhere unexcused.
+  **Shown naming a real offender, not argued.** M1 puts line 64 back exactly as it read before
+  `7e823e5`: killed, and the new sweep names the file alongside the existing per-file guard. M2 is
+  the point of the ticket — it adds the literal to `MarkdownKeyboardShortcutSupport.swift`, a
+  `MarkdownFormatCommand` surface **no** per-file guard names, and **only** the new sweep kills it.
+  2/2 killed.
+  **Filed as:** **One markdown command title is still Title Case, in the one place [[T-845]]'s table does not
   reach.** `iOSMarkdownTextView.swift:64` registers a `UIKeyCommand` whose discoverability title is
   the literal `"Bulleted List"`, while both format toolbars now read
   `MarkdownFormatCommandTitle.sentenceCase(for:)` and say "Bulleted list". T-845 converged the
