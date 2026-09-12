@@ -52,6 +52,12 @@
 #   LEDGER-CLOSURE-LOST  a `TODO.md` entry that is CLOSED in HEAD is open again in the content you
 #                        are staging, with its id intact -- so LEDGER-IDS-LOST sees nothing wrong.
 #                        `--reopens-ids <exact,sorted,list>` reopens them deliberately.
+#   LEDGER-ENTRY-DUPLICATED
+#                        a ledger entry in the content you are staging contains its own body twice
+#                        -- a closure APPENDED to the draft it was meant to replace, so the entry
+#                        asserts both at once. `--duplicated-entries <exact,sorted,list>` says the
+#                        repetition is deliberate. Delta-read against HEAD: only an entry this
+#                        commit duplicates, or duplicates further, is refused (T-1142).
 #   WORKTREE-BEHIND-HEAD a bare `<path>` whose worktree copy is built on a revision older than
 #                        HEAD's. Committing it writes the stale bytes into history, where no drift
 #                        check looks. Rebuild on `git show HEAD:<path>` and pass the `=` form, or
@@ -126,6 +132,23 @@
 # refused as `REMOVES-HEAD-LINES ... --removes 2` and nothing asked, or said, which revision it had
 # been built from.
 #
+# THE DECLARED-ID FLAGS ACTUALLY TAKE THE LIST THEY DOCUMENT (T-1143)
+#
+# Every `--<something>-ids` flag above documents `<exact,sorted,list>`, and until 2026-09-12 the
+# script could not produce or accept one. Both sides were built as `${(j:,:)${(o)$arr}}` -- with no
+# `(@)`, so the array is flattened to one scalar BEFORE the sort and the join, and each is a no-op
+# on a single element. The hint printed the detection order, space-separated.
+#
+# It never surfaced for two reasons, and both are worth keeping. Every existing list is fed by
+# `comm` or `sort -u`, so it arrives lexicographically sorted and the absent sort was invisible;
+# and the selftest declares exactly ONE id in all twelve places it exercises these flags, where a
+# sort and a comma-join are both indistinguishable from doing nothing. 144 checks passed over it.
+#
+# The first list NOT fed by a sorted source was LEDGER-ENTRY-DUPLICATED's, which reads entries in
+# file order, and it printed `T-992 T-991 T-986 T-781` -- unsorted, and refusing the comma form its
+# own message documented. Fixed at all six sites rather than the new one; the five older ones are
+# unchanged in behaviour, since a sorted input sorts to itself. Mode 4g pins a MULTI-id declaration.
+
 # THE DELIBERATE OVERRIDE LEAVES A TRACE (T-991)
 #
 # `--commits-stale <path>` says "the older content really is what I mean". It used to say it to
@@ -185,6 +208,7 @@ usage() {
     say "usage: ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]..."
     say "       flags: --removes <n> --drops-ids <ids> --reopens-ids <ids>"
     say "              --unfiled-ids <ids> --buried-closures <ids> --duplicate-ids <ids>"
+    say "              --duplicated-entries <ids>"
     say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
     say "       ./scripts/agent-commit.sh status         # report outstanding declined hunks"
@@ -334,6 +358,67 @@ message_ids() {  # $1 = message
 }
 is_any_ledger_path() { [[ "${1:t}" == "TODO.md" || "${1:t}" == "TODO_DONE.md" ]] }
 
+# T-1142, and it is the third failure of the same closure-writing step LEDGER-CLOSURE-BURIED
+# guards. That one asks whether the closure was written where the anchor looks. This asks whether
+# writing it REPLACED the draft it was meant to replace, or was appended underneath it.
+#
+# The shape: an entry closed while its work sat in a checkout carries a progress note --
+# `**RESOLVED IN THE CHECKOUT <date>, NOT YET IN HEAD**` -- and when it finally lands the agent
+# pastes the closure in rather than editing the note out. The entry then says CLOSED on its first
+# line and "not yet in HEAD" in its body, with the same paragraphs twice, and every instrument is
+# satisfied: the id is present so LEDGER-IDS-LOST passes, the first line is a closure so
+# LEDGER-CLOSURE-LOST and LEDGER-CLOSURE-BURIED pass, and the line count only ever went UP so
+# REMOVES-HEAD-LINES has nothing to say. Nothing in this script reads an entry against itself.
+#
+# Measured on HEAD 2026-09-12 over 482 entries: FOUR are in this state -- T-781, T-986, T-991 and
+# T-992 -- and all four were created by one commit, `7584c5f`, which landed those same tickets.
+# They have survived 40 subsequent commits of this file unread. T-992 carries 33 duplicated lines
+# and a "NOT YET IN HEAD" claim that has been false since the moment it was written.
+#
+# The reading is the longest run of CONSECUTIVE body lines that appears twice in one entry, and
+# only lines of >= 40 trimmed characters count -- a short line repeats legitimately (a bare
+# `**CLOSED ...**`, a list marker), a paragraph does not. Over those 482 entries the distribution
+# is 477 entries at zero, ONE at two (T-624, two prose lines it genuinely says twice), and then the
+# four defects at 10, 11, 15 and 33. A minimum run of four sits in that gap with a factor of five
+# of margin on each side; it is not a tuned number, it is the only number the gap admits.
+LEDGER_DUP_MIN_RUN=4
+ledger_selfduplicated_ids() {  # $1 = file, $2 = minimum run length; prints "<id>\t<run>"
+    awk -v thresh="${2:-4}" '
+        function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+        function flush(   i, j, k, best) {
+            best = 0
+            for (i = 1; i <= n; i++) {
+                for (j = i + 1; j <= n; j++) {
+                    if (body[i] != body[j]) continue
+                    # Only seed MAXIMAL runs. Without this an entry of N identical lines seeds
+                    # N^2/2 pairs and each extends O(N); with it, one. Measured on a 400-line
+                    # all-identical entry: 4.3s -> 0.03s, same answer.
+                    if (i > 1 && body[i - 1] == body[j - 1]) continue
+                    k = 0
+                    while (j + k <= n && body[i + k] == body[j + k]) k++
+                    if (k > best) best = k
+                }
+            }
+            if (id != "" && best >= thresh) printf "%s\t%d\n", id, best
+            n = 0; id = ""
+        }
+        /^- \[T-[0-9]+\]/ {
+            flush()
+            id = $0; sub(/^- \[/, "", id); sub(/\].*$/, "", id)
+            next
+        }
+        # A section heading, or any other column-zero line, ends the entry it follows.
+        /^[^ \t]/ && NF { flush(); next }
+        {
+            if (id == "") next
+            n++
+            # Short lines are made unique, so they can neither seed a run nor extend one.
+            body[n] = (length(trim($0)) >= 40) ? trim($0) : ("\001" n)
+        }
+        END { flush() }
+    ' "$1" 2>/dev/null
+}
+
 # T-1072, and this is the half the previous two guards do not reach. LEDGER-ID-UNFILED asks whether
 # an id in a commit message has an entry; it cannot ask whether that entry is the SECOND one. The
 # ticket's own shape is "two agents read `next free` before either committed": both then write a
@@ -465,6 +550,7 @@ cmd_commit() {
     local id=$1; shift
     local message="" have_message=0 declared_removals="" declared_dropped_ids="" declared_reopened_ids=""
     local declared_unfiled_ids="" declared_buried_ids="" declared_duplicate_ids=""
+    local declared_duplicated_entries=""
     local -a paths accepted stale_declared not_sweeps
     paths=(); accepted=(); stale_declared=(); not_sweeps=()
 
@@ -488,6 +574,8 @@ cmd_commit() {
                 declared_buried_ids="$2"; shift 2 ;;
             --duplicate-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--duplicate-ids needs a comma-separated id list"
                 declared_duplicate_ids="$2"; shift 2 ;;
+            --duplicated-entries) [[ $# -ge 2 ]] || refuse BAD-OPTION "--duplicated-entries needs a comma-separated id list"
+                declared_duplicated_entries="$2"; shift 2 ;;
             --commits-stale) [[ $# -ge 2 ]] || refuse BAD-OPTION "--commits-stale needs a path"
                 stale_declared+=("$2"); shift 2 ;;
             --not-a-sweep) [[ $# -ge 2 ]] || refuse BAD-OPTION "--not-a-sweep needs a @Test name"
@@ -909,8 +997,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         lost_ids+=(${(f)gone})
     done
     if (( ${#lost_ids} )); then
-        local declared_sorted="${(j:,:)${(o)${(s:,:)declared_dropped_ids}}}"
-        local lost_sorted="${(j:,:)${(o)lost_ids}}"
+        local declared_sorted="${(pj:,:)${(@o)${(@s:,:)declared_dropped_ids}}}"
+        local lost_sorted="${(pj:,:)${(@o)lost_ids}}"
         if [[ "$declared_sorted" != "$lost_sorted" ]]; then
             rm -rf "$scratch"
             refuse LEDGER-IDS-LOST "this commit drops ledger entries HEAD has: ${(j:, :)lost_ids}
@@ -941,8 +1029,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         reopened_ids+=(${(f)reopened}); reopened_in="$name"
     done
     if (( ${#reopened_ids} )); then
-        local declared_reopened_sorted="${(j:,:)${(o)${(s:,:)declared_reopened_ids}}}"
-        local reopened_sorted="${(j:,:)${(o)reopened_ids}}"
+        local declared_reopened_sorted="${(pj:,:)${(@o)${(@s:,:)declared_reopened_ids}}}"
+        local reopened_sorted="${(pj:,:)${(@o)reopened_ids}}"
         if [[ "$declared_reopened_sorted" != "$reopened_sorted" ]]; then
             rm -rf "$scratch"
             refuse LEDGER-CLOSURE-LOST "this commit reverts ledger entries from closed back to open: ${(j:, :)reopened_ids}
@@ -974,8 +1062,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         buried_ids+=(${(f)buried}); buried_in="$name"
     done
     if (( ${#buried_ids} )); then
-        local declared_buried_sorted="${(j:,:)${(o)${(s:,:)declared_buried_ids}}}"
-        local buried_sorted="${(j:,:)${(o)buried_ids}}"
+        local declared_buried_sorted="${(pj:,:)${(@o)${(@s:,:)declared_buried_ids}}}"
+        local buried_sorted="${(pj:,:)${(@o)buried_ids}}"
         if [[ "$declared_buried_sorted" != "$buried_sorted" ]]; then
             rm -rf "$scratch"
             refuse LEDGER-CLOSURE-BURIED "these ledger entries are CLOSED in their body and open on their own first line: ${(j:, :)buried_ids}
@@ -983,6 +1071,69 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   anchors on the entry's FIRST line, so a closure written mid-entry closes nothing they can see.
   Move the \`**CLOSED <date> (...)**\` sentence onto each entry's own first line. If one of these
   really is prose and not a closure, say so: --buried-closures $buried_sorted"
+        fi
+    fi
+
+    # 3a3b. T-1142, and the half 3a3 cannot reach. That guard asks whether the closure was written
+    #       where every instrument looks; this asks whether writing it REPLACED the draft it was
+    #       meant to replace. An appended closure leaves the entry asserting its own body twice --
+    #       and asserting, in T-991/T-992's case, both `CLOSED` and `NOT YET IN HEAD` at once.
+    #
+    #       DELTA-READ AGAINST HEAD, and unlike 3a3 that is deliberate rather than a concession.
+    #       3a3 could be whole-file because its measured population of fourteen was driven to zero
+    #       in the commit that added it. This one cannot be: of the four standing instances, T-986
+    #       is a live sibling's ticket and T-781 is not mine either, so a whole-file reading would
+    #       refuse every commit of this file until somebody else acted -- and the first thing a
+    #       blocked agent would reach for is the escape flag, which is how a guard becomes noise.
+    #       The delta reading catches the defect at the instant it is CREATED, which is where the
+    #       author and the cheap fix both are; the standing four can only shrink from here.
+    #
+    #       Replayed over all 428 `docs/TODO.md` commits in this repository's history: ONE refusal,
+    #       `7584c5f`, which is the commit that created all four. Zero false refusals.
+    local -a dup_entries
+    dup_entries=(); local dup_in="" dupid duprun prevrun
+    # Hoisted, like `gone`/`reopened` above and for T-1074's reason: a bare `local x` whose
+    # parameter is already local prints `x=<value>` instead of redeclaring it. Reachable here the
+    # moment one commit names both TODO.md and TODO_DONE.md.
+    local -A head_runs
+    for name in "${names[@]}"; do
+        is_any_ledger_path "$name" || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue
+        local dup_head="$scratch/$(ledger_key "$name").duphead"
+        if git cat-file -e "$headsha:$name" 2>/dev/null; then
+            git cat-file -p "$headsha:$name" > "$dup_head"
+        else
+            : > "$dup_head"
+        fi
+        # HEAD is read with a threshold of 1, so the comparison is against its TRUE longest run
+        # rather than against the refusal threshold: an entry already repeating three lines must
+        # not be able to acquire a fourth for free.
+        head_runs=()
+        while IFS=$'\t' read -r dupid duprun; do
+            [[ -n "$dupid" ]] && head_runs[$dupid]="$duprun"
+        done < <(ledger_selfduplicated_ids "$dup_head" 1)
+        while IFS=$'\t' read -r dupid duprun; do
+            [[ -n "$dupid" ]] || continue
+            prevrun="${head_runs[$dupid]:-0}"
+            (( duprun > prevrun )) || continue
+            dup_entries+=("$dupid  [$duprun repeated lines, HEAD had $prevrun]"); dup_in="$name"
+        done < <(ledger_selfduplicated_ids "${staged_content[$name]}" "$LEDGER_DUP_MIN_RUN")
+    done
+    if (( ${#dup_entries} )); then
+        local -a dup_ids_only
+        dup_ids_only=("${(@)dup_entries%% *}")
+        local declared_dup_sorted="${(pj:,:)${(@o)${(@s:,:)declared_duplicated_entries}}}"
+        local dup_sorted="${(pj:,:)${(@o)dup_ids_only}}"
+        if [[ "$declared_dup_sorted" != "$dup_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-ENTRY-DUPLICATED "these ledger entries now contain their own body twice: ${(j:, :)dup_entries}
+  A closure APPENDED to the draft it was meant to replace, rather than written over it. The entry
+  then states its case twice and, where the draft was a progress note, states two contradictory
+  cases at once -- \`CLOSED\` on the first line and \`NOT YET IN HEAD\` in the body.
+  No guard above can see this: the id is still there, the first line is still a closure, and the
+  line count only went UP, so REMOVES-HEAD-LINES has nothing to say either.
+  Edit the draft OUT of $dup_in rather than pasting the closure underneath it.
+  If the repetition really is deliberate, say so: --duplicated-entries $dup_sorted"
         fi
     fi
 
@@ -1020,8 +1171,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         done
     fi
     if (( ${#unfiled_ids} )); then
-        local declared_unfiled_sorted="${(j:,:)${(o)${(s:,:)declared_unfiled_ids}}}"
-        local unfiled_sorted="${(j:,:)${(o)unfiled_ids}}"
+        local declared_unfiled_sorted="${(pj:,:)${(@o)${(@s:,:)declared_unfiled_ids}}}"
+        local unfiled_sorted="${(pj:,:)${(@o)unfiled_ids}}"
         if [[ "$declared_unfiled_sorted" != "$unfiled_sorted" ]]; then
             rm -rf "$scratch"
             refuse LEDGER-ID-UNFILED "this message names ticket ids with no formal ledger entry: ${(j:, :)unfiled_ids}
@@ -1059,8 +1210,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         duplicate_ids+=(${(f)dup_new}); duplicate_in="$name"
     done
     if (( ${#duplicate_ids} )); then
-        local declared_duplicate_sorted="${(j:,:)${(o)${(s:,:)declared_duplicate_ids}}}"
-        local duplicate_sorted="${(j:,:)${(o)duplicate_ids}}"
+        local declared_duplicate_sorted="${(pj:,:)${(@o)${(@s:,:)declared_duplicate_ids}}}"
+        local duplicate_sorted="${(pj:,:)${(@o)duplicate_ids}}"
         if [[ "$declared_duplicate_sorted" != "$duplicate_sorted" ]]; then
             rm -rf "$scratch"
             refuse LEDGER-ID-DUPLICATE "this commit files a second formal entry for ids already allocated: ${(j:, :)duplicate_ids}
@@ -1785,6 +1936,111 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" d4 -m "$M" --removes 1 TODO.md=afterdup.md 2>&1 ); rc=$?
     check "an ordinary later edit to a ledger that ALREADY has that duplicate needs no flag" \
         $( [[ $rc == 0 && "$out" != *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4g (LEDGER-ENTRY-DUPLICATED) -- T-1142: a closure APPENDED to the draft it replaces"
+    # The third failure of the same closure-writing step 4e guards. 4e asks whether the closure was
+    # written where the anchor looks; this asks whether writing it replaced the draft or was pasted
+    # under it. Measured on HEAD 2026-09-12: four entries carry their own body twice -- T-781,
+    # T-986, T-991, T-992 -- all four created by one commit, `7584c5f`, unread for 40 commits since.
+    # T-991 and T-992 said `CLOSED` on the first line and `NOT YET IN HEAD` in the body at once.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && git show HEAD:TODO.md > TODO.md ) >/dev/null 2>&1
+    # T-120 is the defect: a progress note, then the closure pasted underneath with the note's own
+    # paragraph repeated verbatim. T-121 is a long entry that says everything once.
+    ( cd "$ws"
+      git show HEAD:TODO.md > dup.md
+      print -rl -- "" "- [T-120] **CLOSED 2026-09-12 (\`deadd10\`).** Originally: the finding, stated once." \
+                      "  **RESOLVED IN THE CHECKOUT 2026-09-12, NOT YET IN HEAD** -- one --removes short." \
+                      "  The decision the ticket asked for is yes, and here is the reasoning behind it," \
+                      "  which runs to several lines so that the repeated run is unmistakably a paragraph." \
+                      "  Measured afterwards: nothing refused, and the positive control caught them all." \
+                      "  Pinned by the mode that follows, so removing it cannot go unnoticed later." \
+                      "  **CLOSED 2026-09-12 (\`deadd10\`).**" \
+                      "  The decision the ticket asked for is yes, and here is the reasoning behind it," \
+                      "  which runs to several lines so that the repeated run is unmistakably a paragraph." \
+                      "  Measured afterwards: nothing refused, and the positive control caught them all." \
+                      "  Pinned by the mode that follows, so removing it cannot go unnoticed later." \
+                      "" "- [T-121] **CLOSED 2026-09-12 (\`deadd11\`).** Originally: a long entry that repeats nothing." \
+                      "  The decision the ticket asked for is yes, and here is the reasoning behind it," \
+                      "  which runs to several lines so that the repeated run is unmistakably a paragraph." \
+                      "  A second paragraph that differs from the first in every one of its own lines," \
+                      "  so that a reader comparing the two entries sees length and not repetition." >> dup.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j1 -m "$M" TODO.md=dup.md 2>&1 ); rc=$?
+    check "an entry that contains its own body twice is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ENTRY-DUPLICATED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "the duplicated id is named, and the long entry that repeats nothing is not" \
+        $( [[ "$out" == *"T-120"* && "$out" != *"T-121"* ]] && print 1 || print 0 ) "$out"
+    check "and it says how long the repeated run is, so the reading can be checked by hand" \
+        $( [[ "$out" == *"repeated lines"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) != *"T-120"* ]] && print 1 || print 0 )
+    out=$( cd "$ws" && zsh "$here" j2 -m "$M" --duplicated-entries T-121 TODO.md=dup.md 2>&1 ); rc=$?
+    check "declaring the WRONG id is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ENTRY-DUPLICATED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" j3 -m "$M" --duplicated-entries T-120 TODO.md=dup.md 2>&1 ); rc=$?
+    check "declaring it deliberately lets the repetition through" $(( rc == 0 )) "exit $rc: $out"
+    # The delta control, and the reason this guard is delta-read at all: once a duplicated entry is
+    # in HEAD, ordinary later edits to that ledger must not inherit its refusal. A whole-file
+    # reading would refuse every commit of this file until somebody else's entry was cleaned up,
+    # and the first thing a blocked agent reaches for is the escape flag.
+    ( cd "$ws"
+      git show HEAD:TODO.md | sed 's/^  \*\*RESOLVED IN THE CHECKOUT.*/  **RESOLVED IN THE CHECKOUT 2026-09-12** -- and this line was later edited./' > afterj.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j4 -m "$M" --removes 1 TODO.md=afterj.md 2>&1 ); rc=$?
+    check "an ordinary later edit to a ledger that ALREADY has that duplicate needs no flag" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-ENTRY-DUPLICATED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # And the positive control on the delta reading: a SECOND entry duplicated on top of the first
+    # still refuses, so "already there" is not a blanket amnesty for the file.
+    ( cd "$ws"
+      git show HEAD:TODO.md > dup2.md
+      print -rl -- "" "- [T-122] **CLOSED 2026-09-12 (\`deadd12\`).** Originally: a second entry, duplicated later." \
+                      "  The decision the ticket asked for is yes, and here is the reasoning behind it," \
+                      "  which runs to several lines so that the repeated run is unmistakably a paragraph." \
+                      "  Measured afterwards: nothing refused, and the positive control caught them all." \
+                      "  Pinned by the mode that follows, so removing it cannot go unnoticed later." \
+                      "  The decision the ticket asked for is yes, and here is the reasoning behind it," \
+                      "  which runs to several lines so that the repeated run is unmistakably a paragraph." \
+                      "  Measured afterwards: nothing refused, and the positive control caught them all." \
+                      "  Pinned by the mode that follows, so removing it cannot go unnoticed later." >> dup2.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j5 -m "$M" TODO.md=dup2.md 2>&1 ); rc=$?
+    check "a NEW duplicated entry still refuses in a ledger that already carries one" \
+        $( [[ $rc == 3 && "$out" == *"T-122"* && "$out" != *"T-120"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4g2 (T-1143) -- the declared-id flags must take the list they document"
+    # Every --<x>-ids flag documents `<exact,sorted,list>` and until 2026-09-12 neither side was
+    # sorted OR comma-joined: `${(j:,:)${(o)$arr}}` with no `(@)` flattens the array first, so both
+    # operators act on one element and do nothing. Masked everywhere, because every older list is
+    # fed by `comm` or `sort -u` and arrives sorted anyway -- and because all twelve existing
+    # exercises of these flags declare exactly ONE id, where sorting and joining are unobservable.
+    # This is the multi-id case: two entries duplicated at once, declared in the documented form.
+    ( cd "$ws"
+      git show HEAD:TODO.md > dup3.md
+      print -rl -- "" "- [T-131] **CLOSED 2026-09-12 (\`deadd13\`).** Originally: the first of two, both duplicated." \
+                      "  The decision the ticket asked for is yes, and here is the reasoning behind it," \
+                      "  which runs to several lines so that the repeated run is unmistakably a paragraph." \
+                      "  Measured afterwards: nothing refused, and the positive control caught them all." \
+                      "  Pinned by the mode that follows, so removing it cannot go unnoticed later." \
+                      "  The decision the ticket asked for is yes, and here is the reasoning behind it," \
+                      "  which runs to several lines so that the repeated run is unmistakably a paragraph." \
+                      "  Measured afterwards: nothing refused, and the positive control caught them all." \
+                      "  Pinned by the mode that follows, so removing it cannot go unnoticed later." \
+                      "" "- [T-130] **CLOSED 2026-09-12 (\`deadd14\`).** Originally: the second of two, filed out of order." \
+                      "  A different paragraph, repeated below, so the two ids are found in file" \
+                      "  order T-131 then T-130 and a sorted list is observably not that order." \
+                      "  It has to be four lines long, because four is the minimum duplicated run." \
+                      "  So here is a fourth line, bringing the repeated run up to that minimum." \
+                      "  A different paragraph, repeated below, so the two ids are found in file" \
+                      "  order T-131 then T-130 and a sorted list is observably not that order." \
+                      "  It has to be four lines long, because four is the minimum duplicated run." \
+                      "  So here is a fourth line, bringing the repeated run up to that minimum." >> dup3.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" k1 -m "$M" TODO.md=dup3.md 2>&1 ); rc=$?
+    check "two duplicated entries at once are both refused" \
+        $( [[ $rc == 3 && "$out" == *"T-130"* && "$out" == *"T-131"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the hint it prints is SORTED and comma-joined, not the order they were found in" \
+        $( [[ "$out" == *"--duplicated-entries T-130,T-131"* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" k2 -m "$M" --duplicated-entries "T-130,T-131" TODO.md=dup3.md 2>&1 ); rc=$?
+    check "the documented comma-separated sorted list is accepted" $(( rc == 0 )) "exit $rc: $out"
 
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"

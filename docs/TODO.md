@@ -118,6 +118,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1137] **`default.profraw` is tracked in git while `.gitignore` carries `*.profraw`, and the combination is invisible to `git add -A` against a fresh index.** A coverage artefact from some `xcodebuild` run is committed at the repository root. Being both tracked and ignored is not merely untidy: `git add -A` skips a path the ignore rules match unless the index already tracks it, so **any** tool that builds a fresh index over a tree — which is the natural way to compare a scratch copy against a commit — reads the file as deleted. Measured 2026-09-12 while building `scripts/agent-scratch.sh` ([[T-1094]]): 25 of 25 untouched trees were refused as holding uncommitted work, all 25 on this one file. Worked around there with `git read-tree <base>`; the file itself should almost certainly be `git rm --cached`'d, which needs someone to confirm nothing reads it.
 
+<!-- staleprov2 2026-09-12: T-1142..T-1143 reserved, both closed in the commit that files them. -->
+
+- [T-1142] **CLOSED 2026-09-12 (agent `staleprov2`).** **A ledger entry can contain its own body twice, and nothing reads an entry against itself.** Found while closing [[T-992]] and [[T-991]], whose own entries turned out to be two of the four instances. An agent closing a ticket whose work sat in a checkout pastes the closure in UNDERNEATH the progress note it was meant to replace, rather than editing the note out. The entry then says `**CLOSED**` on its first line and `**RESOLVED IN THE CHECKOUT ..., NOT YET IN HEAD**` in its body, with the same paragraphs twice — and every existing guard is satisfied: the id is present so `LEDGER-IDS-LOST` passes, the first line is a closure so `LEDGER-CLOSURE-LOST` and `LEDGER-CLOSURE-BURIED` pass, and the line count only ever goes UP, so `REMOVES-HEAD-LINES` has nothing to say either.
+  **MEASURED on HEAD 2026-09-12 over 482 entries:** four are in this state — T-781, T-986, T-991 and T-992 — with duplicated runs of 11, 10, 15 and 33 lines. All four were written by ONE commit, `7584c5f`, which landed those same tickets, and all four survived the 40 commits of this file since. T-991 and T-992 asserted "NOT YET IN HEAD" about code that had been in HEAD for six days.
+  **The reading:** the longest run of CONSECUTIVE body lines appearing twice within one entry, counting only lines of >= 40 trimmed characters, because a short line repeats legitimately and a paragraph does not. Over those 482 entries the distribution is 477 at zero, ONE at two (T-624, two prose lines it genuinely says twice), then the four defects at 10, 11, 15 and 33. A minimum run of four sits in that gap with a factor of five of margin on each side; it is not a tuned number, it is the only number the gap admits.
+  **FALSE-REFUSAL RATE: 1 refusal in 428 replayed `docs/TODO.md` commits, and it is the true positive** — `7584c5f`, which it names with all four ids and their run lengths. Zero false refusals. Proved non-vacuous by replaying that real commit through the real script before repairing anything, rather than against a fixture alone.
+  **Delta-read against HEAD deliberately, and this is the one place it departs from [[T-1106]]'s reading.** `LEDGER-CLOSURE-BURIED` could be whole-file because its measured population of fourteen was driven to zero in the commit that added it. This one cannot be: of the four, T-986 belongs to a live sibling and T-781 is one of [[T-1136]]'s three double-filed ids, so a whole-file reading would refuse every commit of this file until somebody else acted — and the first thing a blocked agent reaches for is the escape flag, which is how a guard becomes noise. The delta reading catches the defect where the author and the cheap fix both are. **T-992 and T-991 are repaired here; T-781 and T-986 are left standing and belong to [[T-1136]]**, which already proposes merging them and is this same argument one layer along.
+  Pinned by `agent-commit.sh` modes 4g and 4g2 and registered in `CadenceGuardScriptSelftestTests.commitHelperRefusals`. Mutation KILLED: disabling the refusal breaks 10 selftest checks.
+
+- [T-1143] **CLOSED 2026-09-12 (agent `staleprov2`).** **Every `--<x>-ids` flag documents `<exact,sorted,list>` and `agent-commit.sh` could neither produce nor accept one.** Found while adding [[T-1142]]'s guard. Both sides of every declared-id comparison were built as `${(j:,:)${(o)$arr}}` — with no `(@)`, so zsh flattens the array to a single scalar BEFORE the sort and the join, and each operator is then a no-op on one element. The hint printed the detection order, space-separated, and the comma-separated form the header documents was refused.
+  **Why 144 selftest checks passed over it — two independent maskings.** Every existing id list is fed by `comm` or `sort -u`, so it arrives lexicographically sorted and the absent sort is invisible; and all twelve places the selftest exercises these flags declare exactly ONE id, where a sort and a comma-join are both indistinguishable from doing nothing. The first list NOT fed by a sorted source was [[T-1142]]'s, which reads entries in file order: it printed `T-992 T-991 T-986 T-781` and refused the comma form its own refusal message told the agent to type.
+  Fixed at all six sites rather than only the new one. The five older ones are unchanged in behaviour, since a sorted input sorts to itself — the fix makes the intent real rather than accidental, so the next guard whose list is not pre-sorted does not inherit the trap. Mode 4g2 pins a MULTI-id declaration, which is the case nothing exercised. Mutation KILLED: restoring the missing `(@)` breaks 2 checks and brings the unsorted hint back verbatim.
+
   **The fix, and why it is additive.** `weekKey(from:calendar: Calendar = .current)` now sets
   `cal.timeZone = calendar.timeZone`, exactly as `weekStartDate(forWeekKey:calendar:)` already did.
   The default is what the parameterless version always used, so **no existing caller changes what it
@@ -2120,9 +2133,9 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   either. The only shape refused would be "old revision plus edits", which is the bug. **Needs a
   decision before code** — it is the one form the ticket said to leave alone.
 
-  **RESOLVED IN THE CHECKOUT 2026-09-06, NOT YET IN HEAD** -- the code is written and verified and
-  is one user-gated `--removes` short of landing; see the note at the end of [[T-1074]]. Flip this
-  first line to `**CLOSED <date> (`sha`).**` when it lands.
+  **Landed in `7584c5f`, and re-verified against HEAD 2026-09-12 (agent `staleprov2`) by mutation:**
+  making the `=` form skip the staleness reading again breaks 4 selftest checks and brings the
+  pre-fix `REMOVES-HEAD-LINES ... --removes 2` reproduction back verbatim.
   **The decision the ticket asked for is: yes, ask the `=` form too.** The old exemption was right
   about the wrong comparison. Refusing a reconstruction because it differs from the WORKTREE would
   refuse the cure; this reading is against HISTORY, where a genuine rebuild on `git show
@@ -2156,40 +2169,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   KILLED: delete the corroboration (10 legitimate selftest commits false-refused), stop asking the
   `=` form (the pre-fix `--removes 2` reproduction returns verbatim), refuse a stale copy too (mode
   4b breaks), drop the trailer (mode 4b4 breaks).
-  **CLOSED 2026-09-06 (commitres; landed by `requeue`).**
-  **The decision the ticket asked for is: yes, ask the `=` form too.** The old exemption was right
-  about the wrong comparison. Refusing a reconstruction because it differs from the WORKTREE would
-  refuse the cure; this reading is against HISTORY, where a genuine rebuild on `git show
-  HEAD:<path>` contains every line HEAD has and settles as `inflight` at the first comparison,
-  before any revision walk. So the cure is not refused and the mistake is: `REBUILD-BEHIND-HEAD`
-  names the sha the content file was built on and how many commits have landed on that path since.
-  **Reproduced first, in a throwaway repository:** a content file built two commits back was refused
-  as `REMOVES-HEAD-LINES: removes 2 line(s) ... --removes 2`. A count, and an invitation to type the
-  number that drops the two lines the siblings landed -- the same wrong-diagnosis shape [[T-982]]
-  found on the bare form. Nothing asked which revision the file came from.
-  **The naive reading does not survive contact, and that is the substance of this ticket.** Applied
-  as written it refused **13 of `agent-commit.sh`'s own selftest commits** and **1 of this
-  repository's last 80 real `docs/TODO.md` commits** (`eab61a0d`, checked by hand: no id dropped, no
-  closure reverted; its 24 "missing" lines are its own T-1036/T-1038 entries rewritten from open
-  text to closures -- a false accusation). The cause: "some older revision R is wholly contained and
-  a line HEAD has is missing" is also what an ordinary rewrite of the NEWEST lines looks like,
-  because deleting what HEAD added leaves R behind. Containment of R is necessary and not
-  sufficient. So a **corroboration** was added: a line HEAD has that R does not, still present in
-  the content, proves the content was built on something newer than R, and the `behind` reading is
-  withdrawn. An agent working from R cannot hold such a line -- it did not exist in anything it read.
-  **Measured after:** 0 of those 80 real commits refused; 0 of the selftest's 105 checks refused;
-  and the positive control on real repository content -- each commit's blob replayed onto the HEAD
-  two commits later, which is exactly the failure this ticket is about -- **caught 13 of 13,
-  missing none**. Two narrowings are recorded in the scripts: the corroboration also narrows the
-  bare-form reading ([[T-982]]), correctly, without weakening any measured [[T-975]] instance (a
-  stale copy is R's blob byte for byte and a stale base is R plus local edits; neither holds a
-  post-R line); and for the `=` form only a **stale base** refuses, because a content file whose
-  bytes ARE an older revision carries none of the agent's own work and so cannot be a mistaken
-  rebuild -- that is a deliberate revert, and `REMOVES-HEAD-LINES` already names every line it
-  drops. Pinned by `agent-commit.sh` modes 4b3/4b4 and `worktree-drift.sh` mode 5c. Four mutations
-  KILLED: delete the corroboration (10 legitimate selftest commits false-refused), stop asking the
-  `=` form (the pre-fix `--removes 2` reproduction returns verbatim), refuse a stale copy too (mode
-  4b breaks), drop the trailer (mode 4b4 breaks).
+
 - [T-991] **CLOSED 2026-09-06 (agent `commitres`; landed by `requeue`, same commit as [[T-992]]).** Originally: **`--commits-stale` lands a stale copy on purpose and leaves no trace.** Every other
   deliberate override in `agent-commit.sh` that discards something leaves a record somebody has to
   clear — a declined hunk writes to `$TMPDIR/cadence-declined-hunks` and `check` fails while it is
@@ -2198,23 +2178,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   four measured instances of [[T-975]] were found by asking. A record in the same ledger, or at
   minimum the path and base sha in the commit trailer.
 
-  **RESOLVED IN THE CHECKOUT 2026-09-06, NOT YET IN HEAD** -- same gate as [[T-992]].
-  Each overridden path now writes a `Commits-Stale: <path> built-on <sha>` trailer into the commit
-  message, immediately above the `Co-Authored-By:` line, so `git log --grep='^Commits-Stale:'`
-  answers *did anyone knowingly commit a copy behind HEAD, and on which path* from any clone,
-  forever, and the base sha makes what was skipped diffable rather than abstract.
-  **The commit message and not the $TMPDIR ledger, deliberately.** A declined-hunk record means
-  somebody still has to act, and `check` fails while one exists; a `--commits-stale` is a settled
-  decision, and filing it as outstanding work would make `check` fail over something already
-  decided. The ledger is also per-checkout and per-boot, and this question gets asked days later.
-  **The user-gating of the flag makes this more valuable, not less:** the flag is now rare and
-  deliberate, so every trailer in the history is a decision somebody made on purpose.
-  One bug found while writing it, worth more than the feature: `awk -v extra=...` **cannot carry a
-  literal newline** ("awk: newline in string"), so the first implementation produced an EMPTY commit
-  message -- taking the `Co-Authored-By:` line with it -- the moment two paths were overridden at
-  once. Spliced in zsh instead. Pinned by mode 4b4, including the control that an ordinary commit
-  acquires no trailer (or `--grep` answers everything and therefore nothing).
-  **CLOSED 2026-09-06 (commitres; landed by `requeue`)** -- same commit as [[T-992]].
+  **Landed in `7584c5f`, and re-verified against HEAD 2026-09-12 (agent `staleprov2`):** dropping
+  the trailer breaks 3 selftest checks. **MEASURED the same day, and it is the answer this ticket
+  existed to make answerable:** `git log --grep='^Commits-Stale:'` over every commit reachable
+  from HEAD returns **nothing**. The flag has never once been used, which is exactly what the
+  standing "never to be used" rule asks for -- and the trailer is what makes that a measurement
+  rather than an assumption.
   Each overridden path now writes a `Commits-Stale: <path> built-on <sha>` trailer into the commit
   message, immediately above the `Co-Authored-By:` line, so `git log --grep='^Commits-Stale:'`
   answers *did anyone knowingly commit a copy behind HEAD, and on which path* from any clone,

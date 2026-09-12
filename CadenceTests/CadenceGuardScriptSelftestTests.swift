@@ -112,6 +112,18 @@ struct CadenceGuardScriptSelftestTests {
         // a word. Naming it here means deleting mode 4f goes red rather than quietly leaving the
         // allocator guarded only against the sequential mistake.
         "LEDGER-ID-DUPLICATE",
+        // T-1142, and it is the third failure of the one step `LEDGER-CLOSURE-BURIED` guards: the
+        // moment an agent writes a closure into an entry. That guard asks whether the closure was
+        // written where every instrument looks. This asks whether writing it REPLACED the draft it
+        // was meant to replace, or was pasted underneath it -- leaving the entry stating its case
+        // twice and, where the draft was a progress note, stating `CLOSED` on its first line and
+        // `NOT YET IN HEAD` in its body at the same time. Nothing above can see it: the id is
+        // still there, the first line is still a closure, and the line count only ever goes UP.
+        // Four entries in docs/TODO.md were in that state when this was measured -- T-781, T-986,
+        // T-991, T-992 -- all four written by one commit, `7584c5f`, and unread for the 40 commits
+        // of that file since. Naming it here means deleting mode 4g goes red rather than quietly
+        // leaving the closure-writing step guarded at two of its three failures.
+        "LEDGER-ENTRY-DUPLICATED",
         "REMOVES-HEAD-LINES",
         "NO-PATHS",
         "UNKNOWN-PATH",
