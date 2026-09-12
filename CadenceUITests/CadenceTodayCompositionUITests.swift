@@ -463,7 +463,7 @@ final class CadenceTodayCompositionUITests: XCTestCase {
         app = XCUIApplication()
         app.launchEnvironment["CADENCE_UI_TEST_MODE"] = "1"
         app.launchEnvironment["CADENCE_LOCAL_STORE_ONLY"] = "1"
-        app.launchEnvironment["CADENCE_UI_TEST_STORE_ID"] = storeID
+        CadenceUITestEnvironment.isolateStoreAndPreferences(app, storeID: storeID)
         app.launchEnvironment["CADENCE_RESET_STORE"] = "1"
         app.launchEnvironment["CADENCE_RESET_USER_DEFAULTS"] = "1"
         app.launchEnvironment["CADENCE_UI_TEST_SCENARIO"] = Fixture.scenario

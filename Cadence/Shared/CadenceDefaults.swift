@@ -91,4 +91,16 @@ nonisolated enum CadenceDefaults {
               let suite = UserDefaults(suiteName: name) else { return .standard }
         return suite
     }
+
+    /// Whether a store is one of the private per-launch suites rather than the shared domain —
+    /// **T-1157**, and the question a destructive tooling path has to ask before it deletes.
+    ///
+    /// It lives *here* for the same reason `resolvedStore` does: this is the one file in the app
+    /// target allowed to name `UserDefaults.standard`, and `CadenceDefaultsRoutingSweepTests`
+    /// enforces that. `CadenceUITestSupport` asked the question itself first and the sweep caught
+    /// it — correctly, and for exactly the reason the sweep exists, since a second file spelling
+    /// the shared domain is how the app ends up reading one key out of two stores.
+    static func isPrivateSuite(_ store: UserDefaults) -> Bool {
+        store !== UserDefaults.standard
+    }
 }

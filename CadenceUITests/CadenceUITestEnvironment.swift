@@ -107,6 +107,46 @@ enum CadenceUITestEnvironment {
             """
         )
     }
+
+    // MARK: - Keeping a launched app out of the signed-in person's own state (T-1157)
+
+    /// The launch-argument key the app reads its private preferences suite from. Spelled here
+    /// rather than at four call sites; `CadenceDefaults.suiteNameArgumentKey` is the app-side
+    /// half, and `CadenceAgentDefaultsIsolationTests` pins that the two agree.
+    static let suiteNameArgumentKey = "CadenceSuiteName"
+
+    /// An id reduced to the characters that can safely name a preferences file.
+    ///
+    /// **This is why T-1157's "one line on each side" would not have worked.** The app's own rule,
+    /// `CadenceDefaults.suiteName(forAgentID:)`, accepts alphanumerics plus `-`, `_` and `.` and
+    /// answers `nil` for anything else — and `nil` means *use the shared domain*, silently, because
+    /// that is the product's behaviour with no argument at all. `CadenceUITests` builds its store
+    /// id as `"ui-\(name)-\(UUID().uuidString)"`, and `XCTestCase.name` on macOS reads
+    /// `-[CadenceUITests testLaunchesToTodayWithSeededSidebarLists]`: square brackets and a space.
+    /// Passing that id through verbatim would have been refused and landed the launch back on the
+    /// signed-in person's plist, with the argument present and looking correct.
+    ///
+    /// The substitution character is `-`, which is in the accepted set, so the result of this
+    /// function is always accepted: the prefix each caller supplies is alphanumeric, so the string
+    /// can never reduce to empty either.
+    static func privateSuiteID(from raw: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        let scalars = raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+        return String(scalars)
+    }
+
+    /// Point one launch at a private SwiftData store **and** a private preferences suite.
+    ///
+    /// The two used to be set apart, and only the first one was ever set: every launch in this
+    /// target carried `CADENCE_UI_TEST_STORE_ID` and none carried `-CadenceSuiteName`, so the
+    /// store was private and every `@AppStorage` value was the signed-in person's. They are one
+    /// call now because they are one decision, and because the next launch site added here should
+    /// not have to know that there were two.
+    static func isolateStoreAndPreferences(_ app: XCUIApplication, storeID: String) {
+        let id = privateSuiteID(from: storeID)
+        app.launchEnvironment["CADENCE_UI_TEST_STORE_ID"] = id
+        app.launchArguments += ["-\(suiteNameArgumentKey)", id]
+    }
 }
 
 /// Every bound this target waits on, and — separately — whether anyone has measured it.

@@ -183,8 +183,13 @@ code, and every one of them has been violated by a shipped change at least once.
   line contains that string — including the shell running your own wait loop, so
   `until ! pgrep -f "xcodebuild test"; do sleep 10; done` never exits, and a plain
   `grep xcodebuild` over `ps aux` reports your own grep as a hit. Match the binary path —
-  `pgrep -f '^/Applications/.*/xcodebuild test'` — **anchored** — or capture the PID when you launch
-  and wait on that. The anchor is not cosmetic: `pgrep -f` matches the *whole command line*, so the
+  `pgrep -f '^/Applications/.*/xcodebuild( .*)? test(-without-building)?( |$)'` — **anchored**, and with
+  the action read as a whole token — or capture the PID when you launch
+  and wait on that. **The token half is T-1162 and it is not cosmetic either**: `xcb.sh` appends the
+  action LAST, so the anchored-but-adjacent form `'^/Applications/.*/xcodebuild test'` matched no test
+  run this repository makes (measured 2026-09-12: `status` printed `live test hosts: 0` against a live
+  one, while the calibrated pattern printed `1` in the same second). And the token is what keeps
+  `-only-testing:CadenceTests` and `build-for-testing` out, both of which carry the letters. The anchor is not cosmetic: `pgrep -f` matches the *whole command line*, so the
   unanchored form counts every agent shell whose own text contains the literal, which includes the
   wait loops written to avoid contention. That inverts the belt into a deadlock — each waiting agent
   sees the others waiting and counts them as running hosts. Measured: one agent held the lock 23

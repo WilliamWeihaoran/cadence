@@ -707,9 +707,11 @@ refusal is correct, and **for a stronger reason than the one it gives**. The sto
 — `CADENCE_LOCAL_STORE_ONLY=1` plus `CADENCE_UI_TEST_STORE_ID` already redirect it. The **container**
 is: a debug build carries the same bundle id, so it gets the user's own
 `~/Library/Containers/com.haoranwei.Cadence/Data/`, which is where the script's own header says the
-private store lands. `run-macos-app.sh` passes no `-CadenceSuiteName`, so the launched instance's
-`CadenceDefaults.store` is the **user's** preferences plist, and the app-group suite `Theme` and
-`CadenceWidgetRefreshCenter` reach is shared by design on top of that (T-1157).
+private store lands. Until T-1157 `run-macos-app.sh` passed no `-CadenceSuiteName`, so the launched
+instance's `CadenceDefaults.store` **was** the user's own preferences plist; it passes one now, and
+refuses an id that cannot name a suite. What is still shared, by design, is the app-group suite
+`Theme` and `CadenceWidgetRefreshCenter` reach — so an agent's app can still change the accent the
+user's widget draws ([[T-1169]]).
 
 **What that refusal does NOT mean.** It is one route, not the surface. Nothing under `CadenceUITests/`
 and nothing in `scripts/xcb.sh` guards on the user's app at all, so a UI run is not blocked by it —

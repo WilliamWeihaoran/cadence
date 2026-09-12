@@ -165,8 +165,8 @@ Before treating a red run as a code regression, check:
   `app.launch()` then fails ~60s in on whichever line called it; `xcb.sh` refuses such a run and the
   tests skip themselves, so a red UI run **is** evidence. Measurements: `docs/AGENTS_REFERENCE.md`.
 - Compile failures that name your file are real until proven otherwise.
-- **Count test hosts with `pgrep -f '^/Applications/.*/xcodebuild test'`**, not a loose `pgrep -f xcodebuild`,
-  which matches the poller asking. It also misses `xcb.sh`'s own runs, whose action comes last — see T-1162.
+- **Count hosts with `pgrep -f '^/Applications/.*/xcodebuild( .*)? test(-without-building)?( |$)'`** — anchored, so
+  the poller is not counted, and action-as-a-token, because `xcb.sh` puts the action **last** (T-1162, calibrated).
 - **A count from a run that did not recompile is vacuous** — an incremental run reuses object files and
   returns 0 either way. `xcb.sh` prints `swift compile tasks: N`, says `!! VACUOUS-COUNT` at 0 (T-1147), and never gates on one.
 - **Count errors and warnings `grep -cE '\.swift:[0-9]+:[0-9]+: (error|warning):'`**, never loosely: the loose form over-counts. Why, and the T-1147 measurement, in `docs/AGENTS_REFERENCE.md`.

@@ -127,4 +127,116 @@ struct CadenceAgentDefaultsIsolationTests {
             "the remembered calendar position still defaults to the shared domain"
         )
     }
+
+    // MARK: - The two macOS launchers, which had none of this (T-1157)
+
+    /// **The same mechanism, and until 2026-09-12 neither macOS launcher asked for it.**
+    ///
+    /// `simulator-claim.sh` above is an iOS launcher. On macOS the two launches an agent is told
+    /// to make — `scripts/run-macos-app.sh` and every `XCUIApplication` in `CadenceUITests` — set
+    /// `CADENCE_LOCAL_STORE_ONLY` and `CADENCE_UI_TEST_STORE_ID` and stopped there. Those isolate
+    /// **SwiftData and nothing else**, which is the sentence this file's header already carries
+    /// about iOS. A debug build carries bundle id `com.haoranwei.Cadence`, so it gets the
+    /// signed-in person's sandbox container, and with no argument `CadenceDefaults.store` *is*
+    /// their `Data/Library/Preferences/com.haoranwei.Cadence.plist` — **86 keys, written the same
+    /// morning**, measured at `4efd003`.
+    @Test func bothMacOSLaunchersAskForAPrivatePreferencesSuite() throws {
+        let script = try CadenceSourceScan.sourceFile("scripts/run-macos-app.sh")
+        #expect(script.contains("CADENCE_UI_TEST_STORE_ID=\"$ID\""), "run-macos-app.sh did not read as itself")
+        #expect(
+            script.contains("-\(CadenceDefaults.suiteNameArgumentKey) \"$ID\""),
+            "run-macos-app.sh launches the app onto the signed-in person's own defaults domain"
+        )
+
+        // Every launch site in the UI target, counted rather than named: a fifth one added later
+        // has to route through the helper too, and a count is the only reading that notices.
+        let uiSources = [
+            "CadenceUITests/CadenceUITests.swift",
+            "CadenceUITests/CadenceUITestsLaunchTests.swift",
+            "CadenceUITests/CadenceTodayCompositionUITests.swift",
+            "CadenceUITests/CadenceSeededSidebarTimingUITests.swift",
+        ]
+        var constructions = 0
+        var isolations = 0
+        for path in uiSources {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            constructions += source.components(separatedBy: "XCUIApplication()").count - 1
+            isolations += source.components(separatedBy: "isolateStoreAndPreferences(").count - 1
+            #expect(
+                !source.contains("launchEnvironment[\"CADENCE_UI_TEST_STORE_ID\"]"),
+                "\(path) still sets the store id by hand, so its preferences suite is whatever it happens to be"
+            )
+        }
+        #expect(constructions == 4, "the UI target builds \(constructions) apps, not the 4 this reading was measured against")
+        #expect(isolations == constructions, "\(constructions) launch sites, \(isolations) of them isolated")
+
+        // The helper lives in the UI-test target, which nothing here can import, so the two
+        // literals it has to keep in step with this target are read as text. Both are load-bearing:
+        // a drifted key name means the argument is ignored and a drifted character set means an id
+        // the app refuses, and each lands the launch back on the shared domain looking correct.
+        let helper = try CadenceSourceScan.sourceFile("CadenceUITests/CadenceUITestEnvironment.swift")
+        #expect(helper.contains("enum CadenceUITestEnvironment {"), "the UI-test environment file did not read as itself")
+        #expect(
+            helper.contains("static let suiteNameArgumentKey = \"\(CadenceDefaults.suiteNameArgumentKey)\""),
+            "the UI target spells a different launch-argument key, so the argument it passes is ignored"
+        )
+        #expect(
+            helper.contains("CharacterSet.alphanumerics.union(CharacterSet(charactersIn: \"-_.\"))"),
+            "the UI target reduces ids against a different character set than CadenceDefaults accepts"
+        )
+    }
+
+    /// **Why "one line on each side" would have been a green no-op**, and the reason T-1157 was
+    /// filed rather than applied blind.
+    ///
+    /// The proposed fix passed the *store id* as the suite name. `CadenceUITests` builds that id
+    /// as `"ui-\(name)-\(UUID().uuidString)"`, and `XCTestCase.name` on macOS is
+    /// `-[CadenceUITests testLaunchesToTodayWithSeededSidebarLists]` — square brackets and a
+    /// space, all three outside the accepted set. `suiteName(forAgentID:)` answers `nil` for that,
+    /// `nil` means the shared domain, and the fallback is silent *by design* because it is the
+    /// product's behaviour with no argument at all. The launch would have carried
+    /// `-CadenceSuiteName`, looked correct in the source, and deleted the same four keys.
+    @Test func theStoreIdTheUITestsBuildIsRefusedUntilItIsReduced() {
+        let raw = "ui--[CadenceUITests testLaunchesToTodayWithSeededSidebarLists]-4E5F6A7B"
+        #expect(
+            CadenceDefaults.suiteName(forAgentID: raw) == nil,
+            "the id the UI tests actually build is accepted, so this test is no longer about anything"
+        )
+
+        // `CadenceUITestEnvironment.privateSuiteID` lives in the UI-test target, which nothing here
+        // can import, so its RULE is restated and its OUTPUT is what gets asserted: every character
+        // outside the accepted set becomes `-`.
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        let reduced = String(raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
+        #expect(reduced == "ui---CadenceUITests-testLaunchesToTodayWithSeededSidebarLists--4E5F6A7B")
+        #expect(
+            CadenceDefaults.suiteName(forAgentID: reduced) == CadenceDefaults.suiteNamePrefix + reduced,
+            "the reduction does not survive the app's own rule, so the UI launches are still shared"
+        )
+    }
+
+    /// The half that does not depend on a launch argument being right.
+    ///
+    /// `CadenceUITestSupport.resetUserDefaults` is what actually *deletes*: four keys, removed from
+    /// whatever `CadenceDefaults.store` resolved to. Both non-skipped UI tests request it. So the
+    /// question it now asks first is not "was an argument passed" — a string, mistypeable — but
+    /// "is this store the shared domain", which is the hazard itself.
+    @Test func aRequestedResetRefusesToRunOnTheSharedDomain() throws {
+        #expect(
+            CadenceUITestSupport.mayResetUserDefaults(store: UserDefaults.standard) == false,
+            "a UI-test reset would still delete the signed-in person's four sidebar keys"
+        )
+        #expect(CadenceDefaults.isPrivateSuite(UserDefaults.standard) == false)
+
+        // Through `withTemporaryDefaults`, which derives the suite name from `#function` — a name
+        // minted per run strands one more preference plist in the app's own container every time
+        // ([[T-516]]), and that container already holds 7803 of them.
+        try withTemporaryDefaults("cadence.tests.reset-guard") { suite in
+            #expect(CadenceDefaults.isPrivateSuite(suite))
+            #expect(
+                CadenceUITestSupport.mayResetUserDefaults(store: suite),
+                "the guard refuses a private suite too, which would leave every UI test unseeded"
+            )
+        }
+    }
 }

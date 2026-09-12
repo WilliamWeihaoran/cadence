@@ -122,7 +122,46 @@ SELF="${0:A}"
 # and counts them as running. One agent held the lock 23 minutes with zero real
 # hosts on the box. The override is testing-only for the same reason as
 # CADENCE_LOCK_DIR: it decides whether a lease may be reclaimed.
-HOST_PATTERN='^/Applications/.*/xcodebuild test'
+#
+# AND THEN CALIBRATE IT, BECAUSE THE ANCHORED FORM MATCHED NOTHING THIS REPOSITORY RUNS (T-1162).
+# It was `'^/Applications/.*/xcodebuild test'`, which reads the action as the FIRST argument. That
+# is the bare invocation both guides document and it is not how any run here is launched:
+# `scripts/xcb.sh:896` appends the action LAST (`run_args=("${args[@]}" "$ACTION")`), so the live
+# command line is
+#
+#   /Applications/…/xcodebuild -project …/Cadence.xcodeproj -scheme Cadence … -only-testing:CadenceTests test
+#
+# and the literal `xcodebuild test` never appears. MEASURED 2026-09-12: `status` was run twice in
+# the same second against one live `xcb.sh <id> test -only-testing:CadenceTests` run, once from
+# this file and once from `git show HEAD:scripts/test-host-lock.sh`. Old: `live test hosts: 0`.
+# New: `live test hosts: 1`. So the reclaim branch's "zero live test hosts" condition -- the T-236 backstop that
+# stops a second host starting on one app-group container -- was satisfiable at any moment by the
+# only sanctioned way to run tests.
+#
+# WHY IT IS NOT A ONE-CHARACTER WIDENING. The obvious `xcodebuild .*test` matches two things that
+# are not a running test host, and matching either is worse than matching nothing:
+#   * `-only-testing:CadenceTests` -- present on EVERY run, including plain `build`;
+#   * `build-for-testing` -- a real action that compiles and runs nothing.
+# What tells them apart is not the letters but the WORD BOUNDARY: an xcodebuild action is its own
+# whitespace-delimited token. `-only-testing:…` has a `-` before `test`, `build-for-testing` has a
+# `-` before it too, and a `-derivedDataPath /tmp/cadence-test-9` has a `/` or a `-`. Only an
+# action is preceded by a space and followed by a space or the end of the line.
+#
+# KNOWN FALSE POSITIVE, recorded rather than tuned away: any bare token `test` matches, so
+# `xcodebuild -scheme test … build` would be counted as a host. This repository's scheme is
+# `Cadence`, and the error is in the safe direction anyway -- an over-count refuses to reclaim,
+# which costs a wait; an under-count reclaims a live host's lease, which is T-236.
+#
+# `test-without-building` IS matched, deliberately: nothing here runs it, but it starts a real test
+# host, and the whole point of this probe is what is running rather than what was typed.
+#
+# Split in two so the selftest can exercise the REAL action half through a REAL `pgrep` against
+# REAL processes. Every existing property overrides the whole pattern via CADENCE_LOCK_PGREP, so
+# the constant itself had never been exercised -- which is how ten green properties sat on top of
+# a pattern that matched nothing. Section 7 rebuilds it with the binary half pointed at a fake
+# tree and this half verbatim.
+HOST_PATTERN_ACTION='( .*)? test(-without-building)?( |$)'
+HOST_PATTERN="^/Applications/.*/xcodebuild$HOST_PATTERN_ACTION"
 [[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_PGREP:-}" ]] && HOST_PATTERN="$CADENCE_LOCK_PGREP"
 # The probe COMMAND, overridable for testing only -- and it is a different knob from the pattern
 # above, because the failure this guards is not "the pattern matched nothing", it is "the tool could
@@ -625,8 +664,18 @@ case "$CMD" in
     #    ticket fixes. LEASE is bumped far above this property's own timeout so a
     #    prompt reclaim can only be explained by the owner-pulse check, not by the
     #    lease having quietly expired anyway.
+    #
+    #    THE "NO LIVE HOST" HALF OF THAT PRECONDITION HAS TO BE ARRANGED NOW (T-1162). Until
+    #    2026-09-12 this property, and `reclaim` above, got it for free: the real HOST_PATTERN
+    #    matched no run this repository makes, so `live_test_hosts` answered zero on any machine in
+    #    any state. `reclaim` was already arranging it (its fixture host is dead by then, matched
+    #    through CADENCE_LOCK_PGREP); this one was not, and the first selftest run after the
+    #    pattern was fixed FAILED here -- correctly -- because a sibling agent's `xcodebuild test`
+    #    was live on the box. So it names a pattern nothing can match, which is what this property
+    #    was always assuming and never saying.
     saved_lease=$CADENCE_LOCK_LEASE
     export CADENCE_LOCK_LEASE=300
+    export CADENCE_LOCK_PGREP="$root/never-a-live-host"
     ( "$SELF" acquire 20 deadowner2 >/dev/null 2>&1; : )  # subshell exits: owner pid dies immediately
     sleep 1
     dead_pid=$(cat "$CADENCE_LOCK_DIR/pid" 2>/dev/null)
@@ -643,6 +692,7 @@ case "$CMD" in
     else
       print -r -- "FAIL dead-owner-reclaims-early: fixture did not set up (pid '$dead_pid' still alive or missing)"; (( fails++ ))
     fi
+    unset CADENCE_LOCK_PGREP
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
     # 5b. ...but a dead owner still defers to a live test host even with the lease
@@ -748,6 +798,82 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
     fi
     "$SELF" release holder4 >/dev/null
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+
+    # 7. THE PATTERN ITSELF, WHICH NOTHING ABOVE TOUCHES (T-1162). Every property so far replaces
+    #    HOST_PATTERN wholesale through CADENCE_LOCK_PGREP, so all ten prove the plumbing and none
+    #    of them has ever read the constant -- which is how ten green properties sat on top of a
+    #    pattern that matched no run this repository makes.
+    #
+    #    So this one keeps the REAL action half, `$HOST_PATTERN_ACTION`, verbatim, and swaps only
+    #    the binary anchor for one pointing into `$root`. The five fixtures are command lines
+    #    copied from live runs measured on 2026-09-12 -- and they are live PROCESSES rather than
+    #    strings, because the original bug was precisely that the string everyone constructed was
+    #    not the one that runs.
+    fakebin="$root/Xcode.app/Contents/Developer/usr/bin/xcodebuild"
+    proj="/Users/agent/Cadence/Cadence.xcodeproj"
+    new_pattern="^$root/.*/xcodebuild$HOST_PATTERN_ACTION"
+    old_pattern="^$root/.*/xcodebuild test"
+    #    REAL PROCESSES WITH EXACT COMMAND LINES. `pgrep -f` reads the argv vector joined by
+    #    spaces, so the fixture hands that joined string to `exec -a` as argv[0] and the process is
+    #    a real one that pgrep enumerates -- byte for byte what it reads off a live run. The
+    #    obvious wrappers all fail here and fail QUIETLY: `zsh -c 'sleep 12' … "$@"` leaves
+    #    `-c sleep 12` between argv[0] and the tail, which destroys the very adjacency the old
+    #    pattern is being measured on, and `/usr/bin/yes` rewrites its own argv in place (measured
+    #    2026-09-12: `ps` showed `xcodebuild test\012-project …`). Either would have produced a
+    #    green comparison that was not about the ordering at all.
+    #
+    #    `cat` downstream of a `sleep` that writes nothing blocks on read with an argv of exactly
+    #    one element and no CPU, and `$!` is the `cat`. A fifo would do the same job but needs an
+    #    `exec <>` redirection, and a FAILED `exec` redirection exits a non-interactive zsh --
+    #    which in a sandbox that forbids `mkfifo` would take the whole selftest with it.
+    fakepid=0
+    spawn_fake() { ( exec sleep 12 ) | ( exec -a "$*" /bin/cat ) > /dev/null & fakepid=$!; sleep 0.4 }
+    kill_fake()  { kill $fakepid 2>/dev/null; wait $fakepid 2>/dev/null }
+    count_with() { pgrep -f "$1" 2>/dev/null | grep -c '^[0-9]' }
+    typeset -a probs; probs=()
+    #    (a) THE T-1162 CASE: how xcb.sh really launches a test run, action LAST behind
+    #        -only-testing. The only sanctioned way to run tests here, and the old pattern is blind
+    #        to it. Counted through `live_test_hosts` rather than a bare `pgrep`, so the real
+    #        counting code is what answers.
+    spawn_fake "$fakebin" -project "$proj" -scheme Cadence -destination platform=macOS \
+               -derivedDataPath /tmp/cadence-test-91 -only-testing:CadenceTests test
+    pattern_was="$HOST_PATTERN"; HOST_PATTERN="$new_pattern"
+    live_test_hosts; a_rc=$?; a_live=$LIVE_HOSTS_COUNT
+    HOST_PATTERN="$pattern_was"
+    a_old=$(count_with "$old_pattern")
+    (( a_rc == 0 && a_live == 1 )) || probs+=("xcb-shaped test run: live_test_hosts rc=$a_rc count=$a_live, wanted rc 0 count 1")
+    (( a_old == 0 )) || probs+=("xcb-shaped test run: the OLD pattern saw $a_old, so this fixture is not the T-1162 case")
+    kill_fake
+    #    (b) the bare invocation both guides document, action FIRST. Still a test host -- and the
+    #        one shape the old pattern DID match, which is why nothing noticed for so long. Asserted
+    #        on both patterns: without it the comparison above could be an artefact of the fixture.
+    spawn_fake "$fakebin" test -project "$proj" -scheme Cadence -destination platform=macOS
+    b_new=$(count_with "$new_pattern"); b_old=$(count_with "$old_pattern")
+    (( b_new == 1 )) || probs+=("bare documented form: new pattern saw $b_new, wanted 1")
+    (( b_old == 1 )) || probs+=("bare documented form: old pattern saw $b_old, wanted 1 -- the old/new comparison is vacuous")
+    kill_fake
+    #    (c) build-for-testing: a real action that compiles and runs nothing. Must not count.
+    spawn_fake "$fakebin" -project "$proj" -scheme Cadence -derivedDataPath /tmp/cadence-build-91 build-for-testing
+    c_new=$(count_with "$new_pattern")
+    (( c_new == 0 )) || probs+=("build-for-testing: new pattern saw $c_new, wanted 0")
+    kill_fake
+    #    (d) a plain build still carrying -only-testing:CadenceTests -- the substring trap that
+    #        makes `xcodebuild .*test` the wrong widening.
+    spawn_fake "$fakebin" -project "$proj" -scheme Cadence -derivedDataPath /tmp/cadence-build-92 -only-testing:CadenceTests build
+    d_new=$(count_with "$new_pattern")
+    (( d_new == 0 )) || probs+=("-only-testing build: new pattern saw $d_new, wanted 0")
+    kill_fake
+    #    (e) the poller asking, spelled as pgrep's own path with the pattern in its tail: the
+    #        deadlock the anchor exists to prevent (one lock held 23 minutes, zero real hosts).
+    spawn_fake /usr/bin/pgrep -f "$new_pattern"
+    e_new=$(count_with "$new_pattern")
+    (( e_new == 0 )) || probs+=("the poller asking: new pattern saw $e_new, wanted 0")
+    kill_fake
+    if (( ${#probs} == 0 )); then
+      print -r -- "PASS host-pattern-calibration: on five exact command lines the old anchored pattern saw the xcb-shaped test run 0 times and the bare documented one 1; the new one counts both test hosts through live_test_hosts and none of build-for-testing, a -only-testing build, or the poller"
+    else
+      print -r -- "FAIL host-pattern-calibration: ${(j:; :)probs}"; (( fails++ ))
+    fi
 
     cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"
     print -r -- "selftest: $fails failure(s)"

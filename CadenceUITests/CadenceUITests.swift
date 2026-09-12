@@ -64,7 +64,7 @@ final class CadenceUITests: XCTestCase {
         app = XCUIApplication()
         app.launchEnvironment["CADENCE_UI_TEST_MODE"] = "1"
         app.launchEnvironment["CADENCE_LOCAL_STORE_ONLY"] = "1"
-        app.launchEnvironment["CADENCE_UI_TEST_STORE_ID"] = storeID
+        CadenceUITestEnvironment.isolateStoreAndPreferences(app, storeID: storeID)
         if resetStore {
             app.launchEnvironment["CADENCE_RESET_STORE"] = "1"
         }

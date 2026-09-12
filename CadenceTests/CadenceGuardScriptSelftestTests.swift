@@ -186,6 +186,16 @@ struct CadenceGuardScriptSelftestTests {
     /// carry their own failing-first half: the selftest runs the OLD expression over the same
     /// fixture first and prints what it answered, so a `PASS` line that did not discriminate would
     /// say so in its own text (`the old reading answered '0'`, `called all 3 waiters dead`).
+    ///
+    /// `host-pattern-calibration` is T-1162, and it is the one property about the **constant**.
+    /// Every entry above overrides `HOST_PATTERN` wholesale through `CADENCE_LOCK_PGREP`, so ten
+    /// green properties proved the plumbing and none of them had ever read the pattern the script
+    /// actually ships — which was `'^/Applications/.*/xcodebuild test'`, i.e. the action as the
+    /// FIRST argument. `xcb.sh` appends the action LAST, so that pattern matched no test run this
+    /// repository makes; measured 2026-09-12 against a live run, it printed nothing and exited 1
+    /// while `ps` showed the process. The property keeps the real action half verbatim, swaps only
+    /// the binary anchor, and runs both the old and the new form over five live processes whose
+    /// argv is a command line copied from a real invocation.
     static let testHostLockProperties = [
         "ordering",
         "no-reclaim",
@@ -197,6 +207,7 @@ struct CadenceGuardScriptSelftestTests {
         "dead-owner-defers-to-live-host",
         "cannot-tell-refuses",
         "cannot-tell-keeps-queue",
+        "host-pattern-calibration",
     ]
 
     /// `ordering` and `no-reclaim` cannot be PROVEN from inside this test host -- not "are awkward
@@ -232,11 +243,16 @@ struct CadenceGuardScriptSelftestTests {
     /// than counting when it cannot ask, the two fail here and are tolerated honestly. Nothing
     /// about the lock got weaker; two green lines stopped being green for no reason.
     ///
-    /// Five of the ten properties are now unprovable from this host, which is a poor ratio for a
+    /// Six of the eleven properties are now unprovable from this host, which is a poor ratio for a
     /// suite whose job is to notice rot. That is filed as [[T-1161]] rather than absorbed here.
     static let testHostLockPropertiesUnverifiableInThisSandbox: Set<String> = [
         "ordering", "no-reclaim", "dead-owner-defers-to-live-host",
         "reclaim", "dead-owner-reclaims-early",
+        // T-1162's property is the same sandbox limit one step earlier: it asks a real `pgrep`
+        // about real processes it spawned, and in here `pgrep` runs, is denied the process list
+        // and exits 3. `live_test_hosts` correctly refuses to answer, the fixture correctly calls
+        // that a failure, and the run outside the sandbox is where the calibration is read.
+        "host-pattern-calibration",
     ]
 
     /// Every property `scripts/simulator-claim.sh`'s selftest names. T-749 ported
