@@ -184,6 +184,7 @@ fi
 usage() {
     say "usage: ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]..."
     say "       flags: --removes <n> --drops-ids <ids> --reopens-ids <ids>"
+    say "              --unfiled-ids <ids> --buried-closures <ids>"
     say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
     say "       ./scripts/agent-commit.sh status         # report outstanding declined hunks"
@@ -267,6 +268,11 @@ is_ledger_path() { [[ "${1:t}" == "TODO.md" ]] }
 # It would buy two true positives (T-562, T-648) for two false ones. A body-wide reading is worse
 # again: 13 open entries mention one of the three words in their prose.
 #
+# (Both of those two have since closed -- T-624 on 2026-09-10, T-623 on 2026-09-11, each as a
+# recorded decision rather than a repair -- so the counterexample above is now history rather than
+# a live pair. The measurement still decides the question: it is about what the word MEANT in an
+# open entry, and nothing has established the alternative convention T-983 said would be needed.)
+#
 # So there is no `RESOLVED`/`VERIFIED` closure CONVENTION to read here -- there are two instances
 # and two counterexamples that use the same word to mean "confirmed open". The alternative the
 # ticket allows, establishing a convention the ledger then follows, is a rewrite of 118 unmarked
@@ -275,6 +281,58 @@ is_ledger_path() { [[ "${1:t}" == "TODO.md" ]] }
 ledger_closed_ids() {  # $1 = file
     sed -n 's/^- \[\(T-[0-9][0-9]*\)\].*CLOSED.*/\1/p' -- "$1" 2>/dev/null | sort -u
 }
+
+# T-1106, and it is the OTHER side of the anchor ledger_closed_ids() just spent eighty lines
+# defending. That reading is correct and stays; what nothing checked is whether the ledger actually
+# WRITES its closures where the reading looks. An agent that puts the closure sentence in the
+# middle of an entry has closed nothing any instrument can see -- the first line still carries the
+# original finding, so the entry reads open to `ledger_closed_ids`, to LEDGER-CLOSURE-LOST, and to
+# the next agent scanning for work. [[T-1085]] sat in exactly that state for five days after it
+# shipped, and was picked up again by an agent who read its first line.
+#
+# Measured against HEAD's docs/TODO.md on 2026-09-11, over 471 entries: **fourteen** entries were
+# buried this way -- T-565, T-661, T-689, T-690, T-691, T-693, T-694, T-755, T-777, T-782, T-986,
+# T-991, T-992, T-1074. Not a hypothetical; a standing population, driven to zero in the same
+# commit that added this so the guard is enforceable at zero rather than baselined.
+#
+# The marker is narrow for the same reason the one above is, and the narrowness is measured rather
+# than asserted: a BOLD RUN OPENING the line (`**CLOSED`, `**PARTIALLY CLOSED`, `**FULLY CLOSED`),
+# never the word loose in prose. Over those same 471 entries that reading names the fourteen and
+# nothing else. In particular it does NOT name T-985, whose body says *"deleted the CLOSED copy"*
+# about a different ticket, and it does not name T-992's own body sentence *"first line to
+# `**CLOSED <date>`"*, which quotes the convention mid-line rather than opening with it. Both are
+# false refusals in the commit path, which is the failure this family must not have.
+ledger_buried_closure_ids() {  # $1 = file
+    awk '
+        /^- \[T-[0-9]+\]/ {
+            id = $0; sub(/^- \[/, "", id); sub(/\].*$/, "", id)
+            inopen = ($0 ~ /^- \[T-[0-9]+\] \*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/) ? 0 : 1
+            next
+        }
+        /^[^ \t]/ { inopen = 0; next }
+        inopen && /^[ \t]+\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/ { print id; inopen = 0 }
+    ' "$1" 2>/dev/null | sort -u
+}
+
+# T-1106's other half, and the one the ticket called the valuable one. The ledger IS the id
+# allocator ([[T-1072]]): an id that lives only in a commit message or in another entry's prose is
+# invisible to the next agent computing "next free", which is how `T-1119` was allocated twice in
+# one week and how `T-1117` was handed out inside T-624's closure with no stub behind it.
+#
+# So: every `T-<n>` this commit's MESSAGE names must have a formal `- [T-<n>]` entry in a ledger,
+# as this commit leaves it. Reading the message rather than the diff is deliberate -- that is the
+# one artefact every commit has, and it is where the id was recorded in all eight measured cases.
+#
+# Measured over all 1064 commits reachable from HEAD on 2026-09-11: 796 distinct ids appear in
+# commit messages and **eight** of them have no formal entry in either ledger -- T-734, T-768,
+# T-849, T-879, T-880, T-1039, T-1064, T-1079. The audit that filed this counted six at `4799e3c`;
+# one (T-752) has since been filed and THREE more have arrived, which is the ticket's "nothing
+# stops the eighth" arriving on schedule. Those eight are history and this guard cannot reach them:
+# it asks only about the message in front of it.
+message_ids() {  # $1 = message
+    print -r -- "$1" | grep -oE '\bT-[0-9]+\b' | sort -u
+}
+is_any_ledger_path() { [[ "${1:t}" == "TODO.md" || "${1:t}" == "TODO_DONE.md" ]] }
 
 STALE_MINUTES="${CADENCE_DECLINED_STALE_MINUTES:-30}"
 
@@ -357,6 +415,7 @@ cmd_accept() {
 cmd_commit() {
     local id=$1; shift
     local message="" have_message=0 declared_removals="" declared_dropped_ids="" declared_reopened_ids=""
+    local declared_unfiled_ids="" declared_buried_ids=""
     local -a paths accepted stale_declared not_sweeps
     paths=(); accepted=(); stale_declared=(); not_sweeps=()
 
@@ -374,6 +433,10 @@ cmd_commit() {
                 declared_dropped_ids="$2"; shift 2 ;;
             --reopens-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--reopens-ids needs a comma-separated id list"
                 declared_reopened_ids="$2"; shift 2 ;;
+            --unfiled-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--unfiled-ids needs a comma-separated id list"
+                declared_unfiled_ids="$2"; shift 2 ;;
+            --buried-closures) [[ $# -ge 2 ]] || refuse BAD-OPTION "--buried-closures needs a comma-separated id list"
+                declared_buried_ids="$2"; shift 2 ;;
             --commits-stale) [[ $# -ge 2 ]] || refuse BAD-OPTION "--commits-stale needs a path"
                 stale_declared+=("$2"); shift 2 ;;
             --not-a-sweep) [[ $# -ge 2 ]] || refuse BAD-OPTION "--not-a-sweep needs a @Test name"
@@ -837,6 +900,84 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   built on a stale copy does to a ticket somebody closed while you were working. Re-read
   \`git show HEAD:$reopened_in\` and rebuild on it, or, if you really are reopening them, say so:
   --reopens-ids $reopened_sorted"
+        fi
+    fi
+
+    # 3a3. T-1106, half one: a CLOSURE THE ANCHOR CANNOT SEE. Every guard above, and every reader
+    #      of docs/TODO.md, takes the entry's own first line as the state of the ticket. An entry
+    #      whose closure was written into its body is therefore closed to a human and open to every
+    #      instrument -- which is not a cosmetic difference: [[T-1085]] read as open for five days
+    #      after it shipped and was picked up again by an agent who read its first line.
+    #
+    #      This is a WHOLE-FILE reading, not a "what changed here" one, and that is deliberate: the
+    #      measured population on 2026-09-11 was fourteen, all fourteen were fixed in the same
+    #      commit that added this, and the guard is enforceable at zero. A per-entry-delta reading
+    #      would have let those fourteen sit forever, which is exactly how they accumulated.
+    local -a buried_ids
+    buried_ids=(); local buried_in="" buried
+    for name in "${names[@]}"; do
+        is_any_ledger_path "$name" || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue
+        buried=$(ledger_buried_closure_ids "${staged_content[$name]}")
+        [[ -n "$buried" ]] || continue
+        buried_ids+=(${(f)buried}); buried_in="$name"
+    done
+    if (( ${#buried_ids} )); then
+        local declared_buried_sorted="${(j:,:)${(o)${(s:,:)declared_buried_ids}}}"
+        local buried_sorted="${(j:,:)${(o)buried_ids}}"
+        if [[ "$declared_buried_sorted" != "$buried_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-CLOSURE-BURIED "these ledger entries are CLOSED in their body and open on their own first line: ${(j:, :)buried_ids}
+  \`ledger_closed_ids\` -- and LEDGER-CLOSURE-LOST, and every agent scanning $buried_in for work --
+  anchors on the entry's FIRST line, so a closure written mid-entry closes nothing they can see.
+  Move the \`**CLOSED <date> (...)**\` sentence onto each entry's own first line. If one of these
+  really is prose and not a closure, say so: --buried-closures $buried_sorted"
+        fi
+    fi
+
+    # 3a4. T-1106, half two, and the one the ticket called the valuable half. The ledger IS the id
+    #      allocator (T-1072): an id that exists only in a commit message, or only in another
+    #      entry's prose, is invisible to the next agent computing "next free". `T-1119` was handed
+    #      to two agents in one week that way, and `T-1117` was allocated inside T-624's closure
+    #      with no stub behind it. Eight ids in this repository's history are in that state already.
+    #
+    #      So the message is checked against the ledgers AS THIS COMMIT LEAVES THEM -- writing the
+    #      stub in the same commit that first names the id is the rule, and this makes it the only
+    #      way through. Historical ids are out of reach by construction: only this message is read.
+    local -a unfiled_ids
+    unfiled_ids=()
+    local filed_ids="$scratch/filed.ids" lpath lblob
+    : > "$filed_ids"
+    for lpath in ${(f)"$(git ls-tree -r --name-only "$headsha" 2>/dev/null | grep -E '(^|/)TODO(_DONE)?\.md$')"} "${names[@]}"; do
+        [[ -n "$lpath" ]] || continue
+        is_any_ledger_path "$lpath" || continue
+        if [[ -n "${staged_content[$lpath]+x}" ]]; then
+            ledger_ids "${staged_content[$lpath]}" >> "$filed_ids"
+        elif git cat-file -e "$headsha:$lpath" 2>/dev/null; then
+            lblob="$scratch/$(ledger_key "$lpath").filed"
+            git cat-file -p "$headsha:$lpath" > "$lblob"
+            ledger_ids "$lblob" >> "$filed_ids"
+        fi
+    done
+    # Only ask the question at all where there is a ledger to ask it of. A checkout with neither
+    # TODO.md nor TODO_DONE.md anywhere would otherwise read every id in the message as unfiled.
+    if [[ -s "$filed_ids" ]]; then
+        local msgid
+        for msgid in ${(f)"$(message_ids "$message")"}; do
+            [[ -n "$msgid" ]] || continue
+            grep -qx -- "$msgid" "$filed_ids" || unfiled_ids+=("$msgid")
+        done
+    fi
+    if (( ${#unfiled_ids} )); then
+        local declared_unfiled_sorted="${(j:,:)${(o)${(s:,:)declared_unfiled_ids}}}"
+        local unfiled_sorted="${(j:,:)${(o)unfiled_ids}}"
+        if [[ "$declared_unfiled_sorted" != "$unfiled_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-ID-UNFILED "this message names ticket ids with no formal ledger entry: ${(j:, :)unfiled_ids}
+  The ledger is the allocator: an id that lives only in a commit message is invisible to the next
+  agent computing \"next free\", which is how one id went to two agents in a single week. Write the
+  stub -- \`- [$unfiled_ids[1]] **<one line>**\` -- into docs/TODO.md in THIS commit. If the id is a
+  historical reference you are only quoting, say so: --unfiled-ids $unfiled_sorted"
         fi
     fi
 
@@ -1407,6 +1548,97 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" e8 -m "$M" TODO.md=unclose.md 2>&1 ); rc=$?
     check "while a genuinely CLOSED entry reverting to open text is still refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST*T-106* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4e (LEDGER-CLOSURE-BURIED / LEDGER-ID-UNFILED) -- T-1106: a closure the anchor cannot"
+    say "          see, and an id the allocator never heard of"
+    # Half one is the other side of 4d. 4d defends the READING of the closure marker; nothing asked
+    # whether the ledger writes its closures where that reading looks. Measured 2026-09-11 over
+    # HEAD's docs/TODO.md: fourteen entries were closed in their body and open on their own first
+    # line -- including T-1085, which read as open for five days after it shipped and was picked up
+    # again by an agent who read its first line. Half two is T-1072's rule made enforceable: an id
+    # that lives only in a commit message is invisible to the next agent computing "next free".
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && git show HEAD:TODO.md > TODO.md ) >/dev/null 2>&1
+    # T-110 is buried: shipped, and saying so three lines in. T-111 is closed properly, so the
+    # refusal has to name one and not the other.
+    ( cd "$ws"
+      git show HEAD:TODO.md > buried.md
+      print -rl -- "" "- [T-110] **the thing that is not done yet.**" \
+                      "  filed 2026-09-08, and then finished." \
+                      "  **CLOSED 2026-09-11 (\`deadd0c\`).** shipped, and nothing can tell." \
+                      "" "- [T-111] **CLOSED 2026-09-11 (\`deadd0e\`).** closed where the anchor looks" \
+                      "  body" >> buried.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h1 -m "$M" TODO.md=buried.md 2>&1 ); rc=$?
+    check "a closure written into an entry's body is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-BURIED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "the buried id is named, and the properly closed one is not" \
+        $( [[ "$out" == *"T-110"* && "$out" != *"T-111"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) != *"T-110"* ]] && print 1 || print 0 )
+    out=$( cd "$ws" && zsh "$here" h1 -m "$M" --buried-closures T-111 TODO.md=buried.md 2>&1 ); rc=$?
+    check "naming the WRONG id is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-BURIED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The cure the refusal names: the same closure, on the entry's own first line.
+    ( cd "$ws"
+      git show HEAD:TODO.md > unburied.md
+      print -rl -- "" "- [T-110] **CLOSED 2026-09-11 (\`deadd0c\`).** Originally: **the thing that is not done yet.**" \
+                      "  filed 2026-09-08, and then finished." \
+                      "" "- [T-111] **CLOSED 2026-09-11 (\`deadd0e\`).** closed where the anchor looks" \
+                      "  body" >> unburied.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h2 -m "$M" TODO.md=unburied.md 2>&1 ); rc=$?
+    check "moving the closure onto the first line is accepted" $(( rc == 0 )) "exit $rc: $out"
+    check "and ledger_closed_ids can now see it" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) == *"T-110] **CLOSED"* ]] && print 1 || print 0 )
+    # The narrowness control, and it is the one that decides this guard can live in the commit
+    # path. T-992's real entry in docs/TODO.md contains the sentence *"first line to `**CLOSED
+    # <date> (`sha`).**` when it lands"* -- the convention quoted MID-LINE, in an entry that is
+    # about the convention. T-985's says "deleted the CLOSED copy" about another ticket. A reading
+    # that took the word anywhere in a body, or a bold run anywhere in a line, refuses both.
+    ( cd "$ws"
+      git show HEAD:TODO.md > quoting.md
+      print -rl -- "" "- [T-112] **open, and it is about the convention itself.**" \
+                      "  The rule is to change the first line to \`**CLOSED <date> (\`sha\`).**\` when it lands," \
+                      "  which nobody did for the CLOSED copy of the entry above." >> quoting.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h3 -m "$M" TODO.md=quoting.md 2>&1 ); rc=$?
+    check "an open entry QUOTING the convention mid-line is not a buried closure" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-BURIED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # Half two. `T-901` is in no ledger, and the message is the only place it exists -- which is
+    # precisely the state T-1117 was handed out in and the state both allocations of T-1119 read.
+    local MU=$'msg for T-901\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    ( cd "$ws" && print -r -- "unfiled" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" h4 -m "$MU" mine.txt 2>&1 ); rc=$?
+    check "a message naming an id with no ledger entry is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-UNFILED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "the unfiled id is named" $( [[ "$out" == *"T-901"* ]] && print 1 || print 0 ) "$out"
+    check "and it is asked about a path that is not the ledger at all" \
+        $( [[ "$out" != *NOTHING-TO-COMMIT* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" h4 -m "$MU" --unfiled-ids T-902 mine.txt 2>&1 ); rc=$?
+    check "naming the WRONG id is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-UNFILED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The cure, and it is T-1072's rule: the stub goes in the SAME commit that first names the id.
+    ( cd "$ws"
+      git show HEAD:TODO.md > stub.md
+      print -rl -- "" "- [T-901] **the stub, written where the allocator can see it.**" \
+                      "  Reserved by the selftest." >> stub.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h5 -m "$MU" mine.txt TODO.md=stub.md 2>&1 ); rc=$?
+    check "writing the stub in the same commit is accepted" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && print -r -- "again" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" h6 -m "$MU" mine.txt 2>&1 ); rc=$?
+    check "and the id stays usable afterwards with no flag" $(( rc == 0 )) "exit $rc: $out"
+    # A quoted fragment that is not a ticket reference at all -- `gone=T-3` appears verbatim in
+    # a499f2f8's real message. One commit in the last sixty measured, and the flag is the cost.
+    local MQ=$'msg quoting gone=T-902 from a script\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    ( cd "$ws" && print -r -- "quoted" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" h7 -m "$MQ" --unfiled-ids T-902 mine.txt 2>&1 ); rc=$?
+    check "a quoted non-reference gets through by being named" $(( rc == 0 )) "exit $rc: $out"
+    # And the negative control that decides the guard is not simply always-on: the ordinary commit,
+    # naming ids that ARE filed, needs no flag at all. Every other mode in this selftest uses a
+    # message with no id in it, so without this check the whole half could be inverted unnoticed.
+    local MF=$'msg for T-901 and T-110\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    ( cd "$ws" && print -r -- "filed" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" h8 -m "$MF" mine.txt 2>&1 ); rc=$?
+    check "a message naming only FILED ids needs no flag" $(( rc == 0 )) "exit $rc: $out"
 
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"

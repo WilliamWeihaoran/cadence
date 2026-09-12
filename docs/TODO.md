@@ -377,7 +377,65 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   nothing can pin. The guard lives beside `RemindersReconcileLedger` for the same reason: reachable
   from `CadenceTests` without a grant.
 
-- [T-1106] **Seven modern ticket ids have commit history and no formal ledger entry, and nothing stops the eighth.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/commit-ledger.md` (CL-1).
+- [T-1106] **CLOSED 2026-09-11 (agent `deletewalk`) — the eighth arrived while the ticket was
+  open, so the forward guard is the whole of the fix; and re-counting turned up a second,
+  larger population the ticket did not know about: FIFTEEN entries whose closure was written
+  where no instrument looks.** Reserved by `audittriage` 2026-09-07 from
+  `docs/audits/2026-09-05/commit-ledger.md` (CL-1).
+  **MEASURED — the population grew, exactly as the ticket predicted.** Over all **1064** commits
+  reachable from `7961782`, **796** distinct `T-<n>` ids appear in commit messages and **eight**
+  have no formal `- [T-n]` entry in either ledger: `T-734`, `T-768`, `T-849`, `T-879`, `T-880`,
+  `T-1039`, `T-1064`, `T-1079`. The audit counted six at `4799e3c`; since then `T-752` has been
+  filed and **three new ones have arrived**. So "nothing stops the eighth" was not a forecast —
+  the eighth had already landed by the time anyone read the ticket. (The audit's script does not
+  run on the stock `/usr/bin/ruby` any more: `US-ASCII` default encoding, `invalid byte sequence`
+  at its `split`. Re-measured with an equivalent reading rather than by fixing a report's script.)
+  **MEASURED — and a second finding the ticket did not ask for.** `ledger_closed_ids` anchors the
+  closure marker on an entry's OWN first line, and eighty lines of `agent-commit.sh` defend that
+  reading. Nothing checked whether the ledger WRITES its closures there. Over HEAD's 471 entries,
+  **fourteen** were closed in their body and open on their first line — `T-565`, `T-661`, `T-689`,
+  `T-690`, `T-691`, `T-693`, `T-694`, `T-755`, `T-777`, `T-782`, `T-986`, `T-991`, `T-992`,
+  `T-1074` — plus `T-221` in `TODO_DONE.md`. That is [[T-1085]]'s five-day shape as a standing
+  population of fifteen, not one accident. All fifteen now carry the closure on their own first
+  line; the body text is untouched, so nothing was lost and `ledger_closed_ids` can see them.
+  **The guard.** Two refusals in `scripts/agent-commit.sh`, beside the `LEDGER-*` family:
+  - `LEDGER-ID-UNFILED` — every `T-<n>` the COMMIT MESSAGE names must have a formal entry in a
+    ledger *as this commit leaves them*, so writing the stub in the same commit ([[T-1072]]) is
+    the way through. Escape: `--unfiled-ids <sorted,list>`. The message is read rather than the
+    diff because it is the one artefact every commit has, and it is where the id was recorded in
+    all eight measured cases. Historical ids are out of reach by construction.
+  - `LEDGER-CLOSURE-BURIED` — a ledger file being committed may not contain an entry that is
+    `**CLOSED` in its body and open on its own first line. Escape: `--buried-closures`. Whole-file,
+    not per-entry-delta, because the baseline was driven to zero in this commit; a delta reading
+    would have let the fifteen sit forever, which is how they accumulated.
+  **NOT VACUOUS, and proved before the fix rather than after.** Run against HEAD's ledgers the
+  buried reader named those fourteen ids in `docs/TODO.md` and `T-221` in `docs/TODO_DONE.md` —
+  and named neither `T-985` (*"deleted the CLOSED copy"*, about another ticket) nor `T-992`'s own
+  body sentence quoting the convention mid-line. Replayed over the last **60** commit messages,
+  `LEDGER-ID-UNFILED` would have refused **3**: `b961a08` (`T-768`) and `7584c5f` (`T-1064`), both
+  true, and `a499f2f` on `T-3`, which is the string `gone=T-3` quoted from a shell transcript.
+  One false refusal in sixty, costing one flag — the honest number, recorded rather than tuned away.
+  **Mutation-tested, three, all killed.** Gutting `ledger_buried_closure_ids` to `return 0` → 4
+  checks fail; deleting the `unfiled_ids+=` collection → 2 fail; **widening** the buried pattern
+  from a bold run opening the line to the bare word `CLOSED` anywhere → 3 fail, and the three that
+  fail are the narrowness controls, which is what makes them controls and not decoration.
+  Selftest mode 4e, 15 new checks; `agent-commit.sh selftest` 136 passed / 0 failed. Both refusal
+  names are in `CadenceGuardScriptSelftestTests.commitHelperRefusals`, so deleting mode 4e goes red.
+  **Residue: [[T-1123]]** — the eight historical ids are not recovered here, deliberately.
+
+- [T-1123] **Eight ids have commit history and no ledger entry, and the new guard cannot reach
+  them.** Filed 2026-09-11 by `deletewalk` as [[T-1106]]'s residue. `LEDGER-ID-UNFILED` reads only
+  the message in front of it, which is what keeps it usable; the eight already in history are
+  therefore untouched: `T-734` (`1f4e235`), `T-768` (`b961a08`), `T-849` (`6ee6e73`), `T-879` and
+  `T-880` (`6afea7b`), `T-1039` (`dcb0a15`), `T-1064` (`7584c5f`), `T-1079` (`6914de0`). The audit
+  that filed T-1106 asked for compact recovered entries and said to **baseline the historical
+  deficit rather than reconstruct 167 old tickets** — this is the modern tail of that deficit, and
+  it is eight, not 167. **Not all eight are the same kind**, which is the work: `T-879`/`T-880`
+  appear in a commit that edits a table in `docs/CODEX_REQUESTS.md`, so they may be references
+  rather than tickets, while `7bf2533` explicitly records closing `T-849`. Recovering an entry
+  means reading its implementation commit and preserving its original classification — a
+  coverage-only ticket must not be rewritten as a production bug. Do not guess dates or cite a
+  removal commit as the fix sha. Reachable today: `git log --format='%H %s %b' | rg 'T-(734|768|849|879|880|1039|1064|1079)'`.
 
 - [T-1107] **Two forms put a section label exactly as far from the block above it as from the block it names.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-05/grouping-spacing.md` (SP-1) and `docs/audits/2026-09-06/request-follow-up.md` (R38).
 
@@ -431,7 +489,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   thing a reader would be misled by — there is a second construction site that never lays out. It
   was left alone because a sibling ([[T-1045]]) has that same section rewritten and uncommitted.
 
-- [T-1074] **A second bare `local x` in one zsh function PRINTS the parameter instead of
+- [T-1074] **CLOSED 2026-09-06 (agent `zshlocal`; landed by `requeue`).** Originally: **A second bare `local x` in one zsh function PRINTS the parameter instead of
   redeclaring it, and in a loop it does so on every iteration.** Found 2026-09-06 by writing one,
   then found three more already shipped. It is `typeset`'s listing behaviour, reached by a
   declaration that looks like C: `f() { local i; for i in 1 2 3; do local kind; kind="v$i"; done }`
@@ -1880,7 +1938,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   stays open and is now the only one: a `move(fromOffsets:toOffset:)` returns nothing to ignore.
   **Originally:** **"A rearrangement the user can see" is guarded for one spelling and no more.**
 
-- [T-992] **The `=` content file is never asked where it was built, and that is the commonest way
+- [T-992] **CLOSED 2026-09-06 (agent `commitres`; landed by `requeue`).** Originally: **The `=` content file is never asked where it was built, and that is the commonest way
   staleness propagates.** [[T-982]] deliberately checks only the bare form, on instruction: the `=`
   reconstruction is the prescribed repair and refusing it would close the only way out. But
   `worktree-drift.sh`'s own header names the real failure as *every agent that reconstructs a file
@@ -1961,7 +2019,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   KILLED: delete the corroboration (10 legitimate selftest commits false-refused), stop asking the
   `=` form (the pre-fix `--removes 2` reproduction returns verbatim), refuse a stale copy too (mode
   4b breaks), drop the trailer (mode 4b4 breaks).
-- [T-991] **`--commits-stale` lands a stale copy on purpose and leaves no trace.** Every other
+- [T-991] **CLOSED 2026-09-06 (agent `commitres`; landed by `requeue`, same commit as [[T-992]]).** Originally: **`--commits-stale` lands a stale copy on purpose and leaves no trace.** Every other
   deliberate override in `agent-commit.sh` that discards something leaves a record somebody has to
   clear — a declined hunk writes to `$TMPDIR/cadence-declined-hunks` and `check` fails while it is
   outstanding. `--commits-stale` writes nothing. So a batch cannot answer *did anyone knowingly
@@ -2033,7 +2091,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   path — refusing a bare `<path>` whose content is behind HEAD, while leaving the
   `<path>=<content-file>` reconstruction form alone, since that form is how an agent deliberately
   rebuilds from HEAD.
-- [T-986] **`agent-commit.sh check`'s gate has no in-repo caller, and cannot have one.**
+- [T-986] **CLOSED 2026-09-06 (agent `commitres`; landed by `requeue`, same commit as [[T-992]]).** Originally: **`agent-commit.sh check`'s gate has no in-repo caller, and cannot have one.**
   Resolving [[T-954]]: `xcb.sh`'s postflight is the wrong cadence, not merely somebody else's file —
   every intra-batch run (`mutate.sh` alone runs it dozens of times) would see a sibling's freshly
   declined, still-normal in-flight hunk, which is the exact case `DECLINED-HUNK-STALE`'s 30-minute
@@ -3427,7 +3485,43 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   got `0.35`. Filing it back rather than landing an arithmetic guess on a screen a user looks at
   daily.
 
-- [T-623] **Hard list deletion walks only the local replica.** VERIFIED 2026-09-01 from CXT-018.
+- [T-623] **CLOSED 2026-09-11 (agent `deletewalk`) — as a recorded decision to park, the shape
+  [[T-624]] and [[T-752]] closed in, not as a repair. Re-measured against HEAD a fourth time and
+  every figure behind the park held or moved further in its favour; there is no half left that an
+  agent can act on, and the one word that would settle it is the user's.**
+  **The park is a STANDING CONSTRAINT, not a lapsed one.** Closing this does not license unparking
+  it. `CadenceOrphanRowInertnessTests` says *"do not remove it without unparking T-623"* at six
+  filters and every one of those sentences is still live: the mechanism below is unchanged, and
+  what closed is the ticket's status as open work, not the reason the filters exist.
+  **What was re-measured 2026-09-11, against HEAD source rather than against this entry.**
+  - The three cascades are where the 2026-09-06 restatement left them —
+    `Cadence/Services/CadenceListDeleteHelpers.swift` `deleteContext` `:39`, `deleteProject`
+    `:108`, `deleteArea` `:133` — each still building its whole tree from local to-many arrays.
+  - The five import-gate greps (`NSPersistentCloudKitContainer`, `eventChangedNotification`,
+    `hasCompletedInitialImport`, `initialImport`, `didFinishImport`) still return **zero** across
+    `.swift` and `.plist`. The signal a gate or a completeness caveat would need does not exist.
+  - `hasUnknownImpact` is still raised at exactly one place, now
+    `CadenceListDeletionSummary.swift:324` (was `:293`): a failed image read, nothing else. The
+    reworded notice is still a good vehicle with nothing to trigger it.
+  - **The durable fix has got more expensive, not less.** Owner assignments in app source are now
+    **261** (`context` 68, `area` 69, `project` 60, `goal` 21, `bundle` 14, `parentTask` 9, `task`
+    7, `parentGoal` 5, `habit` 4, `pursuit` 4) against the 215 this entry recorded, and **487** in
+    `CadenceTests` against 425. The literal soft-delete alternative is **246** `@Query` and **80**
+    `FetchDescriptor` sites. 21 `@Model` types in `CadenceSchema`, unchanged.
+  - **The stated re-open condition has not arrived.** This entry says re-open when the model graph
+    is being changed for another reason and the tombstone can ride along. Two commits have touched
+    `Cadence/Models/` or `CadenceSchema.swift` since CloudKit Production shipped (`a032939`,
+    `9e96c03`) and neither opens the graph; both are behavioural.
+  **Every residue this entry named is now accounted for, which is why it can close.** [[T-751]]
+  (the inertness was an accident and nothing pinned it) closed in `e826cac7` with
+  `CadenceOrphanRowInertnessTests`. [[T-752]] closed 2026-09-11 as a decision, carrying its wording
+  half to [[T-1118]]. [[T-744]] carries `FocusSessionLog`. The product question — whether the empty
+  list-delete confirmation should stop claiming completeness — is [[T-1118]], addressed to the
+  person who can answer it. The one-word ask (*"stay parked"*) is in
+  `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`, filed 2026-09-06 and still unanswered; a
+  fifth verification pass would re-derive this page for the fourth time and move nothing, which is
+  the specific waste this closure exists to stop.
+  Originally: **Hard list deletion walks only the local replica.** VERIFIED 2026-09-01 from CXT-018.
   **RE-SIZED AND RE-SEVERED 2026-09-03**, after both blocking claims were checked against source
   rather than inherited. The mechanism is real and unchanged. **The severity is lower than filed,
   the proposed short-term fix is unimplementable *and* mis-aimed, and the durable fix is far larger
@@ -5565,7 +5659,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   four extra lines T-744 originally asked for are not that gate. The ticket's own text already
   named this boundary; this closure is the verification, not a new argument.
 
-- [T-661] **The portable export carries a device-local calendar identifier.** Found while landing
+- [T-661] **CLOSED 2026-09-04 — decided in favour of the sentence, and the field stays.** Originally: **The portable export carries a device-local calendar identifier.** Found while landing
   [[T-624]]'s evidence gate; not fixed, and it is a decision rather than a bug.
   `CadenceArchiveArea` and `CadenceArchiveProject`
   (`Cadence/Services/CadenceDataExportService.swift:289` and `:327`) copy `linkedCalendarID` straight
@@ -5602,7 +5696,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   sentence itself, read as prose so a reflow passes and only a deletion fails. Two mutations, both
   killed: the field blanked, and the sentence removed.
 
-- [T-782] **An App-Sandboxed test host cannot run the `/usr/bin` developer shims, and nothing says
+- [T-782] **CLOSED 2026-09-04 — ledger-only; zero population confirmed against HEAD, no code change.** Originally: **An App-Sandboxed test host cannot run the `/usr/bin` developer shims, and nothing says
   so.** Measured 2026-09-03 while wiring [[T-719]]: `Cadence.app` is sandboxed, so a `Process` spawned
   from `CadenceTests` inherits the sandbox, and there `/usr/bin/git` and `/usr/bin/python3` — both
   xcrun shims — fail with *"xcrun: error: cannot be used within an App Sandbox"*, exit 1, nothing on
@@ -5619,7 +5713,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   its own control probe, `.probe()` (`/bin/echo`) -- both working tools inside the sandbox, not
   the `/usr/bin/git` / `/usr/bin/python3` xcrun shims this ticket warns about. Nothing left to
   guard.
-- [T-689] **The Goals screen says "No goals yet" when every goal is completed.** Both surfaces draw
+- [T-689] **CLOSED 2026-09-03 (`663bc13`).** Originally: **The Goals screen says "No goals yet" when every goal is completed.** Both surfaces draw
   `CadenceEmptyStateCopy.goalsTitle(isNarrowed: false)` whenever the active count is zero, so a user
   with five finished goals and none in flight reads "No goals yet". [[T-541]] made the detail pane
   agree with the list rather than contradict it, so the two panes now say this together — the
@@ -5638,7 +5732,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   filter shares the defect — and it does not: `.all` matches every `GoalStatus`, so a done goal
   still renders as a row under it instead of being hidden, and the empty branch is unreachable with
   goals present. 4 tests updated/added in `CadenceEmptyStateAuditTests`; 2 mutations, both killed.
-- [T-690] **A paused or cancelled project reaches no Settings lifecycle section, so it cannot be
+- [T-690] **CLOSED 2026-09-03 (`663bc13`).** Originally: **A paused or cancelled project reaches no Settings lifecycle section, so it cannot be
   reopened or deleted there.** `SettingsView.swift` and `iOSSettingsView.swift` both hand
   `SettingsListsSection`/`iOSListsLifecycleSettingsSection` exactly four groups —
   `filter(\.isDone)` and `filter(\.isArchived)` for areas and projects — while `ProjectStatus` has
@@ -5667,7 +5761,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Area`). Left as recorded prose in `CadenceSettingsSectionCopy.swift` and the test suite rather than
   half-building it. 2 tests updated (renamed to reflect sixteen call sites, not twelve), 1 new
   assertion added; 3 mutations, all killed.
-- [T-777] **T-694's Calendar pane still owes its offer title.** The Notifications pane split is
+- [T-777] **CLOSED 2026-09-03 (`663bc13`), same commit as [[T-690]].** Originally: **T-694's Calendar pane still owes its offer title.** The Notifications pane split is
   done (see T-694, closed above): `CadenceNotificationSettingsCopy.connectOfferTitle` before
   asking, `accessRequiredTitle` kept for denied. The Calendar pane needs the same shape —
   `CadenceCalendarSettingsCopy` gains a `connectOfferTitle` ("Connect Apple Calendar"), and
@@ -5688,7 +5782,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a regex rather than a literal `.contains` because the Mac wraps the ternary onto three lines where
   the phone keeps it on one. 2 mutations, both killed.
 
-- [T-691] **The broken-calendar-link row draws no title for an unnamed list.**
+- [T-691] **CLOSED 2026-09-03 (`4cbd2fd`).** Originally: **The broken-calendar-link row draws no title for an unnamed list.**
   `CadenceCalendarLinkHealth.missingLinks` passes `area.name` / `project.name` straight into
   `CadenceMissingCalendarLink.name`, so an untitled area's row is a blank line above its summary —
   the [[T-577]] class. [[T-557]]'s `dormantLinks` passes
@@ -5837,7 +5931,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and six mutations — a call site respelled by hand, the name dropped, the focus restore dropped,
   a `.focused` binding dropped, one glyph size drifted, the opacity tint restored — were all
   killed. Follow-ups: [[T-789]], [[T-790]], [[T-791]].
-- [T-693] **macOS prints a blank calendar name where iOS prints a fallback.**
+- [T-693] **CLOSED 2026-09-03 (`4cbd2fd`).** Originally: **macOS prints a blank calendar name where iOS prints a fallback.**
   `Cadence/macOS/Views/CalendarEventPresentationSupport.swift:73` and `:198` both set
   `calendarTitle = event.calendar?.title ?? ""`, and that string is *displayed*. iOS reads the same
   property at `iOSBoardCards.swift:77` and `iOSSearchView.swift:640` and falls back to
@@ -5852,7 +5946,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   nil` with no TCC prompt, since nothing is saved or fetched. Pinned by
   `CadenceTests.aTimedEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle` and
   `anAllDayEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle`; 2 mutations, 2 killed.
-- [T-694] **The calendar access card's *title* still reads as a fault in the state that is not one.**
+- [T-694] **FULLY CLOSED 2026-09-03 — Notifications half in `4cbd2fd`, Calendar half in `663bc13` via [[T-777]].** Originally: **The calendar access card's *title* still reads as a fault in the state that is not one.**
   [[T-543]] fixed the glyph and the sentence: before anybody is asked, both surfaces now draw a neutral
   `calendar.badge.plus` in `Theme.blue` over "Allow Cadence to show events and connect Apple calendars to
   areas or projects." The title above it still says **"Calendar access required"**, which is the last part
@@ -5899,7 +5993,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Worth keeping the entry rather than deleting it: a sentence that recounts a superseded belief
   reads like the belief when skimmed, which is the [[T-565]] class one level up. If it is misread
   a second time, that is the argument for moving the history out of the always-read file.
-- [T-755] **A `*Radius: <n>` sweep pattern will false-positive on `CadenceWidgets/WidgetChrome.swift`'s
+- [T-755] **CLOSED 2026-09-04 — ledger-only; zero population confirmed against HEAD, no code change.** Originally: **A `*Radius: <n>` sweep pattern will false-positive on `CadenceWidgets/WidgetChrome.swift`'s
   `elevationRadius`.** Found and caught by `CadenceRadiusControlCompactSweepTests` mid-development
   ([[T-616]]): a first-draft detector matched any identifier ending in `Radius`, and `elevationRadius`
   matched the "7" case at one of its four widget-size tiers. It is a `shadow(radius:)` **blur**
@@ -6880,7 +6974,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `paste(_:)` override that was never dispatched is exactly how the macOS bug survived."* It was
   tapped.
 
-- [T-565] **A shared guard against the T-333 / T-337 / T-352 class: comments asserting machinery the
+- [T-565] **CLOSED 2026-09-02 (`9bbc267`).** Originally: **A shared guard against the T-333 / T-337 / T-352 class: comments asserting machinery the
   code no longer has.** Three tickets this week were the same defect — prose naming a mechanism that
   does not exist, which is worse than a missing mechanism because it stops the next reader checking.
   Proposed by the T-352 agent, which was asked to report rather than build it.

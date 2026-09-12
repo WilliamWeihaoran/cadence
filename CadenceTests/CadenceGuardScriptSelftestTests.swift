@@ -91,6 +91,18 @@ struct CadenceGuardScriptSelftestTests {
         "DECLINED-HUNKS-OUTSTANDING",
         "LEDGER-IDS-LOST",
         "LEDGER-CLOSURE-LOST",
+        // T-1106, and the pair is one finding read from both ends. `LEDGER-CLOSURE-BURIED` is the
+        // other side of `LEDGER-CLOSURE-LOST`'s anchor: that guard defends the READING of the
+        // closure marker on an entry's own first line, and nothing asked whether the ledger writes
+        // its closures where that reading looks. Fourteen entries in docs/TODO.md were closed in
+        // their body and open on their first line when this was measured, T-1085 among them --
+        // which read as open for five days after it shipped. `LEDGER-ID-UNFILED` is T-1072's rule
+        // made enforceable: the ledger IS the id allocator, so an id that exists only in a commit
+        // message is invisible to the next agent computing "next free", and T-1119 went to two
+        // agents in one week exactly that way. Naming both here means deleting mode 4e from the
+        // selftest goes red rather than quietly halving what the ledger guards prove.
+        "LEDGER-CLOSURE-BURIED",
+        "LEDGER-ID-UNFILED",
         "REMOVES-HEAD-LINES",
         "NO-PATHS",
         "UNKNOWN-PATH",

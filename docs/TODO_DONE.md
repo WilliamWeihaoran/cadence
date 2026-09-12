@@ -662,7 +662,7 @@ because the commits are already pushed and cannot be amended.
   dates agree still states the day twice. Same rule, a different surface, and a different
   affordance question — a macOS Kanban chip *is* its field's picker.
 
-- [T-221] `0b44973` `ea77271` `5938a7a` **Edit tables in place — done on both platforms.**
+- [T-221] **CLOSED 2026-08-26 (`0b44973`, `ea77271`, `5938a7a`).** **Edit tables in place — done on both platforms.**
   macOS shipped in `0b44973`, iOS in `ea77271`, and the em-dash corruption that shipped with the
   iOS half was cured in `5938a7a`.
 
