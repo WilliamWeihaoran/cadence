@@ -46,12 +46,13 @@
 # pid is NOT sufficient by itself to reclaim: the owner's shell can die (SIGKILL,
 # a crash) while a `nohup`'d `xcodebuild test` it started keeps running detached,
 # same as the existing lease-expiry path. So a dead owner only shortcuts the LEASE
-# wait; it still defers to `live_test_hosts` before actually removing the lock.
+# wait; it still defers to `live_test_hosts` before actually removing the lock -- and since T-1152
+# that probe REFUSES when it cannot read the process list, instead of reporting a plausible zero.
 #
 #   ./scripts/test-host-lock.sh acquire [timeout_seconds] [id]  # blocks, exits 0 when held
 #   ./scripts/test-host-lock.sh release [id]
 #   ./scripts/test-host-lock.sh status                          # holder + the queue behind it
-#   ./scripts/test-host-lock.sh selftest                        # proves the three properties below
+#   ./scripts/test-host-lock.sh selftest                        # proves the properties below
 #
 # Typical use, and note the trap -- releasing only on the happy path is how a lock
 # gets stranded and every later agent waits out the full timeout:
@@ -123,7 +124,90 @@ SELF="${0:A}"
 # CADENCE_LOCK_DIR: it decides whether a lease may be reclaimed.
 HOST_PATTERN='^/Applications/.*/xcodebuild test'
 [[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_PGREP:-}" ]] && HOST_PATTERN="$CADENCE_LOCK_PGREP"
-live_test_hosts() { pgrep -f "$HOST_PATTERN" 2>/dev/null | wc -l | tr -d ' ' }
+# The probe COMMAND, overridable for testing only -- and it is a different knob from the pattern
+# above, because the failure this guards is not "the pattern matched nothing", it is "the tool could
+# not answer at all". Nothing can induce that by choosing a pattern, so nothing could test it.
+PGREP_CMD='pgrep'
+[[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_PGREP_CMD:-}" ]] && PGREP_CMD="$CADENCE_LOCK_PGREP_CMD"
+# The same knob for `ps`, used by `waiter_alive` below, and needed for the same reason: `ps` is
+# setuid root and the one thing no test can arrange is a `ps` that runs and answers nothing.
+PS_CMD='ps'
+[[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_PS_CMD:-}" ]] && PS_CMD="$CADENCE_LOCK_PS_CMD"
+
+# "NO HOSTS" AND "CANNOT TELL" ARE DIFFERENT ANSWERS, AND THE OLD ONE CONFLATED THEM (T-1152).
+#
+# This was `pgrep -f "$HOST_PATTERN" 2>/dev/null | wc -l`. Every way pgrep can fail was routed to
+# the same place: stderr to /dev/null, exit status swallowed by the pipe, and an empty stdin into
+# `wc -l` printing a confident, plausible `0`. Zero is not a neutral answer here -- it is the one
+# that unlocks the destructive branch. The reclaim path defers to this number before removing
+# another agent's lock, so a probe that cannot see anything reads as "the host is free".
+#
+# That is not hypothetical. MEASURED 2026-09-12 ([[T-959]], pinned by
+# `CadenceTestHostSandboxCapabilityTests`): inside the App-Sandboxed `CadenceTests` host,
+# `/usr/bin/pgrep` is NOT refused at `posix_spawn` -- it is not setuid, so it spawns and runs. It
+# is denied the process list, prints *"pgrep: Cannot get process list"* on stderr and exits 3. The
+# old line therefore answered `0` in a host where the true answer is unknowable. An in-host caller
+# reaching the reclaim branch would have removed a lease a live `xcodebuild test` still held, which
+# is [[T-236]] -- two test hosts on one app-group container -- by a route nothing guarded.
+#
+# HOW THE THREE OUTCOMES ARE TOLD APART. stderr is merged into stdout rather than discarded, and
+# read: pgrep's own output is one PID per line and nothing else, so any line that is not a bare
+# integer is the tool talking about itself. Both signals are used, not just the exit status:
+#
+#   exit 0, every line a pid       -> counted, that many hosts.
+#   exit 1, no output at all       -> counted, zero. The ordinary idle box.
+#   exit >= 2, or ANY non-pid line -> CANNOT TELL. Refuse; never reclaim on this.
+#
+# The exit status alone would be enough for the sandbox measured today (3, "fatal error"). The
+# non-pid-line check is there because that is one observation of one OS: a future pgrep that
+# complains and still exits 1 would slip straight back through a status-only reading, and the
+# failure it causes is silent lock theft. Belt and braces, in the safe direction -- a caller that
+# refuses when it could have counted waits; a caller that counts when it could not have reclaims.
+#
+# It sets globals instead of printing a number, because `n=$(live_test_hosts)` runs the function in
+# a SUBSHELL and every variable it set would be discarded with it -- the reading would be lost at
+# exactly the call site that needs it. Call it as a command and read the two globals.
+LIVE_HOSTS_COUNT=0
+LIVE_HOSTS_WHY=""
+live_test_hosts() {   # returns 0 = the count is trustworthy, 4 = cannot tell
+  local out rc line
+  local -a pids noise
+  out=$("$PGREP_CMD" -f "$HOST_PATTERN" 2>&1); rc=$?
+  LIVE_HOSTS_COUNT=0; LIVE_HOSTS_WHY=""
+  for line in ${(f)out}; do
+    if [[ "$line" == <-> ]]; then pids+=("$line"); else noise+=("$line"); fi
+  done
+  if (( ${#noise} )); then
+    LIVE_HOSTS_WHY="$PGREP_CMD exited $rc and said: ${noise[1]}"
+    return 4
+  fi
+  if (( rc >= 2 )); then
+    LIVE_HOSTS_WHY="$PGREP_CMD exited $rc (>=2 is a pgrep error, not an empty result)"
+    return 4
+  fi
+  if (( rc == 1 )); then
+    if (( ${#pids} )); then
+      LIVE_HOSTS_WHY="$PGREP_CMD exited 1 (no matches) yet printed ${#pids} pid(s)"
+      return 4
+    fi
+    return 0
+  fi
+  if (( ${#pids} == 0 )); then
+    LIVE_HOSTS_WHY="$PGREP_CMD exited 0 (matched) yet printed no pid"
+    return 4
+  fi
+  LIVE_HOSTS_COUNT=${#pids}
+  return 0
+}
+
+# What `status` prints. Says "unknown" in as many words rather than a number it does not have:
+# the whole point of the split above is that this line used to read `live test hosts: 0` to a human
+# reading a lock they were about to force.
+live_test_hosts_line() {
+  if live_test_hosts; then print -r -- "$LIVE_HOSTS_COUNT"
+  else print -r -- "unknown -- $LIVE_HOSTS_WHY"
+  fi
+}
 
 # --- the queue ---------------------------------------------------------------
 # Arrival order is a wall-clock stamp with microseconds, zero-padded to a fixed
@@ -140,11 +224,21 @@ arrival_stamp() {
 # half is not pedantry: pids are reused, and a recycled pid that happened to land
 # on some long-lived process would pin a dead waiter at the head of the queue
 # forever.
-waiter_alive() {
-  local pid="${1:-}"
+#
+# THREE ANSWERS, NOT TWO -- the same T-1152 correction as `live_test_hosts`. `ps` is **setuid
+# root** (`4555`), and the App-Sandboxed test host is refused it at `posix_spawn`, so
+# `$(ps ... 2>/dev/null)` is the empty string there for EVERY pid, live or dead. Under the old
+# two-way reading that made this function false for every waiter, and `prune_queue` below then
+# deleted every sibling's ticket in one pass. So an empty answer is reported as "cannot tell"
+# (exit 2) and never as "dead", and the caller falls back to the check that needs no process
+# list at all.
+waiter_alive() {   # 0 = alive, 1 = gone, 2 = cannot tell
+  local pid="${1:-}" cmd
   [[ -n "$pid" ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  [[ "$(ps -o command= -p "$pid" 2>/dev/null)" == *test-host-lock* ]]
+  cmd=$("$PS_CMD" -o command= -p "$pid" 2>/dev/null)
+  [[ -n "$cmd" ]] || return 2
+  [[ "$cmd" == *test-host-lock* ]]
 }
 
 # Drop tickets whose waiter is gone. Both halves are needed: `kill -0` catches the
@@ -152,13 +246,20 @@ waiter_alive() {
 # a stopped process, a pid reused by another copy of this script, a ticket left
 # behind by a machine that rebooted mid-batch. A queue that keeps dead tickets is
 # worse than no queue at all, because the head never moves.
+#
+# T-1152: a "cannot tell" from `waiter_alive` falls through to the AGE check rather than pruning.
+# That is not a new backstop invented for it -- it is the one the paragraph above already names,
+# for exactly the cases "a pid cannot" answer, and a host that cannot read command lines is one
+# more of them. Nothing stalls: a ticket nobody touches still ages out after $TICKET_STALE, and a
+# live waiter that loses its ticket re-files it under its original arrival stamp.
 prune_queue() {
   [[ -n "$QUEUE" && -d "$QUEUE" ]] || return 0
-  local t pid rest now age
+  local t pid rest now age wrc
   now=$(date +%s)
   for t in "$QUEUE"/*(N.); do
     read -r pid rest < "$t" 2>/dev/null || pid=""
-    if ! waiter_alive "$pid"; then rm -f "$t" 2>/dev/null; continue; fi
+    waiter_alive "$pid"; wrc=$?
+    if (( wrc == 1 )); then rm -f "$t" 2>/dev/null; continue; fi
     age=$(( now - $(stat -f %m "$t" 2>/dev/null || print "$now") ))
     (( age > TICKET_STALE )) && rm -f "$t" 2>/dev/null
   done
@@ -276,7 +377,23 @@ case "$CMD" in
             # if a real `xcodebuild test` is running, someone is legitimately using
             # the host no matter how old the lock is or whether its owner shell
             # survived.
-            live=$(live_test_hosts)
+            # T-1152: ask first whether the probe could answer AT ALL. `live=$(live_test_hosts)`
+            # used to read a `0` that meant "pgrep could not see the process list" identically to
+            # one that meant "the box is idle", and this is the branch where that difference
+            # removes somebody else's lock. Refusing outright rather than sleeping-and-retrying,
+            # because the condition does not clear: a caller denied the process list is denied it
+            # for its whole life, and a 5400-second timeout is a worse way to say "I cannot tell"
+            # than saying it.
+            if ! live_test_hosts; then
+              print -r -- "REFUSING to reclaim: cannot read the process list, so \"no live test host\""
+              print -r -- "  is UNKNOWN here, not false. $LIVE_HOSTS_WHY"
+              print -r -- "  Reclaiming on that would free a lease a live \`xcodebuild test\` may still"
+              print -r -- "  hold, starting a second test host on one app-group container (T-236/T-1152)."
+              print -r -- "  If you are inside the App-Sandboxed CadenceTests host, you cannot ask this"
+              print -r -- "  question at all (T-959) -- run the lock from a shell, not from a test."
+              exit 2
+            fi
+            live=$LIVE_HOSTS_COUNT
             if (( live > 0 )); then
               if (( owner_dead )); then
                 print -r -- "  owner pid $owner_pid is dead but ${live} test host(s) still running; NOT reclaiming"
@@ -346,7 +463,7 @@ case "$CMD" in
     else
       print -r -- "queue: empty"
     fi
-    print -r -- "live test hosts: $(live_test_hosts)"
+    print -r -- "live test hosts: $(live_test_hosts_line)"
     ;;
   selftest)
     # The three properties this file has to keep, run for real rather than
@@ -358,6 +475,16 @@ case "$CMD" in
     # (an older copy, for the failing-first comparison) to the same throwaway path.
     export CADENCE_LOCK_TESTING=1 TMPDIR="$root/" CADENCE_LOCK_DIR="$root/cadence-macos-test-host.lock"
     export CADENCE_LOCK_POLL=1 CADENCE_LOCK_LEASE=4 CADENCE_LOCK_TICKET_STALE=10
+    # $LOCK and $QUEUE were computed at the top of this file, BEFORE the exports above existed --
+    # so THIS process's own `queue_names` was reading `${TMPDIR}cadence-macos-test-host.lock.queue`,
+    # the REAL lock's queue, while every child it spawns reads the throwaway one. Harmless-looking
+    # and not harmless: the real queue is empty on an idle box, so an assertion of the form "the
+    # queue drained" passed by reading a directory this selftest never writes to. Mode 4's
+    # `qn == 0` half was exactly that; mode 6b asserts the opposite polarity -- "the queue did NOT
+    # drain" -- which is the one that cannot pass by accident, and it is how this surfaced. Point
+    # them at the sandbox before any mode runs.
+    LOCK="$CADENCE_LOCK_DIR"; QUEUE="${LOCK}.queue"
+    TICKET_STALE=$CADENCE_LOCK_TICKET_STALE; POLL=$CADENCE_LOCK_POLL
     print -r -- "selftest: target $SELF"
     print -r -- "selftest: lock $CADENCE_LOCK_DIR"
     fails=0
@@ -539,6 +666,87 @@ case "$CMD" in
     pkill -P $host2 2>/dev/null; kill $host2 2>/dev/null; wait $host2 2>/dev/null
     unset CADENCE_LOCK_PGREP
     export CADENCE_LOCK_LEASE=$saved_lease
+    cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+
+    # 6. A PROBE THAT CANNOT ANSWER MUST REFUSE, NOT REPORT ZERO (T-1152). Properties 2 and 5b
+    #    prove the lock defers to a live host it can SEE. This is the case underneath both of
+    #    them: a `pgrep` that runs, cannot read the process list, says so on stderr and exits 3 --
+    #    measured inside the App-Sandboxed CadenceTests host (T-959), where every `xcodebuild
+    #    test` on the box is invisible. The fixture is a stand-in with that exact behaviour,
+    #    because the real one needs a sandbox this selftest is not running in.
+    #
+    #    The fixture is deliberately built so a live host DOES exist -- `fakehost3` is running and
+    #    would match -- so "did not reclaim" cannot be explained by there being nothing to protect.
+    #    The only reason to refuse is that the probe could not see it.
+    print -r -- '#!/bin/zsh
+print -u2 -- "pgrep: Cannot get process list"
+exit 3' > "$root/blindpgrep"; chmod +x "$root/blindpgrep"
+    export CADENCE_LOCK_PGREP="$root/fakehost3"
+    print -r -- 'sleep 90' > "$root/fakehost3"; zsh "$root/fakehost3" & host3=$!
+    ( "$SELF" acquire 10 blindowner >/dev/null 2>&1; : )   # subshell exits: owner pid dies
+    sleep 6                                                # lease (4s) expired
+    blind_pid=$(cat "$CADENCE_LOCK_DIR/pid" 2>/dev/null)
+    if kill -0 $host3 2>/dev/null && [[ -n "$blind_pid" ]] && ! kill -0 "$blind_pid" 2>/dev/null; then
+      # First the failing-first half, and it is the point of the whole mode: the OLD expression,
+      # run verbatim against this same fixture, answers a confident `0`. A guard whose "before"
+      # is not demonstrated is a guard nobody can tell from a no-op.
+      was=$("$root/blindpgrep" -f "$CADENCE_LOCK_PGREP" 2>/dev/null | wc -l | tr -d ' ')
+      export CADENCE_LOCK_PGREP_CMD="$root/blindpgrep"
+      out="$("$SELF" acquire 6 blindprober 2>&1)"; rc=$?
+      unset CADENCE_LOCK_PGREP_CMD
+      # The diagnosis is asserted by the PROBE'S OWN NAME appearing in it, not by the fixture's
+      # message text. Run from inside the App-Sandboxed CadenceTests host this fixture degrades:
+      # a file that process wrote cannot be exec'd at all (T-959), so `blindpgrep` fails to launch
+      # instead of running and complaining. Both are "cannot tell", the refusal is the same, and
+      # the reason string names the probe either way -- but the words differ, and pinning the
+      # words would make this mode pass or fail on where it happens to be run.
+      if [[ "$was" == 0 ]] && (( rc == 2 )) && [[ "$out" == *"REFUSING to reclaim"* ]] \
+         && [[ "$out" == *"$root/blindpgrep"* ]] \
+         && [[ "$(cat "$CADENCE_LOCK_DIR/id" 2>/dev/null)" == blindowner ]]; then
+        print -r -- "PASS cannot-tell-refuses: the old reading answered '$was'; this one refuses (rc=$rc) and the lock stayed with 'blindowner'"
+      else
+        print -r -- "FAIL cannot-tell-refuses: old reading='$was' rc=$rc out='$out'"; (( fails++ ))
+      fi
+    else
+      print -r -- "FAIL cannot-tell-refuses: fixture did not set up"; (( fails++ ))
+    fi
+    pkill -P $host3 2>/dev/null; kill $host3 2>/dev/null; wait $host3 2>/dev/null
+    unset CADENCE_LOCK_PGREP
+    cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+
+    # 6b. ...and the same distinction one level down, in the QUEUE. `waiter_alive`'s second half
+    #     is `ps -o command=`, `ps` is setuid root, and the sandboxed host is refused it at
+    #     `posix_spawn` -- so it used to read an empty command line and call EVERY waiter dead.
+    #     One `prune_queue` pass would then delete every sibling's ticket. Fixture: a `ps` that
+    #     runs and prints nothing, over a queue of live waiters that must all survive it.
+    print -r -- '#!/bin/zsh
+exit 0' > "$root/blindps"; chmod +x "$root/blindps"
+    "$SELF" acquire 30 holder4 >/dev/null || { print -r -- "selftest: could not retake the lock (blind-ps)"; exit 2; }
+    for w in q1 q2 q3; do waiter "$w"; sleep 0.4; done
+    for _ in {1..20}; do (( $(queue_names | wc -l) >= 3 )) && break; sleep 0.5; done
+    before_q=$(queue_names | wc -l | tr -d ' ')
+    if (( before_q >= 3 )); then
+      # The old two-way reading, run verbatim over the same live pids: every one reads dead.
+      old_dead=0
+      for t in "$QUEUE"/*(N.); do
+        read -r qpid qrest < "$t" 2>/dev/null || qpid=""
+        [[ "$($root/blindps -o command= -p "$qpid" 2>/dev/null)" == *test-host-lock* ]] || (( old_dead++ ))
+      done
+      export CADENCE_LOCK_PS_CMD="$root/blindps"
+      # `status` runs prune_queue and nothing else destructive, so it is the cheapest way to make
+      # one real pass happen inside a process that has the blind `ps`.
+      "$SELF" status >/dev/null 2>&1
+      unset CADENCE_LOCK_PS_CMD
+      after_q=$(queue_names | wc -l | tr -d ' ')
+      if (( old_dead == before_q )) && (( after_q == before_q )); then
+        print -r -- "PASS cannot-tell-keeps-queue: the old reading called all $old_dead waiters dead; a blind \`ps\` pruned none of $before_q"
+      else
+        print -r -- "FAIL cannot-tell-keeps-queue: old reading called $old_dead of $before_q dead, queue went $before_q -> $after_q"; (( fails++ ))
+      fi
+    else
+      print -r -- "FAIL cannot-tell-keeps-queue: fixture did not set up (queue has $before_q)"; (( fails++ ))
+    fi
+    "$SELF" release holder4 >/dev/null
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
     cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"

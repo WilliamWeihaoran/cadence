@@ -33,9 +33,10 @@ Tests must be scoped to `CadenceTests`:
 Scope unit runs to `CadenceTests` to keep them fast and deterministic — **not** because the UI target
 cannot run. `CadenceUITests` **does** run on macOS since the automation grant of 2026-08-31. It
 launches a real `Cadence.app`, so it MUST hold the test-host lock: `scripts/xcb.sh <id> test`
-`-only-testing:CadenceUITests`, never a bare `xcodebuild`. The baseline is zero **compiler**
-warnings; `xcb.sh` reports tool notices separately (T-1147). The `TestAction`
-pins **`TZ=UTC`** (T-1116): state zones with `CadenceTestTimeZones`, never a shell `TZ=`.
+`-only-testing:CadenceUITests`, never a bare `xcodebuild`. Zero **compiler** warnings, **enforced not asserted**
+(T-1147/T-1149): `xcb.sh` **exits 9** when a run that recompiled Swift has any and `.github/scripts/check-log.sh` fails CI
+the same way; tool notices count separately, a vacuous run never gates, and `CADENCE_ALLOW_WARNINGS=1` downgrades it to a
+report for `mutate.sh` alone. The `TestAction` pins **`TZ=UTC`** (T-1116): zones via `CadenceTestTimeZones`, never a shell `TZ=`.
 
 ## Where Things Live
 
@@ -135,7 +136,9 @@ the next unrelated `save()` to take or `rollback()` to discard. Enforced by `Cad
   runs, take it once and use `xcb.sh <id> raw test`, which skips the lock.
 - **A dead owner pid does not mean a stale lock.** A `nohup`'d `xcodebuild` outlives the shell that
   took the lease, so the pid is routinely gone mid-run. It reclaims only on an expired lease **and**
-  zero live test hosts; forcing it starts a second host on one app-group container (T-236).
+  zero live test hosts; forcing it starts a second host on one app-group container (T-236). **Never
+  drive the lock from inside a test** (T-1152): there `pgrep` runs but is denied the process list, so
+  it refuses to reclaim and `status` prints `unknown` rather than the plausible `0` it used to.
 - `xcodebuild` idle at `Command line invocation` with 0% CPU is a project-file lock, not Swift.
 - Never create simulator devices. Use one existing stock simulator and `scripts/simulator-claim.sh`.
 - Launch the macOS app only through `scripts/run-macos-app.sh start <Cadence.app> <id>`, and pair it
@@ -162,14 +165,11 @@ Before treating a red run as a code regression, check:
   `app.launch()` then fails ~60s in on whichever line called it; `xcb.sh` refuses such a run and the
   tests skip themselves, so a red UI run **is** evidence. Measurements: `docs/AGENTS_REFERENCE.md`.
 - Compile failures that name your file are real until proven otherwise.
-- **Count test hosts with `pgrep -f '^/Applications/.*/xcodebuild test'`.** A loose
-  `pgrep -f xcodebuild` matches any script whose text contains the word — including the poller.
-- **A warning count from a run that did not recompile the file is vacuous.** An incremental
-  `xcodebuild test` reuses object files, so the count returns 0 either way. `xcb.sh` now says so
-  itself (T-1147): it prints `swift compile tasks: N` and `!! VACUOUS-COUNT` when N is 0.
-- **Count compile errors with `grep -cE '\.swift:[0-9]+:[0-9]+: error:'`, not `grep -c 'error:'`,
-  and warnings the same way.** The loose pattern over-counts and discards good evidence quietly —
-  why, and the T-1147 measurement, in `docs/AGENTS_REFERENCE.md`.
+- **Count test hosts with `pgrep -f '^/Applications/.*/xcodebuild test'`**, not a loose `pgrep -f xcodebuild`,
+  which matches the poller asking. It also misses `xcb.sh`'s own runs, whose action comes last — see T-1162.
+- **A count from a run that did not recompile is vacuous** — an incremental run reuses object files and
+  returns 0 either way. `xcb.sh` prints `swift compile tasks: N`, says `!! VACUOUS-COUNT` at 0 (T-1147), and never gates on one.
+- **Count errors and warnings `grep -cE '\.swift:[0-9]+:[0-9]+: (error|warning):'`**, never loosely: the loose form over-counts. Why, and the T-1147 measurement, in `docs/AGENTS_REFERENCE.md`.
 - `sleep` is blocked in a **foreground** tool call (a poll loop there exits 0 having watched nothing);
   it works in a detached job or `Monitor` script, so `acquire` waits from a background runner.
 

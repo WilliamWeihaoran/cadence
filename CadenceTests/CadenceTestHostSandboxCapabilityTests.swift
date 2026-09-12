@@ -148,9 +148,40 @@ struct CadenceTestHostSandboxCapabilityTests {
         #expect(run.output.contains("Cannot get process list") || run.output.isEmpty,
                 "pgrep said something new: \(run.output)")
 
+        // T-1152 keys its repair on BOTH halves of this failure, so both are pinned rather than
+        // left in prose. pgrep's documented statuses are 0 matched / 1 no match / 2 bad options /
+        // 3 fatal error, and what the lock now depends on is that this is a 3 and NOT a 1: exit 1
+        // with no output is the ordinary idle box and has to keep counting as a genuine zero.
+        #expect(run.status == 3,
+                "pgrep exited \(String(describing: run.status)) here, not 3 — and live_test_hosts reads >= 2 as \"cannot tell\", so a 1 would read as a real zero again")
+        #expect(!run.output.isEmpty,
+                "pgrep exited non-zero and said nothing, which is indistinguishable from an idle box on the second signal live_test_hosts reads")
+
         // In-process, the same wall by the same mechanism: no process list, EPERM.
         let sized = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
         #expect(sized <= 0, "proc_listpids returned \(sized), so an in-host process sweep is possible now")
+    }
+
+    /// The repair itself, end to end, in the only place the failure it fixes can actually occur
+    /// (T-1152). Everything else about it is argued from the measurements above; this runs the
+    /// real `scripts/test-host-lock.sh`, in this real sandbox, and reads what it says out loud.
+    ///
+    /// Before the fix that line read `live test hosts: 0` from in here — the same three characters
+    /// an idle developer machine prints, and the value the reclaim branch defers to before
+    /// removing another agent's lock. `pgrep` is not refused (above), it answers nothing, so
+    /// nothing anywhere in the script could tell the two apart.
+    ///
+    /// `status` is the safe subcommand to prove it with: it takes nothing and frees nothing. The
+    /// lock it inspects is `${TMPDIR}cadence-macos-test-host.lock`, which in here resolves inside
+    /// this host's own container — never the `/var/folders` lock sibling agents hold while this
+    /// runs. And `zsh <script>` rather than the script directly, the workaround this file's own
+    /// `itCannotExecAFileItWroteItself` explains.
+    @Test func theTestHostLockKnowsItCannotSeeProcessesFromInHere() throws {
+        let script = Self.repositoryRoot.appendingPathComponent("scripts/test-host-lock.sh").path
+        let run = Self.spawn("/bin/zsh", ["-f", script, "status"])
+        #expect(run.status == 0, "test-host-lock.sh status did not run here: \(run.output)")
+        #expect(run.output.contains("live test hosts: unknown"),
+                "the lock still reports a NUMBER of live test hosts from inside a host that cannot read the process list (T-1152): \(run.output)")
     }
 
     /// A file this process wrote cannot be exec'd, even with 0755 and even when it is a

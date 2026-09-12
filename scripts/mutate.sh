@@ -730,13 +730,25 @@ def run_suite(tree, ident, mutation, scheme, destination, log_dir, tag):
     `raw test` rather than `test`, because this runner already holds the test-host lock for the
     whole batch. `xcb.sh test` takes the lock itself, and wrapping it deadlocks against our own
     lease; `raw` keeps the zero-test guard and the counters and skips only the lock.
+
+    CADENCE_ALLOW_WARNINGS=1 (T-1149). `xcb.sh` now EXITS 9 when a run that recompiled Swift
+    produces anchored warnings, because the repository's warning baseline is zero and nothing
+    local enforced it. A mutated tree is not the baseline, by construction: a large share of the
+    mutations this file makes -- deleting a use, constant-folding a condition, dropping a
+    `@discardableResult` -- produce warnings by design. Left on, the gate would turn exactly those
+    runs red, and `classify_run` reads a red run with no failing test as RED-WITHOUT-A-FAILING-TEST,
+    i.e. INVALID: every such mutation would be discarded as a broken experiment instead of
+    recorded as SURVIVED or KILLED. The warnings are not lost here -- `classify_run` counts them
+    itself (COMPILE_WARNING) and carries the number into the verdict, which is where they belong
+    in a tree whose entire purpose is to be wrong.
     """
     xcb = os.path.join(tree, "scripts", "xcb.sh")
     command = [xcb, ident, "raw", "test", "-scheme", scheme, "-destination", destination]
     if mutation.suite:
         command += ["-only-testing:CadenceTests/%s" % mutation.suite]
+    environment = dict(os.environ, CADENCE_ALLOW_WARNINGS="1")
     started = time.time()
-    finished = subprocess.run(command, cwd=tree, capture_output=True, text=True)
+    finished = subprocess.run(command, cwd=tree, capture_output=True, text=True, env=environment)
     stdout = finished.stdout + finished.stderr
     log_path = None
     for line in stdout.split("\n"):

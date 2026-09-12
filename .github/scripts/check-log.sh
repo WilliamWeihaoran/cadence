@@ -30,10 +30,18 @@ crash=$(grep -ci 'please submit a bug report' "$LOG" | tr -d ' ')
 # `build-for-testing` prints "** TEST BUILD SUCCEEDED **", which a (BUILD|TEST) alternation does
 # not match -- so the naive pattern reports a clean build as bannerless. Measured 2026-08-31.
 succeeded=$(grep -cE '\*\* [A-Z ]*SUCCEEDED \*\*' "$LOG" | tr -d ' ')
+# The DENOMINATOR the two counts above are over (T-1147/T-1149). Same pattern scripts/xcb.sh uses,
+# and needed here for the same reason: an incremental build reuses object files and reprints no
+# diagnostic, so "0 warnings" from a run that compiled nothing certifies nothing at all. A hosted
+# runner starts with empty DerivedData today, which is exactly why this has never bitten -- and
+# exactly why it would go unnoticed the day a cache step is added to speed the job up. The gate
+# below states its denominator rather than trusting a property of the environment.
+compiled=$(grep -cE '^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources|CompileC) ' "$LOG" | tr -d ' ')
 
 echo "== gates =="
 echo "  compile errors (strict): $errors"
 echo "  swift warnings (strict): $warnings"
+echo "  swift compile tasks:     $compiled"
 echo "  toolchain crash markers: $crash"
 echo "  SUCCEEDED banners:       $succeeded"
 
@@ -49,10 +57,24 @@ if [ "$errors" -gt 0 ]; then
   rc=1
 fi
 
-# The warning baseline is ZERO and any new warning is a regression (AGENTS.md).
+# The warning baseline is ZERO and any new warning is a regression (AGENTS.md). This gate is the
+# reason T-1149's claim that "nothing enforces the baseline" was only half right: CI has enforced
+# it, anchored, on every job since it was written. What was missing is local enforcement, which
+# now lives in scripts/xcb.sh, and the denominator below.
 if [ "$warnings" -gt 0 ]; then
   echo "::error::$warnings Swift warning(s); the baseline is zero and any new warning is a regression."
   grep -E '\.swift:[0-9]+:[0-9]+: warning:' "$LOG" | head -40
+  rc=1
+fi
+
+# A job that compiled no Swift is not a clean job -- it is a job with no opinion, and the two
+# strict counts above are then counts over an empty set. Fatal rather than a warning: the step
+# claims to be a gate, and a gate that certifies a build it never saw is worse than no gate. The
+# MCP, test and iOS jobs each compile hundreds of files, so this fires on none of them today.
+if [ "$compiled" -eq 0 ]; then
+  echo "::error::this run compiled 0 Swift files, so the error and warning counts above are over"
+  echo "  nothing -- VACUOUS-COUNT in scripts/xcb.sh's vocabulary. Whatever this log is, it is not"
+  echo "  evidence that the tree builds clean. Check that the build step ran and wrote THIS log."
   rc=1
 fi
 

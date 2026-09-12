@@ -176,6 +176,16 @@ struct CadenceGuardScriptSelftestTests {
     /// later: an OWNER that dies after already taking the lock must not strand it for the full
     /// LEASE (a dead owner pid shortcuts the wait), but still must not reclaim out from under a
     /// live test host the dead owner's shell happened to start.
+    ///
+    /// `cannot-tell-refuses` / `cannot-tell-keeps-queue` are T-1152, and they are the case
+    /// underneath every entry above: all of those ask a probe about other processes, and until
+    /// 2026-09-12 a probe that could not answer was read as answering *no*. `live_test_hosts` was
+    /// `pgrep … 2>/dev/null | wc -l`, which turns a denied process list into a confident `0` — the
+    /// one value that unlocks the reclaim branch — and `waiter_alive`'s `ps -o command=` turns the
+    /// same denial into "this waiter is dead" for every ticket in the queue at once. Both fixtures
+    /// carry their own failing-first half: the selftest runs the OLD expression over the same
+    /// fixture first and prints what it answered, so a `PASS` line that did not discriminate would
+    /// say so in its own text (`the old reading answered '0'`, `called all 3 waiters dead`).
     static let testHostLockProperties = [
         "ordering",
         "no-reclaim",
@@ -185,6 +195,8 @@ struct CadenceGuardScriptSelftestTests {
         "dead-parent-recovers",
         "dead-owner-reclaims-early",
         "dead-owner-defers-to-live-host",
+        "cannot-tell-refuses",
+        "cannot-tell-keeps-queue",
     ]
 
     /// `ordering` and `no-reclaim` cannot be PROVEN from inside this test host -- not "are awkward
@@ -208,12 +220,23 @@ struct CadenceGuardScriptSelftestTests {
     ///
     /// `dead-owner-defers-to-live-host` (T-956) joins them for the identical reason: it also proves
     /// its property through `live_test_hosts`'s `pgrep`, by way of the same fake-host fixture as
-    /// `no-reclaim`. `dead-owner-reclaims-early` does NOT join them -- it asserts the no-live-host
-    /// path, and a `pgrep` that runs but can read no process list reports zero matches (empty stdin
-    /// into `wc -l`), which is indistinguishable from a real zero and proves the property
-    /// regardless of whether `pgrep` can see anything here.
+    /// `no-reclaim`.
+    ///
+    /// `reclaim` and `dead-owner-reclaims-early` JOINED THEM ON 2026-09-12, and how they did is
+    /// the most useful thing in this comment. Until T-1152 both passed in here, and the paragraph
+    /// that used to sit at this spot explained why in so many words: *"a `pgrep` that runs but can
+    /// read no process list reports zero matches, which is indistinguishable from a real zero and
+    /// proves the property regardless"*. Both of those properties assert that a lease IS
+    /// reclaimed, and both were being proved by the blind zero that T-1152 exists to abolish --
+    /// passing on the lie, in the suite written to catch lies. Now that the script refuses rather
+    /// than counting when it cannot ask, the two fail here and are tolerated honestly. Nothing
+    /// about the lock got weaker; two green lines stopped being green for no reason.
+    ///
+    /// Five of the ten properties are now unprovable from this host, which is a poor ratio for a
+    /// suite whose job is to notice rot. That is filed as [[T-1161]] rather than absorbed here.
     static let testHostLockPropertiesUnverifiableInThisSandbox: Set<String> = [
         "ordering", "no-reclaim", "dead-owner-defers-to-live-host",
+        "reclaim", "dead-owner-reclaims-early",
     ]
 
     /// Every property `scripts/simulator-claim.sh`'s selftest names. T-749 ported
@@ -259,10 +282,23 @@ struct CadenceGuardScriptSelftestTests {
     /// The warning counter it guards was itself the loose `grep -c 'warning:'` this repository
     /// bans for errors, and it reported the AppIntents metadata notice as a compiler warning on
     /// every full test build — `warnings: 1` against a baseline of zero — until 2026-09-12.
+    ///
+    /// T-1149 adds a fourth, and this one IS a refusal: `WARNING-BASELINE` is what the runner says
+    /// when a run that recompiled Swift produced anchored warnings, and it is the only one of the
+    /// four that changes the exit code (9). Pinning it matters more than the other three rather
+    /// than less, for the reason the ticket exists: the baseline of zero was stated in `AGENTS.md`,
+    /// in `CLAUDE.md` and in the release checklist for months while nothing local acted on it, so
+    /// the failure mode this repository has actually demonstrated is a rule that everybody quotes
+    /// and no instrument enforces. A later edit that removes the gate and leaves the banner would
+    /// restore exactly that state, and every caller reading an exit code would go on reading zero.
+    /// Both halves of the check earn their keep here: the body must still make the refusal, and
+    /// section 7 of the selftest must still induce it over a fixture log carrying a real
+    /// `\.swift:N:C: warning:` — a gate asserted only by a name in a list is a gate nobody has run.
     static let buildRunnerRefusals = [
         "UNKNOWN-SUITE",
         "PARTIAL-SCOPE",
         "VACUOUS-COUNT",
+        "WARNING-BASELINE",
     ]
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody

@@ -71,6 +71,17 @@
 #    PRINTED with their test counts and the run continues, because a multi-suite file is usually
 #    organised that way on purpose and a guard that fails the normal case gets switched off.
 #
+# 7. A WARNING BASELINE NOTHING LOCAL ENFORCED (T-1149). "The warning baseline is zero and any new
+#    warning is a regression" is in AGENTS.md, CLAUDE.md, the release checklist and every brief;
+#    `.github/scripts/check-log.sh` really does enforce it in CI, and nothing enforced it here. A
+#    build introducing ten Swift warnings exited 0, and the count sat in one banner line among
+#    nine. Since 2026-09-12 a run that RECOMPILED SWIFT and produced anchored warnings exits 9,
+#    and prints them. A run that compiled nothing never gates -- that count is vacuous and saying
+#    so is what T-1147 built -- and `CADENCE_ALLOW_WARNINGS=1` downgrades it to the old report for
+#    the one caller that legitimately builds a non-baseline tree (`mutate.sh`). Measured at
+#    17b5b61: 0 anchored warnings over 669 + 345 compile tasks, so this fires on nobody's normal
+#    day, which is the T-986 test a gate has to pass before it is allowed to gate.
+#
 # It never kills anything. The user's Cadence, the user's Xcode and other agents' builds are all
 # off limits; a stall is reported, and the decision to wait or abandon stays with the caller.
 
@@ -192,7 +203,49 @@ SWIFT_ERROR_PATTERN='\.swift:[0-9]+:[0-9]+: error:'
 SWIFT_WARNING_PATTERN='\.swift:[0-9]+:[0-9]+: warning:'
 SWIFT_COMPILE_TASK_PATTERN='^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources|CompileC) '
 
-diagnostic_report() {  # $1 = log
+# --- and whether anything ACTS on it (T-1149) --------------------------------
+# Everything above is a REPORT, and until 2026-09-12 that is all it was: `$STATUS` was never
+# touched by a warning count, so a build that introduced ten Swift warnings exited 0 and read green
+# to every caller watching an exit code -- with the number sitting in one banner line out of nine.
+# The baseline of zero is asserted in AGENTS.md, in CLAUDE.md, in the release checklist and in
+# every agent brief, and locally it was enforced by whether somebody happened to read that line.
+#
+# WHERE THE GATE WENT, AND WHERE IT DID NOT, decided by looking rather than by taste:
+#
+#   CI ALREADY GATES, and the ticket was wrong to say nothing did. `.github/scripts/check-log.sh`
+#     counts `\.swift:N:C: warning:` and exits 1 above zero, and `ci.yml` runs it `if: always()`
+#     on all three jobs. That gate is real, it is anchored, and it is not the gap.
+#   THE LOCAL RUNNER IS THE GAP. CI fires on push and pull request; agents here commit to `main`
+#     locally and are told not to push, so a warning introduced in a batch is invisible for as
+#     long as the repository owner takes to push it, while every agent in between reads a green
+#     banner. This script is where the log exists at the moment the decision is made.
+#   NOT A GUARD TEST IN CadenceTests. Measured in T-959 and pinned by
+#     `CadenceTestHostSandboxCapabilityTests`: that host may write nothing outside its own
+#     container and the `/usr/bin/xcodebuild` xcrun shim refuses inside the App Sandbox, so it
+#     cannot produce a build log to read. It can only test the COUNTER, which `selftest` and
+#     `CadenceGuardScriptSelftestTests` already do.
+#   NOT THE COMMIT PATH. `agent-commit.sh` has no build log, and gating commits on a build
+#     artefact would refuse every documentation-only commit in the repository.
+#
+# WHY THIS ONE MAY GATE WHERE T-986 SAYS MOST MAY NOT. The rule there is that a guard which fires
+# on the normal case gets switched off -- which is why the declined-hunk backstop above only
+# prints. A warning gate does not fire on the normal case, and that is measured, not assumed:
+# at 17b5b61, a full `build` (669 SwiftCompile tasks) and a full `build-for-testing` (345 more)
+# each produced 0 anchored Swift warnings. The normal case is zero, so the gate is silent until
+# somebody breaks the baseline. Two carve-outs keep it that way:
+#
+#   A VACUOUS RUN NEVER GATES. `warnings: 0` from a run that compiled nothing is a count over an
+#     empty set; so is `warnings: 3` inherited from a log the run did not write. The gate only
+#     fires on a run that actually compiled Swift, which is why VACUOUS-COUNT had to exist first.
+#   CADENCE_ALLOW_WARNINGS=1 DOWNGRADES IT TO THE OLD REPORT. `mutate.sh` sets it, because a
+#     mutated tree is by construction not the baseline -- half the mutations this repository
+#     makes ("never used", "will never be executed") are warnings by design, and a gate that
+#     turned those into RED-WITHOUT-A-FAILING-TEST would corrupt every mutation verdict it
+#     touched. It still SAYS it is downgraded; a silent escape hatch is the thing being fixed.
+WARNING_GATE_EXIT=9
+DIAG_WARNINGS=0
+DIAG_COMPILED=0
+diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline is broken.
   local log="$1"
   local errors warnings loose compiled notices
   errors=$(grep -cE "$SWIFT_ERROR_PATTERN" "$log" 2>/dev/null | tr -d ' ')
@@ -200,6 +253,8 @@ diagnostic_report() {  # $1 = log
   loose=$(grep -c 'warning:' "$log" 2>/dev/null | tr -d ' ')
   compiled=$(grep -cE "$SWIFT_COMPILE_TASK_PATTERN" "$log" 2>/dev/null | tr -d ' ')
   notices=$(( loose - warnings ))
+  DIAG_WARNINGS=$warnings
+  DIAG_COMPILED=$compiled
   say "  compile errors:  $errors"
   say "  warnings:        $warnings"
   if (( notices > 0 )); then
@@ -210,9 +265,23 @@ diagnostic_report() {  # $1 = log
     say "  !! VACUOUS-COUNT: this run compiled 0 Swift files, so \"warnings: $warnings\" is a count"
     say "     over nothing -- an incremental run reuses object files and reprints no diagnostic."
     say "     It is NOT evidence that your change is clean (AGENTS.md). Rebuild the file you edited."
-  else
-    say "  swift compile tasks: $compiled"
+    return 0
   fi
+  say "  swift compile tasks: $compiled"
+  (( warnings > 0 )) || return 0
+  if [[ "${CADENCE_ALLOW_WARNINGS:-}" == "1" ]]; then
+    say "  !! WARNING-BASELINE broken ($warnings), and NOT gated: CADENCE_ALLOW_WARNINGS=1 is set."
+    say "     Reported, not enforced -- which is what mutate.sh wants and what nothing else should."
+    return 0
+  fi
+  say ""
+  say "!! WARNING-BASELINE: $warnings Swift warning(s) over $compiled compile task(s). The baseline"
+  say "   is ZERO and any new warning is a regression (AGENTS.md). This run recompiled Swift, so"
+  say "   the count is about something -- it is not the VACUOUS-COUNT case."
+  grep -E "$SWIFT_WARNING_PATTERN" "$log" 2>/dev/null | head -20 | sed 's/^/     /'
+  say "   Fix them, or set CADENCE_ALLOW_WARNINGS=1 if you are deliberately building a tree that"
+  say "   is not the baseline (mutate.sh does exactly that)."
+  return $WARNING_GATE_EXIT
 }
 
 
@@ -528,6 +597,40 @@ selftest_only_testing() {
   check "a run that compiled nothing says VACUOUS-COUNT rather than certifying zero" \
     $( [[ "$dout" == *VACUOUS-COUNT* && "$dout" == *"warnings:        0"* ]] && print 1 || print 0 ) "$dout"
 
+  say ""
+  say " 7. the warning gate (T-1149)"
+  # Section 6 proves the counters COUNT. This proves something acts on the number, which is the
+  # entire difference between a banner and a baseline -- and every check below reads the EXIT
+  # CODE, because that is the thing the old version never touched.
+  run_counters "$ws/real.log"
+  check "a real Swift warning on a run that compiled exits $WARNING_GATE_EXIT, not 0" \
+    $( (( drc == WARNING_GATE_EXIT )) && print 1 || print 0 ) "exit $drc: $dout"
+  check "…and names the offending line rather than only the count" \
+    $( [[ "$dout" == *WARNING-BASELINE* && "$dout" == *"Probe.swift:15:13"* ]] && print 1 || print 0 ) "$dout"
+
+  # The two carve-outs, and they matter more than the gate: a gate with no carve-outs here fires on
+  # the normal case, and T-986 is the record of what happens to those.
+  check "the AppIntents tool notice alone does NOT trip the gate" \
+    $( { run_counters "$ws/notice.log"; (( drc == 0 )) } && print 1 || print 0 ) "exit $drc: $dout"
+
+  # A VACUOUS run carrying warnings. This is the case the gate must NOT fire on and the one a
+  # naive `warnings > 0` would: the log holds a real anchored warning and no compile task at all,
+  # so the count is inherited from a build this run did not do.
+  print -rl -- \
+    "/repo/CadenceTests/Probe.swift:15:13: warning: initialization of immutable value 'p' was never used; consider replacing with assignment to '_'" \
+    "** BUILD SUCCEEDED **" \
+    > "$ws/vacuous-with-warnings.log"
+  run_counters "$ws/vacuous-with-warnings.log"
+  check "a VACUOUS run with warnings in the log does not gate (the count is over nothing)" \
+    $( (( drc == 0 )) && [[ "$dout" == *VACUOUS-COUNT* && "$dout" != *WARNING-BASELINE* ]] && print 1 || print 0 ) "exit $drc: $dout"
+
+  local edout edrc
+  edout=$(CADENCE_ALLOW_WARNINGS=1 zsh "$here" check-warnings "$ws/real.log" 2>&1); edrc=$?
+  check "CADENCE_ALLOW_WARNINGS=1 downgrades the gate to a report (mutate.sh's case)" \
+    $( (( edrc == 0 )) && print 1 || print 0 ) "exit $edrc: $edout"
+  check "…and says out loud that it was downgraded, rather than going quiet" \
+    $( [[ "$edout" == *"NOT gated"* && "$edout" == *CADENCE_ALLOW_WARNINGS* ]] && print 1 || print 0 ) "$edout"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -564,8 +667,11 @@ if [[ "${1:-}" == "check-warnings" ]]; then
     say "usage: ./scripts/xcb.sh check-warnings <logfile>"; exit 2
   fi
   say "== xcb diagnostics ($CHECK_LOG) =="
+  # Exits with the gate's own status (T-1149), so this subcommand IS the gate and not a prettier
+  # `grep`: anything holding a log -- CI, a coordinator sweeping a batch's logs, this script's own
+  # selftest -- enforces the baseline by running it and reading the exit code.
   diagnostic_report "$CHECK_LOG"
-  exit 0
+  exit $?
 fi
 
 # The resolver on its own, the way `check-test-log` exposes the zero-test guard: it is what
@@ -815,7 +921,7 @@ say "  XCODEBUILD_EXIT=$STATUS"
 # `grep -c 'error:'` counts a test failure whose message contains the word and reads a real kill as
 # a build break, and the loose warning reading it sat beside reported the AppIntents tool notice as
 # a compiler warning on every test run this repository has ever made.
-diagnostic_report "$LOG"
+diagnostic_report "$LOG" || { (( STATUS == 0 )) && STATUS=$WARNING_GATE_EXIT }
 if (( IS_TEST_RUN )); then
   RAN=$(tests_seen "$LOG")
   # Not a test count (T-721): this counts per-test RESULT LINES, and swift-testing prints two for a
