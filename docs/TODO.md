@@ -1722,36 +1722,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   there is no "whole sequence" to renumber. Deciding what `order` means across containers has to
   come first. Noted by z4 under [[T-884]] and left alone under that ticket's scope.
 
-- [T-1119] **For the user: on All Tasks, what should dragging a row above a row in another list do?**
-  Filed 2026-09-11 by `roworder`, carrying the half of [[T-1055]] that is not engineering — the
-  same move [[T-624]] made into [[T-1117]] and [[T-752]] into [[T-1118]], and for the same reason:
-  the other four surfaces have a mechanical answer and this one has a preference where the answer
-  should be.
-  **Where you see it.** On macOS, All Tasks and Inbox, with the grouping chip on *None*, *By Date*
-  or *By Priority* — three of its four modes. Those groups are drawn from every list at once, so a
-  row drag inside one of them can put a task from one list above a task from another.
-  **Why it is a question at all.** `AppTask.order` is a per-list arrangement: two tasks in different
-  lists routinely hold the same `order`, and `TaskOrdering.fallbackPrecedes` settles them by
-  creation date. So "put this row above that one" has no meaning when the two rows are in different
-  lists — there is no single sequence the instruction is about. What the app does today is renumber
-  the whole visible group from 0, which rewrites *several* lists' arrangements from one drag, and
-  T-1055 measured what that costs: a drag on one screen moves rows on another that the user never
-  touched.
-  **The three options, with what each costs you.**
-  1. **Leave it.** A cross-list drag keeps working and keeps rewriting every list represented in
-     the group. Costs exactly what T-1055 measured, and it is the status quo, so nothing changes
-     and nothing new can go wrong.
-  2. **Renumber only the dragged row's own list.** Correct for the rows that share a list with it
-     and silent for the rest — so a drag that crosses lists would visibly do nothing, which is
-     [[T-614]]'s rule inverted and would need a sentence of its own to be honest.
-  3. **Say so at the drop**, the way [[T-1077]] already says *"Moved, but this sort doesn't show it
-     there."* A second sentence for the cross-list case, keeping the gesture. Cheapest to build on
-     what is already there, and adds a second notice to a screen that has one.
-  **Recommendation: 2 plus 3 together, if you ever arrange tasks by hand and then use All Tasks; 1
-  if you do not.** The whole question only exists for people who drag rows into an order they care
-  about. If you never do, `order` is 0 for almost everything you own and none of this is visible.
-  Whichever you pick, [[T-1055]]'s other four surfaces should be fixed with it as one change, not
-  before it.
 - [T-1067] **CLOSED 2026-09-06 (`8a13268`) — one composition model for the sidebar's context-header gaps, read by the layout and by the test.** Reserved 2026-09-06 by agent `gapmodel` from Codex R36's finding that `4c091c1`'s new relationship test composed its gaps without the outer padding, so it asserted on a number no user sees. Nothing was retuned; the corrected figures are 26pt above a context header against 9 below, and what changed is the description.
 - [T-1070] **CLOSED 2026-09-07 (agent `swallow`) — the tag picker returns its refusal instead of swallowing it, and both surfaces say so.** `onCommit` is `([Tag]) -> Bool` now, handed the selection as it stood before the write; `iOSTaskTagStrip.commitTags(restoring:)` commits through `CadencePendingChangePersistence.commitEdit(in:undo:)`, puts that array back on a refusal and answers `false`. All three handles guard on it — `toggle` (tick and untick), `addTag`'s selection, and the chip's `x` in `remove` — and the strip grew a `tagFailureNotice` of its own, because the popover's copy is on a surface that is not up when a chip is removed. `NoteMigrationService.createPermanentNote` is not in this ticket but shares its commit helper; see T-1071. Pinned by `CadenceInlineTagCommitSurfaceTests.theTouchTagPickerReportsARefusedSelectionRatherThanTicking` and `.theTouchTagStripUndoesARemovalTheStoreRefused`. **Filed as:** **`iOSTaskTagPickerPopover.toggle` writes a collection `@Binding` then calls `onCommit()`.** The call site supplies `{ try? modelContext.save() }`. [[T-631]] fixed the insert half and left the selection half; `iOSTaskTagsRow.remove` is the same defect in plain spelling. The save-commit detector cannot see any of them: the report is one frame down through a **closure property**, which a same-file name index does not reach.
   **Found 2026-09-06 while measuring [[T-657]]'s arm**, and it is one of the two sites in that
@@ -3885,54 +3855,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Whichever is picked, the raw opacities are downstream of it**, not the question: the pair to
   match is only decidable once both platforms agree what the pair *means*.
 
-- [T-1130] **For the user: should the two hour rails say "13" and "1 PM", or one of them?** Filed
-  2026-09-12 by `hourladder`, from [[T-619]].
-  **Where you see it.** The column of hour labels down the left of every timed grid.
-  **What differs.** macOS prints a bare 24-hour integer — `Text("\(hour)")`, at 10pt, in
-  `CalTimeRailLabel` (`Cadence/macOS/Views/CalendarPageComponents.swift:7`) and `ScheduleTimeRailRow`
-  (`Cadence/macOS/Views/SchedulePanelSupportViews.swift:4`), both spelling the label themselves. iOS
-  prints the app's own 12-hour label — `TimeFormatters.timeString(from: hour * 60)`, "12 AM",
-  "1 PM" — at 11pt. So the same hour of the same day is called `13` on the Mac and `1 PM` on the
-  phone, and every other time the app prints anywhere (task times, event ranges, block labels) is
-  the iOS spelling, including on macOS.
-  **This one is not really a taste question.** The Mac rail is the only place in the app that names
-  a time without going through `TimeFormatters`, and the two devices disagree about a number a user
-  reads constantly. But changing it does change a shipped screen, and it is not free: `12 AM` is
-  several times the width of `13`, and the Mac's label frame is `calTimeWidth` 44pt inside a 54pt
-  rail (`calTimeTotalWidth`) — probably enough, since iOS fits the same label in 48pt less an 8pt
-  inset, but "probably" is what `theHourLabelFitsTheNarrowRail` exists to replace. Re-measure, do
-  not re-format and hope.
-  **The options.**
-  1. **Leave it.** Two vocabularies, one app.
-  2. **Take `TimeFormatters.timeString` to the Mac rail**, re-measuring `calTimeWidth`/`calTimeInset`
-     against the widest label the way `theHourLabelFitsTheNarrowRail` already measures iOS's.
-  3. **Take the bare integer to iOS.** Narrower and denser, and wrong in the other direction: it
-     would be the only 24-hour clock face in an app that is 12-hour everywhere else.
-  **Recommendation: 2**, and it is the option with a mechanical argument behind it rather than a
-  preference. **Note the separate, real limitation neither option fixes:**
-  `TimeFormatters.timeString` is hardcoded 12-hour AM/PM (`Cadence/Shared/DateFormatters.swift:363`)
-  and ignores the system's 24-hour setting — worth its own ticket, but not this one's to decide.
-
-- [T-1131] **For the user: should the iOS timed grids get a now-line?** Filed 2026-09-12 by
-  `hourladder`, from [[T-619]].
-  **What differs.** macOS draws one: `TimelineCurrentTimeOverlay`
-  (`Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift:81`) — a 1pt `Theme.red` rule across the
-  canvas at the current minute, with an 8pt dot on the Schedule panel, refreshed every 15 seconds by
-  `TimelineView(.periodic)`, and drawn only on a column that is actually today. **iOS draws nothing
-  of the kind on either timed surface**; the only `TimelineView(.periodic` in `Cadence/iOS/` is the
-  focus timer.
-  **Why it is filed rather than built.** It is a feature the phone does not have, not a weight that
-  drifted — it is the largest of [[T-619]]'s three divergences and the one most likely to read as
-  missing rather than as different, since every other calendar app the user has draws one. But it
-  is new surface area on a screen that is already dense: iOS's grid scrolls horizontally through a
-  windowed day range with columns built on demand, so the line has to be a per-column overlay
-  keyed on today rather than one rule across the canvas, and it has to not fight the `1×`–`3×`
-  pinch.
-  **Recommendation: build it**, reusing the Mac's rule rather than inventing a second — the minute
-  arithmetic is already shared-able (`minutesFromMidnight` plus a `yOffset`), and the dot/no-dot
-  split the Mac already has is the same choice iOS needs between its grid and Today.
-
-
 - [T-1135] **CLOSED 2026-09-12 (agent `clockfmt`) — the clock face is the user's now.**
   `TimeFormatters.timeString(from:locale:)` asks `Locale.hourCycle` and spells `13:15` where the
   system is set to a 24-hour clock and the unchanged `1:15 PM` where it is not; `timeRange` follows
@@ -5640,35 +5562,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   that is true almost always for one that is never false, on every delete, for a race that needs a
   second device. Do not land that on a guess.
 
-- [T-1118] **For the user: should the empty list-delete confirmation stop claiming completeness?**
-  Filed 2026-09-11 by `noticetruth2`, carrying the half of [[T-752]] that is not engineering — the
-  same move [[T-624]] made into [[T-1117]], and for the same reason: four write-ups have now
-  restated this question without moving it, and every one was addressed to an engineer.
-  **Where you see it.** On iPhone only, deleting an area, project or context that holds nothing:
-  the confirmation reads *"Nothing else is filed under this area — no tasks, notes or saved links
-  will be lost."* It is now one string,
-  `CadenceListDeletionKind.nothingElseFiledSentence` in `Cadence/Shared/CadenceListDeletionSummary.swift`.
-  **What is wrong with it.** Cadence walks only this device's copy when it deletes a list
-  ([[T-623]], parked and recommended parked). If your other device added something to that list and
-  this one has not downloaded it yet, that item is not in the list here, so the sentence's first
-  clause — *nothing else is filed under this* — is false. The counts beside it are exactly right and
-  never over-report; completeness is the one thing the app asserts and cannot check. There is no
-  signal to condition it on: re-measured 2026-09-11, the five things you would grep for still return
-  zero hits in the whole codebase, so this cannot be shown only when it matters.
-  **The three options, with what each costs you.**
-  1. **Leave it.** True unless a delete lands in the window between another device's write and this
-     device's download. When it is false, the cost T-623 measured is a recoverable row in Inbox, not
-     lost work.
-  2. **Scope it** — *"Nothing else on this device is filed under this area."* Never false. Costs a
-     mention of syncing on every empty delete, including the overwhelming majority where there is
-     nothing to warn about.
-  3. **Drop the clause** — keep only *"No tasks, notes or saved links will be lost."* Narrower and
-     quieter, but not clean: an orphaned list note is filtered out at every read site, so it is
-     unreachable, and a user would call unreachable lost.
-  **Recommendation: 1, unless you have ever seen a stray row in Inbox after deleting a list.** If
-  you have, 2. Either way it is one line in one file and the tests that pin it name the sentence
-  verbatim, so a change is a two-line diff.
-
 - [T-1043] **CLOSED 2026-09-11 (agent `focusimport`) — subsumed: the guard it asked for landed in
   `a92b659` as the writing half of `CadenceCalendarLinkProvenanceSweepTests`, and nothing is left to
   build.** Filed 2026-09-05 while re-verifying [[T-624]]: not a bug, a guard that did not exist.
@@ -5753,6 +5646,250 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   ones rather than anything visibly breaking.
 
 ## Done
+
+- [T-1131] **CLOSED 2026-09-12 (agent `railnow`, verified and landed by `b10land`) — one now-line, and all three timed canvases draw it.** Landed in `e7ecab9`. The repository owner said to build it, and the recommendation it was built to was this entry's own: reuse the Mac's rule rather than invent a second.
+  **It is the Mac's overlay, moved rather than ported.** `TimelineCurrentTimeOverlay`'s body is now
+  `CadenceTimelineNowLine` in `Cadence/Shared/Components/`, with the arithmetic split into
+  `CadenceTimelineNowLineSupport` so the parts that can be wrong are reachable from `CadenceTests`,
+  which builds on macOS and compiles none of `Cadence/iOS/`. `TimelineCurrentTimeOverlay` keeps its
+  name and its five parameters and is a short adapter from `TimelineMetrics`/`TimelineBlockStyle`,
+  so `TimelineDayCanvas` is untouched and nothing the Mac draws changed.
+  **The geometry arrives as a closure, not as an hour height**, and that is the load-bearing
+  decision. Each canvas hands over *its own* minute-to-Y: the Mac passes
+  `metrics.yOffset(forFractionalMinute:)`, iOS's day column passes the `yOffset` every block above
+  it already uses, Today's hour row passes a fraction of its own measured height. Taking
+  `hourHeight` in shared code instead would have re-created the copy
+  `yOffset(forFractionalMinute:)`'s own doc comment warns about — three times over — and would have
+  fallen behind iOS's `1x`-`3x` pinch, which is already folded into the `hourHeight` its columns lay
+  blocks out with.
+  **Today's panel is per hour row rather than one overlay over the pane**, because that grid is a
+  flow: a row is `minHeight: rowHeight` and *grows* with the blocks in it, so no expression over
+  `rowHeight` locates 13:30 once any hour above 13:00 has something in it. Scoping the rule to the
+  row that owns the hour makes the fraction local. It is 24 `TimelineView(.periodic)` leaves rather
+  than one pane-level clock deliberately: a pane-level clock would have to invalidate the `ForEach`
+  owning all 24 rows, redrawing every block, gesture and lane every 15 seconds, where this redraws
+  24 leaves that compute one `dateComponents` and return `EmptyView`. The Calendar grid gates on
+  `isDateInToday` at the column so a windowed week does not mint a schedule per column.
+  **The dot/no-dot split is the one macOS already had** — Schedule panel yes, Calendar page no —
+  and iOS takes the identical split: Today's timeline yes, the windowed Calendar grid no, where one
+  dot per visible column would be a row of them across a week.
+  **The tick is stated once**, as `CadenceTimelineNowLineSupport.tickInterval` = 15s: macOS's own,
+  adopted rather than tightened, because at iOS's resting 58pt hour one minute is 0.97pt, so a
+  15-second tick already moves the rule by about a quarter of a point and a tighter one buys
+  redraws rather than precision.
+  Pinned by five `@Test`s in `CadenceTimelineNowLineTests`: the fractional minute carries its
+  seconds and is read in the zone the caller names (one instant, three zones, three answers —
+  [[T-1115]]); `isVisible`'s two halves, including that exactly one of Today's 24 one-hour rows
+  draws; the rule's origin and far end either side of the dot, and a canvas narrower than its own
+  insets asking for zero rather than a negative frame; the interval, against what a tick is worth on
+  the densest canvas the app draws; and a population sweep over `Cadence/` built on a
+  `CadenceScanInstrument` whose detector is the *conjunction* — a periodic schedule with its
+  interval typed beside it — so `iOSFocusView`'s legitimate one-second focus clock is not caught.
+  That sweep is registered in `CadenceTests/CadenceRealTreeSweepManifest.txt`.
+  **Verified on iOS by building it**, since the macOS test target compiles nothing under
+  `Cadence/iOS/`: `generic/platform=iOS Simulator`, 0 errors and 0 warnings, over a non-vacuous
+  compile.
+  **Originally filed as:** **For the user: should the iOS timed grids get a now-line?** Filed 2026-09-12 by
+  `hourladder`, from [[T-619]].
+  **What differs.** macOS draws one: `TimelineCurrentTimeOverlay`
+  (`Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift:81`) — a 1pt `Theme.red` rule across the
+  canvas at the current minute, with an 8pt dot on the Schedule panel, refreshed every 15 seconds by
+  `TimelineView(.periodic)`, and drawn only on a column that is actually today. **iOS draws nothing
+  of the kind on either timed surface**; the only `TimelineView(.periodic` in `Cadence/iOS/` is the
+  focus timer.
+  **Why it is filed rather than built.** It is a feature the phone does not have, not a weight that
+  drifted — it is the largest of [[T-619]]'s three divergences and the one most likely to read as
+  missing rather than as different, since every other calendar app the user has draws one. But it
+  is new surface area on a screen that is already dense: iOS's grid scrolls horizontally through a
+  windowed day range with columns built on demand, so the line has to be a per-column overlay
+  keyed on today rather than one rule across the canvas, and it has to not fight the `1×`–`3×`
+  pinch.
+  **Recommendation: build it**, reusing the Mac's rule rather than inventing a second — the minute
+  arithmetic is already shared-able (`minutesFromMidnight` plus a `yOffset`), and the dot/no-dot
+  split the Mac already has is the same choice iOS needs between its grid and Today.
+
+- [T-1130] **CLOSED 2026-09-12 (agent `railnow`, verified and landed by `b10land`) — all four hour rails name the hour through `TimeFormatters`.** Landed in `e7ecab9`. The repository owner chose option 2, *"Both follow the system clock"*.
+  **What changed.** `CalTimeRailLabel` (`Cadence/macOS/Views/CalendarPageComponents.swift`) and
+  `ScheduleTimeRailRow` (`Cadence/macOS/Views/SchedulePanelSupportViews.swift`) drew
+  `Text("\(hour)")` — a bare 24-hour integer, and the only two places in the app naming a time
+  without going through the shared formatter. Both now call
+  `TimeFormatters.timeString(from: hour * 60)`, which since [[T-1135]] reads `Locale.hourCycle`. So
+  a rail reads `1 PM` or `13:00` according to the user's own *24-Hour Time* setting rather than
+  according to which window they are looking at, and the two devices no longer call the same hour
+  of the same day two different things.
+  **Measured before changing it, because the rail is a fixed-width column** and this ticket said in
+  as many words that "probably enough" is what a measurement exists to replace. Each rail at its
+  own size and weight, 2026-09-12: the Calendar page's at 10pt semibold in `calTimeWidth`'s 44pt
+  box — widest 12-hour label `10 AM` at 30.89pt, widest 24-hour `08:00` at 30.50pt; the Schedule
+  panel's at 10pt medium in `timeLabelWidth`'s 36pt box — `10 AM` 30.44pt, `04:00` 29.81pt. The
+  Schedule panel's is the tighter of the two and still clears its box by more than 5pt, and **the
+  24-hour face is the narrower one on both rails**, which is the claim that matters for T-1135: no
+  clock setting the user can choose makes a rail overflow. `blockInset` is derived from
+  `timeLabelWidth + timeLabelPad`, so neither figure could have been moved without shifting every
+  block on that panel; the derivation is asserted alongside the widths.
+  Pinned by `DateFormatterSupportTests.ClockFaceFollowsTheSystemTests.theMacHourRailsFitTheWidestLabelOnEitherClockFace`
+  (the widths, with the figures in the failure message so a red run says by how much) and
+  `CalendarTimelineRangeTests.everyHourRailInTheAppNamesItsHourThroughTimeFormatters` (the
+  population — a positive assertion on all four rails, each anchored on its own declaring type so a
+  read that landed on the wrong file fails instead of passing on an absence, plus regex needles for
+  the two retired spellings with their own must-match/must-not-match witnesses).
+  **One stale cross-reference, recorded rather than chased:** that test replaces
+  `theHourRailsLabelTheSameHourInTwoDifferentVocabularies`, which existed to pin the divergence and
+  is therefore gone. [[T-1129]]'s closed entry still names the old spelling; it is prose in a closed
+  ticket and nothing reads it.
+  **The separate limitation this entry flagged is closed**, not carried: `TimeFormatters.timeString`
+  was hardcoded 12-hour, and [[T-1135]] fixed it.
+  **Originally filed as:** **For the user: should the two hour rails say "13" and "1 PM", or one of them?** Filed
+  2026-09-12 by `hourladder`, from [[T-619]].
+  **Where you see it.** The column of hour labels down the left of every timed grid.
+  **What differs.** macOS prints a bare 24-hour integer — `Text("\(hour)")`, at 10pt, in
+  `CalTimeRailLabel` (`Cadence/macOS/Views/CalendarPageComponents.swift:7`) and `ScheduleTimeRailRow`
+  (`Cadence/macOS/Views/SchedulePanelSupportViews.swift:4`), both spelling the label themselves. iOS
+  prints the app's own 12-hour label — `TimeFormatters.timeString(from: hour * 60)`, "12 AM",
+  "1 PM" — at 11pt. So the same hour of the same day is called `13` on the Mac and `1 PM` on the
+  phone, and every other time the app prints anywhere (task times, event ranges, block labels) is
+  the iOS spelling, including on macOS.
+  **This one is not really a taste question.** The Mac rail is the only place in the app that names
+  a time without going through `TimeFormatters`, and the two devices disagree about a number a user
+  reads constantly. But changing it does change a shipped screen, and it is not free: `12 AM` is
+  several times the width of `13`, and the Mac's label frame is `calTimeWidth` 44pt inside a 54pt
+  rail (`calTimeTotalWidth`) — probably enough, since iOS fits the same label in 48pt less an 8pt
+  inset, but "probably" is what `theHourLabelFitsTheNarrowRail` exists to replace. Re-measure, do
+  not re-format and hope.
+  **The options.**
+  1. **Leave it.** Two vocabularies, one app.
+  2. **Take `TimeFormatters.timeString` to the Mac rail**, re-measuring `calTimeWidth`/`calTimeInset`
+     against the widest label the way `theHourLabelFitsTheNarrowRail` already measures iOS's.
+  3. **Take the bare integer to iOS.** Narrower and denser, and wrong in the other direction: it
+     would be the only 24-hour clock face in an app that is 12-hour everywhere else.
+  **Recommendation: 2**, and it is the option with a mechanical argument behind it rather than a
+  preference. **Note the separate, real limitation neither option fixes:**
+  `TimeFormatters.timeString` is hardcoded 12-hour AM/PM (`Cadence/Shared/DateFormatters.swift:363`)
+  and ignores the system's 24-hour setting — worth its own ticket, but not this one's to decide.
+
+- [T-1119] **CLOSED 2026-09-12 (agent `listclaim`, verified and landed by `b10land`) — a cross-list row drag reorders within its own list only.** Landed in `8e1ace1`. The repository owner answered, verbatim: *"Reorder within its own list only."* — option 2 of the three.
+  **The rule is one type, because two things ask it.** `CadenceRowReorderSpan.ownListSiblings(moving:before:in:)`
+  (`Cadence/Shared/CadenceRowReorderSpan.swift`) answers the dropped row's **own list's** rows in
+  the sequence the drop puts them in — keyed on `CadenceTaskQuerySupport.listGroupKey`, so "its own
+  list" means here what it means to every by-list grouping in the app, Inbox included — or `nil`
+  when the drop passes none of them. `TasksPanelSupport.reorderTask` renumbers what it returns;
+  `CadenceReorderVisibility.notice` asks it the same question. Rows of every other list now come
+  out of a drop holding exactly the `order` they went in with.
+  **The `nil` is load-bearing, not an optimisation.** A drop that crosses lists without passing any
+  sibling — dragging the one row this list has in the section above a row of another list — leaves
+  a one-element array, and committing that would renumber it to `0` and silently send the row to
+  the top of a list arrangement the user was not editing: the same damage, one list in. Callers
+  treat `nil` as **success with nothing to write**, so `reorderTask` still answers `true`, because
+  nothing failed.
+  **The notice had to move with the rule.** Drawn off that `true` alone it would say *"Moved, but
+  this sort doesn't show it there"* about a row that did not move — one false sentence replacing
+  the one that type exists to avoid. And all three row surfaces now take the notice into a `let`
+  **before** the drop and assign it after: these are live model rows, so once `reorderTask` has
+  renumbered them the arrangement the question is about is gone, and the same question asked
+  afterwards answers `nil` on exactly the drops that really did land off screen. That ordering was
+  found by a red test rather than reasoned, and
+  `CadenceReorderOffScreenNoticeTests.everyRowDropSurfaceReportsAnOffScreenLanding` now pins the
+  order of the two statements at each site.
+  **It costs nothing on the four surfaces that never cross a list** — Today's groups, a list's
+  Tasks tab and both kanban columns are one container each, so the filter is the identity there,
+  which is what lets this be one rule at one site rather than a special case bolted onto the one
+  panel that has one. Measured rather than asserted, by
+  `CadenceRowReorderSliceSpanTests.thespanRuleIsTheIdentityOnASliceThatIsAlreadyOneList`.
+  **What it does not do, filed rather than left implied:** it narrows a drop to one list, it does
+  **not** widen it to all of that list — [[T-1055]]'s remaining half, now [[T-1175]]. And a drop
+  that writes nothing still *says* nothing while the row springs back, which is option 3 of this
+  ticket's three and was not what the owner bought — now [[T-1174]].
+  Pinned by three new `@Test`s in `CadenceRowReorderSliceSpanTests` (the cross-list drop renumbers
+  its own list and leaves the other alone, including a third row that was in neither section; the
+  no-sibling drop writes nothing; the one-list slice is unchanged) and one in
+  `CadenceReorderOffScreenNoticeTests` (`acrossListDropThatWroteNothingDoesNotClaimAMove`, with its
+  mirror — the same two lists, the same date sort, the same drop, silent without a sibling and
+  speaking with one).
+  **Originally filed as:** **For the user: on All Tasks, what should dragging a row above a row in another list do?**
+  Filed 2026-09-11 by `roworder`, carrying the half of [[T-1055]] that is not engineering — the
+  same move [[T-624]] made into [[T-1117]] and [[T-752]] into [[T-1118]], and for the same reason:
+  the other four surfaces have a mechanical answer and this one has a preference where the answer
+  should be.
+  **Where you see it.** On macOS, All Tasks and Inbox, with the grouping chip on *None*, *By Date*
+  or *By Priority* — three of its four modes. Those groups are drawn from every list at once, so a
+  row drag inside one of them can put a task from one list above a task from another.
+  **Why it is a question at all.** `AppTask.order` is a per-list arrangement: two tasks in different
+  lists routinely hold the same `order`, and `TaskOrdering.fallbackPrecedes` settles them by
+  creation date. So "put this row above that one" has no meaning when the two rows are in different
+  lists — there is no single sequence the instruction is about. What the app does today is renumber
+  the whole visible group from 0, which rewrites *several* lists' arrangements from one drag, and
+  T-1055 measured what that costs: a drag on one screen moves rows on another that the user never
+  touched.
+  **The three options, with what each costs you.**
+  1. **Leave it.** A cross-list drag keeps working and keeps rewriting every list represented in
+     the group. Costs exactly what T-1055 measured, and it is the status quo, so nothing changes
+     and nothing new can go wrong.
+  2. **Renumber only the dragged row's own list.** Correct for the rows that share a list with it
+     and silent for the rest — so a drag that crosses lists would visibly do nothing, which is
+     [[T-614]]'s rule inverted and would need a sentence of its own to be honest.
+  3. **Say so at the drop**, the way [[T-1077]] already says *"Moved, but this sort doesn't show it
+     there."* A second sentence for the cross-list case, keeping the gesture. Cheapest to build on
+     what is already there, and adds a second notice to a screen that has one.
+  **Recommendation: 2 plus 3 together, if you ever arrange tasks by hand and then use All Tasks; 1
+  if you do not.** The whole question only exists for people who drag rows into an order they care
+  about. If you never do, `order` is 0 for almost everything you own and none of this is visible.
+  Whichever you pick, [[T-1055]]'s other four surfaces should be fixed with it as one change, not
+  before it.
+
+- [T-1118] **CLOSED 2026-09-12 (agent `listclaim`, verified and landed by `b10land`) — the empty list-delete confirmation scopes its claim to the device that made it.** Landed in `8e1ace1`. Asked which of the three wordings this sentence should carry, the repository owner answered, verbatim: *"Say 'on this device'."* — option 2.
+  **What changed is one string.** `CadenceListDeletionKind.nothingElseFiledSentence` now reads
+  *"Nothing else **on this device** is filed under this area — no tasks, notes or saved links will
+  be lost."* The clause after the dash is **kept**: dropping it was option 3 and is not what was
+  asked for, and in the ordinary single-device case that clause is the whole reassurance the
+  sentence exists to give.
+  **Why the scoped claim is the only one the app can check.** [[T-623]] measured, cascade by
+  cascade, that a hard list delete walks only the local replica — `CadenceListDeleteHelpers` reads
+  `context.areas ?? []`, `area.tasks ?? []` and the rest — so a child added on another device and
+  not yet synced down is not in them, is not deleted, and arrives afterwards with its owner gone.
+  The counts beside the sentence are computed from those same local arrays, so they are exactly
+  what the cascade takes and never over-report loss, which is the direction [[T-433]]'s rule
+  governs. What the old wording added on top of them was **completeness** — that nothing else
+  exists anywhere — about data this device has not seen, and there is no signal to condition that
+  on: `hasUnknownImpact` is the caveat channel and is raised at exactly one site, by a failed image
+  read.
+  **[[T-623]] stays parked and the cascade is unchanged.** This is a copy change: what the delete
+  does is the same, and what it says about it is now true of the store it read.
+  `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md` carries the status update in the owner's own
+  terms, including the cost they accepted — the mention of syncing appears on every empty delete,
+  including the majority where there is no second device in the story.
+  Pinned by `CadenceListDeletionSurfaceTests.theEmptyListDeleteSentenceScopesItsClaimToThisDevice`
+  (all three kinds verbatim, plus the two properties every kind must hold: it scopes, and it keeps
+  the reassurance) and by `.theEmptyListDeleteSentenceIsSpelledOnceOnTheSharedKind`, whose sweep
+  now carries **both** needles — the scoped claim and the unscoped one it replaced — because the
+  copy most likely to be hand-typed back into a view body is the one that shipped for months.
+  **Originally filed as:** **For the user: should the empty list-delete confirmation stop claiming completeness?**
+  Filed 2026-09-11 by `noticetruth2`, carrying the half of [[T-752]] that is not engineering — the
+  same move [[T-624]] made into [[T-1117]], and for the same reason: four write-ups have now
+  restated this question without moving it, and every one was addressed to an engineer.
+  **Where you see it.** On iPhone only, deleting an area, project or context that holds nothing:
+  the confirmation reads *"Nothing else is filed under this area — no tasks, notes or saved links
+  will be lost."* It is now one string,
+  `CadenceListDeletionKind.nothingElseFiledSentence` in `Cadence/Shared/CadenceListDeletionSummary.swift`.
+  **What is wrong with it.** Cadence walks only this device's copy when it deletes a list
+  ([[T-623]], parked and recommended parked). If your other device added something to that list and
+  this one has not downloaded it yet, that item is not in the list here, so the sentence's first
+  clause — *nothing else is filed under this* — is false. The counts beside it are exactly right and
+  never over-report; completeness is the one thing the app asserts and cannot check. There is no
+  signal to condition it on: re-measured 2026-09-11, the five things you would grep for still return
+  zero hits in the whole codebase, so this cannot be shown only when it matters.
+  **The three options, with what each costs you.**
+  1. **Leave it.** True unless a delete lands in the window between another device's write and this
+     device's download. When it is false, the cost T-623 measured is a recoverable row in Inbox, not
+     lost work.
+  2. **Scope it** — *"Nothing else on this device is filed under this area."* Never false. Costs a
+     mention of syncing on every empty delete, including the overwhelming majority where there is
+     nothing to warn about.
+  3. **Drop the clause** — keep only *"No tasks, notes or saved links will be lost."* Narrower and
+     quieter, but not clean: an orphaned list note is filtered out at every read site, so it is
+     unreachable, and a user would call unreachable lost.
+  **Recommendation: 1, unless you have ever seen a stray row in Inbox after deleting a list.** If
+  you have, 2. Either way it is one line in one file and the tests that pin it name the sentence
+  verbatim, so a change is a two-line diff.
 
 - [T-1096] **CLOSED 2026-09-07 (agent `rescue-rightclick`) — one right-click overlay that reads the point it was handed.** From `docs/audits/2026-09-05/appkit-behavior.md` (AK-1); landed in `8117017`. **The mechanism:** `RightClickActionView.hitTest(_:)` named its `point` argument and never read it, so *any* `.rightMouseDown` anywhere in the window got this view back — the overlay claimed the event wherever the pointer was. It now delegates to a testable `hitTest(_:currentEvent:)` requiring **both** halves: `super.hitTest(point)` for the spatial one — the argument arrives in the **superview's** coordinate system, so a `bounds.contains` would have tested the right point against the wrong rectangle, and the superclass also folds in `isHidden` and a zero-size frame — and `currentEvent.type == .rightMouseDown` for the event one, which still matters because a primary click must fall through to the SwiftUI button underneath.
   **A byte-identical copy of the type carried a byte-identical copy of the defect.** `Cadence/macOS/Views/SidebarSupportViews.swift` declared its own private `SidebarRightClickEditTrigger` / `RightClickEditView`; it is deleted, and that call site now uses the shared `RightClickActionTrigger` as the other four (`TasksPanelComponents`, `TimelineTaskBlock`, `CalendarPageMonthSupportViews`, `KanbanCardView`) already did.
