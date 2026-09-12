@@ -249,9 +249,20 @@ struct CadenceGuardScriptSelftestTests {
     /// `skip` there rather than a failure, so shelling out would assert progressively less while
     /// looking like it asserted more. Reading the source proves the refusals still exist and are
     /// still induced, and it cannot be defeated by the environment.
+    ///
+    /// T-1147 adds a third, and like `PARTIAL-SCOPE` it is a notice rather than a refusal — which
+    /// is the reason it has to be pinned here. `VACUOUS-COUNT` is what the banner says when a run
+    /// compiled 0 Swift files, and the count it decorates is `warnings: 0`: the most reassuring
+    /// line the runner can print, over an empty set. `AGENTS.md` had been asking agents to check
+    /// that by hand for months, every brief repeated it, and the one thing that could delete the
+    /// instrument without deleting a refusal is a later edit that decides the notice is noise.
+    /// The warning counter it guards was itself the loose `grep -c 'warning:'` this repository
+    /// bans for errors, and it reported the AppIntents metadata notice as a compiler warning on
+    /// every full test build — `warnings: 1` against a baseline of zero — until 2026-09-12.
     static let buildRunnerRefusals = [
         "UNKNOWN-SUITE",
         "PARTIAL-SCOPE",
+        "VACUOUS-COUNT",
     ]
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody

@@ -251,12 +251,15 @@ declined_lines() {  # $1 = staged content, $2 = worktree content, $3 = content b
 ledger_ids() {  # $1 = file
     grep -oE '^- \[T-[0-9]+\]' -- "$1" 2>/dev/null | sed 's/^- \[//; s/\]$//' | sort -u
 }
-is_ledger_path() { [[ "${1:t}" == "TODO.md" ]] }
+# There is deliberately no narrower `is_ledger_path` beside `is_any_ledger_path` (T-1145). One
+# existed, matching `TODO.md` alone, and its only two callers -- LEDGER-IDS-LOST and
+# LEDGER-CLOSURE-LOST -- were the two guards that consequently could not see the archive. A second
+# predicate one word apart from the right one is a trap for whoever writes the next guard.
 
 # T-981. LEDGER-IDS-LOST compares ID SETS, and that is one level too shallow. An entry whose text
 # reverts from its closure back to the original open ticket keeps its id, so the id sets are equal
 # and the guard passes -- while the ledger now says a shipped ticket is not started. Two measured
-# instances in this repository's own 349 ledger commits, both found by replaying that history:
+# instances, found by replaying every commit that has ever touched that file:
 #   169d594d  reverted T-679, T-719 and T-787 from CLOSED back to their open text, in a commit
 #             about three unrelated instruments, and nothing said a word.
 #   f566723b  deduped T-777 by deleting the CLOSED copy and keeping the open one.
@@ -272,8 +275,17 @@ is_ledger_path() { [[ "${1:t}" == "TODO.md" ]] }
 #     in Done carry no closure marker at all, so the section answers a different question. The
 #     refusal is about closed TEXT becoming open TEXT for one id, nothing else.
 #
-# Replayed over all 349 commits that have ever touched docs/TODO.md, this reading fires on exactly
-# those two and on none of the other 347.
+# Replayed over the WHOLE history of docs/TODO.md -- every commit that has ever touched it, not a
+# sample -- this reading fires on exactly those two and on nothing else. Re-derived 2026-09-12 at
+# `17b5b61`, and it still names 169d594d and f566723b alone.
+#
+# The number of commits that was is deliberately not written down here, and that is T-1146: this
+# line used to say "all 349 ... none of the other 347", true on 2026-09-05 and simply wrong now,
+# while another header five hundred lines below said 428 about the same population on the same day.
+# That population is `git log --format=%H -- docs/TODO.md`; it grows several times a session, and
+# it moved 429 -> 430 -> 431 across the two sessions that noticed. A denominator frozen in a
+# comment can only rot. What does not rot is the QUESTION and the ANSWER -- replay the file's whole
+# history, and these are the two commits it names. Whoever re-runs it supplies their own count.
 #
 # AND IT STAYS ONE WORD (T-983). The obvious complaint about the above is that it reads only
 # `CLOSED`, so a `RESOLVED` or `VERIFIED` closure is invisible to it. Measured against HEAD's
@@ -979,15 +991,32 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
 
     # 3a. A ledger entry HEAD has and your staged content does not is a LOST TICKET, and it hides
     #     inside any line count large enough to be worth reading past. Name the ids, not the lines.
+    #
+    #     T-1145: this asks the question of BOTH ledgers. It used to ask it of `docs/TODO.md` alone,
+    #     while `LEDGER-ID-UNFILED`, `LEDGER-CLOSURE-BURIED`, `LEDGER-ID-DUPLICATE` and
+    #     `LEDGER-ENTRY-DUPLICATED` next door all read `is_any_ledger_path` -- so a commit that
+    #     dropped an id from `docs/TODO_DONE.md`, where every retired ticket ends up, was refused by
+    #     nothing at all. The archive is the half of the ledger nobody rereads, which makes it the
+    #     half a stale reconstruction can quietly shorten. MEASURED 2026-09-12 before widening it:
+    #     replaying all 11 commits that have ever touched `docs/TODO_DONE.md` through this exact
+    #     reading, and through 3a2's, finds ZERO ids dropped and ZERO closures reverted -- so this
+    #     is enforceable at zero today rather than baselined, and the same replay over `docs/TODO.md`
+    #     names 169d594d and f566723b, which is how we know the reading is not simply blind.
+    #
+    #     The one case that looked like a false refusal is not one: an entry MOVING from TODO.md to
+    #     the archive drops its id from TODO.md, and that half was already refused (with
+    #     `--drops-ids`) before this change. Ids only ever ARRIVE in TODO_DONE.md, and an arrival is
+    #     not a loss, so widening the reading adds no refusal to the ordinary archival commit.
     local -a lost_ids
     lost_ids=()
     # Hoisted out of the loop below on purpose: a bare `local x` whose parameter is already local
     # PRINTS it (`gone=...` on stdout) instead of redeclaring it -- same zsh trap as `drift_call`
-    # above. Unreachable while only one TODO.md can be named per commit; wrong the moment that
-    # changes, and it would surface as noise in a commit's own output, where nobody would read it.
+    # above. REACHABLE since T-1145 widened the loop to both ledgers: a commit naming TODO.md and
+    # TODO_DONE.md together -- which is exactly what archiving an entry looks like -- now takes a
+    # second pass, and without this it would print `gone=T-xxx` into a commit's own output.
     local gone reopened
     for name in "${names[@]}"; do
-        is_ledger_path "$name" || continue
+        is_any_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
         git cat-file -e "$headsha:$name" 2>/dev/null || continue
         local ledger_head="$scratch/$(ledger_key "$name").ledgerhead"
@@ -1014,10 +1043,13 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #      count is whatever the two texts happen to differ by, so REMOVES-HEAD-LINES is a number
     #      somebody acknowledges without reading. Only ids present in BOTH versions are asked
     #      about -- an id that vanished entirely is 3a's finding and naming it twice buries both.
-    local -a reopened_ids
-    reopened_ids=(); local reopened_in=""
+    #      Both ledgers, for T-1145's reason above: an archived closure reverting to its open text
+    #      is the same loss as a live one, and reads as a perfectly ordinary rewrite to everything
+    #      else in this file. `reopened_in` is a LIST because the loop can now find one in each.
+    local -a reopened_ids reopened_in
+    reopened_ids=(); reopened_in=()
     for name in "${names[@]}"; do
-        is_ledger_path "$name" || continue
+        is_any_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
         git cat-file -e "$headsha:$name" 2>/dev/null || continue
         local closure_head="$scratch/$(ledger_key "$name").closurehead"
@@ -1026,7 +1058,7 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
             <(comm -23 <(ledger_closed_ids "$closure_head") <(ledger_closed_ids "${staged_content[$name]}")) \
             <(ledger_ids "${staged_content[$name]}"))
         [[ -n "$reopened" ]] || continue
-        reopened_ids+=(${(f)reopened}); reopened_in="$name"
+        reopened_ids+=(${(f)reopened}); reopened_in+=("$name")
     done
     if (( ${#reopened_ids} )); then
         local declared_reopened_sorted="${(pj:,:)${(@o)${(@s:,:)declared_reopened_ids}}}"
@@ -1037,8 +1069,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   Each id is still there, so LEDGER-IDS-LOST has nothing to say about it -- the entry's own text
   changed from a closure back to the open ticket it was before, which is what a reconstruction
   built on a stale copy does to a ticket somebody closed while you were working. Re-read
-  \`git show HEAD:$reopened_in\` and rebuild on it, or, if you really are reopening them, say so:
-  --reopens-ids $reopened_sorted"
+  \`git show HEAD:<path>\` for ${(j:, :)${(@u)reopened_in}} and rebuild on it, or, if you really
+  are reopening them, say so: --reopens-ids $reopened_sorted"
         fi
     fi
 
@@ -1088,8 +1120,11 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #       The delta reading catches the defect at the instant it is CREATED, which is where the
     #       author and the cheap fix both are; the standing four can only shrink from here.
     #
-    #       Replayed over all 428 `docs/TODO.md` commits in this repository's history: ONE refusal,
-    #       `7584c5f`, which is the commit that created all four. Zero false refusals.
+    #       Replayed over the whole history of `docs/TODO.md`, every commit of it: ONE refusal,
+    #       `7584c5f`, which is the commit that created all four. Zero false refusals. (The commit
+    #       COUNT is not recorded here on purpose -- see ledger_closed_ids() above and T-1146. This
+    #       line said 428 while that one said 349, about the same population on the same day, and
+    #       neither is true a week later. The sha is the evidence; the denominator was decoration.)
     local -a dup_entries
     dup_entries=(); local dup_in="" dupid duprun prevrun
     # Hoisted, like `gone`/`reopened` above and for T-1074's reason: a bare `local x` whose
@@ -1792,6 +1827,54 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" e8 -m "$M" TODO.md=unclose.md 2>&1 ); rc=$?
     check "while a genuinely CLOSED entry reverting to open text is still refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST*T-106* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4d2 (T-1145) -- both guards above must read the ARCHIVE, not just docs/TODO.md"
+    # Everything in 4c and 4d was asserted about `TODO.md`, and for a long time that was all either
+    # guard could see: they read a predicate matching that one filename while the four ledger guards
+    # beside them read `is_any_ledger_path`. `docs/TODO_DONE.md` is where every retired ticket ends
+    # up -- the half nobody rereads, so the half a stale reconstruction can quietly shorten. These
+    # checks are the same two findings asked of the archive; without them the widened predicate is
+    # one word that any later edit could put back.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws"
+      print -rl -- "# Archive" "" "- [T-201] retired" "  body" \
+                   "" "- [T-202] **CLOSED 2026-09-05 (\`deadd0c\`).** shipped long ago" "  body" > TODO_DONE.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" f1 -m "$M" TODO_DONE.md 2>&1 ); rc=$?
+    check "creating the archive is an ordinary commit" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws"
+      print -rl -- "# Archive" "" "- [T-202] **CLOSED 2026-09-05 (\`deadd0c\`).** shipped long ago" "  body" > arch_short.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" f2 -m "$M" TODO_DONE.md=arch_short.md 2>&1 ); rc=$?
+    check "an id dropped from the ARCHIVE is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-IDS-LOST*T-201* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" f2 -m "$M" --drops-ids T-201 --removes 1 TODO_DONE.md=arch_short.md 2>&1 ); rc=$?
+    check "and retiring it from the archive deliberately is allowed" $(( rc == 0 )) "exit $rc: $out"
+    # The closure half. Same id, same line count, T-202's first line back to an open ticket: 4c's
+    # reading has nothing to say about it, which is the whole reason 3a2 exists one level down.
+    ( cd "$ws"
+      git show HEAD:TODO_DONE.md | sed 's/^- \[T-202\] \*\*CLOSED.*/- [T-202] **not shipped after all** back to the open text/' > arch_reopen.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" f3 -m "$M" TODO_DONE.md=arch_reopen.md 2>&1 ); rc=$?
+    check "an ARCHIVED closure reverting to open text is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST*T-202* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the refusal names the archive as the file to re-read" \
+        $( [[ "$out" == *TODO_DONE.md* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" f3 -m "$M" --reopens-ids T-202 --removes 1 TODO_DONE.md=arch_reopen.md 2>&1 ); rc=$?
+    check "reopening an archived entry deliberately is allowed" $(( rc == 0 )) "exit $rc: $out"
+    # Fixture housekeeping, the same note mode 4d carries: the `f2` reconstruction above
+    # deliberately retired T-201, so a record of that declined line is outstanding and the next
+    # commit of this path would read DECLINED-HUNK-LOST instead of what this check is about.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    # The negative control that decides whether the widening is usable: ARCHIVING an entry is the
+    # ordinary ledger commit, and it is the one shape that touches both files at once. Ids only
+    # ever arrive in the archive, so this half must need no flag of its own -- the drop on the
+    # TODO.md side is 4c's finding and was already declared there.
+    ( cd "$ws"
+      git show HEAD:TODO_DONE.md > arch_grown.md
+      print -rl -- "" "- [T-106] **CLOSED 2026-09-05 (\`deadbef\`).** also shipped" "  body" >> arch_grown.md
+      git show HEAD:TODO.md | grep -v '^- \[T-106\]' | grep -v '^  also shipped' > todo_moved.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" f4 -m "$M" --drops-ids T-106 --removes 1 TODO.md=todo_moved.md TODO_DONE.md=arch_grown.md 2>&1 ); rc=$?
+    check "moving an entry INTO the archive needs no flag on the archive's side" \
+        $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
     say " mode 4e (LEDGER-CLOSURE-BURIED / LEDGER-ID-UNFILED) -- T-1106: a closure the anchor cannot"

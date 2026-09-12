@@ -6,6 +6,7 @@
 #   ./scripts/xcb.sh <id> raw   <every arg, including the action>
 #   ./scripts/xcb.sh audit                                     # report shared-DerivedData leaks
 #   ./scripts/xcb.sh check-test-log <log>                      # the zero-test guard, on its own
+#   ./scripts/xcb.sh check-warnings <log>                      # the diagnostic counters, on their own
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
 #   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
 #
@@ -146,6 +147,71 @@ empty_run_diagnostic() {
   else
     say "   the run named no -only-testing: filter, so this is not a mis-scoped suite --"
     say "   the test target built but nothing ran. Read $log from the top."
+  fi
+}
+
+# --- the diagnostic counters (T-1147) ----------------------------------------
+# Two readings, and the repository already knew both were needed: AGENTS.md requires the ANCHORED
+# pattern for errors ("count compile errors with `grep -cE '\.swift:[0-9]+:[0-9]+: error:'`, not
+# `grep -c 'error:'`"), and for a year the line beside it counted warnings with the loose one the
+# same rule bans. That is not a stylistic mismatch, it INVERTS the banner against a zero baseline.
+#
+# MEASURED 2026-09-12, in this repository, at 17b5b61:
+#
+#   a `build` action  (669 SwiftCompile tasks)  loose 0, anchored 0
+#   `build-for-testing` (345 more)              loose 1, anchored 0
+#
+# The one loose match is `appintentsmetadataprocessor[...] warning: Metadata extraction skipped.
+# No AppIntents.framework dependency found.` -- a tool notice from the AppIntents metadata stage of
+# the TEST BUNDLE, which has no AppIntents.framework dependency and never will. So every honest
+# `test` run of this repository has been reporting `warnings: 1` against a stated baseline of
+# zero, and an incremental run that recompiled nothing reports the reassuring `0`. The banner was
+# calibrated exactly backwards: the more real the run, the worse the number looked.
+#
+# The loose count is kept and reported SEPARATELY rather than deleted. A tool notice is not a
+# compiler diagnostic and must not be counted as one, but it is also not nothing -- the way to
+# lose the next `ld: warning:` or `actool: warning:` for good is to grep only for `.swift:`.
+#
+# --- and whether the number is about anything ---------------------------------
+# The second half is the one AGENTS.md has been asking agents to do BY HAND: "a warning count from
+# a run that did not recompile the file is vacuous ... check the log for its SwiftCompile line
+# before quoting the number". Every brief in this repository repeats that sentence, which is the
+# signature of a rule that should be an instrument. An incremental build reuses object files and
+# reprints no diagnostic, so `warnings: 0` from a run that compiled nothing is a count over an
+# empty set -- indistinguishable, in the banner, from a clean full build.
+#
+# So the banner states the denominator. `SwiftCompile` is the task line Xcode 26.6 writes for each
+# compilation this repository's builds perform (669 of them in that full build, 0 in a no-op one);
+# `CompileSwift`/`CompileSwiftSources`/`CompileC` are named alongside it because the older build
+# system and any C/ObjC file spell it differently, and a counter that silently stops matching is
+# the failure mode this whole file exists to prevent. If the vocabulary ever does change, this
+# reports VACUOUS-COUNT on every run rather than quietly certifying zero -- loud and wrong beats
+# silent and wrong, and `CadenceBuildInvocationHygieneTests` pins the pattern against real log
+# lines so the drift is caught before anybody has to notice the noise.
+SWIFT_ERROR_PATTERN='\.swift:[0-9]+:[0-9]+: error:'
+SWIFT_WARNING_PATTERN='\.swift:[0-9]+:[0-9]+: warning:'
+SWIFT_COMPILE_TASK_PATTERN='^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources|CompileC) '
+
+diagnostic_report() {  # $1 = log
+  local log="$1"
+  local errors warnings loose compiled notices
+  errors=$(grep -cE "$SWIFT_ERROR_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  warnings=$(grep -cE "$SWIFT_WARNING_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  loose=$(grep -c 'warning:' "$log" 2>/dev/null | tr -d ' ')
+  compiled=$(grep -cE "$SWIFT_COMPILE_TASK_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  notices=$(( loose - warnings ))
+  say "  compile errors:  $errors"
+  say "  warnings:        $warnings"
+  if (( notices > 0 )); then
+    say "  tool notices:    $notices  (lines saying \`warning:\` that are not a compiler diagnostic;"
+    say "                   the baseline of zero is about the line above. grep the log to read them.)"
+  fi
+  if (( compiled == 0 )); then
+    say "  !! VACUOUS-COUNT: this run compiled 0 Swift files, so \"warnings: $warnings\" is a count"
+    say "     over nothing -- an incremental run reuses object files and reprints no diagnostic."
+    say "     It is NOT evidence that your change is clean (AGENTS.md). Rebuild the file you edited."
+  else
+    say "  swift compile tasks: $compiled"
   fi
 }
 
@@ -425,6 +491,43 @@ selftest_only_testing() {
     $( print -r -- "$out" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$out"
   fi
 
+  say ""
+  say " 6. the diagnostic counters (T-1147)"
+  # Fixture logs, not builds: the three lines below are copied verbatim out of real logs from this
+  # repository on 2026-09-12 (`cadence-xcb-instrufixB/C`), which is the whole point -- the bug was a
+  # pattern that matched the wrong real line, so the fixture has to be the real line.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "2026-09-12 04:37:24.072 appintentsmetadataprocessor[66824:4236838] warning: Metadata extraction skipped. No AppIntents.framework dependency found." \
+    > "$ws/notice.log"
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "/repo/CadenceTests/Probe.swift:15:13: warning: initialization of immutable value 'p' was never used; consider replacing with assignment to '_'" \
+    > "$ws/real.log"
+  print -rl -- "** BUILD SUCCEEDED **" > "$ws/noop.log"
+  local dout drc
+  run_counters() { dout=$(zsh "$here" check-warnings "$1" 2>&1); drc=$?; }
+
+  run_counters "$ws/notice.log"
+  check "the AppIntents tool notice is NOT counted as a warning" \
+    $( [[ $drc == 0 && "$dout" == *"warnings:        0"* ]] && print 1 || print 0 ) "exit $drc: $dout"
+  check "but it is still reported, as a tool notice" \
+    $( [[ "$dout" == *"tool notices:    1"* ]] && print 1 || print 0 ) "$dout"
+  check "and a run that compiled something is not called vacuous" \
+    $( [[ "$dout" != *VACUOUS-COUNT* && "$dout" == *"swift compile tasks: 1"* ]] && print 1 || print 0 ) "$dout"
+
+  # The half that makes the rest of it worth anything: a counter that reports 0 on everything
+  # would pass every check above. This is the one real Swift warning, and it must be seen.
+  run_counters "$ws/real.log"
+  check "a real Swift warning IS counted" \
+    $( [[ "$dout" == *"warnings:        1"* ]] && print 1 || print 0 ) "$dout"
+  check "and it is not double-counted as a tool notice" \
+    $( [[ "$dout" != *"tool notices:"* ]] && print 1 || print 0 ) "$dout"
+
+  run_counters "$ws/noop.log"
+  check "a run that compiled nothing says VACUOUS-COUNT rather than certifying zero" \
+    $( [[ "$dout" == *VACUOUS-COUNT* && "$dout" == *"warnings:        0"* ]] && print 1 || print 0 ) "$dout"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -449,6 +552,19 @@ if [[ "${1:-}" == "check-test-log" ]]; then
     exit 4
   fi
   say "$CHECK_RAN test result(s) in $CHECK_LOG"
+  exit 0
+fi
+
+# The counters on their own, the way `check-test-log` exposes the zero-test guard. It is what
+# `selftest` drives -- a banner nothing can run without paying for a build is a banner nobody
+# tests -- and it is how a caller reads the numbers back off a log some earlier run produced.
+if [[ "${1:-}" == "check-warnings" ]]; then
+  CHECK_LOG="${2:-}"
+  if [[ ! -f "$CHECK_LOG" ]]; then
+    say "usage: ./scripts/xcb.sh check-warnings <logfile>"; exit 2
+  fi
+  say "== xcb diagnostics ($CHECK_LOG) =="
+  diagnostic_report "$CHECK_LOG"
   exit 0
 fi
 
@@ -695,10 +811,11 @@ kill "$WATCHDOG_PID" 2>/dev/null
 say ""
 say "== xcb result ($ID) =="
 say "  XCODEBUILD_EXIT=$STATUS"
-# The compile-error count, spelled the way AGENTS.md requires: a loose `grep -c 'error:'` counts a
-# test failure whose message contains the word and reads a real kill as a build break.
-say "  compile errors:  $(grep -cE '\.swift:[0-9]+:[0-9]+: error:' "$LOG" | tr -d ' ')"
-say "  warnings:        $(grep -c 'warning:' "$LOG" | tr -d ' ')"
+# Both counts spelled the way AGENTS.md requires, and the denominator with them (T-1147): a loose
+# `grep -c 'error:'` counts a test failure whose message contains the word and reads a real kill as
+# a build break, and the loose warning reading it sat beside reported the AppIntents tool notice as
+# a compiler warning on every test run this repository has ever made.
+diagnostic_report "$LOG"
 if (( IS_TEST_RUN )); then
   RAN=$(tests_seen "$LOG")
   # Not a test count (T-721): this counts per-test RESULT LINES, and swift-testing prints two for a

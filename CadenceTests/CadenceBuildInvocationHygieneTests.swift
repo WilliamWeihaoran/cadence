@@ -281,6 +281,73 @@ struct CadenceBuildInvocationHygieneTests {
         #expect(Self.emptyRunLog.contains("** TEST SUCCEEDED **"))
     }
 
+    /// T-1147, and it is the same question as the test above asked of the other two counters in
+    /// the same banner: do they *discriminate*. They did not. `xcb.sh` counted warnings with
+    /// `grep -c 'warning:'` — the loose pattern `AGENTS.md` bans for errors, one line above the
+    /// anchored error count that obeys it — and MEASURED on 2026-09-12 that pattern matched
+    /// exactly one line on a full test build of this repository: an `appintentsmetadataprocessor`
+    /// notice about the test bundle having no AppIntents.framework dependency. So the banner read
+    /// `warnings: 1` against a stated baseline of zero on every run that actually compiled
+    /// something, and `warnings: 0` on the incremental runs that compiled nothing at all.
+    ///
+    /// Only `SWIFT_WARNING_PATTERN` is lifted and executed here. It is written in the intersection
+    /// of POSIX ERE and ICU for the reason the test above gives — no `^`, nothing either engine
+    /// spells differently. `SWIFT_COMPILE_TASK_PATTERN` is anchored with `^[[:space:]]*`, which is
+    /// correct for grep and is exactly the construct that would mean something else here, so it is
+    /// pinned as source rather than run: this asserts it exists and still names the task line.
+    @Test func theRunnersWarningPatternTellsACompilerDiagnosticFromAToolNotice() throws {
+        let runner = try CadenceSourceScan.sourceFile("scripts/xcb.sh")
+        let pattern = try #require(
+            CadenceTestRunGuard.singleQuotedAssignment("SWIFT_WARNING_PATTERN", in: runner),
+            "scripts/xcb.sh declares no SWIFT_WARNING_PATTERN"
+        )
+
+        #expect(CadenceSourceScan.matchCount(pattern, in: Self.realSwiftWarningLog) == 1)
+        #expect(CadenceSourceScan.matchCount(pattern, in: Self.appIntentsNoticeLog) == 0)
+        // The control that makes the line above evidence rather than a pattern matching nothing:
+        // the notice really does say `warning:`, which is why the loose reading counted it.
+        #expect(Self.appIntentsNoticeLog.contains("warning:"))
+
+        // The denominator half. A warning count from a run that recompiled nothing is vacuous —
+        // AGENTS.md has said so for months, and every brief repeated it by hand because no
+        // instrument said it. These two lines are what makes the banner able to say it itself.
+        let commands = CadenceTestRunGuard.commandLines(runner)
+        #expect(
+            CadenceTestRunGuard.singleQuotedAssignment("SWIFT_COMPILE_TASK_PATTERN", in: runner)?
+                .contains("SwiftCompile") == true,
+            "scripts/xcb.sh no longer counts the compile tasks its warning count is a count over"
+        )
+        #expect(
+            commands.contains("VACUOUS-COUNT"),
+            "scripts/xcb.sh no longer says when a warning count is a count over nothing"
+        )
+        // And the finding itself, stated where it can regress: the line that PRINTS the count must
+        // not be the loose grep. The script still runs `grep -c 'warning:'` — that is the separate
+        // tool-notice count, which is the point — so asking whether the loose pattern appears
+        // anywhere would assert nothing. This asks the one question that was wrong.
+        let banner = commands.split(separator: "\n").filter { $0.contains("\"  warnings:") }
+        #expect(banner.count == 1, "scripts/xcb.sh no longer prints exactly one `warnings:` line")
+        #expect(
+            banner.first?.contains("grep") == false,
+            "scripts/xcb.sh prints its warning count straight out of a grep again (T-1147)"
+        )
+    }
+
+    // MARK: - T-1147 witnesses
+
+    /// One real Swift diagnostic, copied out of a build log of this repository on 2026-09-12.
+    private static let realSwiftWarningLog = """
+    /repo/CadenceTests/HabitFrequencyLabelTests.swift:15:13: warning: initialization of immutable \
+    value 'instrufixWarningProbe' was never used; consider replacing with assignment to '_'
+    """
+
+    /// The tool notice that was being counted as one. Also copied verbatim: it is the only line
+    /// matching `warning:` in a full `build-for-testing` log of this repository.
+    private static let appIntentsNoticeLog = """
+    2026-09-12 04:37:24.072 appintentsmetadataprocessor[66824:4236838] warning: Metadata \
+    extraction skipped. No AppIntents.framework dependency found.
+    """
+
     // MARK: - T-552 witnesses
 
     /// The postflight as it stood before T-552: exit code, error count, warning count, leak check.
@@ -570,10 +637,18 @@ enum CadenceTestRunGuard {
 
     /// The value of the script's `TEST_RESULT_PATTERN='...'` assignment, unquoted.
     static func testResultPattern(in shell: String) -> String? {
+        singleQuotedAssignment("TEST_RESULT_PATTERN", in: shell)
+    }
+
+    /// The value of a `NAME='...'` assignment among the script's commands, unquoted. Comment lines
+    /// are already gone, so prose quoting a pattern cannot stand in for the pattern (T-552's rule,
+    /// and the reason this reads `commandLines` rather than the raw source).
+    static func singleQuotedAssignment(_ name: String, in shell: String) -> String? {
+        let prefix = name + "='"
         for line in commandLines(shell).split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("TEST_RESULT_PATTERN='"), trimmed.hasSuffix("'") else { continue }
-            return String(trimmed.dropFirst("TEST_RESULT_PATTERN='".count).dropLast())
+            guard trimmed.hasPrefix(prefix), trimmed.hasSuffix("'") else { continue }
+            return String(trimmed.dropFirst(prefix.count).dropLast())
         }
         return nil
     }
