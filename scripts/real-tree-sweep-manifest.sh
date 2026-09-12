@@ -14,13 +14,18 @@
 #                                                          # own derived data and signing overrides
 #                                                          # rather than paying for a second full
 #                                                          # build under an unrelated identity.
-#   ./scripts/real-tree-sweep-manifest.sh <id> precheck <manifest-file> <repo-path>[=<file>]...
-#                                                          # T-1092: the ~1s, build-free half. Names
-#                                                          # any `@Test` in the given sources that
-#                                                          # is a sweep and is NOT on the manifest.
+#   ./scripts/real-tree-sweep-manifest.sh <id> precheck [--corpus <dir>|--no-corpus] \
+#       <manifest-file> <repo-path>[=<file>]...
+#                                                          # T-1092: the ~2.6s, build-free half.
+#                                                          # Names any `@Test` in the given sources
+#                                                          # that is a sweep and is NOT on the
+#                                                          # manifest. Hops are resolved against
+#                                                          # <dir>, which defaults to this script's
+#                                                          # own CadenceTests/ and degrades to the
+#                                                          # given sources alone when absent.
 #   ./scripts/real-tree-sweep-manifest.sh <id> precheck-selftest
 #                                                          # prove the precheck still separates the
-#                                                          # four cases it is built to separate
+#                                                          # eight cases it is built to separate
 #
 # WHY THE MANIFEST EXISTS
 #
@@ -114,24 +119,65 @@ REGENERATED="${_tmp_base}cadence-real-tree-sweep-${ID}.manifest"
 # of the classifier" that CadenceRealTreeSweepScan's header rightly refuses is that it is **sound,
 # not complete**. The Swift scan starts a test's markers at its own body and only ever unions more
 # in (`var union = test.markers`, `union.formUnion(...)`), so ANY SUBSET of a test's reach that
-# already carries all three markers proves the full reach does. This reads exactly two levels of
-# that subset -- the test's own body, and same-file `func`s at brace depth 0 or 1 whose names the
-# body mentions -- so a test it flags is a sweep by the Swift rule, always. It just cannot see every
-# sweep, and it is not asked to: the authoritative test still runs in the full suite behind it.
+# already carries all three markers proves the full reach does. Every declaration this reads is one
+# the Swift scan reads, and every span it takes is contained in the span the Swift scan takes -- so
+# a test it flags is a sweep by the Swift rule, always. It just cannot see every sweep, and it is
+# not asked to: the authoritative test still runs in the full suite behind it.
 #
-# Measured 2026-09-07 over the committed manifest's 265 entries and 4,638 tests in `CadenceTests/`:
+# WHAT IT REACHES, AND WHY THAT CHANGED (T-1092, 2026-09-12)
 #
-#   body only              146 flagged, 146 on the manifest,  0 false positives, 55.1% recall
-#   body + one same-file `func` hop
-#                          228 flagged, 228 on the manifest,  0 false positives, 86.0% recall
+# It used to hop exactly one declaration, inside one file: the test's own body, plus same-file
+# `func`s whose names the body mentions. Measured against the committed manifest over all 314 files
+# in `CadenceTests/` -- run it yourself, the whole measurement is one command:
 #
-# and both incidents that could be replayed from git -- T-1090's
+#   printf 'Fixture/nothingRealIsNamedHere\n' > /tmp/bogus.txt
+#   ./scripts/real-tree-sweep-manifest.sh <id> precheck /tmp/bogus.txt CadenceTests/*.swift
+#
+#   body only                         146 flagged,  0 false positives,  52.1% of 280 entries
+#   + one same-file `func` hop        234 flagged,  0 false positives,  83.6%   <- was
+#   + transitive, cross-file, stored  280 flagged,  0 false positives, 100.0%   <- now
+#
+# **It now derives the committed manifest exactly, in 2.6s, with no build.** That is the whole of
+# T-1092's "nothing derives it when it changes": the derivation in CI and the one in the full suite
+# were both already there (`ci.yml`'s `CadenceTests` job, and `CadenceTestTargetHygieneTests` with
+# its regenerated banner) -- what nobody had was a reader the AUTHOR could afford. Three changes,
+# each measured by ablation against the same corpus:
+#
+#   +41  a transitive closure rather than one hop, and `var`/`let` admitted as hop targets. One hop
+#        reads the first helper's markers and stops, so `@Test` -> helper -> helper -> walk was
+#        invisible; the closure below is a fixed point, so depth is no longer a number. Dropping
+#        just the `var`/`let` targets from the finished reader costs 15 of the 280.
+#    +5  resolving file-scope names ACROSS files. `CadenceTests` is one module, so
+#        `func cadenceAppSwiftFiles()` declared in `CadenceGlobalUndoSurfaceTests.swift:134` is
+#        callable unqualified from `CadenceContextlessListSurfaceTests.swift`, and a reader that
+#        resolves names only inside one file sees a test that touches nothing. `docs/TODO.md` had
+#        already recorded exactly that case, found by an authoritative `--write` run, not by this.
+#
+# (The two overlap -- a sweep can need both -- so they do not add to 46.)
+#
+# One reach was tried and is deliberately NOT here: delimiting a braceless `var`/`let` by balanced
+# `{}` as well as `()`/`[]`. It also reaches 280, and it reaches five tests that do NOT sweep --
+# `theSweepSkipsTheFilesTheMCPServerTargetCompiles` reads the MCP target's explicit source list, not
+# a directory. Completeness is the authority's job. Soundness is this one's, and 280 with five wrong
+# answers is worse than 280 with none.
+#
+# Non-vacuity, measured 2026-09-12 the way any detector here has to be: drop
+# `CadenceContextlessListSurfaceTests/theAddFirstListRowIsOneComponentBothCallersShare` from the
+# committed manifest and run both readers over that one file. The shipped one exits 0 -- it calls
+# the stale manifest clean. This one exits 4 and names it.
+#
+# So the three indexes and the closure below are now the Swift scan's own, including its one
+# asymmetry (see `resolved` in `sweeps_in`). What it still misses is 15 tests that reach a walk
+# through a `var`/`let`, and hopping those is measured -- 2026-09-12 -- to gain exactly **zero**:
+# adding `var`/`let` targets delimited by a same-line brace flagged the identical 265. The Swift
+# scan reaches them only because its span reader runs a braceless `static let x = f()` on to the
+# next `{` in the file, which is the unsoundness this reader exists to not have (an earlier spelling
+# of it reported 23 false positives). Completeness is the authority's job; soundness is this one's.
+#
+# Both incidents that could be replayed from git -- T-1090's
 # `theStoreRootIsNamedInExactlyOnePlaceUnderCadence` (walks in its own body) and T-1091's
 # `theAppsNestedHelperTypesNoLongerSwallowTheDeclarationsBelowThem` (walks through a same-file
-# `saveCommitSwiftFiles()`) -- are caught by the second. The hop is restricted to `func` on purpose:
-# an earlier spelling hopped into `var`/`let` too, and because a braceless `let x = 5` has no body
-# to delimit, the span reader ran on to the next `{` in the file and swallowed unrelated code. That
-# version reported 23 false positives, which is the whole failure mode this one has to not have.
+# `saveCommitSwiftFiles()`) -- were already caught before this change; the cross-file family was not.
 #
 # `scripts/xcb.sh` is deliberately NOT the caller. It runs per test invocation, including once per
 # mutation inside `scripts/mutate.sh`, where the mutation is in product source and the manifest
@@ -149,6 +195,21 @@ precheck_needles=(
 )
 
 cmd_precheck() {
+    # `--corpus <dir>` / `--no-corpus` may lead the arguments. The default is this script's own
+    # `CadenceTests/`, so no caller has to be taught the flag -- `agent-commit.sh` gets the deeper
+    # reach by upgrading this file alone. A copy of the script sitting beside no `CadenceTests/`
+    # (agent-commit.sh's own selftest workspaces do exactly that) falls back to source-only.
+    local corpus_dir="$ROOT_DIR/CadenceTests"
+    while [[ "${1:-}" == --corpus || "${1:-}" == --no-corpus ]]; do
+        if [[ "$1" == --no-corpus ]]; then
+            corpus_dir=""
+            shift
+        else
+            corpus_dir="${2:-}"
+            shift 2
+        fi
+    done
+    [[ -n "$corpus_dir" && -d "$corpus_dir" ]] || corpus_dir=""
     local manifest_file="${1:-}"
     local -a sources
     sources=("${@:2}")
@@ -165,6 +226,7 @@ cmd_precheck() {
         return 2
     }
     CADENCE_SWEEP_NEEDLES="${(pj:\n:)precheck_needles}" \
+    CADENCE_SWEEP_CORPUS="$corpus_dir" \
         "$PYTHON_BIN" -c "$PRECHECK_PY" "$manifest_file" "${sources[@]}"
 }
 
@@ -188,6 +250,17 @@ SWIFT_SOURCE = re.compile(r"swiftFiles\(|\.swift" + QUOTE)
 TEST = re.compile(r"@Test\b[\s\S]*?\bfunc\s+([A-Za-z0-9_]+)")
 FUNC = re.compile(r"\bfunc\s+([A-Za-z0-9_]+)")
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# Same two patterns the Swift scan resolves hops with: a top-level type's extent, so a member hop
+# `Owner.member` lands somewhere, and the `Owner.member` spelling itself.
+TYPE = re.compile(r"\b(?:struct|final class|class|actor|enum)\s+([A-Za-z0-9_]+)")
+# `var`/`let` are hop targets in the Swift scan too. An earlier spelling of this reader admitted them
+# with a `func`'s span rule -- open at the next `{`, close at its match -- and because a braceless
+# `static let x = f()` has no brace of its own, that ran on to the next `{` in the FILE and swallowed
+# unrelated code: 23 false positives, the exact failure this reader exists to not have. So a
+# braceless one is delimited by its own line instead. A line is a subset of the declaration, and a
+# subset can only ever under-report, which is the invariant that keeps this sound.
+STORED = re.compile(r"\b(?:var|let)\s+([A-Za-z0-9_]+)")
+QUALIFIED = re.compile(r"\b([A-Z][A-Za-z0-9_]*)\s*\.\s*([a-z][A-Za-z0-9_]*)")
 
 WALK_MARK, PRODUCT_MARK, SWIFT_MARK = 1, 2, 4
 SWEEP = WALK_MARK | PRODUCT_MARK | SWIFT_MARK
@@ -243,6 +316,31 @@ def body_span(code, start, after_name):
     return None
 
 
+def stored_span(code, match):
+    """A `var`/`let`'s own text: through the first newline at which no `(`, `[` or `{` it opened is
+    still open. That covers `var body: some View { … }` and a multi-line `= [ "Cadence", … ]` alike,
+    and stops dead at the end of `let count = 5` -- where the `func` span rule used to run on to the
+    next `{` in the FILE and swallow the declaration after it."""
+    line_end = code.find("\n", match.end(1))
+    line_end = len(code) if line_end < 0 else line_end
+    if "{" in code[match.end(1):line_end]:
+        # A computed property or a `= { … }()`: it brought its own braces, so read them.
+        return body_span(code, match.start(), match.end(1))
+    depth = 0
+    for j in range(match.end(1), len(code)):
+        ch = code[j]
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif ch == "{":
+            # A brace on a LATER line belongs to the declaration after this one.
+            return (match.start(), j)
+        elif ch == "\n" and depth <= 0:
+            return (match.start(), j)
+    return (match.start(), len(code))
+
+
 def markers(code_slice, raw_slice):
     """Walk needles from code (a fixture that *quotes* a sweep is not one); the path literal and the
     Swift-source evidence from raw, where literals survive. Same split as the Swift scan."""
@@ -256,10 +354,45 @@ def markers(code_slice, raw_slice):
     return found
 
 
-def sweeps_in(raw):
+def references(code_slice):
+    """The two name sets a hop can be spelled with, exactly as the Swift scan collects them."""
+    return (
+        set(IDENT.findall(code_slice)),
+        set("%s.%s" % pair for pair in QUALIFIED.findall(code_slice)),
+    )
+
+
+def type_extents(code, depths):
+    """`(name, open, close)` for every top-level type, over a copy in which `extension Foo {` reads
+    as `enum      Foo {` -- ten characters for ten, so offsets survive. Without it a member hop into
+    `extension CadenceSourceScan` resolves to nothing, which is most of the shared support file."""
+    as_types = code.replace("extension ", "enum      ")
+    extents = []
+    for m in TYPE.finditer(as_types):
+        if depths[m.start()] != 0:
+            continue
+        open_at = as_types.find("{", m.end())
+        if open_at < 0:
+            continue
+        close = len(as_types)
+        for j in range(open_at + 1, len(as_types)):
+            if as_types[j] == "}" and depths[j] == 1:
+                close = j
+                break
+        extents.append((m.group(1), open_at, close))
+    return extents
+
+
+def parse(path, raw):
+    """One file's `@Test`s and its hop targets: `func`, `var` and `let` at file scope or one type
+    deep, which is the Swift scan's own `depths[...] <= 1` rule. Where the two differ is the SPAN
+    each one reads, and this one is always the shorter -- see `stored_span`. Staying a subset is the
+    whole soundness argument."""
     code = code_only(raw)
     if len(code) != len(raw):
-        raise SystemExit("precheck: masking changed the source's offsets, so spans read the wrong text")
+        raise SystemExit(
+            "precheck: masking changed %s's offsets, so spans read the wrong text" % path
+        )
 
     depth, depths = 0, [0] * len(code)
     for i, ch in enumerate(code):
@@ -270,31 +403,114 @@ def sweeps_in(raw):
             depth -= 1
 
     test_names = set(m.group(1) for m in TEST.finditer(code))
+    extents = type_extents(code, depths)
 
-    # Hop targets: same-file `func`s at file scope or one type deep, exactly the subset of the Swift
-    # scan's `byFileAndName` that is safe to delimit without a type checker. A `@Test` is never a hop
-    # target there either.
-    helpers = {}
-    for m in FUNC.finditer(code):
-        if depths[m.start()] > 1 or m.group(1) in test_names:
-            continue
-        span = body_span(code, m.start(), m.end(1))
-        if span:
-            helpers.setdefault(m.group(1), 0)
-            helpers[m.group(1)] |= markers(code[span[0]:span[1]], raw[span[0]:span[1]])
-
-    found = []
+    tests, decls = [], []
     for m in TEST.finditer(code):
         span = body_span(code, m.start(), m.end(1))
         if not span:
             continue
         slice_code, slice_raw = code[span[0]:span[1]], raw[span[0]:span[1]]
-        union = markers(slice_code, slice_raw)
-        for ident in set(IDENT.findall(slice_code)):
-            union |= helpers.get(ident, 0)
-        if union & SWEEP == SWEEP:
-            found.append(m.group(1))
+        names, qualified = references(slice_code)
+        tests.append((m.group(1), markers(slice_code, slice_raw), names, qualified))
+
+    candidates = [(m, True) for m in FUNC.finditer(code)]
+    candidates += [(m, False) for m in STORED.finditer(code)]
+    for m, is_function in candidates:
+        # A `@Test` is never a hop target: one test naming another's function does not make the
+        # caller a sweep.
+        if depths[m.start()] > 1 or m.group(1) in test_names:
+            continue
+        span = body_span(code, m.start(), m.end(1)) if is_function else stored_span(code, m)
+        if not span:
+            continue
+        slice_code, slice_raw = code[span[0]:span[1]], raw[span[0]:span[1]]
+        names, qualified = references(slice_code)
+        owner = None
+        for extent_name, open_at, close in extents:
+            if open_at < m.start() < close:
+                owner = extent_name
+        decls.append({
+            "name": m.group(1),
+            "file": path,
+            "file_scope": depths[m.start()] == 0,
+            "owner": owner,
+            "markers": markers(slice_code, slice_raw),
+            "names": names,
+            "qualified": qualified,
+        })
+    return tests, decls
+
+
+def sweeps_in(targets, corpus):
+    """Every `@Test` in `targets` that reaches a sweep, resolved across the whole `corpus`.
+
+    `corpus` is `{repo_path: source}` and already carries each target's own bytes. The three indexes
+    and the closure below are the Swift scan's, including its one asymmetry: an unqualified name is
+    resolved **in the file of the test being classified**, never in the file of whichever helper
+    mentioned it. Dropping that asymmetry is measured there as 592 "sweeps" where 240 are real,
+    because the shared support file reaches a walker by its own internal plumbing."""
+    decls = []
+    parsed_targets = {}
+    for path in sorted(corpus):
+        tests, file_decls = parse(path, corpus[path])
+        if path in targets:
+            parsed_targets[path] = tests
+        for decl in file_decls:
+            decls.append(decl)
+
+    by_file_and_name, by_file_scope_name, by_qualified_name = {}, {}, {}
+    for index, decl in enumerate(decls):
+        by_file_and_name.setdefault(decl["file"], {}).setdefault(decl["name"], []).append(index)
+        if decl["file_scope"]:
+            # `CadenceTests` is one module, so a file-scope `func cadenceAppSwiftFiles` is callable
+            # unqualified from any file in it. Resolving these only inside their own file is how a
+            # sweep written as a bare call to a helper next door reads as a test that touches
+            # nothing -- measured as 43 of the 46 entries this reader used to miss.
+            by_file_scope_name.setdefault(decl["name"], []).append(index)
+        if decl["owner"]:
+            by_qualified_name.setdefault("%s.%s" % (decl["owner"], decl["name"]), []).append(index)
+
+    def resolved(in_file, names, qualified):
+        indices = []
+        for name, declared in by_file_and_name.get(in_file, {}).items():
+            if name in names:
+                indices.extend(declared)
+        for name in names:
+            indices.extend(by_file_scope_name.get(name, ()))
+        for name in qualified:
+            indices.extend(by_qualified_name.get(name, ()))
+        return indices
+
+    found = []
+    for path in sorted(parsed_targets):
+        for name, own_markers, names, qualified in parsed_targets[path]:
+            union = own_markers
+            visited = set()
+            frontier = resolved(path, names, qualified)
+            while frontier:
+                index = frontier.pop()
+                if index in visited:
+                    continue
+                visited.add(index)
+                union |= decls[index]["markers"]
+                if union & SWEEP == SWEEP:
+                    break
+                frontier.extend(
+                    resolved(path, decls[index]["names"], decls[index]["qualified"])
+                )
+            if union & SWEEP == SWEEP:
+                found.append((path, name))
     return found
+
+
+def read(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError as problem:
+        sys.stderr.write("precheck: cannot read %s: %s\n" % (path, problem))
+        sys.exit(2)
 
 
 manifest_path, pairs = sys.argv[1], sys.argv[2:]
@@ -309,21 +525,30 @@ if not listed:
     sys.stderr.write("precheck: the manifest handed in names no test, so every sweep would look new\n")
     sys.exit(2)
 
-unlisted = []
+# The corpus every hop is resolved against. Absent (`--no-corpus`, or a copy of this script with no
+# `CadenceTests/` beside it) it degrades to the staged sources alone, which is the same-file-only
+# reach this had before -- fewer findings, never a wrong one.
+corpus = {}
+corpus_root = os.environ.get("CADENCE_SWEEP_CORPUS", "")
+if corpus_root:
+    for folder, _, files in os.walk(corpus_root):
+        for name in files:
+            if not name.endswith(".swift"):
+                continue
+            full = os.path.join(folder, name)
+            corpus[os.path.relpath(full, os.path.dirname(corpus_root.rstrip("/")))] = read(full)
+
+# The staged bytes win over the worktree's for any path this commit carries, and a target that is
+# not under the corpus root is simply added to it.
+targets = set()
 for pair in pairs:
     repo_path, _, source_file = pair.partition("=")
-    source_file = source_file or repo_path
     if not repo_path.endswith(".swift"):
         continue
-    try:
-        with open(source_file, encoding="utf-8", errors="replace") as handle:
-            raw = handle.read()
-    except OSError as problem:
-        sys.stderr.write("precheck: cannot read %s: %s\n" % (source_file, problem))
-        sys.exit(2)
-    for name in sweeps_in(raw):
-        if name not in listed:
-            unlisted.append((repo_path, name))
+    corpus[repo_path] = read(source_file or repo_path)
+    targets.add(repo_path)
+
+unlisted = [(path, name) for path, name in sweeps_in(targets, corpus) if name not in listed]
 
 for repo_path, name in unlisted:
     print("%s\t%s" % (repo_path, name))
@@ -338,11 +563,14 @@ fi
 
 # --- precheck-selftest --------------------------------------------------------
 #
-# Four fixtures, because a precheck is only worth calling if it separates them: the sweep written in
-# the test's own body, the sweep written through a same-file helper (the T-1091 shape, and the one
-# the body-only reader missed), the fixed-file assertion that names product paths but walks nothing,
-# and the sweep that IS already on the manifest. A reader that stopped reading passes the first
-# three by flagging everything, or the last three by flagging nothing, so both directions are asked.
+# Eight fixtures, because a precheck is only worth calling if it separates them. Four sweeps, one per
+# reach this reader has: in the test's own body; through a same-file helper (the T-1091 shape); two
+# hops down; and through a file-scope helper in ANOTHER file. Four non-sweeps, one per way of
+# looking like one: the fixed-file assertion that names product paths but walks nothing, the test
+# that only QUOTES a sweep inside a string, the one already on the manifest, and -- the reason
+# `var`/`let` hop targets were refused for so long -- a test that names a braceless `let` declared
+# immediately before a sweeping `func`. A reader that stopped reading passes the first four by
+# flagging everything, or the last four by flagging nothing, so both directions are asked.
 if [[ "$MODE" == "precheck-selftest" ]]; then
     FAILURES=0
     check() {  # $1 = what, $2 = 1|0
@@ -372,6 +600,43 @@ struct SweepPrecheckFixtures {
         }
     }
 
+    private func theHopInBetween() throws -> Int {
+        try everyProductSwiftFile().count
+    }
+
+    @Test func theOneTwoHopsDown() throws {
+        #expect(try theHopInBetween() > 0)
+    }
+
+    @Test func theOneThroughAHelperInAnotherFile() throws {
+        for path in try everyAppSwiftFileNextDoor() {
+            #expect(!path.isEmpty)
+        }
+    }
+
+    private static let everyRootWorthWalking = [
+        "Cadence",
+        "CadenceWidgets",
+    ]
+
+    private static func walkingTheRoots() throws -> [String] {
+        try everyRootWorthWalking.flatMap { try CadenceSourceScan.swiftFiles(under: $0) }
+    }
+
+    @Test func theOneThroughAMultiLineStoredRoot() throws {
+        #expect(try Self.walkingTheRoots().count > 0)
+    }
+
+    private static let howManyRootsThereAre = 2
+
+    private static func theSweepDeclaredRightAfterIt() throws -> [String] {
+        try CadenceSourceScan.swiftFiles(under: "Cadence")
+    }
+
+    @Test func theOneThatOnlyNamesABracelessLet() {
+        #expect(howManyRootsThereAre == 2)
+    }
+
     @Test func theFixedFileAssertionThatWalksNothing() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/Models/AppTask.swift")
         #expect(!source.isEmpty)
@@ -390,12 +655,35 @@ struct SweepPrecheckFixtures {
 }
 SWIFTEOF
 
-    OUT=$(cmd_precheck "$WS/manifest.txt" "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC=$?
+    # The neighbour file, so `everyAppSwiftFileNextDoor` is a file-scope `func` in a DIFFERENT file.
+    # `CadenceTests` is one module, so the call above is legal Swift and reaches this walk.
+    cat > "$WS/Neighbour.swift" <<'SWIFTEOF'
+import Foundation
+
+func everyAppSwiftFileNextDoor() throws -> [String] {
+    try CadenceSourceScan.swiftFiles(under: "Cadence")
+}
+SWIFTEOF
+
+    OUT=$(cmd_precheck --corpus "$WS" "$WS/manifest.txt" \
+        "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC=$?
     print -r -- "real-tree-sweep-manifest.sh: precheck-selftest (exit $RC)"
     check "an unlisted sweep is reported (exit 4)" $(( RC == 4 ))
     check "the body-only sweep is named" $( [[ "$OUT" == *theOneInItsOwnBody* ]] && print 1 || print 0 )
     check "the same-file-helper sweep is named -- the T-1091 shape" \
         $( [[ "$OUT" == *theOneThroughASameFileHelper* ]] && print 1 || print 0 )
+    check "the sweep TWO hops down is named -- the reach one hop could not have" \
+        $( [[ "$OUT" == *theOneTwoHopsDown* ]] && print 1 || print 0 )
+    check "the sweep through a file-scope helper NEXT DOOR is named -- 5 of T-1092's 46" \
+        $( [[ "$OUT" == *theOneThroughAHelperInAnotherFile* ]] && print 1 || print 0 )
+    check "the sweep whose product root is a multi-line stored \`let\` is named" \
+        $( [[ "$OUT" == *theOneThroughAMultiLineStoredRoot* ]] && print 1 || print 0 )
+    # The other half of admitting `var`/`let`, and the reason the earlier reader refused to: a
+    # braceless `let` must be delimited by its own statement. Read with a `func`'s span rule it runs
+    # on to the next `{` in the FILE, swallows the sweep declared after it, and every test that so
+    # much as names the constant becomes a sweep -- 23 false positives, measured.
+    check "a test that names only a braceless \`let\` is NOT named -- the run-on defect stays fixed" \
+        $( [[ "$OUT" != *theOneThatOnlyNamesABracelessLet* ]] && print 1 || print 0 )
     check "the fixed-file assertion is NOT named" \
         $( [[ "$OUT" != *theFixedFileAssertionThatWalksNothing* ]] && print 1 || print 0 )
     check "a sweep that only appears inside a string literal is NOT named" \
@@ -405,12 +693,27 @@ SWIFTEOF
     check "the repo path is reported, not the temporary file" \
         $( [[ "$OUT" == *"CadenceTests/Fixture.swift"* ]] && print 1 || print 0 )
 
-    # And the same source against a manifest that already names all three sweeps must be silent,
-    # which is the only way to tell "it read them" from "it flags whatever it is shown".
+    # The corpus is the only thing that can see the neighbour, so withholding it must lose exactly
+    # that one finding and keep the other three. A reader that ignored `--corpus` would either name
+    # the cross-file sweep here anyway, or have named nothing above.
+    OUT6=$(cmd_precheck --no-corpus "$WS/manifest.txt" \
+        "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC6=$?
+    check "with no corpus the cross-file sweep is NOT named" \
+        $( [[ "$OUT6" != *theOneThroughAHelperInAnotherFile* ]] && print 1 || print 0 )
+    check "...and the two-hop one still is, so the closure is not the corpus in disguise" \
+        $( [[ "$OUT6" == *theOneTwoHopsDown* ]] && print 1 || print 0 )
+    check "...and it is still a finding (exit 4)" $(( RC6 == 4 ))
+
+    # And the same source against a manifest that already names every sweep must be silent, which is
+    # the only way to tell "it read them" from "it flags whatever it is shown".
     print -rl -- "SweepPrecheckFixtures/theOneAlreadyOnTheManifest" \
         "SweepPrecheckFixtures/theOneInItsOwnBody" \
-        "SweepPrecheckFixtures/theOneThroughASameFileHelper" > "$WS/full.txt"
-    OUT2=$(cmd_precheck "$WS/full.txt" "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC2=$?
+        "SweepPrecheckFixtures/theOneThroughASameFileHelper" \
+        "SweepPrecheckFixtures/theOneTwoHopsDown" \
+        "SweepPrecheckFixtures/theOneThroughAHelperInAnotherFile" \
+        "SweepPrecheckFixtures/theOneThroughAMultiLineStoredRoot" > "$WS/full.txt"
+    OUT2=$(cmd_precheck --corpus "$WS" "$WS/full.txt" \
+        "CadenceTests/Fixture.swift=$WS/Fixture.swift" 2>&1); RC2=$?
     check "a manifest that names them all is accepted (exit 0)" $(( RC2 == 0 ))
     check "and it says nothing" $( [[ -z "$OUT2" ]] && print 1 || print 0 )
 

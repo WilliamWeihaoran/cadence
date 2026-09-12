@@ -102,10 +102,26 @@ struct PersistenceController {
         )
     }
 
-    private static func performStartupMaintenance(in context: ModelContext) {
+    /// Every pass a launch runs against the store it just opened.
+    ///
+    /// **Not `private`, and `defaults` is not a convenience (T-1108).** The empty-store suite used
+    /// to *replay* this sequence — four of its calls and a save, copied into a test helper — with a
+    /// source-reading test beside it pinning that the real body still ran its passes in this order.
+    /// That pin checks production against a list; it cannot check the replay against production,
+    /// and the replay had silently drifted three ways: no
+    /// `CadenceFocusLedger.reconcile`, no `removingForkedOccurrences:`, and an unconditional
+    /// `try? save()` where this guards on `changedStore`. A test that imitates a sequence can drift
+    /// from it and stay green, which is the failure this repository keeps re-finding, so the suite
+    /// calls this instead. `defaults` is the one thing a test cannot share with a launch — writing
+    /// the migration's completion flag into the real suite would leak between runs — and
+    /// `PursuitToGoalMigration.runIfNeeded` already took it for the same reason.
+    static func performStartupMaintenance(
+        in context: ModelContext,
+        defaults: UserDefaults = CadenceDefaults.store
+    ) {
         // Folds any surviving `Pursuit` rows into `Goal`. Self-guarding and idempotent, and
         // manages its own saves because it deletes rows rather than just inserting them.
-        PursuitToGoalMigration.runIfNeeded(modelContext: context)
+        PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
 
         // **No pass here seeds the default tags, and that is the point (T-528).**
         //

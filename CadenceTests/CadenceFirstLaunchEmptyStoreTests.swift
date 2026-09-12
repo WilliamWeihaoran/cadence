@@ -18,30 +18,47 @@ import Testing
 /// not get a better guard on the insert: it lost every unprompted caller. Seeding is a user action
 /// now, and the tests below say so instead of recording the defect.
 ///
-/// `PersistenceController.performStartupMaintenance` is `private`, so the sequence is replayed
-/// rather than called. `theStartupSequenceThisSuiteReplaysIsTheOneLaunchActuallyRuns` reads the
-/// real function's body and fails if the replay drifts from it.
+/// **Every test below calls `PersistenceController.performStartupMaintenance`. It used to imitate
+/// it (T-1108).** The imitation was four pass calls and a save in a private helper, with a source-reading test
+/// beside it pinning that the real body still called the same four in the same order — and that pin
+/// is one-directional. It asks production to match a list; nothing asked the replay to match
+/// production. Measured at `08c84bc`, the replay had drifted three ways, all of them green:
+///
+/// - no `CadenceFocusLedger.reconcile(in:)`, the T-742 pass that heals a stale focus total. The
+///   ordering test above it named that call as expected *of production* and never noticed the
+///   replay had none, so "a first launch changes nothing" was being asserted about a launch that
+///   skipped a pass which can change something.
+/// - no `removingForkedOccurrences:` on the repair, which is the half of T-622's collapse the app
+///   supplies and `DataIntegrityRepairService` cannot spell for itself.
+/// - `try? context.save()` unconditionally, where a launch guards on `changedStore, hasChanges` —
+///   so the replay saved on launches production leaves alone.
+///
+/// A test that replays a sequence rather than calling it can drift from it silently and still pass.
+/// The fix is not a fourth statement in the imitation; it is not having one. `performStartup-
+/// Maintenance` is `internal` now and takes the `defaults` suite a test must not share.
 @Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceFirstLaunchEmptyStoreTests {
 
     // MARK: - The sequence
 
-    /// The replay is only worth anything while it matches. This reads
-    /// `performStartupMaintenance`'s own body — comments blanked, so the prose describing the
-    /// passes cannot stand in for the calls — and pins that the four calls are present *and* in
-    /// this order, the repair pass last so it sees the migrated shape.
+    /// **What a launch runs, and in what order.** Now that every test below *calls* startup
+    /// maintenance, nothing here has to pin a replay against it — so this asks the one thing
+    /// calling it cannot: that the five passes are in this ORDER, the repair after the migrations
+    /// so it sees the migrated shape, and that two facts a passing empty-store run is blind to are
+    /// still true of the body.
     ///
-    /// The comment blanking earns its keep twice here since T-528: the body carries a long comment
-    /// naming `TagSupport.seedDefaultTags` and explaining why it is gone, and the absence check
-    /// below would match that prose and fail on a correct file if it read the raw source.
-    @Test func theStartupSequenceThisSuiteReplaysIsTheOneLaunchActuallyRuns() throws {
+    /// Comments are blanked before reading, so the prose describing a pass cannot stand in for the
+    /// call. That earns its keep twice since T-528: the body carries a long comment naming
+    /// `TagSupport.seedDefaultTags` to explain why it is gone, and the absence check below would
+    /// match that prose and fail on a correct file if it read the raw source.
+    @Test func theLaunchRunsItsFivePassesInThisOrderAndSeedsNothing() throws {
         let source = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
         )
         let body = try #require(
             CadenceSourceScan.functionBody(named: "performStartupMaintenance", in: source),
-            "performStartupMaintenance is gone or its braces do not balance; the replay below is stale"
+            "performStartupMaintenance is gone or its braces do not balance, so this reads nothing"
         )
         #expect(body.count > 200, "the stripped body is too small to be the real one")
 
@@ -86,6 +103,32 @@ struct CadenceFirstLaunchEmptyStoreTests {
             body.contains("reconciledFocusMinutes"),
             "the focus reconcile's answer no longer feeds changedStore, so its repairs are computed and never saved"
         )
+
+        // T-1108. The seam the suite calls through is a seam and not a behaviour change: a launch
+        // passes no `defaults:` and must land on the real suite. A test that reached production by
+        // *moving* production onto its own `UserDefaults` would be a worse imitation than the
+        // replay it replaced.
+        //
+        // Read from this declaration to its own opening brace, not anywhere in the file:
+        // `scheduleRestore` and `clearPendingRestore` in the same file take the same defaulted
+        // parameter, so a file-wide `contains` passes with this one deleted. Measured — that is
+        // what the first spelling of this check did.
+        let declared = try #require(
+            source.range(of: "func performStartupMaintenance"),
+            "startup maintenance is not declared under that name any more"
+        )
+        let bodyOpens = try #require(
+            source.range(of: "{", range: declared.upperBound..<source.endIndex)
+        )
+        let signature = String(source[declared.upperBound..<bodyOpens.lowerBound])
+        #expect(
+            signature.contains("defaults: UserDefaults = CadenceDefaults.store"),
+            "startup maintenance no longer defaults to the real defaults suite, so a launch would read somewhere a test chose: \(signature)"
+        )
+        #expect(
+            source.contains("Self.performStartupMaintenance(in: startupContext)"),
+            "the launch path no longer calls startup maintenance with only the launch's own arguments"
+        )
     }
 
     // MARK: - What a first launch leaves in the store
@@ -100,7 +143,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
         let context = try Self.makeEmptyContext()
 
         try withTemporaryDefaults("CadenceTests.firstLaunch") { defaults in
-            Self.replayStartupMaintenance(in: context, defaults: defaults)
+            Self.launchStartupMaintenance(in: context, defaults: defaults)
         }
 
         let counts = try Self.rowCountsByEntityName(in: context)
@@ -120,10 +163,15 @@ struct CadenceFirstLaunchEmptyStoreTests {
         #expect(try Self.rowCountsByEntityName(in: context)["Tag"] == 1)
     }
 
-    /// Which pass makes the first launch dirty: **none of them.** All four are now written to be
-    /// inert against a store that is empty only because sync has not landed — the symmetry
+    /// Which pass makes the first launch dirty: **none of them.** All five are written to be inert
+    /// against a store that is empty only because sync has not landed — the symmetry
     /// `DataIntegrityRepairService`'s own doc comment argues for, and that the tag seed was the
     /// single exception to.
+    ///
+    /// This one calls the passes individually on purpose, because it asks each one's *answer* and
+    /// `performStartupMaintenance` returns none of them. That is a different thing from replaying
+    /// the sequence, but it drifts the same way, so every term `changedStore` reads is here:
+    /// omitting `CadenceFocusLedger.reconcile` is exactly what T-1108 found in the old replay.
     @Test func noStartupPassReportsAChangeOnAFirstLaunch() throws {
         let context = try Self.makeEmptyContext()
 
@@ -136,10 +184,12 @@ struct CadenceFirstLaunchEmptyStoreTests {
             let repairReport = DataIntegrityRepairService.repairAndRecordFailure(
                 in: context, source: "empty-store-test", saveChanges: false
             )
+            let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)
 
             #expect(migrationReport?.insertedTotal == 0)
             #expect(!synced)
             #expect(repairReport?.changed == false)
+            #expect(!reconciledFocusMinutes, "the focus reconcile raised a counter on an empty store")
             #expect(!context.hasChanges, "a first launch left the store dirty")
         }
     }
@@ -164,7 +214,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
 
         // Launch 1 on the fresh device. The store is empty and stays empty.
         try withTemporaryDefaults("CadenceTests.unsyncedLaunch") { defaults in
-            Self.replayStartupMaintenance(in: context, defaults: defaults)
+            Self.launchStartupMaintenance(in: context, defaults: defaults)
         }
         #expect(try context.fetchCount(FetchDescriptor<Cadence.Tag>()) == 0)
 
@@ -179,11 +229,16 @@ struct CadenceFirstLaunchEmptyStoreTests {
             createdAt: Date(timeIntervalSince1970: 1_600_000_000)
         )
         context.insert(usersOwnTag)
+        // Committed, because a CloudKit import is: the launch below opens a store that already has
+        // this row, rather than inheriting a pending insert from its own test. The replay this test
+        // used to call ended in an unconditional `try? save()` and happened to commit it; a real
+        // launch leaves an unchanged store alone (`guard changedStore, context.hasChanges`).
+        try context.save()
 
         // Launch 2, and every launch after it.
         try withTemporaryDefaults("CadenceTests.unsyncedLaunch2") { defaults in
-            Self.replayStartupMaintenance(in: context, defaults: defaults)
-            Self.replayStartupMaintenance(in: context, defaults: defaults)
+            Self.launchStartupMaintenance(in: context, defaults: defaults)
+            Self.launchStartupMaintenance(in: context, defaults: defaults)
         }
 
         let bugTags = try context.fetch(FetchDescriptor<Cadence.Tag>()).filter { $0.slug == "bug" }
@@ -214,10 +269,13 @@ struct CadenceFirstLaunchEmptyStoreTests {
         // Exactly what `SettingsTagsSection.saveEdits` writes.
         bug.name = "Defect"
         bug.slug = TagSupport.slug(for: "Defect")
+        // Settings commits the rename before the window closes, so the launch below opens a store
+        // that already holds it rather than a context with the edit still pending.
+        try context.save()
 
         try withTemporaryDefaults("CadenceTests.renameSurvives") { defaults in
-            Self.replayStartupMaintenance(in: context, defaults: defaults)
-            Self.replayStartupMaintenance(in: context, defaults: defaults)
+            Self.launchStartupMaintenance(in: context, defaults: defaults)
+            Self.launchStartupMaintenance(in: context, defaults: defaults)
         }
 
         let slugs = try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted()
@@ -569,7 +627,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
     /// list is deliberately this short — a longer one of plausible-looking hooks would widen a
     /// 200-character lookbehind into false positives on dense SwiftUI, and two other checks in the
     /// same test cover what it leaves out: the caller-set pin catches a seed appearing in any new
-    /// file, and `theStartupSequenceThisSuiteReplaysIsTheOneLaunchActuallyRuns` reads the launch
+    /// file, and `theLaunchRunsItsFivePassesInThisOrderAndSeedsNothing` reads the launch
     /// pass's own body directly.
     ///
     /// **`"performStartupMaintenance"` was in this list and could never have fired.** Comments are
@@ -607,14 +665,14 @@ struct CadenceFirstLaunchEmptyStoreTests {
         return ModelContext(container)
     }
 
-    /// `PersistenceController.performStartupMaintenance`, minus the `private`. Pinned to the real
-    /// one by `theStartupSequenceThisSuiteReplaysIsTheOneLaunchActuallyRuns`.
-    private static func replayStartupMaintenance(in context: ModelContext, defaults: UserDefaults) {
-        PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
-        _ = NoteMigrationService.migrateAndRecordFailure(in: context, source: "empty-store-test", saveChanges: false)
-        _ = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
-        _ = DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "empty-store-test", saveChanges: false)
-        try? context.save()
+    /// **A launch. The real one** — `PersistenceController.performStartupMaintenance`, called, not
+    /// imitated (T-1108). See the type comment above for what the imitation had drifted into.
+    ///
+    /// The only argument a launch does not pass is `defaults`, and only because
+    /// `PursuitToGoalMigration` latches its completion flag there: a test writing that into the
+    /// real suite would decide the next unrelated test's migration for it.
+    private static func launchStartupMaintenance(in context: ModelContext, defaults: UserDefaults) {
+        PersistenceController.performStartupMaintenance(in: context, defaults: defaults)
     }
 
     private static func rowCountsByEntityName(in context: ModelContext) throws -> [String: Int] {
