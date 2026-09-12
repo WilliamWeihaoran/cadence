@@ -180,9 +180,17 @@ struct CadenceRowReorderSequenceTests {
     /// `activeTasks` — the one name in that file that carries both the active sort and the hover
     /// freeze — because that is the shape the defect had.
     @Test func everyRowRenumberTakesItsSequenceInOrder() throws {
+        // The sort moved down one type in T-1119, into the span rule the renumber and the notice
+        // now share; the property it carries is unchanged, so this follows it rather than dropping
+        // it. The panel is pinned by delegating to that rule and by holding no sort of its own.
+        let span = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceRowReorderSpan.swift")
+        let spanRule = try CadenceCommitSurfaceScan.declarationBody(named: "ownListSiblings", in: span)
+        #expect(spanRule.contains("scopeTasks.sorted { $0.order < $1.order }"), "the shared row renumber left the `order` sequence")
+
         let panelSupport = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TasksPanelSupport.swift")
         let shared = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: panelSupport)
-        #expect(shared.contains("scopeTasks.sorted { $0.order < $1.order }"), "the shared row renumber left the `order` sequence")
+        #expect(shared.contains("CadenceRowReorderSpan.ownListSiblings("), "the shared row renumber stopped reading the span rule")
+        #expect(!shared.contains(".sorted"), "the shared row renumber grew a second sequence of its own")
 
         let listTab = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/ListDetailComponents.swift")
         let tabDrop = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: listTab)

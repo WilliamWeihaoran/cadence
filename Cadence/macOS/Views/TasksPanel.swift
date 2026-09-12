@@ -140,6 +140,19 @@ struct TasksPanel: View {
                 )
             },
             reorderTask: { droppedID, targetID, scopeTasks in
+                // **Asked before the drop lands, not after it (T-1119).** The question is about the
+                // arrangement this drop is leaving, and `scopeTasks` holds live rows — by the time
+                // `reorderTask` has answered, they carry the orders it just wrote, so a notice
+                // computed afterwards is asked about the wrong sequence. It is still *reported*
+                // afterwards, and only on a drop the store took.
+                let landing = CadenceReorderVisibility.notice(
+                    droppedID: droppedID,
+                    targetID: targetID,
+                    in: scopeTasks,
+                    sortKeyOrder: {
+                        CadenceTaskQuerySupport.todaySortKeyOrder($0, $1, todayKey: todayKey, sortMode: activeSortMode)
+                    }
+                )
                 let reordered = TasksPanelSupport.reorderTask(
                     droppedID: droppedID,
                     targetID: targetID,
@@ -147,14 +160,7 @@ struct TasksPanel: View {
                     modelContext: modelContext
                 )
                 reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
-                reorderOffScreenNotice = reordered ? CadenceReorderVisibility.notice(
-                    droppedID: droppedID,
-                    targetID: targetID,
-                    in: scopeTasks,
-                    sortKeyOrder: {
-                        CadenceTaskQuerySupport.todaySortKeyOrder($0, $1, todayKey: todayKey, sortMode: activeSortMode)
-                    }
-                ) : nil
+                reorderOffScreenNotice = reordered ? landing : nil
                 return reordered
             }
         )

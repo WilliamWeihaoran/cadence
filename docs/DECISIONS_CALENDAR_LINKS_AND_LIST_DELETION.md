@@ -63,6 +63,25 @@ about the whole sentence rather than proposing to drop a clause.
 Where a section below says a ticket is open, read it as the reasoning that led to the decision above
 rather than as the current state.
 
+## Status update, 2026-09-12 — you answered T-1118, and the sentence has changed
+
+**You said: *"Say 'on this device'."*** That is option 2 below, and it has landed. Deleting an empty
+area, project or context on iPhone now reads:
+
+> Nothing else **on this device** is filed under this area — no tasks, notes or saved links will be lost.
+
+**The clause after the dash was kept**, because you asked for the claim to be scoped and not for the
+reassurance to be dropped — dropping it was option 3. The first clause is now the only thing the app
+asserts, and it is a thing the app can check: the delete walks this device's copy of the list
+(`CadenceListDeleteHelpers` reads the local relationship arrays), so "on this device" is exactly the
+extent of what it looked at. Nothing about the delete itself changed; **T-623 stays parked**, which
+is still the recommendation, and this is a copy change in one string.
+
+You will see the new sentence on every empty delete, including the overwhelming majority where there
+is no second device in the story at all. That was option 2's stated cost and it is the one you
+accepted; if the mention of syncing turns out to read as a warning rather than as a scope, say so and
+it is one line back.
+
 *One naming note before you search the ledger:* the id `T-1043` was accidentally handed out twice
 (recorded in T-1072). The one this memo is about is the calendar-link ticket. The other one — text
 sitting on top of an image in a note — was fixed and closed on 2026-09-05 and has nothing to do with
@@ -336,6 +355,6 @@ is a natural next feature.
 ## What each of these needs from you, in one line
 
 - **T-623** — say "stay parked" once, so it stops being re-verified. The sentence that was T-752's
-  is now **T-1118**, which states the three options; picking one is a two-line diff.
+  and then **T-1118** is **answered and landed** — see the 2026-09-12 status update at the top.
 - **T-624** — run the five-minute experiment above and report which of the three sentences you saw.
 - **T-899 + T-1043** — say whether to merge them and schedule one session, or leave both open.

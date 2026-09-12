@@ -314,7 +314,10 @@ struct CadenceReorderCommitSurfaceTests {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TasksPanelSupport.swift")
         let body = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: source)
 
-        #expect(body.contains("CadenceOrderReassignment.moved("), "non-vacuity: not the rearranging body")
+        // Non-vacuity: this is the rearranging body. The `CadenceOrderReassignment.moved(` call it
+        // used to be anchored on moved down one type in T-1119 — into `CadenceRowReorderSpan`,
+        // which decides how much of the sequence the drop may write — so the anchor followed it.
+        #expect(body.contains("CadenceRowReorderSpan.ownListSiblings("), "non-vacuity: not the rearranging body")
         #expect(!body.contains("try? modelContext.save()"), "the row drop swallows its save again")
         #expect(body.contains("CadenceOrderCommit.commit("))
     }

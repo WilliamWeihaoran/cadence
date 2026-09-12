@@ -336,6 +336,10 @@ struct CadenceReorderOffScreenNoticeTests {
     /// **`reordered ?` and not `reordered ? nil :`** — this is the opposite arm from the refusal
     /// line directly above it at each site, and that asymmetry is the assertion. A drop the store
     /// refused moved nothing, so it cannot also have moved somewhere off screen.
+    ///
+    /// **Since T-1119 the question is asked before the drop and reported after it**, so the notice
+    /// is a `let` at each site rather than an expression in the assignment, and the order of the
+    /// two is pinned below.
     @Test func everyRowDropSurfaceReportsAnOffScreenLanding() throws {
         var reporting = 0
         for path in [
@@ -349,12 +353,22 @@ struct CadenceReorderOffScreenNoticeTests {
                 "\(path) retypes the off-screen sentence instead of reading it"
             )
             #expect(
-                source.contains("reorderOffScreenNotice = reordered ? CadenceReorderVisibility.notice("),
-                "\(path) does not ask, on a landed drop, whether the row is visible"
+                source.contains("let landing = CadenceReorderVisibility.notice("),
+                "\(path) does not ask whether the row is visible where it was dropped"
             )
             #expect(
-                source.contains(") : nil"),
-                "\(path) never clears the off-screen notice, so a stale line outlives its drop"
+                source.contains("reorderOffScreenNotice = reordered ? landing : nil"),
+                "\(path) never clears the off-screen notice, or reports one over a drop the store refused"
+            )
+            // **The question is asked before the drop and reported after it (T-1119).** `scopeTasks`
+            // holds live rows, so once `reorderTask` has renumbered them the arrangement the notice
+            // is about is gone — asked afterwards it goes silent on exactly the drops that landed
+            // off screen, which is how this ordering was found.
+            let asked = try #require(source.range(of: "let landing = CadenceReorderVisibility.notice("))
+            let landed = try #require(source.range(of: "TasksPanelSupport.reorderTask("))
+            #expect(
+                asked.lowerBound < landed.lowerBound,
+                "\(path) asks about the arrangement the drop has already overwritten"
             )
             #expect(
                 source.contains("CadenceInlineNotice(text: reorderOffScreenNotice, tone: .informational)"),
@@ -411,6 +425,12 @@ struct CadenceReorderOffScreenNoticeTests {
     /// **End to end, over the drop `CadenceRowReorderSequenceTests` proves springs back.** The
     /// notice fires, the store took the move, and the visible sequence is unchanged — all three at
     /// once, which is the state the sentence describes.
+    ///
+    /// **The notice is taken before the drop, exactly as the three surfaces take it (T-1119).**
+    /// These are live rows: after the commit they hold the orders it just wrote, and *"insert this
+    /// row immediately before the one now immediately after it"* is the no-op
+    /// `CadenceOrderReassignment` names — so the same question asked a second time, of the
+    /// arrangement the drop produced, answers `nil`. Asking before is what the sentence is about.
     @Test func theNoticeFiresOnTheDropThatReallyDoesSpringBack() throws {
         let modelContext = ModelContext(try container())
         let tasks = try datedBoard(in: modelContext)
@@ -419,6 +439,7 @@ struct CadenceReorderOffScreenNoticeTests {
 
         let dropped = try #require(tasks.first { $0.title == "Alpha" })
         let target = try #require(tasks.first { $0.title == "Delta" })
+        let landing = try notice("Alpha", onto: "Delta", in: displayed, field: .date, direction: .ascending)
         #expect(
             TasksPanelSupport.reorderTask(
                 droppedID: dropped.id,
@@ -436,10 +457,7 @@ struct CadenceReorderOffScreenNoticeTests {
             tasks.taskSorted(by: .custom, direction: .ascending).map(\.title) == ["Bravo", "Charlie", "Alpha", "Delta"],
             "and `order` did change — Alpha moved in the custom arrangement, where nothing on screen shows it"
         )
-        #expect(
-            try notice("Alpha", onto: "Delta", in: displayed, field: .date, direction: .ascending)
-                == CadenceReorderVisibility.offScreenNotice
-        )
+        #expect(landing == CadenceReorderVisibility.offScreenNotice)
     }
 
     /// The mirror: the drop that stays put says nothing, and the store agrees it moved.
@@ -460,6 +478,68 @@ struct CadenceReorderOffScreenNoticeTests {
 
         #expect(tasks.taskSorted(by: .date, direction: .ascending).map(\.title) == ["Charlie", "Alpha", "Bravo"])
         #expect(try notice("Charlie", onto: "Alpha", in: displayed, field: .date, direction: .ascending) == nil)
+    }
+
+    /// **T-1119: the notice does not claim a move the drop no longer makes.**
+    ///
+    /// Since *"Reorder within its own list only"*, a cross-list drop that passes none of the dragged
+    /// row's own siblings writes nothing — and still answers `true`, because nothing failed. Drawn
+    /// off that `true` alone, this sentence would say *"Moved, but this sort doesn't show it
+    /// there"* about a row that did not move, which is the false claim this whole type exists to
+    /// prevent.
+    ///
+    /// The pair is the asymmetry this file is built on: the **same** two lists, the same date sort,
+    /// the same drop across a date boundary — silent when nothing was written, and speaking when
+    /// the drag really did pass a sibling of its own.
+    @Test func acrossListDropThatWroteNothingDoesNotClaimAMove() throws {
+        let modelContext = ModelContext(try container())
+        let work = Project(name: "Work")
+        let home = Project(name: "Home")
+        modelContext.insert(work)
+        modelContext.insert(home)
+
+        func row(_ title: String, order: Int, date: String, project: Project) -> AppTask {
+            let task = AppTask(title: title)
+            task.order = order
+            task.scheduledDate = date
+            task.project = project
+            modelContext.insert(task)
+            return task
+        }
+
+        // "Home only" is the one row its list has here, so a drop of it above a Work row passes no
+        // sibling of its own; "Home second" gives the mirror case a sibling to pass.
+        let rows = [
+            row("Work first", order: 0, date: "2026-09-01", project: work),
+            row("Work second", order: 1, date: "2026-09-02", project: work),
+            row("Home only", order: 2, date: "2026-09-03", project: home)
+        ]
+        try modelContext.save()
+
+        #expect(
+            TasksPanelSupport.reorderTask(
+                droppedID: try #require(rows.last).id,
+                targetID: try #require(rows.first).id,
+                scopeTasks: rows,
+                modelContext: modelContext
+            ),
+            "a drop with nothing to write is not a refusal"
+        )
+        #expect(rows.map(\.order) == [0, 1, 2], "non-vacuity: the drop wrote an order after all")
+        #expect(
+            try notice("Home only", onto: "Work first", in: rows, field: .date, direction: .ascending) == nil,
+            "the notice claimed a move for a drop that wrote nothing"
+        )
+
+        // The mirror, one sibling added: the same cross-boundary drop now really does move the row,
+        // and the sentence comes back.
+        let homeSecond = row("Home second", order: 3, date: "2026-09-04", project: home)
+        try modelContext.save()
+        let withSibling = rows + [homeSecond]
+        #expect(
+            try notice("Home second", onto: "Work first", in: withSibling, field: .date, direction: .ascending)
+                == CadenceReorderVisibility.offScreenNotice
+        )
     }
 
     // MARK: - T-1085: the two card drops

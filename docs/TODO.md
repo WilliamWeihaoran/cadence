@@ -5711,6 +5711,47 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Those four tests reached HEAD before this fix did, and that is [[T-679]]'s shared-index hazard in a new spelling.** They were sitting unstaged in the working tree while `mcpwrite2` committed its own edit to the *same file*, so `2c95a84` carried them in. Between that commit and this one, `CadenceTests` did not compile at HEAD: the tests name `SidebarListRegionContent` and `SidebarAddFirstListButton`, which existed only in this agent's tree. Nothing was lost and nothing needed rewriting, but the window is real and `agent-commit.sh`'s foreign-path refusal does not see it — a path the committing agent legitimately touches can still carry somebody else's uncommitted lines.
   Measured: full `-only-testing:CadenceTests` green at 4650 tests in 394 suites, 0 warnings, 0 compile errors. **Mutation-tested 4/4 killed, 0 survived, 0 inconclusive, 0 invalid**, over a baseline green at 22 tests, in the tree that produced the run above. M1 is the one that matters — the bare `ForEach(listSections)`, i.e. the empty sidebar a fresh install saw — killed by `theMacSidebarsListRegionDrawsTheFirstListActionWhenItHasNoSections`. M2 pins `resolve` to `.sections` (the same defect one level down) and M3 to `.firstListAction` (a second create control beside headers that already carry one); M4 puts `ContextSection`'s inline copy of the row back, and is killed by the app-target sweep, which is the guard against the near-copy. The results arrive one commit late because the batch sat second in the test-host queue for 55 minutes while `CadenceTests` did not compile at HEAD, and unbreaking HEAD came first.
 
+- [T-1174] **A cross-list row drop that writes nothing says nothing, and the row just springs back.** Filed 2026-09-12 by `b10land` while landing [[T-1119]].
+  That ticket's answer — *"Reorder within its own list only"* — makes one gesture correctly a
+  no-op: a drag of a row over a row in another list, where the dragged row passes none of its own
+  list's siblings in that section. `CadenceRowReorderSpan.ownListSiblings` answers `nil`,
+  `TasksPanelSupport.reorderTask` writes nothing and answers `true`, and
+  `CadenceReorderVisibility.notice` stays silent so it cannot claim a move that did not happen. All
+  of that is right, and pinned.
+  **What is missing is the third option T-1119 put to the owner and the answer did not buy:** a
+  sentence at the drop, the way [[T-1077]]'s *"Moved, but this sort doesn't show it there."*
+  already handles the other invisible landing. Today the user drags, the row animates back, and
+  nothing explains why — which reads as a gesture that *failed* rather than one that was declined,
+  and is [[T-614]]'s rule in the direction hardest to notice.
+  **Where it would go.** `CadenceReorderVisibility` already owns the one sentence of this kind and
+  already knows the answer: its `notice(droppedID:targetID:in:sortKeyOrder:)` asks the span rule
+  and so can already tell "moved but not shown here" from "nothing to move". A second `String` on
+  that type and a third arm, drawn through the `CadenceInlineNotice(tone: .informational)` all
+  three row surfaces already hold, is the whole shape — an afternoon, not a project.
+  **Not obviously worth building, which is why it is filed rather than done.** It needs copy that
+  is honest about a per-list `order` model without teaching it, and it fires only for people who
+  both arrange rows by hand and use All Tasks. Worth asking the owner for the sentence before
+  writing one.
+
+- [T-1175] **Every row renumber still writes 0…n over the visible slice rather than over the sequence it spans.** Filed 2026-09-12 by `b10land` while landing [[T-1119]] — this is [[T-1055]]'s remaining half, which that entry deliberately left and T-1119 narrowed without closing.
+  **What T-1119 did and did not do.** `CadenceRowReorderSpan.ownListSiblings` narrows a drop to
+  **one list**, so a drag on All Tasks no longer rewrites the arrangement of lists the user was not
+  dragging in. It does not **widen** the renumber to all of that list: the surface still hands in
+  its own slice — one Today group, one All Tasks section, a list's *open* tasks, one kanban column
+  — so `CadenceOrderCommit.commit` still writes 0…n over a subset of a sequence that spans more
+  rows than that, which is exactly what that function's own doc comment forbids.
+  **What is left, with T-1055's measurements still valid.** A list's Tasks tab should pass `tasks`
+  rather than `openTasks(from: tasks)`, so every completed and cancelled row stops holding a
+  colliding `order` — a one-argument change. A Today group and a kanban column are each one
+  container already (`CadenceTaskQuerySupport.listGroupKey` groups Today by container; a list
+  column *is* a container), so they should pass the container's tasks rather than the group's.
+  **Why it is one diff and not four.** [[T-884]] spent a ticket removing exactly the disagreement
+  between row surfaces that landing some-but-not-all of these would put back, and the change wants
+  one mutation-tested commit with `CadenceRowReorderSliceSpanTests` extended over each surface.
+  **The symptom is quiet, which is why this is filed rather than urgent:**
+  `TaskOrdering.fallbackPrecedes` gives a total order regardless, so rows interleave between hidden
+  ones rather than anything visibly breaking.
+
 ## Done
 
 - [T-1096] **CLOSED 2026-09-07 (agent `rescue-rightclick`) — one right-click overlay that reads the point it was handed.** From `docs/audits/2026-09-05/appkit-behavior.md` (AK-1); landed in `8117017`. **The mechanism:** `RightClickActionView.hitTest(_:)` named its `point` argument and never read it, so *any* `.rightMouseDown` anywhere in the window got this view back — the overlay claimed the event wherever the pointer was. It now delegates to a testable `hitTest(_:currentEvent:)` requiring **both** halves: `super.hitTest(point)` for the spatial one — the argument arrives in the **superview's** coordinate system, so a `bounds.contains` would have tested the right point against the wrong rectangle, and the superclass also folds in `isHidden` and a zero-size frame — and `currentEvent.type == .rightMouseDown` for the event one, which still matters because a primary click must fall through to the SwiftUI button underneath.

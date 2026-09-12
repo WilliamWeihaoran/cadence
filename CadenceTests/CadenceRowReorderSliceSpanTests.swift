@@ -358,4 +358,152 @@ struct CadenceRowReorderSliceSpanTests {
         let collisions = Dictionary(grouping: board, by: \.order).filter { $0.value.count > 1 }
         #expect(collisions.keys.sorted() == [0, 1], "the two columns no longer number from the same base")
     }
+
+    // MARK: - T-1119: a drag reorders within its own list only
+
+    /// **The answer to the question this file's measurements raised**, asked of the repository
+    /// owner and answered verbatim: *"Reorder within its own list only."*
+    ///
+    /// The same shape as `atodayDropMovesARowOnTheListsTasksTabThatTodayNeverShowed` above, one
+    /// list further out: All Tasks with the grouping chip on **By Date**, so the Do Today section
+    /// is drawn from two lists at once and a drag inside it names a row in each. Under the
+    /// cross-list renumber this section was renumbered whole, so the other list's row took a new
+    /// `order` from a drag nobody made in it — and on that list's own Tasks tab, a third row that
+    /// was in neither list's section changed places.
+    ///
+    /// What is asserted is both halves of the decision: the dragged row moves among its **own**
+    /// list's rows, and the other list comes out of the drop holding exactly what it went in with.
+    @Test func acrossListDropRenumbersTheDraggedRowsOwnListOnly() throws {
+        let modelContext = ModelContext(try container())
+        let work = Project(name: "Work")
+        let home = Project(name: "Home")
+        modelContext.insert(work)
+        modelContext.insert(home)
+        let todayKey = DateFormatters.ymd.string(from: Date())
+
+        let workFirst = task("Work first", order: 0, project: work, in: modelContext)
+        let workSecond = task("Work second", order: 1, project: work, in: modelContext)
+        let workToday = task("Work today", order: 2, project: work, scheduled: todayKey, in: modelContext)
+        let homeEarly = task("Home early", order: 3, project: home, scheduled: todayKey, in: modelContext)
+        let homeLate = task("Home late", order: 4, project: home, scheduled: todayKey, in: modelContext)
+
+        // `createdAt` is the tie-break every collision falls through to, and it is set so that a
+        // collision is *visible*: "Work today" is older than "Work second", so if a cross-list
+        // renumber ever gives it "Work second"'s order again, it overtakes it on the Work tab.
+        workFirst.createdAt = Date(timeIntervalSince1970: 3_000)
+        workToday.createdAt = Date(timeIntervalSince1970: 3_001)
+        workSecond.createdAt = Date(timeIntervalSince1970: 3_002)
+        homeEarly.createdAt = Date(timeIntervalSince1970: 3_003)
+        homeLate.createdAt = Date(timeIntervalSince1970: 3_004)
+        let all = [workFirst, workSecond, workToday, homeEarly, homeLate]
+        try modelContext.save()
+
+        let workRows = [workFirst, workSecond, workToday]
+        let workTabBefore = customOrder(workRows)
+        #expect(workTabBefore == ["Work first", "Work second", "Work today"])
+
+        // The real All Tasks slice: `TasksListView.sections(from:)` under `.byDate` is
+        // `CadenceTaskQuerySupport.dateDisplayGroups`, and the Do Today group holds both lists'
+        // rows for the day.
+        let section = try #require(
+            CadenceTaskQuerySupport.dateDisplayGroups(from: all, todayKey: todayKey)
+                .first { $0.id == "do-today" }
+        ).tasks
+        #expect(Set(section.map(\.title)) == ["Work today", "Home early", "Home late"])
+        #expect(
+            Set(section.compactMap { $0.project?.name }) == ["Work", "Home"],
+            "non-vacuity: the section this drag is made in does not cross lists"
+        )
+
+        // One drag, inside that section: Home late above Work today.
+        #expect(
+            TasksPanelSupport.reorderTask(
+                droppedID: homeLate.id,
+                targetID: workToday.id,
+                scopeTasks: section,
+                modelContext: modelContext
+            )
+        )
+
+        // Its own list took the move: the two Home rows swapped, which is the whole of what a drag
+        // over a row of another list can mean.
+        #expect(homeLate.order == 0)
+        #expect(homeEarly.order == 1)
+        #expect(customOrder([homeEarly, homeLate]) == ["Home late", "Home early"])
+
+        // And the other list was not written at all — not the row that was in the section, and not
+        // the two that were not.
+        #expect(workRows.map(\.order) == [0, 1, 2], "a row in another list was renumbered by this drop")
+        #expect(
+            customOrder(workRows) == workTabBefore,
+            "a screen the drag was not made on changed because of it"
+        )
+        #expect(
+            customOrder(workRows).firstIndex(of: "Work second") == 1,
+            "a row the user never dragged, in a list the user was not arranging, moved"
+        )
+    }
+
+    /// **The `nil` half of the rule.** A cross-list drop that passes none of the dragged row's own
+    /// siblings has nothing to say in that row's list, so nothing is written anywhere.
+    ///
+    /// The alternative is worse than a no-op rather than merely different: the dragged row would be
+    /// the only member of its filtered sequence, `CadenceOrderCommit.commit` would renumber it to
+    /// `0`, and a drag aimed at a row of another list would silently send it to the top of its own
+    /// list's arrangement. It still answers `true`, because nothing failed.
+    @Test func acrossListDropThatPassesNoneOfItsOwnListsRowsWritesNothing() throws {
+        let modelContext = ModelContext(try container())
+        let work = Project(name: "Work")
+        let home = Project(name: "Home")
+        modelContext.insert(work)
+        modelContext.insert(home)
+        let todayKey = DateFormatters.ymd.string(from: Date())
+
+        let rows = [
+            task("Work A", order: 0, project: work, scheduled: todayKey, in: modelContext),
+            task("Work B", order: 1, project: work, scheduled: todayKey, in: modelContext),
+            task("Home only", order: 2, project: home, scheduled: todayKey, in: modelContext)
+        ]
+        try modelContext.save()
+
+        let section = try #require(
+            CadenceTaskQuerySupport.dateDisplayGroups(from: rows, todayKey: todayKey)
+                .first { $0.id == "do-today" }
+        ).tasks
+
+        #expect(
+            TasksPanelSupport.reorderTask(
+                droppedID: try #require(rows.last).id,
+                targetID: try #require(rows.first).id,
+                scopeTasks: section,
+                modelContext: modelContext
+            ),
+            "a drop with nothing to write is not a refusal"
+        )
+
+        #expect(rows.map(\.order) == [0, 1, 2], "a drop that moved the row past none of its siblings wrote anyway")
+    }
+
+    /// The other four surfaces are one container each, so the rule above is the identity on them —
+    /// which is what lets it live in one place. Measured here on the smallest such surface rather
+    /// than asserted: the same two-row drop as `therenumberWritesNoRowOutsideTheSliceItWasHanded`,
+    /// read through `CadenceRowReorderSpan` directly.
+    @Test func thespanRuleIsTheIdentityOnASliceThatIsAlreadyOneList() throws {
+        let modelContext = ModelContext(try container())
+        let project = Project(name: "Work")
+        modelContext.insert(project)
+
+        let slice = [
+            task("Slice A", order: 3, project: project, in: modelContext),
+            task("Slice B", order: 4, project: project, in: modelContext)
+        ]
+        try modelContext.save()
+
+        let dropped = try #require(slice.last)
+        let target = try #require(slice.first)
+        let siblings = try #require(
+            CadenceRowReorderSpan.ownListSiblings(moving: dropped.id, before: target.id, in: slice)
+        )
+        #expect(siblings.map(\.title) == ["Slice B", "Slice A"], "the span rule dropped a row of the one list it was handed")
+    }
 }

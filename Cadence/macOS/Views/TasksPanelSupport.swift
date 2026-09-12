@@ -298,14 +298,29 @@ enum TasksPanelSupport {
     /// **one list** end up holding the same `order`, and a drag made on Today moves rows on that
     /// list's Tasks tab the user never touched. The span four of the five surfaces want is the
     /// **container** — `CadenceTaskQuerySupport.listGroupKey` groups Today by container and both
-    /// kanban columns sit inside one — and the fifth, All Tasks' cross-list sections, is the open
-    /// question [[T-1119]] puts to the user. Untouched here: this function is about which
-    /// *sequence* is rewritten, not about how much of it.
+    /// kanban columns sit inside one — and widening the renumber to it is still open, as
+    /// [[T-1175]]. What landed below narrows a drop to **one** list; it does not yet widen it to
+    /// all of that list's rows, so a drop still renumbers the slice it was handed.
+    ///
+    /// **What *is* decided is how much of that sequence a drop writes ([[T-1119]]), and it is why
+    /// this renumbers `CadenceRowReorderSpan.ownListSiblings` rather than the whole group.** On All
+    /// Tasks and Inbox a section is drawn from several lists, and a drop used to renumber all of
+    /// them from 0 — rewriting the arrangement of lists the user was not dragging in. Asked what a
+    /// cross-list drag should do, the repository owner answered, verbatim: *"Reorder within its own
+    /// list only."* Rows of every other list now come out of the drop holding exactly the `order`
+    /// they went in with; the rule, and the reason `nil` is success rather than a refusal, are on
+    /// that type.
+    ///
+    /// **It costs nothing on the surfaces that never cross a list.** Today's groups, a list's Tasks
+    /// tab and both kanban columns are one container each, so the filter is the identity there —
+    /// which is what lets this be one rule at one site rather than a cross-list special case bolted
+    /// onto the one panel that has one.
     ///
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
     ///   because a `save()` that throws cannot be provoked out of an in-memory container.
     /// - Returns: Whether the new order is in the store. `false` means every row is back where it
-    ///   was, and the panel must show `CadenceOrderCommit.failureNotice`.
+    ///   was, and the panel must show `CadenceOrderCommit.failureNotice`. A drop with nothing to
+    ///   write answers `true`, because nothing failed.
     static func reorderTask(
         droppedID: UUID,
         targetID: UUID,
@@ -313,11 +328,14 @@ enum TasksPanelSupport {
         modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
-        let sorted = scopeTasks.sorted { $0.order < $1.order }
-        guard let ordered = CadenceOrderReassignment.moved(sorted, droppedID, before: targetID) else { return true }
+        guard let siblings = CadenceRowReorderSpan.ownListSiblings(
+            moving: droppedID,
+            before: targetID,
+            in: scopeTasks
+        ) else { return true }
         return withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
             CadenceOrderCommit.commit(
-                ordered,
+                siblings,
                 readOrder: { $0.order },
                 writeOrder: { $0.order = $1 },
                 in: modelContext,

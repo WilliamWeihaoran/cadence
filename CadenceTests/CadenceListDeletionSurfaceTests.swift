@@ -554,9 +554,13 @@ struct CadenceListDeletionSurfaceTests {
     /// `iOSListDeleteConfirmationSheet`, assembled from `noun` at the call site — the one shape a
     /// whole-literal sweep cannot see, which is exactly how `untitledName` went wrong in T-512.
     ///
-    /// The words are unchanged. What this pins is that there is now one place to change them,
-    /// because T-752's remaining half is a wording decision (carried as T-1118) and it should be a
-    /// one-line decision rather than a hunt through a platform-specific view body.
+    /// What this pins is that there is one place to say it. That mattered when T-1118 was answered:
+    /// the owner's *"Say 'on this device'."* was one string in one file, because this test had
+    /// already made it impossible for a second copy to exist.
+    ///
+    /// **Both wordings are swept, not just the current one.** The needle for the old, unscoped
+    /// claim stays in the sweep, because the failure this guards is a hand-typed copy re-appearing
+    /// in a view body — and the copy most likely to be re-typed is the one that shipped for months.
     @Test func theEmptyListDeleteSentenceIsSpelledOnceOnTheSharedKind() throws {
         // The declaration is on the shared kind; the one surface that draws it reads it.
         try expectOccurrences(of: "nothingElseFiledSentence", at: [
@@ -564,46 +568,78 @@ struct CadenceListDeletionSurfaceTests {
             "Cadence/iOS/iOSListDeletionSupport.swift": 1
         ])
 
-        // And nothing anywhere spells the claim itself. The needle is the part that makes the
-        // completeness assertion, not the reassurance after the dash.
-        let handTyped = "Nothing else is filed under this"
+        // And nothing anywhere spells the claim itself. The needles are the part that makes the
+        // assertion about the store, not the reassurance after the dash: the scoped claim the app
+        // makes today, and the unscoped one T-1118 replaced.
+        let scopedClaim = "Nothing else on this device is filed under this"
+        let unscopedClaim = "Nothing else is filed under this"
         var scanned = 0
         for path in try swiftFiles(under: "Cadence")
         where path != "Cadence/Shared/CadenceListDeletionSummary.swift" {
             let code = try strippingComments(sourceFile(path))
-            #expect(
-                !code.contains(handTyped),
-                "\(path) spells the empty-state claim itself instead of reading CadenceListDeletionKind"
-            )
+            for needle in [scopedClaim, unscopedClaim] {
+                #expect(
+                    !code.contains(needle),
+                    "\(path) spells the empty-state claim itself instead of reading CadenceListDeletionKind"
+                )
+            }
             scanned += 1
         }
         #expect(scanned > 200, "the sweep walked \(scanned) files, so it proved nothing")
 
-        // Non-vacuity, on literal fixtures rather than on the tree: the needle fires on the line
-        // this test removed and stays silent on the line that replaced it.
+        // T-1118 in the source rather than only in the value: the one file allowed to spell the
+        // claim spells the scoped one, and does not spell the unscoped one anywhere — including in
+        // a doc comment, which is why this reads the raw file.
+        let declaration = try sourceFile("Cadence/Shared/CadenceListDeletionSummary.swift")
+        #expect(declaration.contains(scopedClaim), "the shared kind stopped scoping the claim to this device")
+        #expect(
+            !declaration.contains(unscopedClaim),
+            "the unscoped claim T-1118 replaced is back in the file that owns the sentence"
+        )
+
+        // Non-vacuity, on literal fixtures rather than on the tree: each needle fires on the line
+        // that spells it and both stay silent on the line that reads the shared kind.
         #expect(
             #"Text("Nothing else is filed under this \(target.kind.noun.lowercased()) — no tasks, notes or saved links will be lost.")"#
-                .contains(handTyped)
+                .contains(unscopedClaim)
         )
-        #expect(!"Text(target.kind.nothingElseFiledSentence)".contains(handTyped))
+        #expect(
+            #"Text("Nothing else on this device is filed under this \(target.kind.noun.lowercased()).")"#
+                .contains(scopedClaim)
+        )
+        #expect(!"Text(target.kind.nothingElseFiledSentence)".contains(scopedClaim))
+        #expect(!"Text(target.kind.nothingElseFiledSentence)".contains(unscopedClaim))
     }
 
     /// The sentence itself, all three kinds, so a refactor of `noun` cannot quietly reword it — and
-    /// so the wording T-1118 asks about is written down somewhere a diff will show.
-    @Test func theEmptyListDeleteSentenceNamesTheKindAndSaysWhatIsNotLost() {
+    /// so **T-1118's answer is written down somewhere a diff will show**.
+    ///
+    /// The owner's words were *"Say 'on this device'."*, which is option 2 of the three that ticket
+    /// put to them. The claim about the store is scoped to the replica the cascade actually walks
+    /// (`CadenceListDeleteHelpers` reads `area.tasks ?? []` and friends, so an unsynced child is
+    /// not in it); the reassurance after the dash is kept, because dropping it was option 3 and was
+    /// not what was asked for.
+    @Test func theEmptyListDeleteSentenceScopesItsClaimToThisDevice() {
         #expect(
             CadenceListDeletionKind.area.nothingElseFiledSentence
-                == "Nothing else is filed under this area — no tasks, notes or saved links will be lost."
+                == "Nothing else on this device is filed under this area — no tasks, notes or saved links will be lost."
         )
         #expect(
             CadenceListDeletionKind.project.nothingElseFiledSentence
-                == "Nothing else is filed under this project — no tasks, notes or saved links will be lost."
+                == "Nothing else on this device is filed under this project — no tasks, notes or saved links will be lost."
         )
         #expect(
             CadenceListDeletionKind.context.nothingElseFiledSentence
-                == "Nothing else is filed under this context — no tasks, notes or saved links will be lost."
+                == "Nothing else on this device is filed under this context — no tasks, notes or saved links will be lost."
         )
         #expect(Set(CadenceListDeletionKind.allCases.map(\.nothingElseFiledSentence)).count == 3)
+
+        // The two halves of the decision, stated as properties rather than as three literals: every
+        // kind scopes the claim, and every kind keeps the reassurance.
+        for kind in CadenceListDeletionKind.allCases {
+            #expect(kind.nothingElseFiledSentence.contains("on this device"))
+            #expect(kind.nothingElseFiledSentence.contains("no tasks, notes or saved links will be lost"))
+        }
     }
 
     /// The gate it is drawn behind, restated where the sentence now lives: an unread image table

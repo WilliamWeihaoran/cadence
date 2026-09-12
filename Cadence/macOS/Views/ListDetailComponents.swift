@@ -201,6 +201,17 @@ struct ListTasksView: View {
     /// - Returns: Whether the new order is in the store, so the row springs back on a refusal
     ///   rather than sitting in a place nothing holds.
     private func reorderTask(droppedID: UUID, targetID: UUID) -> Bool {
+        // **Asked before the drop lands, not after it (T-1119).** The question is about the
+        // arrangement this drop is leaving, and these are live rows — by the time `reorderTask` has
+        // answered, they carry the orders it just wrote, so a notice computed afterwards is asked
+        // about the wrong sequence. It is still *reported* afterwards, and only on a drop the store
+        // took.
+        let landing = CadenceReorderVisibility.notice(
+            droppedID: droppedID,
+            targetID: targetID,
+            in: tasks,
+            sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
+        )
         let reordered = TasksPanelSupport.reorderTask(
             droppedID: droppedID,
             targetID: targetID,
@@ -208,12 +219,7 @@ struct ListTasksView: View {
             modelContext: modelContext
         )
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
-        reorderOffScreenNotice = reordered ? CadenceReorderVisibility.notice(
-            droppedID: droppedID,
-            targetID: targetID,
-            in: tasks,
-            sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
-        ) : nil
+        reorderOffScreenNotice = reordered ? landing : nil
         return reordered
     }
 

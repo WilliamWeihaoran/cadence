@@ -40,10 +40,34 @@ enum CadenceReorderVisibility {
     /// row.
     ///
     /// It claims the move, because the move happened: the caller only reaches this once
-    /// `CadenceOrderCommit.commit` has answered `true`.
+    /// `CadenceOrderCommit.commit` has answered `true`, and since T-1119 `notice(droppedID:
+    /// targetID:in:sortKeyOrder:)` also refuses to speak for a drop that had nothing to commit.
     static let offScreenNotice = "Moved, but this sort doesn't show it there."
 
-    /// The notice for one drop, or `nil` when the drop is fully visible.
+    /// The notice for one drop, or `nil` when the drop is fully visible — **or when it moved
+    /// nothing at all**.
+    ///
+    /// **The second half is [[T-1119]]'s consequence, and it is what keeps
+    /// `offScreenNotice`'s "it claims the move, because the move happened" true.** Since the owner
+    /// answered *"Reorder within its own list only"*, a cross-list drop that passes none of the
+    /// dropped row's own siblings writes nothing — `CadenceRowReorderSpan.ownListSiblings` answers
+    /// `nil` and `TasksPanelSupport.reorderTask` skips the commit — and it still answers `true`,
+    /// because nothing failed. A notice drawn off that `true` alone would say *"Moved, but this
+    /// sort doesn't show it there"* about a row that did not move: one false sentence replacing the
+    /// one this type exists to avoid. So the same span rule is asked here, from the same shared
+    /// type, rather than being re-derived per surface.
+    ///
+    /// What such a drop should say instead — today it says nothing and the row springs back — is
+    /// the half of T-1119 the owner's answer deliberately did not buy, and is filed as [[T-1174]].
+    ///
+    /// **Ask this BEFORE the drop lands, and report it after.** `tasks` are live model rows: once
+    /// `TasksPanelSupport.reorderTask` has renumbered them, the arrangement this question is about
+    /// is gone, and "insert this row immediately before the one now immediately after it" is the
+    /// no-op `CadenceOrderReassignment` names — so the same question asked afterwards answers `nil`
+    /// on exactly the drops that really did land off screen. All three row surfaces take it into a
+    /// `let` first and assign it on the `reordered` arm;
+    /// `CadenceReorderOffScreenNoticeTests.everyRowDropSurfaceReportsAnOffScreenLanding` pins that
+    /// order, and it is measured rather than reasoned — it was found by a red test.
     ///
     /// - Parameter tasks: the surface's own rows, only so the two ids can be resolved. An id that
     ///   is not in them answers `nil`: a surface that cannot find the row it just moved has nothing
@@ -60,7 +84,9 @@ enum CadenceReorderVisibility {
         sortKeyOrder: (AppTask, AppTask) -> TaskSortKeyOrder
     ) -> String? {
         guard let dropped = tasks.first(where: { $0.id == droppedID }),
-              let target = tasks.first(where: { $0.id == targetID }) else { return nil }
+              let target = tasks.first(where: { $0.id == targetID }),
+              CadenceRowReorderSpan.ownListSiblings(moving: droppedID, before: targetID, in: tasks) != nil
+        else { return nil }
         return sortKeyOrder(dropped, target) == .tie ? nil : offScreenNotice
     }
 
