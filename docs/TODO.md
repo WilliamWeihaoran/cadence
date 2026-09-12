@@ -3659,6 +3659,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   arithmetic is already shared-able (`minutesFromMidnight` plus a `yOffset`), and the dot/no-dot
   split the Mac already has is the same choice iOS needs between its grid and Today.
 
+
+- [T-1135] **Every time the app displays is hard-coded 12-hour AM/PM, ignoring the system's 24-hour setting.**
+  Filed 2026-09-12 by the coordinator, from a finding `hourladder` recorded inside [[T-1130]] while
+  closing [[T-619]] — pulled out to its own id because it is a defect rather than a question, and a
+  finding that lives in another ticket's body is the shape that left [[T-1085]] unnoticed for five days.
+  **MEASURED at `dc0a3dd`.** `DateFormatters.timeString(from:)` (`Cadence/Shared/DateFormatters.swift:363`)
+  builds the string by hand — `h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h)`, `ampm = h < 12 ? "AM" : "PM"` —
+  so it consults no locale and no `Date.FormatStyle`. It has **33 call sites** across both platforms,
+  including the iOS timed grids, the schedule panel, task detail, tracking editors and the markdown
+  task-embed drawing. A user whose Mac or phone is set to a 24-hour clock sees `1 PM` everywhere.
+  **Why this is not covered by [[T-18]].** That ticket backlogs *translation*; this is a system
+  setting the OS already answers, in English, with no localisation work. The App Store listing is
+  English-only by decision, which does not make the clock format an English-only question.
+  **What a fix has to be careful about.** The function takes minutes-since-midnight rather than a
+  `Date`, so it cannot simply defer to a `Date.FormatStyle` without a reference day; and several
+  call sites compare or concatenate its output. Any change needs the same population sweep
+  treatment [[T-976]] used, not a per-file allowlist.
 - [T-623] **CLOSED 2026-09-11 (agent `deletewalk`) — as a recorded decision to park, the shape
   [[T-624]] and [[T-752]] closed in, not as a repair. Re-measured against HEAD a fourth time and
   every figure behind the park held or moved further in its favour; there is no half left that an
