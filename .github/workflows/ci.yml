@@ -56,9 +56,20 @@
 #   * So one full CI pass is roughly 25-40 macOS runner-minutes ≈ $2-$3 per push, or about 5-8
 #     pushes on a plan's included 200-300 macOS minutes.
 #
-# That is why `paths-ignore` below is load-bearing rather than tidy: 106 of this repository's last
-# 120 commits touch only docs/**, AGENTS.md, CLAUDE.md or README.md. Skipping those is an ~88%
-# reduction in billed minutes, and it costs nothing real — no doc change can break a build.
+# That is why `paths-ignore` below is load-bearing rather than tidy: it skips commits that touch
+# only docs/**, AGENTS.md, CLAUDE.md or README.md, and no doc change can break a build.
+#
+# THE RATE IS NOT A CONSTANT, AND THE OLD ONE HAD ROTTED (T-985, re-measured 2026-09-12 at
+# `45c17d6`). This paragraph used to read "106 of this repository's last 120 commits ... an ~88%
+# reduction in billed minutes". Re-measured over the last 120 commits at that revision: **43**, i.e.
+# about 36%. It was true when written, during a docs-heavy stretch. It is a sample of whatever the
+# repository happened to be doing that week, not a property of the filter -- it moved by one inside
+# the single session that re-measured it -- so re-run it before quoting it in a cost argument.
+#
+# The steadier reason to keep the filter, which does not slide with the work mix: **308 of the 430
+# commits that have ever touched docs/TODO.md touch nothing else this workflow would compile.** The
+# ticket ledger is the single most-edited file in the repository -- 430 commits against 70 for the
+# runner-up -- and every edit to it is, by construction, a no-op for every job below.
 # As of 2026-09-04 all three jobs are enabled and running (see the header); the cost was accepted,
 # not avoided. If it ever needs trimming again, `mcp-server` is the one job to keep no matter what:
 # it is the one gate that catches something the local loop structurally cannot.

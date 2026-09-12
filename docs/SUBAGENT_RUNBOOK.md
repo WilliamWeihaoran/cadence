@@ -535,7 +535,15 @@ in-repo caller and cannot have one, and that is a finding rather than an omissio
 wrong cadence — every intra-batch run would see a sibling's freshly declined, perfectly normal
 in-flight hunk, which is the exact case `DECLINED-HUNK-STALE`'s grace period exists *not* to block,
 and `mutate.sh` alone runs it dozens of times per needle. A Swift test cannot reach the ledger at
-all: it lives under `$TMPDIR` and the App-Sandboxed test host's `$TMPDIR` is its own container. So
+all: it lives under `$TMPDIR` and the App-Sandboxed test host's `$TMPDIR` is its own container —
+not because that host cannot spawn a script (it can; it runs this one's `selftest` on every test
+run), but because it would read a different, permanently empty ledger. **And CI cannot either**,
+which is worth saying because it is now the obvious candidate: `ci.yml` does run a guard script
+in-repo since T-977, but a hosted job is a fresh VM with `TMPDIR=$RUNNER_TEMP/`, so the call would
+see an empty ledger and exit 0 on every run — a gate that cannot fail — and `paths-ignore` skips
+`docs/`, which is 308 of the 430 commits that have ever touched `docs/TODO.md` (measured at
+`45c17d6`, T-986). The rule underneath all three: **the gate's state is machine-local, so no caller
+that is version-controlled can see it.** So
 the caller is the 15-minute heartbeat, which is a prompt you write per batch and not a file anyone
 can commit. Put it there, every batch:
 

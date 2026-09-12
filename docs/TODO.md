@@ -2207,15 +2207,43 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Reproduced twice before fixing, including by replaying all 349 commits that have ever touched this
   file, where it fires on exactly the 2 real offenders and none of the other 347.
 
-- [T-985] **The "51 reverted closures" figure was wrong, and the correction is worth keeping.**
+- [T-985] **CLOSED 2026-09-12 (agent `gatefigure2`) — as a recorded decision, the shape [[T-623]] and [[T-624]] closed in: the figure was re-derived from the history rather than inherited from this entry, and what had rotted is the *denominator*, not the finding.** Originally: **The "51 reverted closures" figure was wrong, and the correction is worth keeping.**
   The coordinator read `169d594d`'s net line delta (187 insertions, 136 deletions) as a ticket count
-  and reported 51 tickets silently reverting from closed to open. Measured by w2 across **all 349
-  commits that have ever touched this file**: there are **4 closure reversions in 2 commits** —
-  `169d594d` reverted T-679, T-719 and T-787 inside a commit about three unrelated instruments, and
-  `f566723b` deduped T-777 by deleting the CLOSED copy and keeping the open one — plus 3 ids dropped
-  outright at `169d594d`, before [[T-679]]'s id guard existed. The drift [[T-975]] describes was
-  real and 27 tickets were genuinely fixed-but-open; the *mechanism* was mostly closures **never
-  written**, not closures reverted. Do not re-cite the 51.
+  and reported 51 tickets silently reverting from closed to open.
+  **RE-MEASURED 2026-09-12 at `45c17d6`** by replaying every commit that has ever touched either
+  ledger file through `agent-commit.sh`'s own `ledger_ids` / `ledger_closed_ids` readings, copied
+  verbatim into a throwaway script. Nothing below is inherited from the paragraph above it.
+  - **Closure reversions: still exactly 4 ids in 2 commits.** `169d594d` reverted T-679, T-719 and
+    T-787 inside a commit about three unrelated instruments; `f566723b` deduped T-777 by deleting
+    the CLOSED copy and keeping the open one. Both predate the guard — `LEDGER-CLOSURE-LOST` landed
+    at `f72b1fd` on 2026-09-05, at 351 ledger commits — so across the 79 commits since it has
+    refused nothing, because there has been nothing to refuse.
+  - **The denominator has moved, and it is quoted as if it were a constant: 430, not 349.**
+    `docs/TODO.md` had been touched by 349 commits on 2026-09-05 and by **430** at `45c17d6`. This
+    is not a slow drift: it moved 429 → 430 *during the session that wrote this entry*, when a
+    sibling landed mid-verification, and the CI figure below moved 44 → 43 in the same minutes.
+    A count over this file's history is a measurement with a timestamp, never a property. The stale
+    pair `349`/`347` is still in `scripts/agent-commit.sh`, which now quotes **two different
+    denominators for one population** — see [[T-1146]].
+  - **Where the 51 came from, confirmed arithmetically.** `git show --stat 169d594d -- docs/TODO.md`
+    is `187 insertions(+), 136 deletions(-)`, and 187 − 136 = 51 exactly. One commit's net *line*
+    delta, reported as a ticket count over all of history. Do not re-cite the 51.
+  - **The 3 ids dropped outright at `169d594d` are T-780, T-781 and T-782.** The entry gave the
+    count and not the ids; an id is the part a later reader can check.
+  - **`docs/TODO_DONE.md`: 11 commits of its own, 0 closure reversions, 0 ids dropped.** Measured
+    here for the first time — and it is guarded by neither instrument, which is [[T-1145]].
+  **A second frozen figure, found the same way and corrected in the same commit.**
+  `.github/workflows/ci.yml`'s header justified `paths-ignore` with *"106 of this repository's last
+  120 commits touch only"* the ignored paths — an "~88% reduction in billed minutes". Measured at
+  `45c17d6` by the same replay: **43 of the last 120**, about 36%. The cut is still clearly worth
+  having, and for a reason that does not slide with the week's work mix: **308 of the 430 commits
+  that have ever touched `docs/TODO.md` touch nothing else CI would compile**, and that file is the
+  most-edited in the repository by a factor of six. The workflow now says so.
+  **MEASURED versus TAKEN ON TRUST.** Every number above is measured at `45c17d6`. Two claims in the
+  original entry were *not* re-derived and are left standing as its author's: [[T-975]]'s "27
+  tickets were genuinely fixed-but-open", which rests on a definition of "fixed" this replay cannot
+  see, and the reading that the mechanism was mostly closures **never written** rather than closures
+  reverted — which the 4-versus-27 gap supports but does not establish.
 - [T-984] **CLOSED 2026-09-05 (`f72b1fd`).** **As a decision not to narrow.** A copy behind HEAD carrying deletions is byte-identical to an agent on HEAD who deleted the newer lines plus one more, so no function of the worktree and the history separates them; mtime, the only non-content candidate, is fresh on the very reconstruction it is aimed at. The construction is written into the script header. Those paths are now named `cannot tell` rather than folded into in-flight, and mode 3f pins the non-refusal so a later narrowing has to argue with the paragraph. **Filed as:** **A copy that is behind HEAD *and* has deletions reads as in-flight.**
   `scripts/worktree-drift.sh` finds the newest revision whose every non-trivial line the worktree
   still contains. A stale copy with lines removed contains no such revision, so it is reported as
@@ -2240,18 +2268,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the call in the heartbeat prompt itself, as step 2, ahead of batch work.** What remains is the
   runbook line so the next coordinator does the same; until then it is reachable only by memory.
 
-  **RESOLVED IN THE CHECKOUT 2026-09-06, NOT YET IN HEAD** -- same gate as [[T-992]].
-  The remaining half was the runbook line, and it is now in `docs/SUBAGENT_RUNBOOK.md` under
-  "Committing out of a shared checkout": `check` is **step 2 of the coordinator heartbeat**, ahead
-  of batch work, with the reasoning for why it cannot be a file in this repository beside it, so
-  the next coordinator does not have to re-derive it.
-  **And the gap it left is now covered by something nobody has to remember.** The argument against
-  `xcb.sh` was about *gating* -- every intra-batch run would see a sibling's freshly declined,
-  perfectly normal in-flight hunk, the exact case `DECLINED-HUNK-STALE`'s grace exists not to
-  block, and `mutate.sh` alone runs it dozens of times per needle. That argument does not reach
-  *reporting*. `scripts/xcb.sh` now lists outstanding records at the end of **every** run with each
-  record's age and how many minutes until it walls off the checkout, and never touches `$STATUS`.
-  See [[T-781]].
   **CLOSED 2026-09-06 (commitres; landed by `requeue`)** -- same commit as [[T-992]].
   The remaining half was the runbook line, and it is now in `docs/SUBAGENT_RUNBOOK.md` under
   "Committing out of a shared checkout": `check` is **step 2 of the coordinator heartbeat**, ahead
@@ -2264,6 +2280,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   *reporting*. `scripts/xcb.sh` now lists outstanding records at the end of **every** run with each
   record's age and how many minutes until it walls off the checkout, and never touches `$STATUS`.
   See [[T-781]].
+  **RE-EXAMINED 2026-09-12 at `45c17d6` (agent `gatefigure2`), because the premise had acquired a
+  new candidate: `.github/workflows/ci.yml` now runs a guard script in-repo.** [[T-977]] closed
+  exactly this shape by putting `real-tree-sweep-manifest.sh selftest` in the `macos-tests` job, so
+  "a hosted runner can call a guard script" is true today and was not true when this was filed. It
+  still does not reach `check`, and the reason is stronger than the cadence argument above:
+  **the gate's state is not in the repository.** `LEDGER` is
+  `${CADENCE_DECLINED_LEDGER:-${TMPDIR}cadence-declined-hunks}` — per-machine, per-boot, outside the
+  checkout. A hosted job is a fresh VM with `TMPDIR=$RUNNER_TEMP/` and so an empty ledger on every
+  run: the call would exit 0 unconditionally, a gate that cannot fail, which is the silent-skip
+  shape this repository keeps getting bitten by. `paths-ignore` compounds it — measured at
+  `45c17d6`, **308 of the 430 commits that have ever touched `docs/TODO.md` touch nothing else**, so
+  CI would not start at all on most of the commits that create these records. The App-Sandboxed test
+  host fails for the same reason and *not* for [[T-959]]'s: it can spawn `/bin/zsh -f <script>`,
+  which is how `CadenceGuardScriptSelftestTests` already runs this script's own `selftest` — but its
+  `$TMPDIR` is its own container (`~/Library/Containers/com.haoranwei.Cadence/Data/tmp`, which
+  exists and holds no `cadence-declined-hunks`), so it would read a different, permanently empty one.
+  **So: no in-repo caller, for a reason that survives CI's arrival.** A gate whose state is
+  machine-local cannot have a caller that is version-controlled — and both candidates that look like
+  counterexamples fail by returning success, not by erroring. `docs/SUBAGENT_RUNBOOK.md` carries
+  this leg too, so the next coordinator meets the CI answer where they meet the question.
+  **Also repaired here: this entry was one of [[T-1142]]'s four duplicated bodies.** It carried its
+  closure paragraph twice, the first copy under a "RESOLVED IN THE CHECKOUT ... NOT YET IN HEAD"
+  heading that stopped being true the moment it landed. [[T-1142]] repaired T-991 and T-992 and left
+  this one and T-781 standing because this one belonged to a live sibling — that was me. The stale
+  copy is gone and the surviving text is unchanged, so [[T-1136]]'s remaining instance is T-781 alone.
 
 - [T-977] **CLOSED 2026-09-05 (`452c8037`).** Wired into `ci.yml`'s `macos-tests` job rather than into `CadenceGuardScriptSelftestTests` -- **checked first, and the established pattern would not have worked**: the sandboxed host cannot spawn what that selftest needs ([[T-959]]), so the in-target version would have been permanently red or permanently skipped. Reasoned, not measured: no hosted run was triggered. **Filed as:** **`scripts/real-tree-sweep-manifest.sh selftest` is a check nothing runs.** [[T-873]] fixed the
   regenerator and pinned the fix with a `selftest` subcommand that drives the script against a
@@ -3778,6 +3819,9 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1139] **Nothing compares the build-free sweep precheck's answer with the authoritative scan's, so today's exact agreement will decay silently.** Filed 2026-09-12 by `sweepderive` while closing [[T-1092]]. **MEASURED at `08c84bc`:** `scripts/real-tree-sweep-manifest.sh <id> precheck` now reproduces all 280 entries of `CadenceTests/CadenceRealTreeSweepManifest.txt` with 0 false positives, in 2.6s, with no build — but that number lives in a comment in the script's header and in a command a human has to type. `CadenceTestTargetHygieneTests.theCheapPrecheckLooksForExactlyTheWalkNeedlesTheScanDoes` compares the two readers' **needles** and nothing compares their **answers**, so the precheck can lose a whole family of sweeps (as it had, silently, for the 46 this ticket's parent recovered) while still reporting a clean tree and still passing every test. The natural home is `CadenceGuardScriptSelftestTests`, which already shells out to a guard script from the test host and already chains `precheck-selftest`; the check is "run the precheck over every file in `CadenceTests/` against the committed manifest, and require it to name exactly the manifest's entries". Note that a strict equality makes the precheck's *incompleteness* a test failure, which is not what [[T-1092]] argues for — the honest assertion is probably "no false positives, and these named shapes are still reached", i.e. positional rather than a recall percentage.
 - [T-1140] **The startup-pass list in `noStartupPassReportsAChangeOnAFirstLaunch` is still hand-maintained, which is the drift [[T-1108]] just closed one layer along.** Filed 2026-09-12 by `sweepderive` while closing [[T-1108]]. That test calls the five launch passes individually on purpose, because it asks each one's **answer** and `PersistenceController.performStartupMaintenance` returns none of them — but a hand-written list of the passes is exactly what the replay was, and it had already drifted once: the focus reconcile was missing from it too, and was added by hand in the same commit. Nothing fails if a sixth pass joins `changedStore` and not this test. The shape of a fix: have `performStartupMaintenance` return the terms `changedStore` is built from (a small struct, or the `Bool` it already computes) so the test reads production's own answer, or derive the expected pass list from the function body the way `theLaunchRunsItsFivePassesInThisOrderAndSeedsNothing` already reads it for ordering and assert the two lists match.
+- [T-1145] **`docs/TODO_DONE.md` is a ledger to `is_any_ledger_path` and not to `is_ledger_path`, so `LEDGER-IDS-LOST` and `LEDGER-CLOSURE-LOST` never read it.** Filed 2026-09-12 by `gatefigure2` while re-deriving [[T-985]]. `scripts/agent-commit.sh` carries two ledger predicates: `is_any_ledger_path` (both files — `LEDGER-ID-UNFILED`, `LEDGER-CLOSURE-BURIED`, `LEDGER-ID-DUPLICATE`, `LEDGER-ENTRY-DUPLICATED`) and `is_ledger_path` (`TODO.md` alone — the id-loss and closure-reversion guards). A commit that drops an id from the archive, or reverts an archived closure, is therefore refused by nothing, and the archive is where every retired ticket and 118 unmarked Done entries live. **MEASURED at `45c17d6`, which is why this is a stub and not an alarm:** replaying all 11 commits that have ever touched `docs/TODO_DONE.md` through those same readings finds **0 closure reversions and 0 ids dropped**, so nothing has been lost yet and the widened guard would be enforceable at zero today rather than baselined. The narrowness may well be deliberate — an entry moving from `TODO.md` to the archive is in both files by construction, which is the window `LEDGER-ID-DUPLICATE` already tolerates by name — but the file says nothing either way. Either the widened predicate or one sentence saying why not; both beat the current silence.
+- [T-1146] **`scripts/agent-commit.sh` now quotes two different denominators for one population, five hundred lines apart, and one of them is out by 81.** Filed 2026-09-12 by `gatefigure2` while closing [[T-985]]. `ledger_closed_ids`'s header reads *"Replayed over all 349 commits that have ever touched docs/TODO.md ... none of the other 347"* (`:275`); the `LEDGER-ENTRY-DUPLICATED` header added the same day reads *"all 428 `docs/TODO.md` commits"* (`:1091`). **MEASURED at `45c17d6`: 430.** Neither author was wrong — 349 was true on 2026-09-05 and 428 on 2026-09-12 — and that is the point: the count moved 429 → 430 *during a single session*, when a sibling landed mid-verification. The findings behind both numbers are unchanged (the closure reading still fires on exactly its two commits, now against 428 others), so this is stale prose in front of a reader rather than a wrong guard. It was not fixed in the commit that found it because a sibling had that file open with 266 uncommitted lines, and declining them to correct a comment would have stranded a hunk. The fix is probably not a third number: say what the replay *asked*, date the answer, and let whoever re-runs it supply the count — which is the discipline [[T-985]] exists to record.
+- [T-1147] **`xcb.sh`'s warning counter is `grep -c 'warning:'`, the loose pattern this repository already banned for errors on the line above it — and it reports 1 on every FULL build at HEAD.** Filed 2026-09-12 by `gatefigure2`, who hit it: a clean `CadenceTests` run reported `warnings: 1` against a stated baseline of zero. **MEASURED across four runs in this batch's own logs, and the split is exact.** The two full builds (1014 `SwiftCompile` tasks each) both report `warnings: 1`; the two partial ones (683 and 22 tasks) report 0. The single line matched in both is `appintentsmetadataprocessor[...] warning: Metadata extraction skipped. No AppIntents.framework dependency found.` — a tool notice from the AppIntents metadata stage, not a compiler diagnostic. `grep -cE '\.swift:[0-9]+:[0-9]+: warning:'` returns **0** on all four. The counter is therefore inverted against the rule directly above it in `AGENTS.md`: that rule says a warning count is only trustworthy from a run that actually rebuilt the file, and it is precisely those runs that report the phantom 1, while the vacuous incremental runs report the reassuring 0. `scripts/xcb.sh:700` already uses the anchored pattern for errors and `:701` uses the loose one for warnings — adjacent lines, one lesson applied to one of them. Two things to decide: anchor the warning count (keeping a separate loose count so genuine tool noise stays visible rather than hidden), and say in `AGENTS.md` that "baseline zero" means zero *compiler* warnings — otherwise every agent who reads the banner literally after a cold build goes hunting for a regression that is not there.
 
 - [T-623] **CLOSED 2026-09-11 (agent `deletewalk`) — as a recorded decision to park, the shape
   [[T-624]] and [[T-752]] closed in, not as a repair. Re-measured against HEAD a fourth time and
