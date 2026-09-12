@@ -39,7 +39,7 @@ do {
     // `CadenceMCPToolContractTests.theTwoAdvertisedServerVersionsAreOneNumber` now pins the pair.
     let server = Server(
         name: "cadence-mcp",
-        version: "0.8.0",
+        version: "0.9.0",
         capabilities: .init(tools: .init(listChanged: false))
     )
     let router = CadenceMCPToolRouter(readService: readService, writeService: writeService, writesEnabled: writesEnabled)

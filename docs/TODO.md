@@ -146,6 +146,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Selftest measured 2026-09-12: **11 properties, 0 failures**. `AGENTS.md` and
   `docs/AGENTS_REFERENCE.md` carry the calibrated form.
 
+- [T-1181] **`NoteMigrationService`'s three core-note accessors commit with a bare `try context.save()`, which is neither theirs to call nor confined to the row they created.** Filed 2026-09-12 by `mcpwrite3` while closing [[T-1121]]. `dailyNote(for:in:)`, `weeklyNote(for:in:)` and `permanentNote(in:)` each fetch, and when nothing matches they `context.insert(note)` and then `try context.save()` on the spot. Two consequences, both measured while wiring the MCP undo sweep. **(a) The save is not scoped to the note.** `save()` commits *everything* pending in that `ModelContext`, and this app and the MCP write service each hold exactly one. So an accessor that is only supposed to answer "which note is today's" commits whatever else the caller had in flight, from a call site that never mentions it. **(b) It is un-undoable by anyone above it**, which is the half that bit. `CadenceWriteService.appendCoreNote` now takes a `commit:` seam and un-does its append when the commit is refused — but the note *row* is already in the store by then, committed by this accessor through `ModelContext.save()` directly rather than through the caller's seam, so the refusal leaves an empty core note behind. That arm names the residue in its error text (`CadenceWriteError.coreNoteCreatedButNotAppended`) and `aRefusedCoreNoteAppendUndoesTheTextAndNamesTheNoteItCannotRemove` pins it, which is honest but is not a fix. The shape the repository already has for this is `CadencePendingChangePersistence.commitInsert(of:in:commit:)` plus a `commit:` parameter, which is exactly what `NoteMigrationService.createPermanentNote` was given for T-1071 — these three were left on the old spelling. Not urgent: on the app side the accessors run under a user action that was about to save anyway, and no defect has been observed from (a). What makes it worth an id is that (b) is now *load-bearing* on one surface: the only reason `append_core_note` cannot promise a clean failure is this line. Whoever takes it should route all three through `commitInsert` with a defaulted `commit:`, and then delete the `coreNoteCreatedButNotAppended` branch and its test rather than leaving a claim about a residue that no longer occurs.
+
+- [T-1182] **Nothing on the MCP write surface moves a list, and `update_container` deliberately does not.** Filed 2026-09-12 by `mcpwrite3` while closing [[T-1120]]. `update_container` can re-file a list under a different context, and it leaves `order` exactly as it found it — matching `EditListSheet` and `iOSListEditorViews`, which both assign `context` on a move and renumber only on create. That agreement is right and it leaves a gap: `CadenceMCPOrdering.precedes` breaks an `order` tie on the **name**, so a list moved into a context where some sibling already holds its number interleaves alphabetically rather than landing anywhere the caller chose, and this surface has no way to say where it should go. Three stored fields are unreachable from the surface for the same "not in scope" reason and are worth deciding together: `order` (both lists and contexts — `create_context`/`create_container` set it once and nothing ever changes it), `linkedCalendarID` (T-390 treats the identifier as opaque; writing one from MCP means binding a user's calendar with no picker, which may well be the right refusal), and the `hideDueDateIfEmpty` / `hideSectionDueDateIfEmpty` pair (pure display preferences, cheap and harmless). Not urgent — nothing measured needs any of them — but "can this surface reorder?" is the first question a seeding job asks after "can it rename?", and the answer today is discoverable only by reading the schema.
+
 - [T-1169] **CLOSED 2026-09-12 (agent `defaultsown`) — half falsified against the source, half real and narrowed, and nothing routed.** The headline said an agent's Cadence *writes* the accent id into the shared app-group suite. It does not, on a cold start or on any start: `storeSelected` is reached from exactly one place in `Cadence/` or `CadenceWidgets/` — `CadenceAccentPalettePicker.swift:45`, `action: { selection.select(palette) }` — and `CadenceAccentPaletteSelection.select` returns early on `palette != resolution.palette`. A launch only ever *reads*: `Theme.accents` resolves `CadenceAccentPaletteSelection.shared.resolution`, whose `init` calls `loadSelected`. So the owner's widget cannot change colour unless an agent clicks a palette row in Settings, and the T-735-shaped bug this was filed against does not exist for the accent. **What is real, and is the whole residue:** `CadenceWidgetRefreshCenter` writes `cadence.widgets.lastReloadAt` into that suite from `macOSRootView.swift:326`, on every scene phase change away from `.active` — so an agent's launch does write the owner's app-group plist, and `reloadAllTimelines()` beside it makes the owner's widgets redraw. `markTaskCompleted` and `markHabitChanged` add `cadence.widgets.today.recentlyCompletedTasks` and `…habits.recentlyChangedHabits` if the agent completes anything. **Measured:** that plist held one key throughout — `{'cadence.widgets.lastReloadAt': 1788793125.8544478}` — and came out of a full `CadenceTests` run byte-identical at `sha256 ae833f76…` (mtime moved 18:17:29 → 18:47:29; a `cfprefsd` rewrite of the same bytes, which is why this has to be hashed rather than stat'ed). The `run-macos-app.sh start`/`stop` half is **still unmeasured and could not be**: the launcher refuses while `/Applications/Cadence.app` is up (`scripts/run-macos-app.sh:85`), and it was up for this whole session. Filed as [[T-1176]] rather than left inside a closed ticket. **Not routed, deliberately**: `Theme` and `CadenceWidgetRefreshCenter` keep their app-group store and stay in `CadenceDefaultsRoutingSweepTests.sharedTargetSites`, now the only two entries.
 
 - [T-1170] **CLOSED 2026-09-12 (agent `defaultsown`) — the two services route, the test host asks for a suite of its own, and the owner's plist came out of a full run byte-identical.** **Reproduced first, independently, at `6d56b91`.** A sibling's ordinary `xcb.sh b10land test -only-testing:CadenceTests` was hashed either side: owner `sha256 09bdb70e…` → `b1a9b54d…`, **86 keys before and 86 after**, and the only values that moved were `noteMigration.lastReport.v1` and `dataIntegrityRepair.lastReport.v1`, carrying `finishedAt` **810945654.34 = 2026-09-12 22:40:54 UTC**, inside that run. Before it the same file held a repair report stamped 19:42:26 UTC whose `source` was `mcp-write-service-context` — the string `CadenceWriteService.swift:486` passes — so the person's stored *last repair* had been an agent's for hours. Watching the file at 10s intervals through that run also caught the guard working and then losing: the hash left `09bdb70e…` and returned to it at 22:26:25/22:26:35 and again at 22:28:37/22:28:47 — `PreservedLaunchReportsTrait` snapshotting and restoring — and ended somewhere else anyway, which is what a per-test save/restore does when Swift Testing runs suites in parallel. **The fix is two halves and needs both.** (1) `Cadence/Shared/CadenceDefaults.swift` is in `CadenceMCPServer`'s Sources phase now, so `DataIntegrityRepairService` and `NoteMigrationService` resolve through `CadenceDefaults.store` like everything else and their exemptions are gone from `sharedTargetSites`. (2) the shared scheme's `TestAction` passes `-CadenceSuiteName xctest-host`, so the store they route *to* under `xcodebuild test` is a private suite. Routing alone changes nothing — with no launch argument `CadenceDefaults.store` **is** `UserDefaults.standard`, which is exactly why T-745 could do it to a hot file. **The acceptance measurement.** `xcb.sh defaultsown test -only-testing:CadenceTests`, 22:45:27Z → 23:14:17Z, 4823 tests in 405 suites, 1018 Swift compile tasks, 0 warnings: owner `b1a9b54dde784d1295e09b2912889272935b621cbeb345567fb496609cf2d175`, 50953 bytes, **mtime 18:42:09 before and after** — the file was not opened for writing at all. **The leak was wider than two keys.** `com.haoranwei.Cadence.agent.xctest-host.plist` came out of that run holding **four**: the two reports, plus `mainSidebarWidth` = 264.0 against the owner's 249.6484375 and `scheduleRememberedScrollHour` = 12 against the owner's 0. Those two are `@AppStorage` in `macOSRootShellViews.swift:11` and `SchedulePanel.swift:76` — the person's own sidebar width and remembered scroll hour, not a diagnostic archive — and they were aimed at the same domain. **Enforcement.** `CadenceDefaultsRoutingSweepTests` gained `noTestInThisTargetWritesTheSignedInPersonsOwnPreferences`, the app rule applied to `CadenceTests/` minus `UserDefaults(suiteName:` (a test opening a store of its own is the point of `withTemporaryDefaults`), with a ledger that pins **occurrences, not files** — 12 in `CadenceAgentDefaultsIsolationTests`, 1 in `CadenceAccentPaletteTests` — because every allowlist this repository has been bitten by vouched for a whole file after earning one line. And `theTestHostResolvesItsPreferencesToTheXCTestSuite` asks the running process rather than the scheme text: `isPrivateSuite(CadenceDefaults.store)`, then a probe round-tripped through a freshly opened `com.haoranwei.Cadence.agent.xctest-host`, because `suiteName(forAgentID:)` falls back to the shared domain for a malformed id silently and by design. **Residue, and it is the user's call:** the two report values already in their plist are an agent's, and this fix cannot remove them — [[T-1177]].
@@ -1364,36 +1368,122 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `insert(GoalListLink(...))`). Not urgent: nothing measured needs one. Doing even *one* of them
   turns four list tools from a scan into an execution, which is the argument for starting with
   whichever is cheapest rather than all six.
-- [T-1120] **Nothing on the MCP write surface renames, archives or deletes a list or a context —
-  and the deletion half needs a decision, not an implementation.** [[T-1095]] leg (c).
-  `update_task` is still the only editor on the surface for anything that is not a kanban column:
-  there is no `update_container` (name, description, colorHex, icon, contextId, areaId, dueDate,
-  status) and no `update_context` (name, colorHex, icon, archived). Both are ordinary additive
-  tools over fields that already exist, and both need `create_container`'s refusal set — an
-  `areaId` or a `dueDate` sent to an `area` is a shape error, not an id error. **Deletion is the
-  part to stop and think about.** `ListDeleteHelpers.deleteArea` / `deleteProject` / `deleteContext`
-  are recursive cascades that take a list's tasks, notes, links, goal links, image assets and
-  nested projects with it; this path has no confirmation, no undo and `mcp-audit.log` for a record,
-  and the app's own dialogs read the categorical sentence in
-  `Shared/CadenceListDeletionSummary.swift` before proceeding. Removing a *column* is the same
-  question one size down and is refused by `update_container_columns` for the same reason —
-  archiving is offered instead. Decide deletion on its own before building it.
-- [T-1121] **Every MCP write arm except `update_container_columns` inserts with no undo, on a
-  `ModelContext` that outlives the call.** Found while landing [[T-1095]], which added the missing
-  half for one arm. `CadenceWriteService.saveNotifyAndAudit` now takes `undo:` and commits through
-  `CadencePendingChangePersistence.commitEdit`, and the type is compiled into `CadenceMCPServer`'s
-  Sources phase — so the fix is available and unapplied. The default `undo` is `{}`, which is the
-  honest description of `createContext`, `createContainer`, `createTask` (task **and** its
-  subtasks — `commitInsert` takes a list for exactly this), `appendCoreNote`'s missing-note branch,
-  and the recurrence spawns inside `completeTask`, `cancelTask` and `bulkCancelTasks`. Each of
-  those is an **insert**, so the right call is `commitInsert(of:in:commit:)`, not `commitEdit`: a
-  refused commit must un-insert the objects rather than roll the context back, which would discard
-  whatever else is pending. Why it matters here more than in a view: this service holds **one**
-  long-lived context per server process, so a swallowed-then-abandoned insert waits for the next
-  unrelated tool call's `save()` — a create the caller was told had failed, arriving later under
-  another call's name in `mcp-audit.log`. The `commit:` seam T-1095 added to both initialisers is
-  what makes each one testable.
+- [T-1120] **CLOSED 2026-09-12 (agent `mcpwrite3`) — the MCP write surface can now rename, re-file
+  and retire a list or a context, and the deletion half is settled as a refusal with two measured
+  reasons rather than left open.** Two additive tools, `update_context` and `update_container`,
+  take the surface from 33 to 35 and its write half from 11 to 13. **The ticket's premise about
+  the population was right and its arithmetic is worth restating**: the write arms before this were
+  `create_context`, `create_container`, `update_container_columns`, `create_task`, `update_task`,
+  `schedule_task`, `complete_task`, `reopen_task`, `cancel_task`, `bulk_cancel_tasks` and
+  `append_core_note` — eleven, measured off `CadenceMCPToolRouter`'s `requireWriteService` arms and
+  `CadenceMCPToolDefinitions.writeToolNames`, which
+  `CadenceMCPToolContractTests.writeGatingAgreesAcrossDefinitionsRouterAndSmokeTest` keeps equal to
+  `smoke-test.py`'s `WRITE_TOOLS`. `update_context` takes `name`, `colorHex`, `icon` and
+  `isArchived`; `update_container` takes `name`, `description`, `colorHex`, `icon`,
+  `contextId`/`clearContext`, `areaId`/`clearArea`, `dueDate`/`clearDueDate` and `status`. **No
+  model change** — `Context.isArchived`, `Area.statusRaw` and `Project.statusRaw` are all existing
+  stored fields, so no CloudKit record type moved and no archive flag was re-typed.
 
+  **Deletion is refused, and the reason is not the one the ticket expected.** The ticket framed it
+  as a data-safety decision — no confirmation, no undo, `mcp-audit.log` for a record. That framing
+  is true and it is not the binding constraint, because an undo *is* available for a delete
+  (`CadencePendingChangePersistence.commitCascade` is exactly it, and the cascades already return
+  `false` for the caller to roll back). Two other things are, either alone sufficient:
+
+  - **The cascade is not reachable from this target.**
+    `Cadence/Services/CadenceListDeleteHelpers.swift` is not in `CadenceMCPServer`'s explicit
+    Sources phase, and putting it there pulls in `MarkdownImageAssetService`,
+    `CadenceMarkdownSourceInventory` and `CadenceTaskMutationSupport` — and that last one calls
+    `NotificationManager.shared.cancel(taskIDs:)`, as `deleteContext` itself calls
+    `NotificationManager.shared.cancel(habitIDs:)`. `NotificationManager` lazily touches
+    `UNUserNotificationCenter.current()` behind a guard (`isTestEnvironment`) that covers an
+    XCTest host and an Xcode Preview host and **not** a bundle-less command-line tool. That is the
+    same boundary `CadenceMCPServer/AGENTS.md` already records as the reason `createTask` inserts
+    its subtasks by hand rather than through `CadenceTaskMutationSupport.insertSubtasks`.
+  - **`deleteContext` reads this device's local relationship arrays** — `context.areas ?? []`,
+    `context.projects ?? []`, `context.tasks ?? []` and so on down. A CloudKit record that has not
+    arrived in this replica is in none of them, so a delete arm could not honestly report what it
+    removed: it would answer "deleted" over rows it never saw, which then arrive afterwards with
+    their container gone. `Area.tasks` / `Project.tasks` **nullify** rather than cascade, so those
+    rows are not deleted, they are cut loose into Inbox.
+
+  What is offered instead is archiving, which is `update_container_columns`' own refusal of column
+  removal one size up: reversible from the same tool, destroys nothing, and hides the row wherever
+  `includeArchived` is not asked for. Both new tools say so in their advertised descriptions rather
+  than leaving a caller to discover it.
+
+  **Measured:** full `-only-testing:CadenceTests` over a `git archive HEAD` tree carrying the change
+  — **4811 tests in 404 suites passed**, `XCODEBUILD_EXIT=0`, 0 compile errors, **0 compiler
+  warnings**, 334 swift compile tasks (non-vacuous); the single `warning:` line is
+  `appintentsmetadataprocessor`, a tool notice. `CadenceMCPServer` built separately into private
+  DerivedData over the same tree: `XCODEBUILD_EXIT=0`, 0 errors, **0 warnings**, 450 compile tasks,
+  log confirms it recompiled `CadenceWriteService.swift`. 16 new `@Test`s in
+  `CadenceWriteServiceTests` across this ticket and [[T-1121]]. `plugins/cadence-mcp/scripts/smoke-test.py`
+  green over stdio against the same tree: `OK cadence-mcp 0.9.0`, `OK tools/list 35 tools`,
+  `OK dispatched 35/35 advertised tools`, 40 audit entries — and its new block drives both arms for
+  real: a context renamed **and archived and un-archived** with the flag read back each time, a
+  board renamed, paused and re-dated, plus three refusals (`dueDate` on an area, a status no
+  project has, an update that asks for nothing).
+  `serverVersion` and `main.swift`'s handshake both moved to **0.9.0**, on T-799's argument: the
+  version is the only thing a client can ask, and "can this server retire a list without deleting
+  it?" is a capability question.
+
+  **Not done, deliberately:** nothing changes a list's `order`, `linkedCalendarID` or its two
+  `hide*IfEmpty` flags — filed as [[T-1182]]. **Originally:** **Nothing on the MCP write surface renames, archives or deletes a list or a context — and the deletion half needs a decision, not an implementation.** [[T-1095]] leg (c). `update_task` is still the only editor on the surface for anything that is not a kanban column: there is no `update_container` (name, description, colorHex, icon, contextId, areaId, dueDate, status) and no `update_context` (name, colorHex, icon, archived). Both are ordinary additive tools over fields that already exist, and both need `create_container`'s refusal set — an `areaId` or a `dueDate` sent to an `area` is a shape error, not an id error. **Deletion is the part to stop and think about.** `ListDeleteHelpers.deleteArea` / `deleteProject` / `deleteContext` are recursive cascades that take a list's tasks, notes, links, goal links, image assets and nested projects with it; this path has no confirmation, no undo and `mcp-audit.log` for a record, and the app's own dialogs read the categorical sentence in `Shared/CadenceListDeletionSummary.swift` before proceeding. Removing a *column* is the same question one size down and is refused by `update_container_columns` for the same reason — archiving is offered instead. Decide deletion on its own before building it.
+
+- [T-1121] **CLOSED 2026-09-12 (agent `mcpwrite3`) — every arm on the MCP write surface now
+  un-does what it did when the commit is refused, and the one effect that cannot be undone is named
+  in the arm's own response instead of being implied away.** Measured inventory first, because the
+  ticket asks for one: **11 write arms** before this change, **10 of them with `undo: {}`** — only
+  `updateContainerColumns` had both halves. The sweep landed all ten, plus the two arms [[T-1120]]
+  added in the same commit, so the surface is **13 arms, 13 undos**.
+
+  `saveNotifyAndAudit` now takes `inserted:` as well as `undo:` and **composes the two
+  `CadencePendingChangePersistence` primitives rather than re-spelling either**: `commitInsert`
+  deletes the rows this call added and rethrows, `commitEdit` then runs the field restore and
+  rethrows. That nesting is what the ticket's "insert *or* edit" framing missed — three arms are
+  **both**. `completeTask` and `cancelTask` settle a task in place *and* insert the recurring
+  successor; `bulkCancelTasks` does it for a whole batch. The successor is taken from
+  `markDone` / `markCancelled`'s return value rather than re-derived from
+  `recurrenceSpawnedTaskID`, because `commitInsert` needs the object, which is the reason T-628
+  made those functions return it.
+
+  Two field snapshots are declared in `CadenceWriteService.swift` rather than reused from
+  `Cadence/Shared/`, and the reasons are recorded on the types so the next reader does not retry
+  the reuse: `CadenceListEditSnapshot` and `CadenceTaskFieldSnapshot` share files with types that
+  reach `CadenceWindDownReconciler` in `CadenceTaskContainerLifecycleService.swift` — the
+  notification stack this command-line target cannot link — and `CadenceTaskFieldSnapshot`'s own
+  documented boundary **excludes `notes` and the to-many `tags`**, both of which `updateTask`
+  writes. `tags` is restorable where `subtasks` would not be: those are pre-existing `Tag` rows the
+  arm only re-associated.
+
+  **The honest limit, stated rather than papered over.** `appendCoreNote` has a half no undo here
+  reaches: `NoteMigrationService.dailyNote` / `weeklyNote` / `permanentNote` create a missing core
+  note and `try context.save()` it **themselves**, before the append is applied — so by the time
+  the append's commit is refused, that row is in the store and committed, and rolling back would
+  not touch it. The ticket lists "appendCoreNote's missing-note branch" among the pending inserts;
+  it is not one. The arm answers `CadenceWriteError.coreNoteCreatedButNotAppended`, which names the
+  empty note that now exists, rather than reporting a plain failure over an effect the caller
+  cannot see. That is this repository's standing failure mode — a claim that no longer matches what
+  it checks — answered in the direction of saying more, not less. The commit inside those three
+  accessors is a second defect in its own right and is filed as [[T-1181]].
+
+  **Measured:** full `-only-testing:CadenceTests` green over a `git archive HEAD` tree carrying the
+  change — 4811 tests in 404 suites, `XCODEBUILD_EXIT=0`, 0 errors, **0 compiler warnings**, 334
+  swift compile tasks. **Mutation-tested, scoped to `CadenceTests/CadenceWriteServiceTests`** (53
+  tests, 1 suite, green unmutated), each mutation confirmed to have recompiled
+  `CadenceWriteService.swift` before the run: dropping the `commitInsert` leg fails **two** —
+  `aRefusedCreateLeavesNoRowForTheNextCallsSaveToCommit` and
+  `aRefusedCompletionUnsettlesTheTaskAndUnInsertsTheSpawnedOccurrence`, which is the right shape,
+  since one leg serves both the pure inserts and the settle-plus-spawn arms; dropping
+  `updateContainer`'s undo fails
+  `aRefusedListUpdateLeavesEveryFieldWhereItWas`; making the core-note branch unreachable fails
+  `aRefusedCoreNoteAppendUndoesTheTextAndNamesTheNoteItCannotRemove`; admitting any status fails
+  `aStatusTheKindDoesNotHaveIsRefusedRatherThanStoredAndReadBackAsActive`; dropping `tags` from the
+  task snapshot fails `aRefusedTaskUpdatePutsEveryFieldAndTheTagsBack`. The undo is deliberately
+  **not** a `rollback()`, and `aRefusedWriteLeavesUnrelatedPendingWorkAlone` is that assertion: a
+  refused create must not take a bystander task pending in the same context with it.
+  **Originally:** **Every MCP write arm except `update_container_columns` inserts with no undo, on a `ModelContext` that outlives the call.** Found while landing [[T-1095]], which added the missing half for one arm. `CadenceWriteService.saveNotifyAndAudit` now takes `undo:` and commits through `CadencePendingChangePersistence.commitEdit`, and the type is compiled into `CadenceMCPServer`'s Sources phase — so the fix is available and unapplied. The default `undo` is `{}`, which is the honest description of `createContext`, `createContainer`, `createTask` (task **and** its subtasks — `commitInsert` takes a list for exactly this), `appendCoreNote`'s missing-note branch, and the recurrence spawns inside `completeTask`, `cancelTask` and `bulkCancelTasks`. Each of those is an **insert**, so the right call is `commitInsert(of:in:commit:)`, not `commitEdit`: a refused commit must un-insert the objects rather than roll the context back, which would discard whatever else is pending. Why it matters here more than in a view: this service holds **one** long-lived context per server process, so a swallowed-then-abandoned insert waits for the next unrelated tool call's `save()` — a create the caller was told had failed, arriving later under another call's name in `mcp-audit.log`. The `commit:` seam T-1095 added to both initialisers is what makes each one testable.
 - [T-1092] **CLOSED 2026-09-12 (agent `sweepderive`) — the build-free precheck now derives the manifest exactly, so the author sees an unlisted sweep instead of whoever next runs the suite.** The two derivations the ticket proposed both already existed: `ci.yml`'s `CadenceTests` job runs the authoritative `CadenceTestTargetHygieneTests`, and that test already prints the regenerated file between banners for `real-tree-sweep-manifest.sh --write` to lift out. What nobody had was a reader the **author** could afford, and `scripts/real-tree-sweep-manifest.sh precheck` — added earlier under this id and wired into `agent-commit.sh` — hopped exactly one declaration inside one file. **MEASURED at `08c84bc`** over the committed manifest's 280 entries and all 314 files in `CadenceTests/` (`printf 'Fixture/x\n' > /tmp/b.txt; ./scripts/real-tree-sweep-manifest.sh <id> precheck /tmp/b.txt CadenceTests/*.swift`): 234 flagged, **0 false positives, 83.6% recall**. Now 280 flagged, **0 false positives, 100%** — it reproduces the committed manifest line for line in 2.6s with no build. Three changes, each isolated by ablation: a transitive closure instead of one hop, `var`/`let` admitted as hop targets (+41 together; dropping just the `var`/`let` targets from the finished reader costs 15), and file-scope names resolved **across** files (+5) — `CadenceTests` is one module, so `cadenceAppSwiftFiles()` declared in `CadenceGlobalUndoSurfaceTests.swift` is callable unqualified from four other suites, which is the case [[T-1113]]'s closure had already recorded as invisible to this precheck. **Non-vacuity, the way this repository requires it:** drop `CadenceContextlessListSurfaceTests/theAddFirstListRowIsOneComponentBothCallersShare` from the manifest and run both readers over that one file — the shipped one exits **0** and calls the stale manifest clean; the new one exits 4 and names it. Pinned by four new `precheck-selftest` fixtures (two hops down, a helper in another file, a multi-line stored product root, and — the reason `var`/`let` were refused for so long — a test naming a braceless `let` declared immediately before a sweeping `func`, which must NOT be flagged), all four mutation-tested: killing the cross-file index, the closure, or the stored-declaration targets fails exactly its own check, and reinstating the run-on span fails the braceless-`let` one. `CadenceGuardScriptSelftestTests` already chains that selftest, so no caller changed — the corpus defaults to the script's own `CadenceTests/` and degrades to source-only where there is none. **One reach was tried and deliberately left out:** delimiting a braceless `var`/`let` with balanced `{}` as well as `()`/`[]` also reaches 280 and reaches five tests that do not sweep (`theSweepSkipsTheFilesTheMCPServerTargetCompiles` reads the MCP target's explicit source list, not a directory). Completeness is the authority's job; soundness is this one's. See [[T-1139]] for what still nobody checks. **Originally:** **The real-tree sweep manifest is derivable, and nothing derives it when it changes.** A `@Test` that walks the product tree must be listed in `CadenceTests/CadenceRealTreeSweepManifest.txt` so a deleted sweep cannot vanish quietly. `scripts/real-tree-sweep-manifest.sh --write` regenerates it from the scan and is the sanctioned tool — but nothing runs it at the moment a tree-walking test is added. **Measured: three times in two days** (T-1068's seed test, T-1090's store-directory test, T-1091's nested-helper test) a new sweep landed without its entry and the omission was found by a **full 22-minute suite run**, i.e. by whoever ran the suite next rather than by the author who could have prevented it. Candidates: run the derivation in the test itself and fail with the exact delta (it already prints one), or have `xcb.sh` check it pre-lock the way it now resolves `-only-testing:` suite names.
 - [T-1091] **CLOSED 2026-09-07 (typefiling, landed by the coordinator after a session limit).** A declaration is now filed under the type that **contains** it, using the character extents `declarationExtents(in:)` already provided. **The offender diff is the result worth keeping: 12 before, 12 after — nothing surfaced, nothing hidden.** The index resolves 3 more committers and 1 more swallow name, so the 10.3% mis-filing was real and happened to be inert on today's tree; the false negatives it could have hidden are not currently occurring. Two of its own doc comments name unresolvable symbols *as the examples of the defect*, so they are ledgered as deliberate tombstones — and the comment explaining that is written unqualified, because spelling it out made the explanation itself an unresolvable claim the rule then flagged. **Originally:** **`CadenceSaveCommitRule` files a declaration under the last type *declared* above it, not
   the type that *contains* it — so the app's own migration entry point is indexed under a private

@@ -15,9 +15,14 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case invalidCombination(String)
     case noChanges
     case cannotCompleteCancelledTask(String)
+    case invalidContainerStatus(String, [String])
     case sectionNotFound(String, [String])
     case columnNotFound(String, [String])
     case tagsUnavailable
+    /// A core-note append whose commit was refused **after** the note row itself was already
+    /// committed. See `CadenceWriteService.appendCoreNote`: this is the one arm on this surface
+    /// with an effect it cannot take back, and it says so rather than reporting a plain failure.
+    case coreNoteCreatedButNotAppended(kind: String, key: String, underlying: String)
 
     var errorDescription: String? {
         switch self {
@@ -33,6 +38,8 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "Section names must not be empty."
         case .duplicateSectionName(let name):
             return "Duplicate section name: \(name). Section names must be unique within one list."
+        case .invalidContainerStatus(let value, let allowed):
+            return "Invalid status: \(value). Expected one of: \(allowed.joined(separator: ", "))."
         case .invalidPriority(let value):
             return "Invalid priority value: \(value). Expected none, low, medium, or high."
         case .invalidNoteKind(let value):
@@ -56,6 +63,14 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "No column named \(name) on this list. Expected one of: \(available.joined(separator: ", "))."
         case .tagsUnavailable:
             return "Tags could not be read, so nothing was written."
+        case .coreNoteCreatedButNotAppended(let kind, let key, let underlying):
+            return """
+                Couldn't append to the \(kind) core note for \(key): \(underlying). \
+                The text was not appended and the note's previous content is unchanged — but the \
+                note row itself was created and committed before the append, by \
+                NoteMigrationService, and this call cannot undo that. An empty \(kind) note for \
+                \(key) now exists.
+                """
         }
     }
 }
@@ -158,6 +173,226 @@ nonisolated struct CadenceUpdateContainerColumnsOptions: Sendable {
     var columnOrder: [String]? = nil
 }
 
+/// A change to a `Context` that already exists (T-1120): rename, recolour, re-icon, archive.
+///
+/// **Archiving is what this surface offers instead of deleting, and that is the decision T-1120
+/// asked be taken on its own.** `ModelContext.deleteContext` takes every area, project, pursuit,
+/// goal, habit, completion, note, link, image asset and task beneath it, with no confirmation
+/// step and `mcp-audit.log` for a record. Two things are true about it here that are not true in
+/// the app, and either one is enough:
+///
+/// - **It is not reachable from this target and cannot cheaply be made so.**
+///   `Cadence/Services/CadenceListDeleteHelpers.swift` is not in `CadenceMCPServer`'s explicit
+///   Sources phase, and its task sweep goes through `CadenceTaskMutationSupport.deleteTasks`,
+///   which calls `NotificationManager.shared`. That type lazily touches
+///   `UNUserNotificationCenter.current()`, guarded only for test and Preview hosts — a
+///   command-line tool has neither bundle identity nor that guard. It is the same boundary that
+///   already makes `createTask` insert its subtasks by hand rather than through
+///   `CadenceTaskMutationSupport.insertSubtasks`.
+/// - **`deleteContext` reads this device's local relationship arrays** — `context.areas ?? []`,
+///   `context.tasks ?? []` and so on. A CloudKit record that has not arrived in this store is not
+///   in those arrays, so a delete arm could not honestly report what it removed: it would answer
+///   "deleted" over rows it never saw, which then arrive afterwards orphaned.
+///
+/// So: `isArchived` hides a context everywhere `includeArchived` is not asked for, is reversible
+/// from this same tool, and destroys nothing. `update_container_columns` refuses column removal on
+/// the same argument one size down.
+nonisolated struct CadenceUpdateContextOptions: Sendable {
+    var contextId: String
+    var name: String? = nil
+    var colorHex: String? = nil
+    var icon: String? = nil
+    var isArchived: Bool? = nil
+}
+
+/// A change to the fields of an `Area` or a `Project` that already exists (T-1120).
+///
+/// **`areaId`, `clearArea`, `dueDate` and `clearDueDate` are project-only**, refused on the
+/// requested text before resolution — `CadenceCreateContainerOptions`' argument exactly, because
+/// `Area` declares neither an owning area nor a due date.
+///
+/// **Archiving is `status: "archived"`, and there is no delete**, for the reasons written out on
+/// `CadenceUpdateContextOptions` above.
+///
+/// **`order` is deliberately not recomputed when `contextId` moves the list.** `createContainer`
+/// numbers a new row `max + 1` among its siblings because the model default of 0 would otherwise
+/// interleave it alphabetically; an existing list already carries a number the user's own ordering
+/// produced. Both app editors agree — `EditListSheet` and `iOSListEditorViews` assign
+/// `context` on a move and renumber only on create — and inventing a third behaviour at this
+/// boundary would move a list the caller only asked to re-file.
+nonisolated struct CadenceUpdateContainerOptions: Sendable {
+    var containerKind: String
+    var containerId: String
+    var name: String? = nil
+    var description: String? = nil
+    var colorHex: String? = nil
+    var icon: String? = nil
+    var contextId: String? = nil
+    var clearContext: Bool = false
+    var areaId: String? = nil
+    var clearArea: Bool = false
+    var dueDate: String? = nil
+    var clearDueDate: Bool = false
+    var status: String? = nil
+}
+
+/// Every field `updateContainer` writes to an `Area` or a `Project`, captured before the write so
+/// a refused commit puts all of it back (T-1121).
+///
+/// **Why this is not `CadenceListEditSnapshot`, which says the same sentence about the same two
+/// models.** That type lives in `Cadence/Shared/CadenceListEditSnapshot.swift`, which references
+/// `CadenceTaskFieldSnapshot` — declared in `CadenceTaskFieldEditCommit.swift` beside an enum that
+/// reaches `CadenceWindDownReconciler`, declared in
+/// `Cadence/Services/CadenceTaskContainerLifecycleService.swift`. Adding the shared snapshot to
+/// `CadenceMCPServer`'s Sources phase therefore adds the notification stack to a command-line
+/// tool, which is the coupling `CadenceMCPServer/AGENTS.md` warns about and the same boundary that
+/// keeps `CadenceTaskMutationSupport` out. The covered set is also smaller by design: this arm
+/// writes no task, so there is no `tasks:` leg, and it writes no `sectionConfigsRaw` —
+/// `updateContainerColumns` owns that and has its own undo.
+///
+/// **Raw strings, not the computed façades**, for `CadenceListEditSnapshot`'s own reason:
+/// `statusRaw` coerces an unrecognised value to `.active` on read, so restoring through `status`
+/// would put a normalised value back as if the caller had chosen it.
+private struct CadenceMCPContainerFieldSnapshot {
+    private let area: Area?
+    private let project: Project?
+    private let name: String
+    private let desc: String
+    private let colorHex: String
+    private let icon: String
+    private let statusRaw: String
+    private let dueDate: String
+    private let parentContext: Context?
+    private let parentArea: Area?
+
+    init(_ area: Area) {
+        self.area = area
+        project = nil
+        name = area.name
+        desc = area.desc
+        colorHex = area.colorHex
+        icon = area.icon
+        statusRaw = area.statusRaw
+        // An area has no due date of its own; the field is here for the project case and is put
+        // back only on a project.
+        dueDate = ""
+        parentContext = area.context
+        parentArea = nil
+    }
+
+    init(_ project: Project) {
+        area = nil
+        self.project = project
+        name = project.name
+        desc = project.desc
+        colorHex = project.colorHex
+        icon = project.icon
+        statusRaw = project.statusRaw
+        dueDate = project.dueDate
+        parentContext = project.context
+        parentArea = project.area
+    }
+
+    func restore() {
+        if let area {
+            area.name = name
+            area.desc = desc
+            area.colorHex = colorHex
+            area.icon = icon
+            area.statusRaw = statusRaw
+            area.context = parentContext
+        }
+        if let project {
+            project.name = name
+            project.desc = desc
+            project.colorHex = colorHex
+            project.icon = icon
+            project.statusRaw = statusRaw
+            project.dueDate = dueDate
+            project.context = parentContext
+            project.area = parentArea
+        }
+    }
+}
+
+/// Every field the task-editing arms on this surface write, captured before the write so a
+/// refused commit puts it back (T-1121).
+///
+/// **Why not `CadenceTaskFieldSnapshot`**, which says the same sentence about the same model: two
+/// reasons, and either alone decides it.
+///
+/// - **The file it lives in cannot join this target.** `Cadence/Shared/CadenceTaskFieldEditCommit.swift`
+///   also declares `CadenceTaskFieldEditCommit`, which reaches `CadenceWindDownReconciler` in
+///   `Cadence/Services/CadenceTaskContainerLifecycleService.swift` — the notification stack a
+///   command-line tool has no business linking, and the same boundary that keeps
+///   `CadenceTaskMutationSupport` out of `createTask`.
+/// - **It does not cover what `updateTask` writes.** Its own documented boundary excludes
+///   `notes` and the to-many `tags`, and `updateTask` writes both. `tags` is restorable here where
+///   `subtasks` would not be: the rows are pre-existing `Tag`s this arm only re-associated, so
+///   putting the array back is an undo rather than an attempt to un-insert.
+///
+/// **Raw strings, not the computed façades**, for `CadenceTaskFieldSnapshot`'s own reason: the
+/// computed `status` / `priority` coerce an unrecognised stored value to a default on read, so
+/// restoring through them would write that default back as if the caller had chosen it.
+private struct CadenceMCPTaskFieldSnapshot {
+    let task: AppTask
+    private let title: String
+    private let notes: String
+    private let priorityRaw: String
+    private let statusRaw: String
+    private let completedAt: Date?
+    private let dueDate: String
+    private let scheduledDate: String
+    private let scheduledStartMin: Int
+    private let estimatedMinutes: Int
+    private let sectionName: String
+    private let recurrenceSeriesIDRaw: String
+    private let recurrenceSpawnedTaskIDRaw: String
+    private let area: Area?
+    private let project: Project?
+    private let context: Context?
+    private let tags: [Tag]?
+
+    init(_ task: AppTask) {
+        self.task = task
+        title = task.title
+        notes = task.notes
+        priorityRaw = task.priorityRaw
+        statusRaw = task.statusRaw
+        completedAt = task.completedAt
+        dueDate = task.dueDate
+        scheduledDate = task.scheduledDate
+        scheduledStartMin = task.scheduledStartMin
+        estimatedMinutes = task.estimatedMinutes
+        sectionName = task.sectionName
+        recurrenceSeriesIDRaw = task.recurrenceSeriesIDRaw
+        recurrenceSpawnedTaskIDRaw = task.recurrenceSpawnedTaskIDRaw
+        area = task.area
+        project = task.project
+        context = task.context
+        tags = task.tags
+    }
+
+    func restore() {
+        task.title = title
+        task.notes = notes
+        task.priorityRaw = priorityRaw
+        task.statusRaw = statusRaw
+        task.completedAt = completedAt
+        task.dueDate = dueDate
+        task.scheduledDate = scheduledDate
+        task.scheduledStartMin = scheduledStartMin
+        task.estimatedMinutes = estimatedMinutes
+        task.sectionName = sectionName
+        task.recurrenceSeriesIDRaw = recurrenceSeriesIDRaw
+        task.recurrenceSpawnedTaskIDRaw = recurrenceSpawnedTaskIDRaw
+        task.area = area
+        task.project = project
+        task.context = context
+        task.tags = tags
+    }
+}
+
 private struct PendingAuditEntry {
     let tool: String
     let entityType: String
@@ -180,6 +415,16 @@ private struct PendingAuditEntry {
     /// "container", so the audit log distinguishes the two the way every other MCP surface does.
     static func container(kind: String, id: UUID, summary: String) -> PendingAuditEntry {
         PendingAuditEntry(tool: "create_container", entityType: kind, entityId: id.uuidString, summary: summary)
+    }
+
+    static func contextFields(id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "update_context", entityType: "context", entityId: id.uuidString, summary: summary)
+    }
+
+    /// `entityType` is the container's own kind, exactly as `container(kind:id:summary:)` records
+    /// it; only `tool` separates a create from an edit in `mcp-audit.log`.
+    static func containerFields(kind: String, id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "update_container", entityType: kind, entityId: id.uuidString, summary: summary)
     }
 
     /// Same `entityType` as `container(kind:id:summary:)` — the row that changed is the area or the
@@ -270,8 +515,48 @@ final class CadenceWriteService {
         created.order = try nextContextOrder()
         context.insert(created)
 
-        try saveNotifyAndAudit(.context(id: created.id, summary: "Created context: \(created.name)"))
+        try saveNotifyAndAudit(
+            .context(id: created.id, summary: "Created context: \(created.name)"),
+            inserted: [created]
+        )
         return try readService.contextSummary(contextID: created.id.uuidString)
+    }
+
+    /// Rename, recolour, re-icon or archive a `Context` that already exists (T-1120).
+    ///
+    /// The refusals and the deletion decision are written out on `CadenceUpdateContextOptions`.
+    /// What is here is the shape every editing arm on this surface now shares: validate
+    /// everything, refuse a request that asks for nothing, capture what is about to be written,
+    /// write, and hand the capture to the commit as the undo (T-1121).
+    func updateContext(options: CadenceUpdateContextOptions) throws -> CadenceContextSummary {
+        guard let target = try resolveContext(options.contextId) else {
+            throw CadenceWriteError.invalidCombination("contextId is required.")
+        }
+        let name = try options.name.map { try normalizedRequiredText($0, emptyError: CadenceWriteError.emptyName) }
+        let colorHex = try normalizedOptionalColorHex(options.colorHex)
+        let icon = CadenceMCPServiceSupport.normalizedOptionalText(options.icon)
+
+        guard name != nil || colorHex != nil || icon != nil || options.isArchived != nil else {
+            throw CadenceWriteError.noChanges
+        }
+
+        let previousName = target.name
+        let previousColorHex = target.colorHex
+        let previousIcon = target.icon
+        let previousIsArchived = target.isArchived
+
+        if let name { target.name = name }
+        if let colorHex { target.colorHex = colorHex }
+        if let icon { target.icon = icon }
+        if let isArchived = options.isArchived { target.isArchived = isArchived }
+
+        try saveNotifyAndAudit([.contextFields(id: target.id, summary: "Updated context: \(target.name)")]) {
+            target.name = previousName
+            target.colorHex = previousColorHex
+            target.icon = previousIcon
+            target.isArchived = previousIsArchived
+        }
+        return try readService.contextSummary(contextID: target.id.uuidString)
     }
 
     /// Create an `Area` or a `Project`, optionally carrying the kanban columns that make it a board.
@@ -320,6 +605,9 @@ final class CadenceWriteService {
         // leaves the model's own default rather than a copy of it restated here — `Area`,
         // `Project` and `Context` each declare a different pair.
         let id: UUID
+        // Held as well as the id, so a refused commit can un-insert the row rather than leave it
+        // pending on this service's long-lived context for the next tool call's save() (T-1121).
+        let inserted: any PersistentModel
         switch kind {
         case "area":
             let area = Area(name: name, context: parentContext)
@@ -330,6 +618,7 @@ final class CadenceWriteService {
             context.insert(area)
             if let sectionNames { area.sectionConfigs = sectionNames.map { TaskSectionConfig(name: $0) } }
             id = area.id
+            inserted = area
         default:
             let project = Project(name: name, context: parentContext, area: parentArea)
             if let colorHex { project.colorHex = colorHex }
@@ -340,10 +629,138 @@ final class CadenceWriteService {
             context.insert(project)
             if let sectionNames { project.sectionConfigs = sectionNames.map { TaskSectionConfig(name: $0) } }
             id = project.id
+            inserted = project
         }
 
-        try saveNotifyAndAudit(.container(kind: kind, id: id, summary: "Created \(kind): \(name)"))
+        try saveNotifyAndAudit(
+            .container(kind: kind, id: id, summary: "Created \(kind): \(name)"),
+            inserted: [inserted]
+        )
         return try readService.containerSummary(kind: kind, id: id.uuidString)
+    }
+
+    /// Rename, recolour, re-icon, re-file, redate or archive an `Area` or a `Project` that already
+    /// exists (T-1120).
+    ///
+    /// The project-only refusals, the archive-instead-of-delete decision and the reason `order` is
+    /// left alone on a move are written out on `CadenceUpdateContainerOptions`.
+    ///
+    /// **Everything is validated before the model is touched**, `updateContainerColumns`' shape:
+    /// a refusal in the status leg cannot leave a rename half-applied in the context.
+    func updateContainer(options: CadenceUpdateContainerOptions) throws -> CadenceContainerSummary {
+        let kind = try normalizedContainerKind(options.containerKind)
+
+        // Refused on the *requested* text, before resolution, for `createContainer`'s reason: an
+        // areaId sent to an area is a misunderstanding of the shape whether or not that id names a
+        // real area, and answering "no area found" would send the caller looking for the wrong bug.
+        let requestedAreaID = CadenceMCPServiceSupport.normalizedOptionalText(options.areaId)
+        let requestedContextID = CadenceMCPServiceSupport.normalizedOptionalText(options.contextId)
+        let requestedDueDate = CadenceMCPServiceSupport.normalizedOptionalText(options.dueDate)
+        if kind == "area" {
+            if requestedAreaID != nil || options.clearArea {
+                throw CadenceWriteError.invalidCombination("areaId applies to a project; an area cannot be filed inside another area.")
+            }
+            if requestedDueDate != nil || options.clearDueDate {
+                throw CadenceWriteError.invalidCombination("dueDate applies to a project; an area is ongoing and carries no due date.")
+            }
+        }
+        if options.clearContext && requestedContextID != nil {
+            throw CadenceWriteError.invalidCombination("clearContext cannot be combined with contextId.")
+        }
+        if options.clearArea && requestedAreaID != nil {
+            throw CadenceWriteError.invalidCombination("clearArea cannot be combined with areaId.")
+        }
+        if options.clearDueDate && requestedDueDate != nil {
+            throw CadenceWriteError.invalidCombination("clearDueDate cannot be combined with dueDate.")
+        }
+
+        guard let resolved = try resolveContainer(kind: kind, id: options.containerId) else {
+            throw CadenceWriteError.invalidCombination("containerId is required.")
+        }
+
+        let name = try options.name.map { try normalizedRequiredText($0, emptyError: CadenceWriteError.emptyName) }
+        let colorHex = try normalizedOptionalColorHex(options.colorHex)
+        let icon = CadenceMCPServiceSupport.normalizedOptionalText(options.icon)
+        let newContext = try resolveContext(options.contextId)
+        let newArea = try resolveArea(options.areaId)
+        let dueDate = try validatedOptionalDate(options.dueDate)
+        let statusRaw = try options.status.map { try validatedContainerStatus($0, kind: kind) }
+
+        guard name != nil || options.description != nil || colorHex != nil || icon != nil
+            || newContext != nil || options.clearContext
+            || newArea != nil || options.clearArea
+            || dueDate != nil || options.clearDueDate
+            || statusRaw != nil
+        else {
+            throw CadenceWriteError.noChanges
+        }
+
+        let containerID: UUID
+        let snapshot: CadenceMCPContainerFieldSnapshot
+        let finalName: String
+        switch resolved {
+        case .area(let area):
+            containerID = area.id
+            snapshot = CadenceMCPContainerFieldSnapshot(area)
+            if let name { area.name = name }
+            if let description = options.description { area.desc = description }
+            if let colorHex { area.colorHex = colorHex }
+            if let icon { area.icon = icon }
+            if options.clearContext {
+                area.context = nil
+            } else if let newContext {
+                area.context = newContext
+            }
+            if let statusRaw { area.statusRaw = statusRaw }
+            finalName = area.name
+        case .project(let project):
+            containerID = project.id
+            snapshot = CadenceMCPContainerFieldSnapshot(project)
+            if let name { project.name = name }
+            if let description = options.description { project.desc = description }
+            if let colorHex { project.colorHex = colorHex }
+            if let icon { project.icon = icon }
+            if options.clearContext {
+                project.context = nil
+            } else if let newContext {
+                project.context = newContext
+            }
+            if options.clearArea {
+                project.area = nil
+            } else if let newArea {
+                project.area = newArea
+            }
+            if options.clearDueDate {
+                project.dueDate = ""
+            } else if let dueDate {
+                project.dueDate = dueDate
+            }
+            if let statusRaw { project.statusRaw = statusRaw }
+            finalName = project.name
+        }
+
+        try saveNotifyAndAudit([.containerFields(kind: kind, id: containerID, summary: "Updated \(kind): \(finalName)")]) {
+            snapshot.restore()
+        }
+        return try readService.containerSummary(kind: kind, id: containerID.uuidString)
+    }
+
+    /// The status values this kind of list actually has, or a refusal naming them.
+    ///
+    /// `Area` and `Project` do not share a status enum — `AreaStatus` has three cases and
+    /// `ProjectStatus` five — and **both models coerce an unrecognised `statusRaw` to `.active` on
+    /// read**. So `status: "paused"` on an area would be stored verbatim and then read back as
+    /// `active`: a write the caller was told succeeded whose value the very next read replaces.
+    /// That is `create_container`'s argument about a silently dropped argument, one field along.
+    private func validatedContainerStatus(_ value: String, kind: String) throws -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allowed = kind == "area"
+            ? AreaStatus.allCases.map(\.rawValue)
+            : ProjectStatus.allCases.map(\.rawValue)
+        guard allowed.contains(trimmed) else {
+            throw CadenceWriteError.invalidContainerStatus(value, allowed)
+        }
+        return trimmed
     }
 
     /// Change the kanban columns of a list that already exists: add, rename, recolour, redate,
@@ -606,15 +1023,23 @@ final class CadenceWriteService {
         // green, which is the silence `CadenceMCPServer/AGENTS.md` warns about. Both sides of the
         // relationship are still written here by hand; see T-401 for why that is a convention
         // rather than a repair.
+        var insertedSubtasks: [Subtask] = []
         for (index, subtaskTitle) in subtaskTitles.enumerated() {
             let subtask = Subtask(title: subtaskTitle)
             subtask.parentTask = task
             subtask.order = index
             context.insert(subtask)
             task.subtasks = (task.subtasks ?? []) + [subtask]
+            insertedSubtasks.append(subtask)
         }
 
-        try saveNotifyAndAudit(.task(tool: "create_task", id: task.id, summary: "Created task: \(task.title)"))
+        // The subtasks go in the list too, not just the task: `commitInsert` takes a list for
+        // exactly this case, and un-inserting only the root would strand the rest as orphans in a
+        // context that outlives the call (T-1121).
+        try saveNotifyAndAudit(
+            .task(tool: "create_task", id: task.id, summary: "Created task: \(task.title)"),
+            inserted: [task] + insertedSubtasks
+        )
         return try readService.getTask(taskID: task.id.uuidString)
     }
 
@@ -651,6 +1076,7 @@ final class CadenceWriteService {
         // Same reason as createTask: the throw has to happen while the task is still untouched.
         let tags = try options.tagNames.map { try resolvedTags(named: $0) }
 
+        let snapshot = CadenceMCPTaskFieldSnapshot(task)
         if let title { task.title = title }
         if let notes = options.notes { task.notes = notes }
         if let priority { task.priority = priority }
@@ -674,7 +1100,9 @@ final class CadenceWriteService {
             task.tags = tags
         }
 
-        try saveNotifyAndAudit(.task(tool: "update_task", id: task.id, summary: "Updated task: \(task.title)"))
+        try saveNotifyAndAudit([.task(tool: "update_task", id: task.id, summary: "Updated task: \(task.title)")]) {
+            snapshot.restore()
+        }
         return try readService.getTask(taskID: task.id.uuidString)
     }
 
@@ -694,6 +1122,7 @@ final class CadenceWriteService {
             throw CadenceWriteError.noChanges
         }
 
+        let snapshot = CadenceMCPTaskFieldSnapshot(task)
         if options.clearScheduledDate {
             task.scheduledDate = ""
             task.scheduledStartMin = -1
@@ -709,7 +1138,9 @@ final class CadenceWriteService {
             }
         }
 
-        try saveNotifyAndAudit(.task(tool: "schedule_task", id: task.id, summary: "Scheduled task: \(task.title)"))
+        try saveNotifyAndAudit([.task(tool: "schedule_task", id: task.id, summary: "Scheduled task: \(task.title)")]) {
+            snapshot.restore()
+        }
         return try readService.getTask(taskID: task.id.uuidString)
     }
 
@@ -721,14 +1152,16 @@ final class CadenceWriteService {
 
         var spawnedTaskID: UUID?
         var didChange = false
+        // The successor is taken from `markDone`'s return value rather than re-derived from the
+        // pointer, because a refused commit has to un-insert the object and only the object can be
+        // handed to `commitInsert` (T-628, T-1121).
+        var spawnedTask: AppTask?
+        var snapshot: CadenceMCPTaskFieldSnapshot?
         if !task.isDone {
-            let previouslySpawnedTaskID = task.recurrenceSpawnedTaskID
-            CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context)
+            snapshot = CadenceMCPTaskFieldSnapshot(task)
+            spawnedTask = CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context)
             didChange = true
-
-            if task.recurrenceSpawnedTaskID != previouslySpawnedTaskID {
-                spawnedTaskID = task.recurrenceSpawnedTaskID
-            }
+            spawnedTaskID = spawnedTask?.id
         }
 
         if didChange {
@@ -738,7 +1171,9 @@ final class CadenceWriteService {
             if let spawnedTaskID {
                 auditEntries.append(.task(tool: "complete_task", id: spawnedTaskID, summary: "Spawned recurring task from: \(task.title)"))
             }
-            try saveNotifyAndAudit(auditEntries)
+            try saveNotifyAndAudit(auditEntries, inserted: spawnedTask.map { [$0] } ?? []) {
+                snapshot?.restore()
+            }
         }
         return CadenceCompleteTaskResult(
             task: try readService.getTask(taskID: task.id.uuidString),
@@ -749,9 +1184,12 @@ final class CadenceWriteService {
     func reopenTask(taskID: String) throws -> CadenceTaskDetail {
         let task = try findTask(taskID)
         if task.completedAt != nil || task.status != .todo {
+            let snapshot = CadenceMCPTaskFieldSnapshot(task)
             task.completedAt = nil
             task.status = .todo
-            try saveNotifyAndAudit(.task(tool: "reopen_task", id: task.id, summary: "Reopened task: \(task.title)"))
+            try saveNotifyAndAudit([.task(tool: "reopen_task", id: task.id, summary: "Reopened task: \(task.title)")]) {
+                snapshot.restore()
+            }
         }
         return try readService.getTask(taskID: task.id.uuidString)
     }
@@ -762,18 +1200,21 @@ final class CadenceWriteService {
         // task *carries* a `completedAt`, so the old spelling was true of every already-cancelled
         // task and re-cancelling one would re-stamp its timestamp and write a second audit entry.
         if task.status != .cancelled {
+            let snapshot = CadenceMCPTaskFieldSnapshot(task)
             // Cancelling a single occurrence still advances a recurring series (mirrors completeTask),
             // otherwise cancelling instead of completing one occurrence would silently kill all future ones.
-            let previouslySpawnedTaskID = task.recurrenceSpawnedTaskID
-            CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
+            // The returned successor is what a refused commit un-inserts; see completeTask.
+            let spawnedTask = CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
 
             var auditEntries: [PendingAuditEntry] = [
                 .task(tool: "cancel_task", id: task.id, summary: "Cancelled task: \(task.title)")
             ]
-            if let spawnedTaskID = task.recurrenceSpawnedTaskID, spawnedTaskID != previouslySpawnedTaskID {
-                auditEntries.append(.task(tool: "cancel_task", id: spawnedTaskID, summary: "Spawned recurring task from: \(task.title)"))
+            if let spawnedTask {
+                auditEntries.append(.task(tool: "cancel_task", id: spawnedTask.id, summary: "Spawned recurring task from: \(task.title)"))
             }
-            try saveNotifyAndAudit(auditEntries)
+            try saveNotifyAndAudit(auditEntries, inserted: spawnedTask.map { [$0] } ?? []) {
+                snapshot.restore()
+            }
         }
         return try readService.getTask(taskID: task.id.uuidString)
     }
@@ -816,6 +1257,8 @@ final class CadenceWriteService {
         }
 
         var changed: [AppTask] = []
+        var snapshots: [CadenceMCPTaskFieldSnapshot] = []
+        var spawnedTasks: [AppTask] = []
         var auditEntries: [PendingAuditEntry] = []
         // `status` alone, for the same reason as `cancelTask` above (T-202): a cancelled task now
         // has a non-nil `completedAt`, so `|| task.completedAt != nil` matched every one of them.
@@ -824,17 +1267,25 @@ final class CadenceWriteService {
             // workflow instead of setting status/completedAt directly, otherwise bulk-cancelling
             // a recurring task silently kills the rest of its series (it never spawns the next
             // occurrence the way completeTask/cancelTask do).
-            let previouslySpawnedTaskID = task.recurrenceSpawnedTaskID
-            CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
+            snapshots.append(CadenceMCPTaskFieldSnapshot(task))
+            let spawnedTask = CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
             changed.append(task)
             auditEntries.append(.task(tool: "bulk_cancel_tasks", id: task.id, summary: "Bulk cancelled task: \(task.title)"))
-            if let spawnedTaskID = task.recurrenceSpawnedTaskID, spawnedTaskID != previouslySpawnedTaskID {
-                auditEntries.append(.task(tool: "bulk_cancel_tasks", id: spawnedTaskID, summary: "Spawned recurring task from: \(task.title)"))
+            if let spawnedTask {
+                spawnedTasks.append(spawnedTask)
+                auditEntries.append(.task(tool: "bulk_cancel_tasks", id: spawnedTask.id, summary: "Spawned recurring task from: \(task.title)"))
             }
         }
 
         if !changed.isEmpty {
-            try saveNotifyAndAudit(auditEntries)
+            // One commit for the whole batch, so one undo for the whole batch: every cancellation
+            // goes back and every successor is un-inserted, rather than the store keeping whichever
+            // prefix of a refused bulk call happened to be pending (T-1121).
+            try saveNotifyAndAudit(auditEntries, inserted: spawnedTasks) {
+                for snapshot in snapshots {
+                    snapshot.restore()
+                }
+            }
         }
 
         return CadenceBulkCancelResult(
@@ -842,6 +1293,18 @@ final class CadenceWriteService {
         )
     }
 
+    /// Append to a daily, weekly or permanent core note.
+    ///
+    /// **This is the one arm on this surface with a half it cannot undo, and it says so (T-1121).**
+    /// The *append* is an ordinary in-place edit and is restored exactly like every other one here.
+    /// The note **row** is not: `NoteMigrationService.dailyNote` / `weeklyNote` / `permanentNote`
+    /// create a missing core note and `try context.save()` it themselves, before this function sees
+    /// it — so by the time the append's commit is refused, that row is already in the store and no
+    /// undo available here can take it back. Rolling the context back would not either; it is
+    /// committed. What the caller gets instead of a plain failure is
+    /// `CadenceWriteError.coreNoteCreatedButNotAppended`, which names the empty note that now
+    /// exists. A refusal that under-reports its own effect is the failure mode this repository
+    /// keeps meeting; saying it in the arm's own response text is the honest version.
     func appendCoreNote(kind: String, content: String, dateKey: String? = nil, separator: String? = nil) throws -> CadenceCoreNotesSnapshot {
         let normalizedKind = try normalizeNoteKind(kind)
         let text = try normalizedRequiredText(content, emptyError: CadenceWriteError.emptyContent)
@@ -849,52 +1312,90 @@ final class CadenceWriteService {
         let separator = separator ?? "\n\n"
         let now = Date()
         let auditEntry: PendingAuditEntry
+        let note: Note
+        let noteKey: String
+
+        // A count either side of the accessor, rather than a second copy of its lookup predicate:
+        // the question is only "did that call create a row", and re-spelling how each kind of core
+        // note is found is how the two spellings drift apart.
+        let notesBefore = try context.fetchCount(FetchDescriptor<Note>())
 
         switch normalizedKind {
         case "daily":
-            let note = try NoteMigrationService.dailyNote(for: resolvedDateKey, in: context)
-            var content = note.content
-            append(text, separator: separator, to: &content)
-            note.content = content
-            note.updatedAt = now
+            note = try NoteMigrationService.dailyNote(for: resolvedDateKey, in: context)
+            noteKey = resolvedDateKey
             auditEntry = .coreNote(id: note.id, summary: "Appended daily core note: \(resolvedDateKey)")
         case "weekly":
             let resolvedWeekKey = try weekKey(for: resolvedDateKey)
-            let note = try NoteMigrationService.weeklyNote(for: resolvedWeekKey, in: context)
-            var content = note.content
-            append(text, separator: separator, to: &content)
-            note.content = content
-            note.updatedAt = now
+            note = try NoteMigrationService.weeklyNote(for: resolvedWeekKey, in: context)
+            noteKey = resolvedWeekKey
             auditEntry = .coreNote(id: note.id, summary: "Appended weekly core note: \(resolvedWeekKey)")
         case "permanent":
-            let note = try NoteMigrationService.permanentNote(in: context)
-            var content = note.content
-            append(text, separator: separator, to: &content)
-            note.content = content
-            note.updatedAt = now
+            note = try NoteMigrationService.permanentNote(in: context)
+            noteKey = "Notepad"
             auditEntry = .coreNote(id: note.id, summary: "Appended permanent core note")
         default:
             throw CadenceWriteError.invalidNoteKind(kind)
         }
 
-        try saveNotifyAndAudit(auditEntry)
+        let createdTheNote = try context.fetchCount(FetchDescriptor<Note>()) > notesBefore
+
+        let previousContent = note.content
+        let previousUpdatedAt = note.updatedAt
+        var content = note.content
+        append(text, separator: separator, to: &content)
+        note.content = content
+        note.updatedAt = now
+
+        do {
+            try saveNotifyAndAudit([auditEntry]) {
+                note.content = previousContent
+                note.updatedAt = previousUpdatedAt
+            }
+        } catch {
+            guard createdTheNote else { throw error }
+            throw CadenceWriteError.coreNoteCreatedButNotAppended(
+                kind: normalizedKind,
+                key: noteKey,
+                underlying: error.localizedDescription
+            )
+        }
         return try readService.coreNotes(dateKey: resolvedDateKey)
     }
 
-    private func saveNotifyAndAudit(_ entry: PendingAuditEntry) throws {
-        try saveNotifyAndAudit([entry])
+    private func saveNotifyAndAudit(_ entry: PendingAuditEntry, inserted: [any PersistentModel] = []) throws {
+        try saveNotifyAndAudit([entry], inserted: inserted)
     }
 
     /// Commit, wake the app, and record what was written.
     ///
-    /// **`undo` is what a refused commit puts back**, and it defaults to nothing because that is
-    /// the honest description of every caller except `updateContainerColumns`: they *insert*, and
-    /// an insert whose commit throws is still pending on this service's long-lived `ModelContext`
-    /// for the next tool call's `save()` to take. `CadencePendingChangePersistence.commitInsert` is
-    /// the fix for those and it is now compiled into this target; doing the sweep is
-    /// `docs/TODO.md` T-1121 rather than a rider on a column editor.
-    private func saveNotifyAndAudit(_ entries: [PendingAuditEntry], undo: () -> Void = {}) throws {
-        try CadencePendingChangePersistence.commitEdit(in: context, commit: commit, undo: undo)
+    /// **Both halves of an undo, because an arm here can do both (T-1121).** `inserted` is every
+    /// row this call added and `undo` is what it changed in place; a refused commit un-inserts the
+    /// first and restores the second, in that order, before the caller is told anything. Nothing on
+    /// this surface is allowed to leave a change *pending*: this service holds one long-lived
+    /// `ModelContext` per server process, so an abandoned insert waits for the next unrelated tool
+    /// call's `save()` — a write the caller was told had failed, arriving later under another
+    /// call's name in `mcp-audit.log`.
+    ///
+    /// **The two `CadencePendingChangePersistence` primitives are composed, not re-spelled.**
+    /// `commitInsert` deletes the models it was given and rethrows; `commitEdit` then runs `undo`
+    /// and rethrows. Nesting them is what lets `completeTask` — an in-place status change *and* a
+    /// spawned successor — have one undo covering both, without a third copy of either sentence.
+    /// Neither defaults to a `rollback()`, for the reason `commitEdit` gives: it would discard
+    /// whatever else is pending in the same context.
+    ///
+    /// The one effect no undo here reaches is the core note row `NoteMigrationService` commits
+    /// on its own; `appendCoreNote` names that in its response rather than implying otherwise.
+    private func saveNotifyAndAudit(
+        _ entries: [PendingAuditEntry],
+        inserted: [any PersistentModel] = [],
+        undo: () -> Void = {}
+    ) throws {
+        try CadencePendingChangePersistence.commitEdit(
+            in: context,
+            commit: { try CadencePendingChangePersistence.commitInsert(of: inserted, in: $0, commit: commit) },
+            undo: undo
+        )
         if notifiesExternalWrites {
             CadenceModelContainerFactory.notifyExternalWrite()
         }

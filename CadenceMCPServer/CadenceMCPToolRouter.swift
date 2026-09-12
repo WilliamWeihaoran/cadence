@@ -210,6 +210,34 @@ struct CadenceMCPToolRouter {
                 sectionNames: try arguments.flexibleStringArray("sectionNames")
             )))
 
+        case "update_context":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.updateContext(options: CadenceUpdateContextOptions(
+                contextId: try arguments.requiredString("contextId"),
+                name: arguments.string("name"),
+                colorHex: arguments.string("colorHex"),
+                icon: arguments.string("icon"),
+                isArchived: arguments.bool("isArchived")
+            )))
+
+        case "update_container":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.updateContainer(options: CadenceUpdateContainerOptions(
+                containerKind: try arguments.requiredString("containerKind"),
+                containerId: try arguments.requiredString("containerId"),
+                name: arguments.string("name"),
+                description: arguments.string("description"),
+                colorHex: arguments.string("colorHex"),
+                icon: arguments.string("icon"),
+                contextId: arguments.string("contextId"),
+                clearContext: arguments.bool("clearContext") ?? false,
+                areaId: arguments.string("areaId"),
+                clearArea: arguments.bool("clearArea") ?? false,
+                dueDate: try arguments.dateKey("dueDate"),
+                clearDueDate: arguments.bool("clearDueDate") ?? false,
+                status: arguments.string("status")
+            )))
+
         case "update_container_columns":
             let writeService = try requireWriteService(for: name)
             return try encode(writeService.updateContainerColumns(options: CadenceUpdateContainerColumnsOptions(

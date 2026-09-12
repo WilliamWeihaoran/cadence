@@ -1041,6 +1041,481 @@ struct CadenceWriteServiceTests {
         #expect(try fixture.readService.getTask(taskID: card.summary.id).summary.sectionName == "In Progress")
     }
 
+    // MARK: - T-1120: renaming, re-filing and archiving a list or a context
+
+    @Test func aContextIsRenamedRecolouredAndArchivedOverTheSameSurfaceThatCreatedIt() throws {
+        let fixture = try Fixture()
+        let created = try fixture.writeService.createContext(options: .init(name: "Side projects"))
+
+        let updated = try fixture.writeService.updateContext(options: .init(
+            contextId: created.context.id,
+            name: "  Retired projects  ",
+            colorHex: "4A9EFF",
+            icon: "archivebox.fill",
+            isArchived: true
+        ))
+
+        #expect(updated.context.name == "Retired projects")
+        #expect(updated.context.colorHex == "#4a9eff")
+        #expect(updated.context.icon == "archivebox.fill")
+        #expect(updated.context.isArchived)
+
+        // Reversible from the same tool, which is the whole argument for offering archive where
+        // this surface refuses to offer delete.
+        let restored = try fixture.writeService.updateContext(options: .init(
+            contextId: created.context.id,
+            isArchived: false
+        ))
+        #expect(!restored.context.isArchived)
+        #expect(restored.context.name == "Retired projects")
+    }
+
+    @Test func aContextUpdateRefusesABlankNameAndARequestThatAsksForNothing() throws {
+        let fixture = try Fixture()
+        let created = try fixture.writeService.createContext(options: .init(name: "Work"))
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContext(options: .init(contextId: created.context.id, name: "   "))
+        }
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContext(options: .init(contextId: created.context.id))
+        }
+        #expect(throws: CadenceReadError.self) {
+            try fixture.writeService.updateContext(options: .init(
+                contextId: UUID().uuidString,
+                name: "Nowhere"
+            ))
+        }
+
+        #expect(try fixture.readService.contextSummary(contextID: created.context.id).context.name == "Work")
+    }
+
+    @Test func aListIsRenamedRefiledAndArchivedWithoutDisturbingItsColumns() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+
+        let updated = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            name: "  Launch board v2  ",
+            description: "Now with a due date",
+            colorHex: "#4ecb71",
+            icon: "checklist",
+            contextId: home.context.id,
+            dueDate: "2026-06-30",
+            status: "archived"
+        ))
+
+        #expect(updated.container.name == "Launch board v2")
+        #expect(updated.container.contextId == home.context.id)
+        #expect(updated.container.status == "archived")
+        #expect(updated.container.colorHex == "#4ecb71")
+        // `update_container_columns` owns the column blob; this arm must leave it exactly alone.
+        #expect(updated.sections.map(\.name) == ["Default", "Backlog", "In Progress", "Shipped"])
+    }
+
+    /// `clearContext` / `clearArea` / `clearDueDate` say "remove this", which an omitted argument
+    /// does not — the same distinction `update_task` draws with `clearDueDate`, and the reason
+    /// sending both is a refusal rather than a precedence rule.
+    @Test func clearingAListsParentsIsDistinctFromNotSendingThem() throws {
+        let fixture = try Fixture()
+        let area = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area",
+            name: "Product",
+            contextId: fixture.context.id.uuidString
+        ))
+        let project = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project",
+            name: "Filed project",
+            contextId: fixture.context.id.uuidString,
+            areaId: area.container.id,
+            dueDate: "2026-06-30"
+        ))
+
+        // An update that names neither parent leaves both where they were.
+        let renamed = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: project.container.id,
+            name: "Still filed"
+        ))
+        #expect(renamed.container.contextId == fixture.context.id.uuidString)
+
+        let detached = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: project.container.id,
+            clearContext: true,
+            clearArea: true,
+            clearDueDate: true
+        ))
+        #expect(detached.container.contextId == nil)
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContainer(options: .init(
+                containerKind: "project",
+                containerId: project.container.id,
+                contextId: fixture.context.id.uuidString,
+                clearContext: true
+            ))
+        }
+    }
+
+    @Test func anAreaUpdateRefusesTheTwoArgumentsOnlyAProjectHas() throws {
+        let fixture = try Fixture()
+        let area = try fixture.writeService.createContainer(options: .init(containerKind: "area", name: "Ops"))
+
+        for options in [
+            CadenceUpdateContainerOptions(containerKind: "area", containerId: area.container.id, areaId: UUID().uuidString),
+            CadenceUpdateContainerOptions(containerKind: "area", containerId: area.container.id, clearArea: true),
+            CadenceUpdateContainerOptions(containerKind: "area", containerId: area.container.id, dueDate: "2026-06-30"),
+            CadenceUpdateContainerOptions(containerKind: "area", containerId: area.container.id, clearDueDate: true),
+        ] {
+            #expect(throws: CadenceWriteError.self) {
+                try fixture.writeService.updateContainer(options: options)
+            }
+        }
+
+        #expect(try fixture.readService.containerSummary(kind: "area", id: area.container.id).container.name == "Ops")
+    }
+
+    /// The premise, asserted rather than assumed: `Area.status` reads an unrecognised `statusRaw`
+    /// back as `.active`, so storing `paused` on an area would be a write the caller was told
+    /// succeeded whose value the next read replaces.
+    @Test func aStatusTheKindDoesNotHaveIsRefusedRatherThanStoredAndReadBackAsActive() throws {
+        let fixture = try Fixture()
+        let area = try fixture.writeService.createContainer(options: .init(containerKind: "area", name: "Ops"))
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContainer(options: .init(
+                containerKind: "area",
+                containerId: area.container.id,
+                status: "paused"
+            ))
+        }
+        #expect(try fixture.readService.containerSummary(kind: "area", id: area.container.id).container.status == "active")
+
+        let stored = try #require(try fixture.modelContext.fetch(FetchDescriptor<Area>()).first { $0.id.uuidString == area.container.id })
+        stored.statusRaw = "paused"
+        #expect(stored.status == .active)
+
+        // The same word is a real status on a project, so this is about the kind and not the word.
+        let project = try fixture.writeService.createContainer(options: .init(containerKind: "project", name: "Launch"))
+        let paused = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: project.container.id,
+            status: "paused"
+        ))
+        #expect(paused.container.status == "paused")
+    }
+
+    @Test func aRefusedListUpdateLeavesEveryFieldWhereItWas() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainer(options: .init(
+                containerKind: "project",
+                containerId: board.container.id,
+                name: "Renamed",
+                description: "Changed",
+                colorHex: "#ff0000",
+                icon: "flame.fill",
+                contextId: home.context.id,
+                dueDate: "2026-06-30",
+                status: "archived"
+            ))
+        }
+
+        let after = try fixture.readService.containerSummary(kind: "project", id: board.container.id)
+        #expect(after.container.name == "Launch board")
+        #expect(after.container.status == "active")
+        #expect(after.container.contextId == nil)
+
+        let stored = try #require(try fixture.modelContext.fetch(FetchDescriptor<Project>()).first { $0.id.uuidString == board.container.id })
+        #expect(stored.desc == "")
+        #expect(stored.dueDate == "")
+    }
+
+    @Test func aRefusedContextUpdatePutsTheNameAndTheArchiveFlagBack() throws {
+        let fixture = try Fixture()
+        let created = try fixture.writeService.createContext(options: .init(name: "Work"))
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContext(options: .init(
+                contextId: created.context.id,
+                name: "Renamed",
+                isArchived: true
+            ))
+        }
+
+        let after = try fixture.readService.contextSummary(contextID: created.context.id)
+        #expect(after.context.name == "Work")
+        #expect(!after.context.isArchived)
+    }
+
+    // MARK: - T-1121: a refused commit leaves nothing pending
+
+    /// The failure this whole sweep is about. A refused *insert* used to stay pending on a
+    /// `ModelContext` that outlives the call, so the very next tool call's `save()` committed a
+    /// context, a list or a task the caller had been told did not exist. Here the next `save()` is
+    /// the assertion: it must commit nothing.
+    @Test func aRefusedCreateLeavesNoRowForTheNextCallsSaveToCommit() throws {
+        let fixture = try Fixture()
+        let contextsBefore = try fixture.modelContext.fetchCount(FetchDescriptor<Context>())
+        let projectsBefore = try fixture.modelContext.fetchCount(FetchDescriptor<Project>())
+        let tasksBefore = try fixture.modelContext.fetchCount(FetchDescriptor<AppTask>())
+        let subtasksBefore = try fixture.modelContext.fetchCount(FetchDescriptor<Subtask>())
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.createContext(options: .init(name: "Ghost context"))
+        }
+        #expect(throws: CommitRefused.self) {
+            try refusing.createContainer(options: .init(containerKind: "project", name: "Ghost list"))
+        }
+        #expect(throws: CommitRefused.self) {
+            try refusing.createTask(options: .init(title: "Ghost task", subtaskTitles: ["One", "Two"]))
+        }
+
+        // The next unrelated save, which is exactly who used to take them.
+        try fixture.modelContext.save()
+
+        #expect(try fixture.modelContext.fetchCount(FetchDescriptor<Context>()) == contextsBefore)
+        #expect(try fixture.modelContext.fetchCount(FetchDescriptor<Project>()) == projectsBefore)
+        #expect(try fixture.modelContext.fetchCount(FetchDescriptor<AppTask>()) == tasksBefore)
+        // The subtasks go back too: undoing only the root would strand them as orphans.
+        #expect(try fixture.modelContext.fetchCount(FetchDescriptor<Subtask>()) == subtasksBefore)
+    }
+
+    /// The undo must not be a `rollback()`: this service holds one context per server process, so
+    /// discarding everything pending would take work the refused call never touched.
+    @Test func aRefusedWriteLeavesUnrelatedPendingWorkAlone() throws {
+        let fixture = try Fixture()
+        let bystander = AppTask(title: "Being typed")
+        fixture.modelContext.insert(bystander)
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.createContext(options: .init(name: "Ghost context"))
+        }
+
+        try fixture.modelContext.save()
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).contains { $0.id == bystander.id })
+    }
+
+    @Test func aRefusedTaskUpdatePutsEveryFieldAndTheTagsBack() throws {
+        let fixture = try Fixture()
+        let created = try fixture.writeService.createTask(options: .init(
+            title: "Original",
+            notes: "Original notes",
+            priority: "low",
+            dueDate: "2026-04-30",
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString,
+            sectionName: "Build",
+            tagNames: ["bug"]
+        ))
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateTask(options: .init(
+                taskId: created.summary.id,
+                title: "Changed",
+                notes: "Changed notes",
+                priority: "high",
+                clearDueDate: true,
+                clearContainer: true,
+                tagNames: ["feature"]
+            ))
+        }
+
+        let after = try fixture.readService.getTask(taskID: created.summary.id)
+        #expect(after.summary.title == "Original")
+        #expect(after.notes == "Original notes")
+        #expect(after.summary.priority == "low")
+        #expect(after.summary.dueDate == "2026-04-30")
+        #expect(after.summary.container?.id == fixture.project.id.uuidString)
+        #expect(after.summary.sectionName == "Build")
+        #expect(after.summary.tags.map(\.slug) == ["bug"])
+    }
+
+    @Test func aRefusedScheduleLeavesTheTaskUnscheduled() throws {
+        let fixture = try Fixture()
+        let created = try fixture.writeService.createTask(options: .init(title: "Unscheduled"))
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.scheduleTask(options: .init(
+                taskId: created.summary.id,
+                scheduledDate: "2026-04-28",
+                scheduledStartMin: 600,
+                estimatedMinutes: 50
+            ))
+        }
+
+        let after = try fixture.readService.getTask(taskID: created.summary.id)
+        #expect(after.summary.scheduledDate == "")
+        #expect(after.summary.scheduledStartMin == -1)
+        #expect(after.summary.estimatedMinutes == 30)
+    }
+
+    /// A completion of a recurring task is an in-place edit **and** an insert, so its undo has to
+    /// be both: the status goes back and the successor is un-inserted.
+    @Test func aRefusedCompletionUnsettlesTheTaskAndUnInsertsTheSpawnedOccurrence() throws {
+        let fixture = try Fixture()
+        let task = AppTask(title: "Daily standup")
+        task.recurrenceRule = .daily
+        task.scheduledDate = DateFormatters.todayKey()
+        fixture.modelContext.insert(task)
+        try fixture.modelContext.save()
+        let tasksBefore = try fixture.modelContext.fetchCount(FetchDescriptor<AppTask>())
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.completeTask(taskID: task.id.uuidString)
+        }
+
+        try fixture.modelContext.save()
+
+        #expect(task.status == .todo)
+        #expect(task.completedAt == nil)
+        #expect(task.recurrenceSpawnedTaskID == nil)
+        #expect(try fixture.modelContext.fetchCount(FetchDescriptor<AppTask>()) == tasksBefore)
+    }
+
+    @Test func aRefusedBulkCancelPutsEveryTaskInTheBatchBack() throws {
+        let fixture = try Fixture()
+        for index in 0..<3 {
+            let task = AppTask(title: "Bulk candidate \(index)")
+            fixture.modelContext.insert(task)
+        }
+        try fixture.modelContext.save()
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.bulkCancelTasks(options: .init(titlePrefix: "Bulk candidate"))
+        }
+
+        try fixture.modelContext.save()
+        let tasks = try fixture.modelContext.fetch(FetchDescriptor<AppTask>())
+            .filter { $0.title.hasPrefix("Bulk candidate") }
+        #expect(tasks.count == 3)
+        #expect(tasks.allSatisfy { $0.status == .todo && $0.completedAt == nil })
+    }
+
+    /// The one effect on this surface that cannot be undone, and the response text that says so.
+    ///
+    /// `NoteMigrationService.dailyNote` commits the note row itself before any text is appended,
+    /// so a refused append leaves an empty note behind. The append *is* undone — the assertion
+    /// below reads the content back — and the error names what is left rather than reporting a
+    /// plain failure over an effect the caller cannot see.
+    @Test func aRefusedCoreNoteAppendUndoesTheTextAndNamesTheNoteItCannotRemove() throws {
+        let fixture = try Fixture()
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        var thrown: Error?
+        do {
+            _ = try refusing.appendCoreNote(kind: "daily", content: "Never landed", dateKey: "2026-04-28")
+        } catch {
+            thrown = error
+        }
+
+        let error = try #require(thrown as? CadenceWriteError)
+        guard case .coreNoteCreatedButNotAppended(let kind, let key, _) = error else {
+            Issue.record("expected coreNoteCreatedButNotAppended, got \(error)")
+            return
+        }
+        #expect(kind == "daily")
+        #expect(key == "2026-04-28")
+        let message = try #require(error.errorDescription)
+        #expect(message.contains("2026-04-28"))
+        #expect(message.contains("now exists"))
+
+        // The note is there, and it is empty: the row landed, the text did not.
+        let snapshot = try fixture.readService.coreNotes(dateKey: "2026-04-28")
+        #expect(snapshot.dailyNote?.content == "")
+
+        // An append onto a note that already exists has no such half, so it fails plainly.
+        var second: Error?
+        do {
+            _ = try refusing.appendCoreNote(kind: "daily", content: "Also never landed", dateKey: "2026-04-28")
+        } catch {
+            second = error
+        }
+        #expect(second is CommitRefused)
+        #expect(try fixture.readService.coreNotes(dateKey: "2026-04-28").dailyNote?.content == "")
+    }
+
+    @Test func renamingAndArchivingAreAudited() throws {
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-audit-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+
+        let fixture = try Fixture(auditLogger: CadenceMCPAuditLogger(logURL: auditURL))
+        let created = try fixture.writeService.createContext(options: .init(name: "Work MCP"))
+        _ = try fixture.writeService.updateContext(options: .init(contextId: created.context.id, isArchived: true))
+        let area = try fixture.writeService.createContainer(options: .init(containerKind: "area", name: "Ops MCP"))
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "area",
+            containerId: area.container.id,
+            status: "archived"
+        ))
+
+        let entries = try readAuditEntries(from: auditURL)
+        let tools = entries.map(\.tool)
+        #expect(tools.contains("update_context"))
+        #expect(tools.contains("update_container"))
+
+        let contextEntry = try #require(entries.first { $0.tool == "update_context" })
+        #expect(contextEntry.entityType == "context")
+        #expect(contextEntry.entityId == created.context.id)
+
+        // The entity type is the list's own kind, exactly as `create_container` records it.
+        let containerEntry = try #require(entries.first { $0.tool == "update_container" })
+        #expect(containerEntry.entityType == "area")
+        #expect(containerEntry.entityId == area.container.id)
+    }
+
     private struct CommitRefused: Error {}
 
     private func readAuditEntries(from url: URL) throws -> [TestAuditEntry] {

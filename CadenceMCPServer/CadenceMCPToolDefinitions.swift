@@ -42,10 +42,19 @@ enum CadenceMCPToolDefinitions {
     // set them at creation. Additive again — no field moved, no response shape changed — and taken
     // for the same reason: "can this server re-shape a board it did not just create?" is a
     // capability question, and the only way a client can ask one is the version.
-    private static let serverVersion = "0.8.0"
+    // 0.9.0, on the same argument again: `update_context` and `update_container` mean this surface
+    // can rename, recolour, re-file and **archive** a context or a list it did not just create
+    // (T-1120), where before `update_task` was the only editor on it for anything that was not a
+    // kanban column. Additive — no field moved, no response shape changed. "Can this server retire
+    // a list without deleting it?" is a capability question, and the version is the only thing a
+    // client can ask. It still cannot **delete** anything, deliberately; see
+    // `CadenceUpdateContextOptions` for that decision and its two measured reasons.
+    private static let serverVersion = "0.9.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
+        "update_context",
+        "update_container",
         "update_container_columns",
         "create_task",
         "update_task",
@@ -205,6 +214,28 @@ enum CadenceMCPToolDefinitions {
                 "dueDate": dateProperty("Optional due date, yyyy-MM-dd or natural day. Projects only — an area is ongoing and carries no due date, and sending this with containerKind area is rejected."),
                 "sectionNames": flexibleStringArrayProperty("Optional kanban column names, in order. Each must be non-empty and unique within the list; a blank or repeated name is rejected rather than dropped. A column named Default always exists and is prepended when this list omits it, because every task with no section name lands in it."),
             ], required: ["containerKind", "name"])),
+            Tool(name: "update_context", description: "Rename, recolour, re-icon or archive a Cadence context that already exists. Answers the same summary get_context_summary does. There is no deletion on this surface — archive instead; an archived context is hidden wherever includeArchived is not asked for, keeps everything filed under it, and is reversible from this same tool.", inputSchema: schema([
+                "contextId": uuidProperty("Context UUID."),
+                "name": stringProperty("Optional new name. Must be non-empty; a blank name is rejected rather than dropped.", minLength: 1),
+                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
+                "icon": stringProperty("Optional SF Symbol name."),
+                "isArchived": booleanProperty("Optional archived flag. Archiving hides the context from list_contexts unless includeArchived is set; it deletes nothing and is reversible by sending false."),
+            ], required: ["contextId"])),
+            Tool(name: "update_container", description: "Change the fields of a Cadence area or project that already exists: rename, describe, recolour, re-icon, re-file under a context or an owning area, redate, and set status including archived. Answers the same summary get_container_summary does. Columns are update_container_columns; there is no deletion on this surface — set status to archived instead.", inputSchema: schema([
+                "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
+                "containerId": uuidProperty("Area/project UUID."),
+                "name": stringProperty("Optional new list name. Must be non-empty; a blank name is rejected rather than dropped.", minLength: 1),
+                "description": stringProperty("Optional replacement description. Send an empty string to clear it."),
+                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
+                "icon": stringProperty("Optional SF Symbol name."),
+                "contextId": uuidProperty("Optional context UUID to re-file the list under. The list keeps its order number; re-filing is not a re-ordering."),
+                "clearContext": booleanProperty("Set true to unfile the list from its context. Cannot be combined with contextId."),
+                "areaId": uuidProperty("Optional owning area UUID. Projects only — an area cannot be filed inside another area, and sending this with containerKind area is rejected."),
+                "clearArea": booleanProperty("Set true to detach the project from its owning area. Projects only. Cannot be combined with areaId."),
+                "dueDate": dateProperty("Optional due date, yyyy-MM-dd or natural day. Projects only — an area is ongoing and carries no due date, and sending this with containerKind area is rejected."),
+                "clearDueDate": booleanProperty("Set true to clear the project's due date. Projects only. Cannot be combined with dueDate."),
+                "status": stringProperty("Optional status. An area takes active, done or archived; a project also takes paused and cancelled. A value the kind does not have is rejected rather than stored, because the model reads an unrecognised status back as active. Archiving hides the list without deleting anything and is reversible.", enumValues: Array(Set(ProjectStatus.allCases.map(\.rawValue)).union(AreaStatus.allCases.map(\.rawValue))).sorted()),
+            ], required: ["containerKind", "containerId"])),
             Tool(name: "update_container_columns", description: "Change the kanban columns of a Cadence area or project that already exists: add, rename, recolour, redate, archive, complete and reorder. Answers the same summary get_container_summary does. Columns are addressed by name. There is no removal — archive a column instead.", inputSchema: schema([
                 "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
                 "containerId": uuidProperty("Area/project UUID."),

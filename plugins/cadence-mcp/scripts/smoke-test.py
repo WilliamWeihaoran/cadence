@@ -20,6 +20,8 @@ LAUNCHER = SCRIPT_DIR / "run-cadence-mcp.sh"
 WRITE_TOOLS = {
     "create_context",
     "create_container",
+    "update_context",
+    "update_container",
     "update_container_columns",
     "create_task",
     "update_task",
@@ -1006,6 +1008,66 @@ def main() -> int:
             "a rename to the name the column already holds",
             "No valid changes were provided.",
         )
+
+        # --- Renaming and archiving over the wire (T-1120) ----------------------------------
+        # `update_context` and `update_container` are the first editors on this surface for
+        # anything that is not a task or a kanban column. Archiving is what they offer instead of
+        # deletion, so the archived flag is read back rather than assumed, and the project-only
+        # refusals are driven the way `create_container`'s are.
+        renamed_context = call_ok(111, "update_context", {
+            "contextId": context_id,
+            "name": "MCP smoke context renamed",
+            "isArchived": True,
+        })
+        check_keys(renamed_context, CONTEXT_SUMMARY_KEYS, set(), "update_context summary")
+        check_keys(renamed_context["context"], CONTEXT_REF_KEYS, set(), "update_context ref")
+        if renamed_context["context"]["name"] != "MCP smoke context renamed":
+            raise AssertionError(f"expected the renamed context, got {renamed_context['context']}")
+        if not renamed_context["context"]["isArchived"]:
+            raise AssertionError(f"expected the context archived, got {renamed_context['context']}")
+        # Reversible from the same tool, which is the whole argument for offering it in place of a
+        # delete: put it back so the rest of this run sees the context it expects.
+        unarchived_context = call_ok(112, "update_context", {"contextId": context_id, "isArchived": False})
+        if unarchived_context["context"]["isArchived"]:
+            raise AssertionError(f"expected the context un-archived, got {unarchived_context['context']}")
+
+        renamed_board = call_ok(113, "update_container", board_target | {
+            "name": "MCP smoke board renamed",
+            "status": "paused",
+            "dueDate": "2026-04-30",
+        })
+        check_keys(renamed_board, CONTAINER_SUMMARY_KEYS, set(), "update_container summary")
+        check_keys(renamed_board["container"], CONTAINER_REF_KEYS, CONTAINER_REF_OPTIONAL, "update_container ref")
+        if renamed_board["container"]["name"] != "MCP smoke board renamed":
+            raise AssertionError(f"expected the renamed board, got {renamed_board['container']}")
+        if renamed_board["container"]["status"] != "paused":
+            raise AssertionError(f"expected a paused board, got {renamed_board['container']}")
+        if renamed_board["container"]["contextId"] != context_id:
+            raise AssertionError(f"expected the board still filed, got {renamed_board['container']}")
+        call_error(
+            114,
+            "update_container",
+            {"containerKind": "area", "containerId": board_id, "dueDate": "2026-04-30"},
+            "dueDate on an area",
+            "dueDate applies to a project",
+        )
+        call_error(
+            115,
+            "update_container",
+            board_target | {"status": "retired"},
+            "a status no project has",
+            "Invalid status: retired.",
+        )
+        call_error(
+            116,
+            "update_container",
+            board_target,
+            "an update that asks for nothing",
+            "No valid changes were provided.",
+        )
+        # Put the board back under its created name so the audit and container assertions further
+        # down keep reading what they were written against.
+        call_ok(117, "update_container", board_target | {"name": "MCP smoke board", "status": "active"})
 
         # --- The five write tools that ran nowhere at all (T-259) ------------------------
         # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are

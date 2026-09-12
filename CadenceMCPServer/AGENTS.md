@@ -58,11 +58,15 @@ compiles in a view is not evidence it compiles here.
   (`group.com.haoranwei.Cadence`, `Library/Application Support/Cadence/default.store`) with
   `allowsSave: true` — the same file the running app has open. It is gated on the
   `CADENCE_MCP_ENABLE_WRITES` environment flag and defaults to read-only, but when enabled there is
-  no confirmation step and no undo stack: `createContext`, `createContainer`, `createTask`,
-  `updateContainerColumns`, `updateTask`, `scheduleTask`, `completeTask`, `reopenTask`,
-  `cancelTask`, `bulkCancelTasks` and `appendCoreNote` write and save.
-  *No undo stack* is now one arm less than literal — `updateContainerColumns` puts its columns and
-  its re-filed cards back when the commit is refused; see the `commitEdit` bullet below. `mcp-audit.log` beside the store is the only record, and
+  no confirmation step: `createContext`, `updateContext`, `createContainer`, `updateContainer`,
+  `updateContainerColumns`, `createTask`, `updateTask`, `scheduleTask`, `completeTask`,
+  `reopenTask`, `cancelTask`, `bulkCancelTasks` and `appendCoreNote` — **thirteen arms** — write and
+  save. *No undo stack* is no longer true of any of them (T-1121): every arm goes through
+  `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts what the call added and restores what it
+  changed in place before the caller is told. The one residue is named rather than hidden — an
+  `append_core_note` onto a core note that did not exist yet leaves the empty note row behind,
+  because `NoteMigrationService` commits it on its own before the append, and the arm answers
+  `CadenceWriteError.coreNoteCreatedButNotAppended` saying so. `mcp-audit.log` beside the store is the only record, and
   `CadenceMCPRefreshCoordinator` (macOS Services) watches a `.cadence-mcp-refresh` marker file so
   the app reloads after an external write. Treat a write-path change as a data-safety change.
 - Opening the read-write container also runs `NoteMigrationService`, `TagSupport` seeding/sync and
@@ -175,12 +179,23 @@ than naming a build.
   `preparesStore: false`, because the services default to preparing and used to re-run the sequence
   twice more over the same context, against a live store, before any tool call. Do not add a guard
   inside `prepare` instead: the flag is readable at the call site, which is where the mistake was.
-- **The write surface can mint a context and a list and re-shape a board, and nothing else**
-  (T-799, T-1095). The create arms exist because `create_task` took a `containerId` the surface
-  could not produce and a `sectionName` it refused unless the column already existed, so a kanban
-  board could not be seeded at all. **Nothing creates a goal, habit, tag, saved link, list note or
-  bundle ([[T-1122]]), nothing renames or archives a list or context ([[T-1120]]), and nothing
-  deletes anything** — deletion is refused pending its own decision: no undo, no confirmation.
+- **The write surface can mint, re-shape, rename and retire a context or a list — and cannot
+  delete one** (T-799, T-1095, T-1120). The create arms exist because `create_task` took a
+  `containerId` the surface could not produce and a `sectionName` it refused unless the column
+  already existed, so a kanban board could not be seeded at all. `update_context` and
+  `update_container` are the editors for everything that is not a task or a column: name,
+  description, colour, icon, filing, due date, and **status/`isArchived`**.
+  **Nothing creates a goal, habit, tag, saved link, list note or bundle ([[T-1122]]).**
+  **Nothing deletes anything, and that is settled, not deferred.** Two measured reasons, either
+  sufficient, both written out on `CadenceUpdateContextOptions`:
+  `Cadence/Services/CadenceListDeleteHelpers.swift` is not in this target's Sources phase and
+  cannot cheaply be — its task sweep reaches `CadenceTaskMutationSupport.deleteTasks`, which calls
+  `NotificationManager.shared`, which lazily touches `UNUserNotificationCenter.current()` under a
+  guard that covers test and Preview hosts and not a bundle-less command-line tool; and
+  `deleteContext` walks this device's **local** relationship arrays (`context.areas ?? []`), so a
+  delete arm could not honestly report what it removed when a CloudKit record has not arrived.
+  Archiving is what is offered instead: reversible from the same tool, destroys nothing, and it is
+  `update_container_columns`' own argument about column removal one size up.
 - **Three `Cadence/Shared/` files joined the Sources phase for `update_container_columns`, and not
   for the reason T-1095 predicted** — the merge's `base`/`edited`/`current` is *not* what earns
   them. What does: `CadenceSectionEditingSupport.applySectionNameChanges` (without it a rename
@@ -192,5 +207,14 @@ than naming a build.
   renders as `isError`, plus an undo.** The first half it always had; the second it did not.
   `CadenceWriteService` holds one long-lived `ModelContext`, so a refused `save()` left the
   mutation *pending* for the next tool call's `save()` to commit — a write the caller was told had
-  failed, landing later from a call that never mentioned it. Only `updateContainerColumns` commits
-  through `commitEdit` today; **every other arm still inserts with no undo** ([[T-1121]]).
+  failed, landing later from a call that never mentioned it. **Every arm now has both halves**
+  (T-1121). `saveNotifyAndAudit(_:inserted:undo:)` *composes* the two
+  `CadencePendingChangePersistence` primitives rather than re-spelling either: `commitInsert`
+  deletes the rows this call added and rethrows, `commitEdit` then runs the field restore and
+  rethrows. Nesting them is what gives `completeTask` — a status change **and** a spawned successor
+  — one undo covering both. Neither is a `rollback()`, for `commitEdit`'s stated reason: one
+  long-lived context per process means a rollback would discard whatever else is pending.
+  Two field snapshots live in `CadenceWriteService.swift` rather than being reused from
+  `Cadence/Shared/`: `CadenceTaskFieldSnapshot` and `CadenceListEditSnapshot` share a file with
+  types reaching `CadenceWindDownReconciler`, and `CadenceTaskFieldSnapshot`'s documented boundary
+  excludes `notes` and `tags`, which `updateTask` writes. Both reasons are on the local types.
