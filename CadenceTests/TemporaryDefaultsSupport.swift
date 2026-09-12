@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import Cadence
 
 /// Runs `body` against a `UserDefaults` suite that belongs to the calling test alone.
 ///
@@ -85,9 +86,15 @@ private func temporaryDefaultsSuiteName(scope: String, test: String) -> String {
 /// The `UserDefaults` keys a test writes just by running a migration or a repair (T-480).
 ///
 /// Both hold "what happened to your data the last time the app touched it", read back on the next
-/// launch, and neither service takes an injectable store: `record(_:)` is a private static that
-/// writes `UserDefaults.standard`, so **any** test that reaches `migrateIfNeeded` or
-/// `repairIfNeeded` writes one of these — deliberately or not.
+/// launch, and neither service takes an injectable store: `record(_:)` is a private static, so
+/// **any** test that reaches `migrateIfNeeded` or `repairIfNeeded` writes one of these —
+/// deliberately or not.
+///
+/// **Since [[T-1170]] the store it writes is `CadenceDefaults.store`, not the shared domain**, and
+/// so is the snapshot below. The two have to be the same store or the guard restores a key nobody
+/// wrote: under a `-CadenceSuiteName` launch — which every `xcodebuild test` of this scheme now is
+/// — `CadenceDefaults.store` is the private `xctest-host` suite, and `UserDefaults.standard` is
+/// still the signed-in person's own `com.haoranwei.Cadence.plist`.
 ///
 /// That both keys belong here was measured rather than reasoned about. On 2026-08-29 the app's
 /// stored repair report read `{"source":"test-again",…}` and its migration report
@@ -101,7 +108,7 @@ nonisolated enum StoredLaunchReports {
     ]
 
     static func snapshot() -> [(key: String, value: Data?)] {
-        keys.map { ($0, UserDefaults.standard.data(forKey: $0)) }
+        keys.map { ($0, CadenceDefaults.store.data(forKey: $0)) }
     }
 
     /// Restoring an **absent** key means removing it, not skipping it. Skipping is the quiet half
@@ -110,9 +117,9 @@ nonisolated enum StoredLaunchReports {
     static func restore(_ saved: [(key: String, value: Data?)]) {
         for (key, value) in saved {
             if let value {
-                UserDefaults.standard.set(value, forKey: key)
+                CadenceDefaults.store.set(value, forKey: key)
             } else {
-                UserDefaults.standard.removeObject(forKey: key)
+                CadenceDefaults.store.removeObject(forKey: key)
             }
         }
     }

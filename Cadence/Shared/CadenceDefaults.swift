@@ -39,12 +39,22 @@ import Foundation
 ///
 /// 1. An app launched by *tapping its icon* on the simulator carries no launch arguments and so
 ///    shares the device-wide domain again.
-/// 2. Four files keep an unrouted store because a target that cannot compile *this* file also
-///    compiles them. `Theme` and `CadenceWidgetRefreshCenter` reach the **app-group** suite on
+/// 2. Two files keep an unrouted store because a target that cannot compile *this* file also
+///    compiles them: `Theme` and `CadenceWidgetRefreshCenter` reach the **app-group** suite on
 ///    purpose — the widget is a separate process, and the accent id and the reload state are the
-///    two facts both processes must agree about — while `DataIntegrityRepairService` and
-///    `NoteMigrationService` are in `CadenceMCPServer`'s explicit source list, which has no
-///    `CadenceDefaults` in it to route through.
+///    two facts both processes must agree about.
+///
+/// **`DataIntegrityRepairService` and `NoteMigrationService` used to be a third and fourth
+/// ([[T-1170]]), and the reason they no longer are is worth keeping.** They were exempt because
+/// `CadenceMCPServer`'s explicit source list had no `CadenceDefaults` in it — which is a statement
+/// about a *build graph*, not about who owns the file being written. Measured: the signed-in
+/// person's own `com.haoranwei.Cadence.plist` came out of an ordinary `CadenceTests` run with the
+/// same 86 keys and two different values, both `…lastReport.v1`, stamped inside the run — a debug
+/// test host carries this app's bundle id, so `UserDefaults.standard` there is their file. This
+/// file is in that target's Sources phase now, so both services route; and the shared scheme's
+/// `TestAction` passes `-CadenceSuiteName xctest-host`, so the store they route *to* during a test
+/// run is a private suite. Neither half works alone: with no launch argument `store` **is**
+/// `UserDefaults.standard`.
 /// `nonisolated`, and it has to be: three of the sites routed through it — `NoteTemplateLibrary`,
 /// `PursuitToGoalMigration` and `CadenceCalendarLinkObservations` — are themselves `nonisolated`,
 /// and under this project's main-actor default isolation a `static let` here is main-actor-bound.

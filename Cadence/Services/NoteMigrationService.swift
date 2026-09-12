@@ -177,7 +177,7 @@ nonisolated enum NoteMigrationService {
     }
 
     static func lastReport() -> NoteMigrationReport? {
-        guard let data = UserDefaults.standard.data(forKey: lastReportKey) else { return nil }
+        guard let data = CadenceDefaults.store.data(forKey: lastReportKey) else { return nil }
         return try? JSONDecoder().decode(NoteMigrationReport.self, from: data)
     }
 
@@ -577,7 +577,7 @@ nonisolated enum NoteMigrationService {
 
     private static func record(_ report: NoteMigrationReport) {
         guard let data = try? JSONEncoder().encode(report) else { return }
-        UserDefaults.standard.set(data, forKey: lastReportKey)
+        CadenceDefaults.store.set(data, forKey: lastReportKey)
     }
 
     private static func log(_ report: NoteMigrationReport) {

@@ -723,7 +723,7 @@ struct DataIntegrityRepairServiceTests {
             try JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any]
         )
         object.removeValue(forKey: "habitRemindersCleared")
-        UserDefaults.standard.set(try JSONSerialization.data(withJSONObject: object), forKey: key)
+        CadenceDefaults.store.set(try JSONSerialization.data(withJSONObject: object), forKey: key)
 
         let read = try #require(DataIntegrityRepairService.lastReport())
         #expect(read.source == "previous-launch")

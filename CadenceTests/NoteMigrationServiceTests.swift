@@ -21,25 +21,25 @@ struct NoteMigrationServiceTests {
         for key in StoredLaunchReports.keys {
             let sentinel = Data("a report the app wrote for \(key)".utf8)
 
-            UserDefaults.standard.set(sentinel, forKey: key)
+            CadenceDefaults.store.set(sentinel, forKey: key)
             withStoredLaunchReportsPreserved {
-                UserDefaults.standard.set(fabricated, forKey: key)
+                CadenceDefaults.store.set(fabricated, forKey: key)
                 #expect(
-                    UserDefaults.standard.data(forKey: key) == fabricated,
+                    CadenceDefaults.store.data(forKey: key) == fabricated,
                     "the guard blocked the body's write to \(key)"
                 )
             }
             #expect(
-                UserDefaults.standard.data(forKey: key) == sentinel,
+                CadenceDefaults.store.data(forKey: key) == sentinel,
                 "a fabricated report outlived the guard on \(key)"
             )
 
-            UserDefaults.standard.removeObject(forKey: key)
+            CadenceDefaults.store.removeObject(forKey: key)
             withStoredLaunchReportsPreserved {
-                UserDefaults.standard.set(fabricated, forKey: key)
+                CadenceDefaults.store.set(fabricated, forKey: key)
             }
             #expect(
-                UserDefaults.standard.data(forKey: key) == nil,
+                CadenceDefaults.store.data(forKey: key) == nil,
                 "the guard invented a stored report on \(key) for an app that had none"
             )
         }
@@ -619,7 +619,7 @@ struct NoteMigrationServiceTests {
             try JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any]
         )
         object.removeValue(forKey: "skippedCanonicalDuplicate")
-        UserDefaults.standard.set(try JSONSerialization.data(withJSONObject: object), forKey: key)
+        CadenceDefaults.store.set(try JSONSerialization.data(withJSONObject: object), forKey: key)
 
         let read = try #require(NoteMigrationService.lastReport())
         #expect(read.source == "previous-launch")

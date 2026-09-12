@@ -255,7 +255,7 @@ nonisolated enum DataIntegrityRepairService {
     }
 
     static func lastReport() -> DataIntegrityRepairReport? {
-        guard let data = UserDefaults.standard.data(forKey: lastReportKey) else { return nil }
+        guard let data = CadenceDefaults.store.data(forKey: lastReportKey) else { return nil }
         return try? JSONDecoder().decode(DataIntegrityRepairReport.self, from: data)
     }
 
@@ -958,7 +958,7 @@ nonisolated enum DataIntegrityRepairService {
 
     private static func record(_ report: DataIntegrityRepairReport) {
         guard let data = try? JSONEncoder().encode(report) else { return }
-        UserDefaults.standard.set(data, forKey: lastReportKey)
+        CadenceDefaults.store.set(data, forKey: lastReportKey)
     }
 
     private static func log(_ report: DataIntegrityRepairReport) {
