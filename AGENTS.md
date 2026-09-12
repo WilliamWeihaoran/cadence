@@ -139,9 +139,9 @@ the next unrelated `save()` to take or `rollback()` to discard. Enforced by `Cad
 - Never create simulator devices. Use one existing stock simulator and `scripts/simulator-claim.sh`.
 - Launch the macOS app only through `scripts/run-macos-app.sh start <Cadence.app> <id>`, and pair it
   with `stop <id>` in the same turn.
-- Use one scratch directory per agent and clean only inside it.
-- Isolate with `git archive HEAD | tar -x -C <dir>`: 910 files in 0.2s and already exactly HEAD, so
-  no dirty-path restore step. `rsync` copies 8963 files / 464 MB and another agent's in-flight edits.
+- **Mint and release scratch through `scripts/agent-scratch.sh`** (T-1094): `new <id>` does the
+  `git archive HEAD | tar -x` and refuses a generic name; `release` refuses to delete a tree holding
+  work that is in neither its base nor HEAD. `rsync` copies 464 MB and siblings' in-flight edits.
 - Launch long build/test runs and poll them in one shell invocation; confirm the log names your tree.
 
 ## Red-Run Triage

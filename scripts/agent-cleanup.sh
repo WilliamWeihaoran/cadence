@@ -111,12 +111,25 @@ say "== scratch directories =="
 # matches nothing even against a file created one second ago, so every directory read
 # as stale and `--apply` deleted live agents' trees -- it took a running agent's
 # isolated copy out from under it mid-run. Compare mtimes numerically instead.
+# T-1094 wires a second condition in beneath staleness, and it is the one that matters: a tree
+# minted by `scripts/agent-scratch.sh` carries the sha it was archived from, so this loop can ask
+# whether anything in it is in NEITHER that sha NOR HEAD -- i.e. whether it is the only copy of
+# somebody's work. Three batches of finished, mutation-tested work have been destroyed by a delete
+# that nobody checked first (the last on 2026-09-11), and a 30-minute idle timer does not
+# distinguish "abandoned" from "the agent was refused and is writing its report". Unstamped
+# directories behave exactly as before: this cannot answer the question for them, and pretending
+# otherwise would be worse than the timer.
+_scratch_guard="$(git rev-parse --show-toplevel 2>/dev/null)/scripts/agent-scratch.sh"
 for d in "$SCRATCH_ROOT"/*/*/scratchpad/(agent|lead)-*(N/); do
   sz=$(du -sh "$d" 2>/dev/null | cut -f1)
   newest=$(find "$d" -type f -exec stat -f %m {} + 2>/dev/null | sort -rn | head -1)
   age=$(( $(date +%s) - ${newest:-0} ))
   if (( age < 1800 )); then
     say "  $sz  ${d:t}  -- ACTIVE, left alone"
+  elif [[ -f "$d/.cadence-scratch/base" && -x "$_scratch_guard" ]] \
+       && ! zsh "$_scratch_guard" check "$d" >/dev/null 2>&1; then
+    say "  $sz  ${d:t}  (stale) -- HOLDS WORK THAT IS IN NO COMMIT; left alone (T-1094)"
+    say "      ./scripts/agent-scratch.sh check ${(q)d}   names the files"
   else
     say "  $sz  ${d:t}  (stale)"
     run "rm -rf ${(q)d}"

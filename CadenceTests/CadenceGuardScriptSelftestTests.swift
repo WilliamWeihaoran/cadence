@@ -103,6 +103,15 @@ struct CadenceGuardScriptSelftestTests {
         // selftest goes red rather than quietly halving what the ledger guards prove.
         "LEDGER-CLOSURE-BURIED",
         "LEDGER-ID-UNFILED",
+        // T-1072, and it is the half `LEDGER-ID-UNFILED` structurally cannot reach. That guard
+        // makes an id that is in no ledger impossible; in a CONCURRENT allocation both agents file
+        // a stub, so both messages pass it and the collision lands anyway. The only artefact two
+        // agents reading "next free" before either committed leaves behind is a ledger with two
+        // formal `- [T-n]` entries for one id -- T-1119, T-1109/T-1110 and T-1043 all landed in
+        // exactly that shape, and `b05869d` committed the whole file twice without anything saying
+        // a word. Naming it here means deleting mode 4f goes red rather than quietly leaving the
+        // allocator guarded only against the sequential mistake.
+        "LEDGER-ID-DUPLICATE",
         "REMOVES-HEAD-LINES",
         "NO-PATHS",
         "UNKNOWN-PATH",
@@ -115,6 +124,25 @@ struct CadenceGuardScriptSelftestTests {
         "SWEEP-MANIFEST-MISSING",
         "SWEEP-CHECK-MISSING",
         "SWEEP-CHECK-FAILED",
+    ]
+
+    /// Every refusal `scripts/agent-scratch.sh` makes (T-1094). The ticket was filed over work that
+    /// stopped existing, twice, and its prescribed fix was a paragraph in
+    /// `docs/AGENT_BRIEF_PREAMBLE.md`. **It happened a third time on 2026-09-11 with that paragraph
+    /// in place**, because the paragraph opened *"a refused commit means your files are the only
+    /// copy"* and that agent deleted its tree before reaching a refusal at all. The predicate that
+    /// covers both shapes is not about the commit path — it is *is this work in HEAD yet* — so the
+    /// guard reads the tree three ways: against the sha it was minted from, against HEAD, and
+    /// refuses only what is in neither. `GENERIC-SCRATCH-NAME` and `SCRATCH-NAME-TAKEN` are the
+    /// second loss measured that week, when a sibling's `git archive` landed on top of an agent's
+    /// tree at `.../scratchpad/tree` and its whole first build-and-test round measured HEAD.
+    /// Naming them here means deleting a mode goes red rather than quietly halving the guard.
+    static let scratchGuardRefusals = [
+        "GENERIC-SCRATCH-NAME",
+        "SCRATCH-NAME-TAKEN",
+        "SCRATCH-HOLDS-UNLANDED-WORK",
+        "UNKNOWN-SCRATCH",
+        "NOT-REPO-ROOT",
     ]
 
     /// Every refusal `scripts/worktree-drift.sh` makes (T-975). Two, because the script's job is
@@ -246,6 +274,18 @@ struct CadenceGuardScriptSelftestTests {
         let run = try CadenceSelftestRun.of("scripts/worktree-drift.sh")
         let complaints = run.complaints(requiring: Self.worktreeDriftRefusals)
         #expect(complaints.isEmpty, "./scripts/worktree-drift.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
+    /// T-1094. Runs entirely inside a throwaway git repository under `$TMPDIR`: it mints trees,
+    /// edits them, commits in that repository and releases them, and touches neither this checkout
+    /// nor any tree a sibling is building in. About two seconds. The two checks worth knowing about
+    /// are the pair in mode 3 — the same tree is REFUSED before its commit and releasable the moment
+    /// the commit reaches HEAD — and the one above them, an untouched tree eight commits behind HEAD
+    /// naming zero files, which is what a two-way reading against HEAD alone could not do.
+    @Test func theScratchGuardsOwnGuardsStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/agent-scratch.sh")
+        let complaints = run.complaints(requiring: Self.scratchGuardRefusals)
+        #expect(complaints.isEmpty, "./scripts/agent-scratch.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
     /// T-780. Runs entirely inside a throwaway git repository under `$TMPDIR`, like the drift
@@ -403,6 +443,7 @@ struct CadenceGuardScriptSelftestTests {
         for (script, refusals) in [
             ("scripts/mutate.sh", Self.mutationRunnerRefusals),
             ("scripts/agent-commit.sh", Self.commitHelperRefusals),
+            ("scripts/agent-scratch.sh", Self.scratchGuardRefusals),
             ("scripts/worktree-drift.sh", Self.worktreeDriftRefusals),
             ("scripts/xcb.sh", Self.buildRunnerRefusals),
             (".githooks/pre-commit", Self.preCommitHookRefusals),
@@ -435,6 +476,7 @@ struct CadenceGuardScriptSelftestTests {
         for script in [
             "scripts/mutate.sh",
             "scripts/agent-commit.sh",
+            "scripts/agent-scratch.sh",
             "scripts/test-host-lock.sh",
             "scripts/simulator-claim.sh",
             "scripts/worktree-drift.sh",

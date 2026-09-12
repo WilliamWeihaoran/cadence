@@ -17,7 +17,12 @@ Open a whole file only when you are editing it. Never read `docs/TODO.md` or `do
 **The scratchpad is shared by every agent in the batch. Namespace your files.** Put everything under
 `<scratchpad>/<your-agent-id>/` and prefix log and plan names with your id. An agent using generic
 names — `plan.txt`, `mut.log`, `tree` — has already collided with a sibling mid-mutation-run and had
-to terminate a runner to recover. Same for build ids: `xcb.sh <your-id>`, never a shared word.
+to terminate a runner to recover. Same for build ids: `xcb.sh <your-id>`, never a shared word. **This
+paragraph did not stop it**: on 2026-09-11 a sibling's `git archive` landed on top of one agent's
+tree at `.../scratchpad/tree`, and that agent's whole first build-and-test round then measured HEAD
+instead of its own edits — a wrong answer, not a crash. So the name is no longer yours to pick:
+`./scripts/agent-scratch.sh new <your-agent-id>` mints the tree, does the `git archive HEAD | tar -x`,
+and refuses the generic words outright.
 
 **Build in a `git archive HEAD` tree, not the working tree, whenever siblings are in flight.** The
 shared checkout routinely will not compile because another agent is mid-edit in a file you do not
@@ -71,14 +76,24 @@ the same way. `--removes <n>` is not a formality: read every line the refusal li
 that each one is yours to remove, and only then say the number. **Never `--commits-stale`** — it is the
 one override here that discards a sibling's landed work.
 
-**A refused commit means your files are the only copy of your work. Do not delete them.** A refusal —
-`REMOVES-HEAD-LINES`, `HEAD-MOVED`, `WORKTREE-BEHIND-HEAD`, a user-gated flag — says *this commit was
-not taken*, not *this work was no good*. Two batches of finished, mutation-tested work were destroyed
-exactly this way (T-1094): the commit was refused, and the agent then did the standing "delete
-DerivedData and scratch when you are done", which was the only copy. **Cleanup applies to what you
-committed and to nothing else.** If anything you produced is not in `git log`, leave those files where
-they are, do not clean their directory, and end your report with their **absolute paths** and the exact
-refusal text — so the next agent commits your work instead of rebuilding it.
+**DELETE NOTHING UNTIL `git log` SHOWS YOUR COMMIT AT HEAD.** Not "unless it was refused" — the
+condition is not about the commit path at all, it is *is this work in HEAD yet*. This paragraph used
+to open *"a refused commit means your files are the only copy"*, and on 2026-09-11, with that wording
+in place, an agent finished T-752, T-919 and T-1085, deleted its tree **before its commit landed**,
+and every line was lost; a second agent rebuilt all three from nothing. The refusal-shaped rule did
+not cover the refusal-free way to do it. Three batches now, counting the two T-1094 was filed over.
+
+So do not answer it from memory:
+
+    ./scripts/agent-scratch.sh release <your tree>
+
+refuses while anything in there is in neither the sha it was minted from nor HEAD, and names the
+files. `check` asks without deleting. A refusal — `REMOVES-HEAD-LINES`, `HEAD-MOVED`,
+`WORKTREE-BEHIND-HEAD`, a user-gated flag — says *this commit was not taken*, not *this work was no
+good*. **Cleanup applies to what you committed and to nothing else.** If anything you produced is not
+in `git log`, leave those files where they are, do not clean their directory, and end your report with
+their **absolute paths** and the exact refusal text — so the next agent commits your work instead of
+rebuilding it.
 
 ## Safety
 

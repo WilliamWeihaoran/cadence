@@ -13,21 +13,41 @@ below.
 commit, because the git index is shared between every agent in the checkout and four separate
 batches lost something to that. See "Committing out of a shared checkout" below.
 
-- **Work in an isolated copy.** `mkdir -p /private/tmp/cadence-<tag> && git archive HEAD | tar -x -C
-  /private/tmp/cadence-<tag>` — work there, never edit the user's repo, never commit. The coordinator
-  diffs your tree against **current HEAD** and lands it. **This is `git archive`, not `rsync`, and the
-  difference matters**: the archive is 910 files / 14 MB and *is* HEAD, so there is no "restore the
-  dirty paths" step to forget; `rsync -a --exclude .git` copies 8963 files / 464 MB including
-  `.codex-build` **and any other agent's in-flight edits**, which is how you end up verifying someone
-  else's uncommitted code and reporting it as HEAD. (T-237's slow-`git archive` claim was measured on
-  2026-08-30 at 0.06s and closed as not reproducible.)
+- **Work in an isolated copy, and mint it with `./scripts/agent-scratch.sh new <your-agent-id>`.**
+  It does the `git archive HEAD | tar -x` for you, into a name built from your id, the base sha and
+  the pid, and it stamps the tree with the sha it came from. Work there, never edit the user's repo,
+  never commit. **This is `git archive`, not `rsync`, and the difference matters**: the archive is 910
+  files / 14 MB and *is* HEAD, so there is no "restore the dirty paths" step to forget; `rsync -a
+  --exclude .git` copies 8963 files / 464 MB including `.codex-build` **and any other agent's
+  in-flight edits**, which is how you end up verifying someone else's uncommitted code and reporting
+  it as HEAD. (T-237's slow-`git archive` claim was measured on 2026-08-30 at 0.06s and closed as not
+  reproducible.) **The name is the point of the helper, not a convenience.** On 2026-09-11 a sibling
+  extracted its own archive over an agent's tree at `.../scratchpad/tree`, and that agent's entire
+  first build-and-test round measured HEAD rather than its own edits — silently, as a wrong ANSWER.
+  `new` refuses `tree`, `work`, `scratch`, `build` and the rest of the words that have collided, and
+  refuses to extract into a directory that already exists.
+- **`release`, never `rm -rf`. Delete nothing until `git log` shows your commit at HEAD.**
+  `./scripts/agent-scratch.sh release <dir>` refuses (`SCRATCH-HOLDS-UNLANDED-WORK`) while anything in
+  the tree is in **neither** the sha it was minted from **nor** HEAD — which is the literal question
+  "is this the only copy of this". `check <dir>` asks without deleting, and `status` asks of every
+  tree at once. The three-way reading is why this is usable at all: two-way against HEAD would refuse
+  every release, because siblings land constantly. Measured over 25 untouched trees archived from the
+  last 25 commits and checked against HEAD: **0 files named.** Build output is invisible to it (the
+  tree's own `.gitignore`), and nothing is hashed into the shared object database.
+  This is T-1094, and it has now cost **three** batches of finished, mutation-tested work — the last
+  on 2026-09-11, with the warning paragraph already in `docs/AGENT_BRIEF_PREAMBLE.md`. That paragraph
+  was conditioned on *a refused commit*; the 2026-09-11 agent never got that far. The predicate is
+  "in HEAD yet", and it is a script's question, not a habit's.
 - **Scoped runs only.** Run `-only-testing:CadenceTests/<YourSuite>` for failing-first and every
   mutation. Do **not** run the full `CadenceTests` suite — the coordinator runs one integration pass
   for the whole batch, so a full run from you costs six minutes and duplicates it.
 - **Clean only inside your own scratch directory.** The session scratchpad
   (`.../<session-id>/scratchpad/`) is **shared** — it holds the coordinator's integration runner and
   batch plan. An agent emptied it during cleanup on 2026-08-30, deleting the runner mid-batch. Your
-  scratch is `/private/tmp/cadence-<your-tag>*` and your own private DerivedData; nothing else.
+  scratch is the tree `agent-scratch.sh new` minted for you and your own private DerivedData; nothing
+  else. `scripts/agent-cleanup.sh --apply` now consults `agent-scratch.sh check` before deleting a
+  stale stamped tree and leaves one holding unlanded work alone, so the 30-minute idle timer can no
+  longer mistake "the agent was refused and is writing its report" for "abandoned".
 - **A toolchain crash reads as 0 compile errors.** A crashed `swift-frontend` emits **no**
   `.swift:line:col: error:` lines, so the strict error count returns **0 on a build that failed** — which
   is exactly how a crash gets reported as a clean run. Always pair the error count with the exit code,
@@ -200,7 +220,8 @@ batches lost something to that. See "Committing out of a shared checkout" below.
   that made one such crash unreproducible from the agent's own archive tree.
 - **Never** launch or build the Cadence app, kill a process named `Cadence`, use a simulator, touch
   the real app-group store, or set `CADENCE_MCP_ENABLE_WRITES`.
-- **Delete your DerivedData when you finish** (~1.7 GB) and release the lock.
+- **Delete your DerivedData when you finish** (~1.7 GB) and release the lock. The scratch TREE is a
+  different question: `agent-scratch.sh release` it, and if that refuses, leave it and report the path.
 - See also the lock path, stale-owner, `sleep`, compile-error-count and vacuous-warning rules above.
 
 ## Running the app and the simulator

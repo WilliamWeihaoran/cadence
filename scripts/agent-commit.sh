@@ -184,7 +184,7 @@ fi
 usage() {
     say "usage: ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]..."
     say "       flags: --removes <n> --drops-ids <ids> --reopens-ids <ids>"
-    say "              --unfiled-ids <ids> --buried-closures <ids>"
+    say "              --unfiled-ids <ids> --buried-closures <ids> --duplicate-ids <ids>"
     say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
     say "       ./scripts/agent-commit.sh status         # report outstanding declined hunks"
@@ -334,6 +334,55 @@ message_ids() {  # $1 = message
 }
 is_any_ledger_path() { [[ "${1:t}" == "TODO.md" || "${1:t}" == "TODO_DONE.md" ]] }
 
+# T-1072, and this is the half the previous two guards do not reach. LEDGER-ID-UNFILED asks whether
+# an id in a commit message has an entry; it cannot ask whether that entry is the SECOND one. The
+# ticket's own shape is "two agents read `next free` before either committed": both then write a
+# stub for the same id, both messages name a filed id, and LEDGER-ID-UNFILED passes both. The only
+# artefact the collision leaves anywhere is a ledger with two formal `- [T-n]` entries for one id,
+# and until now nothing read it.
+#
+# WHY THE READING IS A DELTA AND NOT THE WHOLE FILE, which is the opposite of the choice T-1106
+# made one function up, and the difference is not taste:
+#
+#   * The event being guarded IS a single commit. An id is allocated once; "did THIS commit hand
+#     out an id that was already handed out" is the literal question, and a whole-file reading
+#     answers a different one.
+#   * HEAD carries three standing duplicates -- T-781, T-974 and T-1043 -- and they are not all
+#     fixable. T-781 and T-974 each have a closure filed as a NEW entry with the original open copy
+#     left behind, so one id reads open and closed at once. T-1043 is two genuinely different
+#     tickets (an image fix and a calendar-link one), and T-1072 decided in as many words: **"Fix
+#     the allocator, not the three collisions."** Renumbering either would orphan every `[[T-1043]]`
+#     reference in the ledger. A whole-file reading would therefore refuse every future commit to
+#     docs/TODO.md until a fix the ticket forbids had been made -- a permanent false refusal in the
+#     commit path, which is the one failure this family must not have.
+#
+# MEASURED, by replaying every commit that has ever touched either ledger and asking each one
+# whether it introduced a duplicate its parent did not have. **436 commits, 7 refusals:**
+#
+#   939959e  2026-09-11  T-1119   the incident this ticket was re-filed over: one id, two agents,
+#                                 both having read the same "next free" before either committed.
+#   be10dd4  2026-09-07  T-1109   `importgraph` and `importedge` reserved the SAME TWO ids on the
+#                        T-1110   same day for unrelated findings. Not previously recorded anywhere.
+#   dcb0a15  2026-09-05  T-1043   the collision T-1072's own entry names.
+#   988d7cb  2026-09-04  T-781    a closure filed as a new entry, the open original left in place,
+#                        T-974    so `ledger_closed_ids` says closed and a top-down reader says open.
+#   022ab0e  2026-09-03  T-777    the duplication `f566723b` later deduped by hand (see T-981 above).
+#   b05869d  2026-08-29  33 ids   **the entire file was committed twice** -- two `# Cadence - task
+#                                 list` headers, two `## Open` sections, 719 lines apart, byte for
+#                                 byte identical. It landed in history and nothing said a word.
+#   e322be1  2026-08-31  T-572    the ONE false refusal. A prerequisite note was written in entry
+#                                 form (`- [T-572] *(**PREREQUISITE ADDED...`) above the real
+#                                 ticket. Nobody allocated T-572 twice; an annotation borrowed the
+#                                 entry syntax. Recorded rather than tuned away: narrowing the
+#                                 pattern to exclude a `*(` second line would also stop reading the
+#                                 shape b05869d landed in, which is the worst of the seven.
+#
+# So: 6 true, 1 false in 436 replayed commits, against LEDGER-ID-UNFILED's 1 in 60. The flag is
+# `--duplicate-ids`, and the T-572 shape is what it is for.
+ledger_duplicate_ids() {  # $1... = ledger files, read as one ledger
+    grep -h -oE '^- \[T-[0-9]+\]' -- "$@" 2>/dev/null | sed 's/^- \[//; s/\]$//' | sort | uniq -d
+}
+
 STALE_MINUTES="${CADENCE_DECLINED_STALE_MINUTES:-30}"
 
 # Age from the record's mtime, not from a field inside it: records written before this check
@@ -415,7 +464,7 @@ cmd_accept() {
 cmd_commit() {
     local id=$1; shift
     local message="" have_message=0 declared_removals="" declared_dropped_ids="" declared_reopened_ids=""
-    local declared_unfiled_ids="" declared_buried_ids=""
+    local declared_unfiled_ids="" declared_buried_ids="" declared_duplicate_ids=""
     local -a paths accepted stale_declared not_sweeps
     paths=(); accepted=(); stale_declared=(); not_sweeps=()
 
@@ -437,6 +486,8 @@ cmd_commit() {
                 declared_unfiled_ids="$2"; shift 2 ;;
             --buried-closures) [[ $# -ge 2 ]] || refuse BAD-OPTION "--buried-closures needs a comma-separated id list"
                 declared_buried_ids="$2"; shift 2 ;;
+            --duplicate-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--duplicate-ids needs a comma-separated id list"
+                declared_duplicate_ids="$2"; shift 2 ;;
             --commits-stale) [[ $# -ge 2 ]] || refuse BAD-OPTION "--commits-stale needs a path"
                 stale_declared+=("$2"); shift 2 ;;
             --not-a-sweep) [[ $# -ge 2 ]] || refuse BAD-OPTION "--not-a-sweep needs a @Test name"
@@ -978,6 +1029,48 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   agent computing \"next free\", which is how one id went to two agents in a single week. Write the
   stub -- \`- [$unfiled_ids[1]] **<one line>**\` -- into docs/TODO.md in THIS commit. If the id is a
   historical reference you are only quoting, say so: --unfiled-ids $unfiled_sorted"
+        fi
+    fi
+
+    # 3a5. T-1072's concurrent half. The guard above makes an id that was never filed impossible;
+    #      it says nothing about an id filed TWICE, which is the exact residue of two agents both
+    #      reading "next free" before either committed. `T-1119` in one week, `T-1109`/`T-1110` in
+    #      another, and `T-1043` -- all three incidents left one shape behind, a ledger with two
+    #      formal entries for one id, and nothing read it. Rationale, the delta reading and the
+    #      436-commit replay that measured 6 true refusals and 1 false are on `ledger_duplicate_ids`.
+    #
+    #      Read PER LEDGER FILE, not across both, and that is what was measured: an entry moving
+    #      from TODO.md to TODO_DONE.md is briefly in both by construction, and a commit staging one
+    #      side of that move is an ordinary commit, not a double allocation.
+    local -a duplicate_ids
+    duplicate_ids=(); local duplicate_in="" dup_head="" dup_staged="" dup_new="" dup_headfile=""
+    for name in "${names[@]}"; do
+        is_any_ledger_path "$name" || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue
+        dup_staged="$scratch/$(ledger_key "$name").dupstaged"
+        ledger_duplicate_ids "${staged_content[$name]}" > "$dup_staged"
+        [[ -s "$dup_staged" ]] || continue
+        dup_head="$scratch/$(ledger_key "$name").duphead"
+        dup_headfile="$scratch/$(ledger_key "$name").duphead.blob"
+        git cat-file -p "$headsha:$name" > "$dup_headfile" 2>/dev/null || : > "$dup_headfile"
+        ledger_duplicate_ids "$dup_headfile" > "$dup_head"
+        dup_new=$(comm -23 "$dup_staged" "$dup_head")
+        [[ -n "$dup_new" ]] || continue
+        duplicate_ids+=(${(f)dup_new}); duplicate_in="$name"
+    done
+    if (( ${#duplicate_ids} )); then
+        local declared_duplicate_sorted="${(j:,:)${(o)${(s:,:)declared_duplicate_ids}}}"
+        local duplicate_sorted="${(j:,:)${(o)duplicate_ids}}"
+        if [[ "$declared_duplicate_sorted" != "$duplicate_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-ID-DUPLICATE "this commit files a second formal entry for ids already allocated: ${(j:, :)duplicate_ids}
+  The ledger IS the allocator, so an id with two entries is an id two pieces of work answer to, and
+  every later \`[[$duplicate_ids[1]]]\` reference is ambiguous forever. This is what two agents both
+  reading \"next free\" before either committed leaves behind -- HEAD already moved under you once,
+  a sibling's stub for this id landed, and your reconstruction carried yours in beside theirs.
+  Renumber YOUR entry to an id that is free in $duplicate_in as this commit leaves it, and fix the
+  references in your own hunk. If this really is one ticket written twice on purpose, say so:
+  --duplicate-ids $duplicate_sorted"
         fi
     fi
 
@@ -1639,6 +1732,59 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     ( cd "$ws" && print -r -- "filed" >> mine.txt )
     out=$( cd "$ws" && zsh "$here" h8 -m "$MF" mine.txt 2>&1 ); rc=$?
     check "a message naming only FILED ids needs no flag" $(( rc == 0 )) "exit $rc: $out"
+
+    say ""
+    say " mode 4f (LEDGER-ID-DUPLICATE) -- T-1072: the id two agents both computed as \"next free\""
+    # The half LEDGER-ID-UNFILED cannot reach. That guard makes an UNFILED id impossible; both
+    # agents in a concurrent allocation file a stub, so both messages pass it. What the collision
+    # actually leaves is a ledger with two formal entries for one id, and until T-1136 nothing read
+    # it -- three measured incidents (T-1119, T-1109/T-1110, T-1043) landed in exactly this shape.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && git show HEAD:TODO.md > TODO.md ) >/dev/null 2>&1
+    # The sibling's stub for T-901 is already in HEAD (mode 4e filed it). This is the second agent
+    # rebuilding on the new HEAD and carrying its own entry for the same id in beside it, which is
+    # precisely what `939959e` did.
+    ( cd "$ws"
+      git show HEAD:TODO.md > collide.md
+      print -rl -- "" "- [T-901] **the OTHER piece of work that read the same next-free value.**" \
+                      "  Reserved by a second agent, minutes later, from the same ledger." >> collide.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d1 -m "$M" TODO.md=collide.md 2>&1 ); rc=$?
+    check "a second formal entry for an id HEAD already has is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "the doubly-allocated id is named" $( [[ "$out" == *"T-901"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md | grep -c '^- \[T-901\]' ) == 1 ]] && print 1 || print 0 )
+    out=$( cd "$ws" && zsh "$here" d1 -m "$M" --duplicate-ids T-902 TODO.md=collide.md 2>&1 ); rc=$?
+    check "naming the WRONG id is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The cure the refusal names, and the reason it is the right cure: renumbering YOUR entry is
+    # the only repair that leaves both pieces of work addressable. Deleting either loses one.
+    ( cd "$ws"
+      git show HEAD:TODO.md > renumbered.md
+      print -rl -- "" "- [T-903] **the OTHER piece of work that read the same next-free value.**" \
+                      "  Renumbered off T-901 by the refusal." >> renumbered.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d2 -m "$M" TODO.md=renumbered.md 2>&1 ); rc=$?
+    check "renumbering to a free id is accepted" $(( rc == 0 )) "exit $rc: $out"
+    check "and both pieces of work now have an id" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md | grep -cE '^- \[T-(901|903)\]' ) == 2 ]] && print 1 || print 0 )
+    # THE CHECK THAT PINS THE DELTA READING, and it is the reason this guard can live in the commit
+    # path at all. HEAD's real docs/TODO.md carries three standing duplicates -- T-781 and T-974
+    # (a closure filed as a new entry beside the open original) and T-1043 (two genuinely different
+    # tickets) -- and T-1072 decided that the allocator gets fixed and the collisions do not, so
+    # renumbering them would orphan every reference. A whole-file reading would refuse every commit
+    # to the ledger forever. This proves the pre-existing duplicate is tolerated and only a NEW one
+    # refuses.
+    ( cd "$ws"
+      git show HEAD:TODO.md > collide2.md
+      print -rl -- "" "- [T-901] **filed twice on purpose, to make the pre-existing duplicate real.**" \
+                      "  So the next check is asked of a ledger that already carries one." >> collide2.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d3 -m "$M" --duplicate-ids T-901 TODO.md=collide2.md 2>&1 ); rc=$?
+    check "declaring the duplicate deliberately lands it" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws"
+      git show HEAD:TODO.md | sed 's/^  Renumbered off T-901 by the refusal./  Renumbered, and this line was later edited./' > afterdup.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d4 -m "$M" --removes 1 TODO.md=afterdup.md 2>&1 ); rc=$?
+    check "an ordinary later edit to a ledger that ALREADY has that duplicate needs no flag" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"

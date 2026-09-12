@@ -112,6 +112,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 <!-- importgraph 2026-09-07: T-1109..T-1110 reserved from docs/audits/2026-09-07/. -->
 
+<!-- briefhygiene 2026-09-12: T-1136..T-1137 reserved. -->
+
+- [T-1136] **Three ids in `docs/TODO.md` have two formal entries each, and two of them read closed and open at the same time.** Found by the 436-commit replay that produced `LEDGER-ID-DUPLICATE` ([[T-1072]]). `T-781` and `T-974` each have a `**CLOSED 2026-09-04**` entry filed as a NEW entry at `988d7cb` with the original open text left in place below it — so `ledger_closed_ids` (which is `sort -u` over every matching line) says closed, and an agent scanning the file top-down hits the open copy first and can pick the ticket up again. That is exactly [[T-1085]]'s five-day failure with a different cause. `T-1043` is the third and is a different animal: two genuinely different tickets (a note-image fix and a calendar-link one), both since closed, and [[T-1072]] decided in as many words that the allocator gets fixed and the collisions do not — renumbering either would orphan every `[[T-1043]]` reference in the ledger. So this is not "fix all three": it is **merge the two stale open copies into their closures, decide what `T-1043` should say about itself, and then decide whether `LEDGER-ID-DUPLICATE` can be tightened from a delta to a whole-file reading**, which is the reading T-1106 argued for and which this standing population is currently the only thing preventing.
+
+- [T-1137] **`default.profraw` is tracked in git while `.gitignore` carries `*.profraw`, and the combination is invisible to `git add -A` against a fresh index.** A coverage artefact from some `xcodebuild` run is committed at the repository root. Being both tracked and ignored is not merely untidy: `git add -A` skips a path the ignore rules match unless the index already tracks it, so **any** tool that builds a fresh index over a tree — which is the natural way to compare a scratch copy against a commit — reads the file as deleted. Measured 2026-09-12 while building `scripts/agent-scratch.sh` ([[T-1094]]): 25 of 25 untouched trees were refused as holding uncommitted work, all 25 on this one file. Worked around there with `git read-tree <base>`; the file itself should almost certainly be `git rm --cached`'d, which needs someone to confirm nothing reads it.
+
   **The fix, and why it is additive.** `weekKey(from:calendar: Calendar = .current)` now sets
   `cal.timeZone = calendar.timeZone`, exactly as `weekStartDate(forWeekKey:calendar:)` already did.
   The default is what the parameterless version always used, so **no existing caller changes what it
@@ -1060,7 +1066,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   current count. The defect is unchanged — nothing in `CadenceUITests` deletes the store it makes —
   so the next UI-test run starts the backlog again.
 
-- [T-1094] **The agent brief told agents to delete their scratch, and agents whose commit was refused deleted the only copy of verified work.** Measured 2026-09-07: two batches of finished, mutation-tested work no longer exist. [[T-780]]'s pre-commit hook (16/16 selftest checks, 3 killed mutations) and [[T-996]]/[[T-997]]/[[T-998]]/[[T-999]]'s guard fixes (219 insertions over 8 files, 5/5 mutations killed, `git apply --check` clean) were both refused by `REMOVES-HEAD-LINES` while the flag was user-gated, and both agents then followed the brief's standing *"delete DerivedData and scratch when done"* — which was the only copy. **Not the `SubagentStop` cleanup hook**: `scripts/agent-cleanup.sh` only sweeps `scratchpad/(agent|lead)-*` and never matched these names. The instruction and the refusal are individually right and jointly destructive. **Fix the brief, not the script**: an agent whose commit did not land must preserve its content files and say where they are, and cleanup applies only to what it committed. Later briefs in the same session already say *"report anything worth preserving before you stop"*; that line needs to be in the standing preamble, and the standing preamble is `docs/AGENT_BRIEF_PREAMBLE.md`. T-780 has since been rebuilt from scratch (`1236238`); the four guard tickets have not.
+- [T-1094] **CLOSED 2026-09-12 (agent `briefhygiene`) — it happened a THIRD time with the prescribed
+  prose already in place, because that prose was conditioned on a refusal and the third loss did not
+  involve one. The fix is `scripts/agent-scratch.sh`, which answers "is this the only copy" instead of
+  asking an agent to remember.** Originally: **The agent brief told agents to delete their scratch, and agents whose commit was refused deleted the only copy of verified work.** Measured 2026-09-07: two batches of finished, mutation-tested work no longer exist. [[T-780]]'s pre-commit hook (16/16 selftest checks, 3 killed mutations) and [[T-996]]/[[T-997]]/[[T-998]]/[[T-999]]'s guard fixes (219 insertions over 8 files, 5/5 mutations killed, `git apply --check` clean) were both refused by `REMOVES-HEAD-LINES` while the flag was user-gated, and both agents then followed the brief's standing *"delete DerivedData and scratch when done"* — which was the only copy. **Not the `SubagentStop` cleanup hook**: `scripts/agent-cleanup.sh` only sweeps `scratchpad/(agent|lead)-*` and never matched these names. The instruction and the refusal are individually right and jointly destructive. **Fix the brief, not the script**: an agent whose commit did not land must preserve its content files and say where they are, and cleanup applies only to what it committed. Later briefs in the same session already say *"report anything worth preserving before you stop"*; that line needs to be in the standing preamble, and the standing preamble is `docs/AGENT_BRIEF_PREAMBLE.md`. T-780 has since been rebuilt from scratch (`1236238`); the four guard tickets have not.
+
+  **MEASURED — the ticket's own fix shipped on 2026-09-07 and did not hold.** `docs/AGENT_BRIEF_PREAMBLE.md`
+  has carried *"A refused commit means your files are the only copy of your work. Do not delete them"*
+  since this was filed. On **2026-09-11**, with that paragraph in place, agent `noticetruth` finished
+  T-752, T-919 and T-1085, deleted its tree **before its commit landed**, and every line was lost; a
+  second agent rebuilt all three from nothing. The paragraph could not have caught it: it opens *"a
+  refused commit means…"*, and `noticetruth` never reached a refusal. The predicate that covers both
+  shapes is not about the commit path — it is **is this work in HEAD yet**, and that is a script's
+  question. Same week, second loss mode: a sibling's `git archive` extraction landed on top of another
+  agent's tree at `.../scratchpad/tree`, so that agent's whole first build-and-test round measured HEAD
+  rather than its own edits. The preamble **already named `tree` as a hazard in as many words**.
+
+  **THE FIX — `scripts/agent-scratch.sh`, a three-way reading.** A tree is minted from `git archive
+  <base>` and stamped with `<base>`. For each file: identical to the base's blob → untouched;
+  identical to HEAD's blob → landed, a copy exists in history; **neither → the only copy**, and
+  `release` refuses (`SCRATCH-HOLDS-UNLANDED-WORK`) naming the files. The third input is what makes it
+  usable — two-way against HEAD alone would refuse every release in this checkout, because siblings
+  land constantly. `new <id>` also mints the NAME rather than accepting one: `GENERIC-SCRATCH-NAME`
+  refuses `tree`, `work`, `scratch`, `build` and the rest, on the basename, and `SCRATCH-NAME-TAKEN`
+  refuses extracting into a directory that already exists. `scripts/agent-cleanup.sh --apply` consults
+  `check` before deleting a stale stamped tree, so the automatic 30-minute sweeper can no longer
+  mistake "refused, and writing its report" for "abandoned" either.
+
+  **MEASURED — not vacuous, and the false-refusal rate is recorded rather than tuned away.** Selftest:
+  **24 checks, 24 passed**, including the real case in both directions — an edit made in a tree is
+  refused *before* the commit and the same tree is releasable the moment the commit reaches HEAD.
+  False-refusal measurement over 25 untouched trees archived from the last 25 commits and checked
+  against HEAD: **25 refusals on the first run, every single one of them the same file,
+  `default.profraw`.** That is a real defect found by measuring rather than an argument for relaxing
+  the reading: `git add -A` skips a path that `.gitignore` matches and the index does not already
+  track, and this repository **tracks `default.profraw` while `.gitignore` carries `*.profraw`**, so
+  against an empty index it read as deleted from both sides. Seeding the index with `git read-tree
+  <base>` fixed it: the same 25 trees now name **0 files**. (`default.profraw` being tracked at all is
+  [[T-1137]].) The reading is deliberately unselective about stray logs and content files: a
+  measurement file really can be the only copy of something, `--force` is one flag, and the failure
+  this guard must not have is the quiet pass.
 - [T-1095] **CLOSED 2026-09-11 (agent `mcpwrite3`) — the MCP write surface can now change a
   board it did not just create. Leg (a) only; (b) and (c) are filed, not done.** One additive tool,
   `update_container_columns`, takes the surface from 32 to 33 and its write half from 10 to 11. It
@@ -1644,7 +1689,53 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
   **Filed as:** **filing a note into a folder commits nothing at all, on either platform.** `CadenceListNoteFiling.move(_:toFolder:)` sets `note.folderPath` and stops: no `save()`, no `try?`, no persistence helper. `iOSListNotesView.iOSNoteFolderSheet.save()` calls `onSave(normalized)` and `dismiss()`, and the row visibly changes folder on the strength of autosave — the cost [[T-327]] measured. **No half of the `try? save()` rule sees it, because there is no commit in any frame to hang a swallow on.**
   Not fixed with T-1071 because the fix is not local to the door that reports it. `move` has four production call sites — `ListNotesView` twice (drag-to-folder and the folder sheet), `iOSListNotesView` twice — plus `CadenceArchiveImportService`, which files hundreds of restored notes off the main actor (T-1086) and must **not** commit per note. So the commit belongs at the three interactive call sites, each with a `commitEdit(in:undo:)` restoring the previous `folderPath` and each with a notice on the surface the user is left looking at, which is the column rather than the dismissed sheet.
-- [T-1072] **Ids were handed out in agent briefs without being written to the ledger, and collided twice in one night.** The ledger IS the allocator; a reservation that lives only in a brief is invisible to the next agent computing "next free id". [[T-1043]] is defined twice (an image fix and a calendar-link ticket), and T-1067/T-1068 were each claimed by two agents for unrelated work. Ids are meant to be stable and never reused, so every reference to a collided id is ambiguous. **Fix the allocator, not the three collisions:** write the stub at the moment the id is handed out, as this block does.
+- [T-1072] **CLOSED 2026-09-12 (agent `briefhygiene`) — `LEDGER-ID-UNFILED` closed the sequential
+  half and structurally cannot reach the concurrent one; `LEDGER-ID-DUPLICATE` reads the only artefact
+  a simultaneous allocation leaves anywhere.** Originally: **Ids were handed out in agent briefs without being written to the ledger, and collided twice in one night.** The ledger IS the allocator; a reservation that lives only in a brief is invisible to the next agent computing "next free id". [[T-1043]] is defined twice (an image fix and a calendar-link ticket), and T-1067/T-1068 were each claimed by two agents for unrelated work. Ids are meant to be stable and never reused, so every reference to a collided id is ambiguous. **Fix the allocator, not the three collisions:** write the stub at the moment the id is handed out, as this block does.
+
+  **MEASURED — three more incidents after filing, and the enforced half missed all three.** `69ba009`
+  added `LEDGER-ID-UNFILED` (T-1106), which refuses a commit whose message names an id with no formal
+  ledger entry. That is the *sequential* mistake — `T-1117`, handed out inside T-624's closure with no
+  stub. It cannot reach the *concurrent* one, and the reason is structural rather than a gap in its
+  reading: when two agents both compute "next free" before either commits, **both write a stub**, so
+  both messages name a filed id and both pass. `T-1119` went to two agents that way and needed a
+  renumbering commit.
+
+  **THE ONLY ARTEFACT A COLLISION LEAVES IS A LEDGER WITH TWO FORMAL ENTRIES FOR ONE ID**, and until
+  now nothing read it. `LEDGER-ID-DUPLICATE` does, as a **delta** — ids duplicated in the content you
+  are staging that were not already duplicated in HEAD's copy. Replayed over **every commit that has
+  ever touched either ledger — 436 commits, 7 refusals, 6 true and 1 false**:
+
+  - `939959e` 2026-09-11 — `T-1119`, the incident this was re-filed over.
+  - `be10dd4` 2026-09-07 — `T-1109` **and** `T-1110`: `importgraph` and `importedge` reserved the same
+    two ids on the same day for unrelated findings. **Not recorded anywhere before this replay.**
+  - `dcb0a15` 2026-09-05 — `T-1043`, the collision this entry names.
+  - `988d7cb` 2026-09-04 — `T-781` and `T-974`: a closure filed as a NEW entry with the open original
+    left in place, so one id reads closed to `ledger_closed_ids` and open to anyone scanning top-down.
+  - `022ab0e` 2026-09-03 — `T-777`, the duplication `f566723b` later deduped by hand.
+  - `b05869d` 2026-08-29 — **33 ids: the entire file was committed twice.** Two `# Cadence — task
+    list` headers, two `## Open` sections, 719 lines apart, byte-for-byte identical. It landed in
+    history and nothing said a word.
+  - `e322be1` 2026-08-31 — `T-572`, **the one false refusal.** A prerequisite note was written in
+    entry form above the real ticket; nobody allocated T-572 twice. Recorded, not tuned away:
+    excluding that shape would also stop reading the shape `b05869d` landed in.
+
+  **WHY A DELTA AND NOT A WHOLE-FILE READING, which is the opposite of T-1106's choice.** The event
+  being guarded is one commit — "did THIS commit hand out an id that was already handed out" is the
+  literal question. And HEAD carries three standing duplicates that this ticket decided are not to be
+  fixed ([[T-1136]]): a whole-file reading would refuse every future commit to `docs/TODO.md` until a
+  renumbering the ticket forbids had happened, which is a permanent false refusal in the commit path.
+
+  **WHAT WAS DELIBERATELY NOT BUILT, and the measurement that decided it.** The obvious "make
+  simultaneous allocation impossible" design is an atomic reservation store — lock, read the ledger,
+  reserve, unlock. It would have prevented **none of the measured incidents**: every one of
+  `T-1119`, `T-1109`, `T-1110` and `T-1117` was an id **handed out in a coordinator's brief**, not
+  computed by an agent running a helper, and a reservation store under `$TMPDIR` is invisible to a
+  coordinator writing briefs anywhere else. A guard at commit time is reached by **every** id that
+  matters, because an id that never reaches a commit has collided with nothing. So: the catch is worth
+  building and was; the allocator is a briefing rule, and the brief already carries it.
+  Selftest mode 4f, **8 checks**, including the check that pins the delta reading: a ledger that
+  already carries a duplicate stays editable with no flag.
 - [T-1066] **CLOSED 2026-09-06 (tooltruth; landed by `requeue`) — the mechanism was not a race, and the print now reports from the filesystem.** **Filed as:** **`run-macos-app.sh stop` prints "private store removed" over a store it did not remove.**
   Both halves reproduced first, in one command each.
   **The mechanism, measured:** [[T-1064]]'s fix was **never committed**. `git log -- scripts/run-macos-app.sh`
