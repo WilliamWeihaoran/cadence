@@ -120,6 +120,14 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 <!-- staleprov2 2026-09-12: T-1142..T-1143 reserved, both closed in the commit that files them. -->
 
+<!-- sandboxzsh 2026-09-12: T-1151..T-1153 reserved while closing T-959 and re-verifying T-1074. -->
+
+- [T-1151] **[[T-977]]'s reason for keeping `real-tree-sweep-manifest.sh selftest` out of the test target is falsified, and the replacement reason is unmeasured.** `.github/workflows/ci.yml` says the App-Sandboxed test host *"cannot spawn `xcodebuild`, ps or pgrep at all"*. Measured 2026-09-12 closing [[T-959]]: it spawns Xcode's own `xcodebuild -version` to exit 0, and it spawns `pgrep`; only the setuid `ps` is refused. The decision may well still be right, but it now rests on a different fact -- the host may write nothing outside its own container, so it cannot lay down the stale tree this selftest regenerates from -- and **that has not been carried through end to end**. What is needed is one honest attempt: run the selftest from inside `CadenceTests` with `$TMPDIR` as its workspace and see what actually stops it, then either wire it in (and drop the CI step, which runs only when a commit touches something other than `docs/TODO.md`) or record the measured refusal. The comment in `ci.yml` has been corrected to say exactly this much and no more.
+
+- [T-1152] **`scripts/test-host-lock.sh` run from inside the sandboxed test host would answer plausibly, wrongly, and destructively -- and nothing stops it.** Measured 2026-09-12 ([[T-959]]). `live_test_hosts` is `pgrep -f "$HOST_PATTERN" | wc -l`; in that host `pgrep` **runs** and reports *"Cannot get process list"*, so the count is `0` rather than an error. `waiter_alive` is `kill -0` AND `ps -o command=`; `ps` is refused at `posix_spawn`, so the command line is empty and the test is false for **every** waiter. Put together, an in-host caller would see an empty queue and zero live hosts: `prune_queue` deletes every sibling's ticket and the reclaim path frees a lease that is genuinely held -- which is [[T-236]]'s two-hosts-on-one-container failure, reached by a route the script has no guard against. There is no such caller today, and the fix is cheap: have `live_test_hosts` tell "no matches" from "could not ask" (`pgrep` exit 3 with output on stderr is not exit 1 with none) and refuse rather than reclaim when it cannot ask. Note that `no-reclaim` is TOLERATED in `CadenceGuardScriptSelftestTests`, so this is precisely the path that suite is blind to.
+
+- [T-1153] **Nothing pins what the test host can do, so a claim about it ages into a rule and then into a decision.** [[T-959]] measured one true fact on 2026-09-04 -- `/bin/ps` is refused at `posix_spawn` -- and by 2026-09-12 it had been generalised to "cannot spawn `ps` or `pgrep`", then to "an unrecognised exec target", and three separate decisions had been taken on the generalisation, two of which cited it by number. `CadenceTestHostSandboxCapabilityTests` now pins the matrix, which stops that particular sentence drifting; what it does not do is stop the **next** environment claim doing the same thing. Worth deciding: whether a claim about the execution environment should be required to name the test that holds it, the way the `try? save()` rule names `CadenceSaveCommitDisciplineTests` -- and whether `docs/AGENTS_REFERENCE.md`'s red-run triage should carry the CAN half, since "the sandbox can spawn `/bin/zsh <script>`" is the fact that makes a guard-script selftest wireable at all and it was discovered twice independently ([[T-986]], then here).
+
 - [T-1142] **CLOSED 2026-09-12 (agent `staleprov2`).** **A ledger entry can contain its own body twice, and nothing reads an entry against itself.** Found while closing [[T-992]] and [[T-991]], whose own entries turned out to be two of the four instances. An agent closing a ticket whose work sat in a checkout pastes the closure in UNDERNEATH the progress note it was meant to replace, rather than editing the note out. The entry then says `**CLOSED**` on its first line and `**RESOLVED IN THE CHECKOUT ..., NOT YET IN HEAD**` in its body, with the same paragraphs twice — and every existing guard is satisfied: the id is present so `LEDGER-IDS-LOST` passes, the first line is a closure so `LEDGER-CLOSURE-LOST` and `LEDGER-CLOSURE-BURIED` pass, and the line count only ever goes UP, so `REMOVES-HEAD-LINES` has nothing to say either.
   **MEASURED on HEAD 2026-09-12 over 482 entries:** four are in this state — T-781, T-986, T-991 and T-992 — with duplicated runs of 11, 10, 15 and 33 lines. All four were written by ONE commit, `7584c5f`, which landed those same tickets, and all four survived the 40 commits of this file since. T-991 and T-992 asserted "NOT YET IN HEAD" about code that had been in HEAD for six days.
   **The reading:** the longest run of CONSECUTIVE body lines appearing twice within one entry, counting only lines of >= 40 trimmed characters, because a short line repeats legitimately and a paragraph does not. Over those 482 entries the distribution is 477 at zero, ONE at two (T-624, two prose lines it genuinely says twice), then the four defects at 10, 11, 15 and 33. A minimum run of four sits in that gap with a factor of five of margin on each side; it is not a tuned number, it is the only number the gap admits.
@@ -652,6 +660,39 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   reader used to skip. Mutation control: reverting `opensLoop` to `line == "do"` takes
   `theBareLocalScanCanTellTheShapeFromItsNearMisses` red on both C-style probes. All twelve scripts
   still read clean: 0 findings over 229 declarations.
+
+  **Re-verified at `17b5b61` by a second agent that did not trust either half (2026-09-12,
+  `sandboxzsh`). The population is still empty and both halves of the instrument still bite.**
+  A brief asserted a surviving instance at `worktree-drift.sh:295` for the second time; it is still
+  false, and the residue paragraph above is still the right answer to it. What is new is the
+  independent check. The sweep was re-implemented from scratch in `awk` over zsh's own
+  re-serialisation -- sharing no code with `CadenceShellLocalScan`, only the technique -- and run
+  over all 13 `scripts/*.sh` plus `.githooks/pre-commit`. It read **340** declarations and found
+  **0**. `CadenceShellLocalScan`, asked the same question in the same tree, read **340** and found
+  **0**. Two independently written readers agreeing to the declaration is what makes the zero worth
+  something; either one alone is a silence.
+  **Non-vacuity, proven by construction rather than asserted.** The historical instance was
+  re-broken in a copy -- `local i p gone` back to `local i p`, with a bare `local gone` returned to
+  the inside of the per-behind-path loop -- and BOTH halves named it, which is the first time they
+  have been shown to bite together:
+  * Structural: `noZshScriptReachesABareLocalDeclarationTwice` failed, naming
+    ``scripts/worktree-drift.sh: `local gone` in print_reading() -- it is inside a loop, so every
+    pass after the first prints it``.
+  * Behavioural: `worktree-drift.sh selftest` went 52 passed / 0 failed to 51 / 1, failing on its
+    own *"the report carries no stray zsh assignment line (T-1074)"* check, and
+    `theWorktreeDriftGuardsOwnGuardsStillFire` carried that up into the suite.
+  * The independent `awk` reader named the same declaration in the same scope.
+  **False-positive rate: zero, and recorded rather than tuned.** Across the whole live population --
+  340 declarations, 14 files -- neither reader produced a single finding, and
+  `theBareLocalScanCanTellTheShapeFromItsNearMisses` (the near-miss probes: `local -a` in a loop, a
+  second declaration that assigns, the same name in two functions, a bare `local` after the loop
+  closed, `local` in a comment and in a string, two C-style spellings, a `case`-arm declaration)
+  stayed green throughout. Nothing was relaxed to get there.
+  **The declaration floor was stale, and is now dated instead of retyped.** The comment beside
+  `#expect(declarationsRead >= 100)` said 229 + 12; the real figure at `17b5b61` is 340. The floor
+  itself is deliberately left at 100 -- it exists to catch a parse that died, not to be edited every
+  time a script grows -- but the comment now says what was measured and when, which is the half that
+  was actually wrong.
 
 - [T-1076] **CLOSED 2026-09-06 (suitecheck, landed in `7584c5f`).** `xcb.sh` resolves `-only-testing:` suite names **pre-build and pre-lock**: an unknown name is refused at exit 8 in ~1.7s, and a known name whose file has siblings prints the skipped suites and their counts without failing the run. Counterexample proven first — a real run scoped to a filename returned exit 0 having silently skipped 58% of that file. **Originally:** **RESERVED 2026-09-06 (agent `decide`) — the suite-per-file rule that [[T-481]] settles.** Placeholder written at the moment the id was handed out, not when the work lands. Body follows in the same batch.
   **Still a stub at HEAD, verified 2026-09-06 (`reconcile`).** No body was ever written under it and no
@@ -4736,7 +4777,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   test host cannot prove either, and an in-host approximation would prove less than it appears to.
   Proven instead by the terminal runs above.
 
-- [T-959] **CadenceTests' App-Sandboxed host cannot spawn `ps` or `pgrep` at all -- EPERM at
+- [T-959] **CLOSED 2026-09-12 (agent `sandboxzsh`).** The broad reading is FALSE and three decisions rested on it; what the host refuses is narrower and sharper than "cannot spawn", and is now measured and pinned by `CadenceTestHostSandboxCapabilityTests` rather than described. **Originally:** **CadenceTests' App-Sandboxed host cannot spawn `ps` or `pgrep` at all -- EPERM at
   `posix_spawn`, not merely restricted output.** Found landing [[T-748]]/[[T-749]]'s selftests in
   `CadenceGuardScriptSelftestTests`. [[T-782]] closed a narrower version of this as moot: the only
   two shell-outs under `CadenceTests` at the time (`CadenceSelftestRun.of`'s `/bin/zsh -f <script>
@@ -4763,6 +4804,76 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Any future selftest wired into this suite that needs either should expect the same wall: tolerate
   it by name (the pattern above), and prove that property by direct terminal invocation instead --
   which is what [[T-748]] and [[T-749]]'s entries above do.
+
+  **MEASURED 2026-09-12 (macOS 26.6 / Xcode 26.6), from inside a real `CadenceTests` run, 24 probes.**
+  Every line below is a spawn attempted by the test host itself and its outcome read back out of the
+  test log -- none of it is reasoned from the sandbox profile.
+
+  **What this host CAN do.** It spawns `/bin/echo`, `/bin/ls`, `/usr/bin/env`, `/bin/sh` and
+  `/bin/zsh` freely, and a `zsh` three levels deep still runs -- which is how
+  `CadenceGuardScriptSelftestTests` already runs six guard-script selftests, the point `gatefigure2`
+  made closing [[T-986]]. It spawns **Xcode's own `xcodebuild`** (`-version`, exit 0, *"Xcode 26.6"*).
+  It execs **a script that was already on disk directly**: `./scripts/xcb.sh` prints its usage and
+  exits 2. It reads the checkout it is testing. It writes inside its own container `$TMPDIR`,
+  including `mktemp -d`.
+
+  **What it CANNOT do, and the actual mechanism in each case -- three different ones, not one.**
+
+  1. **A setuid binary is refused at `posix_spawn`.** `/bin/ps` (`4755`) and `/usr/bin/top` (`4555`)
+     both throw `NSPOSIXErrorDomain Code=1` before a byte of output. That half of this ticket is
+     correct, and the mechanism is the setuid bit -- not the identity of `ps`.
+  2. **`pgrep` is NOT in that class and this ticket was simply wrong about it.** `/usr/bin/pgrep` is
+     `755`, spawns perfectly well, and exits 3 saying *"sysmon request failed with error: sysmond
+     service not found / pgrep: Cannot get process list"*. It is denied the process **list**, not
+     the **exec**. In-process the same wall by the same mechanism: `proc_listpids` returns 0 with
+     `errno=EPERM`. This is the worse of the two failures, not the milder one -- a refusal announces
+     itself, and an answer of zero does not.
+  3. **A file this process itself wrote cannot be exec'd, whatever it is.** A freshly written,
+     freshly `chmod 755`'d script: EPERM. A **byte-for-byte, non-setuid copy of `/bin/ls`**, 0755:
+     EPERM. Handing either path to `/bin/zsh` works. So this is not the here-document `$TMPPREFIX`
+     issue [[T-782]]/[[T-719]] found -- that is real and separate (a bare here-document still fails
+     with *"can't create temp file for here document"* until `TMPPREFIX` is moved inside `$TMPDIR`)
+     -- and it is not `mutate.sh`'s "an unrecognised exec target" either, which the repo's own
+     scripts execing fine disproves.
+
+  Two more, neither previously on the record and both load-bearing: **the `/usr/bin` xcrun shims run
+  and then refuse** -- `git`, `python3` and `/usr/bin/xcodebuild` all spawn and print *"xcrun: error:
+  cannot be used within an App Sandbox"*, a different failure with a different fix from either of the
+  above -- and **writes land in its container and nowhere else**: `/tmp` is EPERM, and so is the
+  checkout under test, while reading that checkout is fine.
+
+  **Which decisions rested on the broad reading.** Three, and the accounting matters more than the
+  probe does.
+
+  * **The `ordering` / `no-reclaim` tolerations in `CadenceGuardScriptSelftestTests` (from
+    [[T-748]]/[[T-749]]) SURVIVE, on corrected and partly stronger grounds.** `ordering` really is
+    the setuid-`ps` refusal: `waiter_alive` reads an empty command line and calls every waiter dead.
+    `no-reclaim` is not a refusal at all -- `live_test_hosts` pipes a running `pgrep`'s empty output
+    into `wc -l` and gets a plausible `0`. Same verdict, different mechanism, and the second one is
+    a live hazard rather than a testing inconvenience: filed as [[T-1152]]. The doc comments on
+    `testHostLockPropertiesUnverifiableInThisSandbox`, `theTestHostLocksOwnGuardsStillFire` and
+    `theSimulatorClaimsOwnGuardStillFires` are corrected here to say which is which.
+  * **`.github/workflows/ci.yml`'s reason for [[T-977]] is FALSIFIED as written.** It says the host
+    *"cannot spawn `xcodebuild`, ps or pgrep at all"*; two of those three are wrong. Whether an
+    in-host run is genuinely impossible now rests on the container write restriction instead, which
+    is measured but has not been carried through end to end -- filed as [[T-1151]]. The comment is
+    corrected to say that, rather than to keep a reason that does not hold.
+  * **`scripts/mutate.sh`'s probe-then-skip is CORRECT and its comment was not.** The code probes
+    the environment instead of assuming, which is exactly right and is why it keeps working; the
+    generalisation written beside it ("ps/pgrep are not special cases; an unrecognised exec target
+    is") is wrong in both directions and is corrected. `mutate.sh selftest`: 70 passed, 0 failed.
+  * [[T-986]]'s own reading is **confirmed**: it already said this host can spawn `/bin/zsh -f
+    <script>` and fails for a `$TMPDIR` reason rather than T-959's. That was the one place the broad
+    reading had already been noticed, and it was right.
+
+  **The instrument, and why it is a test and not a paragraph.** `CadenceTestHostSandboxCapabilityTests`
+  (6 tests) asserts the matrix in both directions -- that `ps` and `top` are setuid AND refused, that
+  `pgrep`, `zsh` and `ls` are NOT setuid AND spawn, that a self-written file is refused while the
+  repo's own script is not, that `proc_listpids` answers nothing, that `/tmp` and the checkout are
+  unwritable while the container is writable. Each assertion carries the observation that would
+  falsify it, so an OS that lifts one of these limits turns this suite red instead of leaving a
+  six-day-old sentence in a ledger to be generalised from again. That failure mode is what this
+  ticket cost: the sentence was measured once, correctly, on one binary, and then read as a rule.
 
 - [T-786] **CLOSED 2026-09-04 (`051712d`, `c1efab0`).** Originally: **`scripts/mutate.sh` cannot verify a mutation against a `@Test("...")` display-named
   test.** Found while fixing [[T-667]]. `FAILED_SWIFT_TESTING = re.compile(r"✘ Test

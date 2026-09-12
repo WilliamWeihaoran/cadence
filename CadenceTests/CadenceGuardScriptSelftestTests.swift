@@ -188,22 +188,30 @@ struct CadenceGuardScriptSelftestTests {
     ]
 
     /// `ordering` and `no-reclaim` cannot be PROVEN from inside this test host -- not "are awkward
-    /// to", cannot. Both read cross-process liveness through `ps`/`pgrep` (`waiter_alive`'s
-    /// `ps -o command= -p $pid`, `live_test_hosts`'s `pgrep -f`), and CadenceTests runs
-    /// App-Sandboxed: measured 2026-09-04, spawning `/bin/ps` from inside this host throws
-    /// `Error Domain=NSPOSIXErrorDomain Code=1 "Operation not permitted"` before it produces a
-    /// single byte of output, and the selftest's own child `zsh` inherits the same sandbox, so its
-    /// internal `ps`/`pgrep` calls fail identically -- see T-959, which generalises this past the
-    /// two scripts here. So these two are TOLERATED failures below, not required, and they are
+    /// to", cannot. Both read cross-process liveness (`waiter_alive`'s `ps -o command= -p $pid`,
+    /// `live_test_hosts`'s `pgrep -f`) and CadenceTests runs App-Sandboxed -- but the two halves
+    /// fail by DIFFERENT mechanisms, which T-959 originally ran together and which
+    /// `CadenceTestHostSandboxCapabilityTests` now pins apart (measured 2026-09-12):
+    ///
+    /// * `/bin/ps` is refused at `posix_spawn` -- `NSPOSIXErrorDomain Code=1` before a byte of
+    ///   output -- because it is **setuid root**, not because it is `ps`. `waiter_alive` then reads
+    ///   an empty command line and calls every waiter dead.
+    /// * `/usr/bin/pgrep` is NOT setuid and spawns perfectly well. It exits 3 saying *"Cannot get
+    ///   process list"*, so `live_test_hosts` pipes nothing into `wc -l` and reports a completely
+    ///   plausible **0**. That is the worse of the two: a refusal announces itself, an answer of
+    ///   zero does not (T-1152).
+    ///
+    /// A child `zsh` inherits the same sandbox, so a script's own internal calls hit the same wall.
+    /// So these two are TOLERATED failures below, not required, and they are
     /// proven the other way instead: direct terminal invocation, captured in docs/TODO.md's T-748
     /// and T-650 entries (`w4 w1 w2 w3` before the fix, `w1 w2 w3 w4` after, three runs of three).
     ///
     /// `dead-owner-defers-to-live-host` (T-956) joins them for the identical reason: it also proves
     /// its property through `live_test_hosts`'s `pgrep`, by way of the same fake-host fixture as
     /// `no-reclaim`. `dead-owner-reclaims-early` does NOT join them -- it asserts the no-live-host
-    /// path, where a `pgrep` that cannot even spawn still degrades to reporting zero matches (empty
-    /// stdin into `wc -l`), which is indistinguishable from a real zero and proves the property
-    /// regardless of whether `pgrep` itself works here.
+    /// path, and a `pgrep` that runs but can read no process list reports zero matches (empty stdin
+    /// into `wc -l`), which is indistinguishable from a real zero and proves the property
+    /// regardless of whether `pgrep` can see anything here.
     static let testHostLockPropertiesUnverifiableInThisSandbox: Set<String> = [
         "ordering", "no-reclaim", "dead-owner-defers-to-live-host",
     ]
@@ -322,8 +330,9 @@ struct CadenceGuardScriptSelftestTests {
     /// actually holding that lock. Real subprocesses and real `sleep`s, so this one runs for tens of
     /// seconds rather than about one -- see the type doc above.
     ///
-    /// `ordering` / `no-reclaim` are TOLERATED, not required (T-959: this host cannot spawn `ps` or
-    /// `pgrep` at all, and both properties depend on one of them). Tolerating a named failure is not
+    /// `ordering` / `no-reclaim` are TOLERATED, not required (T-959: this host cannot spawn the
+    /// setuid `ps` at all, and the `pgrep` it can spawn cannot read the process list -- see the
+    /// `testHostLockPropertiesUnverifiableInThisSandbox` doc). Tolerating a named failure is not
     /// the same as ignoring it: this still fails loudly if either PASSES unexpectedly (the sandbox
     /// limit lifted, this list is stale) or if anything NOT on the tolerated list fails.
     @Test func theTestHostLocksOwnGuardsStillFire() throws {
@@ -337,7 +346,7 @@ struct CadenceGuardScriptSelftestTests {
 
     /// T-749. Runs against a throwaway claims root and a fake `simctl` (`CADENCE_SIM_CLAIMS_DIR` /
     /// `CADENCE_SIMCTL`), so this is safe alongside sibling agents holding real device claims.
-    /// `ordering` is TOLERATED, not required -- same T-959 sandbox limit as above.
+    /// `ordering` is TOLERATED, not required -- `waiter_alive`'s setuid `ps`, same as above (T-959).
     @Test func theSimulatorClaimsOwnGuardStillFires() throws {
         let run = try CadenceSelftestRun.of("scripts/simulator-claim.sh")
         let complaints = run.complaintsForNamedRuns(
@@ -544,7 +553,11 @@ struct CadenceGuardScriptSelftestTests {
         // 12 scripts declared 229 names when this was written, and `.githooks/pre-commit` adds 12
         // more (T-780); a reading that has fallen under 100 has lost a parse, not a script. (228
         // before the `case`-arm read below was added — the 229th is `run-macos-app.sh`'s
-        // `(status) local -a pf`, which the reader used to skip.)
+        // `(status) local -a pf`, which the reader used to skip.) Re-measured at `17b5b61`:
+        // **340** across 13 scripts plus the hook, and the floor is deliberately left at 100 —
+        // it is there to catch a parse that died, not to be retyped every time a script grows.
+        // The 340 was confirmed by a second, independently written reader (T-1074), which agreed
+        // to the declaration: same total, same zero findings.
         #expect(names.count >= 6, "scripts/ holds \(names.count) .sh files, so this sweep is reading less than it claims")
         #expect(declarationsRead >= 100, "the sweep read only \(declarationsRead) declarations, so its silence means nothing")
         #expect(

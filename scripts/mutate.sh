@@ -1533,10 +1533,14 @@ def selftest():
     # mechanism `test-host-lock.sh selftest` itself uses) rather than copies planted under a
     # throwaway root. Earlier attempts did the latter and hit the App-Sandboxed test host's OTHER
     # limit: a file this run just wrote and `chmod +x`'d cannot be exec'd at all -- not "restricted",
-    # `PermissionError: Operation not permitted` before a single byte of output, generalising T-959
-    # (ps/pgrep are not special cases; an unrecognised exec target is) past the two scripts that
-    # ticket named. The REAL scripts, sitting where they always have, are not "an unrecognised exec
-    # target" and are exactly what a batch actually runs -- so this proves what ships, not a stand-in.
+    # `PermissionError: Operation not permitted` before a single byte of output. The rule is
+    # narrower than the "unrecognised exec target" this comment used to claim, and was measured
+    # 2026-09-12 (T-959, pinned by CadenceTestHostSandboxCapabilityTests): what that host refuses
+    # at posix_spawn is a SETUID binary, and any file THE PROCESS ITSELF WROTE -- a byte-for-byte
+    # 0755 copy of /bin/ls is refused too. An ordinary script that was already on disk execs fine,
+    # directly, and `pgrep` is not refused at all. The REAL scripts, sitting where they always
+    # have, are files this run did not write, and are exactly what a batch actually runs -- so this
+    # proves what ships, not a stand-in.
     #
     # Still probed rather than assumed: some other sandbox (or a future, stricter one) may refuse
     # even this, and that must read as unverifiable, not as a failed check -- the exact trap of "an

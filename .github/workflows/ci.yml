@@ -183,9 +183,13 @@ jobs:
           if-no-files-found: ignore
       # T-977: scripts/real-tree-sweep-manifest.sh selftest -- the proof that a stale manifest
       # still regenerates a non-empty body (T-873) -- had no caller anywhere: not this workflow,
-      # not xcb.sh's own preflight, and not CadenceTests itself, which cannot run it (that host's
-      # App Sandbox cannot spawn `xcodebuild`, ps or pgrep at all -- T-959, T-782). A hosted runner
-      # is not sandboxed the same way, so this is the one place that CAN actually run it. Reuses
+      # not xcb.sh's own preflight, and not CadenceTests itself. The reason first given for that
+      # last one was wrong and is corrected here (T-959, measured 2026-09-12): the test host CAN
+      # spawn Xcode's own `xcodebuild` (exit 0) and CAN spawn `pgrep`; only the setuid `ps` is
+      # refused. What stops an in-host run is that the host may write nothing outside its own
+      # container -- not `/tmp`, and not the checkout it is testing -- so it cannot lay down the
+      # stale tree this selftest regenerates from. That is unmeasured end to end (T-1151). A
+      # hosted runner is not sandboxed at all, so this is the one place that CAN run it. Reuses
       # the derived data and signing overrides the Test step above already built, so this is
       # close to free rather than a second full compile.
       - name: Real-tree sweep manifest selftest
