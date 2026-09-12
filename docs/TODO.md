@@ -843,7 +843,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceArchiveImportEntryPointTests.neitherArchiveImportSurfaceDrawsANativePicker` covers the two
   files T-1082 touched and nothing else; it is a plug, not the rule.
 
-- [T-1088] **MEASURED 2026-09-07 (leakfold) in `45599d6`, deliberately not patched.** Folding an imported habit day's split rows means inventing a number, which is the same guess [[T-391]] refused to let the startup repair make. The tests now say so where a reader will find them. Stays open as a decision, not a defect. **Originally:** **The archive importer does not fold a habit day's split rows, which is the exact case
+- [T-1088] **CLOSED 2026-09-12 (agent `parkeddecisions`) — as a recorded decision NOT to fold, the shape [[T-623]] and [[T-624]] closed in. The asymmetry the fold was to be justified by does not exist in source: the startup repair is handed a whole habit-day too, so the importer does not know more than it does.** Re-measured against HEAD rather than against the entry below; the importer keeps `model.count = record.count`. **MEASURED 2026-09-07 (`leakfold`) in `45599d6`, deliberately not patched.** Folding an imported habit day's split rows means inventing a number, which is the same guess [[T-391]] refused to let the startup repair make. The tests now say so where a reader will find them. **Originally:** **The archive importer does not fold a habit day's split rows, which is the exact case
   [[T-391]] wrote its warning for.** Found while granting the importer's exemptions in [[T-1086]],
   not in use. `CadenceHabitCompletionDuplicateTests
   .aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent` closes T-391 by *documenting* rather
@@ -869,6 +869,45 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   row carrying the sum — and it must be decided against the T-391 argument, because summing here is
   the same guess T-391 refused to let the repair make; the importer's claim to be allowed it is
   that it sees the whole day at once and the repair sees one row at a time.
+
+  **What was re-measured 2026-09-12, against HEAD source rather than against this entry.**
+  - **The repair sees a whole habit-day, not one row at a time.**
+    `DataIntegrityRepairService.repairDuplicateHabitCompletions` builds
+    `rowsByDay: [HabitDay: [HabitCompletion]]` keyed on `(habit.id, completion.date)` and hands
+    `CadenceHabitCompletionStore.collapseDuplicates` the **entire group**
+    (`Cadence/Services/DataIntegrityRepairService.swift`, `repairDuplicateHabitCompletions`). The
+    sentence this ticket rests on — an importer *"sees a whole archive's rows for a day at once"* —
+    is true of both parties, so it separates neither. That is the whole of the answer.
+  - **The archive carries no provenance to key on.** `CadenceArchiveHabitCompletion` holds exactly
+    `id, date, count, createdAt, habitID` and the model exactly `id, date, count, createdAt, habit`.
+    Encoded, a day split `[1, 1]` and a [[T-359]] check-in synced twice are the same records field
+    for field, so the proposed sum reads both as 2 — right once, wrong once.
+  - **The importer's write is unchanged**: `model.count = record.count`, one verbatim copy, in
+    `CadenceArchiveImportService.write(_:mode:into:tally:in:)`.
+  - **The population is still unreachable from anything this app writes.** `HabitCompletion`'s
+    initializer takes no `count`, and the only other assignment under `Cadence/` is
+    `survivor.count = collapsed`, a `max` over rows that are already `1`.
+
+  **The alternatives, and why none of them is better than the verbatim copy.** (a) *Fold to the
+  sum* — the guess, and it is the T-359 bug for every duplicate it meets. (b) *Flatten to 1* —
+  silently discards a day the user did complete, and is a second author of quantities besides.
+  (c) *Add provenance to `HabitCompletion`* — CloudKit has been in Production since 2026-09-05, so
+  a new field arrives `nil` on exactly the legacy rows this ticket is about; it cannot answer the
+  question retroactively, which is the only case there is. (d) *Report the collapse at import* —
+  honest, but the repair already collapses at every launch and says nothing, and a notice for a
+  population no Cadence-written archive can contain is noise. (e) **Copy verbatim and let the
+  repair keep the largest row** — what ships. The cost is stated as behaviour rather than as prose:
+  a split day reads low and the remainder is deleted from the store.
+
+  **What a future reader should re-measure before reopening, and where the trigger already lives.**
+  `CadenceHabitCompletionDuplicateTests` carries all three, executably:
+  `theArchiveCarriesNoFieldThatSeparatesASplitHabitDayFromASyncedDuplicate` pins both property
+  lists — if either grows a device id, a write reason or an origin, it goes red and this ticket
+  becomes *answerable* rather than refused; `theStartupRepairIsHandedAWholeHabitDayJustAsAnImporterWouldBe`
+  pins the symmetry behaviourally (the survivor's count is the maximum over all three rows and the
+  largest is neither first nor last); `nothingUnderCadenceEverWritesAHabitDayQuantityAboveOne` pins
+  that the importer is still the only outside author. Closing this does **not** license folding:
+  the refusal is the standing decision, and the red test is how it gets revisited.
 
 - [T-1086] **CLOSED 2026-09-06 — the archive importer tripped seven source sweeps; six are real
   exceptions and the seventh was a shared helper the importer had simply not called.**
@@ -3983,7 +4022,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-657] **MEASURED 2026-09-06 (savefail2), and the measurement is why it is still open.** The
+- [T-657] **CLOSED 2026-09-12 (agent `parkeddecisions`) — as a recorded decision NOT to land the arm, the shape [[T-623]] and [[T-624]] closed in. Re-measured against HEAD with the arm built and swept rather than read: 20 additions, 4 real, 16 false — an 80% false-positive rate — and 3 of the 4 real ones are already ledgered in `existenceExemptions`. The one net new finding is filed as [[T-1132]] instead.** The
   ticket made shipping conditional on measuring the arm's false-positive cost first. An
   implementation now exists, the measurement has been taken against it, and the cost is **not
   zero**: the arm turns **three sweep tests red** and adds **7 declarations across 7 files**, of
@@ -4043,6 +4082,101 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `editorTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(task)` plus a redraw.
   That is the identical claim `iOSMarkdownEditingSurface` makes by *returning* the same value, and
   the detector sees the iOS one and not the macOS three.
+
+  **RE-MEASURED 2026-09-12 (agent `parkeddecisions`) against HEAD, with the arm implemented and
+  swept rather than read.** Nothing below was inherited: since the 2026-09-06 figures, 33 commits
+  have touched `Cadence/` — the tree the sweep reads — and 3 have touched
+  `CadenceSaveCommitDisciplineTests.swift` itself. The implementation is the one this entry records —
+  the base spelling `(?<![=!<>])=(?!=)\s*MarkdownTaskEmbedRenderInfo\s*\.\s*task\(` in the
+  vocabulary, plus an index of same-file declarations that are **pure reports**: not `body`, no
+  `->`, no insert, no delete, no commit and no swallowed commit, and a body matching that file's own
+  screen vocabulary (`successReport` plus its `@AppStorage` and `@Binding` needles). It was wired
+  into **both** readers, which is the seam the first measurement was missing. 587 files swept.
+
+  - **The index is 269 helpers app-wide, not "about 20+".** That estimate was the figure furthest
+    from the truth, and the width is the arm, not a detail of it.
+  - **`reportOffenders`: 2 → 6.** Four additions, four files.
+  - **`indirectReportOffenders`: 1 → 17.** Sixteen additions, seven files.
+  - **Ten distinct files go red**, across two sweeps —
+    `noSwallowedSaveIsFollowedByADismissOrACompletionHandler` and
+    `noSuccessReportFollowsACommitSwallowedOneFrameDown`.
+
+  **The triage, every addition by name rather than by count.**
+  - **Real: 4 of 20.** `iOSCalendarSettingsSection.saveCalendarLinks` is unchanged since 2026-09-06
+    and still real — filed now as [[T-1132]], which also carries a macOS twin no half of the rule
+    can see. The other three are `ListNotesSupportViews`, `NoteEditorPane` and `NotePanel`'s
+    `toggleEmbeddedTask`: each runs `try? modelContext.save()` and then repaints the embed card with
+    `MarkdownTaskEmbedRenderInfo.task(…)` in its own block, which is [[T-366]]/[[T-648]] exactly.
+    **All three are already named in `existenceExemptions`**, owned by [[T-636]](a)'s
+    recurrence-spawn family. The arm does not find them. It names them a second time, in a second
+    list, with a second entry to keep from going stale.
+  - **False: 16 of 20, in two families, and neither is one adjustment away from free.**
+    - **Eleven are view builders** — `body` five times, plus `controlRow`, `editorPane`,
+      `notesHeader`, `noteEditor`, `selectedSectionContent` and `optionList`, every one returning
+      `some View`. This is the case `reportOffenders`' own doc rules out in its first paragraph: *a
+      `var body` holding an autosave in one closure and a `dismiss()` in an unrelated one is not
+      this defect*. The block window narrows that; 269 index names widen it back past what the
+      window was buying.
+    - **Five are one false positive counted five times.** `NotePanel.appendSummary`,
+      `handleEditorFocusChange`, `refreshFromStore`, `selectTab` and `updateEditorContent` all call
+      `flushPendingEditorContent()`, which is in the index because its second line is
+      `pendingFallbackContentSyncTask = nil` — the `pending<Something> = nil` spelling that
+      `cancelledWorkItemNames` exists in the base rule to **discount**, and is measured there as
+      *"worth exactly two false positives"*. The arm's index carries no such discriminator, so it
+      re-imports the discounted line and multiplies it by every call site. None of the five reports
+      anything to anyone: `activeTab = tab` is the tab the user just clicked, `editorContent =
+      content` is the editor's own draft mirror, and `handleEditorFocusChange` is two lines that
+      flush on blur.
+
+  **Why that is a decision not to land and not a tuning exercise.** This repository has been bitten
+  by instruments that fire on the wrong population, and the standing answer is to record the rate
+  rather than to trim it away — one arm landed this week deliberately keeping a 1-in-60 false
+  refusal. 16 in 20 is not that shape. And the arithmetic on the other side has collapsed: the
+  population the arm was designed for is **gone**. [[T-648]] closed in `ab9e513` and took the three
+  macOS `toggleEmbeddedSubtask`/`renameEmbeddedTask` pairs that were its only known true positives;
+  the two sites the 2026-09-06 hand-measurement turned up on the way, [[T-1070]] and [[T-1071]], are
+  both closed as well. **The arm has already delivered everything it is going to deliver, and it
+  delivered it as a one-off measurement rather than as a standing instrument.** What landing it
+  would add today is ten red files, twenty exemption lines, and one finding that a single afternoon
+  of reading produced without it.
+
+  **What a future reader should re-measure before reopening, in this order.**
+  1. **Re-run the index width.** If a `cancelled`-style discriminator can bring 269 down materially
+     *without* dropping `refreshEmbeddedTask` — the one helper the arm exists to reach — the
+     arithmetic changes and this is worth re-deriving. Nothing here says it cannot; it says nobody
+     has, and that the first attempt did not.
+  2. **Find a true positive the arm is the only witness of.** Today it has none: every real hit is
+     either already ledgered or already filed. An arm whose entire yield is visible to another half
+     is a second opinion, not an instrument.
+  3. **Do not read the `toggleEmbeddedTask` trio leaving `existenceExemptions` as a reason to
+     reopen.** [[T-636]](a) fixing that family removes three of the arm's four real hits and makes
+     the case *weaker*, not stronger.
+
+- [T-1132] **The record of which calendars Cadence is observing is written on the strength of a link
+  save the store may have refused, on both platforms — and on macOS no half of the save-commit rule
+  can see it.** Found 2026-09-12 by agent `parkeddecisions` while re-measuring [[T-657]]'s arm; it is
+  the one net new finding that measurement produced, carried out of a ticket that closed as a
+  decision not to land the instrument.
+  `iOSCalendarSettingsSection.saveCalendarLinks` is `try? modelContext.save()` followed by
+  `refreshCalendarObservations()`, whose body computes the observed set from
+  `CadenceCalendarLinkObservations.linkedCalendarIDs(areas:projects:)` — read off the **model
+  objects**, which hold the edit whether or not it committed — and writes the `@AppStorage`
+  `observedCalendarIDsRaw`. That is [[T-635]]'s shape and the reason `persistedReport` is in the
+  rule's vocabulary at all: a defaults write **outlives the rollback**. The link is discarded, the
+  device-local record saying *"we are observing calendar X"* is not, and [[T-624]]'s evidence gate
+  reads it afterwards as fact.
+  **The macOS twin is the worse half.** `SettingsListManagementSections.saveCalendarLinks` is
+  `do { try modelContext.save() } catch { print(…) }` and then the same
+  `refreshCalendarObservations()`. A `print` is not a report to the user, so the defect is
+  identical — and it is invisible to **every** half of the rule, because `swallowedSave` keys on
+  `try?` over a commit surface and this is neither. Do not fix the iOS side alone: it would leave
+  the same bug on the primary surface with nothing pointing at it.
+  Fix both through the same door — commit through `CadencePendingChangePersistence.commitEdit`,
+  name the refusal on the settings surface, and refresh the observation record only past the
+  `catch`. Check the third and second call sites of `refreshCalendarObservations()` (`.onAppear`
+  and `.onChange(of: calendarManager.storeVersion)`) while there: those two read the store rather
+  than a pending write and are almost certainly fine, but the claim should be measured rather than
+  assumed.
 
 - [T-654] **CLOSED 2026-09-04 (`a1e5791`).** Originally: **The block focus timer banks its minutes over a swallowed save, then clears the clock.**
   Found while landing [[T-636]](c), which fixed the single-task door beside it.
