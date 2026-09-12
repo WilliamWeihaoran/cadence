@@ -3885,8 +3885,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-1159] **The iPad half of the simulator-keyboard question is unmeasured, and [[T-732]]'s one observation was on an iPad.** Filed 2026-09-12 by `verifyenv` while closing it. On **iPhone 17 Pro / iOS 26.5**, booted headlessly with Simulator.app not running, a focused field draws **no** software keyboard and takes injected text — measured twice, Spotlight and Safari's address bar, plus `ConnectHardwareKeyboard` absent from the entire `com.apple.iphonesimulator` domain. T-732 reported the opposite on 2026-09-02: *"the full software QWERTY came up unprompted in Cadence's new-task composer on the claimed iPad."* Both cannot be general, and the difference is worth a name rather than a shrug. It was not settled here because every iPad in the fleet is shut down, `scripts/simulator-claim.sh boot` starts iPhones only by design, and the one-device rule stands — the same wall [[T-731]] hit for rotation. Why it is more than curiosity: if an iPad really does boot without a hardware keyboard attached, then UIKit's honouring of `keyboardDismissMode = .interactive` is observable on a simulator **at iPad width** today, which is not the phone-width Notes tab `docs/device-checks.md` item 1 describes but does settle the half of it that is about UIKit rather than about layout.
 
-- [T-1160] **HEAD is red: `AgentContextBudgetTests.activeAgentGuidesStayCompactAndRouteToReferences` fails at `3916615`, because that commit took root `AGENTS.md` seven lines over its own cap.** Filed 2026-09-12 by `verifyenv`, which hit it as the only failure in an otherwise clean full run. **MEASURED:** `git show 3916615:AGENTS.md | wc -l` is **206**, which is **207** by the test's `split(omittingEmptySubsequences: false)` count, against a limit of **200** — the test says so in as many words: *"AGENTS.md has 207 lines by this test's count (206 by `wc -l`)"*. The same file was **199** at `2369efc`; `3916615` is +13/−6 on it. **Nothing about it is intermittent and nothing about it is mine**: the assertion is a line count over `CLAUDE.md`, three `docs/*_REFERENCE.md` and every `AGENTS.md` the walk finds, so any commit touching none of those fails identically. **How it got in is the part worth keeping**, and it is [[T-552]]'s shape rather than carelessness: `3916615`'s own message records `MEASURED: XCODEBUILD_EXIT=0 ... 21 test result lines (CadenceBuildInvocationHygieneTests + CadenceGuardScriptSelftestTests)` — a run scoped to the two suites the change was about, which cannot see a cap on a file the change also edited. A scoped run is the repo's standing advice and it is right; what is missing is anything that notices when the edited **paths** fall outside the suites the run covered. **Not fixed here, deliberately.** The cap's sanctioned relief is to move prose to `docs/AGENTS_REFERENCE.md` and link out (`CLAUDE.md`, "Context Budget Rules"), and choosing which seven lines go is an editorial call on the repository's most-read file, made worse by doing it to a sibling's prose from the commit before last — *"do not revert unrelated agent changes"* covers deleting it, and only the author knows which half was the load-bearing half. **Id minted outside this agent's allocation** (T-1157..T-1159), because a live red at HEAD that fails every agent's full `CadenceTests` run is worse unfiled than mis-numbered.
-
+- [T-1160] **CLOSED 2026-09-12 (the coordinator) — `AGENTS.md` is back under its cap, and the prose that pushed it over is in the reference where the file's own rule puts it.**
+  Filed by `verifyenv` out of its own id allocation, deliberately, because a live red at HEAD is
+  worse unfiled than mis-numbered. That judgement was right and the id is kept.
+  **The mechanism.** `3916615` took `AGENTS.md` from 199 lines to 206 against
+  `AgentContextBudgetTests`' cap of 200 (by that test's count; 199 by `wc -l`). The commit was
+  verified with a scoped selftest and a subset run, neither of which could see a cap on a file the
+  commit itself edited — the same shape as [[T-1085]] and [[T-976]]: an instrument that cannot
+  reach the thing the change broke. **The coordinator pushed it**, so it was red on `origin/main`
+  for four commits.
+  **The fix removes narrative, not rules.** Three bullets compressed and the T-1147 measurement
+  moved into `docs/AGENTS_REFERENCE.md` under its own heading, which is what `CLAUDE.md` says to do
+  when an always-read file gains a rule: remove or link out something else. Nothing that tells an
+  agent what to do was deleted; `verifyenv` was right not to do this itself, since deleting a
+  sibling's paragraphs is what "do not revert unrelated agent changes" forbids.
+  Measured after the fix: `AGENTS.md` 199 by `wc -l`, and `AgentContextBudgetTests`
+  **6 tests in 1 suite passed, `XCODEBUILD_EXIT=0`**, 0 compile errors, **0 anchored warnings**,
+  1015 Swift compile tasks — so the zero is not vacuous, on the first run read through the
+  T-1147 banner that separates compiler warnings from tool notices.
 - [T-623] **CLOSED 2026-09-11 (agent `deletewalk`) — as a recorded decision to park, the shape
   [[T-624]] and [[T-752]] closed in, not as a repair. Re-measured against HEAD a fourth time and
   every figure behind the park held or moved further in its favour; there is no half left that an

@@ -33,9 +33,8 @@ Tests must be scoped to `CadenceTests`:
 Scope unit runs to `CadenceTests` to keep them fast and deterministic — **not** because the UI target
 cannot run. `CadenceUITests` **does** run on macOS since the automation grant of 2026-08-31. It
 launches a real `Cadence.app`, so it MUST hold the test-host lock: `scripts/xcb.sh <id> test`
-`-only-testing:CadenceUITests`, never a bare `xcodebuild`. The warning baseline is zero **compiler**
-warnings (T-1147) — `xcb.sh`'s `warnings:` line counts Swift diagnostics and reports tool notices,
-such as the AppIntents one every test run prints, on a line of their own. The `TestAction`
+`-only-testing:CadenceUITests`, never a bare `xcodebuild`. The baseline is zero **compiler**
+warnings; `xcb.sh` reports tool notices separately (T-1147). The `TestAction`
 pins **`TZ=UTC`** (T-1116): state zones with `CadenceTestTimeZones`, never a shell `TZ=`.
 
 ## Where Things Live
@@ -164,19 +163,13 @@ Before treating a red run as a code regression, check:
   tests skip themselves, so a red UI run **is** evidence. Measurements: `docs/AGENTS_REFERENCE.md`.
 - Compile failures that name your file are real until proven otherwise.
 - **Count test hosts with `pgrep -f '^/Applications/.*/xcodebuild test'`.** A loose
-  `pgrep -f xcodebuild` matches any script whose own command text contains the word — including the
-  poller asking. That hid a stranded lock for 29 minutes on 2026-08-29.
+  `pgrep -f xcodebuild` matches any script whose text contains the word — including the poller.
 - **A warning count from a run that did not recompile the file is vacuous.** An incremental
-  `xcodebuild test` reuses object files, so the count returns 0 whether or not your change
-  introduced warnings. `xcb.sh` now says so itself (T-1147): the banner prints `swift compile
-  tasks: N`, and `!! VACUOUS-COUNT` where N is 0. A bare `xcodebuild` still tells you nothing —
-  check the log for its `SwiftCompile` lines before quoting a number from one.
+  `xcodebuild test` reuses object files, so the count returns 0 either way. `xcb.sh` now says so
+  itself (T-1147): it prints `swift compile tasks: N` and `!! VACUOUS-COUNT` when N is 0.
 - **Count compile errors with `grep -cE '\.swift:[0-9]+:[0-9]+: error:'`, not `grep -c 'error:'`,
   and warnings the same way.** The loose pattern over-counts and discards good evidence quietly —
-  why, in `docs/AGENTS_REFERENCE.md`. Measured 2026-09-12 (T-1147): the loose warning reading
-  `xcb.sh` used matched exactly one line on a full test build, `appintentsmetadataprocessor …
-  warning: Metadata extraction skipped`, so every honest run reported `warnings: 1` against a
-  baseline of zero while a vacuous one reported 0.
+  why, and the T-1147 measurement, in `docs/AGENTS_REFERENCE.md`.
 - `sleep` is blocked in a **foreground** tool call (a poll loop there exits 0 having watched nothing);
   it works in a detached job or `Monitor` script, so `acquire` waits from a background runner.
 

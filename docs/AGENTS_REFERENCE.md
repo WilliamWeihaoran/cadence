@@ -546,3 +546,18 @@ the same everywhere — while ambient *and* a day-boundary derivation is 22 acro
 a weaker, separate finding (a clock race, which the pin does not fix) and is ledgered per file rather
 than banned. `WeekKeyResolutionTests` is exempt by file: its subject *is* the parameterless helpers'
 device-zone default, so it cannot state a zone instead.
+
+### The loose `warning:` reading, measured (T-1147, 2026-09-12)
+
+`xcb.sh` counted warnings with `grep -c 'warning:'` — the loose pattern its own neighbouring line
+banned for errors. Measured over three real logs: a plain `build` (669 `SwiftCompile` tasks) emits
+**no** `warning:` line at all; `build-for-testing` over the same tree (345 more tasks) matches
+exactly **one**, `appintentsmetadataprocessor … warning: Metadata extraction skipped. No
+AppIntents.framework dependency found.` The phantom is tied to the **test bundle**, not to how full
+the build is.
+
+The effect was an inverted baseline: every honest cold run reported `warnings: 1` against a stated
+baseline of zero, while a vacuous incremental run that recompiled nothing reported a reassuring `0`.
+The counter is now anchored (`\.swift:N:M: warning:`), tool notices are reported on their own line
+so a future real `ld:` or `actool: warning:` is not lost, and a run that compiled zero Swift files
+prints `!! VACUOUS-COUNT` rather than certifying a zero it cannot support.
