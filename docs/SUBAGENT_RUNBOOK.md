@@ -699,18 +699,29 @@ which is the hollow-instrument shape this whole section is about, one layer up.
 Plan format, `--no-build` dry runs and every option are documented in the header of
 `scripts/mutate.sh`.
 
-## `run-macos-app.sh` refuses while the user's own Cadence is running, and that is the common case
+## `run-macos-app.sh` refuses while the user's own Cadence is running — that route, not every route
 
-Measured 2026-09-02: the guard fired (exit 3, *"REFUSING: the user's own Cadence is running. Do not add
-a second writer."*) against an app that had been up since 31 August. The refusal is correct — the
-alternative is a second writer on the user's real store, which has hung an instance for fifteen hours —
-but it means **every "screenshot the Mac app" ticket is unrunnable whenever the user is using their
-app**, which is most of the time.
+Measured 2026-09-02 and again 2026-09-12 (T-730): the guard fires (exit 3, *"REFUSING: the user's own
+Cadence is running. Do not add a second writer."*) against an app that had been up for days. The
+refusal is correct, and **for a stronger reason than the one it gives**. The store is not the exposure
+— `CADENCE_LOCAL_STORE_ONLY=1` plus `CADENCE_UI_TEST_STORE_ID` already redirect it. The **container**
+is: a debug build carries the same bundle id, so it gets the user's own
+`~/Library/Containers/com.haoranwei.Cadence/Data/`, which is where the script's own header says the
+private store lands. `run-macos-app.sh` passes no `-CadenceSuiteName`, so the launched instance's
+`CadenceDefaults.store` is the **user's** preferences plist, and the app-group suite `Theme` and
+`CadenceWidgetRefreshCenter` reach is shared by design on top of that (T-1157).
+
+**What that refusal does NOT mean.** It is one route, not the surface. Nothing under `CadenceUITests/`
+and nothing in `scripts/xcb.sh` guards on the user's app at all, so a UI run is not blocked by it —
+what blocks a UI run is a locked screen (T-563). Say "`run-macos-app.sh` refused", never "the Mac
+cannot be screenshotted".
 
 Two fallbacks, in order of fidelity:
 
-1. **`XCUIScreenshot` under the test-host lock.** The UI target does run (T-563), it launches its own
-   copy against a private store, and it is the only route that captures real app chrome.
+1. **`XCUIScreenshot` under the test-host lock, and it is built now.** `CadenceUITestPixelSupport`
+   reads a screenshot as 8-bit sRGB RGBA, `CadenceTodayCompositionUITests` takes `window.screenshot()`
+   and maps element frames onto its pixels, and `CadenceUITestsLaunchTests` attaches `app.screenshot()`.
+   It launches its own copy against a private store and is the only route that captures real app chrome.
 2. **An offscreen `ImageRenderer` harness** that transcribes the modifier chain verbatim from the draw
    site. This is the real glyph run and answers questions about type, tracking and advance exactly. It
    is **not** the app: it cannot tell you the components are wired together as the source says. Say

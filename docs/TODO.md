@@ -3879,6 +3879,14 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 - [T-1148] **`--drops-ids` lets a ticket leave `docs/TODO.md` with nothing asking whether it ever arrived in `docs/TODO_DONE.md`, and three have not.** Filed 2026-09-12 by `instrufix` while closing [[T-1145]]. `LEDGER-IDS-LOST` asks the right question of each ledger separately and both now read it, but the ordinary way an entry leaves `TODO.md` is that it MOVES, and the flag that authorises the drop is satisfied by the drop alone. **MEASURED at `17b5b61`:** over the 270 `docs/TODO.md` commits since the archive was created (`37fd8a21`, 2026-08-26), three ids left `TODO.md` and are in NEITHER ledger at HEAD — `T-441` at `193f257f`, and `T-768` and `T-849` at `7bf25332`. `193f257f` is *"85 closures reach the archive"*: a bulk archival commit that moved 85 entries and dropped an 86th on the floor, which is the exact shape a per-file reading cannot see. (`T-768`/`T-849` are two of the eight already named in `LEDGER-ID-UNFILED`'s header as message-only ids, so the populations overlap.) Enforceable at **three**, not at zero, so the check needs a decision about the standing three first — recover them from `193f257f^` and `7bf25332^`, or record that they were retired on purpose. The cheap reading: for each id in `--drops-ids`, require it to be present in a `TODO_DONE.md` this same commit stages, or to be named in an escape that says it is being retired rather than archived.
 - [T-1149] **The zero-warning baseline is stated in `AGENTS.md`, `CLAUDE.md` and every brief, and enforced by nothing.** Filed 2026-09-12 by `instrufix` while closing [[T-1147]]. `xcb.sh` prints the count and never touches `$STATUS`; a build that introduces ten Swift warnings exits 0 and reads green to any caller watching the exit code, and the banner line is one of nine. Until today the count could not have been gated on — it reported a phantom `1` on every run that built `CadenceTests` ([[T-1147]]) — so this was not an option; it now is. **MEASURED at `17b5b61` 2026-09-12: 0 anchored Swift warnings on a full `build` (669 `SwiftCompile` tasks) and 0 on a full `build-for-testing` (345 more), so a gate is enforceable at zero rather than baselined.** The argument against is [[T-986]]'s, and it has to be answered rather than waved at: a gate that fires on the normal case gets switched off. A warning gate does not fire on the normal case — the normal case is zero — but it WOULD fire on an incremental run that recompiled nothing and inherited someone else's warning, which is why `VACUOUS-COUNT` had to exist first. Suggested shape: exit non-zero on a non-vacuous run whose anchored warning count is above zero, never on a vacuous one, with the same `--` escape the other guards carry.
 
+- [T-1157] **`run-macos-app.sh` and `CadenceUITests` both launch a second Cadence into the *user's own* preferences container, and two non-skipped UI tests delete four of their keys from it.** Filed 2026-09-12 by `verifyenv` while closing [[T-730]]. **MEASURED at `3916615`:** a debug build carries bundle id `com.haoranwei.Cadence`, so it gets the user's sandbox container — `run-macos-app.sh`'s own header says the private store lands at `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores` ([[T-1064]]) and that directory exists, created 2026-09-07. Both launchers set `CADENCE_LOCAL_STORE_ONLY=1` and `CADENCE_UI_TEST_STORE_ID`, which isolate **SwiftData and nothing else** — the exact sentence `CadenceDefaults`'s header and `scripts/simulator-claim.sh`'s already carry about iOS ([[T-735]]). Neither passes `-CadenceSuiteName`; the only launch in the repo that does is `scripts/simulator-claim.sh:432`. So the launched instance's `CadenceDefaults.store` **is** `UserDefaults.standard`, i.e. the user's `Data/Library/Preferences/com.haoranwei.Cadence.plist` — **87 keys, mtime the same day**, so it is a file they are actively using. Sharing is the mild half. `CadenceUITests.testLaunchesToTodayWithSeededSidebarLists` and `CadenceUITestsLaunchTests.testLaunch` are **not** gated behind `CADENCE_RUN_INTERACTIVE_UI_TESTS`, both launch with `CADENCE_RESET_USER_DEFAULTS=1`, and `CadenceUITestSupport.resetUserDefaults` then removes `listDetailDefaultPage`, `sidebarHiddenTabs`, `sidebarTabOrder` and `sidebarTabColors` from that store — the user's sidebar layout, silently, on every UI run `AGENTS.md` tells agents to make. All four are absent from the plist today, which is exactly the ambiguity worth removing: nobody can tell whether they were never set or already taken. **The fix looks one line long on each side** — `-CadenceSuiteName "$ID"` on `run-macos-app.sh`'s exec, and `app.launchArguments += ["-CadenceSuiteName", storeID]` at each `XCUIApplication` launch — and was **deliberately not applied blind**, because it cannot be verified end to end while the user's copy is up and the screen is locked, and because it does not close the hole: the app-group suite `group.com.haoranwei.Cadence` that `Theme` and `CadenceWidgetRefreshCenter` reach stays shared **by design** either way, so what is left has to be stated rather than assumed away.
+
+- [T-1158] **Nobody has yet seen a window screenshot of a second Cadence taken while the user's copy runs, which is the single measurement [[T-730]] turns on.** Filed 2026-09-12 by `verifyenv` while closing it. The argument that the `XCUIScreenshot` route coexists with the user's running app is derived from source and from an **absence** — `CadenceTodayCompositionUITests` takes `window.screenshot()`, `CadenceUITestsLaunchTests` attaches `app.screenshot()`, and nothing under `CadenceUITests/` or in `scripts/xcb.sh` matches `/Applications/Cadence` — not from a picture. The direct run was refused by a precondition unrelated to the ticket: `ioreg -n Root -d1 -k IOConsoleUsers` reported `"CGSSessionScreenIsLocked"=Yes` for the whole session, and `xcb.sh` exits 5 on a `CadenceUITests` run in that state ([[T-563]]). A second gap in the same direction: **no `cadence-xcb-*.log` in `$TMPDIR` has ever carried `-only-testing:CadenceUITests`** — the local log record contains no scoped UI run at all, so there is nothing historical to date against either. Whoever takes this needs only an unlocked screen: `scripts/xcb.sh <id> test -only-testing:CadenceUITests` with `pgrep -f '/Applications/Cadence.app/Contents/MacOS/Cadence'` non-empty before **and** after, confirming the count does not move, and an attachment pulled out of the `.xcresult` to prove a real picture came back. Do [[T-1157]] first, or accept that the run rewrites the user's sidebar keys while you watch.
+
+- [T-1159] **The iPad half of the simulator-keyboard question is unmeasured, and [[T-732]]'s one observation was on an iPad.** Filed 2026-09-12 by `verifyenv` while closing it. On **iPhone 17 Pro / iOS 26.5**, booted headlessly with Simulator.app not running, a focused field draws **no** software keyboard and takes injected text — measured twice, Spotlight and Safari's address bar, plus `ConnectHardwareKeyboard` absent from the entire `com.apple.iphonesimulator` domain. T-732 reported the opposite on 2026-09-02: *"the full software QWERTY came up unprompted in Cadence's new-task composer on the claimed iPad."* Both cannot be general, and the difference is worth a name rather than a shrug. It was not settled here because every iPad in the fleet is shut down, `scripts/simulator-claim.sh boot` starts iPhones only by design, and the one-device rule stands — the same wall [[T-731]] hit for rotation. Why it is more than curiosity: if an iPad really does boot without a hardware keyboard attached, then UIKit's honouring of `keyboardDismissMode = .interactive` is observable on a simulator **at iPad width** today, which is not the phone-width Notes tab `docs/device-checks.md` item 1 describes but does settle the half of it that is about UIKit rather than about layout.
+
+- [T-1160] **HEAD is red: `AgentContextBudgetTests.activeAgentGuidesStayCompactAndRouteToReferences` fails at `3916615`, because that commit took root `AGENTS.md` seven lines over its own cap.** Filed 2026-09-12 by `verifyenv`, which hit it as the only failure in an otherwise clean full run. **MEASURED:** `git show 3916615:AGENTS.md | wc -l` is **206**, which is **207** by the test's `split(omittingEmptySubsequences: false)` count, against a limit of **200** — the test says so in as many words: *"AGENTS.md has 207 lines by this test's count (206 by `wc -l`)"*. The same file was **199** at `2369efc`; `3916615` is +13/−6 on it. **Nothing about it is intermittent and nothing about it is mine**: the assertion is a line count over `CLAUDE.md`, three `docs/*_REFERENCE.md` and every `AGENTS.md` the walk finds, so any commit touching none of those fails identically. **How it got in is the part worth keeping**, and it is [[T-552]]'s shape rather than carelessness: `3916615`'s own message records `MEASURED: XCODEBUILD_EXIT=0 ... 21 test result lines (CadenceBuildInvocationHygieneTests + CadenceGuardScriptSelftestTests)` — a run scoped to the two suites the change was about, which cannot see a cap on a file the change also edited. A scoped run is the repo's standing advice and it is right; what is missing is anything that notices when the edited **paths** fall outside the suites the run covered. **Not fixed here, deliberately.** The cap's sanctioned relief is to move prose to `docs/AGENTS_REFERENCE.md` and link out (`CLAUDE.md`, "Context Budget Rules"), and choosing which seven lines go is an editorial call on the repository's most-read file, made worse by doing it to a sibling's prose from the commit before last — *"do not revert unrelated agent changes"* covers deleting it, and only the author knows which half was the load-bearing half. **Id minted outside this agent's allocation** (T-1157..T-1159), because a live red at HEAD that fails every agent's full `CadenceTests` run is worse unfiled than mis-numbered.
+
 - [T-623] **CLOSED 2026-09-11 (agent `deletewalk`) — as a recorded decision to park, the shape
   [[T-624]] and [[T-752]] closed in, not as a repair. Re-measured against HEAD a fourth time and
   every figure behind the park held or moved further in its favour; there is no half left that an
@@ -4634,7 +4642,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   from both spellings — the standalone card and the same reference drawn inline.
   Found [[T-734]] on the way, which is the reason this was worth driving rather than reasoning.
 
-- [T-730] **macOS visual verification is unavailable whenever the user's own Cadence is running, which
+- [T-730] **CLOSED 2026-09-12 (agent `verifyenv`) — the refusal is real and the headline is not: it blocks one route, and the hazard it names is not the one it prevents.**
+  Originally: **macOS visual verification is unavailable whenever the user's own Cadence is running, which
   is most of the time.** Measured 2026-09-02: `scripts/run-macos-app.sh start` refused with exit 3 —
   *"REFUSING: the user's own Cadence is running. Do not add a second writer."* — against an app that had
   been up since 31 August. **The refusal is correct**; the alternative is a second writer on the user's
@@ -4646,6 +4655,47 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the draw site's modifier chain (exact for type, tracking and advance; cannot tell you the components
   are wired together as the source says). Recorded in `docs/SUBAGENT_RUNBOOK.md` today; what is open is
   whether to build the first one properly.
+
+  **CLOSED 2026-09-12 — re-measured against the machine rather than inherited, and three of the four
+  claims moved.** The precondition still holds: `/Applications/Cadence.app/Contents/MacOS/Cadence` is
+  **pid 1264, started Thu Sep 10 02:05:41, elapsed 2d 03h**, one instance and not two.
+  **1. MEASURED — the refusal still fires, and it is a script decision rather than an OS one.** Re-run
+  today against a debug `Cadence.app` built in this agent's own tree: **exit 3**, the message verbatim,
+  the user's pid **1264 unchanged before and after**, and zero processes matching
+  `cadence-dd-verifyenv/Build/Products/Debug/Cadence.app`. The paired `stop verifyenv` answered
+  `!! NOTHING REMOVED` and exited 1, which is the correct answer when `start` refused and is [[T-1066]]'s
+  guard reporting from the filesystem instead of assuming. The guard itself is five lines in
+  `scripts/run-macos-app.sh`'s `start` arm: a `pgrep -f "/Applications/Cadence.app/Contents/MacOS/Cadence"`
+  that fires *before* the exec. The script launches `"$APP/Contents/MacOS/Cadence"` directly rather than
+  through LaunchServices, so nothing in macOS would stop a second instance of that bundle id.
+  **2. MEASURED — the entry names the wrong hazard, and the right one is worse.** Its stated alternative
+  is "a second writer on the user's real store", and the script *already* prevents that:
+  `CADENCE_LOCAL_STORE_ONLY=1` plus `CADENCE_UI_TEST_STORE_ID` redirect the SwiftData store. What is not
+  prevented is a second writer on the user's **preferences**. A debug build carries the same bundle id,
+  so it gets the same sandbox container — `~/Library/Containers/com.haoranwei.Cadence/Data/`, exactly
+  where the script's own header ([[T-1064]]) says the private store lands, and where
+  `Data/tmp/CadenceUITestStores` exists (created 2026-09-07). `run-macos-app.sh` passes **no**
+  `-CadenceSuiteName`, so `CadenceDefaults.store` in the launched instance resolves to
+  `UserDefaults.standard`, i.e. the user's `Data/Library/Preferences/com.haoranwei.Cadence.plist`
+  (**87 keys**, written the same day), and `Theme` / `CadenceWidgetRefreshCenter` reach the app-group
+  suite `group.com.haoranwei.Cadence`, which `CadenceDefaults` documents as unroutable by design. So the
+  guard is **correct for a reason it does not give**, and the reason it gives was handled before it fired.
+  Filed as [[T-1157]], with the one-line fix and why it was not applied blind.
+  **3. MEASURED — "what is open is whether to build the first one properly" is answered at HEAD.**
+  `CadenceUITests/CadenceUITestPixelSupport.swift` reads an `XCUIScreenshot` as 8-bit sRGB RGBA;
+  `CadenceTodayCompositionUITests` takes `window.screenshot()` and maps element frames onto its pixels;
+  `CadenceUITestsLaunchTests` attaches `app.screenshot()`. The harness this ticket asks about exists.
+  **4. MEASURED — that route has no guard on the user's app.** Nothing under `CadenceUITests/` and
+  nothing in `scripts/xcb.sh` matches `/Applications/Cadence`. So "macOS visual verification is
+  unavailable whenever the user's own Cadence is running" is **false as stated**: what is unavailable is
+  `run-macos-app.sh`'s route. `docs/SUBAGENT_RUNBOOK.md`'s section repeated the same over-reach and is
+  rewritten in this commit to say *"that route, not every route"*.
+  **NOT MEASURED, and this is the honest limit of the closure.** No window screenshot of a second
+  instance has actually been taken while the user's copy runs. The run was refused by a precondition
+  unrelated to this ticket: `ioreg -n Root -d1 -k IOConsoleUsers` reported `"CGSSessionScreenIsLocked"=Yes`
+  for the whole session, and `xcb.sh` exits 5 on a `CadenceUITests` run in that state ([[T-563]]). Point 4
+  is therefore derived from source and from an absence, not from a picture. Carried as [[T-1158]] rather
+  than smuggled into this closure as observation.
 
 
 - [T-731] **CLOSED 2026-09-06 (`dcd110c`).** Originally: **The `isRegularWidth == true` branch of the iOS editor sheets is dead on the iPad anyone
@@ -4720,7 +4770,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the last one proving the one-cover allowance is for the note editor specifically and not for any
   cover in that file. Suite green at HEAD: 20 tests, 0.26s, 0 compile errors, 0 Swift warnings.
 
-- [T-732] **`docs/device-checks.md`'s keyboard-dismiss item rests on a premise that is false on this
+- [T-732] **CLOSED 2026-09-12 (agent `verifyenv`) — re-measured, and it went the other way: the premise's *conclusion* holds, its *mechanism* was wrong, and the item stays on the device list.**
+  Originally: **`docs/device-checks.md`'s keyboard-dismiss item rests on a premise that is false on this
   fleet.** It says the simulator suppresses the software keyboard while a Mac keyboard is attached.
   OBSERVED 2026-09-02: the full software QWERTY came up unprompted in Cadence's new-task composer on
   the claimed iPad. If the keyboard is available, the `keyboardDismissMode = .interactive` check is a
@@ -4728,6 +4779,38 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **This is the same shape as [[T-280]]'s premise, which was also false and also load-bearing**: an
   item stayed on the hardware list for weeks because of an untested claim about the tooling rather than
   about the app. Re-triage before anyone carries it to a device.
+
+  **CLOSED 2026-09-12 — re-derived on hardware this agent booted, and the 2026-09-02 reading did not
+  reproduce.** iPhone 17 Pro / iOS 26.5 (`7B642065-86FC-4987-8674-22066D32878C`), booted by
+  `scripts/simulator-claim.sh boot --apply`, claimed and released in the same turn, left booted and
+  untouched. **Simulator.app was not running** for any of it — `ps -Ao pid,command` matched nothing but
+  Claude helpers — which is the first thing that makes the old wording wrong.
+  **MEASURED, four readings.** (a) `ConnectHardwareKeyboard` appears **zero** times in the whole
+  `com.apple.iphonesimulator` domain — not globally, and not in any of its per-device `DevicePreferences`
+  entries — so nobody has ever set that toggle either way here. (b) In Spotlight, the search field took
+  first responder (caret visible, Suggestions list up) and **no software keyboard was drawn**. (c) In
+  **Safari's address bar**, same again: URL selected, field focused, no keyboard — two surfaces, one
+  SpringBoard and one UIKit app. (d) Injected text lands anyway: `control text "abc"` wrote `Abc` into
+  the Spotlight field and Settings answered *No Results for "Abc"*. A field that is first responder and
+  accepts key events with nothing on screen **is** the suppression the item describes.
+  **So the premise is materially right and mechanically wrong.** It is not that someone attached a Mac
+  keyboard in Simulator.app; it is that a headless `simctl` boot comes up with one already attached and
+  the agent surface cannot detach it — `xcrun simctl` has no keyboard command, and `simctl ui` offers
+  appearance / increase_contrast / content_size only.
+  **Fixed in this commit, in both places the false sentence lived.** `docs/device-checks.md` item 1 now
+  states the headless-boot mechanism and names the one step that would unblock it (a person turning
+  *I/O → Keyboard → Connect Hardware Keyboard* off in Simulator.app, which an agent may not do), and the
+  same claim in `Cadence/iOS/iOSMarkdownEditor.swift`'s `keyboardDismissMode` comment — the more
+  load-bearing copy, since it tells whoever debugs a stuck keyboard where to start — is corrected too.
+  The cited line number there moved with the edit and was updated (`:170` → `:177`).
+  **Two corrections of record.** The list is **two items, four steps, under two minutes**, and says so
+  on its own line 7; a brief describing it as five items and five minutes is quoting the pre-[[T-561]]
+  version. And `docs/device-checks.md` is read by **no test as data** — `AgentContextBudgetTests` caps
+  `CLAUDE.md` and every `AGENTS.md` by a tree walk and nothing else, and the only other mention in
+  `CadenceTests/` is a doc comment in `MarkdownImagePasteTests` — so the [[T-732]] edit is safe for the
+  reason that rule asks you to check, rather than by assumption.
+  **Unsettled, deliberately: the iPad.** The 2026-09-02 reading was on one, and no iPad was booted here.
+  Carried as [[T-1159]].
 
 - [T-745] **CLOSED 2026-09-11 (`defaultsroute`) — the decision is *route them*, and the routing is a rule now instead of a set of correct call sites.** [[T-949]] is the same ticket and is closed as a duplicate. **27 sites across 12 files** now resolve through `CadenceDefaults.store`: `ListDetailView` x8, `PersistenceController` x6, `CadenceCalendarVisibilityPreferences` x3, `TasksPanel` x2, and one each in `NotificationManager`, `MarkdownNoteSupport`, `CadenceUITestSupport`, `PursuitToGoalMigration`, `AISettingsManager`, `AppleAccountManager`, `CadenceCalendarLinkObservations`, `CadenceNotesEditorPreferences`. Every one is a one-token substitution and **none of them changes the product**: with no `-CadenceSuiteName` argument `CadenceDefaults.store` *is* `UserDefaults.standard`, which is why this was safe to do to a hot file. **What it buys** is the thing neither filing had a name for: six keys were reachable through two stores at once — `notificationsEnabled`, `noteTemplateOverrides`, the hidden- and observed-calendar lists, the four `CadencePreferenceKeys` the UI-test reset clears, and the retired key `purgeRetiredKeys` drops — each written through a routed `@AppStorage` and read through an unrouted `.standard`, agreeing only because no launch argument was present. **Four sites are deliberately left, and the exemption is derived rather than typed**: `CadenceDefaults.swift` is in neither the `CadenceWidgets` nor the `CadenceMCPServer` Sources phase, so `Theme` and `CadenceWidgetRefreshCenter` (which reach the **app-group** suite on purpose — the widget is another process, and the accent id and the reload state are what both must agree about) and `DataIntegrityRepairService` and `NoteMigrationService` (in the CLI target's explicit list) physically cannot route. `CadenceDefaultsRoutingSweepTests.theSharedTargetExemptionNamesFilesTheRouterCannotReach` measures that premise both ways rather than asserting it. **The sweep was red before it was green**: run unchanged against `a92b659` it named exactly the twelve files the same commit routes, which is the only thing separating this census from one that matches nothing. The sweep's one stated limit: it reads spellings, so a bare `.standard` passed *positionally* into a `UserDefaults` parameter is invisible — `.standard` is also a `CadenceAccentPalette` case. The one site of that shape, `TasksPanel.storedSortMode(in: .standard, …)`, is why `in:` is one of the six needles. **The second gap this ticket raised is unchanged and now the only one left**: an app launched by tapping its icon on the simulator carries no launch arguments and is back on the device-wide domain. **Filed as:** **`CadenceDefaults` covers `@AppStorage` and the calendar memory, and nothing else.**
   [[T-735]] routed every `@AppStorage` through `defaultAppStorage` on the scene and pointed

@@ -164,8 +164,15 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         // away is `keyboardDismissMode` below — the editor *is* the scroll view, so dragging the
         // text down should drag the keyboard with it. That is the only remaining dismissal on the
         // phone's Notes tab, which hides its navigation bar; every sheet-hosted editor still has
-        // its own Done/Cancel above the keyboard. It has **not** been confirmed on a device with a
-        // software keyboard up: the simulator suppresses it while a hardware keyboard is attached.
+        // its own Done/Cancel above the keyboard. It has **not** been confirmed with a software
+        // keyboard up, and the blocker is the tooling rather than the app — but not the blocker
+        // this comment used to name. Re-measured 2026-09-12 (T-732): Simulator.app is not in the
+        // picture at all, because agents boot devices headlessly with `simctl`, and a headless boot
+        // comes up with a hardware keyboard already attached that nothing in the agent surface can
+        // detach (`simctl` has no keyboard command; `simctl ui` offers appearance, increase_contrast
+        // and content_size only). Observed twice on iPhone 17 Pro / iOS 26.5, Simulator.app not
+        // running: Spotlight's and Safari's fields took first responder with a visible caret and no
+        // software keyboard drawn, and injected text typed straight into them.
         // If a user reports a stuck keyboard, this line is the first thing to check.
         textView.keyboardDismissMode = .interactive
         textView.alwaysBounceVertical = true

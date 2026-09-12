@@ -20,13 +20,27 @@ simulator, and the recipe is in [Moved off this list](#moved-off-this-list).
 
 ## 1. Can you dismiss the keyboard in the Notes tab? ([T-55])
 
-**Why neither a test nor a simulator can settle it:** the simulator suppresses the software keyboard
-while a Mac keyboard is attached, and that toggle lives in Simulator.app — which agents here are not
-to touch. No keyboard, no keyboard-dismiss gesture.
+**Why neither a test nor a simulator can settle it — re-measured 2026-09-12 ([T-732]), which named
+the wrong mechanism and reached the right conclusion.** The old wording said a Mac keyboard is
+*attached* and the toggle lives in Simulator.app. Simulator.app is not in the picture at all: agents
+boot devices headlessly with `simctl` and never launch it, and a headless boot comes up with a
+hardware keyboard **already** attached that nothing in the agent surface can detach — `xcrun simctl`
+has no keyboard command, `simctl ui` offers appearance, increase_contrast and content_size only, and
+`ConnectHardwareKeyboard` appears nowhere in `com.apple.iphonesimulator`, globally or in any of its
+per-device entries. The one toggle that would detach it is a menu item in Simulator.app, which
+agents here are not to touch. **The consequence is unchanged, and was observed twice on iPhone 17
+Pro / iOS 26.5 with Simulator.app not running:** in Spotlight and in Safari's address bar the field
+took first responder — caret visible, suggestions list up — and **no software keyboard was drawn**,
+while injected text typed straight into it. No keyboard, no keyboard-dismiss gesture.
+
+**If you would rather not do this by hand:** open Simulator.app yourself, turn *I/O → Keyboard →
+Connect Hardware Keyboard* off, and the software keyboard comes up — at which point this is a
+downward `touch_path` on the note text and becomes somebody else's job. An agent may not take that
+step for you, which is the whole of why the item is still here.
 
 **Why it's in doubt:** the note editor's "Done" bar was removed (`64218d1`); its only job was to
 drop focus. What's left is `keyboardDismissMode = .interactive`
-(`Cadence/iOS/iOSMarkdownEditor.swift:170`) — dragging the note text downward should carry the
+(`Cadence/iOS/iOSMarkdownEditor.swift:177`) — dragging the note text downward should carry the
 keyboard away, the way Apple Notes behaves. It has never been seen to work here, and no test asserts
 it, deliberately: the property being set is not the question, UIKit honouring it is.
 
