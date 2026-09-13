@@ -7,12 +7,15 @@ read. Nothing was trimmed: each entry keeps its prose and the SHA that shipped i
 Search here before filing anything that sounds familiar — several tickets were re-reported this
 week by audits that had only seen the open list.
 
-177 entries.
+188 entries.
 
 **Coverage: this archive begins mid-project.** These entries are near-complete from ~T-200 on (96% of
 T-300..399 is accounted for here or in the open list) and near-empty before it (10-13% of T-1..199).
 Roughly 200 tickets closed earlier were removed from the open list and never archived; they are
 recoverable verbatim from this file's git history and were measured as not worth backfilling (T-462).
+The eleven ids that fell into that state **after** T-462 drew the line are recovered in
+`## Recovered from history` at the end of this file (T-1123, T-1148); above T-462's baseline the
+message-only population is zero as of 2026-09-12.
 **A search here that finds nothing is not evidence a ticket is new if its id is below ~T-200.**
 
 - [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
@@ -3298,3 +3301,71 @@ Newest first. The commit message carries the reasoning; this is the index.
   a `List`; a metadata strip that could not scroll.
 - [D-01] `74f59ee` Seven keyboard toolbars, five of which never rendered — and the `/` slash menu
   they were hiding.
+
+## Recovered from history — ids that lived only in a commit message
+
+Written 2026-09-12 by `ledgerheal2`, closing [[T-1123]] and the standing half of [[T-1148]].
+
+The ledger is this repository's id allocator ([[T-1072]]), so an id with no formal `- [T-n]` entry
+anywhere is invisible to the next agent computing "next free" — which is how `T-1119` went to two
+agents in one week. `LEDGER-ID-UNFILED` ([[T-1106]]) makes that impossible going forward and reads
+only the message in front of it, so the ids already in that state were out of its reach by
+construction; `LEDGER-ID-UNARCHIVED` ([[T-1148]]) does the same for an entry that leaves
+`docs/TODO.md` and arrives nowhere. These eleven are the population both guards were built after.
+
+**Scope, said out loud.** This recovers the ids above the pre-[[T-462]] historical baseline only.
+Measured at `60c69b6` 2026-09-12: 834 distinct ids appear in a commit message reachable from HEAD
+and 172 of them have no formal entry in either ledger — but **162 of those 172 are `T-441` or
+below**, the deficit T-462 measured at ~200 tickets and decided not to backfill. Above that line
+the set is exactly these ten. The eleventh entry is `T-441` itself: it sits *inside* T-462's
+range, and it is here anyway because it is [[T-1148]]'s standing loss and because the commit that
+fixed it is the commit that dropped it. After this section the message-only count above the
+baseline is **zero**; below it, 161 remain, deliberately.
+
+**Each entry keeps its ticket's original KIND.** A coverage ticket is not rewritten here as a
+production bug, a measurement is not rewritten as a fix, and an id that was never a ticket says so
+rather than being given a plausible finding. Every sha below is the commit that did the work, read
+from its own diff; where an id was removed by a different commit, both are named.
+
+- [T-441] **CLOSED 2026-08-29 (`193f257f`) — `ListEditorCalendarRow` rendered unlinked, gone and merely-hidden as one string.** Residue from [[T-400]]. Recovered 2026-09-12 by `ledgerheal2` under [[T-1148]]: the commit that fixed this ticket is also the commit that dropped its entry.
+  **The original finding, from the entry as it stood at `193f257f^`:** the row showed `selectedTitle ?? "None"` sourced from `availableCalendars`, so a link whose calendar had been deleted looked identical to one that was never set — and the row is a live binding that writes back on save, so opening the editor could quietly clear a link the user still wanted. The new health check knew the difference; the row did not ask it.
+  **Half the premise did not survive that commit's own measurement, and the correction is the user-visible part.** `selectedCalendarID` is seeded from the stored value and `applyEdits()` writes the same value back, so open-and-save is a no-op — the row was not the silent overwrite the ticket described. The real defect was the **misreport**: a calendar that exists but is hidden rendered as "None", so a user who "fixed" what looked like a missing link overwrote one that was working. The row now asks `CadenceCalendarLinkRowState` for one of four verdicts, and the missing case is worded by `CadenceCalendarLinkHealth` rather than re-typed. Finished by [[T-464]], which found the picker still offering only visible calendars; carried to the timeline card by [[T-467]].
+  **How the entry was lost, which is the whole of [[T-1148]].** `193f257f` is *"A hidden calendar stops reading as a missing one, and 85 closures reach the archive"*: it moved 85 entries into this file and left an 86th — its own ticket — on the floor. Every instrument in `scripts/agent-commit.sh` passed it, because the 86 removals were declared together with `--drops-ids` and only the removals were ever read.
+
+- [T-734] **CLOSED 2026-09-03 (`f50fb4b`) — choosing a `/task` or `/link` suggestion left the snippet's own `]]` behind.** A production defect, found while driving [[T-723]] on iPhone 17 Pro / iOS 26.5. Never had a ledger entry at any revision; recovered 2026-09-12 by `ledgerheal2` under [[T-1123]].
+  The slash commands insert a whole snippet — `[[task:]]`, `[[]]` — and park the caret inside it, so the closing brackets already exist when the reference picker opens. The picker's replacement range ran from the `[[` only as far as the caret, and the suggestion it inserts is itself a complete `[[...]]`, so the snippet's own `]]` survived as literal text after the rendered reference: `/task` → pick "Beta" wrote `Beta]]`. The stray brackets also stopped the line being a standalone task embed, so it drew as an inline link instead of a card.
+  **Not an iOS defect, which is why the fix is in `Shared`:** the same `context(in:selection:)` feeds macOS's picker. The replacement range now runs through a `]]` the caret is sitting in front of — exactly two characters, and only on the caret's own line. `MarkdownReferenceCompletionSupport` +17 lines, pinned by 48 lines of `NoteReferenceSupportTests`.
+
+- [T-768] **CLOSED 2026-09-04 (`561d901`; entry dropped by `7bf25332`) — the two macOS event deletes report through the global alert, and the reason was reasoned rather than measured.** Residue of [[T-658]], filed out of it by `d4caac3`. Recovered 2026-09-12 by `ledgerheal2` under [[T-1123]] and [[T-1148]].
+  **The original finding, from the entry as it stood at `7bf25332^`:** [[T-658]] moved Save and quick-create to an inline notice on the popover holding the draft and deliberately left Delete on the global alert. The argument for leaving it was that both deletes leave through `DeleteConfirmationManager`, whose `DeleteConfirmationOverlay` covers the whole window, so pressing its Delete button is a click outside a transient `NSPopover` and closes the editor before EventKit answers — an inline notice would have nothing to draw on, and suppressing the alert for it would turn a reported failure into a silent one. The ticket's own objection was that this is AppKit *reasoning* about `NSPopover.behavior == .transient`, not an observation, and that it had never been checked because `run-macos-app.sh` refuses while the user's own Cadence is running.
+  **The ask was a measurement, and `561d901` answered it:** neither macOS event-delete popover survives the confirmation overlay's Delete, for two different reasons — so the global alert stays correct at both sites and the three-line `deleteOutcome(for:)` addition the ticket held open is not wanted.
+  **The ticket's other half was split rather than closed with it.** Widening `presentRefusable(…)` — which takes a fixed `failureNotice: String` and so cannot carry `CalendarWriteFailure.message` — to a typed refusal was never touched, and `7bf25332` filed it as `T-919` precisely so it would not be lost with the ticket that carried it. That commit then dropped this entry without archiving it, which is the defect [[T-1148]] describes.
+
+- [T-849] **CLOSED 2026-09-04 (`0bf319d`; entry dropped by `7bf25332`) — the note panel drew an unlabelled failure.** Recovered 2026-09-12 by `ledgerheal2` under [[T-1123]] and [[T-1148]].
+  **The original finding, verbatim from `7bf25332^`:** *"`NotePanel.swift:80-99,113`; `loadOrCreateCoreNotes` swallows. Make it throwing or return a typed result, and keep loading."*
+  **Fixed as asked:** the panel now names a failed load with a per-tab failure notice and a retry instead of spinning on it forever. The same `7bf25332` that recorded the closure in its message dropped the entry rather than moving it here.
+
+- [T-879] **CLOSED 2026-09-04 (`3b56985`) — COVERAGE ONLY, not a production defect: `CadenceSwipeActionSupport.release`'s edge factor was unpinned.** Recovered 2026-09-12 by `ledgerheal2` under [[T-1123]], which asked whether this id was a ticket at all.
+  **It is a ticket, and the doubt is worth recording.** [[T-1123]] noted that `T-879`/`T-880` appear in `6afea7b`, a commit whose only file is `docs/CODEX_REQUESTS.md`, and wondered whether they were references rather than tickets. They are not: `6afea7b` is *"T-882: correct R24's coverage-audit table"* and merely cites the landing. The work is `3b56985`, whose entire diff is two new test files, 217 lines, no production change — so the original classification is coverage, and rewriting it here as a bug would be a false history.
+  **The hole.** `release` multiplies velocity by the edge's direction so the release rule can stay unsigned. Every velocity case in the existing suite dragged right, where that factor is 1, and its single trailing case released under the commit speed — so **dropping the factor changed nothing any test could see, while inverting the trailing edge for the user**. Pinned by `CadenceSwipeEdgeArbitrationTests` (151 lines). The audit that raised it named seven `Shared` files as untested by static type-name matching; six of the seven were wrong, and what that proxy missed was the opposite shape — a live hole inside a file it counted as covered.
+
+- [T-880] **CLOSED 2026-09-04 (`3b56985`) — COVERAGE ONLY, not a production defect: `CadenceTaskStatusEditing.completeFocusSession`'s answer was unpinned.** Recovered 2026-09-12 by `ledgerheal2` under [[T-1123]]; same commit and same audit as [[T-879]], and the same note applies about `6afea7b` being a citation rather than the work.
+  `completeFocusSession` is the wrapper's only entry point that returns an answer, and `iOSFocusView` resets the stopwatch on that answer. The existing suite called it through a Void-returning table and every other test read the call site's guard out of source, so nothing exercised the returned value the UI actually branches on. Pinned by `CadenceFocusCompletionAnswerTests` (66 lines).
+
+- [T-1064] **CLOSED 2026-09-06 (`7584c5f`) — `scripts/run-macos-app.sh` leaked its private UI-test store, and the fix lived only in a working tree for four days.** Recovered 2026-09-12 by `ledgerheal2` under [[T-1123]].
+  The ticket recorded **76** leaked private stores on 2026-09-05 and gave `stop` an `APP_STORE_ROOT` — the app's real sandbox container, `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores/<id>` — in place of the `${TMPDIR}` path the sandboxed app never writes. Its header is still the document of record for where that store lands, cited by later tickets for exactly that.
+  **It was never committed, and that is how it became [[T-1066]].** `git log -- scripts/run-macos-app.sh` had exactly one commit, `50429a6` from 2026-08-22; every agent works from a `git archive HEAD` copy, so every agent was running the pre-fix script — removing a path that was never written, then printing success. `7584c5f` landed T-1066's reporting fix and this ticket's removal fix in the same commit, credited in its message and nowhere else until now. The residue that outlived both is [[T-1074]].
+
+- [T-1039] **RETIRED 2026-09-12 by `ledgerheal2` under [[T-1123]] — never a ticket; a dangling link, filed here so the id cannot be handed out as free.**
+  `T-1039` has no entry at any revision of either ledger and no commit of its own. It exists as `[[T-1039]]` in another entry's prose — "the blue sidebar line", paired with [[T-1037]], which is a real ticket — and [[T-1042]]'s closure already recorded the problem in as many words: *"`docs/TODO.md:105` links `[[T-1039]]` as 'the blue sidebar line' and no T-1039 exists anywhere in `docs/` — a dangling id from this same batch."* `dcb0a15` (T-1043) then repeated the pairing in its own message, which is the only reason the id appears in commit history at all.
+  **Nothing is recovered because there is nothing to recover.** The blue-sidebar-line report is [[T-1037]]'s; this id was a slip of the pen beside it. The general shape — an id that lives only in a `[[link]]`, which `LEDGER-ID-UNFILED` structurally cannot see because it reads the commit message — is filed as [[T-1206]].
+
+- [T-1079] **RETIRED 2026-09-12 by `ledgerheal2` under [[T-1123]] — never a ticket; a duplicate draft that was deliberately not used.**
+  `6914de0` says so itself, and it is the only commit that names the id: the finding was *"recorded under the id sweeps already reserved with the right one-line cause, rather than as the duplicate T-1079 that was drafted with the wrong offender."* The work is [[T-1078]] — the third red is a nested `func`, and both rival explanations for it are wrong. The id was drawn, found to describe the wrong offender, and abandoned; it is filed here only so the allocator can see it.
+
+- [T-1155] **RETIRED 2026-09-12 by `ledgerheal2` under [[T-1123]] — allocated in a killed agent's tree, never written to a ledger, refiled as [[T-1161]].**
+  Both this and [[T-1156]] were drawn by `guardgate3` and lost when that agent was killed with work in the shared checkout. `4efd0035` says it plainly — *"the two dangling ids in its tree (T-1155, T-1156, never written to the ledger) are filed as T-1161 and T-1162"* — and that message is the only place either id has ever appeared.
+  **This is the leak that refills the population this section drains, and it is one day younger than [[T-1123]].** The ticket named eight ids; these two arrived after it was filed, through `LEDGER-ID-UNFILED`'s `--unfiled-ids` escape, which authorises the message and leaves no ledger trace behind. Filed as [[T-1207]].
+
+- [T-1156] **RETIRED 2026-09-12 by `ledgerheal2` under [[T-1123]] — allocated in the same killed agent's tree as [[T-1155]], never written to a ledger, refiled as [[T-1162]].**
+  The work itself is not lost: [[T-1162]] shipped it — the `pgrep` host pattern that could not tell `xcb.sh`'s own run from a foreign one. Only the id is retired, and only so it is never handed out twice.

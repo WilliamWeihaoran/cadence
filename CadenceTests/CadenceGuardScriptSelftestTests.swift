@@ -124,6 +124,18 @@ struct CadenceGuardScriptSelftestTests {
         // of that file since. Naming it here means deleting mode 4g goes red rather than quietly
         // leaving the closure-writing step guarded at two of its three failures.
         "LEDGER-ENTRY-DUPLICATED",
+        // T-1148, and it is `LEDGER-IDS-LOST`'s unasked second question. That guard asks whether
+        // dropping an id was DELIBERATE, `--drops-ids` answers it, and nothing then asks where the
+        // ticket WENT -- while the ordinary way an entry leaves docs/TODO.md is that it MOVES to
+        // the archive, i.e. a drop plus an arrival. Only the drop was ever read, so `193f257f`
+        // moved 85 entries, left an 86th (T-441) on the floor, and was authorised by the same one
+        // flag as the 85. Naming it here means deleting mode 4d3 goes red: measured 2026-09-12,
+        // removing that block leaves the string `LEDGER-ID-UNARCHIVED` in the selftest's output
+        // exactly zero times, because mode 4c only ever holds it inside a passing check's unprinted
+        // detail. Mode 4d3 is also where the two-ids-on-the-floor fixture lives, and that fixture
+        // is not decoration -- with one id on the floor, collecting only the LAST unarchived id
+        // passed all 173 checks that existed before it.
+        "LEDGER-ID-UNARCHIVED",
         "REMOVES-HEAD-LINES",
         "NO-PATHS",
         "UNKNOWN-PATH",

@@ -49,6 +49,11 @@
 #   LEDGER-IDS-LOST      a `TODO.md` you are committing no longer has a `- [T-n]` entry HEAD had.
 #                        `--drops-ids <exact,sorted,list>` retires them deliberately. A line count
 #                        cannot show you this; an id can.
+#   LEDGER-ID-UNARCHIVED an id `--drops-ids` retires from a `TODO.md` is in no `TODO_DONE.md` as
+#                        this commit leaves it. The flag says the removal was deliberate; it does
+#                        not say where the ticket WENT, and an entry normally leaves the open list
+#                        by MOVING to the archive. `--retires-ids <exact,sorted,list>` says the id
+#                        is being struck off rather than archived (T-1148).
 #   LEDGER-CLOSURE-LOST  a `TODO.md` entry that is CLOSED in HEAD is open again in the content you
 #                        are staging, with its id intact -- so LEDGER-IDS-LOST sees nothing wrong.
 #                        `--reopens-ids <exact,sorted,list>` reopens them deliberately.
@@ -207,6 +212,7 @@ fi
 usage() {
     say "usage: ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]..."
     say "       flags: --removes <n> --drops-ids <ids> --reopens-ids <ids>"
+    say "              --retires-ids <ids>"
     say "              --unfiled-ids <ids> --buried-closures <ids> --duplicate-ids <ids>"
     say "              --duplicated-entries <ids>"
     say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
@@ -359,12 +365,27 @@ ledger_buried_closure_ids() {  # $1 = file
 # as this commit leaves it. Reading the message rather than the diff is deliberate -- that is the
 # one artefact every commit has, and it is where the id was recorded in all eight measured cases.
 #
-# Measured over all 1064 commits reachable from HEAD on 2026-09-11: 796 distinct ids appear in
-# commit messages and **eight** of them have no formal entry in either ledger -- T-734, T-768,
-# T-849, T-879, T-880, T-1039, T-1064, T-1079. The audit that filed this counted six at `4799e3c`;
-# one (T-752) has since been filed and THREE more have arrived, which is the ticket's "nothing
-# stops the eighth" arriving on schedule. Those eight are history and this guard cannot reach them:
-# it asks only about the message in front of it.
+# THE QUESTION, and the answer dated rather than a denominator that rots (T-1146): replay every
+# commit reachable from HEAD, take the ids its message names, and ask whether each has a formal
+# `- [T-n]` entry in either ledger. Re-derived 2026-09-12 at `60c69b6`: 834 distinct ids appear in
+# a commit message and **172** have no formal entry anywhere.
+#
+# That 172 is not an alarm and the SHAPE is the reason -- 162 of them are `T-441` or below, inside
+# the ~200-ticket deficit T-462 measured and decided not to backfill. Above T-462's line the set
+# was ten: T-734, T-768, T-849, T-879, T-880, T-1039, T-1064, T-1079 (the eight T-1123 named) plus
+# T-1155 and T-1156, which arrived through this guard's own `--unfiled-ids` escape one day after
+# T-1123 counted the eight. All ten, and T-441 with them, are now formal entries under
+# `## Recovered from history` in docs/TODO_DONE.md, so above the baseline the population is ZERO
+# and this guard is enforceable at zero rather than in front of a standing backlog.
+#
+# An earlier revision of this header said "796 distinct ids ... and eight of them", which was the
+# right eight and the wrong reading: it stated the modern tail without stating that a line had been
+# drawn at T-462, so re-running the obvious query gave 172 and the number looked like a lie. Same
+# lesson as T-1146 -- a count in front of a reader has to carry its population.
+#
+# Historical ids remain out of reach BY CONSTRUCTION and that is deliberate: this asks only about
+# the message in front of it, which is what keeps it usable. The half it does not implement -- an
+# id that lives only in another entry's prose, said two paragraphs up -- is T-1206.
 message_ids() {  # $1 = message
     print -r -- "$1" | grep -oE '\bT-[0-9]+\b' | sort -u
 }
@@ -561,6 +582,7 @@ cmd_accept() {
 cmd_commit() {
     local id=$1; shift
     local message="" have_message=0 declared_removals="" declared_dropped_ids="" declared_reopened_ids=""
+    local declared_retired_ids=""
     local declared_unfiled_ids="" declared_buried_ids="" declared_duplicate_ids=""
     local declared_duplicated_entries=""
     local -a paths accepted stale_declared not_sweeps
@@ -580,6 +602,8 @@ cmd_commit() {
                 declared_dropped_ids="$2"; shift 2 ;;
             --reopens-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--reopens-ids needs a comma-separated id list"
                 declared_reopened_ids="$2"; shift 2 ;;
+            --retires-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--retires-ids needs a comma-separated id list"
+                declared_retired_ids="$2"; shift 2 ;;
             --unfiled-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--unfiled-ids needs a comma-separated id list"
                 declared_unfiled_ids="$2"; shift 2 ;;
             --buried-closures) [[ $# -ge 2 ]] || refuse BAD-OPTION "--buried-closures needs a comma-separated id list"
@@ -1007,8 +1031,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #     the archive drops its id from TODO.md, and that half was already refused (with
     #     `--drops-ids`) before this change. Ids only ever ARRIVE in TODO_DONE.md, and an arrival is
     #     not a loss, so widening the reading adds no refusal to the ordinary archival commit.
-    local -a lost_ids
-    lost_ids=()
+    local -a lost_ids open_lost_ids
+    lost_ids=(); open_lost_ids=()
     # Hoisted out of the loop below on purpose: a bare `local x` whose parameter is already local
     # PRINTS it (`gone=...` on stdout) instead of redeclaring it -- same zsh trap as `drift_call`
     # above. REACHABLE since T-1145 widened the loop to both ledgers: a commit naming TODO.md and
@@ -1024,6 +1048,10 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         gone=$(comm -23 <(ledger_ids "$ledger_head") <(ledger_ids "${staged_content[$name]}"))
         [[ -n "$gone" ]] || continue
         lost_ids+=(${(f)gone})
+        # 3a1 below needs to know WHICH ledger each id left, and this is the only place that knows.
+        # An id leaving the archive has nowhere further to go; an id leaving the OPEN list is
+        # supposed to be arriving somewhere, and that is the question nothing has been asking.
+        [[ "${name:t}" == "TODO.md" ]] && open_lost_ids+=(${(f)gone})
     done
     if (( ${#lost_ids} )); then
         local declared_sorted="${(pj:,:)${(@o)${(@s:,:)declared_dropped_ids}}}"
@@ -1034,6 +1062,90 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   A reconstruction built on a stale copy loses a sibling's tickets in exactly this shape, and a
   line count hides it. Re-read \`git show HEAD:<path>\` and rebuild, or, if you really mean to
   retire them, say so: --drops-ids $lost_sorted"
+        fi
+    fi
+
+    # 3a1. T-1148, and it is the question `--drops-ids` was invented to stop asking. 3a above asks
+    #      whether the drop was DELIBERATE; the flag answers that and nothing then asks the second
+    #      half, which is the one the ledger is for: **where did the ticket go?** The ordinary way
+    #      an entry leaves `docs/TODO.md` is that it MOVES to `docs/TODO_DONE.md`, and a move is a
+    #      drop plus an arrival. Only the drop was ever read, so a bulk archival commit that moves
+    #      85 entries and leaves an 86th on the floor is authorised by the same flag as the 85.
+    #
+    #      MEASURED by replaying every commit that has ever touched `docs/TODO.md` and asking each
+    #      one whether an id it dropped is in that commit's own `docs/TODO_DONE.md`. Re-derived
+    #      2026-09-12 at `60c69b6`: **101 commits dropped at least one id, 384 drop events in
+    #      total, and only 92 of the 384 arrived in the archive in the commit that dropped them.**
+    #      Of the 292 that did not, **202 distinct ids are in neither ledger at HEAD**, and the
+    #      split is the whole reason this is enforceable: **200 of the 202 are `T-441` or below**,
+    #      inside the deficit `T-462` measured (at ~200 tickets) and deliberately did not backfill,
+    #      85 of which `193f257f` reconstructed from git history. The other two are T-768 and
+    #      T-849, and they are T-1148's -- now recovered, which takes the modern residue to zero.
+    #      A previous revision of this comment called that residue "284", which was T-462's own
+    #      superseded figure; T-462 narrowed it to 200 and this replay's answer is 202.
+    #
+    #      SO WHY THIS IS NOT A GUARD THAT FIRES ON THE NORMAL CASE ([[T-986]]), which is the one
+    #      failure this family must not have: the gap is HISTORY. Over the **218** commits of
+    #      `docs/TODO.md` since 2026-08-30, exactly **THREE** dropped an id at all --
+    #
+    #        169d594d  T-780, T-781, T-782   the T-981 reversion; all three are back in TODO.md now
+    #        7bf25332  T-752, T-768, T-849   T-752 came back; T-768 and T-849 never arrived anywhere
+    #        3a381116  T-935                 back in TODO.md now
+    #
+    #      -- and **all three are defects**. Five of those seven ids were put back by a later
+    #      commit, which is what an accidental drop looks like after someone notices; the other two
+    #      are T-768 and T-849, which with T-441 were T-1148's standing loss and are now recovered
+    #      into docs/TODO_DONE.md, so this guard is enforceable at zero rather than baselined at
+    #      three. NOT ONE of the three was a legitimate archival, so this
+    #      reading has a measured false-refusal rate of zero over the whole modern population, and
+    #      it would have caught every real instance in it. Today's convention is to close an entry
+    #      IN PLACE -- 158 of the 193 entries in `## Open` carry `CLOSED` on their own first line --
+    #      so dropping an id is already the rare event, not the daily one.
+    #
+    #      The escape is `--retires-ids`, deliberately a SECOND flag rather than a wider reading of
+    #      `--drops-ids`: "this entry is moving to the archive" and "this id is being struck off
+    #      because it was never a ticket" are different claims, and the whole finding is that one
+    #      flag was being made to carry both. `--retires-ids` must name the unarchived set exactly,
+    #      the same discipline every other declaration here uses, so it cannot be typed once and
+    #      left in an alias.
+    #
+    #      Asked of the archive AS THIS COMMIT LEAVES IT -- staged content where the commit names
+    #      `TODO_DONE.md`, HEAD's blob otherwise -- so the ordinary move, which stages both files
+    #      together, needs no flag at all. There is deliberately no "only ask where an archive
+    #      exists" carve-out of the kind LEDGER-ID-UNFILED carries: a checkout with no archive is
+    #      precisely the state in which 200 tickets were lost, and answering "no archive, therefore
+    #      nothing to check" is how a guard stops matching its population.
+    local -a unarchived_ids
+    unarchived_ids=()
+    local archived_ids="$scratch/archived.ids" apath ablob openlost
+    : > "$archived_ids"
+    for apath in ${(f)"$(git ls-tree -r --name-only "$headsha" 2>/dev/null | grep -E '(^|/)TODO_DONE\.md$')"} "${names[@]}"; do
+        [[ -n "$apath" ]] || continue
+        [[ "${apath:t}" == "TODO_DONE.md" ]] || continue
+        if [[ -n "${staged_content[$apath]+x}" ]]; then
+            ledger_ids "${staged_content[$apath]}" >> "$archived_ids"
+        elif git cat-file -e "$headsha:$apath" 2>/dev/null; then
+            ablob="$scratch/$(ledger_key "$apath").archived"
+            git cat-file -p "$headsha:$apath" > "$ablob"
+            ledger_ids "$ablob" >> "$archived_ids"
+        fi
+    done
+    for openlost in "${open_lost_ids[@]}"; do
+        grep -qx -- "$openlost" "$archived_ids" || unarchived_ids+=("$openlost")
+    done
+    if (( ${#unarchived_ids} )); then
+        local declared_retired_sorted="${(pj:,:)${(@o)${(@s:,:)declared_retired_ids}}}"
+        local unarchived_sorted="${(pj:,:)${(@o)unarchived_ids}}"
+        if [[ "$declared_retired_sorted" != "$unarchived_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-ID-UNARCHIVED "this commit drops ledger entries from the open list that arrive nowhere: ${(j:, :)unarchived_ids}
+  --drops-ids says the removal was deliberate; it does not say where the ticket went. An entry
+  normally LEAVES docs/TODO.md by MOVING to docs/TODO_DONE.md, and none of these is in the archive
+  as this commit leaves it -- so the reasoning in them is about to exist only in git history, where
+  the next agent to wonder about this ticket will not look. Stage the archive with the entry in it
+  in this same commit, or, if the id is being struck off rather than archived -- a draft that was
+  never a ticket, a duplicate, an id superseded before it was used -- say which:
+  --retires-ids $unarchived_sorted"
         fi
     fi
 
@@ -1176,7 +1288,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #      allocator (T-1072): an id that exists only in a commit message, or only in another
     #      entry's prose, is invisible to the next agent computing "next free". `T-1119` was handed
     #      to two agents in one week that way, and `T-1117` was allocated inside T-624's closure
-    #      with no stub behind it. Eight ids in this repository's history are in that state already.
+    #      with no stub behind it. Ten ids reached that state before this guard existed; T-1123
+    #      recovered all ten into docs/TODO_DONE.md, so there is no standing backlog behind it.
     #
     #      So the message is checked against the ledgers AS THIS COMMIT LEAVES THEM -- writing the
     #      stub in the same commit that first names the id is the rule, and this makes it the only
@@ -1720,8 +1833,20 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" d1 -m "$M" --drops-ids T-101 TODO.md=stale.md 2>&1 ); rc=$?
     check "naming the WRONG id is still refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-IDS-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # T-1148 changed what this line proves, and the change is the ticket. `--drops-ids` used to be
+    # the whole answer; it now authorises the REMOVAL and 3a1 asks the second half -- where did the
+    # ticket go? There is no `TODO_DONE.md` in this workspace yet (4d2 creates it), so T-102 arrives
+    # nowhere and the bare form is now the refusal rather than the pass.
     out=$( cd "$ws" && zsh "$here" d1 -m "$M" --drops-ids T-102 --removes 1 TODO.md=stale.md 2>&1 ); rc=$?
-    check "retiring it deliberately is allowed" $(( rc == 0 )) "exit $rc: $out"
+    check "--drops-ids alone no longer retires an entry that arrives nowhere" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-UNARCHIVED*T-102* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the refusal offers the flag that says struck off rather than archived" \
+        $( [[ "$out" == *"--retires-ids T-102"* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" d1 -m "$M" --drops-ids T-102 --retires-ids T-101 --removes 1 TODO.md=stale.md 2>&1 ); rc=$?
+    check "retiring the WRONG id is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-UNARCHIVED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" d1 -m "$M" --drops-ids T-102 --retires-ids T-102 --removes 1 TODO.md=stale.md 2>&1 ); rc=$?
+    check "striking it off deliberately is allowed" $(( rc == 0 )) "exit $rc: $out"
     # And the ordinary case -- adding an entry, losing none -- must not be refused at all.
     ( cd "$ws"
       git show HEAD:TODO.md > grown.md
@@ -1875,6 +2000,86 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" f4 -m "$M" --drops-ids T-106 --removes 1 TODO.md=todo_moved.md TODO_DONE.md=arch_grown.md 2>&1 ); rc=$?
     check "moving an entry INTO the archive needs no flag on the archive's side" \
         $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4d3 (LEDGER-ID-UNARCHIVED) -- T-1148: --drops-ids says the removal was deliberate,"
+    say "          it does not say where the ticket went"
+    # The f4 check directly above is this mode's negative control and the reason the guard is
+    # usable: the ORDINARY way an entry leaves the open list is a move, and a move needs no flag.
+    # What nothing asked until T-1148 is the other half of that move. `193f257f` archived 85
+    # entries and dropped an 86th, `T-441`, on the floor in the same commit; every instrument in
+    # this script passed it, because the 86 drops were declared together and only the drops were
+    # ever read. The fixture below is that commit in miniature: three ids leave TODO.md, two of
+    # them arrive in the archive, one does not.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws"
+      git show HEAD:TODO.md > todo_three.md
+      print -rl -- "- [T-301] alpha" "  body alpha" \
+                   "- [T-302] beta"  "  body beta"  \
+                   "- [T-303] gamma" "  body gamma" >> todo_three.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h1 -m "$M" TODO.md=todo_three.md 2>&1 ); rc=$?
+    check "three entries arrive in the open list with no flag" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws"
+      git show HEAD:TODO.md | grep -vE '^- \[T-30[123]\]|^  body (alpha|beta|gamma)$' > todo_bulk.md
+      git show HEAD:TODO_DONE.md > arch_bulk.md
+      print -rl -- "- [T-301] alpha" "  body alpha" "- [T-302] beta" "  body beta" >> arch_bulk.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h2 -m "$M" --drops-ids T-301,T-302,T-303 --removes 6 \
+              TODO.md=todo_bulk.md TODO_DONE.md=arch_bulk.md 2>&1 ); rc=$?
+    check "a bulk move that archives two of three is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-UNARCHIVED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The half that makes the refusal worth reading: it must name the one that was dropped on the
+    # floor and NOT the two that landed, or it is a line count again.
+    check "and it names only the id that arrived nowhere" \
+        $( [[ "$out" == *T-303* && "$out" != *T-301* && "$out" != *T-302* ]] && print 1 || print 0 ) "$out"
+    # And the mutation that survived every check above until this one existed. With exactly ONE id
+    # on the floor, `unarchived_ids+=(...)` and `unarchived_ids=(...)` are indistinguishable:
+    # reducing the collection to "keep the last one" left all 173 checks passing, so the refusal
+    # could have named T-303 while waving T-302 through in the same commit -- `193f257f` again, one
+    # level down. Measured, not imagined: that mutation was run and it was green. The fixture here
+    # archives ONE of three, so two ids arrive nowhere and BOTH have to be named.
+    ( cd "$ws"
+      git show HEAD:TODO_DONE.md > arch_one.md
+      print -rl -- "- [T-301] alpha" "  body alpha" >> arch_one.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h2 -m "$M" --drops-ids T-301,T-302,T-303 --removes 6 \
+              TODO.md=todo_bulk.md TODO_DONE.md=arch_one.md 2>&1 ); rc=$?
+    check "a bulk move that archives ONE of three is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-UNARCHIVED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it names BOTH ids that arrived nowhere, not just the last one" \
+        $( [[ "$out" == *T-302* && "$out" == *T-303* && "$out" != *T-301* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" h2 -m "$M" --drops-ids T-301,T-302,T-303 --retires-ids T-303 --removes 6 \
+              TODO.md=todo_bulk.md TODO_DONE.md=arch_one.md 2>&1 ); rc=$?
+    check "and striking off ONE of the two does not satisfy it" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-UNARCHIVED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" h2 -m "$M" --drops-ids T-301,T-302,T-303 --retires-ids T-301,T-303 --removes 6 \
+              TODO.md=todo_bulk.md TODO_DONE.md=arch_bulk.md 2>&1 ); rc=$?
+    check "naming an id that DID arrive as struck off is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-UNARCHIVED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" h2 -m "$M" --drops-ids T-301,T-302,T-303 --retires-ids T-303 --removes 6 \
+              TODO.md=todo_bulk.md TODO_DONE.md=arch_bulk.md 2>&1 ); rc=$?
+    check "striking the third off deliberately is allowed" $(( rc == 0 )) "exit $rc: $out"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    # An id already IN the archive at HEAD -- deduplicating an entry left behind in the open list
+    # after its closure was archived -- has arrived, and arriving earlier is still arriving. This
+    # is the false refusal the guard must not have: it reads the archive as this commit LEAVES it,
+    # not as this commit CHANGES it, and here the commit does not name the archive at all.
+    ( cd "$ws"
+      git show HEAD:TODO.md > todo_dupe.md
+      print -rl -- "- [T-301] alpha" "  body alpha" >> todo_dupe.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h3 -m "$M" TODO.md=todo_dupe.md 2>&1 ); rc=$?
+    check "an id that is already archived may be re-opened in the open list" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && git show HEAD:TODO.md | grep -vE '^- \[T-301\]|^  body alpha$' > todo_deduped.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h4 -m "$M" --drops-ids T-301 --removes 2 TODO.md=todo_deduped.md 2>&1 ); rc=$?
+    check "and dropping it again needs no --retires-ids, because it is already in the archive" \
+        $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $out"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    # And the boundary: an id leaving the ARCHIVE is 3a's finding, not this one. There is nowhere
+    # further for it to arrive, so asking this question of it would be a second refusal for one
+    # event -- which is how an agent learns to type both flags without reading either.
+    ( cd "$ws" && git show HEAD:TODO_DONE.md | grep -vE '^- \[T-302\]|^  body beta$' > arch_less.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" h5 -m "$M" --drops-ids T-302 --removes 2 TODO_DONE.md=arch_less.md 2>&1 ); rc=$?
+    check "an id dropped from the ARCHIVE is 3a's refusal alone, not this one" \
+        $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $out"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
 
     say ""
     say " mode 4e (LEDGER-CLOSURE-BURIED / LEDGER-ID-UNFILED) -- T-1106: a closure the anchor cannot"
