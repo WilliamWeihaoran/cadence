@@ -5694,6 +5694,38 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 - [T-1222] **Every agent in a session shares one scratchpad directory, so `agent-commit.sh -F <message-file>` is a collision surface — and one commit carried the wrong agent's message until it was rewritten.** Filed 2026-09-13 by `ledgerguard`, on its own commit. **MEASURED:** `938cdb7` (rewritten as `0fb5504`) held `ledgerguard`'s [[T-1206]] + [[T-1207]] + [[T-1209]] diff — `scripts/agent-commit.sh`, `docs/SUBAGENT_RUNBOOK.md`, `CadenceTests/CadenceGuardScriptSelftestTests.swift`, `docs/TODO.md` — under the subject *"T-1174 + T-1175: a drop that writes nothing says why, and a renumber spans the list it is numbering"*, which is `reorderfeel`'s work on [[T-1174]]/[[T-1175]]. Both agents wrote `…/scratchpad/msg.txt`; the sibling's write at 11:34:31 replaced the file `ledgerguard` had written minutes earlier, and `-F` read it at commit time with nothing to say the bytes had changed under it. The same directory holds `msg2.txt` … `msg5.txt`, `t1177.txt` and `all.txt` from three different agents, so the generic name is the norm rather than one agent's slip.
   **Repaired before publication, by the coordinator.** `ledgerguard` recorded this as *not* repairable, for a reason worth keeping: rewriting a landed commit means `update-ref` over a HEAD siblings are committing onto, which is the one operation this repository's commit path exists to avoid, and its `--amend` was declined by the harness. Two things made it safe from outside the agent and neither was visible from inside one: the commits were **unpushed**, so no published history ever carried the wrong message; and `git update-ref refs/heads/main <new> <expected-old>` is a compare-and-swap that **fails** rather than clobbers if a sibling lands in between — precisely the hazard named above. Both were rebuilt with `git commit-tree` over their **byte-identical trees**, verified by `git diff bf4491e HEAD --stat` returning empty, so only the messages changed: `938cdb7` → `0fb5504`, `bf4491e` → `bd8227a`. The worktree and index were never touched, which is what allowed it with an agent live in the same checkout. This is not tidiness: id reconciliation reads ids out of commit messages, and [[T-1123]] + [[T-1148]] had just spent a batch repairing that source. `git log --grep=T-1206` now finds the commit.
   **Two fixes, and they are independent.** (1) Cheap and immediate: name a message file for the agent and the work (`msg-<agent>-<ticket>.txt`), which `docs/SUBAGENT_RUNBOOK.md` now says. (2) Mechanical, and the one worth arguing about: `agent-commit.sh` could compare the ids its MESSAGE names against the ids whose ledger entries the same commit CHANGES, and refuse when both sets are non-empty and disjoint — this commit's message named `T-1174`/`T-1175` while its ledger hunk rewrote `T-1206`, `T-1207` and `T-1209`, which is as clean a signal as the guard family gets. It needs a replay over history before it lands, because a commit that edits an unrelated entry in passing is an ordinary thing to do.
+- [T-1216] **[[T-1174]] and [[T-1175]] landed with no mutation testing, which T-1175's own entry asked for by name.** Filed 2026-09-13 by `reorderfeel`, about its own two commits — `cb6687a` and `750f177`.
+  The closed entries record a full `-only-testing:CadenceTests` run green at **4838 tests in 405
+  suites**, 0 warnings, and a **failing-first** proof for T-1175 (the four T-1055 measurements
+  flipped to the asked-for behaviour and run RED against the shipped code: `XCODEBUILD_EXIT=65`, 58
+  tests, 14 issues, no other test failing). What neither records is a single killed mutation, and
+  T-1175's open entry had said in as many words that the change *"wants one mutation-tested commit
+  with `CadenceRowReorderSliceSpanTests` extended over each surface"*.
+  **Why it did not happen, which is worth recording rather than excusing:** the test-host lock ran
+  25–30 minutes a turn with four agents queued behind it that afternoon, and the author spent its
+  cycles on the red proof and two full runs. The plans were written and never run. This is the
+  ordinary shape of the omission — not a judgement that the mutations were unnecessary.
+  **The five that were planned, each with the test that should kill it.** They are cheap to
+  re-derive and the first two are the ones that argue:
+  1. `CadenceRowReorderSpan.wholeSequence`'s `guard !anchors.isEmpty` inverted, i.e. the renumber
+     back over the slice — every flipped T-1055 measurement.
+  2. `placed += 1` unconditional instead of `if heldIDs.contains(row.id)` —
+     `thewholeSequenceKeepsACardTheDestinationListDoesNotHoldYet`. **This one is not hypothetical:
+     it was the first draft's real behaviour and a test found it**, which is the strongest reason
+     to have the mutation on record.
+  3. `wholeSequence`'s `listGroupKey` filter dropped, so the write reaches past the list —
+     `thewholeSequenceTakesOnlyTheListItsKeyNames` and `acrossListDropRenumbersTheDraggedRowsOwnListOnly`.
+  4. `ListDetailComponents` handing `spanTasks: CadenceTaskQuerySupport.openTasks(from: tasks)`,
+     i.e. its own slice as its span — `everyRowDropSurfaceHandsInASpanWiderThanItsSlice`. This is
+     the defect a *required* parameter cannot catch, so it is the one that argues for that test.
+  5. `KanbanBoardSupport.reorder`'s `alsoRestoring: sequence` narrowed back to `ordered` —
+     `arefusedCardDropPutsBackEveryRowTheWidenedRenumberTouches`.
+  And two for T-1174, on `movesTheSlice`: `false` (the ticket removed — killed by
+  `acrossListDropThatWroteNothingSaysSoWithoutClaimingAMove`) and `true` (every silent drop given a
+  sentence — killed by `adropThatChangesNothingIsNotToldWhyItChangedNothing`). The pair is the
+  whole discrimination the ticket is about, so a survivor in either direction would mean the
+  sentence fires on a population it was not built for.
+
 ## Done
 
 - [T-1174] **CLOSED 2026-09-13 (written by agent `reorderfeel`, verified and landed by `reorderland`) — a cross-list row drop that writes nothing now says so, instead of springing back unexplained.** The half of [[T-1119]] the owner's answer did not buy, filed rather than assumed and then built.
