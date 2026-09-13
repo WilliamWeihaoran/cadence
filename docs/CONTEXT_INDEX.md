@@ -20,7 +20,8 @@ loading broad histories.
   `AGENTS.md`, `Cadence/iOS/AGENTS.md`, then search `docs/IOS_AGENTS_REFERENCE.md` for host/shell
   details.
 - MCP server/plugin:
-  `AGENTS.md`, `CadenceMCPServer/AGENTS.md`, `plugins/cadence-mcp/AGENTS.md`.
+  `AGENTS.md`, `CadenceMCPServer/AGENTS.md`, `plugins/cadence-mcp/AGENTS.md`, then search
+  `docs/MCP_AGENTS_REFERENCE.md` for the boundary history the scoped guide routes out to.
 - Build/test/debugging weirdness:
   `AGENTS.md` first; search `docs/AGENTS_REFERENCE.md` only for the detailed incident history.
 - Product/feature history:

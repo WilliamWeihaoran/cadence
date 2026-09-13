@@ -3,25 +3,18 @@
 This is the canonical description of the MCP boundary. The other guides that mention it
 (`../AGENTS.md`, `../CLAUDE.md`, `../docs/CLAUDE_REFERENCE.md`, `../Cadence/Services/AGENTS.md`,
 `../plugins/cadence-mcp/AGENTS.md`) state the procedure in one line and point here.
+The measured detail behind several rules below — commit archaeology, the T-259/T-409/T-415
+histories, the build-log forensics — lives in `../docs/MCP_AGENTS_REFERENCE.md`. Read the section a
+pointer names; do not load it by default.
 
 ## The rule is a procedure, not a prohibition
 
-This file used to say: *"Do not edit it during normal app UI/model refactors unless the task
-explicitly asks for MCP work."* Four other guides carried a variant. That rule was wrong, and
-being wrong in five places is what made it ignorable.
-
-It was written by anticipation, not by incident — `5790cc5` created thirteen `AGENTS.md` files in
-one sweep eight days after this surface appeared, which is why it carries no reason. Meanwhile
-**roughly half the commits that touch these paths are not MCP work**: `842c82d` moved the read
-service onto the unified `Note` model, `89db417` added tags, `acea9ce` was the Pursuit→Goal merge,
-`1363e7e` the Notes rework, `0ff391d` data-integrity repair, `f94361a` the `nonisolated` sweep.
-They *had* to reach in. So "do not touch MCP" cannot mean what it says, and a change that obeys it
-produces one of two failures:
-
-- **A broken target.** `670e299` and `62dc384` are both this: shared code edited app-side, the
-  `Cadence` scheme green, `CadenceMCPServer` not compiling.
-- **A silently stale response schema**, which is worse because nothing goes red. The `Pursuit`
-  relationships were missing from MCP summaries until `0040f24` noticed.
+This file used to say *"do not edit it during normal app UI/model refactors unless the task
+explicitly asks for MCP work,"* and four other guides carried a variant. It was written by
+anticipation rather than by incident, and roughly half the commits touching these paths are not MCP
+work and *had* to reach in — so it cannot mean what it says. Obeying it produces either **a broken
+target** or **a silently stale response schema**, and the second is worse because nothing goes red.
+Both have happened; the commits are in the reference, under "Why the prohibition was wrong".
 
 What replaces it: **when model or shared-service code changes, review this boundary deliberately.**
 Build it on its own scheme into a private `-derivedDataPath`, grep the log for warnings, and change
@@ -37,8 +30,9 @@ compiles a hand-picked subset of app source directly, not a framework. Currently
 `TagSupport`, `NoteReferenceSupport`, `MarkdownMetadataSupport`, `CadenceHabitCompletionStore`,
 `CadenceSearchMatcher`, `Shared/CadenceTaskRecurrenceWorkflowSupport`, `Shared/DateFormatters`,
 `Shared/CadencePendingChangePersistence`, `Shared/CadenceSectionConfigMerge`,
-`Shared/CadenceSectionEditingSupport` — plus this folder's four files. **Adding a file to `Models/` does not add it here.** A new type that an existing compiled
-file references is a link error in this target and nothing at all in the app.
+`Shared/CadenceSectionEditingSupport` — plus this folder's four files. **Adding a file to `Models/`
+does not add it here.** A new type that an existing compiled file references is a link error in
+this target and nothing at all in the app.
 
 It is also the only target on `SWIFT_VERSION = 6.0` with `SWIFT_STRICT_CONCURRENCY = targeted` and
 **without** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. The app and the widgets default their
@@ -63,34 +57,31 @@ compiles in a view is not evidence it compiles here.
   `reopenTask`, `cancelTask`, `bulkCancelTasks` and `appendCoreNote` — **thirteen arms** — write and
   save. *No undo stack* is no longer true of any of them (T-1121): every arm goes through
   `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts what the call added and restores what it
-  changed in place before the caller is told. The one residue is named rather than hidden — an
-  `append_core_note` onto a core note that did not exist yet leaves the empty note row behind,
-  because `NoteMigrationService` commits it on its own before the append, and the arm answers
-  `CadenceWriteError.coreNoteCreatedButNotAppended` saying so. `mcp-audit.log` beside the store is the only record, and
-  `CadenceMCPRefreshCoordinator` (macOS Services) watches a `.cadence-mcp-refresh` marker file so
-  the app reloads after an external write. Treat a write-path change as a data-safety change.
+  changed in place before the caller is told. The one residue is named rather than hidden: an
+  `append_core_note` onto a core note that did not exist yet leaves the empty note row behind
+  (`NoteMigrationService` commits it before the append) and answers
+  `CadenceWriteError.coreNoteCreatedButNotAppended` saying so. `mcp-audit.log` beside the store is
+  the only record, and `CadenceMCPRefreshCoordinator` (macOS Services) watches a
+  `.cadence-mcp-refresh` marker file so the app reloads after an external write. Treat a write-path
+  change as a data-safety change.
 - Opening the read-write container also runs `NoteMigrationService`, `TagSupport` seeding/sync and
   `DataIntegrityRepairService` against live data. A migration bug reaches users through this door
   as much as through app launch.
 - **Nothing under `CadenceMCPServer/` is unit-*executed*.** `CadenceTests` covers the app-side half
   (`CadenceReadServiceTests`, `CadenceWriteServiceTests`, `CadenceSearchMatcherTests`); the router,
   the tool definitions and the argument parsing are *run* only by
-  `plugins/cadence-mcp/scripts/smoke-test.py`. None of those three files is in the app target's
-  Sources phase, so `CadenceTests` cannot reference a symbol in them and cannot call one.
-  `CadenceMCPToolContractTests` is therefore a **source scan**, not an execution: it pins the
-  three-way name contract below, the write gate, that every non-private helper in
-  `CadenceMCPArgumentParsing` has a router call site (T-260 deleted two that did not), and that the
-  smoke test still checks its own dispatch coverage. It executes nothing. Do not read it as
-  behavioural coverage of the router.
-- **The smoke test dispatches all 33 arms and asserts that it does.** It ran 21 of 30 until
-  T-259, with `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task`
-  executed by nothing anywhere — five of the eight write tools, each with its own argument wiring,
-  and `schedule_task` the only place `minuteOfDay`, `durationMinutes` and `clearScheduledDate` are
-  read together. It now drives a full create → update → schedule → complete → reopen → cancel
-  lifecycle against the fixture store, asserts the resulting DTO key sets, and records every
-  `tools/call` so an unexercised arm fails the run. Its error-path checks assert the error *text*,
-  because a deleted arm answers "Unknown tool" and a renamed argument key answers a different
-  "Missing required argument" — both errors, and a bare `isError` check is green for both.
+  `plugins/cadence-mcp/scripts/smoke-test.py`, because none of those three files is in the app
+  target's Sources phase and `CadenceTests` therefore cannot even reference a symbol in them.
+  `CadenceMCPToolContractTests` is a **source scan**, not an execution: it pins the three-way name
+  contract below, the write gate, that every non-private helper in `CadenceMCPArgumentParsing` has
+  a router call site, and that the smoke test still checks its own dispatch coverage. Do not read
+  it as behavioural coverage of the router.
+- **The smoke test dispatches all 33 arms and asserts that it does.** It drives a full create →
+  update → schedule → complete → reopen → cancel lifecycle against the fixture store, asserts the
+  resulting DTO key sets, and records every `tools/call` so an unexercised arm fails the run. Its
+  error-path checks assert the error *text*: a deleted arm answers "Unknown tool" and a renamed
+  argument key answers "Missing required argument", and a bare `isError` check is green for both.
+  What it missed before T-259, and why, is in the reference.
 - **The 33 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
   (the advertised schema), `CadenceMCPToolRouter.swift` (33 `case` arms), and the smoke test's
   expectations. Renaming or adding one means all three, and the definitions/router pair will
@@ -105,12 +96,9 @@ compiles in a view is not evidence it compiles here.
 
 Build **this** scheme. The old advice here was "build the app target if shared model code changed",
 which is exactly backwards — the `Cadence` scheme staying green is the thing that hides the break.
-
-`CadenceTests/CadenceTargetSourceMembershipTests.swift` now catches the commonest shape of that
-break from inside the app scheme (T-409): it reads this target's Sources phase and fails when a
-listed file references a type declared only in a file the target does not compile — `aaa0064`,
-mechanised. It sees types, not free functions or extension members, so it narrows the window rather
-than closing it. Building this scheme is still the check.
+`CadenceTests/CadenceTargetSourceMembershipTests.swift` catches the commonest shape of it from
+inside the app scheme (T-409) by reading this target's Sources phase, but it sees types, not free
+functions or extension members: it narrows the window rather than closing it.
 
 ```sh
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
@@ -118,44 +106,38 @@ than closing it. Building this scheme is still the check.
   -derivedDataPath /tmp/cadence-mcp-$$ build 2>&1 | tee /tmp/mcp-build-$$.log
 ```
 
-Then **grep the log**, with no path filter. Exit 0 says nothing about warnings: this target sat at
-two warnings under a zero baseline precisely because a check read its exit status and never read
-its output, and a later isolation regression surfaced only under synthesized-macro paths that a
-`grep "/Cadence/"` would have missed. The private `-derivedDataPath` is not optional — see the
+Then **grep the log**, with no path filter. Exit 0 says nothing about warnings, and a `grep
+"/Cadence/"` misses the synthesized-macro paths a real isolation regression surfaced under — both
+measured, both in the reference. The private `-derivedDataPath` is not optional; see the
 non-negotiable in `../AGENTS.md` for what the shared one does to a running app.
 
 Run `plugins/cadence-mcp/scripts/smoke-test.py` after any router, tool-definition or
 argument-parsing change. It verifies read-only mode and then drives a temp fixture store via
-`CADENCE_MCP_STORE_URL`, so it never touches the app-group store — `resolvedStoreURL()` prefers
-that override over `CadenceStoreSupport.primaryStoreURL()`, and `auditLogURL()` and
-`refreshMarkerURL()` are both derived from it, so the entire write path lands in the temp
-directory. That is the whole safety argument: check it in
-`Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift` rather than trusting this line.
-
-Set `CADENCE_MCP_DERIVED_DATA` when you run it, or the launcher rebuilds into the shared
-`.codex-build` the installed plugin and Codex are using. Point it at a path you have **already**
-built into: the launcher builds lazily on first launch, that build outlasts the smoke test's
-45-second per-response timeout, and the failure reads `timed out waiting for response 100` rather
-than naming a build.
+`CADENCE_MCP_STORE_URL`, so it never touches the app-group store: `resolvedStoreURL()` prefers that
+override over `CadenceStoreSupport.primaryStoreURL()`, and `auditLogURL()` and `refreshMarkerURL()`
+derive from it, so the entire write path lands in the temp directory. That is the whole safety
+argument — check it in `CadenceModelContainerFactory.swift` rather than trusting this line. Set
+`CADENCE_MCP_DERIVED_DATA` to a path you have **already** built into, or the launcher rebuilds into
+the shared `.codex-build` and the lazy build outlasts the 45-second per-response timeout, failing
+as `timed out waiting for response 100` rather than naming a build.
 
 ## Working Rules
 
 - **Every `list_*` tool, `search_cadence`, `get_recent_mcp_writes` and each of `get_today_brief`'s
-  four task sections answer with `CadencePage`, not a bare array** (T-382; the brief followed in
-  T-385, where an undisclosed `prefix(50)` on `inbox` alone turned 51 tasks into 50 with no count
-  and no way for the caller to raise it). The envelope is `items`, `offset`, `returnedCount`,
-  `totalCount`, `hasMore`, `nextOffset`, declared once in
-  `Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift`.
-  Add a new list tool through `CadencePage.paging` and give it an `offset` argument beside its
-  `limit`; a `hasMore: true` that the caller cannot act on is worse than the silent truncation the
-  envelope replaced. `CadenceTests` pins the schema/router halves of that pairing by scan
+  four task sections answer with `CadencePage`, not a bare array** (T-382, and T-385 for the brief
+  — the undisclosed `prefix(50)` that turned 51 inbox tasks into 50 is in the reference). The
+  envelope is `items`, `offset`, `returnedCount`, `totalCount`, `hasMore`, `nextOffset`, declared
+  once in `Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift`. Add a new list tool through
+  `CadencePage.paging` and give it an `offset` argument beside its `limit`; a `hasMore: true` the
+  caller cannot act on is worse than the silent truncation the envelope replaced. `CadenceTests`
+  pins the schema/router halves of that pairing by scan
   (`everyLimitBearingToolAdvertisesTheOffsetThatMakesHasMoreActionable`), because nothing here is
   unit-executed.
 - **`CadencePage.paging` takes one already-ordered candidate list, so a tool that draws from two
   sources must merge before it pages.** `listContainers` used to sort areas and projects
-  separately, concatenate, and cap — which returned zero projects whenever areas outnumbered the
-  limit (T-383), reproducibly so after T-372. `CadenceMCPOrdering.precedes` is total across kinds
-  already; use it on one merged list rather than re-introducing a per-kind cap.
+  separately, concatenate, and cap — returning zero projects whenever areas outnumbered the limit
+  (T-383, reproducible after T-372). `CadenceMCPOrdering.precedes` is total across kinds already;
+  use it on one merged list rather than re-introducing a per-kind cap.
 - **Reads go through `fetchAll` / `fetchFirst`, never a bare `FetchDescriptor`** (T-384). `limit`
   used to cap the response while every read fetched the whole table, filtered and sorted in memory,
   and then sliced — so `list_tasks(limit: 1)` and `list_tasks(limit: 5000)` did identical work.
@@ -163,22 +145,17 @@ than naming a build.
   container and walks its `tasks` / `notes` / `links` edge rather than filtering a whole table by
   `area?.id`; simple status, kind, archived and date filters go into the predicate.
   `CadenceReadService.fetchedRowCount` is the instrument — it counts rows materialised through a
-  fetch descriptor, and `CadenceReadServiceTests` asserts bounded numbers against it. What is
-  *not* pushable: full-text scoring (`search_cadence`, and the `textQuery` arm of `list_tasks`),
-  the explicit `statuses` filter (it compares `statusRaw.lowercased()`, which the predicate grammar
-  has no equivalent for), and the **sort**, so `offset`/`limit` still slice in memory. That last one
-  is **settled, not deferred** (T-415, closed as X-09) — and not for the `UUID` reason this file
-  used to give, which was never checked and is false: Foundation conforms `UUID` to `Comparable`.
-  The real ones are computed sort legs (`AppTask.isDone`, `Note.displayTitle`),
-  `localizedCaseInsensitiveCompare` against `SortDescriptor`'s numeric-aware `.localizedStandard`,
-  and candidate lists that are relationship edges or cross-kind merges rather than fetches. Written
-  out on `CadencePage.paging`; closing it needs a stored sort key and a migration.
+  fetch descriptor, and `CadenceReadServiceTests` asserts bounded numbers against it. Full-text
+  scoring, the explicit `statuses` filter and the **sort** are not pushable, so `offset`/`limit`
+  still slice in memory; that is **settled, not deferred** (T-415, closed as X-09). The three real
+  reasons — and the false `UUID` one this file used to give — are on `CadencePage.paging` and in
+  the reference.
 - **Read-write startup prepares the store exactly once** (T-309). The four-step sequence — note
   migration, tag seeding, tag sync, integrity repair — lives in `CadenceMCPStorePreparation.prepare`
   and is run by `makeReadWriteContainer()`. `main.swift` then passes `performsMigrations: false` and
   `preparesStore: false`, because the services default to preparing and used to re-run the sequence
-  twice more over the same context, against a live store, before any tool call. Do not add a guard
-  inside `prepare` instead: the flag is readable at the call site, which is where the mistake was.
+  twice more over the same context, against a live store, before any tool call. Do not guard inside
+  `prepare` instead: the flag is readable at the call site, which is where the mistake was.
 - **The write surface can mint, re-shape, rename and retire a context or a list — and cannot
   delete one** (T-799, T-1095, T-1120). The create arms exist because `create_task` took a
   `containerId` the surface could not produce and a `sectionName` it refused unless the column
@@ -200,9 +177,9 @@ than naming a build.
   for the reason T-1095 predicted** — the merge's `base`/`edited`/`current` is *not* what earns
   them. What does: `CadenceSectionEditingSupport.applySectionNameChanges` (without it a rename
   strands every card on a name no column has, and `sectionSummaries` answers the orphan back as a
-  phantom column), `mutateSectionConfigs`' T-915 guard, and `CadencePendingChangePersistence`.
-  Full reasoning in T-1095's ledger entry. Adding a file here is still not casual: it is another
-  path by which an app-side edit breaks a target no scheme builds.
+  phantom column), `mutateSectionConfigs`' T-915 guard, and `CadencePendingChangePersistence`. Full
+  reasoning in T-1095's ledger entry. Adding a file here is still not casual: it is another path by
+  which an app-side edit breaks a target no scheme builds.
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
   renders as `isError`, plus an undo.** The first half it always had; the second it did not.
   `CadenceWriteService` holds one long-lived `ModelContext`, so a refused `save()` left the
@@ -212,9 +189,7 @@ than naming a build.
   `CadencePendingChangePersistence` primitives rather than re-spelling either: `commitInsert`
   deletes the rows this call added and rethrows, `commitEdit` then runs the field restore and
   rethrows. Nesting them is what gives `completeTask` — a status change **and** a spawned successor
-  — one undo covering both. Neither is a `rollback()`, for `commitEdit`'s stated reason: one
-  long-lived context per process means a rollback would discard whatever else is pending.
-  Two field snapshots live in `CadenceWriteService.swift` rather than being reused from
-  `Cadence/Shared/`: `CadenceTaskFieldSnapshot` and `CadenceListEditSnapshot` share a file with
-  types reaching `CadenceWindDownReconciler`, and `CadenceTaskFieldSnapshot`'s documented boundary
-  excludes `notes` and `tags`, which `updateTask` writes. Both reasons are on the local types.
+  — one undo covering both. Neither is a `rollback()`: one long-lived context per process means a
+  rollback discards whatever else is pending. Two field snapshots stay local to this file rather
+  than being reused from `Cadence/Shared/`; both reasons are on the local types and in the
+  reference.
