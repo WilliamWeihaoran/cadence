@@ -3897,7 +3897,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   rendered comparison or an explicit number from the user. Both halves of that stop hold; what it
   could not see from arithmetic alone is that the two ratios were not commensurable.
 
-- [T-1129] **For the user: should the Mac's hour ladder grow iOS's every-third-hour rung, or should
+- [T-1129] **ANSWERED 2026-09-13 by the owner: option 2 — bring iOS's every-third-hour rung to the Mac.** Not yet built. The question and the three options it was chosen from are below, unchanged; what follows is the decision and what it binds.
+  **The owner picked the additive option**, so nothing [[T-595]]/[[T-596]] settled on iOS is undone: iOS keeps its rung exactly as it draws it today, and the Mac grows the same one. The Mac's half-hour tick **stays** at the deepest zoom — it is a different line and the ticket already established the two do not conflict.
+  **Binding on whoever builds it:** derive the weights **once** in `Cadence/Shared/` and have both platforms read them, the way `CadenceCalendarWeekdayHeaderMetrics` already does for the day-header band. Do **not** copy the cadence across — copying the cadence without the weights is precisely how [[T-596]] happened, and repeating it here would recreate the drift this ticket exists to end.
+  The raw opacities are downstream of the decision and were explicitly not the question; with both platforms now agreeing what the pair *means*, the pair is decidable. Surfaces to change: macOS Calendar → Timeline and the Schedule panel (iOS Calendar's timed grid and Today's timeline already have it).
+  ---
+  *The question as it was put, kept because the options are what the answer means:*
+  **For the user: should the Mac's hour ladder grow iOS's every-third-hour rung, or should
   iOS's ladder go flat like the Mac's?** Filed 2026-09-12 by `hourladder`, carrying the half of
   [[T-619]] that is not engineering.
   **Where you see it.** Any timed grid: macOS Calendar → Timeline and the Schedule panel; iOS
