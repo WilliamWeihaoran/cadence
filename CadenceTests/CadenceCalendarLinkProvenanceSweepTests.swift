@@ -19,7 +19,7 @@ import Testing
 /// - **The writing half (T-1043).** A link this device made must be recorded in
 ///   `CadenceCalendarLinkObservations`, or the gate can never report *that* link broken on the
 ///   device that made it. Every path does record it today, each for a different local reason. A new
-///   link-writing surface — or a settings write that skips `saveCalendarLinks()` — silently
+///   link-writing surface — or a settings write that skips `saveCalendarLinks(_:)` — silently
 ///   produces a link that works and whose eventual breakage can never be reported.
 ///
 /// Both halves want the same instrument, so they share one: a scan of `Cadence/` **as text**. Text
@@ -39,9 +39,20 @@ import Testing
 ///    allowance the rule is red on four lines of landed, deliberate code.
 /// 2. **The unlink allowance is not needed, so it is not here.** Measured over `Cadence/`: every
 ///    `= ""` write of a link is a settings surface that already routes through
-///    `saveCalendarLinks()`, so an unlink branch would be a rule with no site behind it. A future
+///    `saveCalendarLinks(_:)`, so an unlink branch would be a rule with no site behind it. A future
 ///    bare unlink is a *cheap* false positive — it goes red once and is ledgered with its reason —
 ///    and that is better than a permanently unexercised branch.
+///
+/// ## A third, after [[T-1132]]
+///
+/// The two settings surfaces no longer assign `linkedCalendarID` at all. Both used to write the
+/// field and then reach the store through a swallowed save — `try?` on iOS, a caught-and-`print`ed
+/// error on macOS — with the observation refresh running either way; both now hand the write to
+/// `CadenceCalendarLinkCommit.write(…)`, which puts the previous identifier back when the store
+/// refuses. So the writer population lost two files and gained one, and the reach claim for
+/// `Cadence/iOS/` moved to the funnel's call sites. The rule got **stricter**, not looser: a
+/// settings write that skipped the save is now a bare assignment in a view, which is an offender
+/// outright rather than one a missing mention of a helper has to catch.
 ///
 /// Every allowance below is asserted to be load-bearing for that second reason: a category with no
 /// site left is a rule nobody is reading any more.
@@ -71,9 +82,31 @@ struct CadenceCalendarLinkProvenanceSweepTests {
     /// The call that records a pick straight into the device-local observation record.
     static let recordPickNeedle = "CadenceCalendarLinkObservations.recordPick("
 
-    /// The settings surfaces' one write path. It ends in `refreshCalendarObservations()`, which is
-    /// what makes reaching it equivalent to recording the pick.
-    static let settingsWriteNeedle = "saveCalendarLinks()"
+    /// **T-1132.** The one declaration that writes a link and records nothing *because recording is
+    /// not its job*.
+    ///
+    /// `CadenceCalendarLinkCommit.write` is the commit both settings surfaces now hand their writes
+    /// to, and the observation record must be written only once that commit has **landed** — it is
+    /// an `@AppStorage` write computed off the model objects, so writing it beside the save is
+    /// exactly the bug T-1132 fixed: a defaults write outliving a discarded change. The recording
+    /// therefore sits in the callers' `saveCalendarLinks(_:)`, past the `catch`, and
+    /// `everyCallerOfTheSharedLinkCommitHandsItToTheSettingsSave` below is what keeps it there.
+    static let commitFunnelDeclarations: Set<String> = [
+        "Cadence/Shared/CadenceCalendarLinkCommit.swift#write"
+    ]
+
+    /// The settings surfaces' one write path, and the call that reaches it.
+    ///
+    /// Before T-1132 this needle was `saveCalendarLinks()` and it vouched for a *settings
+    /// declaration that mentioned it*. The surfaces no longer assign `linkedCalendarID` at all —
+    /// they hand the write to `CadenceCalendarLinkCommit` — so the rule is stricter now than the
+    /// needle ever made it: a settings write that skipped the save would be a bare assignment in a
+    /// view, which is an offender outright rather than one a missing mention has to catch.
+    static let commitFunnelNeedle = "CadenceCalendarLinkCommit.write("
+
+    /// The funnel the two surfaces wrap that commit in, which is where the observation record is
+    /// refreshed past the `catch`.
+    static let settingsWriteNeedle = "saveCalendarLinks"
 
     // MARK: - The reading half (T-899)
 
@@ -128,8 +161,10 @@ struct CadenceCalendarLinkProvenanceSweepTests {
             }
             let key = "\(write.path)#\(declaration.name)"
             let records = declaration.body.contains(Self.recordPickNeedle)
-                || declaration.body.contains(Self.settingsWriteNeedle)
-            guard !records, !Self.restoreDeclarations.contains(key) else { continue }
+                || declaration.body.contains(Self.commitFunnelNeedle)
+            guard !records,
+                  !Self.restoreDeclarations.contains(key),
+                  !Self.commitFunnelDeclarations.contains(key) else { continue }
             offenders.append(key)
         }
 
@@ -138,8 +173,8 @@ struct CadenceCalendarLinkProvenanceSweepTests {
             Since T-624 a break is reported only for an identifier this device has seen alive, so \
             an unrecorded link is one whose eventual breakage can never be reported here (T-1043). \
             Call `\(Self.recordPickNeedle)…)` beside the assignment, route it through \
-            `\(Self.settingsWriteNeedle)`, or — only if it puts back a value the store already held \
-            — add it to `restoreDeclarations` with the reason. Offenders: \(offenders.sorted()).
+            `\(Self.commitFunnelNeedle)…)`, or — only if it puts back a value the store already \
+            held — add it to `restoreDeclarations` with the reason. Offenders: \(offenders.sorted()).
             """)
     }
 
@@ -156,8 +191,39 @@ struct CadenceCalendarLinkProvenanceSweepTests {
             #expect(!matching.isEmpty, "\(key) no longer writes a calendar link; drop the allowance")
             #expect(matching.allSatisfy { write in
                 guard let body = write.declaration?.body else { return false }
-                return !body.contains(Self.recordPickNeedle) && !body.contains(Self.settingsWriteNeedle)
+                return !body.contains(Self.recordPickNeedle) && !body.contains(Self.commitFunnelNeedle)
             }, "\(key) records an observation now, so it is an ordinary link write rather than a restore")
+        }
+    }
+
+    /// **T-1132.** The funnel allowance, read the same way: it still writes a link, it still
+    /// records nothing itself, and every caller still hands it to the settings save that records
+    /// past the `catch`. Without the caller half the allowance would excuse any new surface that
+    /// simply called the commit and never refreshed the observation record — which is the T-1043
+    /// hole in a newer shape.
+    @Test func everyCallerOfTheSharedLinkCommitHandsItToTheSettingsSave() throws {
+        let writes = try Self.writeSites()
+        for key in Self.commitFunnelDeclarations {
+            let matching = writes.filter { write in
+                guard let declaration = write.declaration else { return false }
+                return "\(write.path)#\(declaration.name)" == key
+            }
+            #expect(!matching.isEmpty, "\(key) no longer writes a calendar link; drop the allowance")
+            #expect(matching.allSatisfy { $0.declaration?.body.contains(Self.recordPickNeedle) == false },
+                    "\(key) records the pick itself now, before the commit it is supposed to follow")
+        }
+
+        let callers = try Self.commitFunnelCallers()
+        #expect(callers.count >= 2, "the shared link commit is called from \(callers.count) place(s)")
+        for caller in callers {
+            let declaration = try #require(
+                caller.declaration,
+                "\(caller.path): a call to the shared link commit the sweep cannot attribute to a func"
+            )
+            #expect(
+                declaration.body.contains(Self.settingsWriteNeedle),
+                "\(caller.path)#\(declaration.name) commits a link without routing it through the save that records it"
+            )
         }
     }
 
@@ -166,20 +232,21 @@ struct CadenceCalendarLinkProvenanceSweepTests {
     @Test func allThreeWriterCategoriesAreStillLoadBearing() throws {
         let writes = try Self.writeSites()
         var recordsThePick = 0
-        var savesThroughSettings = 0
+        var commitsThroughTheFunnel = 0
         var restores = 0
         for write in writes {
             guard let declaration = write.declaration else { continue }
-            if Self.restoreDeclarations.contains("\(write.path)#\(declaration.name)") {
+            let key = "\(write.path)#\(declaration.name)"
+            if Self.restoreDeclarations.contains(key) {
                 restores += 1
+            } else if Self.commitFunnelDeclarations.contains(key) {
+                commitsThroughTheFunnel += 1
             } else if declaration.body.contains(Self.recordPickNeedle) {
                 recordsThePick += 1
-            } else if declaration.body.contains(Self.settingsWriteNeedle) {
-                savesThroughSettings += 1
             }
         }
         #expect(recordsThePick > 0, "no write records a pick directly any more")
-        #expect(savesThroughSettings > 0, "no write reaches the settings save any more")
+        #expect(commitsThroughTheFunnel > 0, "no write goes through the shared link commit any more")
         #expect(restores > 0, "no restore path writes a link any more; drop the fourth allowance")
     }
 
@@ -188,14 +255,24 @@ struct CadenceCalendarLinkProvenanceSweepTests {
     /// The whole point of a text scan is `Cadence/iOS/`, which the macOS test target compiles no
     /// symbol from. Without this, both sweeps above could be passing on a tree they never opened.
     @Test func theSweepReadsTheIOSTreeAsTextAndNotOnlyTheMacOne() throws {
+        // **T-1132 moved where iOS shows up.** It used to appear in the writer sweep, because
+        // `iOSCalendarSettingsSection` assigned `linkedCalendarID` at six sites. It assigns none
+        // now — every write goes to `CadenceCalendarLinkCommit` — so the reach claim is made
+        // against the funnel's call sites, which is where the iOS tree appears today. The claim
+        // itself is unchanged: this sweep must be opening `Cadence/iOS/` as text, or both rules
+        // above are passing on a tree they never read.
+        let callers = Set(try Self.commitFunnelCallers().map(\.path))
+        #expect(callers.contains("Cadence/iOS/iOSCalendarSettingsSection.swift"),
+                "the sweep never reached the iOS calendar settings surface, which commits four link writes")
+        #expect(callers.contains("Cadence/macOS/Views/SettingsListManagementSections.swift"),
+                "the sweep never reached the macOS calendar settings surface")
+
         let writes = try Self.writeSites()
         let paths = Set(writes.map(\.path))
-        #expect(paths.contains("Cadence/iOS/iOSCalendarSettingsSection.swift"),
-                "the sweep never reached the iOS calendar settings surface, which writes six links")
         #expect(paths.contains("Cadence/macOS/Sheets/EditListSheet.swift"),
                 "the sweep never reached the macOS list editor, which writes two")
-        #expect(paths.count >= 5,
-                "the writer population has shrunk below the five files T-1043 measured")
+        #expect(paths.count >= 4,
+                "the writer population has shrunk below the four files that still assign a link directly")
 
         let readers = try Self.readerSites()
         #expect(Set(readers.map(\.path)).contains("Cadence/macOS/Sheets/ListEditorSupportViews.swift"),
@@ -248,18 +325,22 @@ struct CadenceCalendarLinkProvenanceSweepTests {
                     default:
                         break
                     }
-                    saveCalendarLinks()
+                    CadenceCalendarLinkObservations.recordPick(calendarID, replacing: stored)
                 }
             }
             """
         let writes = Self.writeSites(in: source, path: "Fixture.swift")
         #expect(writes.count == 1, "the value type's own self-assignment was counted as a link write")
         #expect(writes.first?.declaration?.name == "relink")
-        #expect(writes.first?.declaration?.body.contains(Self.settingsWriteNeedle) == true,
+        #expect(writes.first?.declaration?.body.contains(Self.recordPickNeedle) == true,
                 "attribution stopped at the switch's braces rather than at the func's")
     }
 
     /// And it sees the shape the ticket is about: the same write with the settings save removed.
+    ///
+    /// This fixture is also, verbatim, the shape [[T-1132]] removed from `Cadence/iOS/` — a link
+    /// write over a swallowed save — so it stays here as the negative fixture even though no file
+    /// in the tree spells it any more.
     @Test func theWriteReaderSeesASettingsWriteThatSkipsTheSave() {
         let source = """
             struct Thing {
@@ -271,8 +352,33 @@ struct CadenceCalendarLinkProvenanceSweepTests {
             """
         let writes = Self.writeSites(in: source, path: "Fixture.swift")
         #expect(writes.count == 1)
-        #expect(writes.first?.declaration?.body.contains(Self.settingsWriteNeedle) == false)
+        #expect(writes.first?.declaration?.body.contains(Self.commitFunnelNeedle) == false)
         #expect(writes.first?.declaration?.body.contains(Self.recordPickNeedle) == false)
+    }
+
+    /// The funnel-caller detector, against literal fixtures: a call to the shared commit is
+    /// attributed to its enclosing `func`, and the needle does not match the declaration itself.
+    @Test func theFunnelCallerReaderSeparatesACallFromTheDeclarationItCalls() {
+        let caller = """
+            struct Thing {
+                private func toggle(_ calendarID: String, for area: Area) {
+                    saveCalendarLinks { try CadenceCalendarLinkCommit.write(calendarID, to: area, in: modelContext) }
+                }
+            }
+            """
+        let declaration = """
+            enum CadenceCalendarLinkCommit {
+                static func write(_ calendarID: String, to area: Area, in modelContext: ModelContext) throws {
+                    area.linkedCalendarID = calendarID
+                }
+            }
+            """
+        let callers = Self.commitFunnelCallers(in: caller, path: "Fixture.swift")
+        #expect(callers.count == 1)
+        #expect(callers.first?.declaration?.name == "toggle")
+        #expect(callers.first?.declaration?.body.contains(Self.settingsWriteNeedle) == true)
+        #expect(Self.commitFunnelCallers(in: declaration, path: "Fixture.swift").isEmpty,
+                "the declaration of the commit was counted as a call to it")
     }
 
     // MARK: - Scanning
@@ -321,6 +427,39 @@ struct CadenceCalendarLinkProvenanceSweepTests {
         try productSources()
             .filter { $0.raw.contains(".linkedCalendarID") }
             .flatMap { writeSites(in: CadenceSourceScan.codeOnly($0.raw), path: $0.path) }
+    }
+
+    /// **T-1132.** Every product-tree call of `CadenceCalendarLinkCommit.write(`, attributed to the
+    /// `func` making it.
+    private static func commitFunnelCallers() throws -> [WriteSite] {
+        try productSources()
+            .filter { $0.raw.contains(commitFunnelNeedle) }
+            .flatMap { commitFunnelCallers(in: CadenceSourceScan.codeOnly($0.raw), path: $0.path) }
+    }
+
+    /// Qualified by the enum's own name, which is what separates a call from the declaration: the
+    /// commit's own body spells `func write(`, never `CadenceCalendarLinkCommit.write(`.
+    static func commitFunnelCallers(in source: String, path: String) -> [WriteSite] {
+        let characters = Array(source)
+        var results: [WriteSite] = []
+        var spans: [FunctionSpan]?
+
+        for start in occurrences(of: commitFunnelNeedle, in: characters) {
+            let declarations = spans ?? functionSpans(in: characters)
+            spans = declarations
+            let enclosing = declarations
+                .filter { $0.body.contains(start) }
+                .min { $0.body.count < $1.body.count }
+            results.append(
+                WriteSite(
+                    path: path,
+                    declaration: enclosing.map {
+                        Declaration(name: $0.name, body: String(characters[$0.body]))
+                    }
+                )
+            )
+        }
+        return results
     }
 
     /// The argument list of every `CadenceCalendarLink(` / `CadenceCalendarLinkRowState.forLink(`

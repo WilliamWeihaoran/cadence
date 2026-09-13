@@ -484,9 +484,22 @@ struct CadenceCalendarLinkHealthTests {
                 CadenceSourceScan.matchCount("private func disconnect\\(", in: code) == 1,
                 "\(path) has no single disconnect, or more than one"
             )
+            // **T-1132.** The disconnect used to spell `linkedCalendarID = ""` once per branch,
+            // which is where the 2 came from. It writes neither now: both branches go to
+            // `writeLink`, which reaches the store through `CadenceCalendarLinkCommit` and puts
+            // the previous identifier back when the save is refused. The claim is unchanged — a
+            // disconnect writes the *empty* identifier and never a fresh one, for the two kinds of
+            // list — so it is asked of the argument rather than of the assignment, and the 2 moves
+            // to the funnel where the two branches now live.
             let disconnect = try #require(CadenceSourceScan.functionBody(named: "disconnect", in: code))
-            #expect(CadenceSourceScan.matchCount("linkedCalendarID = \"\"", in: disconnect) == 2)
+            #expect(CadenceSourceScan.matchCount("writeLink\\(\"\", toListWith:", in: disconnect) == 1)
             #expect(!disconnect.contains("calendarIdentifier"))
+            let writeLink = try #require(CadenceSourceScan.functionBody(named: "writeLink", in: code))
+            #expect(
+                CadenceSourceScan.matchCount("CadenceCalendarLinkCommit\\.write\\(calendarID, to: ", in: writeLink) == 2,
+                "\(path) no longer commits the disconnect for both an area and a project"
+            )
+            #expect(!writeLink.contains("calendarIdentifier"))
 
             // Placement: after the access branch, not inside it.
             let authorizationBranch = try #require(code.range(of: "if calendarManager.isAuthorized"))

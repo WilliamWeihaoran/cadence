@@ -13,6 +13,9 @@ struct iOSCalendarSettingsSection: View {
     @AppStorage(CalendarVisibilityPreferences.hiddenCalendarIDsKey) private var hiddenCalendarIDsRaw = ""
     /// **T-624.** Device-local, never synced: the identifiers this device has seen EventKit carry.
     @AppStorage(CadenceCalendarLinkObservations.observedCalendarIDsKey) private var observedCalendarIDsRaw = ""
+    /// **T-1132.** Set when the store refused a link write, and cleared by the next one that
+    /// lands. Top of the section, as on macOS: all three cards below write links.
+    @State private var linkFailureNotice: String?
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -91,13 +94,7 @@ struct iOSCalendarSettingsSection: View {
     /// re-pick would put a fresh `EKCalendar.calendarIdentifier` into a CloudKit-synced property,
     /// which is the clobber T-624 removed.
     private func disconnect(_ link: CadenceDormantCalendarLink) {
-        switch link.kind {
-        case .area:
-            areas.first { $0.id == link.id }?.linkedCalendarID = ""
-        case .project:
-            projects.first { $0.id == link.id }?.linkedCalendarID = ""
-        }
-        saveCalendarLinks()
+        writeLink("", toListWith: link.id, kind: link.kind)
     }
 
     private var missingLinksCard: some View {
@@ -122,6 +119,10 @@ struct iOSCalendarSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let linkFailureNotice {
+                CadenceInlineFailureNotice(text: linkFailureNotice)
+            }
+
             if calendarManager.isAuthorized {
                 // Above the calendar list, not inside it: these lists have no live calendar to
                 // hang off, which is exactly why they were invisible before T-400.
@@ -251,13 +252,13 @@ struct iOSCalendarSettingsSection: View {
     }
 
     private func toggleCalendar(_ calendarID: String, for area: Area) {
-        area.linkedCalendarID = area.linkedCalendarID == calendarID ? "" : calendarID
-        saveCalendarLinks()
+        let picked = area.linkedCalendarID == calendarID ? "" : calendarID
+        saveCalendarLinks { try CadenceCalendarLinkCommit.write(picked, to: area, in: modelContext) }
     }
 
     private func toggleCalendar(_ calendarID: String, for project: Project) {
-        project.linkedCalendarID = project.linkedCalendarID == calendarID ? "" : calendarID
-        saveCalendarLinks()
+        let picked = project.linkedCalendarID == calendarID ? "" : calendarID
+        saveCalendarLinks { try CadenceCalendarLinkCommit.write(picked, to: project, in: modelContext) }
     }
 
     /// Writes the user's re-pick, or `""` for Remove Link.
@@ -266,17 +267,37 @@ struct iOSCalendarSettingsSection: View {
     /// the user did not choose: nothing infers a calendar from the old identifier or from the
     /// list's name.
     private func relink(_ link: CadenceMissingCalendarLink, to calendarID: String) {
-        switch link.kind {
-        case .area:
-            areas.first { $0.id == link.id }?.linkedCalendarID = calendarID
-        case .project:
-            projects.first { $0.id == link.id }?.linkedCalendarID = calendarID
-        }
-        saveCalendarLinks()
+        writeLink(calendarID, toListWith: link.id, kind: link.kind)
     }
 
-    private func saveCalendarLinks() {
-        try? modelContext.save()
+    /// The write behind a broken-link repair and a dormant-link disconnect, both of which name
+    /// their list by `id` rather than holding the model.
+    private func writeLink(_ calendarID: String, toListWith id: UUID, kind: CadenceMissingCalendarLink.ListKind) {
+        switch kind {
+        case .area:
+            guard let area = areas.first(where: { $0.id == id }) else { return }
+            saveCalendarLinks { try CadenceCalendarLinkCommit.write(calendarID, to: area, in: modelContext) }
+        case .project:
+            guard let project = projects.first(where: { $0.id == id }) else { return }
+            saveCalendarLinks { try CadenceCalendarLinkCommit.write(calendarID, to: project, in: modelContext) }
+        }
+    }
+
+    /// **T-1132.** Commits a link write, and refreshes the device-local observation record **only
+    /// past the `catch`**.
+    ///
+    /// This used to be `try? modelContext.save()` followed unconditionally by the refresh, which
+    /// writes an `@AppStorage` set computed off the model objects — so a refused save left the link
+    /// discarded and the record of observing it behind. `CadenceCalendarLinkCommit` carries the
+    /// rest of that reasoning; macOS's `SettingsCalendarSection` is this same function.
+    private func saveCalendarLinks(_ write: () throws -> Void) {
+        do {
+            try write()
+        } catch {
+            linkFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        linkFailureNotice = nil
         refreshCalendarObservations()
     }
 }

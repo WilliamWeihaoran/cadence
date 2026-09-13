@@ -13,9 +13,19 @@ struct SettingsCalendarSection: View {
     @AppStorage(CalendarVisibilityPreferences.hiddenCalendarIDsKey) private var hiddenCalendarIDsRaw = ""
     /// **T-624.** Device-local, never synced: the identifiers this Mac has seen EventKit carry.
     @AppStorage(CadenceCalendarLinkObservations.observedCalendarIDsKey) private var observedCalendarIDsRaw = ""
+    /// **T-1132.** Set when the store refused a link write. It sits at the top of the section
+    /// rather than beside one card because all three cards here write links, and it is the same
+    /// placement `SettingsView` gives its own two refusal notices — under the header the user is
+    /// still looking at. `CadenceCalendarLinkCommit` has put the identifier back by the time this
+    /// is set, so the section and the sentence agree.
+    @State private var linkFailureNotice: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let linkFailureNotice {
+                CadenceInlineFailureNotice(text: linkFailureNotice)
+            }
+
             SettingsCalendarWorkHoursSection()
 
             if calendarManager.isAuthorized {
@@ -128,13 +138,7 @@ struct SettingsCalendarSection: View {
     /// re-pick would put a fresh `EKCalendar.calendarIdentifier` into a CloudKit-synced property,
     /// which is the clobber T-624 removed.
     private func disconnect(_ link: CadenceDormantCalendarLink) {
-        switch link.kind {
-        case .area:
-            areas.first { $0.id == link.id }?.linkedCalendarID = ""
-        case .project:
-            projects.first { $0.id == link.id }?.linkedCalendarID = ""
-        }
-        saveCalendarLinks()
+        writeLink("", toListWith: link.id, kind: link.kind)
     }
 
     private var missingLinksCard: some View {
@@ -249,13 +253,13 @@ struct SettingsCalendarSection: View {
     }
 
     private func toggleCalendar(_ calendarID: String, for area: Area) {
-        area.linkedCalendarID = area.linkedCalendarID == calendarID ? "" : calendarID
-        saveCalendarLinks()
+        let picked = area.linkedCalendarID == calendarID ? "" : calendarID
+        saveCalendarLinks { try CadenceCalendarLinkCommit.write(picked, to: area, in: modelContext) }
     }
 
     private func toggleCalendar(_ calendarID: String, for project: Project) {
-        project.linkedCalendarID = project.linkedCalendarID == calendarID ? "" : calendarID
-        saveCalendarLinks()
+        let picked = project.linkedCalendarID == calendarID ? "" : calendarID
+        saveCalendarLinks { try CadenceCalendarLinkCommit.write(picked, to: project, in: modelContext) }
     }
 
     /// Writes the user's re-pick, or `""` for Remove Link.
@@ -264,21 +268,38 @@ struct SettingsCalendarSection: View {
     /// the user did not choose: nothing infers a calendar from the old identifier or from the
     /// list's name.
     private func relink(_ link: CadenceMissingCalendarLink, to calendarID: String) {
-        switch link.kind {
-        case .area:
-            areas.first { $0.id == link.id }?.linkedCalendarID = calendarID
-        case .project:
-            projects.first { $0.id == link.id }?.linkedCalendarID = calendarID
-        }
-        saveCalendarLinks()
+        writeLink(calendarID, toListWith: link.id, kind: link.kind)
     }
 
-    private func saveCalendarLinks() {
-        do {
-            try modelContext.save()
-        } catch {
-            print("SettingsCalendarSection: failed to save calendar links: \(error)")
+    /// The write behind a broken-link repair and a dormant-link disconnect, both of which name
+    /// their list by `id` rather than holding the model.
+    private func writeLink(_ calendarID: String, toListWith id: UUID, kind: CadenceMissingCalendarLink.ListKind) {
+        switch kind {
+        case .area:
+            guard let area = areas.first(where: { $0.id == id }) else { return }
+            saveCalendarLinks { try CadenceCalendarLinkCommit.write(calendarID, to: area, in: modelContext) }
+        case .project:
+            guard let project = projects.first(where: { $0.id == id }) else { return }
+            saveCalendarLinks { try CadenceCalendarLinkCommit.write(calendarID, to: project, in: modelContext) }
         }
+    }
+
+    /// **T-1132.** Commits a link write, and refreshes the device-local observation record **only
+    /// past the `catch`**.
+    ///
+    /// This used to be `do { try modelContext.save() } catch { print(…) }` followed
+    /// unconditionally by the refresh. A `print` is not a report to the user, and the refresh
+    /// computes its set off the model objects — which held the edit whether or not the store took
+    /// it — and writes it to `UserDefaults`, where it outlives the discarded change.
+    /// `CadenceCalendarLinkCommit` carries the rest of that reasoning.
+    private func saveCalendarLinks(_ write: () throws -> Void) {
+        do {
+            try write()
+        } catch {
+            linkFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        linkFailureNotice = nil
         refreshCalendarObservations()
     }
 }

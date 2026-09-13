@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -323,11 +324,39 @@ struct CadenceCalendarLinkObservationsTests {
             // The third call site by name rather than by count: it is the one a mutation deleted
             // and got away with, and it is the one that matters most — the link the user just made
             // is the link this device most needs to be able to vouch for.
-            let saver = try #require(code.range(of: "private func saveCalendarLinks()"))
-            let saverBody = code[saver.upperBound...].prefix(400)
+            //
+            // **T-1132 made its position load-bearing too.** The saver used to be
+            // `try? modelContext.save()` (iOS) or `do { … } catch { print(…) }` (macOS) followed
+            // *unconditionally* by the refresh. The refresh reads the model objects — which hold
+            // the edit whether or not the store took it — and writes `@AppStorage`, and a defaults
+            // write outlives the discarded change. So "after the write" and "after the write
+            // **landed**" are two different programs, and only one of them is honest. The four
+            // assertions below are that ordering: commit, then name the refusal and leave, and only
+            // past that record what this device has seen.
+            let saver = try #require(
+                code.range(of: "private func saveCalendarLinks(_ write: () throws -> Void)"),
+                "\(path) no longer funnels its link writes through one commit"
+            )
+            let saverBody = String(code[saver.upperBound...].prefix(500))
             #expect(
-                saverBody.contains("refreshCalendarObservations()"),
+                saverBody.contains("try write()"),
+                "\(path) does not commit the write it was handed"
+            )
+            let catchClause = try #require(saverBody.range(of: "} catch {"))
+            let notice = try #require(
+                saverBody.range(of: "linkFailureNotice = CadencePendingChangePersistence.editFailureNotice"),
+                "\(path) does not name a refused link write on the settings surface"
+            )
+            let bailOut = try #require(saverBody.range(of: "return"))
+            let refresh = try #require(
+                saverBody.range(of: "refreshCalendarObservations()"),
                 "\(path) commits a link write without recording that this device saw the calendar"
+            )
+            #expect(catchClause.lowerBound < notice.lowerBound)
+            #expect(notice.lowerBound < bailOut.lowerBound)
+            #expect(
+                bailOut.lowerBound < refresh.lowerBound,
+                "\(path) refreshes the observation record on a path a refused save still reaches"
             )
         }
 
@@ -377,5 +406,93 @@ struct CadenceCalendarLinkObservationsTests {
         // T-624 is stated where a future edit to the detector will meet it, not merely true.
         let health = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceCalendarLinkHealth.swift")
         #expect(health.contains("T-624"), "the detector does not say why it needs prior evidence")
+    }
+
+    // MARK: - The commit behind a link write (T-1132)
+
+    private struct LinkCommitRefused: Error {}
+
+    /// The success path, asserted from a **second context on the same container**: the identifier
+    /// is in the store by the time the surface refreshes its observation record, which is the only
+    /// thing that makes the refresh's `@AppStorage` write true.
+    @MainActor
+    @Test func acommittedCalendarLinkIsInTheStoreBeforeTheObservationRecordIsRefreshed() throws {
+        let modelContainer = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(modelContainer)
+        let area = Area(name: "Work")
+        modelContext.insert(area)
+        try modelContext.save()
+
+        try CadenceCalendarLinkCommit.write("CAL-NEW", to: area, in: modelContext)
+
+        #expect(!modelContext.hasChanges)
+        #expect(
+            try ModelContext(modelContainer).fetch(FetchDescriptor<Area>()).map(\.linkedCalendarID) == ["CAL-NEW"]
+        )
+    }
+
+    /// **The manufacturing direction.** A refused *link* used to leave the new identifier on the
+    /// model, so `linkedCalendarIDs(areas:projects:)` reported it and `observing(...)` learned it
+    /// into `UserDefaults` — where it outlived the discarded change, and where T-624's gate reads
+    /// it afterwards as this device's own evidence.
+    ///
+    /// The assertion is on the observation set rather than only on the field, because the set is
+    /// what the bug actually damaged: the field would have been corrected by the next fetch.
+    @MainActor
+    @Test func arefusedCalendarLinkLeavesTheObservationSetUnableToLearnTheNewIdentifier() throws {
+        let modelContainer = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(modelContainer)
+        let area = Area(name: "Work")
+        area.linkedCalendarID = "CAL-OLD"
+        modelContext.insert(area)
+        try modelContext.save()
+
+        #expect(throws: LinkCommitRefused.self) {
+            try CadenceCalendarLinkCommit.write("CAL-NEW", to: area, in: modelContext) { _ in
+                throw LinkCommitRefused()
+            }
+        }
+
+        #expect(area.linkedCalendarID == "CAL-OLD", "the refused link was left on the model")
+        #expect(
+            CadenceCalendarLinkObservations.observing(
+                linkedCalendarIDs: CadenceCalendarLinkObservations.linkedCalendarIDs(areas: [area], projects: []),
+                liveCalendarIDs: ["CAL-OLD", "CAL-NEW"],
+                isCalendarAccessAuthorized: true,
+                observed: ["CAL-OLD"]
+            ) == ["CAL-OLD"],
+            "the device learned a calendar it is not linked to, from a link the store refused"
+        )
+    }
+
+    /// **The forgetting direction, which is the half nobody thinks of.** `observing(...)` ends in
+    /// `∩ linked`, so it drops an identifier no list links any more. A refused *unlink* therefore
+    /// did the opposite damage to the one above: it erased evidence this device really had, and a
+    /// genuinely broken link then goes unreported on the only device that could report it.
+    @MainActor
+    @Test func arefusedCalendarUnlinkLeavesTheObservationSetUnableToForgetTheOldIdentifier() throws {
+        let modelContainer = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(modelContainer)
+        let project = Project(name: "Launch")
+        project.linkedCalendarID = "CAL-OLD"
+        modelContext.insert(project)
+        try modelContext.save()
+
+        #expect(throws: LinkCommitRefused.self) {
+            try CadenceCalendarLinkCommit.write("", to: project, in: modelContext) { _ in
+                throw LinkCommitRefused()
+            }
+        }
+
+        #expect(project.linkedCalendarID == "CAL-OLD", "the refused unlink was left on the model")
+        #expect(
+            CadenceCalendarLinkObservations.observing(
+                linkedCalendarIDs: CadenceCalendarLinkObservations.linkedCalendarIDs(areas: [], projects: [project]),
+                liveCalendarIDs: [],
+                isCalendarAccessAuthorized: true,
+                observed: ["CAL-OLD"]
+            ) == ["CAL-OLD"],
+            "the device forgot a calendar it had seen, because of an unlink the store refused"
+        )
     }
 }
