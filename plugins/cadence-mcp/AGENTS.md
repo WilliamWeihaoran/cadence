@@ -52,7 +52,7 @@ too. The boundary's rules live in `CadenceMCPServer/AGENTS.md`.
 - Keep scripts deterministic and safe to run repeatedly.
 - Do not assume the macOS app is open unless the script explicitly checks/launches it.
 - Preserve command-line output that other agents or smoke tests parse.
-- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 33 tool
+- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 35 tool
   names are a contract in three places — the definitions, the router's `case` arms, and this
   smoke test — and the first two can disagree while compiling.
 - A new tool means a new dispatch here, not only a new name in `EXPECTED_TOOLS`. The coverage

@@ -30,9 +30,9 @@ compiles a hand-picked subset of app source directly, not a framework. Currently
 `TagSupport`, `NoteReferenceSupport`, `MarkdownMetadataSupport`, `CadenceHabitCompletionStore`,
 `CadenceSearchMatcher`, `Shared/CadenceTaskRecurrenceWorkflowSupport`, `Shared/DateFormatters`,
 `Shared/CadencePendingChangePersistence`, `Shared/CadenceSectionConfigMerge`,
-`Shared/CadenceSectionEditingSupport` — plus this folder's four files. **Adding a file to `Models/`
-does not add it here.** A new type that an existing compiled file references is a link error in
-this target and nothing at all in the app.
+`Shared/CadenceSectionEditingSupport`, `Shared/CadenceDefaults` — plus this folder's four files.
+**Adding a file to `Models/` does not add it here.** A new type that an existing compiled file
+references is a link error in this target and nothing at all in the app.
 
 It is also the only target on `SWIFT_VERSION = 6.0` with `SWIFT_STRICT_CONCURRENCY = targeted` and
 **without** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. The app and the widgets default their
@@ -76,19 +76,19 @@ compiles in a view is not evidence it compiles here.
   contract below, the write gate, that every non-private helper in `CadenceMCPArgumentParsing` has
   a router call site, and that the smoke test still checks its own dispatch coverage. Do not read
   it as behavioural coverage of the router.
-- **The smoke test dispatches all 33 arms and asserts that it does.** It drives a full create →
+- **The smoke test dispatches all 35 arms and asserts that it does.** It drives a full create →
   update → schedule → complete → reopen → cancel lifecycle against the fixture store, asserts the
   resulting DTO key sets, and records every `tools/call` so an unexercised arm fails the run. Its
   error-path checks assert the error *text*: a deleted arm answers "Unknown tool" and a renamed
   argument key answers "Missing required argument", and a bare `isError` check is green for both.
   What it missed before T-259, and why, is in the reference.
-- **The 33 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
-  (the advertised schema), `CadenceMCPToolRouter.swift` (33 `case` arms), and the smoke test's
+- **The 35 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
+  (the advertised schema), `CadenceMCPToolRouter.swift` (35 `case` arms), and the smoke test's
   expectations. Renaming or adding one means all three, and the definitions/router pair will
   compile perfectly while disagreeing. `CadenceTests/CadenceMCPToolContractTests.swift` is the
   guard: it fails when those three sets diverge, and separately when
   `CadenceMCPToolDefinitions.writeToolNames`, the router arms that call `requireWriteService`, and
-  the smoke test's `WRITE_TOOLS` stop naming the same eleven tools. That second assertion is the
+  the smoke test's `WRITE_TOOLS` stop naming the same thirteen tools. That second assertion is the
   data-safety one — a mutating arm missing from `writeToolNames` is **advertised and executable in
   the default read-only mode**, which is not a typo-class failure.
 

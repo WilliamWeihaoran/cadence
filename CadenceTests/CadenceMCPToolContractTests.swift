@@ -7,7 +7,7 @@ import Testing
 /// a symbol from any of them. These are therefore source-scanning tests by necessity, not by
 /// laziness (see "Source-Scanning Tests: The Two Ways They Go Wrong" in `Cadence/Shared/AGENTS.md`).
 ///
-/// What they pin is the failure `CadenceMCPServer/AGENTS.md` calls out by name: "the 30 tool names
+/// What they pin is the failure `CadenceMCPServer/AGENTS.md` calls out by name: "the 35 tool names
 /// are a contract in three places at once — the advertised schema, the router's `case` arms, and
 /// the smoke test's expectations — and the definitions/router pair will compile perfectly while
 /// disagreeing." A tool advertised but not routed is a runtime "Unknown tool"; a tool routed but
