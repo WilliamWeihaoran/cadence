@@ -583,26 +583,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Not done here, and filed as [[T-1126]]:** the same pair is hand-stacked at up to eleven more
   macOS settings sites.
 
-- [T-1126] **Up to eleven more macOS settings section labels sit as far from the block above them as
-  from the block they name.** Found by `copyfit` 2026-09-11 while closing [[T-1107]], which fixed
-  only the two forms the two audits named. The same `SettingsSectionLabel` + `SettingsCard` pair is
-  stacked as plain siblings of a `VStack(alignment: .leading, spacing: 16)` in
-  `SettingsCalendarSection` (3 eyebrows), `SettingsListsSection` (6, in its populated branch),
-  `SettingsDataSafetySection` (`Available Backups`) and `SettingsAboutSection` (the
-  reference-links eyebrow). **An eyebrow that is its stack's first child has nothing above it and
-  is not an offender** — `SettingsSidebarSection`'s single label and `SettingsListsSection`'s
-  empty-branch label are that case, which is why the count is a range and not a number.
-  The gap to use already exists: `CadenceSectionLabelMetrics.labelToNamedBlock`.
-  **Three things to know before starting.** (1) The audit's caution stands: decide it visually
-  first, pane by pane. (2) Extend `CadenceSectionLabelGroupingTests`' positional check to each pane
-  converted; a count of grouping stacks equal to the count of labels is satisfied by two labels in
-  one group. (3) The tidiest form is probably not a wrapper at all but `CadenceFieldSection`, which
-  is the same two components (`SectionEyebrowLabel` over `CadenceSettingsCard`) at the right gap —
-  but four of those call sites hand in a computed `SettingsCard { … }` property rather than its
-  contents, and converting *every* site would leave `SettingsSectionLabel` with no callers, which
-  `SettingsSharedVocabularyTests.noneOfTheSevenStacksTheOlderTitledGroupSpelling` currently anchors
-  its non-vacuity assertion on.
-
 - [T-1108] **CLOSED 2026-09-12 (agent `sweepderive`) — the empty-store suite calls the launch instead of imitating it, and the imitation had drifted three ways, not one.** The audit reserved this for a single missing operation. **MEASURED at `08c84bc`**, `CadenceFirstLaunchEmptyStoreTests.replayStartupMaintenance` differed from `PersistenceController.performStartupMaintenance` in three places: no `CadenceFocusLedger.reconcile(in:)` (T-742's store-wide pass, the one the audit found); no `removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders` on the repair, which is the half of [[T-622]]'s collapse the app supplies and `DataIntegrityRepairService` cannot spell for itself; and an unconditional `try? context.save()` where a launch guards on `changedStore, context.hasChanges` — so the replay saved on launches production leaves alone. **The pin beside it could not have caught any of them, and that is the general lesson:** `theStartupSequenceThisSuiteReplaysIsTheOneLaunchActuallyRuns` read production's body and asserted the five calls were present and in order. That checks production against a list. Nothing checked the replay against production, so "a first launch changes nothing" was being asserted about a launch missing a pass that can change something. **A test that replays a sequence rather than calling it can drift from it silently and still pass** — the repeated shape this repository keeps re-finding, and the fix is not a fourth statement in the imitation, it is not having one. `performStartupMaintenance` is `internal` now and takes `defaults: UserDefaults = CadenceDefaults.store`; a launch passes nothing and lands on the real suite, while a test passes the temporary suite it must not share (`PursuitToGoalMigration.runIfNeeded` already took it, for that reason). The six call sites call production. The source-reading test is kept, renamed `theLaunchRunsItsFivePassesInThisOrderAndSeedsNothing`, because it still asks the two things calling cannot: the **order** of the passes, and that the body neither seeds tags (T-528) nor drops `reconciledFocusMinutes` out of `changedStore` (T-742) — and it gained two expectations pinning that the seam stayed a seam (the default is the real store; the launch path still calls it with the launch's own arguments). Two tests that inserted a row and relied on the replay's unconditional save now commit it themselves, which is also what a CloudKit import and a Settings rename actually do. `noStartupPassReportsAChangeOnAFirstLaunch` still lists the passes by hand — legitimately, since it asks each one's *answer* and the launch returns none of them — so the reconcile was added there too; [[T-1140]] is the general form. **Mutation-tested, both directions, one mutant:** insert a `Context` row into `performStartupMaintenance` — a launch that silently manufactures a workspace, the exact defect the audit was chasing. Against **HEAD's replay** the suite is green, `XCODEBUILD_EXIT=0`, 13 tests. Against **this one** it is `XCODEBUILD_EXIT=65`: `aFirstLaunchAgainstAnEmptyStoreCreatesNothingAtAll` fails on the row. Nothing else about the two runs differs, so that is the whole value of calling production rather than imitating it, measured rather than argued. **Originally:** **The empty-store startup test replays a startup sequence that is missing one of the operations it asserts production performs.** Reserved by `audittriage` 2026-09-07 from `docs/audits/2026-09-06/request-follow-up.md`.
 
 - [T-1117] **Does one iCloud calendar carry the same `EKCalendar.calendarIdentifier` on this user's
@@ -4646,32 +4626,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
      reopen.** [[T-636]](a) fixing that family removes three of the arm's four real hits and makes
      the case *weaker*, not stronger.
 
-- [T-1132] **The record of which calendars Cadence is observing is written on the strength of a link
-  save the store may have refused, on both platforms — and on macOS no half of the save-commit rule
-  can see it.** Found 2026-09-12 by agent `parkeddecisions` while re-measuring [[T-657]]'s arm; it is
-  the one net new finding that measurement produced, carried out of a ticket that closed as a
-  decision not to land the instrument.
-  `iOSCalendarSettingsSection.saveCalendarLinks` is `try? modelContext.save()` followed by
-  `refreshCalendarObservations()`, whose body computes the observed set from
-  `CadenceCalendarLinkObservations.linkedCalendarIDs(areas:projects:)` — read off the **model
-  objects**, which hold the edit whether or not it committed — and writes the `@AppStorage`
-  `observedCalendarIDsRaw`. That is [[T-635]]'s shape and the reason `persistedReport` is in the
-  rule's vocabulary at all: a defaults write **outlives the rollback**. The link is discarded, the
-  device-local record saying *"we are observing calendar X"* is not, and [[T-624]]'s evidence gate
-  reads it afterwards as fact.
-  **The macOS twin is the worse half.** `SettingsListManagementSections.saveCalendarLinks` is
-  `do { try modelContext.save() } catch { print(…) }` and then the same
-  `refreshCalendarObservations()`. A `print` is not a report to the user, so the defect is
-  identical — and it is invisible to **every** half of the rule, because `swallowedSave` keys on
-  `try?` over a commit surface and this is neither. Do not fix the iOS side alone: it would leave
-  the same bug on the primary surface with nothing pointing at it.
-  Fix both through the same door — commit through `CadencePendingChangePersistence.commitEdit`,
-  name the refusal on the settings surface, and refresh the observation record only past the
-  `catch`. Check the third and second call sites of `refreshCalendarObservations()` (`.onAppear`
-  and `.onChange(of: calendarManager.storeVersion)`) while there: those two read the store rather
-  than a pending write and are almost certainly fine, but the claim should be measured rather than
-  assumed.
-
 - [T-654] **CLOSED 2026-09-04 (`a1e5791`).** Originally: **The block focus timer banks its minutes over a swallowed save, then clears the clock.**
   Found while landing [[T-636]](c), which fixed the single-task door beside it.
   `iOSFocusView.logBundleSession` calls `CadenceFocusSupport.logElapsedSeconds(_:across:)` →
@@ -5749,6 +5703,90 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 - [T-1209] **A successful `<path>=<content-file>` commit leaves the worktree copy of that path behind HEAD, and nothing says so or guards the READING of it.** Filed 2026-09-13 by `ledgerheal2`, observed on its own commit. **MEASURED at `b34c1f5`:** `scripts/agent-commit.sh ledgerheal2 -m … docs/TODO.md=<file> docs/TODO_DONE.md=<file>` reported `committed b34c1f5b` and `shared index is clean against the new HEAD`, and immediately afterwards both worktree files were **byte-identical to `HEAD~1`** — the whole commit was in the tree and in neither file on disk. The behaviour is almost certainly deliberate and right: the `=` form exists for a file a sibling is also editing, and writing the worktree would destroy their in-flight hunks. The gap is that the committing agent is never told to re-sync its own, and `docs/SUBAGENT_RUNBOOK.md`'s *"Which path form to use"* section — which explains `REBUILD-BEHIND-HEAD`, `DECLINED-HUNK-LOST` and why never to `git commit -- <path>` — does not mention it at all.
   **The commit path is already guarded; the read path is not.** A later bare-`<path>` commit of the stale file is refused by `WORKTREE-BEHIND-HEAD`, and a reconstruction built the documented way (`git show HEAD:<path>` plus your edits) is correct by construction. What nothing catches is an agent that **reads** `docs/TODO.md` off disk to find work, or to quote an entry, or to count the Open section — it gets the previous revision with no signal, and in this repository that file is the ledger, the id allocator and the work queue at once. The one-line cure is `git show HEAD:<path> > <path>` after the commit; the question is whether `agent-commit.sh` should do it for paths whose worktree copy is byte-identical to the revision it just replaced (i.e. where no sibling edit can be lost), or whether the runbook should simply say to do it by hand.
 ## Done
+
+- [T-1132] **CLOSED 2026-09-13 (written by `calsettings`, verified and landed by `calsettings3`) —
+  both calendar settings surfaces commit the link before they record having seen the calendar, and a
+  refusal is a sentence on the surface rather than a `print` into a log nobody reads.** Landed in
+  `25e787e`.
+  New `CadenceCalendarLinkCommit` (`Cadence/Shared/`) writes one list's `linkedCalendarID` through
+  `CadencePendingChangePersistence.commitEdit` and puts the previous identifier back when the store
+  refuses — a field snapshot, not `rollback()`, which would take whatever else is pending on this
+  app's one `ModelContext`. Both surfaces' `saveCalendarLinks` takes the write as a closure now, and
+  the *shape* of that function is the fix: commit, then set `linkFailureNotice` and **`return` out
+  of the `catch`**, and only past that call `refreshCalendarObservations()`. Eight write sites (four
+  per platform) funnel through one `writeLink(_:toListWith:kind:)` per surface.
+  **Both platforms in the same change, as the ticket required.** The macOS half was the one no part
+  of the save-commit rule could see: `swallowedSave` keys on `try?` over a commit surface, and
+  `do { … } catch { print(…) }` is neither.
+  **The damage ran both ways, so the tests assert the observation set and not the field.**
+  `observing(…)` ends in `∩ linked`, so a refused *link* taught this device a calendar it is not
+  linked to — manufacturing T-624 evidence out of a discarded change — and a refused *unlink* made
+  it forget one it really had seen, silencing a genuinely broken link on the only device that could
+  report it. Both directions are pinned, plus the success path read back from a second
+  `ModelContext` on the same container.
+  **The other two `refreshCalendarObservations()` call sites were measured, not assumed** — the
+  ticket asked for that and the draft had skipped it. `.onAppear` and
+  `.onChange(of: calendarManager.storeVersion)` are clean, for a stronger reason than "they read the
+  store": after this change **no product path leaves a pending `linkedCalendarID` on the shared
+  context at all**. The remaining direct writers are `EditListSheet` (commits through `commitEdit`
+  with a snapshot undo), `CadenceArchiveImportService` (its own `ModelContext`, `rollback()` on
+  failure) and `CadenceListEditSnapshot.restore` (which writes the store's own value back). Before
+  this change they could publish a pending edit, because a refused save left one on the model for
+  the next appearance to find.
+  **Three landed tests were asserting the old shape, and the draft was reported code-complete
+  without them** — the suite was red on all three. `CadenceCalendarLinkHealthTests` counted
+  `linkedCalendarID = ""` twice inside `disconnect`, which writes neither now (the two branches and
+  the count moved to `writeLink`, and "a disconnect writes the *empty* identifier, never a fresh
+  one" is asked of the argument); the app-wide inline-notice census in
+  `CadenceMarkdownImageCommitSurfaceTests` went 65 → 67, one bare notice per platform; and
+  `CadenceRealTreeSweepManifest.txt` was missing the two new sweeps, so
+  `theRealTreeSweepManifestIsExactlyWhatTheScanFinds` was red.
+  The provenance sweep's writer rule got **stricter**, not looser: the settings surfaces assign
+  `linkedCalendarID` nowhere now, so a settings write that skipped the save would be a bare
+  assignment in a view — an offender outright — rather than one a missing mention of
+  `saveCalendarLinks()` had to catch. The funnel is the one ledgered declaration that writes a link
+  and records nothing, and `everyCallerOfTheSharedLinkCommitHandsItToTheSettingsSave` stops that
+  allowance from excusing a future surface that commits and never records; it is also where
+  `Cadence/iOS/` now appears in the reach claim.
+  `CadenceTests`: 4829 tests, `XCODEBUILD_EXIT=65` with the **only** failure
+  `AgentContextBudgetTests.activeAgentGuidesStayCompactAndRouteToReferences`, which is
+  [[T-1208]]'s standing red at HEAD and unrelated. 0 warnings over 1019 Swift compile tasks;
+  `generic/platform=iOS Simulator` builds `XCODEBUILD_EXIT=0`, 0 errors / 0 warnings over 1344.
+
+- [T-1126] **CLOSED 2026-09-13 (written by `calsettings`, verified and landed by `calsettings3`) —
+  every eyebrow in the four remaining macOS settings panes is grouped with the block it names, and
+  the check that says so is positional.** Landed in `52aeeae`.
+  Thirteen `SettingsSectionLabel` + card pairs moved into a
+  `VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock)` inside the
+  pane's existing `spacing: 16` stack: `SettingsCalendarSection` (broken links, Apple calendars,
+  dormant links), `SettingsListsSection` (the six lifecycle branches plus the empty one),
+  `SettingsDataSafetySection` (Available Backups) and `SettingsAboutSection` (Build, and the
+  reference links that were the offender). 10 inside a group, 16 between them — the difference *is*
+  the grouping.
+  **The two the ticket counted as non-offenders were converted anyway, deliberately.** About's
+  "Build" and the inactive-lists pane's empty-branch label are each their stack's first child, so
+  neither sat below anything; leaving them at 16 while their neighbours moved to 10 would replace
+  one inconsistency with another. In `SettingsListsSection` it is load-bearing for a second reason:
+  *which* of the six branches renders first depends on the user's data, so "first child, nothing
+  above it" is not a property any one of them has. Converting every eyebrow in a converted pane is
+  also what lets the assertion be `eyebrowsOutsideAGroup(…) == []` rather than a list of exceptions.
+  **The positional check was mutation-tested, which is the whole reason the ticket warned about
+  it.** `theFourRemainingSettingsPanesGroupEveryEyebrowWithTheBlockItNames` reads each pane's own
+  `declarationBody` — three of the four share one file with `SettingsContextsSection`, which
+  [[T-1107]] already converted and which would otherwise vouch for its neighbours. M4 (2026-09-13):
+  move `SettingsSectionLabel(text: CadenceAppReferenceLink.sectionTitle)` out of its grouping stack
+  and above it, leaving About with the same two eyebrows and the same two grouping stacks a
+  count-only assertion would see. It **compiled** — 8 Swift compile tasks, 0 errors, 0 warnings, so
+  not a vacuous run — and the suite went **red**: `XCODEBUILD_EXIT=65`, 5 tests, the *only* failure
+  being that test, naming
+  `stranded → ["SettingsSectionLabel(text: CadenceAppReferenceLink.sectionTitle)"]`. The eyebrow
+  count and the grouping-stack count were both still satisfied while it was red, which is the
+  vacuity the ticket predicted, measured rather than argued. Restored by `cp` and re-run green.
+  `CadenceFieldSection` was not used, for the reason the ticket anticipated: four of these call
+  sites hand in a computed `SettingsCard { … }` property rather than its contents, and converting
+  every site would leave `SettingsSectionLabel` with no callers — which
+  `SettingsSharedVocabularyTests.noneOfTheSevenStacksTheOlderTitledGroupSpelling` anchors its
+  non-vacuity assertion on.
 
 - [T-1131] **CLOSED 2026-09-12 (agent `railnow`, verified and landed by `b10land`) — one now-line, and all three timed canvases draw it.** Landed in `e7ecab9`. The repository owner said to build it, and the recommendation it was built to was this entry's own: reuse the Mac's rule rather than invent a second.
   **It is the Mac's overlay, moved rather than ported.** `TimelineCurrentTimeOverlay`'s body is now
