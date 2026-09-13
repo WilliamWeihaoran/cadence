@@ -101,28 +101,33 @@ struct SettingsDataSafetySection: View {
                 }
             }
 
-            SettingsSectionLabel(text: "Available Backups")
-            SettingsCard {
-                VStack(spacing: 0) {
-                    if backups.isEmpty {
-                        HStack(spacing: 12) {
-                            Image(systemName: "externaldrive")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.dim)
-                            Text("No backups available.")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.dim)
-                            Spacer()
-                        }
-                    } else {
-                        ForEach(Array(backups.prefix(16).enumerated()), id: \.element.id) { index, backup in
-                            StoreBackupRow(
-                                backup: backup,
-                                onReveal: { NSWorkspace.shared.activateFileViewerSelecting([backup.url]) },
-                                onRestore: { pendingRestore = backup }
-                            )
-                            if index < min(backups.count, 16) - 1 {
-                                CadenceRowDivider(leadingInset: 42)
+            // **T-1126.** Grouped with the card it names: it used to sit 16pt below the Backups
+            // card above it and 16pt above the list it labels, which is to say attached to
+            // neither.
+            VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                SettingsSectionLabel(text: "Available Backups")
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        if backups.isEmpty {
+                            HStack(spacing: 12) {
+                                Image(systemName: "externaldrive")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Theme.dim)
+                                Text("No backups available.")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Theme.dim)
+                                Spacer()
+                            }
+                        } else {
+                            ForEach(Array(backups.prefix(16).enumerated()), id: \.element.id) { index, backup in
+                                StoreBackupRow(
+                                    backup: backup,
+                                    onReveal: { NSWorkspace.shared.activateFileViewerSelecting([backup.url]) },
+                                    onRestore: { pendingRestore = backup }
+                                )
+                                if index < min(backups.count, 16) - 1 {
+                                    CadenceRowDivider(leadingInset: 42)
+                                }
                             }
                         }
                     }

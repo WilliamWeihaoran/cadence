@@ -24,25 +24,35 @@ import SwiftUI
 /// data *is* that screen's subject.
 struct SettingsAboutSection: View {
     var body: some View {
+        // **T-1126.** Each eyebrow is grouped with the card it names at
+        // `CadenceSectionLabelMetrics.labelToNamedBlock`; the 16 between the two groups is what
+        // separates the sections. The reference-links eyebrow was the offender — it sat as far
+        // from the Build card above it as from the card it labels — and "Build" is grouped in the
+        // same pass because a pane with one gap for its first heading and another for its second
+        // is the inconsistency the relation exists to remove.
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: "Build")
-            SettingsCard {
-                VStack(spacing: 0) {
-                    CadenceSettingsInfoRow(title: "Version", value: CadenceAppBuildIdentity.version)
-                    CadenceRowDivider()
-                    CadenceSettingsInfoRow(title: "Build", value: CadenceAppBuildIdentity.build)
-                    CadenceRowDivider()
-                    CadenceSettingsInfoRow(title: "Bundle ID", value: CadenceAppBuildIdentity.bundleID)
+            VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                SettingsSectionLabel(text: "Build")
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        CadenceSettingsInfoRow(title: "Version", value: CadenceAppBuildIdentity.version)
+                        CadenceRowDivider()
+                        CadenceSettingsInfoRow(title: "Build", value: CadenceAppBuildIdentity.build)
+                        CadenceRowDivider()
+                        CadenceSettingsInfoRow(title: "Bundle ID", value: CadenceAppBuildIdentity.bundleID)
+                    }
                 }
             }
 
-            SettingsSectionLabel(text: CadenceAppReferenceLink.sectionTitle)
-            SettingsCard {
-                HStack(spacing: 10) {
-                    ForEach(CadenceAppReferenceLink.all) { link in
-                        SettingsAboutLinkButton(link: link)
+            VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                SettingsSectionLabel(text: CadenceAppReferenceLink.sectionTitle)
+                SettingsCard {
+                    HStack(spacing: 10) {
+                        ForEach(CadenceAppReferenceLink.all) { link in
+                            SettingsAboutLinkButton(link: link)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
                 }
             }
         }

@@ -32,12 +32,16 @@ struct SettingsCalendarSection: View {
                 // Above the calendar list, not inside it: these lists have no live calendar to
                 // hang off, which is exactly why they were invisible before T-400.
                 if !missingLinks.isEmpty {
-                    SettingsSectionLabel(text: CadenceCalendarLinkHealth.brokenLinksSectionTitle)
-                    missingLinksCard
+                    VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                        SettingsSectionLabel(text: CadenceCalendarLinkHealth.brokenLinksSectionTitle)
+                        missingLinksCard
+                    }
                 }
 
-                SettingsSectionLabel(text: CadenceCalendarSettingsCopy.appleCalendarsSectionTitle)
-                calendarsCard
+                VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                    SettingsSectionLabel(text: CadenceCalendarSettingsCopy.appleCalendarsSectionTitle)
+                    calendarsCard
+                }
             } else {
                 calendarAccessCard
             }
@@ -49,8 +53,10 @@ struct SettingsCalendarSection: View {
             // purely local fact behind an unrelated question, which is a smaller version of the
             // invisibility the card exists to end.
             if !dormantLinks.isEmpty {
-                SettingsSectionLabel(text: CadenceCalendarLinkHealth.dormantLinksSectionTitle)
-                dormantLinksCard
+                VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                    SettingsSectionLabel(text: CadenceCalendarLinkHealth.dormantLinksSectionTitle)
+                    dormantLinksCard
+                }
             }
         }
         .onAppear { refreshCalendarObservations() }
@@ -671,40 +677,58 @@ struct SettingsListsSection: View {
                 // The eyebrow is half of T-600(b) here: every other branch of this pane names
                 // the group it is showing, and the empty one — the only branch a reader with no
                 // inactive lists ever sees — named nothing.
-                SettingsSectionLabel(text: CadenceSettingsEmptyStateCopy.inactiveListsSectionTitle)
-                SettingsCard {
-                    CadenceSettingsNoticeRow(
-                        systemImage: "archivebox",
-                        title: CadenceSettingsEmptyStateCopy.inactiveListsTitle,
-                        detail: CadenceSettingsEmptyStateCopy.inactiveListsSubtitle
-                    ) {
-                        EmptyView()
+                VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                    SettingsSectionLabel(text: CadenceSettingsEmptyStateCopy.inactiveListsSectionTitle)
+                    SettingsCard {
+                        CadenceSettingsNoticeRow(
+                            systemImage: "archivebox",
+                            title: CadenceSettingsEmptyStateCopy.inactiveListsTitle,
+                            detail: CadenceSettingsEmptyStateCopy.inactiveListsSubtitle
+                        ) {
+                            EmptyView()
+                        }
                     }
                 }
             } else {
+                // **T-1126.** Every branch here is grouped, including whichever one happens to
+                // render first: which of the six is first depends on the user's data, so "this
+                // eyebrow is the stack's first child and has nothing above it" is not a property
+                // any one of them has.
                 if !completedAreas.isEmpty {
-                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.completedAreas)
-                    lifecycleCard(areas: completedAreas)
+                    VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                        SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.completedAreas)
+                        lifecycleCard(areas: completedAreas)
+                    }
                 }
                 if !archivedAreas.isEmpty {
-                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedAreas)
-                    lifecycleCard(areas: archivedAreas)
+                    VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                        SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedAreas)
+                        lifecycleCard(areas: archivedAreas)
+                    }
                 }
                 if !completedProjects.isEmpty {
-                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.completedProjects)
-                    lifecycleCard(projects: completedProjects)
+                    VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                        SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.completedProjects)
+                        lifecycleCard(projects: completedProjects)
+                    }
                 }
                 if !archivedProjects.isEmpty {
-                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedProjects)
-                    lifecycleCard(projects: archivedProjects)
+                    VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                        SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedProjects)
+                        lifecycleCard(projects: archivedProjects)
+                    }
                 }
                 if !pausedProjects.isEmpty {
-                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.pausedProjects)
-                    lifecycleCard(projects: pausedProjects)
+                    VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                        SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.pausedProjects)
+                        lifecycleCard(projects: pausedProjects)
+                    }
                 }
                 if !cancelledProjects.isEmpty {
-                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.cancelledProjects)
-                    lifecycleCard(projects: cancelledProjects)
+                    VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                        SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.cancelledProjects)
+                        lifecycleCard(projects: cancelledProjects)
+                    }
                 }
             }
         }

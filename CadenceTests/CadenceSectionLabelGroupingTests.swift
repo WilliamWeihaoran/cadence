@@ -17,6 +17,8 @@ struct CadenceSectionLabelGroupingTests {
     private static let fieldRowsFile = "Cadence/Shared/Components/CadenceFieldRows.swift"
     private static let contextsFile = "Cadence/macOS/Views/SettingsListManagementSections.swift"
     private static let goalSheetFile = "Cadence/macOS/Sheets/CreateGoalSheet.swift"
+    private static let dataSafetyFile = "Cadence/macOS/Views/SettingsDataSafetySection.swift"
+    private static let aboutFile = "Cadence/macOS/Views/SettingsAboutSection.swift"
     private static let groupOpener = "CadenceSectionLabelMetrics.labelToNamedBlock"
 
     /// The constant has one definition and the shared titled group reads it, so a call site that
@@ -85,6 +87,52 @@ struct CadenceSectionLabelGroupingTests {
             CadenceSourceScan.matchCount("VStack\\(alignment: \\.leading, spacing: 6\\)", in: body) == 0,
             "a field group in the goal sheet still spells its own gap"
         )
+    }
+
+    /// **T-1126.** The four panes that still hand-stacked the same pair, one positional check each.
+    ///
+    /// Per pane rather than per file, and positional rather than counted, for the reason the
+    /// detector's own note gives: a file's count of grouping stacks matching its count of labels is
+    /// satisfied by two labels inside one group. `declarationBody` is what makes "per pane" mean
+    /// anything here — three of these panes share `SettingsListManagementSections.swift` with
+    /// `SettingsContextsSection`, which T-1107 already converted and which would otherwise vouch
+    /// for its neighbours.
+    ///
+    /// **Two eyebrows deliberately in scope that the ticket counted as non-offenders**: Settings →
+    /// About's "Build" and the inactive-lists pane's empty-branch label are each their stack's
+    /// first child, so neither sat below anything. They are grouped anyway, because a pane that
+    /// draws its first heading 16pt from its card and its second 10pt from theirs has replaced one
+    /// inconsistency with another. Every eyebrow in a converted pane is grouped; that is what makes
+    /// `eyebrowsOutsideAGroup` the whole assertion rather than a list of exceptions.
+    @Test func theFourRemainingSettingsPanesGroupEveryEyebrowWithTheBlockItNames() throws {
+        let listManagement = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.contextsFile))
+        let dataSafety = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.dataSafetyFile))
+        let about = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.aboutFile))
+
+        // (declaration, source, eyebrows the pane draws). The count is non-vacuity — it says the
+        // scan found the pane it names — and the positional sweep below is the rule.
+        let panes: [(declaration: String, code: String, eyebrows: Int)] = [
+            ("struct SettingsCalendarSection: View", listManagement, 3),
+            ("struct SettingsListsSection: View", listManagement, 7),
+            ("struct SettingsDataSafetySection: View", dataSafety, 1),
+            ("struct SettingsAboutSection: View", about, 2)
+        ]
+
+        for pane in panes {
+            let body = try #require(
+                CadenceSourceScan.declarationBody(pane.declaration, in: pane.code),
+                "non-vacuity: \(pane.declaration) was not found"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("SettingsSectionLabel\\(", in: body) == pane.eyebrows,
+                "\(pane.declaration) draws a different number of eyebrows than this check was written against"
+            )
+            let stranded = Self.eyebrowsOutsideAGroup(in: body, drawnBy: "SettingsSectionLabel(")
+            #expect(
+                stranded.isEmpty,
+                "\(pane.declaration): eyebrow(s) still stacked as a sibling of the section stack: \(stranded.joined(separator: " | "))"
+            )
+        }
     }
 
     /// The lines that draw an eyebrow without a grouping stack opening directly above them.
