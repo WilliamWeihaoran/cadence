@@ -93,7 +93,17 @@ nonisolated enum CadenceDefaults {
     ///
     /// Resolved once: the argument domain cannot change while the process runs, and a `lazy static`
     /// keeps the two readers from disagreeing halfway through a launch.
-    static let store: UserDefaults = resolvedStore()
+    ///
+    /// `nonisolated(unsafe)` since [[T-1170]] put this file in `CadenceMCPServer`'s Sources phase,
+    /// and it is the target asymmetry `CadenceMCPServer/AGENTS.md` exists to warn about rather than
+    /// a new hazard: that target is the only one on Swift 6 **without**
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so a `static let` of a non-`Sendable` type is an
+    /// error there and nothing at all in the app or the widgets. Measured: this line compiled clean
+    /// in a 1,018-task app build and failed `-scheme CadenceMCPServer` at `:96:16` with
+    /// *"static property 'store' is not concurrency-safe"*. `UserDefaults` documents itself as
+    /// thread-safe, and this is a `let` bound once before any concurrency starts, so the `unsafe`
+    /// is an annotation rather than a claim being taken on trust.
+    nonisolated(unsafe) static let store: UserDefaults = resolvedStore()
 
     /// The resolution, with the argument-domain read handed in so a test can drive it.
     static func resolvedStore(agentID: String? = UserDefaults.standard.string(forKey: suiteNameArgumentKey)) -> UserDefaults {
