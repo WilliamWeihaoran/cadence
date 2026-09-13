@@ -514,6 +514,12 @@ Which path form to use:
   anyone edited can be lost, and says it did. When it is not — somebody's hunks are in it — it names
   the path on stderr and leaves it alone: **read `git show HEAD:<path>`, not the file on disk**, and
   re-sync with `git show HEAD:<path> > <path>` once those hunks are accounted for.
+- **Name your `-F` message file after yourself, never `msg.txt`** (T-1222). The session scratchpad is
+  ONE directory shared by every agent in the session, and `-F` reads the file at commit time: a
+  sibling writing its own `msg.txt` there replaces yours with nothing to say the bytes changed under
+  you. Measured 2026-09-13 — `938cdb7` carries one agent's diff under another agent's subject line,
+  and the same directory held `msg2.txt` … `msg5.txt` from three agents at once. `msg-<agent>-<ticket>.txt`
+  costs nothing; so does reading back `git log -1 --format=%s` after a commit that used `-F`.
 - **A `[[T-n]]` link is an allocation too** (T-1206). The ledger *is* the id allocator, and it is read
   top-down for `- [T-n]` entries, so an id that exists only inside another entry's prose is invisible
   to whoever computes "next free" — `T-1039` stood as a link with nothing behind it for a week, and
