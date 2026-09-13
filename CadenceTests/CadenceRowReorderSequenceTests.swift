@@ -88,6 +88,10 @@ struct CadenceRowReorderSequenceTests {
                 droppedID: dropped.id,
                 targetID: target.id,
                 scopeTasks: displayed,
+                // The fixture is one list and nothing is hidden, so the span is the slice's own
+                // set — stated rather than defaulted, because T-1175 is precisely the case where
+                // those two differ and a test that cannot say which it means cannot see it.
+                spanTasks: tasks,
                 modelContext: modelContext
             )
         )
@@ -144,6 +148,10 @@ struct CadenceRowReorderSequenceTests {
                 droppedID: dropped.id,
                 targetID: target.id,
                 scopeTasks: displayed,
+                // The fixture is one list and nothing is hidden, so the span is the slice's own
+                // set — stated rather than defaulted, because T-1175 is precisely the case where
+                // those two differ and a test that cannot say which it means cannot see it.
+                spanTasks: tasks,
                 modelContext: modelContext
             )
         )
@@ -165,6 +173,8 @@ struct CadenceRowReorderSequenceTests {
                 tasks.taskSorted(by: .date, direction: .ascending).sorted { $0.order < $1.order },
                 moving: dropped,
                 before: target,
+                spanning: tasks,
+                ofList: CadenceTaskDropSupport.containerKey(for: .inbox),
                 in: modelContext
             )
         )
@@ -237,6 +247,10 @@ struct CadenceRowReorderSequenceTests {
                 droppedID: dropped.id,
                 targetID: target.id,
                 scopeTasks: displayed,
+                // The fixture is one list and nothing is hidden, so the span is the slice's own
+                // set — stated rather than defaulted, because T-1175 is precisely the case where
+                // those two differ and a test that cannot say which it means cannot see it.
+                spanTasks: tasks,
                 modelContext: modelContext
             )
         )
@@ -271,6 +285,10 @@ struct CadenceRowReorderSequenceTests {
                 droppedID: dropped.id,
                 targetID: target.id,
                 scopeTasks: displayed,
+                // The fixture is one list and nothing is hidden, so the span is the slice's own
+                // set — stated rather than defaulted, because T-1175 is precisely the case where
+                // those two differ and a test that cannot say which it means cannot see it.
+                spanTasks: tasks,
                 modelContext: modelContext
             )
         )
@@ -297,6 +315,10 @@ struct CadenceRowReorderSequenceTests {
                 droppedID: dropped.id,
                 targetID: target.id,
                 scopeTasks: displayed,
+                // The fixture is one list and nothing is hidden, so the span is the slice's own
+                // set — stated rather than defaulted, because T-1175 is precisely the case where
+                // those two differ and a test that cannot say which it means cannot see it.
+                spanTasks: tasks,
                 modelContext: modelContext
             )
         )

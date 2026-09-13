@@ -104,10 +104,15 @@ struct CadenceRowReorderSliceSpanTests {
 
     // MARK: - Do orders collide?
 
-    /// **MEASURED.** Yes, and inside one container. A drop on a list's Tasks tab renumbers
-    /// `openTasks(from: tasks)` from 0, and the list's finished tasks are not in that array, so they
-    /// keep the orders the renumber has just handed out again.
-    @Test func adropOnAListsTasksTabHandsItsFinishedTasksOrdersTheOpenOnesNowAlsoHold() throws {
+    /// **MEASURED, and fixed by [[T-1175]].** They did, and inside one container: a drop on a
+    /// list's Tasks tab renumbered `openTasks(from: tasks)` from 0, and the list's finished tasks
+    /// were not in that array, so they kept the orders the renumber had just handed out again.
+    ///
+    /// The tab is the smallest surface where the **visible slice is a strict subset of the
+    /// sequence the numbering spans**, which is the whole of what T-1175 is about and the thing a
+    /// test over a slice equal to its span cannot see. The renumber now spans the list, so the two
+    /// finished rows are numbered with the open ones and nothing collides.
+    @Test func adropOnAListsTasksTabNumbersItsFinishedRowsIntoTheSameSequence() throws {
         let modelContext = ModelContext(try container())
         let project = Project(name: "Work")
         modelContext.insert(project)
@@ -132,23 +137,31 @@ struct CadenceRowReorderSliceSpanTests {
                 droppedID: try #require(open.last).id,
                 targetID: try #require(open.first).id,
                 scopeTasks: CadenceTaskQuerySupport.openTasks(from: all),
+                spanTasks: all,
                 modelContext: modelContext
             )
         )
 
-        #expect(open.map(\.order) == [1, 2, 0], "the open slice was not renumbered from 0")
-        #expect(done.map(\.order) == [0, 1], "a finished task was written by a drop that never named it")
+        // The two finished rows keep the places they held — a drag among the open rows cannot
+        // move a row past one the screen was not showing — and they are numbered rather than left
+        // holding orders the open rows have just been given again.
+        #expect(done.map(\.order) == [0, 1], "the finished rows were moved by a drag that never named them")
+        #expect(open.map(\.order) == [3, 4, 2], "the renumber stopped at the edge of the visible slice")
+        #expect(customOrder(all) == ["Done A", "Done B", "Open C", "Open A", "Open B"])
 
         let collisions = Dictionary(grouping: all, by: \.order).filter { $0.value.count > 1 }
-        #expect(collisions.keys.sorted() == [0, 1])
-        #expect(collisions[0]?.count == 2)
-        #expect(collisions[1]?.count == 2)
+        #expect(collisions.isEmpty, "the renumber left rows of one list holding the same order")
+        #expect(Set(all.map(\.order)) == [0, 1, 2, 3, 4], "the list is not one 0…n sequence")
     }
 
-    /// **MEASURED.** The renumber writes no row outside the slice — which is both why the collision
-    /// happens and why it is bounded. A task in another list, and a task in the same list held back
-    /// by the tab's filter, come out of the commit holding the order they went in with.
-    @Test func therenumberWritesNoRowOutsideTheSliceItWasHanded() throws {
+    /// **Where the renumber stops, after [[T-1175]]: at the edge of the *list*, not the edge of
+    /// the slice.** The two outsiders in this fixture were indistinguishable before — both came out
+    /// of the commit holding the order they went in with — and they are the two halves of the
+    /// decision. The row in another list is still untouched, because `order` is a per-list
+    /// arrangement and [[T-1119]] settled that a drop may not write another list's. The row in the
+    /// *same* list that the tab's filter held back is now written, because it is inside the
+    /// sequence the drop is renumbering and leaving it out is what made the orders collide.
+    @Test func therenumberSpansTheWholeListAndStopsAtItsEdge() throws {
         let modelContext = ModelContext(try container())
         let work = Project(name: "Work")
         let home = Project(name: "Home")
@@ -170,29 +183,39 @@ struct CadenceRowReorderSliceSpanTests {
                 droppedID: try #require(slice.last).id,
                 targetID: try #require(slice.first).id,
                 scopeTasks: slice,
+                spanTasks: outsiders + slice,
                 modelContext: modelContext
             )
         )
 
         #expect(slice.map(\.order) == [1, 0])
-        #expect(outsiders.map(\.order) == [7, 8], "a row outside the slice was renumbered")
+        #expect(outsiders[0].order == 7, "a row in another list was renumbered by this drop")
+        #expect(outsiders[1].order == 2, "a row of the dragged row's own list was left out of its sequence")
+        #expect(
+            customOrder(outsiders + slice) == ["Slice B", "Slice A", "Same list, finished", "Other list"],
+            "the list did not come out of the drop as one 0…n sequence"
+        )
     }
 
     // MARK: - Does a later renumber undo an earlier one?
 
-    /// **MEASURED.** Yes, and it does not need the two screens to be *sorted* differently — only
-    /// to *slice* differently.
+    /// **MEASURED, and fixed by [[T-1175]].** It did, and it did not need the two screens to be
+    /// *sorted* differently — only to *slice* differently.
     ///
     /// The user arranges four rows on the list's Tasks tab, dragging Delta to the top. Then, on
     /// Today, they drag Charlie above Bravo — the only two rows that list puts on the day, and a
     /// one-place move on the tab. Today's group is a two-row slice, so it renumbers to `0, 1` over
     /// the orders the tab arrangement had just given to Delta and Alpha.
     ///
-    /// Two things the user did not ask for come out of that. **Delta, which they deliberately
-    /// dragged to the top and then never touched, is no longer at the top.** And **Charlie, which
-    /// they asked to move up one place, is now first** — it travelled three places, past two rows
-    /// that were not in the slice and not on the screen.
-    @Test func asecondDropOnASmallerSliceOverwritesTheArrangementTheFirstOneMade() throws {
+    /// Two things the user did not ask for used to come out of that. **Delta, which they
+    /// deliberately dragged to the top and then never touched, was no longer at the top.** And
+    /// **Charlie, which they asked to move up one place, was first** — it travelled three places,
+    /// past two rows that were not in the slice and not on the screen.
+    ///
+    /// The second drop's slice is a **strict subset** of the sequence it renumbers, which is the
+    /// shape this whole ticket is about: the renumber now spans the list, the two rows outside the
+    /// Today group keep the places the first drag gave them, and the one-place move is one place.
+    @Test func asecondDropOnASmallerSliceKeepsTheArrangementTheFirstOneMade() throws {
         let modelContext = ModelContext(try container())
         let project = Project(name: "Work")
         modelContext.insert(project)
@@ -216,6 +239,7 @@ struct CadenceRowReorderSliceSpanTests {
                 droppedID: delta.id,
                 targetID: alpha.id,
                 scopeTasks: CadenceTaskQuerySupport.openTasks(from: all),
+                spanTasks: all,
                 modelContext: modelContext
             )
         )
@@ -238,6 +262,7 @@ struct CadenceRowReorderSliceSpanTests {
                 droppedID: charlie.id,
                 targetID: bravo.id,
                 scopeTasks: todaySlice,
+                spanTasks: all,
                 modelContext: modelContext
             )
         )
@@ -245,29 +270,31 @@ struct CadenceRowReorderSliceSpanTests {
         // On Today the gesture did exactly what was asked.
         #expect(customOrder([bravo, charlie]) == ["Charlie", "Bravo"])
 
-        // Charlie and Bravo took 0 and 1 — the orders Delta and Alpha were holding.
-        #expect(charlie.order == 0)
-        #expect(bravo.order == 1)
+        // And the two rows the Today group never held keep the places the first drag gave them.
         #expect(delta.order == 0)
         #expect(alpha.order == 1)
+        #expect(charlie.order == 2)
+        #expect(bravo.order == 3)
+        #expect(Set(all.map(\.order)).count == 4, "the second drop left two rows holding one order")
 
-        // And this is what the Tasks tab shows now. Every row has moved, from a drag made on a
-        // different screen over two of them.
-        #expect(customOrder(all) == ["Charlie", "Delta", "Alpha", "Bravo"])
-        #expect(customOrder(all).first == "Charlie", "the one-place move on Today travelled one place")
-        #expect(customOrder(all).first != "Delta", "the row the user dragged to the top is still at the top")
+        // And this is what the Tasks tab shows now: the first drag's arrangement, with the one
+        // swap the second drag asked for.
+        #expect(customOrder(all) == ["Delta", "Alpha", "Charlie", "Bravo"])
+        #expect(customOrder(all).first == "Delta", "the row the user dragged to the top left it")
     }
 
     // MARK: - Can the user see it?
 
-    /// **MEASURED.** Yes, on a screen the drag was not made on. Nothing is dragged on the list's
-    /// Tasks tab at all here: the user's only gesture is on Today, and it moves a row on the tab
-    /// that Today never displayed.
+    /// **MEASURED, and fixed by [[T-1175]].** It did, on a screen the drag was not made on.
+    /// Nothing is dragged on the list's Tasks tab at all here: the user's only gesture is on Today,
+    /// and it used to move a row on the tab that Today never displayed.
     ///
-    /// This is the answer to the ticket's "confirmed by reading, not observed in use", and it is
-    /// sharper than the "quiet interleaving" it predicted: the interleave is deterministic, but the
-    /// *displacement* is not quiet — an untouched row changes places with another untouched row.
-    @Test func atodayDropMovesARowOnTheListsTasksTabThatTodayNeverShowed() throws {
+    /// This was the answer to the ticket's "confirmed by reading, not observed in use", and it is
+    /// sharper than the "quiet interleaving" it predicted: the interleave was deterministic, but the
+    /// *displacement* was not quiet — an untouched row changed places with another untouched row.
+    /// Today's group is a **strict subset** of the list it is drawn from, so the drop now renumbers
+    /// the list and the two rows the group never held stay where they were.
+    @Test func atodayDropLeavesTheRowsItsOwnGroupNeverHeld() throws {
         let modelContext = ModelContext(try container())
         let project = Project(name: "Work")
         modelContext.insert(project)
@@ -299,6 +326,7 @@ struct CadenceRowReorderSliceSpanTests {
                 droppedID: try #require(rows.last).id,
                 targetID: rows[2].id,
                 scopeTasks: todaySlice,
+                spanTasks: rows,
                 modelContext: modelContext
             )
         )
@@ -306,19 +334,18 @@ struct CadenceRowReorderSliceSpanTests {
         // On Today the gesture did exactly what was asked.
         #expect(customOrder(Array(rows[2...])) == ["Today late", "Today early"])
 
-        // On the list's Tasks tab, which the user was not looking at, the sequence is different.
-        // "Today late" was renumbered to 0 and now ties with "Unscheduled first"; "Today early"
-        // was renumbered to 1 and now ties with "Unscheduled second". Both ties are resolved by
-        // `createdAt`, so "Unscheduled second" — a row the user never dragged and which Today
-        // never displayed — has been pushed from second place to third.
+        // On the list's Tasks tab, which the user was not looking at, the only change is the one
+        // the user made. "Today late" and "Today early" swapped; the two unscheduled rows, which
+        // Today never displayed, hold the places and the orders they held before.
         let after = customOrder(rows)
-        #expect(after == ["Unscheduled first", "Today late", "Unscheduled second", "Today early"])
-        #expect(after != before)
+        #expect(after == ["Unscheduled first", "Unscheduled second", "Today late", "Today early"])
+        #expect(after != before, "non-vacuity: the drop the user did make changed nothing either")
         #expect(before.firstIndex(of: "Unscheduled second") == 1)
         #expect(
-            after.firstIndex(of: "Unscheduled second") == 2,
-            "a row the user never dragged, and which Today never displayed, did not move"
+            after.firstIndex(of: "Unscheduled second") == 1,
+            "a row the user never dragged, and which Today never displayed, moved"
         )
+        #expect(Set(rows.map(\.order)) == [0, 1, 2, 3], "the list is not one 0…n sequence")
     }
 
     /// **MEASURED.** The kanban card drop has the same shape through a different commit. One
@@ -348,6 +375,8 @@ struct CadenceRowReorderSliceSpanTests {
                 column,
                 moving: movingCard,
                 before: landingCard,
+                spanning: other + column,
+                ofList: CadenceTaskDropSupport.containerKey(for: .project(work.id)),
                 in: modelContext
             )
         )
@@ -421,6 +450,7 @@ struct CadenceRowReorderSliceSpanTests {
                 droppedID: homeLate.id,
                 targetID: workToday.id,
                 scopeTasks: section,
+                spanTasks: all,
                 modelContext: modelContext
             )
         )
@@ -476,12 +506,182 @@ struct CadenceRowReorderSliceSpanTests {
                 droppedID: try #require(rows.last).id,
                 targetID: try #require(rows.first).id,
                 scopeTasks: section,
+                spanTasks: rows,
                 modelContext: modelContext
             ),
             "a drop with nothing to write is not a refusal"
         )
 
         #expect(rows.map(\.order) == [0, 1, 2], "a drop that moved the row past none of its siblings wrote anyway")
+    }
+
+    // MARK: - T-1175: the span is the list, not the slice
+
+    /// **The rule the widening is built on: a drag among visible rows never moves one of them past
+    /// a row the screen was not showing.** `wholeSequence` is read directly here because the
+    /// property is about *positions* and is invisible in a `customOrder` reading, where a hidden
+    /// row that moved one place and a hidden row that did not both come out somewhere plausible.
+    ///
+    /// The list is `Hidden A, Visible A, Hidden B, Visible B, Hidden C`. The slice — the two
+    /// visible rows — comes back reversed, and the three hidden rows are still first, third and
+    /// fifth. The alternative rules both fail it: appending the hidden rows would put them last,
+    /// and resequencing the whole list from the drop would let a visible row overtake `Hidden B`.
+    @Test func thewholeSequenceLeavesEveryRowTheSliceDoesNotHoldWhereItWas() throws {
+        let modelContext = ModelContext(try container())
+        let project = Project(name: "Work")
+        modelContext.insert(project)
+
+        let hiddenA = task("Hidden A", order: 0, project: project, in: modelContext)
+        let visibleA = task("Visible A", order: 1, project: project, in: modelContext)
+        let hiddenB = task("Hidden B", order: 2, project: project, in: modelContext)
+        let visibleB = task("Visible B", order: 3, project: project, in: modelContext)
+        let hiddenC = task("Hidden C", order: 4, project: project, in: modelContext)
+        let list = [hiddenA, visibleA, hiddenB, visibleB, hiddenC]
+        try modelContext.save()
+
+        let sequence = CadenceRowReorderSpan.wholeSequence(
+            resequencing: [visibleB, visibleA],
+            within: list,
+            ofList: CadenceTaskQuerySupport.listGroupKey(for: visibleA)
+        )
+        #expect(
+            sequence.map(\.title) == ["Hidden A", "Visible B", "Hidden B", "Visible A", "Hidden C"],
+            "a hidden row changed places with a row the drag never named"
+        )
+        #expect(sequence.count == list.count, "the widening dropped or duplicated a row of the list")
+    }
+
+    /// **The span is one list, and a row of another is not in it** — the [[T-1119]] half, asked of
+    /// the widening rather than of the narrowing. A universe of two lists comes back as the one the
+    /// key names, so widening the *write* cannot undo the decision that a drop writes one list.
+    @Test func thewholeSequenceTakesOnlyTheListItsKeyNames() throws {
+        let modelContext = ModelContext(try container())
+        let work = Project(name: "Work")
+        let home = Project(name: "Home")
+        modelContext.insert(work)
+        modelContext.insert(home)
+
+        let workRows = [
+            task("Work A", order: 0, project: work, in: modelContext),
+            task("Work B", order: 1, project: work, done: true, in: modelContext)
+        ]
+        let homeRows = [
+            task("Home A", order: 0, project: home, in: modelContext),
+            task("Home B", order: 1, project: home, in: modelContext)
+        ]
+        try modelContext.save()
+
+        let sequence = CadenceRowReorderSpan.wholeSequence(
+            resequencing: [workRows[0]],
+            within: workRows + homeRows,
+            ofList: CadenceTaskQuerySupport.listGroupKey(for: workRows[0])
+        )
+        #expect(sequence.map(\.title) == ["Work A", "Work B"], "the widening reached a list the drop was not in")
+        #expect(
+            !sequence.contains(where: { homeRows.map(\.id).contains($0.id) }),
+            "a row of another list is inside the sequence this drop renumbers"
+        )
+    }
+
+    /// **A card arriving from another column is kept**, which is the one way a slice can hold a row
+    /// the span does not. `KanbanBoardSupport.reorder` files the card into the destination column
+    /// inside the same commit, so at the moment this is asked the card's own list is still the one
+    /// it is leaving — and a widening that took only the rows it recognised would drop the dragged
+    /// card out of the sequence and leave it holding its old `order`.
+    @Test func thewholeSequenceKeepsACardTheDestinationListDoesNotHoldYet() throws {
+        let modelContext = ModelContext(try container())
+        let work = Project(name: "Work")
+        let home = Project(name: "Home")
+        modelContext.insert(work)
+        modelContext.insert(home)
+
+        let destination = [
+            task("Work A", order: 0, project: work, in: modelContext),
+            task("Work B", order: 1, project: work, done: true, in: modelContext)
+        ]
+        let arriving = task("Home A", order: 9, project: home, in: modelContext)
+        try modelContext.save()
+
+        let sequence = CadenceRowReorderSpan.wholeSequence(
+            resequencing: [arriving, destination[0]],
+            within: destination,
+            ofList: CadenceTaskDropSupport.containerKey(for: .project(work.id))
+        )
+        #expect(sequence.map(\.title) == ["Home A", "Work A", "Work B"], "the arriving card fell out of the sequence")
+    }
+
+    /// **A refused card drop puts back every row the renumber would have written**, which since
+    /// this ticket is the **list** rather than the column. The undo snapshot had to widen with the
+    /// write: left at the column, a refused drop would leave the rows outside it — this list's
+    /// finished card — holding orders from a drop the store never took.
+    @Test func arefusedCardDropPutsBackEveryRowTheWidenedRenumberTouches() throws {
+        let modelContext = ModelContext(try container())
+        let work = Project(name: "Work")
+        modelContext.insert(work)
+
+        let column = [
+            task("Card A", order: 0, project: work, in: modelContext),
+            task("Card B", order: 1, project: work, in: modelContext)
+        ]
+        let outsideTheColumn = task("Finished", order: 7, project: work, done: true, in: modelContext)
+        try modelContext.save()
+
+        struct Refused: Error {}
+        #expect(
+            !KanbanBoardSupport.reorder(
+                column,
+                // Indexed rather than `#require`d: the column is the literal two rows above, so
+                // both `#require`s were redundant and the compiler said so. The warning baseline
+                // is zero.
+                moving: column[1],
+                before: column[0],
+                spanning: column + [outsideTheColumn],
+                ofList: CadenceTaskDropSupport.containerKey(for: .project(work.id)),
+                in: modelContext,
+                commit: { _ in throw Refused() }
+            ),
+            "a refused commit was reported as a drop that happened"
+        )
+        #expect(column.map(\.order) == [0, 1], "the refused drop left the new order on the column")
+        #expect(
+            outsideTheColumn.order == 7,
+            "the refused drop left a row outside the column holding an order it was never committed"
+        )
+    }
+
+    /// **Every row-drop surface hands in a span, and none of them hands in its own slice.** The
+    /// parameter is not defaulted, so a surface cannot *forget* it — what it can still do is pass
+    /// the array it already had, which compiles, passes every test written over a slice equal to
+    /// its span, and reinstates the whole defect one surface at a time. This reads the five sites
+    /// and names the value each one passes.
+    ///
+    /// Whole-file reads rather than declaration bodies, because one of the five is a closure
+    /// (`TasksPanel`'s `reorderTask:` argument) and a body reader anchored on a prefix that has
+    /// already opened the brace reads the wrong span. Each file holds exactly one such call, which
+    /// the non-vacuity line below asserts rather than assumes.
+    @Test func everyRowDropSurfaceHandsInASpanWiderThanItsSlice() throws {
+        let sites: [(path: String, call: String, span: String)] = [
+            ("Cadence/macOS/Views/TasksPanel.swift", "TasksPanelSupport.reorderTask(", "spanTasks: allTasks"),
+            ("Cadence/macOS/Views/TasksListView.swift", "TasksPanelSupport.reorderTask(", "spanTasks: allTasks"),
+            ("Cadence/macOS/Views/ListDetailComponents.swift", "TasksPanelSupport.reorderTask(", "spanTasks: tasks"),
+            ("Cadence/macOS/Views/KanbanListColumnView.swift", "KanbanBoardSupport.reorder(", "spanning: spanTasks"),
+            ("Cadence/macOS/Views/KanbanSectionColumnView.swift", "KanbanBoardSupport.reorder(", "spanning: spanTasks")
+        ]
+        var checked = 0
+        for site in sites {
+            let source = try CadenceCommitSurfaceScan.scanned(site.path)
+            #expect(
+                source.components(separatedBy: site.call).count == 2,
+                "\(site.path) no longer holds exactly one \(site.call), so this read is about the wrong call"
+            )
+            #expect(source.contains(site.span), "\(site.path) renumbers a slice rather than the sequence it spans")
+            #expect(
+                !source.contains("spanTasks: scopeTasks"),
+                "\(site.path) hands its own slice in as the span, which is the defect T-1175 is about"
+            )
+            checked += 1
+        }
+        #expect(checked == 5, "expected five row-drop surfaces, checked \(checked)")
     }
 
     /// The other four surfaces are one container each, so the rule above is the identity on them —

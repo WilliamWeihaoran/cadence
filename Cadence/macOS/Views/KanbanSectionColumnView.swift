@@ -13,6 +13,10 @@ struct ListSectionKanbanColumn: View {
     let section: TaskSectionConfig
     let tasks: [AppTask]
     let universeTasks: [AppTask]
+    /// The rows the renumber a card drop makes is allowed to span (T-1175). A section column is one
+    /// section of a list, and `order` is a **list's** arrangement, so the other sections' cards are
+    /// inside the sequence this drop renumbers even though they are in other columns.
+    let spanTasks: [AppTask]
     /// The board's active sort, handed down rather than read here (T-1085). This column does not
     /// sort its own cards — `ListSectionsKanbanView.sortedTasksForSection` does, and hands the
     /// result in as `tasks` — so until now the column had no way to answer the one question a card
@@ -359,12 +363,22 @@ struct ListSectionKanbanColumn: View {
     /// refused drop is not left half-applied — the card filed under this column's `sectionName` at
     /// the position it had in its old one. `KanbanBoardSupport.reorder` snapshots every field
     /// either half writes, including `sectionName` and all three relationships.
+    ///
+    /// **`ofList:` is this column's list and not the card's (T-1175).** The renumber spans the
+    /// **destination** list, and `assigning` files the card into it inside this same commit — so
+    /// until that closure has run the card's own `CadenceTaskQuerySupport.listGroupKey` still names
+    /// the list it is leaving. `taskContainerSelection` is what the column knows about itself, and
+    /// it resolves **area before project**, which is the `assigning` closure's own order; the two
+    /// agree on every card either can see, because that closure nils whichever container it does
+    /// not set.
     private func moveTask(_ task: AppTask, before target: AppTask?) -> Bool {
         let columnOrder = tasks.sorted { $0.order < $1.order }
         let reordered = KanbanBoardSupport.reorder(
             columnOrder,
             moving: task,
             before: target,
+            spanning: spanTasks,
+            ofList: CadenceTaskDropSupport.containerKey(for: taskContainerSelection),
             in: modelContext,
             assigning: {
                 if let area {

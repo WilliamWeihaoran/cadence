@@ -157,6 +157,10 @@ struct TasksPanel: View {
                     droppedID: droppedID,
                     targetID: targetID,
                     scopeTasks: scopeTasks,
+                    // A Today group is one list's rows *for one day*, so it is a strict subset of
+                    // the sequence a drop inside it renumbers (T-1175). The page's whole query is
+                    // the span; the dragged row's own list is picked out of it.
+                    spanTasks: allTasks,
                     modelContext: modelContext
                 )
                 reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice

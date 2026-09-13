@@ -71,6 +71,10 @@ struct ListSectionsKanbanView: View {
                                     section: section,
                                     tasks: sectionTasks,
                                     universeTasks: universeTasks ?? tasks,
+                                    // The same array as above, answering a different question: the
+                                    // board's whole list, which is the sequence a card drop in any
+                                    // one of these columns renumbers (T-1175).
+                                    spanTasks: universeTasks ?? tasks,
                                     sortField: sortField,
                                     sortDirection: sortDirection,
                                     area: area,

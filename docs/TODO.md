@@ -5684,24 +5684,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   both arrange rows by hand and use All Tasks. Worth asking the owner for the sentence before
   writing one.
 
-- [T-1175] **Every row renumber still writes 0…n over the visible slice rather than over the sequence it spans.** Filed 2026-09-12 by `b10land` while landing [[T-1119]] — this is [[T-1055]]'s remaining half, which that entry deliberately left and T-1119 narrowed without closing.
-  **What T-1119 did and did not do.** `CadenceRowReorderSpan.ownListSiblings` narrows a drop to
-  **one list**, so a drag on All Tasks no longer rewrites the arrangement of lists the user was not
-  dragging in. It does not **widen** the renumber to all of that list: the surface still hands in
-  its own slice — one Today group, one All Tasks section, a list's *open* tasks, one kanban column
-  — so `CadenceOrderCommit.commit` still writes 0…n over a subset of a sequence that spans more
-  rows than that, which is exactly what that function's own doc comment forbids.
-  **What is left, with T-1055's measurements still valid.** A list's Tasks tab should pass `tasks`
-  rather than `openTasks(from: tasks)`, so every completed and cancelled row stops holding a
-  colliding `order` — a one-argument change. A Today group and a kanban column are each one
-  container already (`CadenceTaskQuerySupport.listGroupKey` groups Today by container; a list
-  column *is* a container), so they should pass the container's tasks rather than the group's.
-  **Why it is one diff and not four.** [[T-884]] spent a ticket removing exactly the disagreement
-  between row surfaces that landing some-but-not-all of these would put back, and the change wants
-  one mutation-tested commit with `CadenceRowReorderSliceSpanTests` extended over each surface.
-  **The symptom is quiet, which is why this is filed rather than urgent:**
-  `TaskOrdering.fallbackPrecedes` gives a total order regardless, so rows interleave between hidden
-  ones rather than anything visibly breaking.
 - [T-1206] **CLOSED 2026-09-13 (agent `ledgerguard`) — enforced at zero NEW rather than at one, because the reading is a delta and a delta needs no floor.** Originally filed as: **`LEDGER-ID-UNFILED` implements half of what its own header claims: an id that lives only in another entry's `[[prose link]]` is invisible to it.** Filed 2026-09-12 by `ledgerheal2` while closing [[T-1123]]. The guard's header in `scripts/agent-commit.sh` says an id *"that exists only in a commit message, **or only in another entry's prose**, is invisible to the next agent computing 'next free'"* and then reads the commit message alone. Both halves are real and the second one has a body count: `T-1039` was a `[[link]]` beside [[T-1037]] with nothing behind it, noticed by [[T-1042]]'s closure and left standing for a week, and `T-1117` was handed out inside [[T-624]]'s closure with no stub — which is the incident T-1106 itself cites. **MEASURED at `60c69b6`:** the two ledgers hold **478** distinct `[[T-n]]` links, of which **29** resolve to no formal `- [T-n]` entry anywhere. This commit's recovery clears seven of them, leaving **22**. **Enforceable at 1, not at 0**, and that is the decision to make first: 21 of the 22 are `T-441` or below and sit inside [[T-462]]'s deliberately un-backfilled deficit, so a guard would need a floor — and a floor is a magic number that rots. The one above the line is `T-1069`, filed as its own problem below. The cheap reading is: for each `[[T-n]]` in a ledger this commit stages, require a formal entry somewhere, with the pre-T-462 set declared once. The expensive-but-honest alternative is to fix the 21 links rather than exempt them.
   **RE-DERIVED at `b23845d` rather than quoted:** the two ledgers hold **486** distinct `[[T-n]]` links and **22** resolve to no formal `- [T-n]` entry anywhere. 21 are `T-441` or below, inside [[T-462]]'s deliberately un-backfilled deficit; the one above the line is `T-1069`, which appears in no commit message either and is filed as [[T-1221]].
   **THE DECISION DISSOLVES THE CHOICE RATHER THAN TAKING A SIDE.** `LEDGER-LINK-UNFILED` reads a **delta against HEAD**, the way [[T-1072]]'s duplicate guard does and for the same measured reason: only a link THIS commit introduces is read, so the 22 standing ones are HEAD's and stay HEAD's. No floor is declared, no backfill T-462 forbids is demanded, and the guard is enforceable at **zero new** — not at 1. `--unfiled-links <exact,sorted,list>` is there for a historical reference you really are only quoting.
@@ -5735,6 +5717,44 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Not repaired in history, deliberately.** Rewriting a landed commit's message means `update-ref` over a HEAD that siblings are committing onto, which is the one operation this repository's whole commit path exists to avoid; the amend was attempted, declined by the harness, and the record is being corrected where the repository actually keeps its record instead — [[T-1206]], [[T-1207]] and [[T-1209]] each name `938cdb7` and say the subject is not theirs. `git log --grep=T-1206` will not find that commit; the ledger will.
   **Two fixes, and they are independent.** (1) Cheap and immediate: name a message file for the agent and the work (`msg-<agent>-<ticket>.txt`), which `docs/SUBAGENT_RUNBOOK.md` now says. (2) Mechanical, and the one worth arguing about: `agent-commit.sh` could compare the ids its MESSAGE names against the ids whose ledger entries the same commit CHANGES, and refuse when both sets are non-empty and disjoint — this commit's message named `T-1174`/`T-1175` while its ledger hunk rewrote `T-1206`, `T-1207` and `T-1209`, which is as clean a signal as the guard family gets. It needs a replay over history before it lands, because a commit that edits an unrelated entry in passing is an ordinary thing to do.
 ## Done
+
+- [T-1175] **CLOSED 2026-09-13 (written by agent `reorderfeel`, verified and landed by `reorderland`) — a row renumber writes `0…n` over the sequence it spans, not over the slice the screen was showing.** [[T-1055]]'s remaining half, which [[T-1119]] narrowed without closing.
+  **Two arrays, not one wider one, and that is the whole design.** `scopeTasks` is what the user
+  was looking at, so it is what *"put this row above that one"* means; `spanTasks` is where the
+  numbers are allowed to go, so it is what gets written. `CadenceRowReorderSpan.wholeSequence(
+  resequencing:within:ofList:)` joins them: the rows the slice does not hold keep their places —
+  each one is re-emitted after the same number of slice rows that preceded it — so **a drag among
+  visible rows can never move one of them past a row the screen was not showing**. What changes is
+  only that the list then comes out numbered `0…n`, which is what stops a hidden row and a visible
+  one holding the same `order`. It sorts by `TaskOrdering.fallbackPrecedes` rather than `order`
+  alone, because before the fix the collisions were real and `order` alone is therefore not a total
+  order over the rows being repaired.
+  **Five surfaces, one rule.** A list's Tasks tab passes `tasks` beside its `openTasks(from:)`
+  slice; `TasksPanel` and `TasksListView` pass the page's whole `@Query`; both kanban columns pass
+  the board's universe and name the **destination column's** list, because `assigning` refiles the
+  card inside the same commit and until then the card's own `CadenceTaskQuerySupport.listGroupKey`
+  still names the list it is leaving. `spanTasks` is deliberately **not** defaulted: a surface that
+  passed its slice twice would silently reinstate the defect, and
+  `everyRowDropSurfaceHandsInASpanWiderThanItsSlice` reads all five sites and names the value each
+  one passes.
+  **It did not undo [[T-1119]].** A row of another list is in neither function's sequence, and
+  `thewholeSequenceTakesOnlyTheListItsKeyNames` measures that. The card arriving from another
+  column is the one row of the slice the destination list does not hold yet, and it is kept rather
+  than dropped (`thewholeSequenceKeepsACardTheDestinationListDoesNotHoldYet`).
+  **T-1055's four measurements, flipped to the asked-for behaviour**, are the proof:
+  `adropOnAListsTasksTabNumbersItsFinishedRowsIntoTheSameSequence`,
+  `therenumberSpansTheWholeListAndStopsAtItsEdge`,
+  `asecondDropOnASmallerSliceKeepsTheArrangementTheFirstOneMade` and
+  `atodayDropLeavesTheRowsItsOwnGroupNeverHeld` — the last of which is the sharp one: the user's
+  only gesture is on Today, and it used to move a row on a Tasks tab Today never displayed.
+  `arefusedCardDropPutsBackEveryRowTheWidenedRenumberTouches` pins the undo over the widened write,
+  since `CadenceTaskFieldEditCommit` now has to snapshot the list rather than the column.
+  **Measured: the full `-only-testing:CadenceTests` run green at 4838 tests in 405 suites, `XCODEBUILD_EXIT=0`, 0 compile errors, 0 warnings.** Verified by a second agent against the code rather than the report,
+  which caught two things the author's own account did not mention and which are fixed here:
+  `ListSectionKanbanColumn` had grown a `columnContainer` property **character-identical** to the
+  `taskContainerSelection` eight lines above it — and it had taken `moveTask`'s doc comment with it
+  — and `CadenceRowReorderSliceSpanTests` emitted a `'#require(_:_:)' is redundant` warning against
+  a zero-warning baseline, on a `before:` argument whose parameter is already `AppTask?`.
 
 - [T-1226] **CLOSED 2026-09-13 (the coordinator) — the evidence 17 ledger citations rest on is in
   the repository, not only on one disk.** `docs/audits/` had been untracked since it was first

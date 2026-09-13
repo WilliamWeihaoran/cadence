@@ -445,6 +445,10 @@ struct CadenceReorderOffScreenNoticeTests {
                 droppedID: dropped.id,
                 targetID: target.id,
                 scopeTasks: displayed,
+                // The fixture is one list and nothing is hidden, so the span is the slice's own
+                // set — stated rather than defaulted, because T-1175 is precisely the case where
+                // those two differ and a test that cannot say which it means cannot see it.
+                spanTasks: tasks,
                 modelContext: modelContext
             )
         )
@@ -472,6 +476,10 @@ struct CadenceReorderOffScreenNoticeTests {
                 droppedID: dropped.id,
                 targetID: target.id,
                 scopeTasks: displayed,
+                // The fixture is one list and nothing is hidden, so the span is the slice's own
+                // set — stated rather than defaulted, because T-1175 is precisely the case where
+                // those two differ and a test that cannot say which it means cannot see it.
+                spanTasks: tasks,
                 modelContext: modelContext
             )
         )
@@ -521,6 +529,7 @@ struct CadenceReorderOffScreenNoticeTests {
                 droppedID: try #require(rows.last).id,
                 targetID: try #require(rows.first).id,
                 scopeTasks: rows,
+                spanTasks: rows,
                 modelContext: modelContext
             ),
             "a drop with nothing to write is not a refusal"

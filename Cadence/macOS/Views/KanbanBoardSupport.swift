@@ -232,6 +232,23 @@ enum KanbanBoardSupport {
     /// new column at its old position. `CadenceTaskFieldEditCommit` snapshots every one of those
     /// fields on every card it is given, so the undo puts the whole drop back.
     ///
+    /// **`columnTasks` is a column and `spanTasks` is the list it sits in ([[T-1175]]).** A column
+    /// is never the whole `order` sequence: a *list* column draws only
+    /// `activeTasks(from:)`, so its list's finished work is outside it, and a *section* column is
+    /// one section of a list whose other sections number from 0 as well. Renumbering the column
+    /// alone therefore handed its cards the orders cards elsewhere in the same list were already
+    /// holding — the card-drop spelling of what T-1055 measured on the row surfaces.
+    /// `CadenceRowReorderSpan.wholeSequence` widens the write without widening the *move*: cards
+    /// the column does not draw keep their places, and the list comes out numbered `0…n`.
+    ///
+    /// **`listKey` is the destination column's, not the card's.** A card arriving from another
+    /// column is refiled by `assigning` inside this same commit, so until that runs its own
+    /// `CadenceTaskQuerySupport.listGroupKey` still names the list it is leaving. The column knows
+    /// which list it is; the card does not yet.
+    ///
+    /// - Parameter spanTasks: the board's own universe, filtered to `listKey` here. A list board
+    ///   must hand in the store's tasks rather than the board's `activeTasks`, or the finished rows
+    ///   this is about are not in it.
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
     ///   because a `save()` that throws cannot be provoked out of an in-memory container.
     /// - Returns: Whether the drop is in the store. `false` means every card is back where it was
@@ -241,6 +258,8 @@ enum KanbanBoardSupport {
         _ columnTasks: [AppTask],
         moving task: AppTask,
         before target: AppTask?,
+        spanning spanTasks: [AppTask],
+        ofList listKey: String,
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() },
         assigning assign: () -> Void = {}
@@ -252,15 +271,22 @@ enum KanbanBoardSupport {
         } else {
             ordered.append(task)
         }
+        let sequence = CadenceRowReorderSpan.wholeSequence(
+            resequencing: ordered,
+            within: spanTasks,
+            ofList: listKey
+        )
         return withAnimation(kanbanCardReorderAnimation) {
             CadenceTaskFieldEditCommit.commit(
                 task,
-                alsoRestoring: ordered,
+                // The whole sequence, not the column: the undo has to put back every card the
+                // renumber below writes, and since T-1175 that is the list rather than the column.
+                alsoRestoring: sequence,
                 in: modelContext,
                 commit: commit
             ) {
                 assign()
-                for (index, item) in ordered.enumerated() {
+                for (index, item) in sequence.enumerated() {
                     item.order = index
                 }
             }

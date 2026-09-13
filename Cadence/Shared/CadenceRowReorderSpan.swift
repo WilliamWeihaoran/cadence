@@ -22,10 +22,11 @@ import Foundation
 /// renumber and explain it at the drop — they answered, verbatim: *"Reorder within its own list
 /// only."* That is what `ownListSiblings(moving:before:in:)` returns.
 ///
-/// **What this is not.** It does not widen a renumber to the whole container: a surface still hands
-/// in its own slice, and every caller's slice is still smaller than the sequence its numbering
-/// spans — that is T-1055's remaining half, filed as [[T-1175]]. This narrows the write to one
-/// list; it does not yet widen it to all of that list.
+/// **Two questions, and they are orthogonal.** `ownListSiblings` answers **which list** a drop may
+/// write — one, the dragged row's — and `wholeSequence` answers **how much of that list** —
+/// all of it, and not the handful of rows the screen was showing ([[T-1175]], the other half of
+/// [[T-1055]]). Widening the second did not undo the first: a row of another list is not in the
+/// sequence either function returns, and `thewholeSequenceTakesOnlyTheListItsKeyNames` measures it.
 enum CadenceRowReorderSpan {
 
     /// The dropped row's **own list's** rows, in the sequence the drop puts them in — or `nil` when
@@ -69,5 +70,80 @@ enum CadenceRowReorderSpan {
         let before = sorted.filter { CadenceTaskQuerySupport.listGroupKey(for: $0) == key }
         guard before.map(\.id) != after.map(\.id) else { return nil }
         return after
+    }
+
+    /// One list's **whole `order` sequence**, with `slice`'s rows resequenced inside it — what a
+    /// drop must renumber, rather than the handful of rows the screen happened to be showing
+    /// ([[T-1175]], the remaining half of [[T-1055]]).
+    ///
+    /// **The defect this closes.** `CadenceOrderCommit.commit`'s own doc says `ordered` "must be
+    /// the *whole* collection the `order` sequence spans rather than the visible slice", and every
+    /// row surface handed it a slice: a list's Tasks tab handed its **open** rows, a Today group
+    /// handed the rows that list puts on the day, a kanban column handed the cards that column
+    /// draws. Each of those is a strict subset of one list, so a renumber from 0 handed the rows it
+    /// could see the orders the rows it could not see were already holding — measured in
+    /// `CadenceRowReorderSliceSpanTests`, where one drag on Today moved a row on a Tasks tab the
+    /// user was not looking at.
+    ///
+    /// **The rule: the rows the slice does not hold keep their places, and the slice fills the
+    /// places it already occupied.** `held` is the list in its own sequence; each row outside the
+    /// slice is re-emitted after the same number of slice rows that preceded it before the drop, so
+    /// **a drag among visible rows can never move one of them past a row the screen was not
+    /// showing**. What changes is only that the whole list is then numbered `0…n`, which is what
+    /// stops a hidden row and a visible one holding the same `order`.
+    ///
+    /// **It does not decide *which* rows are the list.** `key` is the caller's, because the caller
+    /// is the only one that knows: a row drop's list is the dragged row's own
+    /// (`CadenceTaskQuerySupport.listGroupKey`), and a kanban card drop's is the **destination
+    /// column's** — the card is being refiled into it by the same commit, so its own key is still
+    /// the list it is leaving. A row of `slice` that `universe` does not hold is that card, and it
+    /// is kept rather than dropped.
+    ///
+    /// **`held` is sorted by `TaskOrdering.fallbackPrecedes` and not by `order` alone.** Before this
+    /// fix the collisions were real, so `order` alone is not a total order over the rows being
+    /// repaired, and a `sorted(by:)` over a non-total order is not stable. `fallbackPrecedes` is
+    /// both total and the sequence the custom sort actually displays, so the repair canonicalises
+    /// the arrangement the user was already looking at.
+    static func wholeSequence(
+        resequencing slice: [AppTask],
+        within universe: [AppTask],
+        ofList key: String
+    ) -> [AppTask] {
+        let sliceIDs = Set(slice.map(\.id))
+        let held = universe
+            .filter { CadenceTaskQuerySupport.listGroupKey(for: $0) == key }
+            .sorted(by: TaskOrdering.fallbackPrecedes)
+
+        var anchors: [(row: AppTask, following: Int)] = []
+        var passed = 0
+        for row in held {
+            if sliceIDs.contains(row.id) {
+                passed += 1
+            } else {
+                anchors.append((row, passed))
+            }
+        }
+        // Nothing outside the slice: the slice already *is* the list's sequence, which is what the
+        // four one-container surfaces hand in when their filter happens to hide nothing.
+        guard !anchors.isEmpty else { return slice }
+
+        // `placed` counts only the slice rows the list **already held**, which is what keeps a row
+        // arriving from another column from displacing the anchors: it is not one of the rows
+        // `following` was counted against, so it does not spend one of their places.
+        let heldIDs = Set(held.map(\.id))
+        var sequence: [AppTask] = []
+        var next = 0
+        var placed = 0
+        for anchor in anchors {
+            while next < slice.count, placed < anchor.following {
+                let row = slice[next]
+                sequence.append(row)
+                if heldIDs.contains(row.id) { placed += 1 }
+                next += 1
+            }
+            sequence.append(anchor.row)
+        }
+        sequence.append(contentsOf: slice[next...])
+        return sequence
     }
 }

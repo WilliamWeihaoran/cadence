@@ -12,6 +12,11 @@ struct TaskListKanbanColumn: View {
     let color: Color
     let tasks: [AppTask]
     let universeTasks: [AppTask]
+    /// The rows the renumber a card drop makes is allowed to span — the store's tasks, not the
+    /// board's (T-1175). `universeTasks` answers a different question, "is this a card this board
+    /// may accept", and is deliberately the board's own active tasks; widening *it* would let a
+    /// payload from somewhere else in the app resolve here.
+    let spanTasks: [AppTask]
     let sortField: TaskSortField
     let sortDirection: TaskSortDirection
     let container: TaskContainerSelection
@@ -170,6 +175,8 @@ struct TaskListKanbanColumn: View {
             columnOrder,
             moving: task,
             before: target,
+            spanning: spanTasks,
+            ofList: CadenceTaskDropSupport.containerKey(for: container),
             in: modelContext,
             assigning: { onAssignTask(task) }
         )

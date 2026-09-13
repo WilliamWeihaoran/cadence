@@ -437,6 +437,11 @@ struct TasksListView: View {
             droppedID: droppedID,
             targetID: targetID,
             scopeTasks: scopeTasks,
+            // `allTasks` and not `visibleTaskUniverse` (T-1175): the span is the sequence the
+            // numbering covers, which includes the completed and cancelled rows this page filters
+            // out and the Inbox scope hides. What list it belongs to is decided by the dragged row,
+            // not by this page's scope.
+            spanTasks: allTasks,
             modelContext: modelContext
         )
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice

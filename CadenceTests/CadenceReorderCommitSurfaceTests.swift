@@ -81,6 +81,8 @@ struct CadenceReorderCommitSurfaceTests {
                 [first, second, third],
                 moving: third,
                 before: first,
+                spanning: [first, second, third],
+                ofList: CadenceTaskDropSupport.containerKey(for: .inbox),
                 in: modelContext
             )
         )
@@ -113,6 +115,11 @@ struct CadenceReorderCommitSurfaceTests {
                 [first, second],
                 moving: second,
                 before: first,
+                // The destination column's list, not the card's: `assigning` files it into the
+                // area inside this same commit, so until then its own key still names the Inbox
+                // it is leaving (T-1175).
+                spanning: [first, second],
+                ofList: CadenceTaskDropSupport.containerKey(for: .area(area.id)),
                 in: modelContext,
                 commit: { _ in throw CommitRefused() },
                 assigning: { second.area = area }

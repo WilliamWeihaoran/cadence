@@ -292,15 +292,15 @@ enum TasksPanelSupport {
     /// false — inside a tie band the displayed sequence *is* the `order` sequence. What each
     /// surface does instead is ask `CadenceReorderVisibility` per drop and name the minority case.
     ///
-    /// **`scopeTasks` is still a slice**, and `CadenceOrderCommit.commit` says a renumber should
-    /// span the whole sequence. Every row surface in the app hands it a group or a tab rather than
-    /// a container. T-1055 measured what that costs, in `CadenceRowReorderSliceSpanTests`: rows of
-    /// **one list** end up holding the same `order`, and a drag made on Today moves rows on that
-    /// list's Tasks tab the user never touched. The span four of the five surfaces want is the
-    /// **container** — `CadenceTaskQuerySupport.listGroupKey` groups Today by container and both
-    /// kanban columns sit inside one — and widening the renumber to it is still open, as
-    /// [[T-1175]]. What landed below narrows a drop to **one** list; it does not yet widen it to
-    /// all of that list's rows, so a drop still renumbers the slice it was handed.
+    /// **`scopeTasks` is a slice and `spanTasks` is not, which is [[T-1175]].**
+    /// `CadenceOrderCommit.commit` says a renumber must span the whole sequence, and every row
+    /// surface used to hand it a group or a tab: T-1055 measured what that cost in
+    /// `CadenceRowReorderSliceSpanTests` — rows of **one list** left holding the same `order`, and
+    /// a drag made on Today moving rows on that list's Tasks tab the user never touched. The two
+    /// arrays are two different questions and neither can be dropped. `scopeTasks` is what the user
+    /// was looking at, so it is what "put this row above that one" means; `spanTasks` is where the
+    /// numbers are allowed to go, so it is what gets written. `CadenceRowReorderSpan.wholeSequence`
+    /// puts them together, and the rows `scopeTasks` does not hold keep their places inside it.
     ///
     /// **What *is* decided is how much of that sequence a drop writes ([[T-1119]]), and it is why
     /// this renumbers `CadenceRowReorderSpan.ownListSiblings` rather than the whole group.** On All
@@ -316,6 +316,12 @@ enum TasksPanelSupport {
     /// which is what lets this be one rule at one site rather than a cross-list special case bolted
     /// onto the one panel that has one.
     ///
+    /// - Parameter spanTasks: the widest set of rows the surface knows about — the page's whole
+    ///   `@Query`, or a list detail's own `tasks`. It is filtered to the dragged row's list here, so
+    ///   a caller does not have to work out which container it is dropping into, and it is **not**
+    ///   defaulted: a surface that passed its slice twice would silently reinstate the defect, and
+    ///   a defaulted argument is exactly the kind of check that stops matching its population
+    ///   without failing.
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
     ///   because a `save()` that throws cannot be provoked out of an in-memory container.
     /// - Returns: Whether the new order is in the store. `false` means every row is back where it
@@ -325,6 +331,7 @@ enum TasksPanelSupport {
         droppedID: UUID,
         targetID: UUID,
         scopeTasks: [AppTask],
+        spanTasks: [AppTask],
         modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
@@ -332,10 +339,15 @@ enum TasksPanelSupport {
             moving: droppedID,
             before: targetID,
             in: scopeTasks
-        ) else { return true }
+        ), let dropped = siblings.first(where: { $0.id == droppedID }) else { return true }
+        let sequence = CadenceRowReorderSpan.wholeSequence(
+            resequencing: siblings,
+            within: spanTasks,
+            ofList: CadenceTaskQuerySupport.listGroupKey(for: dropped)
+        )
         return withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
             CadenceOrderCommit.commit(
-                siblings,
+                sequence,
                 readOrder: { $0.order },
                 writeOrder: { $0.order = $1 },
                 in: modelContext,

@@ -216,6 +216,11 @@ struct ListTasksView: View {
             droppedID: droppedID,
             targetID: targetID,
             scopeTasks: CadenceTaskQuerySupport.openTasks(from: tasks),
+            // The tab draws its open rows and files its finished ones under a toggle, so the slice
+            // above is a strict subset of this list — and a renumber of the slice alone handed the
+            // open rows the orders the finished ones were holding (T-1175). `tasks` is this list,
+            // whole.
+            spanTasks: tasks,
             modelContext: modelContext
         )
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice

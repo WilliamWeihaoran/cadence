@@ -26,6 +26,7 @@ struct TaskListsKanbanView: View {
                         color: column.color,
                         tasks: column.tasks,
                         universeTasks: activeTasks,
+                        spanTasks: allTasks,
                         sortField: sortField,
                         sortDirection: sortDirection,
                         container: column.container,
