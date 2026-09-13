@@ -6,3 +6,6 @@ build/
 
 # Per-user Xcode state; the shared schemes live in xcshareddata.
 xcuserdata/
+
+# Python bytecode from the screenshot tooling.
+__pycache__/

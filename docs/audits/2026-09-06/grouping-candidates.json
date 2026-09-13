@@ -1,0 +1,1620 @@
+{
+  "tree": "5aac94d",
+  "scope": "Literal top/bottom padding call sites only; candidates, not semantic grouping pairs. Includes comment hits explicitly marked.",
+  "sites": [
+    {
+      "file": "Cadence/Shared/CadenceTodayLayoutSupport.swift",
+      "line": 208,
+      "source": "/// `.padding(.top, 12)` stands at nine sites across `Cadence/iOS/` against five for `10`, and",
+      "comment": true
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceAccentPalettePicker.swift",
+      "line": 53,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceBoardColumnHeader.swift",
+      "line": 323,
+      "source": ".padding(.top, CadenceBoardColumnHeaderMetrics.topPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceBoardColumnHeader.swift",
+      "line": 324,
+      "source": ".padding(.bottom, CadenceBoardColumnHeaderMetrics.bottomPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceChoicePicker.swift",
+      "line": 235,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceDatePicker.swift",
+      "line": 112,
+      "source": ".padding(.bottom, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceDatePicker.swift",
+      "line": 124,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceDatePicker.swift",
+      "line": 227,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceDatePicker.swift",
+      "line": 228,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceFieldRows.swift",
+      "line": 111,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/Shared/Components/CadenceStartupIssueBanner.swift",
+      "line": 215,
+      "source": ".padding(.top, 14)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSBoardCards.swift",
+      "line": 128,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSBoardCards.swift",
+      "line": 487,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarBoardView.swift",
+      "line": 424,
+      "source": ".padding(.bottom, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+      "line": 241,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+      "line": 243,
+      "source": ".padding(.bottom, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+      "line": 446,
+      "source": ".padding(.bottom, bottomPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarMonthViews.swift",
+      "line": 388,
+      "source": ".padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarSettingsSection.swift",
+      "line": 223,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarSettingsSection.swift",
+      "line": 325,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarSettingsSection.swift",
+      "line": 414,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarSettingsSection.swift",
+      "line": 564,
+      "source": ".padding(.top, 15)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarSettingsSection.swift",
+      "line": 610,
+      "source": ".padding(.top, 5)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarTimelineViews.swift",
+      "line": 574,
+      "source": ".padding(.bottom, iOSCalendarTimelineMetrics.previewInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarTimelineViews.swift",
+      "line": 884,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarTimelineViews.swift",
+      "line": 1012,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCalendarTimelineViews.swift",
+      "line": 1076,
+      "source": ".padding(.top, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCompactTabShell.swift",
+      "line": 212,
+      "source": ".padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCompactTabShell.swift",
+      "line": 213,
+      "source": ".padding(.bottom, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCreateTaskSheet.swift",
+      "line": 134,
+      "source": ".padding(.top, CadenceTaskComposerLayout.contentTopPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSCreateTaskSheet.swift",
+      "line": 135,
+      "source": ".padding(.bottom, CadenceTaskComposerLayout.contentBottomPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSDataResetSettingsSection.swift",
+      "line": 175,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSDataResetSettingsSection.swift",
+      "line": 176,
+      "source": ".padding(.bottom, 28)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSDateJumpTitle.swift",
+      "line": 195,
+      "source": ".padding(.top, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSDateJumpTitle.swift",
+      "line": 196,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSDateJumpTitle.swift",
+      "line": 208,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFeatureComponents.swift",
+      "line": 317,
+      "source": ".padding(.top, padded ? metrics.topPadding : 0)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFeatureComponents.swift",
+      "line": 318,
+      "source": ".padding(.bottom, padded ? metrics.bottomPadding : 0)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFeatureDetailViews.swift",
+      "line": 112,
+      "source": ".padding(.top, isCompact ? 8 : 20)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFeatureDetailViews.swift",
+      "line": 113,
+      "source": ".padding(.bottom, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFeatureDetailViews.swift",
+      "line": 594,
+      "source": ".padding(.top, isCompact ? 8 : 20)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFeatureDetailViews.swift",
+      "line": 595,
+      "source": ".padding(.bottom, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFloatingCreateTaskButton.swift",
+      "line": 106,
+      "source": ".padding(.bottom, iOSCircularAddButton.edgeInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFocusView.swift",
+      "line": 196,
+      "source": ".padding(.top, 18)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSFocusView.swift",
+      "line": 197,
+      "source": ".padding(.bottom, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSGoalAttachListsSheet.swift",
+      "line": 94,
+      "source": ".padding(.bottom, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSInboxRemindersSection.swift",
+      "line": 118,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListDeletionSupport.swift",
+      "line": 293,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListDeletionSupport.swift",
+      "line": 294,
+      "source": ".padding(.bottom, 28)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListDetailView.swift",
+      "line": 175,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListDetailView.swift",
+      "line": 257,
+      "source": ".padding(.top, 14)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListDetailView.swift",
+      "line": 258,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListDetailView.swift",
+      "line": 361,
+      "source": ".padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListEditorViews.swift",
+      "line": 813,
+      "source": ".padding(.bottom, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListSupportViews.swift",
+      "line": 29,
+      "source": ".padding(.top, 14)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListSupportViews.swift",
+      "line": 30,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListSupportViews.swift",
+      "line": 570,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListSupportViews.swift",
+      "line": 571,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListSupportViews.swift",
+      "line": 638,
+      "source": ".padding(.bottom, 14)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListSupportViews.swift",
+      "line": 650,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListViews.swift",
+      "line": 117,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSListsRegularPane.swift",
+      "line": 41,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSMarkdownEditingSurface.swift",
+      "line": 170,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSMarkdownEditingSurface.swift",
+      "line": 176,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSMarkdownPreview.swift",
+      "line": 68,
+      "source": ".padding(.top, level <= 2 ? 4 : 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSMoreTabView.swift",
+      "line": 70,
+      "source": ".padding(.top, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSMoreTabView.swift",
+      "line": 71,
+      "source": ".padding(.bottom, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSNoteDeletionSupport.swift",
+      "line": 164,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSNoteDeletionSupport.swift",
+      "line": 165,
+      "source": ".padding(.bottom, 28)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSNotesView.swift",
+      "line": 845,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSNotesView.swift",
+      "line": 846,
+      "source": ".padding(.bottom, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSNotificationsSettingsSection.swift",
+      "line": 93,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRemindersSettingsSection.swift",
+      "line": 76,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRemindersSettingsSection.swift",
+      "line": 85,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 201,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 202,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 205,
+      "source": ".padding(.bottom, iOSSidebarMetrics.groupSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 220,
+      "source": ".padding(.top, iOSSidebarMetrics.groupSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 224,
+      "source": ".padding(.top, iOSSidebarMetrics.rowSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 225,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 228,
+      "source": ".padding(.top, iOSSidebarMetrics.groupSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 229,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 306,
+      "source": ".padding(.top, iOSSidebarMetrics.groupSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 334,
+      "source": ".padding(.bottom, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSRootSidebar.swift",
+      "line": 737,
+      "source": ".padding(.top, 3)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSearchView.swift",
+      "line": 501,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsComponents.swift",
+      "line": 218,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsContextSection.swift",
+      "line": 85,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsContextSection.swift",
+      "line": 86,
+      "source": ".padding(.bottom, 28)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsOverviewSections.swift",
+      "line": 319,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsTagsSection.swift",
+      "line": 240,
+      "source": ".padding(.top, 5)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsView.swift",
+      "line": 141,
+      "source": ".padding(.top, 14)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsView.swift",
+      "line": 142,
+      "source": ".padding(.bottom, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsView.swift",
+      "line": 183,
+      "source": ".padding(.top, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSSettingsView.swift",
+      "line": 184,
+      "source": ".padding(.bottom, 32)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTaskCollectionPage.swift",
+      "line": 97,
+      "source": ".padding(.top, metrics.topPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTaskCollectionPage.swift",
+      "line": 98,
+      "source": ".padding(.bottom, metrics.bottomPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTaskDetailComponents.swift",
+      "line": 59,
+      "source": ".padding(.top, iOSTaskInspectorMetrics.completionTopPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTaskDetailComponents.swift",
+      "line": 464,
+      "source": ".padding(.top, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTaskGroupSection.swift",
+      "line": 35,
+      "source": ".padding(.top, iOSTaskSectionHeader.topPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTaskGroupSection.swift",
+      "line": 123,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTaskViews.swift",
+      "line": 543,
+      "source": ".padding(.top, Self.topPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTasksPageView.swift",
+      "line": 69,
+      "source": ".padding(.bottom, metrics.bottomPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTasksTabView.swift",
+      "line": 96,
+      "source": ".padding(.bottom, metrics.bottomPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodayCompactViews.swift",
+      "line": 83,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodayCompactViews.swift",
+      "line": 84,
+      "source": ".padding(.bottom, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodaySchedulePanel.swift",
+      "line": 101,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodaySchedulePanel.swift",
+      "line": 102,
+      "source": ".padding(.bottom, 14)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodaySchedulePanel.swift",
+      "line": 164,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodaySchedulePanel.swift",
+      "line": 414,
+      "source": ".padding(.top, -6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodaySchedulePanel.swift",
+      "line": 462,
+      "source": ".padding(.top, 5)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodaySchedulePanel.swift",
+      "line": 563,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTodaySchedulePanel.swift",
+      "line": 590,
+      "source": ".padding(.top, 3)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTrackingEditorSheets.swift",
+      "line": 212,
+      "source": ".padding(.top, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTrackingEditorSheets.swift",
+      "line": 237,
+      "source": ".padding(.top, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTrackingEditorSheets.swift",
+      "line": 484,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSTrackingEditorSheets.swift",
+      "line": 509,
+      "source": ".padding(.top, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSWindDownConfirmation.swift",
+      "line": 160,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/iOS/iOSWindDownConfirmation.swift",
+      "line": 161,
+      "source": ".padding(.bottom, 28)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/CadenceCalendarPicker.swift",
+      "line": 91,
+      "source": "Divider().background(Theme.borderSubtle).padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/CadenceCalendarPicker.swift",
+      "line": 108,
+      "source": ".padding(.top, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/CadenceCalendarPicker.swift",
+      "line": 109,
+      "source": ".padding(.bottom, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Editor/MarkdownEditorView.swift",
+      "line": 138,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateGoalSheet.swift",
+      "line": 98,
+      "source": ".padding(.top, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateGoalSheet.swift",
+      "line": 99,
+      "source": ".padding(.bottom, 20)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateGoalSheet.swift",
+      "line": 226,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+      "line": 96,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+      "line": 141,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+      "line": 142,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+      "line": 151,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+      "line": 163,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+      "line": 224,
+      "source": ".padding(.bottom, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift",
+      "line": 150,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift",
+      "line": 151,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift",
+      "line": 166,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/ListEditorSupportViews.swift",
+      "line": 38,
+      "source": ".padding(.top, 18)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/ListEditorSupportViews.swift",
+      "line": 39,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Sheets/ListEditorSupportViews.swift",
+      "line": 45,
+      "source": ".padding(.bottom, 18)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/AIActionsSupportViews.swift",
+      "line": 518,
+      "source": ".padding(.top, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CadenceContextPicker.swift",
+      "line": 118,
+      "source": "Divider().background(Theme.borderSubtle).padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift",
+      "line": 166,
+      "source": ".padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift",
+      "line": 49,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift",
+      "line": 249,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarBoardRailSupportViews.swift",
+      "line": 145,
+      "source": ".padding(.top, CadenceBoardColumnHeaderMetrics.topPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift",
+      "line": 113,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift",
+      "line": 114,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift",
+      "line": 176,
+      "source": ".padding(.bottom, 18)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarPageComponents.swift",
+      "line": 22,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
+      "line": 334,
+      "source": ".padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CalendarPageSupportViews.swift",
+      "line": 340,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CommitmentSharedViews.swift",
+      "line": 39,
+      "source": ".padding(.top, metrics.topPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/CommitmentSharedViews.swift",
+      "line": 40,
+      "source": ".padding(.bottom, metrics.bottomPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ContainerPickerSupportViews.swift",
+      "line": 200,
+      "source": ".padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ContainerPickerSupportViews.swift",
+      "line": 201,
+      "source": ".padding(.bottom, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusChromeSupportViews.swift",
+      "line": 42,
+      "source": ".padding(.top, 18)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusChromeSupportViews.swift",
+      "line": 43,
+      "source": ".padding(.bottom, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusLogSessionPopovers.swift",
+      "line": 41,
+      "source": ".padding(.top, 14)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusLogSessionPopovers.swift",
+      "line": 42,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusLogSessionPopovers.swift",
+      "line": 172,
+      "source": ".padding(.top, 14)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusLogSessionPopovers.swift",
+      "line": 173,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusPickerSupportViews.swift",
+      "line": 71,
+      "source": ".padding(.bottom, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusView.swift",
+      "line": 101,
+      "source": ".padding(.top, 34)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/FocusView.swift",
+      "line": 221,
+      "source": ".padding(.top, 34)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/GoalAttachWorkSheet.swift",
+      "line": 70,
+      "source": ".padding(.bottom, 18)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/GoalAttachWorkSheet.swift",
+      "line": 90,
+      "source": ".padding(.top, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/GoalInspectorView.swift",
+      "line": 223,
+      "source": ".padding(.top, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/GoalPickerViews.swift",
+      "line": 128,
+      "source": "Divider().background(Theme.borderSubtle).padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/GoalsSupportViews.swift",
+      "line": 299,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/HabitsFormSheets.swift",
+      "line": 278,
+      "source": ".padding(.top, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/HabitsFormSheets.swift",
+      "line": 279,
+      "source": ".padding(.bottom, 20)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/InboxSupportViews.swift",
+      "line": 57,
+      "source": ".padding(.top, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/InboxSupportViews.swift",
+      "line": 58,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift",
+      "line": 83,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/KanbanCardSupportViews.swift",
+      "line": 156,
+      "source": ".padding(.top, -1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/KanbanCardView.swift",
+      "line": 171,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/KanbanColumnSupportViews.swift",
+      "line": 156,
+      "source": ".padding(.top, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/KanbanColumnSupportViews.swift",
+      "line": 157,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/KanbanColumnSupportViews.swift",
+      "line": 208,
+      "source": ".padding(.top, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/KanbanListSectionSupportViews.swift",
+      "line": 62,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+      "line": 289,
+      "source": ".padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/LinksView.swift",
+      "line": 62,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListDetailComponents.swift",
+      "line": 73,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListDetailComponents.swift",
+      "line": 88,
+      "source": ".padding(.top, 40)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListDetailSupportViews.swift",
+      "line": 39,
+      "source": ".padding(.top, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListDetailSupportViews.swift",
+      "line": 40,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListDetailSupportViews.swift",
+      "line": 80,
+      "source": ".padding(.top, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListDetailSupportViews.swift",
+      "line": 81,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListDetailSupportViews.swift",
+      "line": 407,
+      "source": ".padding(.top, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListDetailSupportViews.swift",
+      "line": 408,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListNotesView.swift",
+      "line": 220,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/ListNotesViewSupportViews.swift",
+      "line": 52,
+      "source": ".padding(.bottom, hasTagFilters ? 6 : 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/NoteEditorAccessoryViews.swift",
+      "line": 151,
+      "source": ".padding(.top, MarkdownEditorMetrics.toolbarHeight + MarkdownEditorMetrics.textInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/NoteEditorPane.swift",
+      "line": 188,
+      "source": ".padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/NotePanel.swift",
+      "line": 64,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/NotesView.swift",
+      "line": 566,
+      "source": ".padding(.top, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/NotesView.swift",
+      "line": 567,
+      "source": ".padding(.bottom, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift",
+      "line": 276,
+      "source": ".padding(.top, 7)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift",
+      "line": 348,
+      "source": ".padding(.top, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+      "line": 406,
+      "source": ".padding(.top, 18)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+      "line": 407,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+      "line": 447,
+      "source": ".padding(.bottom, 18)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsListManagementSections.swift",
+      "line": 299,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsListManagementSections.swift",
+      "line": 326,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsListManagementSections.swift",
+      "line": 376,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsListManagementSections.swift",
+      "line": 405,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsListManagementSections.swift",
+      "line": 425,
+      "source": ".padding(.top, 15)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsListManagementSections.swift",
+      "line": 471,
+      "source": ".padding(.top, 7)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsSectionViews.swift",
+      "line": 51,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsSectionViews.swift",
+      "line": 373,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsSupportViews.swift",
+      "line": 136,
+      "source": ".padding(.bottom, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsSupportViews.swift",
+      "line": 138,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsTagsSection.swift",
+      "line": 55,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsTagsSection.swift",
+      "line": 286,
+      "source": ".padding(.top, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsTagsSection.swift",
+      "line": 344,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsView.swift",
+      "line": 63,
+      "source": ".padding(.top, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SettingsView.swift",
+      "line": 64,
+      "source": ".padding(.bottom, 32)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SidebarComponents.swift",
+      "line": 153,
+      "source": ".padding(.top, SidebarMetrics.contextHeaderTopPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SidebarComponents.swift",
+      "line": 205,
+      "source": ".padding(.bottom, SidebarMetrics.contextSectionBottomSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SidebarView.swift",
+      "line": 62,
+      "source": ".padding(.top, SidebarMetrics.topInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SidebarView.swift",
+      "line": 63,
+      "source": ".padding(.bottom, SidebarMetrics.headerBottomSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SidebarView.swift",
+      "line": 67,
+      "source": ".padding(.bottom, SidebarMetrics.groupSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SidebarView.swift",
+      "line": 144,
+      "source": ".padding(.top, SidebarMetrics.rowSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SidebarView.swift",
+      "line": 147,
+      "source": ".padding(.top, SidebarMetrics.groupSpacing)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/SidebarView.swift",
+      "line": 148,
+      "source": ".padding(.bottom, SidebarMetrics.bottomInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TagPickerSupportViews.swift",
+      "line": 194,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift",
+      "line": 192,
+      "source": ".padding(.top, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskCompletionAnimationViews.swift",
+      "line": 80,
+      "source": ".padding(.bottom, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift",
+      "line": 38,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift",
+      "line": 195,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift",
+      "line": 32,
+      "source": ".padding(.top, MarkdownEditorMetrics.textInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift",
+      "line": 247,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift",
+      "line": 248,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 81,
+      "source": ".padding(.bottom, TaskInspectorFieldRowMetrics.verticalPadding)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 229,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 230,
+      "source": ".padding(.bottom, 2)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 234,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 241,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 242,
+      "source": ".padding(.bottom, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 246,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 255,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 256,
+      "source": ".padding(.bottom, 4)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+      "line": 260,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksListView.swift",
+      "line": 250,
+      "source": ".padding(.top, 12)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksListView.swift",
+      "line": 314,
+      "source": ".padding(.bottom, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksListView.swift",
+      "line": 382,
+      "source": ".padding(.top, 40)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksListView.swift",
+      "line": 501,
+      "source": ".padding(.top, section.listGroup == nil ? 16 : 20)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksListView.swift",
+      "line": 502,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksListView.swift",
+      "line": 548,
+      "source": ".padding(.top, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksListView.swift",
+      "line": 549,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanel.swift",
+      "line": 186,
+      "source": ".padding(.top, showsHeader ? 12 : 0)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanel.swift",
+      "line": 187,
+      "source": ".padding(.bottom, 16)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanel.swift",
+      "line": 214,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanel.swift",
+      "line": 354,
+      "source": ".padding(.top, 40)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanel.swift",
+      "line": 421,
+      "source": ".padding(.bottom, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanelSectionViews.swift",
+      "line": 49,
+      "source": "/// tie-break the ticket asks for rather than a third figure: `.padding(.bottom, 6)` stands at",
+      "comment": true
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanelSectionViews.swift",
+      "line": 138,
+      "source": ".padding(.top, TasksPanelMetrics.sectionHeaderTopInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanelSectionViews.swift",
+      "line": 139,
+      "source": ".padding(.bottom, TasksPanelMetrics.sectionHeaderBottomInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanelSectionViews.swift",
+      "line": 246,
+      "source": ".padding(.top, TasksPanelMetrics.sectionHeaderTopInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TasksPanelSectionViews.swift",
+      "line": 247,
+      "source": ".padding(.bottom, TasksPanelMetrics.sectionHeaderBottomInset)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift",
+      "line": 338,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TimelineDayCanvasShellViews.swift",
+      "line": 72,
+      "source": ".padding(.top, 6)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift",
+      "line": 194,
+      "source": ".padding(.top, 1)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/macOSRootSupportViews.swift",
+      "line": 123,
+      "source": ".padding(.top, padded ? metrics.topPadding : 0)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/macOSRootSupportViews.swift",
+      "line": 124,
+      "source": ".padding(.bottom, padded ? metrics.bottomPadding : 0)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/macOSRootSupportViews.swift",
+      "line": 297,
+      "source": ".padding(.bottom, 24)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/macOSRootSupportViews.swift",
+      "line": 346,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/macOSRootSupportViews.swift",
+      "line": 347,
+      "source": ".padding(.bottom, 8)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/Views/macOSRootSupportViews.swift",
+      "line": 418,
+      "source": ".padding(.bottom, 36)",
+      "comment": false
+    },
+    {
+      "file": "Cadence/macOS/macOSRootView.swift",
+      "line": 80,
+      "source": ".padding(.top, 10)",
+      "comment": false
+    }
+  ]
+}

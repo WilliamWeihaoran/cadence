@@ -5704,6 +5704,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **The commit path is already guarded; the read path is not.** A later bare-`<path>` commit of the stale file is refused by `WORKTREE-BEHIND-HEAD`, and a reconstruction built the documented way (`git show HEAD:<path>` plus your edits) is correct by construction. What nothing catches is an agent that **reads** `docs/TODO.md` off disk to find work, or to quote an entry, or to count the Open section — it gets the previous revision with no signal, and in this repository that file is the ledger, the id allocator and the work queue at once. The one-line cure is `git show HEAD:<path> > <path>` after the commit; the question is whether `agent-commit.sh` should do it for paths whose worktree copy is byte-identical to the revision it just replaced (i.e. where no sibling edit can be lost), or whether the runbook should simply say to do it by hand.
 ## Done
 
+- [T-1226] **CLOSED 2026-09-13 (the coordinator) — the evidence 17 ledger citations rest on is in
+  the repository, not only on one disk.** `docs/audits/` had been untracked since it was first
+  written. [[T-1112]]'s entry already said what that costs — *"a real finding was one commit away
+  from being lost with the audit directory, which is untracked"* — and nothing had acted on it.
+  **Measured before committing**, because a citation to a file that is not there is worse than no
+  citation: `docs/TODO.md` cites **17 distinct** `docs/audits/` paths across 21 references, and all
+  17 resolve. Seven further files (three `README.md`s, three inventories and the
+  `ledger-inventory.rb` that generated two of them) are supporting material nothing cites by name,
+  and are tracked too — the generator is what makes an inventory re-derivable rather than a number
+  to be taken on trust. 22 files, 232 KB, all text.
+  `design/` is tracked for the same reason one level down: four rounds of icon concepts reviewed and
+  rejected for [[T-16]], and **rounds 1–3 are raster-only with no vector source**, so they are not
+  regenerable. 9.8 MB against a 127 MB repository. Round 4 has the eight SVGs its `README.md`
+  documents as the source of its PNGs.
+  `__pycache__/` is **ignored** rather than tracked — bytecode the screenshot tooling regenerates —
+  because [[T-1137]] closed on the rule that nothing is tracked and ignored at the same time.
+
 - [T-1132] **CLOSED 2026-09-13 (written by `calsettings`, verified and landed by `calsettings3`) —
   both calendar settings surfaces commit the link before they record having seen the calendar, and a
   refusal is a sentence on the surface rather than a `print` into a log nobody reads.** Landed in
