@@ -103,6 +103,23 @@ struct CadenceGuardScriptSelftestTests {
         // selftest goes red rather than quietly halving what the ledger guards prove.
         "LEDGER-CLOSURE-BURIED",
         "LEDGER-ID-UNFILED",
+        // T-1206 and T-1207, and they are the two halves `LEDGER-ID-UNFILED` claimed and did not
+        // keep. Its header says an id invisible to the allocator is one that lives only in a commit
+        // message *or only in another entry's prose*, and it read the message alone:
+        // `LEDGER-LINK-UNFILED` is the prose half, read as a delta against HEAD so the 22 links
+        // HEAD carries with nothing behind them need no floor and no backfill. Replayed over every
+        // commit that ever touched a ledger — 447 of them — it refuses 42, and the seven since
+        // 2026-09-03 name T-1117 (the incident T-1106 cites) and four of the eight ids T-1123 spent
+        // a day recovering out of commit history by hand.
+        // `LEDGER-UNFILED-UNTRACED` is the escape hatch closing behind itself: `--unfiled-ids`
+        // authorised a message and wrote nothing anywhere an allocator reads, which is how T-1155
+        // and T-1156 became message-only ids — through this family's own flag, one day after T-1123
+        // was filed to recover eight others. An id waved past must now be named in a ledger the
+        // same commit leaves behind, and `--not-an-id` is the separate, smaller claim for a
+        // fragment like `gone=T-3` that is no ticket reference at all. Naming both here means
+        // deleting mode 4h or 4i goes red rather than quietly restoring the hole.
+        "LEDGER-LINK-UNFILED",
+        "LEDGER-UNFILED-UNTRACED",
         // T-1072, and it is the half `LEDGER-ID-UNFILED` structurally cannot reach. That guard
         // makes an id that is in no ledger impossible; in a CONCURRENT allocation both agents file
         // a stub, so both messages pass it and the collision lands anyway. The only artefact two

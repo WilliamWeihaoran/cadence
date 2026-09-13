@@ -503,6 +503,36 @@ Which path form to use:
   behind HEAD, and on which path* had no answer after the fact — the exact question all four
   measured instances of T-975 were found by asking. `git log --grep='^Commits-Stale:'` answers it
   now, from any clone, and the base sha makes what was skipped diffable.
+- **A successful `=` reconstruction used to leave YOUR copy of that path a revision behind HEAD, in
+  silence** (T-1209). The commit goes into a tree and the worktree is never written — deliberately,
+  because the reason to use the `=` form is that a sibling has in-flight edits in that file. Measured
+  on `b34c1f5`: the script printed `committed b34c1f5b` and `shared index is clean against the new
+  HEAD`, and both files on disk were byte-identical to `HEAD~1` a second later. The *commit* path was
+  guarded (`WORKTREE-BEHIND-HEAD` refuses a later bare `<path>` of that copy); the *reading* was not,
+  and `docs/TODO.md` is the ledger, the id allocator and the work queue at once. The script now
+  re-syncs your copy **when it is byte-identical to the revision the commit replaced**, so nothing
+  anyone edited can be lost, and says it did. When it is not — somebody's hunks are in it — it names
+  the path on stderr and leaves it alone: **read `git show HEAD:<path>`, not the file on disk**, and
+  re-sync with `git show HEAD:<path> > <path>` once those hunks are accounted for.
+- **A `[[T-n]]` link is an allocation too** (T-1206). The ledger *is* the id allocator, and it is read
+  top-down for `- [T-n]` entries, so an id that exists only inside another entry's prose is invisible
+  to whoever computes "next free" — `T-1039` stood as a link with nothing behind it for a week, and
+  `T-1117` was handed out inside another ticket's closure with no stub. A link this commit
+  **introduces** that resolves to no entry anywhere is `LEDGER-LINK-UNFILED`; write the stub in the
+  same commit. Only new links are read, so the 22 unresolved ones HEAD carries (21 of them inside
+  T-462's un-backfilled deficit) need no floor and no backfill. `--unfiled-links <exact,sorted,list>`
+  is for a historical reference you really are only quoting.
+- **`--unfiled-ids` now has to leave the record rather than replace it** (T-1207). It says *"this is a
+  historical reference you are only quoting"* and it used to write that claim nowhere: `4efd0035` used
+  it for `T-1155` and `T-1156` — ids a killed agent had drawn — said in its own message that they were
+  *"never written to the ledger"*, and went through, **one day after** T-1123 was filed to recover
+  eight ids in exactly that state. Each id you wave past must now be **named in a ledger this same
+  commit leaves behind** (a retired-id sentence is enough; a formal `- [T-n]` entry makes the flag
+  unnecessary), or it is `LEDGER-UNFILED-UNTRACED`. Both escapes write a trailer — `Unfiled-Ids:`,
+  `Unfiled-Links:` — so `git log --grep='^Unfiled-'` answers *who waved what past* from any clone.
+  If the `T-<n>` is not a ticket reference at all (`gone=T-3`, quoted out of a script), that is a
+  different and smaller claim: `--not-an-id <T-n>`, which records `Not-A-Ticket-Id:` and asks nothing
+  of the ledger.
 
 - **Every check above is about ONE `HEAD`, and it used to commit onto another** (T-974). The script
   re-read `HEAD` at each step and captured the parent sha only just before `commit-tree`, so a

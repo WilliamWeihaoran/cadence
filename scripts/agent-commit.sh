@@ -63,6 +63,21 @@
 #                        asserts both at once. `--duplicated-entries <exact,sorted,list>` says the
 #                        repetition is deliberate. Delta-read against HEAD: only an entry this
 #                        commit duplicates, or duplicates further, is refused (T-1142).
+#   LEDGER-LINK-UNFILED  a `[[T-n]]` link this commit INTRODUCES into a ledger resolves to no
+#                        formal `- [T-n]` entry anywhere, as this commit leaves the ledgers. The
+#                        other half of LEDGER-ID-UNFILED's own claim: the ledger is the allocator,
+#                        so an id that lives only in another entry's prose is invisible to "next
+#                        free" exactly like a message-only one (T-1206). Read as a DELTA against
+#                        HEAD, so the standing backlog is exempt by construction and no floor is
+#                        needed. `--unfiled-links <exact,sorted,list>` says the link is a historical
+#                        reference you are only quoting.
+#   LEDGER-UNFILED-UNTRACED
+#                        an id `--unfiled-ids` waves past LEDGER-ID-UNFILED is named in NO ledger as
+#                        this commit leaves them -- so the escape REPLACES the record instead of
+#                        writing it, which is how `T-1155` and `T-1156` became message-only ids one
+#                        day after T-1123 counted eight of exactly those (T-1207). Name the id in a
+#                        ledger in this same commit, or, if it is not a ticket reference at all,
+#                        say that instead: `--not-an-id <T-n>`.
 #   WORKTREE-BEHIND-HEAD a bare `<path>` whose worktree copy is built on a revision older than
 #                        HEAD's. Committing it writes the stale bytes into history, where no drift
 #                        check looks. Rebuild on `git show HEAD:<path>` and pass the `=` form, or
@@ -214,6 +229,7 @@ usage() {
     say "       flags: --removes <n> --drops-ids <ids> --reopens-ids <ids>"
     say "              --retires-ids <ids>"
     say "              --unfiled-ids <ids> --buried-closures <ids> --duplicate-ids <ids>"
+    say "              --unfiled-links <ids> --not-an-id <T-n>"
     say "              --duplicated-entries <ids>"
     say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
@@ -390,6 +406,68 @@ message_ids() {  # $1 = message
     print -r -- "$1" | grep -oE '\bT-[0-9]+\b' | sort -u
 }
 is_any_ledger_path() { [[ "${1:t}" == "TODO.md" || "${1:t}" == "TODO_DONE.md" ]] }
+
+# T-1206, and it is the half the header above spent a paragraph claiming and did not implement. The
+# sentence is *"an id that exists only in a commit message, OR ONLY IN ANOTHER ENTRY'S PROSE, is
+# invisible to the next agent computing 'next free'"*, and only the first clause was read. Both
+# halves have a body count: `T-1039` was a `[[link]]` written beside T-1037 with nothing behind it
+# and stood for a week, and `T-1117` was handed out inside T-624's closure with no stub -- which is
+# the incident T-1106 itself cites as its reason for existing.
+#
+# THE READING IS A DELTA against HEAD, for LEDGER-ID-DUPLICATE's reason and not for taste. Measured
+# at `b23845d`: the two ledgers hold **486** distinct `[[T-n]]` links and **22** of them resolve to
+# no formal `- [T-n]` entry anywhere. Twenty-one are `T-441` or below, inside the ~200-ticket
+# deficit T-462 measured and deliberately did not backfill; the twenty-second is `T-1069`, a link
+# with nothing behind it and no commit message naming it either (T-1221). So a whole-file reading
+# would refuse every future commit to docs/TODO.md until a backfill T-462 forbids had been done,
+# which is the one failure this family must not have -- and the obvious alternative, a declared
+# floor, is a magic number that rots the moment the deficit is touched. A delta needs neither: the
+# standing 22 are HEAD's, they stay HEAD's, and the guard is enforceable at zero NEW.
+#
+# MEASURED by replay, the same way T-1072's duplicate guard was. Every commit reachable from HEAD
+# that touched either ledger, asked whether it introduced an unresolved link its parent did not
+# have: **447 commits, 42 refusals**, and only seven of them since 2026-09-03 --
+#
+#   a92b659  2026-09-11  T-1117, T-411   T-1117 is the incident T-1106 cites. T-411 is a quotation.
+#   db17932  2026-09-06  T-1069          the link with nothing behind it, still standing at HEAD.
+#   9b31280  2026-09-05  T-1064          \
+#   dcb0a15  2026-09-05  T-1039           | four of the eight ids T-1123 had to recover from commit
+#   7bf2533  2026-09-04  T-752, T-768     | history five to eight days later. Every one of them was
+#   6109adb  2026-09-04  T-879, T-880     | a prose link at the moment it was written, and this
+#   1f4e235  2026-09-03  T-734           /  reading would have refused the commit that wrote it.
+#
+# So of the 11 modern id-occurrences, 8 are the population T-1123 spent a day recovering by hand,
+# one is T-1069, and two (T-411, T-752) are historical quotations -- which is what the flag is for.
+# The 35 older refusals are all pre-T-462 and unreachable now: they are in HEAD's standing set.
+ledger_link_ids() {  # $1 = file; the `[[T-n]]` references in its prose
+    grep -oE '\[\[T-[0-9]+\]\]' -- "$1" 2>/dev/null | tr -d '[]' | sort -u
+}
+
+# Inserting a trailer immediately ABOVE the last non-blank line of the message, which has to stay
+# the Co-Authored-By line -- NO-COAUTHOR-TRAILER reads the last non-blank line, and every commit in
+# this repository ends with it. Written as a function because there are now two callers (T-991's
+# `Commits-Stale:` and T-1207's `Unfiled-Ids:`), and the near-copy is the shape this repo keeps
+# filing tickets about. It edits `message` in the caller's scope, which is zsh's dynamic scoping
+# used deliberately: the alternative is returning a whole multi-line message through stdout and
+# losing trailing blank lines to command substitution.
+#
+# In zsh, not awk: `awk -v extra=...` cannot carry a literal newline in an assignment ("awk:
+# newline in string"), so a two-path override silently produced an EMPTY message -- and the
+# Co-Authored-By line with it. Measured while writing T-991. Splice the array instead.
+splice_trailers() {  # $@ = trailer lines
+    (( $# )) || return 0
+    local -a msg_lines out_lines
+    msg_lines=("${(@f)message}"); out_lines=()
+    local last=0 li
+    for (( li = 1; li <= ${#msg_lines}; li++ )); do
+        [[ "${msg_lines[li]}" == *[^[:space:]]* ]] && last=$li
+    done
+    for (( li = 1; li <= ${#msg_lines}; li++ )); do
+        (( li == last )) && out_lines+=("$@")
+        out_lines+=("${msg_lines[li]}")
+    done
+    message="${(F)out_lines}"
+}
 
 # T-1142, and it is the third failure of the same closure-writing step LEDGER-CLOSURE-BURIED
 # guards. That one asks whether the closure was written where the anchor looks. This asks whether
@@ -584,9 +662,9 @@ cmd_commit() {
     local message="" have_message=0 declared_removals="" declared_dropped_ids="" declared_reopened_ids=""
     local declared_retired_ids=""
     local declared_unfiled_ids="" declared_buried_ids="" declared_duplicate_ids=""
-    local declared_duplicated_entries=""
-    local -a paths accepted stale_declared not_sweeps
-    paths=(); accepted=(); stale_declared=(); not_sweeps=()
+    local declared_duplicated_entries="" declared_unfiled_links=""
+    local -a paths accepted stale_declared not_sweeps not_ids
+    paths=(); accepted=(); stale_declared=(); not_sweeps=(); not_ids=()
 
     while (( $# )); do
         case "$1" in
@@ -606,6 +684,10 @@ cmd_commit() {
                 declared_retired_ids="$2"; shift 2 ;;
             --unfiled-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--unfiled-ids needs a comma-separated id list"
                 declared_unfiled_ids="$2"; shift 2 ;;
+            --unfiled-links) [[ $# -ge 2 ]] || refuse BAD-OPTION "--unfiled-links needs a comma-separated id list"
+                declared_unfiled_links="$2"; shift 2 ;;
+            --not-an-id) [[ $# -ge 2 ]] || refuse BAD-OPTION "--not-an-id needs one T-<n>"
+                not_ids+=("$2"); shift 2 ;;
             --buried-closures) [[ $# -ge 2 ]] || refuse BAD-OPTION "--buried-closures needs a comma-separated id list"
                 declared_buried_ids="$2"; shift 2 ;;
             --duplicate-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--duplicate-ids needs a comma-separated id list"
@@ -907,22 +989,10 @@ $(print -r -- "$sweep_out" | sed 's/^/    /')
     #     NO-COAUTHOR-TRAILER is checked against the last non-blank line and every commit in this
     #     repository ends with it.
     if (( ${#stale_audit} )); then
-        local -a audit_lines msg_lines out_lines
+        local -a audit_lines
         audit_lines=()
         for reading in "${stale_audit[@]}"; do audit_lines+=("Commits-Stale: $reading") done
-        # In zsh, not awk: `awk -v extra=...` cannot carry a literal newline in an assignment
-        # ("awk: newline in string"), so a two-path override silently produced an EMPTY message and
-        # the Co-Authored-By line with it. Measured while writing this. Splice the array instead.
-        msg_lines=("${(@f)message}"); out_lines=()
-        local last=0 li
-        for (( li = 1; li <= ${#msg_lines}; li++ )); do
-            [[ "${msg_lines[li]}" == *[^[:space:]]* ]] && last=$li
-        done
-        for (( li = 1; li <= ${#msg_lines}; li++ )); do
-            (( li == last )) && out_lines+=("${audit_lines[@]}")
-            out_lines+=("${msg_lines[li]}")
-        done
-        message="${(F)out_lines}"
+        splice_trailers "${audit_lines[@]}"
         say "note: recorded the override in the commit message: ${(j:; :)audit_lines}"
     fi
 
@@ -1296,18 +1366,26 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #      way through. Historical ids are out of reach by construction: only this message is read.
     local -a unfiled_ids
     unfiled_ids=()
-    local filed_ids="$scratch/filed.ids" lpath lblob
-    : > "$filed_ids"
+    local filed_ids="$scratch/filed.ids" ledger_text="$scratch/ledger.text" link_ids="$scratch/link.ids"
+    local lpath lblob lcontent
+    : > "$filed_ids"; : > "$ledger_text"; : > "$link_ids"
     for lpath in ${(f)"$(git ls-tree -r --name-only "$headsha" 2>/dev/null | grep -E '(^|/)TODO(_DONE)?\.md$')"} "${names[@]}"; do
         [[ -n "$lpath" ]] || continue
         is_any_ledger_path "$lpath" || continue
         if [[ -n "${staged_content[$lpath]+x}" ]]; then
-            ledger_ids "${staged_content[$lpath]}" >> "$filed_ids"
+            lcontent="${staged_content[$lpath]}"
         elif git cat-file -e "$headsha:$lpath" 2>/dev/null; then
             lblob="$scratch/$(ledger_key "$lpath").filed"
             git cat-file -p "$headsha:$lpath" > "$lblob"
-            ledger_ids "$lblob" >> "$filed_ids"
+            lcontent="$lblob"
+        else
+            continue
         fi
+        # One read of each ledger answers three questions: which ids are FILED (this guard), which
+        # ids its prose LINKS to (3a4b), and whether an id is named in it at all (3a4c).
+        ledger_ids "$lcontent" >> "$filed_ids"
+        ledger_link_ids "$lcontent" >> "$link_ids"
+        cat -- "$lcontent" >> "$ledger_text"
     done
     # Only ask the question at all where there is a ledger to ask it of. A checkout with neither
     # TODO.md nor TODO_DONE.md anywhere would otherwise read every id in the message as unfiled.
@@ -1319,7 +1397,14 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         done
     fi
     if (( ${#unfiled_ids} )); then
-        local declared_unfiled_sorted="${(pj:,:)${(@o)${(@s:,:)declared_unfiled_ids}}}"
+        # Two flags answer this one, because the two cases are not the same claim and T-1207 is
+        # about telling them apart. `--unfiled-ids` says "this id is real and is not a live
+        # allocation", and 3a4c then makes it write that down. `--not-an-id` says "this T-<n> is
+        # not a ticket reference at all" -- `gone=T-3` appears verbatim in a499f2f8's message --
+        # and there is nothing for a ledger to record about it.
+        local -a declared_unfiled_all
+        declared_unfiled_all=(${(s:,:)declared_unfiled_ids} "${not_ids[@]}")
+        local declared_unfiled_sorted="${(pj:,:)${(@o)declared_unfiled_all}}"
         local unfiled_sorted="${(pj:,:)${(@o)unfiled_ids}}"
         if [[ "$declared_unfiled_sorted" != "$unfiled_sorted" ]]; then
             rm -rf "$scratch"
@@ -1327,8 +1412,111 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   The ledger is the allocator: an id that lives only in a commit message is invisible to the next
   agent computing \"next free\", which is how one id went to two agents in a single week. Write the
   stub -- \`- [$unfiled_ids[1]] **<one line>**\` -- into docs/TODO.md in THIS commit. If the id is a
-  historical reference you are only quoting, say so: --unfiled-ids $unfiled_sorted"
+  historical reference you are only quoting, say so -- --unfiled-ids $unfiled_sorted -- and name it
+  in a ledger in this same commit, because the escape has to leave a record rather than replace one
+  (T-1207). If the T-<n> is not a ticket reference at all, that is --not-an-id <T-n> instead."
         fi
+    fi
+
+    # 3a4b. T-1206, and it is the sentence 3a4's own header makes and does not keep: an id that
+    #       lives only in another entry's PROSE is invisible to the allocator in exactly the way a
+    #       message-only one is. `T-1039` stood as a bare `[[link]]` beside T-1037 for a week and
+    #       `T-1117` was handed out inside T-624's closure with no stub -- the incident T-1106
+    #       cites. The delta reading, the 22 standing links at HEAD and the 447-commit replay that
+    #       measured 42 refusals are on `ledger_link_ids`.
+    #
+    #       Read across BOTH ledgers as one, like 3a4 and unlike 3a5: a link into the archive is an
+    #       ordinary link, and half the entries an open ticket references are closed ones.
+    local -a introduced_links
+    introduced_links=()
+    if [[ -s "$link_ids" ]]; then
+        local head_filed="$scratch/head.filed" head_links="$scratch/head.links" hpath hblob new_links
+        : > "$head_filed"; : > "$head_links"
+        for hpath in ${(f)"$(git ls-tree -r --name-only "$headsha" 2>/dev/null | grep -E '(^|/)TODO(_DONE)?\.md$')"}; do
+            [[ -n "$hpath" ]] || continue
+            hblob="$scratch/$(ledger_key "$hpath").headledger"
+            git cat-file -p "$headsha:$hpath" > "$hblob" 2>/dev/null || continue
+            ledger_ids "$hblob" >> "$head_filed"
+            ledger_link_ids "$hblob" >> "$head_links"
+        done
+        sort -u "$link_ids"   > "$scratch/links.sorted"
+        sort -u "$filed_ids"  > "$scratch/filed.sorted"
+        sort -u "$head_links" > "$scratch/head.links.sorted"
+        sort -u "$head_filed" > "$scratch/head.filed.sorted"
+        comm -23 "$scratch/links.sorted" "$scratch/filed.sorted" > "$scratch/unresolved.now"
+        comm -23 "$scratch/head.links.sorted" "$scratch/head.filed.sorted" > "$scratch/unresolved.head"
+        new_links=$(comm -23 "$scratch/unresolved.now" "$scratch/unresolved.head")
+        [[ -n "$new_links" ]] && introduced_links=(${(f)new_links})
+    fi
+    if (( ${#introduced_links} )); then
+        local declared_links_sorted="${(pj:,:)${(@o)${(@s:,:)declared_unfiled_links}}}"
+        local links_sorted="${(pj:,:)${(@o)introduced_links}}"
+        if [[ "$declared_links_sorted" != "$links_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-LINK-UNFILED "this commit writes [[links]] to ids with no formal ledger entry: ${(j:, :)introduced_links}
+  The ledger IS the allocator, and it is read top-down for \`- [T-n]\` entries, so an id that exists
+  only inside another entry's prose is invisible to the next agent computing \"next free\" -- which
+  is how T-1039 stood as a link with nothing behind it for a week, and how T-1117 was handed out
+  inside another ticket's closure with no stub. Write the stub --
+  \`- [$introduced_links[1]] **<one line>**\` -- into docs/TODO.md in THIS commit.
+  Only links this commit INTRODUCES are read; the ones HEAD already carries are HEAD's.
+  If the link is a historical reference you are only quoting, say so: --unfiled-links $links_sorted"
+        fi
+    fi
+
+    # 3a4c. T-1207. `--unfiled-ids` is the one escape in this family that used to authorise a
+    #       message and leave nothing behind: it says "this is a historical reference you are only
+    #       quoting", which is the right sentence for a quotation and was used for the opposite
+    #       case. `4efd0035` named `T-1155` and `T-1156` -- ids a killed agent had drawn and never
+    #       written down -- SAID IN ITS OWN MESSAGE that they were "never written to the ledger",
+    #       refiled the work elsewhere, and went through. One day after T-1123 was filed to recover
+    #       eight ids in exactly that state. The guard documented the leak rather than slowing it.
+    #
+    #       So the escape now has to leave the record instead of replacing it: an id waved past
+    #       must be NAMED in a ledger as this commit leaves it. Not a formal entry -- if you write
+    #       one the id is filed and no flag is needed at all -- just present where a future
+    #       allocator greps. Measured over this repository: `4efd0035` staged docs/TODO.md and that
+    #       file names neither id, and neither ledger named either at its parent, so this reading
+    #       refuses it. Replaying every commit reachable from HEAD, 316 id-occurrences would have
+    #       needed the flag and 120 of them are untraced in the ledger text -- but only ONE of those
+    #       commits postdates LEDGER-ID-UNFILED existing, and it is 4efd0035.
+    #
+    #       The genuine quotation case is `--not-an-id`, which is a different claim about a
+    #       different kind of string and has nothing to record.
+    if [[ -n "$declared_unfiled_ids" && -s "$ledger_text" ]]; then
+        local -a untraced_ids
+        untraced_ids=()
+        local declid
+        grep -oE '\bT-[0-9]+\b' "$ledger_text" | sort -u > "$scratch/ledger.mentions"
+        for declid in ${(s:,:)declared_unfiled_ids}; do
+            [[ -n "$declid" ]] || continue
+            grep -qx -- "$declid" "$scratch/ledger.mentions" || untraced_ids+=("$declid")
+        done
+        if (( ${#untraced_ids} )); then
+            rm -rf "$scratch"
+            refuse LEDGER-UNFILED-UNTRACED "these ids are waved past by --unfiled-ids and named in no ledger: ${(j:, :)untraced_ids}
+  The escape says the id is one you are only quoting. Whatever it is, the ledger has to carry it:
+  an id authorised here and written down nowhere is a message-only id, which is the exact state
+  LEDGER-ID-UNFILED exists to prevent -- T-1155 and T-1156 reached it THROUGH this flag, one day
+  after T-1123 was filed to recover eight others like them.
+  Name $untraced_ids[1] in docs/TODO.md or docs/TODO_DONE.md in THIS commit -- a retired-id note is
+  enough, and a formal \`- [$untraced_ids[1]]\` entry makes the flag unnecessary altogether.
+  If this T-<n> is not a ticket reference at all, --not-an-id $untraced_ids[1] is the right claim."
+        fi
+    fi
+
+    # The two deliberate overrides above go into the COMMIT MESSAGE, for T-991's reason: the
+    # $TMPDIR ledger is per-checkout, per-boot and cleared, and the question -- *who waved an id
+    # past the allocator guard, and which ids* -- is asked days later and from a clone.
+    # `git log --grep='^Unfiled-Ids:'` answers it forever.
+    local -a escape_trailers
+    escape_trailers=()
+    [[ -n "$declared_unfiled_ids" ]] && escape_trailers+=("Unfiled-Ids: ${(pj:, :)${(@o)${(@s:,:)declared_unfiled_ids}}}")
+    (( ${#not_ids} )) && escape_trailers+=("Not-A-Ticket-Id: ${(pj:, :)${(@o)not_ids}}")
+    [[ -n "$declared_unfiled_links" ]] && escape_trailers+=("Unfiled-Links: ${(pj:, :)${(@o)${(@s:,:)declared_unfiled_links}}}")
+    if (( ${#escape_trailers} )); then
+        splice_trailers "${escape_trailers[@]}"
+        say "note: recorded the id escape in the commit message: ${(j:; :)escape_trailers}"
     fi
 
     # 3a5. T-1072's concurrent half. The guard above makes an id that was never filed impossible;
@@ -1449,6 +1637,50 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         say "note: $name was committed as reconstructed content; $(print -r -- "$declined" | grep -c .) worktree line(s) were declined and are in no commit."
         say "      recorded at $record -- the next commit of this path must account for them."
     done
+
+    # 5b. T-1209, and it is the READ path of the same drift T-982 guards on the write side. The `=`
+    #     form commits a tree and never writes the worktree -- deliberately, because the reason to
+    #     reach for it at all is that a sibling has in-flight edits in that file and the worktree
+    #     form would take theirs with yours. What that left unowned is the COMMITTING agent's own
+    #     copy: `b34c1f5` printed `committed b34c1f5b` and `shared index is clean against the new
+    #     HEAD`, and a second later both files on disk were byte-identical to `HEAD~1` -- the whole
+    #     commit in the tree and in neither file. Nothing said so.
+    #
+    #     The commit path was already guarded: a later bare `<path>` of that stale copy is
+    #     WORKTREE-BEHIND-HEAD. The READING was not, and `docs/TODO.md` is the ledger, the id
+    #     allocator and the work queue at once -- so the failure is an agent picking "next free"
+    #     out of a revision that has moved, which is the shape of half the tickets above this line.
+    #
+    #     Written back ONLY where nothing can be lost: the worktree copy is byte-identical to the
+    #     revision this commit replaced, so it holds nobody's edits. Any other copy is left exactly
+    #     alone and said out loud with the one-line cure, because a worktree still holding a
+    #     sibling's hunks is the case the `=` form exists for and overwriting it is the bug.
+    local -a resynced left_behind
+    resynced=(); left_behind=()
+    local wt_previous
+    for name in "${names[@]}"; do
+        [[ -n "${source_of[$name]}" ]] || continue      # the bare form staged the worktree copy
+        [[ -f "$name" ]] || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue
+        cmp -s -- "$name" "${staged_content[$name]}" && continue   # already what this commit landed
+        wt_previous="$scratch/$(ledger_key "$name").wtprevious"
+        git cat-file -p "$headsha:$name" > "$wt_previous" 2>/dev/null || : > "$wt_previous"
+        if cmp -s -- "$name" "$wt_previous"; then
+            cp -- "${staged_content[$name]}" "$name" && resynced+=("$name")
+        else
+            left_behind+=("$name")
+        fi
+    done
+    if (( ${#resynced} )); then
+        say "note: re-synced the worktree copy of ${(j:, :)resynced} to what this commit landed (T-1209)."
+        say "      It was byte-identical to the revision replaced, so no in-flight edit could be lost."
+    fi
+    if (( ${#left_behind} )); then
+        say "note: the worktree copy of ${(j:, :)left_behind} is BEHIND this commit and was left alone:" >&2
+        say "      it is neither what landed nor the revision replaced, so somebody's edits are in it." >&2
+        say "      Read \`git show HEAD:<path>\`, never the file on disk, until you have re-synced with" >&2
+        say "      \`git show HEAD:<path> > <path>\` (T-1209)." >&2
+    fi
 
     # 6. THE REPAIR. Without this the shared index still holds the pre-commit blobs for your paths,
     #    and `git status` reports your own landed work as a staged revert (Batch M, 274 deletions).
@@ -2162,8 +2394,17 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     # a499f2f8's real message. One commit in the last sixty measured, and the flag is the cost.
     local MQ=$'msg quoting gone=T-902 from a script\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
     ( cd "$ws" && print -r -- "quoted" >> mine.txt )
-    out=$( cd "$ws" && zsh "$here" h7 -m "$MQ" --unfiled-ids T-902 mine.txt 2>&1 ); rc=$?
-    check "a quoted non-reference gets through by being named" $(( rc == 0 )) "exit $rc: $out"
+    # T-1207 split this in two, because the two claims are not the same claim. A fragment that is
+    # not a ticket reference has nothing for a ledger to record, and that is --not-an-id; a
+    # historical id you really are quoting is a real id, and --unfiled-ids now has to leave it
+    # written down somewhere an allocator reads. Asserting BOTH here is what stops the split from
+    # being a rename: the same commit, one flag through and the other refused.
+    out=$( cd "$ws" && zsh "$here" h7 -m "$MQ" --not-an-id T-902 mine.txt 2>&1 ); rc=$?
+    check "a quoted non-reference gets through as what it is (--not-an-id)" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && print -r -- "quoted again" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" h7b -m "$MQ" --unfiled-ids T-902 mine.txt 2>&1 ); rc=$?
+    check "calling the same fragment a historical reference is refused until a ledger names it" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-UNFILED-UNTRACED* ]] && print 1 || print 0 ) "exit $rc: $out"
     # And the negative control that decides the guard is not simply always-on: the ordinary commit,
     # naming ids that ARE filed, needs no flag at all. Every other mode in this selftest uses a
     # message with no id in it, so without this check the whole half could be inverted unnoticed.
@@ -2330,6 +2571,147 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" k2 -m "$M" --duplicated-entries "T-130,T-131" TODO.md=dup3.md 2>&1 ); rc=$?
     check "the documented comma-separated sorted list is accepted" $(( rc == 0 )) "exit $rc: $out"
 
+    say ""
+    say " mode 4h (LEDGER-LINK-UNFILED) -- T-1206: an id that lives only in another entry's prose"
+    # 4e's half two makes a MESSAGE-only id impossible. This is the other half of the sentence in
+    # that guard's own header -- "or only in another entry's prose" -- which was claimed for a week
+    # and not implemented. Measured by replaying every commit that ever touched either ledger: 447
+    # commits, 42 would have been refused, and the seven since 2026-09-03 name T-1117 (the incident
+    # T-1106 cites as its reason for existing) and four of the eight ids T-1123 later recovered out
+    # of commit history by hand.
+    #
+    # TWO unresolved links in the fixture, deliberately, and a third that RESOLVES. With one id on
+    # the floor an `=` written where `+=` was meant is indistinguishable from the correct code --
+    # which is exactly how mode 4d3's single-id fixture let that mutation survive all 173 checks.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && git show HEAD:TODO.md > TODO.md ) >/dev/null 2>&1
+    ( cd "$ws"
+      git show HEAD:TODO.md > links.md
+      print -rl -- "" "- [T-940] **an entry whose prose hands out ids nothing else has heard of.**" \
+                      "  Sibling lesson to [[T-950]] and to [[T-951]]; the link to [[T-903]] resolves." >> links.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" g1 -m "$M" TODO.md=links.md 2>&1 ); rc=$?
+    check "a [[link]] to an id with no formal entry is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-LINK-UNFILED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "BOTH unresolved ids are named, and the link that resolves is not" \
+        $( [[ "$out" == *"T-950"* && "$out" == *"T-951"* && "$out" != *"T-903"* ]] && print 1 || print 0 ) "$out"
+    check "and the hint is the sorted comma list the flag documents" \
+        $( [[ "$out" == *"--unfiled-links T-950,T-951"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) != *"T-940"* ]] && print 1 || print 0 )
+    out=$( cd "$ws" && zsh "$here" g1 -m "$M" --unfiled-links T-950 TODO.md=links.md 2>&1 ); rc=$?
+    check "declaring only ONE of the two is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-LINK-UNFILED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The cure the refusal names: the stubs go in the SAME commit that first links the ids.
+    ( cd "$ws"
+      cp links.md stublinks.md
+      print -rl -- "" "- [T-950] **the first stub, written where the allocator can see it.**" \
+                      "  Reserved by the selftest." \
+                      "" "- [T-951] **the second stub, for the id beside it.**" \
+                      "  Reserved by the selftest." >> stublinks.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" g2 -m "$M" TODO.md=stublinks.md 2>&1 ); rc=$?
+    check "writing both stubs in the same commit is accepted" $(( rc == 0 )) "exit $rc: $out"
+    check "and the allocator can now see both ids" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md | grep -cE '^- \[T-95[01]\]' ) == 2 ]] && print 1 || print 0 )
+    # THE CHECK THAT PINS THE DELTA READING, and it is the whole reason this guard needs no floor.
+    # HEAD's real ledgers carry 22 links that resolve to nothing, 21 of them inside T-462's
+    # deliberately un-backfilled deficit. A whole-file reading would refuse every future commit to
+    # docs/TODO.md until a backfill that ticket forbids had been done; a declared floor would be a
+    # magic number that rots the first time the deficit is touched. Neither is needed: what HEAD
+    # already carries stays HEAD's, and only a link this commit INTRODUCES is read.
+    ( cd "$ws"
+      git show HEAD:TODO.md > standing.md
+      print -rl -- "" "- [T-941] **an entry quoting an id from before the ledger was kept.**" \
+                      "  It refers to [[T-960]], which has no entry and is never going to have one." >> standing.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" g3 -m "$M" --unfiled-links T-960 TODO.md=standing.md 2>&1 ); rc=$?
+    check "a historical link declared deliberately lands" $(( rc == 0 )) "exit $rc: $out"
+    check "and the override is recorded in the commit message, not just in somebody's argv" \
+        $( [[ $( cd "$ws" && git log -1 --format=%B ) == *"Unfiled-Links: T-960"* ]] && print 1 || print 0 )
+    ( cd "$ws"
+      git show HEAD:TODO.md | sed 's/^  It refers to \[\[T-960\]\], which has no entry and is never going to have one./  It refers to [[T-960]], and this line was later edited by somebody else./' > later.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" g4 -m "$M" --removes 1 TODO.md=later.md 2>&1 ); rc=$?
+    check "an ordinary later edit to a ledger that ALREADY carries that unresolved link needs no flag" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-LINK-UNFILED* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4i (LEDGER-UNFILED-UNTRACED) -- T-1207: the escape must write the record, not replace it"
+    # `--unfiled-ids` refuses nothing and authorises a message, and until 2026-09-13 it left no
+    # trace anywhere an allocator reads. `4efd0035` used it for T-1155 and T-1156 -- ids a killed
+    # agent had drawn -- said in its own message that they were "never written to the ledger", and
+    # went through, ONE DAY after T-1123 was filed to recover eight ids in exactly that state.
+    # Measured: that commit staged docs/TODO.md and neither ledger named either id at its parent,
+    # so this reading refuses it. TWO ids again, and the middle fixture traces only ONE of them.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && git show HEAD:TODO.md > TODO.md ) >/dev/null 2>&1
+    local MR=$'msg retiring T-970 and T-971\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    ( cd "$ws" && print -r -- "retired" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" i1 -m "$MR" --unfiled-ids "T-970,T-971" mine.txt 2>&1 ); rc=$?
+    check "waving ids past with no ledger naming them is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-UNFILED-UNTRACED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and both untraced ids are named" \
+        $( [[ "$out" == *"T-970"* && "$out" == *"T-971"* ]] && print 1 || print 0 ) "$out"
+    ( cd "$ws"
+      git show HEAD:TODO.md > half.md
+      print -rl -- "  T-970 was drawn by an agent that was killed, and is retired here." >> half.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" i2 -m "$MR" --unfiled-ids "T-970,T-971" mine.txt TODO.md=half.md 2>&1 ); rc=$?
+    check "tracing one of the two is not tracing both" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-UNFILED-UNTRACED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the refusal names the untraced one only" \
+        $( [[ "$out" == *"T-971"* && "$out" != *"T-970"* ]] && print 1 || print 0 ) "$out"
+    ( cd "$ws"
+      git show HEAD:TODO.md > both.md
+      print -rl -- "  T-970 and T-971 were drawn by an agent that was killed, and are retired here." >> both.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" i3 -m "$MR" --unfiled-ids "T-970,T-971" mine.txt TODO.md=both.md 2>&1 ); rc=$?
+    check "naming both in a ledger in the SAME commit is accepted" $(( rc == 0 )) "exit $rc: $out"
+    check "and the escape is recorded in the commit message" \
+        $( [[ $( cd "$ws" && git log -1 --format=%B ) == *"Unfiled-Ids: T-970, T-971"* ]] && print 1 || print 0 )
+    check "which is findable afterwards from any clone" \
+        $( [[ -n "$( cd "$ws" && git log --grep='^Unfiled-Ids:' --format=%h )" ]] && print 1 || print 0 )
+    local MN=$'msg quoting gone=T-972 out of a script\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    ( cd "$ws" && print -r -- "not an id" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" i4 -m "$MN" --not-an-id T-972 mine.txt 2>&1 ); rc=$?
+    check "a fragment that is no ticket reference has nothing to record, and says that instead" $(( rc == 0 )) "exit $rc: $out"
+    check "and that claim is recorded too" \
+        $( [[ $( cd "$ws" && git log -1 --format=%B ) == *"Not-A-Ticket-Id: T-972"* ]] && print 1 || print 0 )
+    ( cd "$ws" && print -r -- "ordinary" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" i5 -m "$M" mine.txt 2>&1 ); rc=$?
+    check "an ordinary commit carries neither trailer" \
+        $( [[ $rc == 0 && $( cd "$ws" && git log -1 --format=%B ) != *Unfiled-Ids* && $( cd "$ws" && git log -1 --format=%B ) != *Not-A-Ticket-Id* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4j (T-1209) -- a = reconstruction must not leave the committing agent reading a stale copy"
+    # The `=` form commits a tree and never writes the worktree, which is right: the reason to
+    # reach for it is that a sibling has in-flight edits in that file. What nobody owned was the
+    # COMMITTING agent's own copy. `b34c1f5` printed `committed b34c1f5b` and `shared index is
+    # clean`, and both files on disk were byte-identical to HEAD~1 a second later -- and
+    # docs/TODO.md is the ledger, the id allocator and the work queue at once, so the next thing
+    # that agent read was a revision that had moved.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && git show HEAD:TODO.md > TODO.md ) >/dev/null 2>&1
+    ( cd "$ws"
+      git show HEAD:TODO.md > resync.md
+      print -rl -- "" "- [T-980] **the entry whose landing the committing agent has to be able to read.**" \
+                      "  Written through the = form, which never used to write the worktree." >> resync.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j1 -m "$M" TODO.md=resync.md 2>&1 ); rc=$?
+    check "the = reconstruction commits" $(( rc == 0 )) "exit $rc: $out"
+    check "and the worktree copy is no longer a revision behind what just landed" \
+        $( [[ $( cd "$ws" && cat TODO.md ) == $( cd "$ws" && git show HEAD:TODO.md ) ]] && print 1 || print 0 )
+    check "and it says so rather than leaving the agent to find out" \
+        $( [[ "$out" == *"re-synced the worktree copy"* ]] && print 1 || print 0 ) "$out"
+    # The branch that must NOT be written, which is the reason this is conditional and not a `git
+    # checkout`: a worktree holding somebody's in-flight edits is the case the = form exists for.
+    ( cd "$ws" && git show HEAD:TODO.md > TODO.md
+      print -r -- "  a sibling's in-flight line, in the worktree and in no commit." >> TODO.md ) >/dev/null 2>&1
+    ( cd "$ws"
+      git show HEAD:TODO.md > decline.md
+      print -rl -- "" "- [T-982] **my own entry, reconstructed without the sibling's line.**" \
+                      "  Which is the whole reason the = form exists." >> decline.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j2 -m "$M" TODO.md=decline.md 2>&1 ); rc=$?
+    check "a reconstruction declining a worktree line still commits" $(( rc == 0 )) "exit $rc: $out"
+    check "the worktree copy holding a sibling's line is left exactly alone" \
+        $( [[ $( cd "$ws" && cat TODO.md ) == *"in-flight line"* ]] && print 1 || print 0 )
+    check "and the agent is told to read HEAD rather than the file on disk" \
+        $( [[ "$out" == *"git show HEAD:<path> > <path>"* ]] && print 1 || print 0 ) "$out"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"
     say "         -- the shapes that commit nothing must not read as a commit"
