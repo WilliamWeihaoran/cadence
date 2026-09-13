@@ -1,7 +1,7 @@
 import Foundation
 
-/// Whether the row the user just dropped landed somewhere they can see it, and the one sentence
-/// that says so when it did not.
+/// Whether the row the user just dropped landed somewhere they can see it, and the sentence that
+/// says so when it did not — or when it did not land at all ([[T-1174]]).
 ///
 /// **The condition is per drop, not per sort (T-1077).** [[T-1054]] proposed refusing the reorder
 /// half of a drop whenever the active sort is not `.custom`, on the premise that the dragged row
@@ -41,8 +41,38 @@ enum CadenceReorderVisibility {
     ///
     /// It claims the move, because the move happened: the caller only reaches this once
     /// `CadenceOrderCommit.commit` has answered `true`, and since T-1119 `notice(droppedID:
-    /// targetID:in:sortKeyOrder:)` also refuses to speak for a drop that had nothing to commit.
+    /// targetID:in:sortKeyOrder:)` refuses to speak *this* sentence for a drop that had nothing to
+    /// commit — that drop gets `acrossListsNotice`, which claims nothing.
     static let offScreenNotice = "Moved, but this sort doesn't show it there."
+
+    /// What a drop that crossed lists and therefore moved nothing says ([[T-1174]]).
+    ///
+    /// **This is the sentence [[T-1119]]'s answer needs, not the option that answer declined.** The
+    /// repository owner was given three choices and picked *"Reorder within its own list only"*.
+    /// That ticket's own text records what picking it costs: the option "would be [[T-614]]'s rule
+    /// inverted and would need a sentence of its own to be honest", because a drag that crosses
+    /// lists now visibly does nothing. Option 3 was a different thing — *keep* the cross-list
+    /// renumber and explain the move at the drop — and nothing here revives it: the drop still
+    /// writes nothing, and this reports that rather than softening it.
+    ///
+    /// **It leads with the outcome and then gives the rule**, in that order, because the first
+    /// thing the user needs is that the spring-back was not a failure — T-614's rule is that a
+    /// visible rearrangement is the success report, so its absence reads as a refusal unless
+    /// something says otherwise. `CadenceOrderCommit.failureNotice` is what a refusal says, and it
+    /// is deliberately not this: nothing failed, so it is drawn in
+    /// `CadenceInlineNotice(tone: .informational)` beside the other landing sentence.
+    ///
+    /// **It names a list rather than a sort**, which is the one thing that makes it safe to draw on
+    /// all three row surfaces: `offScreenNotice` may not name a sort mode because the surfaces
+    /// speak two vocabularies for it (*Custom* and *List Order*), and "its own list" has one
+    /// spelling everywhere — it is `CadenceTaskQuerySupport.listGroupKey`, the same grouping the
+    /// sidebar, Today's headers and All Tasks' By List mode all use, Inbox included.
+    ///
+    /// **It teaches nothing about `order`.** A sentence explaining that each list carries its own
+    /// hand-made sequence would be a paragraph about a data model at the moment the user is trying
+    /// to move a row; this states the rule as a rule, which is all that is needed to aim the next
+    /// drag — drop it on a row of its own list and it moves.
+    static let acrossListsNotice = "Nothing moved — rows only reorder within their own list."
 
     /// The notice for one drop, or `nil` when the drop is fully visible — **or when it moved
     /// nothing at all**.
@@ -57,8 +87,12 @@ enum CadenceReorderVisibility {
     /// one this type exists to avoid. So the same span rule is asked here, from the same shared
     /// type, rather than being re-derived per surface.
     ///
-    /// What such a drop should say instead — today it says nothing and the row springs back — is
-    /// the half of T-1119 the owner's answer deliberately did not buy, and is filed as [[T-1174]].
+    /// **What such a drop says instead is `acrossListsNotice` ([[T-1174]])**, and only when it
+    /// really did ask for something: `CadenceRowReorderSpan.movesTheSlice` separates a drop that was
+    /// declined because it crossed lists from one that asked for no change at all, and the second
+    /// stays silent. So this answers one of three things, and the three arms are the three
+    /// different events a drop can be — moved and shown, moved and not shown, not moved and told
+    /// why.
     ///
     /// **Ask this BEFORE the drop lands, and report it after.** `tasks` are live model rows: once
     /// `TasksPanelSupport.reorderTask` has renumbered them, the arrangement this question is about
@@ -84,9 +118,16 @@ enum CadenceReorderVisibility {
         sortKeyOrder: (AppTask, AppTask) -> TaskSortKeyOrder
     ) -> String? {
         guard let dropped = tasks.first(where: { $0.id == droppedID }),
-              let target = tasks.first(where: { $0.id == targetID }),
-              CadenceRowReorderSpan.ownListSiblings(moving: droppedID, before: targetID, in: tasks) != nil
-        else { return nil }
+              let target = tasks.first(where: { $0.id == targetID }) else { return nil }
+        guard CadenceRowReorderSpan.ownListSiblings(moving: droppedID, before: targetID, in: tasks) != nil else {
+            // The drop wrote nothing. Which of the two reasons it was decides whether there is
+            // anything to say: a gesture that asked for no change needs no sentence, and one that
+            // asked for a change across lists and was declined is the one that springs back
+            // unexplained (T-1174).
+            return CadenceRowReorderSpan.movesTheSlice(moving: droppedID, before: targetID, in: tasks)
+                ? acrossListsNotice
+                : nil
+        }
         return sortKeyOrder(dropped, target) == .tie ? nil : offScreenNotice
     }
 

@@ -5662,28 +5662,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Those four tests reached HEAD before this fix did, and that is [[T-679]]'s shared-index hazard in a new spelling.** They were sitting unstaged in the working tree while `mcpwrite2` committed its own edit to the *same file*, so `2c95a84` carried them in. Between that commit and this one, `CadenceTests` did not compile at HEAD: the tests name `SidebarListRegionContent` and `SidebarAddFirstListButton`, which existed only in this agent's tree. Nothing was lost and nothing needed rewriting, but the window is real and `agent-commit.sh`'s foreign-path refusal does not see it — a path the committing agent legitimately touches can still carry somebody else's uncommitted lines.
   Measured: full `-only-testing:CadenceTests` green at 4650 tests in 394 suites, 0 warnings, 0 compile errors. **Mutation-tested 4/4 killed, 0 survived, 0 inconclusive, 0 invalid**, over a baseline green at 22 tests, in the tree that produced the run above. M1 is the one that matters — the bare `ForEach(listSections)`, i.e. the empty sidebar a fresh install saw — killed by `theMacSidebarsListRegionDrawsTheFirstListActionWhenItHasNoSections`. M2 pins `resolve` to `.sections` (the same defect one level down) and M3 to `.firstListAction` (a second create control beside headers that already carry one); M4 puts `ContextSection`'s inline copy of the row back, and is killed by the app-target sweep, which is the guard against the near-copy. The results arrive one commit late because the batch sat second in the test-host queue for 55 minutes while `CadenceTests` did not compile at HEAD, and unbreaking HEAD came first.
 
-- [T-1174] **A cross-list row drop that writes nothing says nothing, and the row just springs back.** Filed 2026-09-12 by `b10land` while landing [[T-1119]].
-  That ticket's answer — *"Reorder within its own list only"* — makes one gesture correctly a
-  no-op: a drag of a row over a row in another list, where the dragged row passes none of its own
-  list's siblings in that section. `CadenceRowReorderSpan.ownListSiblings` answers `nil`,
-  `TasksPanelSupport.reorderTask` writes nothing and answers `true`, and
-  `CadenceReorderVisibility.notice` stays silent so it cannot claim a move that did not happen. All
-  of that is right, and pinned.
-  **What is missing is the third option T-1119 put to the owner and the answer did not buy:** a
-  sentence at the drop, the way [[T-1077]]'s *"Moved, but this sort doesn't show it there."*
-  already handles the other invisible landing. Today the user drags, the row animates back, and
-  nothing explains why — which reads as a gesture that *failed* rather than one that was declined,
-  and is [[T-614]]'s rule in the direction hardest to notice.
-  **Where it would go.** `CadenceReorderVisibility` already owns the one sentence of this kind and
-  already knows the answer: its `notice(droppedID:targetID:in:sortKeyOrder:)` asks the span rule
-  and so can already tell "moved but not shown here" from "nothing to move". A second `String` on
-  that type and a third arm, drawn through the `CadenceInlineNotice(tone: .informational)` all
-  three row surfaces already hold, is the whole shape — an afternoon, not a project.
-  **Not obviously worth building, which is why it is filed rather than done.** It needs copy that
-  is honest about a per-list `order` model without teaching it, and it fires only for people who
-  both arrange rows by hand and use All Tasks. Worth asking the owner for the sentence before
-  writing one.
-
 - [T-1206] **CLOSED 2026-09-13 (agent `ledgerguard`) — enforced at zero NEW rather than at one, because the reading is a delta and a delta needs no floor.** Originally filed as: **`LEDGER-ID-UNFILED` implements half of what its own header claims: an id that lives only in another entry's `[[prose link]]` is invisible to it.** Filed 2026-09-12 by `ledgerheal2` while closing [[T-1123]]. The guard's header in `scripts/agent-commit.sh` says an id *"that exists only in a commit message, **or only in another entry's prose**, is invisible to the next agent computing 'next free'"* and then reads the commit message alone. Both halves are real and the second one has a body count: `T-1039` was a `[[link]]` beside [[T-1037]] with nothing behind it, noticed by [[T-1042]]'s closure and left standing for a week, and `T-1117` was handed out inside [[T-624]]'s closure with no stub — which is the incident T-1106 itself cites. **MEASURED at `60c69b6`:** the two ledgers hold **478** distinct `[[T-n]]` links, of which **29** resolve to no formal `- [T-n]` entry anywhere. This commit's recovery clears seven of them, leaving **22**. **Enforceable at 1, not at 0**, and that is the decision to make first: 21 of the 22 are `T-441` or below and sit inside [[T-462]]'s deliberately un-backfilled deficit, so a guard would need a floor — and a floor is a magic number that rots. The one above the line is `T-1069`, filed as its own problem below. The cheap reading is: for each `[[T-n]]` in a ledger this commit stages, require a formal entry somewhere, with the pre-T-462 set declared once. The expensive-but-honest alternative is to fix the 21 links rather than exempt them.
   **RE-DERIVED at `b23845d` rather than quoted:** the two ledgers hold **486** distinct `[[T-n]]` links and **22** resolve to no formal `- [T-n]` entry anywhere. 21 are `T-441` or below, inside [[T-462]]'s deliberately un-backfilled deficit; the one above the line is `T-1069`, which appears in no commit message either and is filed as [[T-1221]].
   **THE DECISION DISSOLVES THE CHOICE RATHER THAN TAKING A SIDE.** `LEDGER-LINK-UNFILED` reads a **delta against HEAD**, the way [[T-1072]]'s duplicate guard does and for the same measured reason: only a link THIS commit introduces is read, so the 22 standing ones are HEAD's and stay HEAD's. No floor is declared, no backfill T-462 forbids is demanded, and the guard is enforceable at **zero new** — not at 1. `--unfiled-links <exact,sorted,list>` is there for a historical reference you really are only quoting.
@@ -5717,6 +5695,41 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Not repaired in history, deliberately.** Rewriting a landed commit's message means `update-ref` over a HEAD that siblings are committing onto, which is the one operation this repository's whole commit path exists to avoid; the amend was attempted, declined by the harness, and the record is being corrected where the repository actually keeps its record instead — [[T-1206]], [[T-1207]] and [[T-1209]] each name `938cdb7` and say the subject is not theirs. `git log --grep=T-1206` will not find that commit; the ledger will.
   **Two fixes, and they are independent.** (1) Cheap and immediate: name a message file for the agent and the work (`msg-<agent>-<ticket>.txt`), which `docs/SUBAGENT_RUNBOOK.md` now says. (2) Mechanical, and the one worth arguing about: `agent-commit.sh` could compare the ids its MESSAGE names against the ids whose ledger entries the same commit CHANGES, and refuse when both sets are non-empty and disjoint — this commit's message named `T-1174`/`T-1175` while its ledger hunk rewrote `T-1206`, `T-1207` and `T-1209`, which is as clean a signal as the guard family gets. It needs a replay over history before it lands, because a commit that edits an unrelated entry in passing is an ordinary thing to do.
 ## Done
+
+- [T-1174] **CLOSED 2026-09-13 (written by agent `reorderfeel`, verified and landed by `reorderland`) — a cross-list row drop that writes nothing now says so, instead of springing back unexplained.** The half of [[T-1119]] the owner's answer did not buy, filed rather than assumed and then built.
+  **The sentence is `CadenceReorderVisibility.acrossListsNotice`:** *"Nothing moved — rows only
+  reorder within their own list."* It leads with the outcome and then gives the rule, because
+  [[T-614]]'s rule is that a visible rearrangement *is* the success report, so its absence reads as
+  a refusal unless something says otherwise. It is **not** `CadenceOrderCommit.failureNotice` —
+  nothing failed, nothing was even offered to the store — so it is drawn in the
+  `CadenceInlineNotice(tone: .informational)` all three row surfaces already hold, beside the other
+  landing sentence. It names a **list** and not a sort, which is what makes it safe on every
+  surface: `offScreenNotice` may not name a sort because the two surfaces spell the same
+  arrangement *Custom* and *List Order*, and "its own list" has one spelling everywhere.
+  **The real work is the discrimination, not the string.** `CadenceRowReorderSpan.ownListSiblings`
+  answers `nil` for two different events and only one of them is an event: *"nothing was asked
+  for"* (drop a row on the row already immediately after it) must stay silent, and *"something was
+  asked for and was declined"* is the one that springs back unexplained.
+  `CadenceRowReorderSpan.movesTheSlice` separates them **by reading the slice**, not by comparing
+  the two rows' lists — because a drag can cross a list boundary and still move the row past its
+  own siblings, in which case it is a real move and gets the other sentence.
+  `adragThatOnlyPassesAnotherListsRowIsDeclinedAndSaysSo` is the case that forces the slice
+  reading; `adropThatChangesNothingIsNotToldWhyItChangedNothing` is the arm that keeps the sentence
+  meaning something. Both public answers are built on one private `sliceMove`, so the two can never
+  disagree about what a gesture asked for, and `everyRowRenumberTakesItsSequenceInOrder` follows
+  [[T-884]]'s property into it.
+  **A second, separately-real defect went with it.** A list's Tasks tab asked the notice about its
+  whole `tasks` while the renumber used `openTasks(from: tasks)`, so the two were asked about
+  different sequences: a drop whose **open** rows are already in the order it asks for, but which
+  passes a *finished* row on the way, wrote nothing and was told *"Moved, but this sort doesn't
+  show it there."* — the exact false claim that type exists to avoid, one surface in. Both
+  questions now take the rows the drop renumbers, and
+  `thelistTabAsksTheNoticeAboutTheRowsItRenumbers` measures both readings over one arrangement
+  rather than asserting the fixed one alone.
+  **Measured: the full `-only-testing:CadenceTests` run green at 4838 tests in 405 suites, `XCODEBUILD_EXIT=0`, 0 compile errors, 0 warnings.** This entry's predecessor cited
+  `acrossListDropThatWroteNothingDoesNotClaimAMove`; the test is now
+  `acrossListDropThatWroteNothingSaysSoWithoutClaimingAMove`, since it asserts the sentence rather
+  than only the absence of the wrong one, and [[T-1119]]'s entry above is corrected to match.
 
 - [T-1175] **CLOSED 2026-09-13 (written by agent `reorderfeel`, verified and landed by `reorderland`) — a row renumber writes `0…n` over the sequence it spans, not over the slice the screen was showing.** [[T-1055]]'s remaining half, which [[T-1119]] narrowed without closing.
   **Two arrays, not one wider one, and that is the whole design.** `scopeTasks` is what the user
@@ -6012,7 +6025,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Pinned by three new `@Test`s in `CadenceRowReorderSliceSpanTests` (the cross-list drop renumbers
   its own list and leaves the other alone, including a third row that was in neither section; the
   no-sibling drop writes nothing; the one-list slice is unchanged) and one in
-  `CadenceReorderOffScreenNoticeTests` (`acrossListDropThatWroteNothingDoesNotClaimAMove`, with its
+  `CadenceReorderOffScreenNoticeTests` (`acrossListDropThatWroteNothingSaysSoWithoutClaimingAMove`, with its
   mirror — the same two lists, the same date sort, the same drop, silent without a sibling and
   speaking with one).
   **Originally filed as:** **For the user: on All Tasks, what should dragging a row above a row in another list do?**

@@ -206,10 +206,18 @@ struct ListTasksView: View {
         // answered, they carry the orders it just wrote, so a notice computed afterwards is asked
         // about the wrong sequence. It is still *reported* afterwards, and only on a drop the store
         // took.
+        //
+        // **The same array the renumber gets, and that is not cosmetic (T-1174).** This handed the
+        // notice the list's whole `tasks` while handing the renumber only its open ones, so the two
+        // were asked about different sequences: a drop whose open rows are already in the order it
+        // asks for, but which passes a *finished* row on the way, writes nothing and was told
+        // "Moved, but this sort doesn't show it there" — the false claim this type exists to avoid,
+        // one surface in. `CadenceReorderVisibility` reads `tasks` only to resolve the two ids and
+        // to ask the span rule, and both questions are about the rows the drop renumbers.
         let landing = CadenceReorderVisibility.notice(
             droppedID: droppedID,
             targetID: targetID,
-            in: tasks,
+            in: CadenceTaskQuerySupport.openTasks(from: tasks),
             sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
         )
         let reordered = TasksPanelSupport.reorderTask(

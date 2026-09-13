@@ -27,6 +27,11 @@ import Foundation
 /// all of it, and not the handful of rows the screen was showing ([[T-1175]], the other half of
 /// [[T-1055]]). Widening the second did not undo the first: a row of another list is not in the
 /// sequence either function returns, and `thewholeSequenceTakesOnlyTheListItsKeyNames` measures it.
+///
+/// The third thing on this type is not a rule but a **distinction**: `movesTheSlice` separates the
+/// drop `ownListSiblings` declines because it crossed lists from the one it declines because
+/// nothing was asked for, which is what lets `CadenceReorderVisibility` speak for the first and
+/// stay quiet for the second ([[T-1174]]).
 enum CadenceRowReorderSpan {
 
     /// The dropped row's **own list's** rows, in the sequence the drop puts them in — or `nil` when
@@ -50,9 +55,10 @@ enum CadenceRowReorderSpan {
     ///
     /// **Callers must treat `nil` as success with nothing to write, not as a refusal.** Nothing
     /// failed: `CadenceOrderCommit.failureNotice` would be two false sentences, exactly as
-    /// `CadenceReorderVisibility` says about the other notice. What such a drop should *say* — it
-    /// currently says nothing, and the row springs back — is the half of T-1119 the owner's answer
-    /// deliberately did not buy, and is filed as [[T-1174]].
+    /// `CadenceReorderVisibility` says about the other notice. What such a drop *says* is
+    /// `CadenceReorderVisibility.acrossListsNotice` ([[T-1174]]) — it said nothing at all until
+    /// then, and the row springing back with no explanation reads as a gesture that failed rather
+    /// than one that was declined. Which of the two `nil`s is which is `movesTheSlice`.
     ///
     /// The container is `CadenceTaskQuerySupport.listGroupKey`, so "its own list" means here what
     /// it means to every by-list grouping in the app, Inbox included.
@@ -61,13 +67,11 @@ enum CadenceRowReorderSpan {
         before targetID: UUID,
         in scopeTasks: [AppTask]
     ) -> [AppTask]? {
-        let sorted = scopeTasks.sorted { $0.order < $1.order }
-        guard let ordered = CadenceOrderReassignment.moved(sorted, droppedID, before: targetID),
-              let dropped = ordered.first(where: { $0.id == droppedID }) else { return nil }
+        guard let move = sliceMove(moving: droppedID, before: targetID, in: scopeTasks) else { return nil }
 
-        let key = CadenceTaskQuerySupport.listGroupKey(for: dropped)
-        let after = ordered.filter { CadenceTaskQuerySupport.listGroupKey(for: $0) == key }
-        let before = sorted.filter { CadenceTaskQuerySupport.listGroupKey(for: $0) == key }
+        let key = CadenceTaskQuerySupport.listGroupKey(for: move.dropped)
+        let after = move.after.filter { CadenceTaskQuerySupport.listGroupKey(for: $0) == key }
+        let before = move.before.filter { CadenceTaskQuerySupport.listGroupKey(for: $0) == key }
         guard before.map(\.id) != after.map(\.id) else { return nil }
         return after
     }
@@ -145,5 +149,50 @@ enum CadenceRowReorderSpan {
         }
         sequence.append(contentsOf: slice[next...])
         return sequence
+    }
+
+    /// Whether the drop asks for **any** change to the slice's own `order` sequence, ignoring which
+    /// lists the rows are in — the question that separates the two drops `ownListSiblings` declines
+    /// ([[T-1174]]).
+    ///
+    /// Both come back as `nil` from that function and both write nothing, but they are not the same
+    /// event and must not get the same response:
+    ///
+    /// - **Nothing was asked for.** "Insert me immediately before the row already immediately after
+    ///   me", or a drop on the row the pointer started on. The sequence already says what the
+    ///   gesture asked it to say, so there is nothing to report and this answers `false`.
+    /// - **Something was asked for and declined.** The row really does move in the slice — past
+    ///   rows of *other* lists only — and T-1119's rule declines it because `order` is a per-list
+    ///   arrangement and the instruction names no single sequence. That is the drop the user sees
+    ///   spring back with no explanation, and this answers `true` so
+    ///   `CadenceReorderVisibility.notice` can say so.
+    ///
+    /// It reads the `order` sequence and not the displayed one for the same reason the renumber
+    /// does ([[T-884]]): `order` is the arrangement the drop would write, so it is the arrangement
+    /// the drop's own "did this change anything" question is about.
+    static func movesTheSlice(
+        moving droppedID: UUID,
+        before targetID: UUID,
+        in scopeTasks: [AppTask]
+    ) -> Bool {
+        sliceMove(moving: droppedID, before: targetID, in: scopeTasks) != nil
+    }
+
+    /// The slice before and after the drop, and the dropped row — or `nil` when the drop changes
+    /// the slice's `order` sequence not at all.
+    ///
+    /// One place, because both public answers above are built on it and a second spelling of
+    /// "sorted by `order`, then moved" is how `ownListSiblings` and `movesTheSlice` would come to
+    /// disagree about what the same gesture asked for.
+    private static func sliceMove(
+        moving droppedID: UUID,
+        before targetID: UUID,
+        in scopeTasks: [AppTask]
+    ) -> (dropped: AppTask, before: [AppTask], after: [AppTask])? {
+        let sorted = scopeTasks.sorted { $0.order < $1.order }
+        guard let ordered = CadenceOrderReassignment.moved(sorted, droppedID, before: targetID),
+              ordered.map(\.id) != sorted.map(\.id),
+              let dropped = ordered.first(where: { $0.id == droppedID }) else { return nil }
+        return (dropped, sorted, ordered)
     }
 }

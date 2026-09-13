@@ -352,6 +352,12 @@ struct CadenceReorderOffScreenNoticeTests {
                 !source.contains("\"Moved, but this sort"),
                 "\(path) retypes the off-screen sentence instead of reading it"
             )
+            // T-1174's second sentence arrives through the same `landing` value, so a surface that
+            // spelled it here would be drawing one of the two notices from a copy.
+            #expect(
+                !source.contains("\"Nothing moved"),
+                "\(path) retypes the declined-drop sentence instead of reading it"
+            )
             #expect(
                 source.contains("let landing = CadenceReorderVisibility.notice("),
                 "\(path) does not ask whether the row is visible where it was dropped"
@@ -497,9 +503,14 @@ struct CadenceReorderOffScreenNoticeTests {
     /// prevent.
     ///
     /// The pair is the asymmetry this file is built on: the **same** two lists, the same date sort,
-    /// the same drop across a date boundary — silent when nothing was written, and speaking when
-    /// the drag really did pass a sibling of its own.
-    @Test func acrossListDropThatWroteNothingDoesNotClaimAMove() throws {
+    /// the same drop across a date boundary — one declined and told so, one that really did pass a
+    /// sibling of its own and claims the move.
+    ///
+    /// **The declined arm said nothing at all until [[T-1174]]**, which is the defect that ticket
+    /// is about: the row springs back and T-614's rule makes a missing rearrangement read as a
+    /// refusal. What it says now is `acrossListsNotice`, and the assertion below is still that it
+    /// does not claim a move — a sentence, but not that one.
+    @Test func acrossListDropThatWroteNothingSaysSoWithoutClaimingAMove() throws {
         let modelContext = ModelContext(try container())
         let work = Project(name: "Work")
         let home = Project(name: "Home")
@@ -535,9 +546,14 @@ struct CadenceReorderOffScreenNoticeTests {
             "a drop with nothing to write is not a refusal"
         )
         #expect(rows.map(\.order) == [0, 1, 2], "non-vacuity: the drop wrote an order after all")
+        let declined = try notice("Home only", onto: "Work first", in: rows, field: .date, direction: .ascending)
         #expect(
-            try notice("Home only", onto: "Work first", in: rows, field: .date, direction: .ascending) == nil,
+            declined != CadenceReorderVisibility.offScreenNotice,
             "the notice claimed a move for a drop that wrote nothing"
+        )
+        #expect(
+            declined == CadenceReorderVisibility.acrossListsNotice,
+            "a drop that was declined for crossing lists said nothing, and the row just sprang back"
         )
 
         // The mirror, one sibling added: the same cross-boundary drop now really does move the row,
@@ -548,6 +564,188 @@ struct CadenceReorderOffScreenNoticeTests {
         #expect(
             try notice("Home second", onto: "Work first", in: withSibling, field: .date, direction: .ascending)
                 == CadenceReorderVisibility.offScreenNotice
+        )
+    }
+
+    // MARK: - T-1174: the drop that was declined rather than lost
+
+    /// **The second sentence reports the rule, and claims nothing.**
+    ///
+    /// Three separate claims, because three separate things would be wrong. It must not be
+    /// `offScreenNotice`, which says *"Moved"* about a row that did not move. It must not be
+    /// `CadenceOrderCommit.failureNotice`, which says the store refused something — nothing was
+    /// offered to the store at all here, and a red line would send the user hunting for a fault.
+    /// And it must not name a sort mode, for the reason `offScreenNotice` may not: the two surfaces
+    /// that draw it label the same arrangement `Custom` and `List Order`, so either name is wrong
+    /// on one of them. What it may name is a **list**, which has one spelling on every surface.
+    @Test func theAcrossListsSentenceReportsTheRuleRatherThanAFailure() {
+        #expect(CadenceReorderVisibility.acrossListsNotice == "Nothing moved — rows only reorder within their own list.")
+        #expect(CadenceReorderVisibility.acrossListsNotice != CadenceReorderVisibility.offScreenNotice)
+        #expect(CadenceReorderVisibility.acrossListsNotice != CadenceOrderCommit.failureNotice)
+        #expect(!CadenceReorderVisibility.acrossListsNotice.contains("Couldn't"))
+        #expect(!CadenceReorderVisibility.acrossListsNotice.contains("Moved,"))
+        for label in [TaskSortField.custom.rawValue, CadenceTaskSortMode.listOrder.title] {
+            #expect(
+                !CadenceReorderVisibility.acrossListsNotice.contains(label),
+                "the sentence names \(label), which is this arrangement's name on only one of the two surfaces"
+            )
+        }
+    }
+
+    /// **A drop that asked for nothing is told nothing**, and this is the arm that makes the
+    /// sentence above mean something rather than firing on every drop that writes no row.
+    ///
+    /// Both `nil`s out of `CadenceRowReorderSpan.ownListSiblings` write nothing, and only one of
+    /// them is an event. Dropping a row onto the row already immediately after it in `order` is
+    /// the gesture `CadenceOrderReassignment` calls a no-op in the other direction: the sequence
+    /// already says what the drag asked it to say, so there is nothing to explain and a sentence
+    /// would be noise on a screen that did exactly what it should.
+    @Test func adropThatChangesNothingIsNotToldWhyItChangedNothing() throws {
+        let modelContext = ModelContext(try container())
+        let project = Project(name: "Work")
+        modelContext.insert(project)
+
+        let rows = ["Alpha", "Bravo", "Charlie"].enumerated().map { index, title -> AppTask in
+            let task = AppTask(title: title)
+            task.order = index
+            task.project = project
+            modelContext.insert(task)
+            return task
+        }
+        try modelContext.save()
+
+        #expect(
+            CadenceRowReorderSpan.ownListSiblings(
+                moving: rows[0].id,
+                before: rows[1].id,
+                in: rows
+            ) == nil,
+            "non-vacuity: this drop writes something after all, so it is not the silent arm"
+        )
+        #expect(
+            !CadenceRowReorderSpan.movesTheSlice(moving: rows[0].id, before: rows[1].id, in: rows),
+            "a drop onto the row already after it was read as a move that was declined"
+        )
+        #expect(
+            try notice("Alpha", onto: "Bravo", in: rows, field: .custom, direction: .ascending) == nil,
+            "a drop that asked for no change was given a sentence explaining why it made none"
+        )
+
+        // The asymmetry, over the same three rows: one row further along, the same `nil` from
+        // `ownListSiblings` is no longer available — the drop really does move the row — so the
+        // predicate that separates the two answers the other way.
+        #expect(
+            CadenceRowReorderSpan.movesTheSlice(moving: rows[0].id, before: rows[2].id, in: rows),
+            "a drop that moves the row past a sibling was read as asking for nothing"
+        )
+    }
+
+    /// **The declined drop does not need the two rows to be in different lists** — only the rows it
+    /// passed on the way. This is why `movesTheSlice` reads the slice rather than comparing the two
+    /// ids' lists, and the case would be silent under a rule that did.
+    ///
+    /// Work first, Home only, Work second, in that `order`. Dragging *Work first* above *Work
+    /// second* names two rows of the same list, and the only row it passes belongs to another one —
+    /// so within Work the arrangement already says what the drag asked for, nothing is written, and
+    /// the row springs back over the Home row it was dragged past.
+    @Test func adragThatOnlyPassesAnotherListsRowIsDeclinedAndSaysSo() throws {
+        let modelContext = ModelContext(try container())
+        let work = Project(name: "Work")
+        let home = Project(name: "Home")
+        modelContext.insert(work)
+        modelContext.insert(home)
+
+        func row(_ title: String, order: Int, project: Project) -> AppTask {
+            let task = AppTask(title: title)
+            task.order = order
+            task.project = project
+            modelContext.insert(task)
+            return task
+        }
+
+        let rows = [
+            row("Work first", order: 0, project: work),
+            row("Home only", order: 1, project: home),
+            row("Work second", order: 2, project: work)
+        ]
+        try modelContext.save()
+
+        #expect(
+            TasksPanelSupport.reorderTask(
+                droppedID: rows[0].id,
+                targetID: rows[2].id,
+                scopeTasks: rows,
+                spanTasks: rows,
+                modelContext: modelContext
+            ),
+            "a drop with nothing to write is not a refusal"
+        )
+        #expect(rows.map(\.order) == [0, 1, 2], "non-vacuity: the drop wrote an order after all")
+        #expect(
+            try notice("Work first", onto: "Work second", in: rows, field: .custom, direction: .ascending)
+                == CadenceReorderVisibility.acrossListsNotice,
+            "a drag declined for the rows it passed was left unexplained"
+        )
+    }
+
+    /// **The notice and the renumber must be asked about the same rows** — the list's Tasks tab
+    /// asked them about different ones, and that is a false claim rather than an inconsistency.
+    ///
+    /// The tab handed `notice` its whole `tasks` and `TasksPanelSupport.reorderTask` only
+    /// `openTasks(from: tasks)`. A drop whose **open** rows are already in the order it asks for,
+    /// but which passes a finished row on the way, is declined by the span rule over the open slice
+    /// and accepted by it over the whole list — so nothing was written and the tab said *"Moved,
+    /// but this sort doesn't show it there"*. Both readings are below, over one arrangement.
+    @Test func thelistTabAsksTheNoticeAboutTheRowsItRenumbers() throws {
+        let modelContext = ModelContext(try container())
+        let project = Project(name: "Work")
+        modelContext.insert(project)
+
+        func row(_ title: String, order: Int, done: Bool) -> AppTask {
+            let task = AppTask(title: title)
+            task.order = order
+            task.project = project
+            task.status = done ? .done : .todo
+            task.scheduledDate = done ? "" : (order == 0 ? "2026-09-01" : "2026-09-08")
+            modelContext.insert(task)
+            return task
+        }
+
+        // Open, finished, open — so "put Open first above Open second" is a no-op among the open
+        // rows and a real move across the whole list.
+        let all = [row("Open first", order: 0, done: false), row("Finished", order: 1, done: true), row("Open second", order: 2, done: false)]
+        try modelContext.save()
+        let open = CadenceTaskQuerySupport.openTasks(from: all)
+        #expect(open.map(\.title) == ["Open first", "Open second"], "non-vacuity: the tab's filter hides nothing here")
+
+        #expect(
+            TasksPanelSupport.reorderTask(
+                droppedID: all[0].id,
+                targetID: all[2].id,
+                scopeTasks: open,
+                spanTasks: all,
+                modelContext: modelContext
+            ),
+            "a drop with nothing to write is not a refusal"
+        )
+        #expect(all.map(\.order) == [0, 1, 2], "non-vacuity: the drop wrote an order after all")
+
+        #expect(
+            try notice("Open first", onto: "Open second", in: open, field: .date, direction: .ascending) == nil,
+            "the tab claimed a move for a drop that wrote nothing"
+        )
+        #expect(
+            try notice("Open first", onto: "Open second", in: all, field: .date, direction: .ascending)
+                == CadenceReorderVisibility.offScreenNotice,
+            "non-vacuity: the wider array answers the same as the narrow one, so nothing was being measured"
+        )
+
+        // And the site itself asks both questions about one array.
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/ListDetailComponents.swift")
+        let body = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: source)
+        #expect(
+            body.contains("in: CadenceTaskQuerySupport.openTasks(from: tasks)"),
+            "the tab asks the notice about rows its renumber does not touch"
         )
     }
 
@@ -729,6 +927,12 @@ struct CadenceReorderOffScreenNoticeTests {
             #expect(
                 !source.contains("\"Moved, but this sort"),
                 "\(path) retypes the off-screen sentence instead of reading it"
+            )
+            // T-1174's second sentence arrives through the same `landing` value, so a surface that
+            // spelled it here would be drawing one of the two notices from a copy.
+            #expect(
+                !source.contains("\"Nothing moved"),
+                "\(path) retypes the declined-drop sentence instead of reading it"
             )
             #expect(
                 source.contains("reorderOffScreenNotice = reordered ? CadenceReorderVisibility.cardDropNotice("),

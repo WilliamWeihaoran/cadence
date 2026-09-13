@@ -194,8 +194,13 @@ struct CadenceRowReorderSequenceTests {
         // now share; the property it carries is unchanged, so this follows it rather than dropping
         // it. The panel is pinned by delegating to that rule and by holding no sort of its own.
         let span = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceRowReorderSpan.swift")
-        let spanRule = try CadenceCommitSurfaceScan.declarationBody(named: "ownListSiblings", in: span)
+        // The sort moved once more in T-1174, into the private step `ownListSiblings` and
+        // `movesTheSlice` now share so that the two cannot disagree about what a gesture asked for.
+        // The property is unchanged and this follows it again rather than being dropped.
+        let spanRule = try CadenceCommitSurfaceScan.declarationBody(named: "sliceMove", in: span)
         #expect(spanRule.contains("scopeTasks.sorted { $0.order < $1.order }"), "the shared row renumber left the `order` sequence")
+        let ownList = try CadenceCommitSurfaceScan.declarationBody(named: "ownListSiblings", in: span)
+        #expect(!ownList.contains(".sorted"), "the span rule grew a second sequence beside the one it shares")
 
         let panelSupport = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TasksPanelSupport.swift")
         let shared = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: panelSupport)
