@@ -517,7 +517,7 @@ Which path form to use:
 - **Name your `-F` message file after yourself, never `msg.txt`** (T-1222). The session scratchpad is
   ONE directory shared by every agent in the session, and `-F` reads the file at commit time: a
   sibling writing its own `msg.txt` there replaces yours with nothing to say the bytes changed under
-  you. Measured 2026-09-13 — `938cdb7` carries one agent's diff under another agent's subject line,
+  you. Measured 2026-09-13 — `938cdb7` (rewritten as `0fb5504`) carried one agent's diff under another's subject line,
   and the same directory held `msg2.txt` … `msg5.txt` from three agents at once. `msg-<agent>-<ticket>.txt`
   costs nothing; so does reading back `git log -1 --format=%s` after a commit that used `-F`.
 - **A `[[T-n]]` link is an allocation too** (T-1206). The ledger *is* the id allocator, and it is read
