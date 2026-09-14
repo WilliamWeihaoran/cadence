@@ -5694,37 +5694,68 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 - [T-1222] **Every agent in a session shares one scratchpad directory, so `agent-commit.sh -F <message-file>` is a collision surface — and one commit carried the wrong agent's message until it was rewritten.** Filed 2026-09-13 by `ledgerguard`, on its own commit. **MEASURED:** `938cdb7` (rewritten as `0fb5504`) held `ledgerguard`'s [[T-1206]] + [[T-1207]] + [[T-1209]] diff — `scripts/agent-commit.sh`, `docs/SUBAGENT_RUNBOOK.md`, `CadenceTests/CadenceGuardScriptSelftestTests.swift`, `docs/TODO.md` — under the subject *"T-1174 + T-1175: a drop that writes nothing says why, and a renumber spans the list it is numbering"*, which is `reorderfeel`'s work on [[T-1174]]/[[T-1175]]. Both agents wrote `…/scratchpad/msg.txt`; the sibling's write at 11:34:31 replaced the file `ledgerguard` had written minutes earlier, and `-F` read it at commit time with nothing to say the bytes had changed under it. The same directory holds `msg2.txt` … `msg5.txt`, `t1177.txt` and `all.txt` from three different agents, so the generic name is the norm rather than one agent's slip.
   **Repaired before publication, by the coordinator.** `ledgerguard` recorded this as *not* repairable, for a reason worth keeping: rewriting a landed commit means `update-ref` over a HEAD siblings are committing onto, which is the one operation this repository's commit path exists to avoid, and its `--amend` was declined by the harness. Two things made it safe from outside the agent and neither was visible from inside one: the commits were **unpushed**, so no published history ever carried the wrong message; and `git update-ref refs/heads/main <new> <expected-old>` is a compare-and-swap that **fails** rather than clobbers if a sibling lands in between — precisely the hazard named above. Both were rebuilt with `git commit-tree` over their **byte-identical trees**, verified by `git diff bf4491e HEAD --stat` returning empty, so only the messages changed: `938cdb7` → `0fb5504`, `bf4491e` → `bd8227a`. The worktree and index were never touched, which is what allowed it with an agent live in the same checkout. This is not tidiness: id reconciliation reads ids out of commit messages, and [[T-1123]] + [[T-1148]] had just spent a batch repairing that source. `git log --grep=T-1206` now finds the commit.
   **Two fixes, and they are independent.** (1) Cheap and immediate: name a message file for the agent and the work (`msg-<agent>-<ticket>.txt`), which `docs/SUBAGENT_RUNBOOK.md` now says. (2) Mechanical, and the one worth arguing about: `agent-commit.sh` could compare the ids its MESSAGE names against the ids whose ledger entries the same commit CHANGES, and refuse when both sets are non-empty and disjoint — this commit's message named `T-1174`/`T-1175` while its ledger hunk rewrote `T-1206`, `T-1207` and `T-1209`, which is as clean a signal as the guard family gets. It needs a replay over history before it lands, because a commit that edits an unrelated entry in passing is an ordinary thing to do.
-- [T-1216] **[[T-1174]] and [[T-1175]] landed with no mutation testing, which T-1175's own entry asked for by name.** Filed 2026-09-13 by `reorderfeel`, about its own two commits — `cb6687a` and `750f177`.
-  The closed entries record a full `-only-testing:CadenceTests` run green at **4838 tests in 405
-  suites**, 0 warnings, and a **failing-first** proof for T-1175 (the four T-1055 measurements
-  flipped to the asked-for behaviour and run RED against the shipped code: `XCODEBUILD_EXIT=65`, 58
-  tests, 14 issues, no other test failing). What neither records is a single killed mutation, and
-  T-1175's open entry had said in as many words that the change *"wants one mutation-tested commit
-  with `CadenceRowReorderSliceSpanTests` extended over each surface"*.
+- [T-1216] **CLOSED 2026-09-14 (agent `reordermutate`) — the seven mutations [[T-1174]] and [[T-1175]] planned by name are run, and all seven are killed.** The omission this ticket recorded is closed by running the plans, not by re-arguing them.
+  **One `scripts/mutate.sh` batch over a `git archive HEAD` tree at `cea1746`, one test-host lease
+  for the whole of it: 7 killed, 0 survived, 0 inconclusive, 0 refused as invalid.** The reason the
+  author recorded for skipping is kept verbatim below rather than paraphrased, because the cost it
+  names is now measured instead of estimated, and the measurement changes the shape of it:
   **Why it did not happen, which is worth recording rather than excusing:** the test-host lock ran
   25–30 minutes a turn with four agents queued behind it that afternoon, and the author spent its
   cycles on the red proof and two full runs. The plans were written and never run. This is the
   ordinary shape of the omission — not a judgement that the mutations were unnecessary.
-  **The five that were planned, each with the test that should kill it.** They are cheap to
-  re-derive and the first two are the ones that argue:
-  1. `CadenceRowReorderSpan.wholeSequence`'s `guard !anchors.isEmpty` inverted, i.e. the renumber
-     back over the slice — every flipped T-1055 measurement.
-  2. `placed += 1` unconditional instead of `if heldIDs.contains(row.id)` —
-     `thewholeSequenceKeepsACardTheDestinationListDoesNotHoldYet`. **This one is not hypothetical:
-     it was the first draft's real behaviour and a test found it**, which is the strongest reason
-     to have the mutation on record.
-  3. `wholeSequence`'s `listGroupKey` filter dropped, so the write reaches past the list —
-     `thewholeSequenceTakesOnlyTheListItsKeyNames` and `acrossListDropRenumbersTheDraggedRowsOwnListOnly`.
-  4. `ListDetailComponents` handing `spanTasks: CadenceTaskQuerySupport.openTasks(from: tasks)`,
-     i.e. its own slice as its span — `everyRowDropSurfaceHandsInASpanWiderThanItsSlice`. This is
-     the defect a *required* parameter cannot catch, so it is the one that argues for that test.
-  5. `KanbanBoardSupport.reorder`'s `alsoRestoring: sequence` narrowed back to `ordered` —
-     `arefusedCardDropPutsBackEveryRowTheWidenedRenumberTouches`.
-  And two for T-1174, on `movesTheSlice`: `false` (the ticket removed — killed by
-  `acrossListDropThatWroteNothingSaysSoWithoutClaimingAMove`) and `true` (every silent drop given a
-  sentence — killed by `adropThatChangesNothingIsNotToldWhyItChangedNothing`). The pair is the
-  whole discrimination the ticket is about, so a survivor in either direction would mean the
-  sentence fires on a population it was not built for.
+  Each of the seven mutation runs took **31–62 seconds**. The expensive part is the cold build of
+  the isolated tree — 154s — and a batch pays that **once**, not once per mutation; seven separate
+  invocations would have paid it seven times. The lock cost was real, and it was a cost of running
+  the plans one at a time.
+  **Every mutation compiled, which is the claim a mutation report is usually missing.** 0 compile
+  errors in all seven logs, and each run recompiled the file it had changed rather than testing a
+  stale binary: 2 swift compile tasks for M1, M2, M3 and M7, 4 for M4, M5 and M6, against 1019 for
+  the cold baseline. Only M2 raised a warning, and by construction — it removes `heldIDs`'s one
+  reader — which is why the runner sets `CADENCE_ALLOW_WARNINGS=1` over a tree whose whole purpose
+  is to be wrong.
+  **Two unmutated baselines, because the runner only takes one.** `mutate.sh` baselines
+  `mutations[0].suite` alone, so its *green over 14 tests* covers `CadenceRowReorderSliceSpanTests`
+  and says nothing about `CadenceReorderOffScreenNoticeTests`, which the last two mutations are
+  scoped to. Both suites were therefore measured green together first, unmutated:
+  `XCODEBUILD_EXIT=0`, **40 test result lines** (14 + 26), **0 warnings**, 1019 swift compile tasks.
+  Filed as [[T-1245]].
+  **The seven, each with the test that killed it.**
+  1. `wholeSequence`'s `guard !anchors.isEmpty` inverted — the renumber back over the slice. Killed
+     by all four flipped T-1055 measurements plus `thewholeSequenceKeepsACardTheDestinationListDoesNotHoldYet`,
+     `thewholeSequenceLeavesEveryRowTheSliceDoesNotHoldWhereItWas` and
+     `thewholeSequenceTakesOnlyTheListItsKeyNames`: seven tests.
+  2. `placed += 1` unconditional. Killed by `thewholeSequenceKeepsACardTheDestinationListDoesNotHoldYet`
+     **and by no other test in the suite** — the strongest form the claim could take. The mistake
+     that was actually made in the first draft is caught by exactly the one test written for it,
+     and the other thirteen cannot see it.
+  3. `wholeSequence`'s `listGroupKey` filter dropped. Killed by `thewholeSequenceTakesOnlyTheListItsKeyNames`,
+     `acrossListDropRenumbersTheDraggedRowsOwnListOnly`, `therenumberSpansTheWholeListAndStopsAtItsEdge`
+     and `akanbanCardDropRenumbersOneColumnAndCollidesWithTheNext`.
+  4. `ListDetailComponents` handing `spanTasks: CadenceTaskQuerySupport.openTasks(from: tasks)` —
+     its own slice as its span. Killed by `everyRowDropSurfaceHandsInASpanWiderThanItsSlice`, alone.
+     **The kill is textual, and that is the thing to know about it:**
+     `adropOnAListsTasksTabNumbersItsFinishedRowsIntoTheSameSequence` calls
+     `TasksPanelSupport.reorderTask` directly with the right span — it *stands in for* the tab
+     rather than running it — so no behavioural test in either suite reaches
+     `ListDetailComponents`'s own drop path. The source scan is the only thing holding that site,
+     which is precisely why T-1175 wrote it, and this mutation is the proof that it holds.
+  5. `KanbanBoardSupport.reorder`'s `alsoRestoring: sequence` narrowed back to `ordered`. Killed by
+     `arefusedCardDropPutsBackEveryRowTheWidenedRenumberTouches`, alone.
+  6. `movesTheSlice` → `false`. Killed by `acrossListDropThatWroteNothingSaysSoWithoutClaimingAMove`,
+     `adragThatOnlyPassesAnotherListsRowIsDeclinedAndSaysSo` and
+     `adropThatChangesNothingIsNotToldWhyItChangedNothing`.
+  7. `movesTheSlice` → `true`. Killed by `adropThatChangesNothingIsNotToldWhyItChangedNothing`,
+     `theNoticeStaysSilentOnTheDropThatStaysPut`, `thelistTabAsksTheNoticeAboutTheRowsItRenumbers`,
+     `onlyADropAcrossAPriorityBandSpeaks` and `underTheCustomSortEveryDropIsVisible`.
+  **The last pair is the one [[T-1174]] is about, and it answers in both directions.** `false` is
+  killed by the declined arm and `true` by the silent arm, so the sentence fires on the population
+  it was built for and on no other — a survivor either way would have meant it did not. **No test
+  was added, because no mutation survived.** This ticket changes no source: the deliverable is the
+  run, and the tree it ran against is `cea1746` unmodified.
+
+- [T-1245] **`mutate.sh`'s baseline is scoped to `mutations[0].suite`, so a plan naming two suites never establishes that the second one is green unmutated.** Filed 2026-09-14 by `reordermutate` while running [[T-1216]]'s seven plans. **MEASURED at `cea1746`:** the runner takes `probe = mutations[0]` and does one `-only-testing:CadenceTests/<probe.suite>` run, then refuses the whole batch unless it is green — *"in a tree whose suite is already red, or which does not build, KILLED means nothing at all"*, which is exactly right and is asked about one suite. T-1216's plan named two, `CadenceRowReorderSliceSpanTests` for five mutations and `CadenceReorderOffScreenNoticeTests` for two, and the second one was never baselined by the runner.
+  **The direction of the error is what makes it worth a ticket.** A second suite that is already red goes red under the mutation as well, `classify_run` finds failing test lines and a suite that ran, and the verdict printed is **KILLED** — the reassuring answer, reached by a run that measured nothing. That is the same shape as STALE NEEDLE, DID-NOT-COMPILE and NO-TESTS-RAN, each of which this script refuses by name; this one it does not see.
+  **Worked around by hand rather than fixed here:** both suites were measured green together in one unmutated `scripts/xcb.sh` run before the batch — `XCODEBUILD_EXIT=0`, 40 test result lines, 0 warnings, 1019 swift compile tasks — which is what makes T-1216's last two verdicts evidence rather than decoration. The fix is one baseline per distinct `suite:` in the plan: an extra scoped run per additional suite, and nothing at all for the single-suite plans that are the norm.
 
 ## Done
 
