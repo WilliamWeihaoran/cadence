@@ -202,6 +202,69 @@ struct CalendarBehaviorRegressionTests {
         #expect(scrollState.headerOffset == -500)
     }
 
+    // MARK: - T-1271: which hour the timeline restores to
+
+    /// The day's first timed item outranks the remembered hour.
+    ///
+    /// This is the half of T-1271 with a cost attached, so it is pinned rather than left to the
+    /// prose: a user who scrolled to 14:00 and came back does **not** land at 14:00 on a day whose
+    /// first block is at 09:00. The owner asked for "the day opens scrolled to its first timed
+    /// item" on all three surfaces, and a remembered hour is written from wherever a scroll
+    /// stopped, not from a choice — so it loses to what the day actually holds.
+    @Test func theFirstTimedItemOutranksTheRememberedTimelineHour() {
+        #expect(
+            CalendarPageStateSupport.restoredTimelineHour(
+                firstTimedMinute: 9 * 60,
+                rememberedScrollHour: 14
+            ) == 8
+        )
+    }
+
+    /// And it is the *only* thing that outranks it. A day with nothing timed on it has no item to
+    /// open on, so the remembered hour still answers — which is what keeps it from being dead
+    /// weight — and the clock answers when nothing has been remembered yet.
+    @Test func aDayWithNothingTimedStillOpensWhereTheUserLeftIt() throws {
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
+        let twoPM = try #require(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 15, hour: 14))
+        )
+
+        #expect(
+            CalendarPageStateSupport.restoredTimelineHour(
+                firstTimedMinute: nil,
+                rememberedScrollHour: 14,
+                now: twoPM,
+                calendar: calendar
+            ) == 14
+        )
+        // -1 is the unset default of `calendarRememberedTimelineHour`.
+        #expect(
+            CalendarPageStateSupport.restoredTimelineHour(
+                firstTimedMinute: nil,
+                rememberedScrollHour: -1,
+                now: twoPM,
+                calendar: calendar
+            ) == 13
+        )
+    }
+
+    /// macOS and iOS open at the same hour on the same day, because they ask the same function.
+    /// Two surfaces agreeing by construction rather than by two rules that currently match is the
+    /// whole of why T-596 and T-1129 are in the ledger.
+    @Test func bothPlatformsOpenTheSameDayAtTheSameHour() {
+        for minute in [0, 7 * 60 + 30, 13 * 60, 23 * 60] {
+            #expect(
+                CalendarPageStateSupport.restoredTimelineHour(
+                    firstTimedMinute: minute,
+                    rememberedScrollHour: 20
+                ) == CadenceScheduleSupport.initialTimelineHour(
+                    firstTimedMinute: minute,
+                    showsToday: false
+                )
+            )
+        }
+    }
+
     @Test func timelineJumpApplicationUpdatesVisibleAndExternalStateTogether() {
         var visibleDay: Int?
         var visibleHour: Int?

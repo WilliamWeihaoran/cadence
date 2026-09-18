@@ -162,6 +162,51 @@ struct CalendarPageStateSupport {
     // `CalendarPageDataSupport.handleViewModeChange`. Both are gone; that inline pair is the
     // only return path, and it is what the tests now drive.
 
+    /// The hour the timeline opens at, given what the day it opens on actually holds.
+    ///
+    /// Three rungs (**T-1271**), and the order is the decision:
+    ///
+    /// 1. **The day's first timed item**, through `CadenceScheduleSupport.initialTimelineHour` —
+    ///    the same function and the same one-hour lead iOS's grid uses, so the two surfaces open at
+    ///    the same hour on the same day rather than at two hours that merely look similar.
+    /// 2. The remembered hour, for a day with nothing timed on it.
+    /// 3. The current hour, backed off by one, when nothing has been remembered yet.
+    ///
+    /// **The first rung outranks the remembered hour, and that is a real cost**: a user who
+    /// scrolled to 14:00, left the page and came back lands back on the day's first item instead
+    /// of at 14:00. It is what the owner asked for in so many words — "the day opens scrolled to
+    /// its first timed item" — and the alternative keeps the complaint alive, because a remembered
+    /// hour is written from wherever the scroll happened to stop, not from a choice. The remembered
+    /// hour is not dead: it still answers every day the first rung cannot.
+    ///
+    /// Pure, and separate from the restore below, because the restore takes two `ScrollViewProxy`s
+    /// and nothing in `CadenceTests` can make one.
+    static func restoredTimelineHour(
+        firstTimedMinute: Int?,
+        rememberedScrollHour: Int,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Int {
+        if let firstTimedMinute, firstTimedMinute >= 0 {
+            return CadenceScheduleSupport.initialTimelineHour(
+                firstTimedMinute: firstTimedMinute,
+                showsToday: false,
+                startHour: calStartHour,
+                endHour: calEndHour,
+                calendar: calendar
+            )
+        }
+        if rememberedScrollHour >= calStartHour {
+            return min(rememberedScrollHour, max(calStartHour, calEndHour - 1))
+        }
+        return min(
+            max(calStartHour, calendar.component(.hour, from: now) - 1),
+            max(calStartHour, calEndHour - 1)
+        )
+    }
+
+    /// `firstTimedMinute` is asked for the day the restore is about to land on, which is why it is
+    /// a closure rather than a value: the target day is decided here.
     static func restoreTimelineScrollIfNeeded(
         didRestoreTimelineScroll: inout Bool,
         rememberedScrollHour: Int,
@@ -170,6 +215,7 @@ struct CalendarPageStateSupport {
         todayDayIdx: Int,
         visibleTimelineDayIndex: inout Int?,
         visibleTimelineHour: inout Int?,
+        firstTimedMinute: (Int) -> Int?,
         vProxy: ScrollViewProxy,
         hProxy: ScrollViewProxy,
         setHorizontalRestoring: @escaping (Bool) -> Void,
@@ -177,14 +223,15 @@ struct CalendarPageStateSupport {
     ) {
         guard !didRestoreTimelineScroll else { return }
 
-        let currentHour = Calendar.current.component(.hour, from: Date())
-        let fallbackHour = max(calStartHour, currentHour - 1)
-        let scrollHour = rememberedScrollHour >= calStartHour ? rememberedScrollHour : fallbackHour
         let targetDay = rememberedTimelineDayIndex(
             rememberedDateKey: anchorDateKey,
             bufferStart: bufferStart,
             todayDayIdx: todayDayIdx,
             calendar: Calendar.current
+        )
+        let scrollHour = restoredTimelineHour(
+            firstTimedMinute: firstTimedMinute(targetDay),
+            rememberedScrollHour: rememberedScrollHour
         )
 
         didRestoreTimelineScroll = true

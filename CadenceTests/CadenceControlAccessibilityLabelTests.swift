@@ -780,7 +780,7 @@ struct CadenceControlAccessibilityLabelTests {
         (
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
             "struct iOSCalendarTimelineDayHeader: View {",
-            "CadenceCalendarDayAccessibility.timelineDayLabel(date:date,timedCount:timedCount,unscheduledCount:unscheduledTasks.count)",
+            "CadenceCalendarDayAccessibility.timelineDayLabel(date:date,unscheduledCount:unscheduledTasks.count)",
             false
         ),
     ]
@@ -808,23 +808,24 @@ struct CadenceControlAccessibilityLabelTests {
                 == "\(day), has scheduled items"
         )
 
-        // The timeline band draws two figures, and says both. The unscheduled clause is dropped
-        // rather than read as "0 unscheduled".
+        // The timeline band draws one figure since T-1271 — the unscheduled chips — and says that
+        // and nothing else. The "N timed" chip it used to carry is gone from the band, so the
+        // count is gone from the label with it.
         #expect(
-            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, timedCount: 4, unscheduledCount: 2)
-                == "\(day), 4 timed items, 2 unscheduled"
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, unscheduledCount: 2)
+                == "\(day), 2 unscheduled"
         )
-        #expect(
-            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, timedCount: 1, unscheduledCount: 0)
-                == "\(day), 1 timed item"
-        )
+        // And a band with no chips is the bare date. Not `emptyPhrase`: the column under this
+        // header can be full of blocks, so "no scheduled items" would be a claim about the day
+        // that the day contradicts. The other two cells *do* summarise their day, which is why
+        // they keep it.
+        #expect(CadenceCalendarDayAccessibility.timelineDayLabel(date: date, unscheduledCount: 0) == day)
 
-        // One wording for an empty day across all three, by construction rather than by three
-        // literals happening to match.
+        // One wording for an empty day across the two cells that summarise one, by construction
+        // rather than by two literals happening to match.
         let empty = "\(day), \(CadenceCalendarDayAccessibility.emptyPhrase)"
         #expect(CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 0) == empty)
         #expect(CadenceCalendarDayAccessibility.markedDayLabel(date: date, hasItems: false) == empty)
-        #expect(CadenceCalendarDayAccessibility.timelineDayLabel(date: date, timedCount: 0, unscheduledCount: 0) == empty)
 
         // And the date really is the long form the cells used to announce alone — so this suite
         // records that the fix *added* to the label rather than replacing it.

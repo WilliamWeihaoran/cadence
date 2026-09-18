@@ -142,20 +142,62 @@ enum CadenceScheduleSupport {
         }
     }
 
+    /// The earliest start minute among a span's timed items, or `nil` when it holds none.
+    ///
+    /// `scheduledStartMin == -1` means "no time at all" — an unscheduled task, which lives in the
+    /// header band rather than in the grid — so negatives are not items this can return. Nothing
+    /// else is filtered: an out-of-range minute from a bad import is still a block the canvas
+    /// draws (`timelineHourRow` clamps it into the first or last row), so it is still something
+    /// the canvas should open on rather than scroll past.
+    static func earliestTimedStartMinute(_ startMinutes: [Int]) -> Int? {
+        startMinutes.filter { $0 >= 0 }.min()
+    }
+
+    /// The hour a canvas opens at so the item starting at `minute` is the first thing under the
+    /// top edge.
+    ///
+    /// Backed off by `leadHours` for the same reason the "today" rule below is: a block flush
+    /// against the top edge of a scroller reads as clipped, and the hour just above is the context
+    /// that says *how early* the day starts. The clamp is what answers a day whose first item is
+    /// at 23:00 — `lastHour` is the last row that exists, the scroll view clamps the rest, and the
+    /// item lands at the bottom of the viewport rather than nowhere.
+    static func timelineHour(
+        forFirstTimedMinute minute: Int,
+        leadHours: Int = 1,
+        startHour: Int = calendarStartHour,
+        endHour: Int = calendarEndHour
+    ) -> Int {
+        let lastHour = max(startHour, endHour - 1)
+        let row = timelineHourRow(forMinute: minute, startHour: startHour, endHour: endHour)
+        return min(max(row - max(0, leadHours), startHour), lastHour)
+    }
+
     /// The hour a freshly opened day timeline should be scrolled to.
     ///
     /// A timeline draws from `calendarStartHour` and a scroll view opens at its top, so a canvas
     /// left to itself opens at its first hour whatever the time of day. That was already wrong at
-    /// 6 AM; at midnight it is worse, and the grid now starts at midnight. When the span on screen
-    /// includes **today** the answer is the current hour, backed off by `leadHours` so the hour
-    /// just gone is still visible for context. Otherwise there is no "now" to honour, and the best
-    /// available default is the user's own work-hours start — the same `calendar.workHours.*.v1`
-    /// window the amber band on each column already draws — rather than a second hardcoded hour.
+    /// 6 AM; at midnight it is worse, and the grid now starts at midnight.
+    ///
+    /// Three rungs, in order (**T-1271**):
+    ///
+    /// 1. `firstTimedMinute` — the earliest timed item on the days about to be shown. The owner's
+    ///    decision, and the only rung that looks at what is actually on the canvas: a week that
+    ///    opens above everything it draws is a week that looks empty.
+    /// 2. the current hour, backed off by `leadHours`, when the span on screen includes **today**.
+    ///    A day with nothing timed on it has no item to open on, and "now" is the next best answer.
+    /// 3. the user's own work-hours start — the same `calendar.workHours.*.v1` window the amber
+    ///    band on each column already draws — when there is no "now" to honour either.
+    ///
+    /// `showsToday` must be read from the columns actually on screen. It used to be read from
+    /// `CadenceCalendarTimelineWindow.eventWindowDates`, a **28-day** EventKit fetch span, so a
+    /// week a fortnight away still counted as "shows today" and opened at the current hour — which
+    /// is how the owner's week came to open at 1 AM, hours above everything it drew.
     ///
     /// This is **derived on every open and never persisted**. A measured or derived scroll offset
     /// written into a defaults key is what put the Calendar Board seven months in the past
     /// (`ecaf80f`): a garbage reading became a saved anchor and compounded across launches.
     static func initialTimelineHour(
+        firstTimedMinute: Int? = nil,
         showsToday: Bool,
         now: Date = Date(),
         workHoursStartMinute: Int = CalendarWorkHoursPreferences.defaultStartMinute,
@@ -164,6 +206,14 @@ enum CadenceScheduleSupport {
         endHour: Int = calendarEndHour,
         calendar: Calendar = .current
     ) -> Int {
+        if let firstTimedMinute, firstTimedMinute >= 0 {
+            return timelineHour(
+                forFirstTimedMinute: firstTimedMinute,
+                leadHours: leadHours,
+                startHour: startHour,
+                endHour: endHour
+            )
+        }
         let lastHour = max(startHour, endHour - 1)
         let preferred: Int
         if showsToday {

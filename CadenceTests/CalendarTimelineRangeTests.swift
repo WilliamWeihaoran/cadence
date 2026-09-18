@@ -451,6 +451,115 @@ struct CalendarTimelineRangeTests {
         #expect(CadenceScheduleSupport.timelineScrollOffset(forHour: 0, hourHeight: 58) == CGFloat(0))
     }
 
+    // MARK: - T-1271: a day opens on its first timed item
+
+    /// The owner's decision, and the rung that outranks the clock. 14:00 with a 09:00 standup on
+    /// screen opens at 08:00, not at 13:00: the day's own contents beat the wall clock, because a
+    /// canvas opened above everything it draws is a canvas that looks empty.
+    @Test func aDayOpensOnItsFirstTimedItemRatherThanOnTheClock() throws {
+        let twoPM = try date("2026-08-15", hour: 14)
+
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(
+                firstTimedMinute: 9 * 60,
+                showsToday: true,
+                now: twoPM,
+                calendar: calendar
+            ) == 8
+        )
+    }
+
+    /// The first item keeps the same one hour of context above it that "now" gets, so its block is
+    /// the first thing under the top edge rather than flush against it.
+    @Test func theFirstTimedItemKeepsAnHourOfContextAboveIt() throws {
+        for minute in [9 * 60, 9 * 60 + 1, 9 * 60 + 59] {
+            #expect(
+                CadenceScheduleSupport.timelineHour(forFirstTimedMinute: minute) == 8,
+                "a 9 AM item should open the canvas at 8 AM whatever the minute"
+            )
+        }
+        // Midnight has no hour above it to show, which is the only case with no lead.
+        #expect(
+            CadenceScheduleSupport.timelineHour(forFirstTimedMinute: 0)
+                == CadenceScheduleSupport.calendarStartHour
+        )
+    }
+
+    /// A day whose first item is at 23:00. The rule asks for 22:00 and stops there — there is no
+    /// hour past `calendarEndHour - 1` to ask for, and the scroll view clamps the offset to the
+    /// bottom of its content from there, which puts the block on screen. The answer is never an
+    /// hour the ladder does not draw.
+    @Test func aDayWhoseFirstItemIsLateOpensAsCloseToItAsTheLadderAllows() {
+        let lastHour = CadenceScheduleSupport.calendarEndHour - 1
+
+        #expect(CadenceScheduleSupport.timelineHour(forFirstTimedMinute: 23 * 60) == 22)
+        #expect(CadenceScheduleSupport.timelineHour(forFirstTimedMinute: 23 * 60 + 59) == 22)
+        // And a stored minute past the end of the day still lands on a row that exists, for the
+        // same reason `timelineHourRow` clamps rather than dropping the block.
+        #expect(CadenceScheduleSupport.timelineHour(forFirstTimedMinute: 99 * 60) == lastHour - 1)
+    }
+
+    /// A day with nothing timed on it has no item to open on, so the two older rungs are still the
+    /// answer — and are reached only when the first one is absent.
+    @Test func aDayWithNothingTimedFallsBackToTheClockThenToWorkHours() throws {
+        let twoPM = try date("2026-08-15", hour: 14)
+
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(
+                firstTimedMinute: nil,
+                showsToday: true,
+                now: twoPM,
+                calendar: calendar
+            ) == 13
+        )
+        #expect(
+            CadenceScheduleSupport.initialTimelineHour(
+                firstTimedMinute: nil,
+                showsToday: false,
+                now: twoPM,
+                workHoursStartMinute: 10 * 60,
+                calendar: calendar
+            ) == 10
+        )
+    }
+
+    /// `scheduledStartMin == -1` is "no time at all" — an unscheduled task, which lives in the
+    /// header band and has no block in the grid. It is not something the canvas can open on, and
+    /// treating it as minute -1 would open every such day at midnight.
+    @Test func anUnscheduledTaskIsNotAFirstTimedItem() {
+        #expect(CadenceScheduleSupport.earliestTimedStartMinute([]) == nil)
+        #expect(CadenceScheduleSupport.earliestTimedStartMinute([-1, -1]) == nil)
+        #expect(CadenceScheduleSupport.earliestTimedStartMinute([-1, 10 * 60, 9 * 60]) == 9 * 60)
+        #expect(CadenceScheduleSupport.earliestTimedStartMinute([0]) == 0)
+    }
+
+    /// Which days "is today on screen?" is asked about. It used to be `eventWindowDates`, a 28-day
+    /// EventKit **fetch** span whose identity only changes once a week — so a week the user had
+    /// scrolled a fortnight away still answered yes and opened at the current hour. At 1 AM the
+    /// current hour is the top of the canvas, which is the owner's report.
+    @Test func theVisibleSpanIsTheColumnsOnScreenNotTheEventFetchWindow() throws {
+        let leading = try #require(DateFormatters.date(from: "2026-08-17", in: calendar))
+        let visible = CadenceCalendarTimelineWindow.visibleDates(
+            leadingDate: leading,
+            visibleDayCount: 7,
+            calendar: calendar
+        )
+
+        #expect(visible.count == 7)
+        #expect(DateFormatters.dateKey(from: visible.first ?? leading, calendar: calendar) == "2026-08-17")
+        #expect(DateFormatters.dateKey(from: visible.last ?? leading, calendar: calendar) == "2026-08-23")
+
+        let fetched = CadenceCalendarTimelineWindow.eventWindowDates(
+            leadingDate: leading,
+            calendar: calendar
+        )
+        // The fetch window is four times as wide and starts a week *before* the leading column, so
+        // it contains days no column on screen is showing.
+        #expect(fetched.count == 28)
+        let visibleKeys = Set(visible.map { DateFormatters.dateKey(from: $0, calendar: calendar) })
+        #expect(fetched.contains { !visibleKeys.contains(DateFormatters.dateKey(from: $0, calendar: calendar)) })
+    }
+
     // MARK: - The hour ladder both platforms draw (T-619 → T-1129)
 
     /// **Every third hour is a rung; the other sixteen are texture — and the sixteen are the half

@@ -140,19 +140,23 @@ nonisolated enum CadenceCalendarDayAccessibility {
         "\(dayName(date)), \(hasItems ? "has scheduled items" : emptyPhrase)"
     }
 
-    /// For the timeline's day header, which draws **two** figures: an "N timed" chip and up to two
+    /// For the timeline's day header, which since **T-1271** draws **one** figure: up to two
     /// unscheduled task chips with a "+ M more".
     ///
-    /// `"Monday, 31 August 2026, 3 timed items, 2 unscheduled"`. Both numbers, because both are on
-    /// screen; the unscheduled clause is dropped when there are none rather than read as "0".
-    static func timelineDayLabel(date: Date, timedCount: Int, unscheduledCount: Int) -> String {
-        var label = timedCount > 0
-            ? "\(dayName(date)), \(timedCount) timed item\(timedCount == 1 ? "" : "s")"
-            : "\(dayName(date)), \(emptyPhrase)"
-        if unscheduledCount > 0 {
-            label += ", \(unscheduledCount) unscheduled"
-        }
-        return label
+    /// `"Monday, 31 August 2026, 2 unscheduled"`, and the bare date when there are none.
+    ///
+    /// It used to lead with an "N timed" count, because the band drew one. The band does not any
+    /// more — every timed task, bundle and event is a block in the grid below, so the count
+    /// restated what was already on screen — and this label follows it down rather than keeping a
+    /// figure alive in the audio that is nowhere in the picture. Same rule as `markedDayLabel`:
+    /// the count is knowable at the call site and is still not this cell's to announce.
+    ///
+    /// **No `emptyPhrase` here**, unlike the other two. A header with no unscheduled chips is not
+    /// an empty day — the column under it can be full — so "no scheduled items" would be the same
+    /// mismatch pointing the other way. An empty *day* is announced by the empty grid, not here.
+    static func timelineDayLabel(date: Date, unscheduledCount: Int) -> String {
+        guard unscheduledCount > 0 else { return dayName(date) }
+        return "\(dayName(date)), \(unscheduledCount) unscheduled"
     }
 
     /// One wording for an empty day, so the three cells cannot drift into three ways of saying

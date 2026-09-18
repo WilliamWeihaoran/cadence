@@ -227,10 +227,7 @@ struct iOSCalendarTimelineGrid: View {
                         let date = date(at: index)
                         iOSCalendarTimelineDayHeader(
                             date: date,
-                            unscheduledTasks: items(unscheduledTasksByDate, on: date),
-                            eventCount: items(eventsByDate, on: date).count,
-                            bundleCount: items(bundlesByDate, on: date).count,
-                            taskCount: items(scheduledTasksByDate, on: date).count
+                            unscheduledTasks: items(unscheduledTasksByDate, on: date)
                         ) {
                             selectedDate = date
                         }
@@ -464,9 +461,26 @@ struct iOSCalendarTimelineGrid: View {
         )
     }
 
-    /// Opens the timeline near the hour that matters instead of at the top of the canvas — which is
-    /// midnight now that the grid draws the whole day. See
-    /// `CadenceScheduleSupport.initialTimelineHour` for the rule; this is only where it is applied.
+    /// Opens the timeline on its **first timed item** instead of at the top of the canvas — which
+    /// is midnight now that the grid draws the whole day. See
+    /// `CadenceScheduleSupport.initialTimelineHour` for the three-rung rule; this is where the
+    /// span it applies to is decided.
+    ///
+    /// **Which days.** The earliest item across every column *on screen*, not just the leading
+    /// one. A week is one span to a reader, and opening at Monday's work-hours default because
+    /// Monday is empty would put Tuesday's 07:00 standup above the fold in the same picture. The
+    /// same span now answers `showsToday`, which used to ask `eventWindowDates` — a 28-day
+    /// EventKit *fetch* window — and so said yes for any week within a fortnight of today. That is
+    /// what opened a scrolled-away week at the current hour, and at 1 AM the current hour is the
+    /// top of the canvas: the owner's report, and not a coincidence of timing.
+    ///
+    /// **Once per appearance, not once per day scrolled to.** `didPlaceInitialScroll` is `@State`,
+    /// so this runs on the first laid-out canvas of each visit to the grid and never again while
+    /// that grid lives. Re-deriving on every horizontal scroll would yank the canvas vertically
+    /// under a finger that was moving it horizontally, and re-deriving when the data changed would
+    /// move it under a task the user had just dragged. A user who scrolls away from the opening
+    /// hour has said where they want to be; nothing here overrules that until they leave and come
+    /// back.
     ///
     /// It runs off the scroll view's own reported content height rather than `onAppear` because
     /// `onAppear` can fire before the canvas has a content size, and a `scrollTo(y:)` against a
@@ -479,13 +493,16 @@ struct iOSCalendarTimelineGrid: View {
         guard !didPlaceInitialScroll, contentHeight >= timelineHeight else { return }
         didPlaceInitialScroll = true
 
-        let showsToday = CadenceCalendarTimelineWindow.eventWindowDates(
+        let visibleDates = CadenceCalendarTimelineWindow.visibleDates(
             leadingDate: leadingDate,
+            visibleDayCount: visibleDayCount,
             calendar: calendar
-        ).contains { calendar.isDateInToday($0) }
-
+        )
         let hour = CadenceScheduleSupport.initialTimelineHour(
-            showsToday: showsToday,
+            firstTimedMinute: CadenceScheduleSupport.earliestTimedStartMinute(
+                timedStartMinutes(on: visibleDates)
+            ),
+            showsToday: visibleDates.contains { calendar.isDateInToday($0) },
             workHoursStartMinute: workHoursStartMinute,
             calendar: calendar
         )
@@ -493,9 +510,37 @@ struct iOSCalendarTimelineGrid: View {
             y: CadenceScheduleSupport.timelineScrollOffset(forHour: hour, hourHeight: hourHeight)
         )
     }
+
+    /// Start minutes of everything `iOSCalendarTimelineDayColumn` draws as a block on `dates`.
+    ///
+    /// The three sources the removed "N timed" chip counted, read the same way the column reads
+    /// them so the hour this opens at cannot describe a different set from the one on screen. An
+    /// event is measured **on its column's day**, so one running through midnight contributes the
+    /// 00:00 its block actually starts at there rather than yesterday's start time; all-day events
+    /// are not blocks at all and are dropped, exactly as the column drops them.
+    private func timedStartMinutes(on dates: [Date]) -> [Int] {
+        dates.flatMap { date -> [Int] in
+            let key = DateFormatters.dateKey(from: date)
+            let taskMinutes = CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate)
+                .map(\.scheduledStartMin)
+            let bundleMinutes = CadenceScheduleSupport.items(on: key, in: bundlesByDate)
+                .map(\.startMin)
+            let eventMinutes = CadenceScheduleSupport.items(on: key, in: eventsByDate)
+                .filter { !$0.isAllDay }
+                .map { iOSCalendarEventSupport.minuteRange(for: $0, on: date).start }
+            return taskMinutes + bundleMinutes + eventMinutes
+        }
+    }
 }
 
-/// The band over one day column.
+/// The band over one day column: the weekday, the day number, and the day's **unscheduled** tasks.
+///
+/// Nothing timed is named here. It used to end in an "N timed" chip counting the day's tasks,
+/// bundles and events, and that chip hid nothing — `iOSCalendarTimelineDayColumn` draws every one
+/// of those three as a block in the grid below, so the count restated the picture rather than
+/// adding to it. The unscheduled chips stay because those items genuinely have no block: they have
+/// no time, which is what puts them in the band at all. Apple Calendar's top band carries all-day
+/// items and nothing else, for the same reason. **T-1271.**
 ///
 /// It carries **no selection state**. Tapping a header still sets the calendar's selected day — the
 /// day inspector beside a wide-enough Week pane is what reads it — but nothing on the grid lights up
@@ -505,17 +550,10 @@ struct iOSCalendarTimelineGrid: View {
 private struct iOSCalendarTimelineDayHeader: View {
     let date: Date
     let unscheduledTasks: [AppTask]
-    let eventCount: Int
-    let bundleCount: Int
-    let taskCount: Int
     let action: () -> Void
 
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
-
-    /// Exactly what the "N timed" chip shows — one number, read once, so the chip and the
-    /// accessibility label cannot state two.
-    private var timedCount: Int { taskCount + bundleCount + eventCount }
 
     var body: some View {
         Button(action: action) {
@@ -551,14 +589,6 @@ private struct iOSCalendarTimelineDayHeader: View {
                         )
                     }
 
-                    if timedCount > 0 {
-                        iOSCalendarMiniChip(
-                            title: "\(timedCount) timed",
-                            icon: "clock.fill",
-                            color: Theme.blue
-                        )
-                    }
-
                     if unscheduledTasks.count > 2 {
                         Text(CadenceTaskSurfaceOptions.moreLabel(hidden: unscheduledTasks.count - 2))
                             .font(.system(size: 9, weight: .medium))
@@ -587,8 +617,9 @@ private struct iOSCalendarTimelineDayHeader: View {
             }
         }
         .buttonStyle(.iosPressable)
-        // Both figures the band draws — the "N timed" chip and the unscheduled stack — where it
-        // used to announce the long date and nothing else (T-573).
+        // The one figure the band still draws — the unscheduled stack — where it used to announce
+        // the long date and nothing else (T-573), and where it briefly announced an "N timed"
+        // count as well (T-1271 took that chip off the band).
         //
         // **No `.isSelected` trait here**, unlike the two month cells. This header carries no
         // selection state by design (see the doc above): tapping it still sets the calendar's
@@ -597,7 +628,6 @@ private struct iOSCalendarTimelineDayHeader: View {
         .accessibilityLabel(
             CadenceCalendarDayAccessibility.timelineDayLabel(
                 date: date,
-                timedCount: timedCount,
                 unscheduledCount: unscheduledTasks.count
             )
         )

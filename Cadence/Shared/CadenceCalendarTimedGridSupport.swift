@@ -201,6 +201,24 @@ enum CadenceCalendarTimelineWindow {
         return leading
     }
 
+    /// The columns actually on screen, given the one at the leading edge.
+    ///
+    /// Distinct from `eventWindowDates`, which is a 28-day **fetch** span sized so its identity
+    /// only changes once a week; asking that span "is today on screen?" answers yes for a
+    /// fortnight either side of today and is what opened the timeline at the current hour on a
+    /// week the user had scrolled away to (T-1271). Anything deciding what the user is *looking
+    /// at* wants this one.
+    static func visibleDates(
+        leadingDate: Date,
+        visibleDayCount: Int,
+        calendar: Calendar = .current
+    ) -> [Date] {
+        let leading = calendar.startOfDay(for: leadingDate)
+        return (0..<max(1, visibleDayCount)).compactMap {
+            calendar.date(byAdding: .day, value: $0, to: leading)
+        }
+    }
+
     // MARK: Scroll position ↔ column index
 
     /// The column at the leading edge, for a horizontal content offset.

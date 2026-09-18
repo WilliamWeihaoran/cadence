@@ -8,6 +8,10 @@ import Combine
 struct CalendarPageView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
+    // Read for one thing only: the first timed item on the day a restore is about to land on
+    // (`firstTimedMinute`). The cache below is what actually holds the events; this is the handle
+    // it needs to fill a day it has not seen.
+    @Environment(CalendarManager.self) private var calendarManager
     @Query private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
     @Query(sort: \Area.order) private var areas: [Area]
@@ -290,10 +294,34 @@ struct CalendarPageView: View {
             todayDayIdx: todayDayIdx,
             visibleTimelineDayIndex: &visibleTimelineDayIndex,
             visibleTimelineHour: &visibleTimelineHour,
+            firstTimedMinute: { firstTimedMinute(onDayIndex: $0) },
             vProxy: vProxy,
             hProxy: hProxy,
             setHorizontalRestoring: { isRestoringHorizontalScroll = $0 },
             setVerticalRestoring: { isRestoringVerticalScroll = $0 }
+        )
+    }
+
+    /// The earliest minute a block starts at on the buffer day `dayIndex`, or `nil` when that day
+    /// draws none — the figure `CalendarPageStateSupport.restoredTimelineHour` opens the canvas on
+    /// (T-1271).
+    ///
+    /// Read from the same three sources `CalDayColumn` draws: this page's `tasksByDate` and
+    /// `bundlesByDate`, and the event cache's timed segments **clipped to that day**, so an event
+    /// running through midnight contributes the 00:00 its block starts at there. One day, not the
+    /// visible span, because the restore also scrolls horizontally to that day and it is the one
+    /// the user will be looking at.
+    private func firstTimedMinute(onDayIndex dayIndex: Int) -> Int? {
+        guard let date = cal.date(byAdding: .day, value: dayIndex, to: bufferStart) else { return nil }
+        let key = DateFormatters.dateKey(from: date)
+        let eventMinutes = CalendarEventItem.timedSegments(
+            from: calendarEventDayCache.timedEvents(for: date, calendarManager: calendarManager),
+            for: date
+        ).map(\.startMin)
+        return CadenceScheduleSupport.earliestTimedStartMinute(
+            (tasksByDate[key] ?? []).map(\.scheduledStartMin)
+                + (bundlesByDate[key] ?? []).map(\.startMin)
+                + eventMinutes
         )
     }
 
