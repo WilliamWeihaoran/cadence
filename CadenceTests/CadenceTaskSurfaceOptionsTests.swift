@@ -480,16 +480,9 @@ private func desktopSurfaceSourceFile(_ relativePath: String) throws -> String {
 /// length comparison stays meaningful. The `(?<!:)` is not decoration: without it the `//` in a
 /// URL literal is read as a comment and everything after it on that line disappears from the scan.
 private func desktopSurfaceStrippingComments(_ source: String) throws -> String {
-    var result = source
-    for pattern in ["(?<!:)//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-        while let range = result.range(of: pattern, options: .regularExpression) {
-            result.replaceSubrange(
-                range,
-                with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound))
-            )
-        }
-    }
-    return result
+    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
+    // what this copy used, because correcting it is T-1270 and not this change.
+    return CadenceSourceScan.strippingComments(source, lineComments: .guarded)
 }
 
 /// Collapses every run of whitespace to one space, so a one-line body can be asserted exactly

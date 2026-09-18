@@ -330,16 +330,9 @@ private func paneRuleSource(_ relativePath: String) throws -> String {
 /// prose. Crude on purpose: a `//` inside a string literal is blanked too, which can only make these
 /// checks stricter about what counts as a comment, never looser about live code.
 private func paneRuleStrippingComments(_ source: String) throws -> String {
-    var result = source
-    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-        while let range = result.range(of: pattern, options: .regularExpression) {
-            result.replaceSubrange(
-                range,
-                with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound))
-            )
-        }
-    }
-    return result
+    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
+    // what this copy used, because correcting it is T-1270 and not this change.
+    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
 }
 
 /// `NSRegularExpression` rather than a `range(of:options:.regularExpression)` loop, because the

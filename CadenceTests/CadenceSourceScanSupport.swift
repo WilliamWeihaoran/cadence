@@ -30,15 +30,117 @@ enum CadenceSourceScan {
         try String(contentsOf: repositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
     }
 
+    /// The two comment shapes, compiled once. Order matters and is the old loop's order: line
+    /// comments first, so a `/*` written inside a `//` line is already blank when the block pass
+    /// looks for it.
+    ///
+    /// Which spelling of the line-comment pattern a caller wants.
+    ///
+    /// **These two are not interchangeable, and the difference is measured.** Stripping every
+    /// `.swift` file under `Cadence/` and `CadenceTests/` with each spelling and comparing the
+    /// results: **48 of 915 files come out different**, among them `AIProvider.swift`,
+    /// `CadenceDeepLink.swift`, `MarkdownImageAssetService.swift` and `AppStoreReviewReadiness.swift`.
+    /// Every one of them holds a `https://` on a line that carries code, and `plain` blanks from
+    /// those two slashes to the end of the line — taking the line's `{`, its closing paren, or the
+    /// rest of a declaration with it.
+    ///
+    /// So `guarded` is the correct one and `plain` is a bug. It is still spelled here, and is still
+    /// what the 54 copied strippers pass, because **changing what a scan reads is a different
+    /// change from making it fast** — moving 54 helpers onto the correct spelling alters what 48
+    /// files' assertions see, and that belongs in its own commit with its own test run, not smuggled
+    /// in under a performance fix. [[T-1270]] carries it.
+    enum LineCommentSpelling {
+        /// `(?<!:)//` — does not fire on the slashes in a URL. Correct; the default.
+        case guarded
+        /// Bare `//`. What the 54 copied strippers used before they were routed here.
+        case plain
+
+        var spelling: String {
+            switch self {
+            case .guarded: return "(?<!:)//[^\n]*"
+            case .plain: return "//[^\n]*"
+            }
+        }
+    }
+
+    /// The two comment shapes per spelling, compiled once. Order matters and is the old loop's
+    /// order: line comments first, so a `/*` written inside a `//` line is already blank when the
+    /// block pass looks for it.
+    private static let compiledPatterns: [String: [NSRegularExpression]] = {
+        var table: [String: [NSRegularExpression]] = [:]
+        for spelling in [LineCommentSpelling.guarded, .plain] {
+            let spellings = [spelling.spelling, "/\\*(?s:.)*?\\*/"]
+            let compiled = spellings.compactMap { try? NSRegularExpression(pattern: $0) }
+            // A pattern that stopped compiling would leave comments in the text and every scan
+            // built on this reading prose as code. Loud here beats green there.
+            precondition(compiled.count == spellings.count, "a comment pattern stopped compiling")
+            table[spelling.spelling] = compiled
+        }
+        return table
+    }()
+
     /// Blanks `//` line comments and `/* */` block comments with spaces of equal length, so
     /// assertions read code rather than prose and the string keeps its length.
-    static func strippingComments(_ source: String) -> String {
+    ///
+    /// **T-1269: one `matches(in:)` per pattern, not one `range(of:)` per comment.** This used to
+    /// re-run `range(of:options: .regularExpression)` from the **start of the string** after every
+    /// replacement, so blanking N comments out of a length-L file cost N full scans of L. On this
+    /// repository's comment density that is not a constant factor worth shrugging at: measured
+    /// 2026-09-14 in a release build, stripping `CadenceTodayUnificationTests.swift` once took
+    /// **135 seconds**, and stripping all 915 `.swift` files in `Cadence/` and `CadenceTests/` took
+    /// **170 seconds**. The same two numbers below are 0.002s and 0.38s. A `sample` of a live test
+    /// host had caught 811 of 847 stacks inside the old loop, under one test that had produced no
+    /// output for sixteen minutes.
+    ///
+    /// Collecting every match of a pattern in one pass is **exactly** equivalent here, not merely
+    /// close, and it is worth saying why rather than trusting it:
+    ///
+    /// - the replacement is spaces, so it can never create a `/` and therefore never a *new* match
+    ///   the from-the-start loop would have gone on to find;
+    /// - matches of one pattern are non-overlapping and left-to-right, which is the same order the
+    ///   loop blanked them in;
+    /// - blanking one match cannot reach the `(?<!:)` lookbehind of the next, because a line-comment
+    ///   match runs to its end of line, so the character before the following match is never inside
+    ///   the preceding one.
+    ///
+    /// Checked rather than argued, **per spelling**: for a fixed line-comment pattern, the one-pass
+    /// form and the from-the-start loop produce byte-identical output over every `.swift` file in
+    /// the tree.
+    ///
+    /// An earlier draft of this comment also claimed the two *spellings* agree with each other.
+    /// They do not: measured over 915 files, `plain` and `guarded` disagree on **48** of them. See
+    /// `LineCommentSpelling`. That is why this takes the spelling as a parameter instead of quietly
+    /// moving every caller onto the correct one.
+    ///
+    /// The width stays a **Character** count, because that is what callers depend on:
+    /// `CadenceCommitSurfaceScan.scanned` asserts `stripped.count == raw.count`. It is deliberately
+    /// not the UTF-8 length — a comment holding a multi-byte character blanks to *fewer bytes* than
+    /// it occupied (measured: one 170,209-byte file strips to 169,807), so byte offsets are **not**
+    /// preserved here and nothing may start relying on them. Character offsets and the character
+    /// count are.
+    static func strippingComments(
+        _ source: String,
+        lineComments spelling: LineCommentSpelling = .guarded
+    ) -> String {
         var result = source
-        for pattern in ["(?<!:)//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-            while let range = result.range(of: pattern, options: .regularExpression) {
+        guard let patterns = compiledPatterns[spelling.spelling] else { return result }
+        for regex in patterns {
+            let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))
+            guard !matches.isEmpty else { continue }
+            var blanked = ""
+            blanked.reserveCapacity(result.count)
+            var cursor = result.startIndex
+            for match in matches {
+                guard let range = Range(match.range, in: result), range.lowerBound >= cursor else {
+                    continue
+                }
+                blanked.append(contentsOf: result[cursor..<range.lowerBound])
                 let width = result.distance(from: range.lowerBound, to: range.upperBound)
-                result.replaceSubrange(range, with: String(repeating: " ", count: width))
+                blanked.append(String(repeating: " ", count: width))
+                cursor = range.upperBound
             }
+            blanked.append(contentsOf: result[cursor...])
+            result = blanked
         }
         return result
     }

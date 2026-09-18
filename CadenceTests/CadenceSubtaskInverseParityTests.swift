@@ -618,14 +618,9 @@ private func subtaskSourceFile(_ relativePath: String) throws -> String {
 /// Blanks `//` line comments and `/* */` block comments with spaces of equal length, so the scanned
 /// string is never shorter than the raw one and a length check is a real check.
 private func strippingSwiftComments(_ source: String) -> String {
-    var result = source
-    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-        while let range = result.range(of: pattern, options: .regularExpression) {
-            let width = result.distance(from: range.lowerBound, to: range.upperBound)
-            result.replaceSubrange(range, with: String(repeating: " ", count: width))
-        }
-    }
-    return result
+    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
+    // what this copy used, because correcting it is T-1270 and not this change.
+    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
 }
 
 /// Both sides of the subtask relationship as the **store** holds them, read back through a fresh

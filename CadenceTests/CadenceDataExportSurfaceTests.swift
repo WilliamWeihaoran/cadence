@@ -730,16 +730,9 @@ private func exportSourceFile(_ relativePath: String) throws -> String {
 }
 
 private func strippingExportComments(_ source: String) throws -> String {
-    var result = source
-    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-        while let range = result.range(of: pattern, options: .regularExpression) {
-            result.replaceSubrange(
-                range,
-                with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound))
-            )
-        }
-    }
-    return result
+    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
+    // what this copy used, because correcting it is T-1270 and not this change.
+    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
 }
 
 /// **T-661.** The archive carries one field whose meaning does not travel with the file, and the

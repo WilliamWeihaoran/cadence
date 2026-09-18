@@ -614,14 +614,7 @@ private func tintSourceFile(_ relativePath: String) throws -> String {
 /// Blanks `//` and `/* */` comments so the assertions read code rather than prose — the doc comment
 /// above `defaultColorHex` quotes the very literals its body must not contain.
 private func strippingSwiftComments(_ source: String) -> String {
-    var result = source
-    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-        while let range = result.range(of: pattern, options: .regularExpression) {
-            result.replaceSubrange(
-                range,
-                with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound))
-            )
-        }
-    }
-    return result
+    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
+    // what this copy used, because correcting it is T-1270 and not this change.
+    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
 }

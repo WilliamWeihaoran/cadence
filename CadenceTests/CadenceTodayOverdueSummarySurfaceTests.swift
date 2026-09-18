@@ -713,11 +713,7 @@ private func sourceFile(_ relativePath: String) throws -> String {
 }
 
 private func strippingComments(_ source: String) throws -> String {
-    var result = source
-    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-        while let range = result.range(of: pattern, options: .regularExpression) {
-            result.replaceSubrange(range, with: "")
-        }
-    }
-    return result
+    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
+    // what this copy used, because correcting it is T-1270 and not this change.
+    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
 }

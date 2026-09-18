@@ -360,12 +360,8 @@ struct RemindersConnectionStateTests {
 /// `CadenceNoteReferencePanelSurfaceTests` and five others keep theirs. Replaces each comment with
 /// the same number of spaces so offsets and line numbers in a failure message still line up.
 private func strippingComments(_ source: String) throws -> String {
-    var result = source
-    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-        while let range = result.range(of: pattern, options: .regularExpression) {
-            result.replaceSubrange(range, with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound)))
-        }
-    }
-    return result
+    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
+    // what this copy used, because correcting it is T-1270 and not this change.
+    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
 }
 #endif
