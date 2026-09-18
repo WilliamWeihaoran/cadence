@@ -635,19 +635,27 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceSourceScan.matchCount("gently highlight", in: mac) == 1)
     }
 
-    /// **T-696/T-697.** iOS's subtitle carries both fixes: "on weekdays" for the band's real gate,
-    /// and a second sentence for the reach T-697 found — the same two keys also feed
-    /// `CadenceScheduleSupport.readyScheduleSlots` ("Ready to Schedule") and `initialTimelineHour`,
-    /// neither of which checks the day of the week, so that sentence says "every day" rather than
-    /// repeating "on weekdays".
+    /// **T-696/T-697, as T-1273 left them.** iOS's subtitle carries both fixes: "on weekdays" for
+    /// the band's real gate, and a second sentence for the reach T-697 found. That reach was two
+    /// readers — the slot arithmetic behind "Ready to Schedule", and `initialTimelineHour` — and
+    /// T-1273 deleted the first along with the stack that was its only caller. The sentence names
+    /// the one that is left, and still says "every day" rather than repeating "on weekdays",
+    /// because `initialTimelineHour` never checked the calendar.
+    ///
+    /// The second half pins that the deleted clause is *gone*, not merely no longer first: a
+    /// subtitle still advertising a stack the user cannot find is the failure the removal was for.
     @Test func theIOSWorkHoursSentenceNamesTheWeekendGapAndTheSchedulingReach() throws {
         let phone = try Self.strippedSource(at: Self.workHoursSurfaces[1])
         #expect(
             phone.contains(
                 "Text(\"Calendar day columns gently highlight \\(workHoursLabel) on weekdays. " +
-                "Ready to Schedule and the day timeline's opening hour use this window every day.\")"
+                "The day timeline's opening hour uses this window every day.\")"
             ),
             "the iOS work-hours subtitle no longer names both the weekday gate and the scheduling reach"
+        )
+        #expect(
+            !phone.contains("Ready to Schedule"),
+            "the iOS work-hours subtitle still names the stack T-1273 removed"
         )
     }
 

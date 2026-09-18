@@ -112,7 +112,7 @@ struct CalendarTimelineRangeTests {
 
     /// The two times the window used to swallow. 05:00 was clamped up into the 06:00 row and 23:30
     /// down into the 22:00 row, each printing a time its row contradicted; before the clamp existed
-    /// they matched no row at all and vanished, since "Ready to Schedule" needs
+    /// they matched no row at all and vanished, since the then-live "Ready to Schedule" needed
     /// `scheduledStartMin == -1`. Both now land on their own hour.
     @Test func aTaskAtFiveAMOrHalfPastElevenLandsInItsOwnRow() {
         #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 5 * 60) == 5)

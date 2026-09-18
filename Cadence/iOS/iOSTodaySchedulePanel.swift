@@ -14,14 +14,20 @@ import SwiftUI
 /// numbers nobody had ever seen — the same defect `iOSTodayView`'s deleted `todayRowDensity`
 /// had, in the same file family. The regular figures are the only ones that ever drew, so they are
 /// the ones that stay.
+///
+/// **T-1273: the pane is the grid, and nothing else.** A "Ready to Schedule" stack used to stand
+/// above the hour rows — up to four of today's untimed tasks, each a title, an estimate and three
+/// suggested-start chips — so on a real day the first hour this pane drew was 1 PM, and the pane
+/// whose whole subject is *when* opened on a list of things with no when. The owner was offered
+/// four ways to shrink it and chose to remove it: the same tasks are listed in the task column one
+/// divider to the left, on screen at the only width this pane is ever built at, so nothing became
+/// unreachable. What went with it is the staging area a task could be dragged out of, which was the
+/// stated cost. Placing an untimed task is now the grid's own gesture — tap the hour you want it
+/// in — which is the one this pane already taught in its empty state.
 struct iOSSchedulePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
-    @AppStorage(CalendarWorkHoursPreferences.startMinuteKey)
-    private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
-    @AppStorage(CalendarWorkHoursPreferences.endMinuteKey)
-    private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     @State private var quickCreateStartMin: Int?
     @State private var quickCreateTitle = ""
     @State private var quickCreateError: String?
@@ -40,10 +46,6 @@ struct iOSSchedulePanel: View {
         CadenceScheduleSupport.bundles(on: todayKey, from: allBundles, includeCompleted: false)
     }
 
-    private var untimedTodayTasks: [AppTask] {
-        CadenceScheduleSupport.unscheduledTasksByDate(allTasks)[todayKey] ?? []
-    }
-
     /// Drives the one-line hint, and it is about the *grid*, not the day: the hint's job is to say
     /// that tapping an hour is what fills the grid, so it stays for as long as the grid is empty —
     /// which is also the only time there is room for it. It goes the moment the first block lands,
@@ -52,38 +54,11 @@ struct iOSSchedulePanel: View {
         scheduledTasks.isEmpty && todayBundles.isEmpty
     }
 
-    /// The day the ready-to-schedule chips are offered against: the clock, the work-hours window
-    /// and what is already on the day. Each row derives its own start times from it, because the
-    /// block a chip writes is as long as the task — see
-    /// `CadenceScheduleSupport.ReadyScheduleContext`.
-    ///
-    /// Derived on every draw and deliberately not seeded into `@State`: the answer goes stale as
-    /// the day moves and as tasks are placed, and a snapshot taken in `onAppear` would keep
-    /// offering an hour that has just been filled.
-    private var readyScheduleContext: CadenceScheduleSupport.ReadyScheduleContext {
-        CadenceScheduleSupport.ReadyScheduleContext(
-            workStartMinute: workHoursStartMinute,
-            workEndMinute: workHoursEndMinute,
-            busyRanges: CadenceScheduleSupport.busyMinuteRanges(
-                tasks: scheduledTasks,
-                bundles: todayBundles
-            )
-        )
-    }
-
     /// The scroll target for the inline composer. See `quickCreateComposer(for:)`.
     private static let quickCreateAnchorID = "schedule.quickCreate"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if !untimedTodayTasks.isEmpty {
-                iOSScheduleReadyStack(tasks: untimedTodayTasks, context: readyScheduleContext)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-
-                Divider().background(Theme.borderSubtle.opacity(0.72))
-            }
-
             // A plain scroll view, not a `ZStack` with the empty hint floated over it. The hint was
             // a card laid across the middle of the grid, hiding two hours of rows and their
             // controls outright — `.allowsHitTesting(false)` kept them tappable but left them
@@ -449,8 +424,13 @@ private struct iOSScheduleHourRow: View {
                                 startMin: task.scheduledStartMin,
                                 endMin: task.scheduledEndMin,
                                 fillsAvailableHeight: false,
-                                // Only this pane offers it: the "Ready to Schedule" stack a cleared
-                                // task falls back into is directly above the grid here.
+                                // Only this pane offers it, and T-1273 changed where a cleared
+                                // task lands rather than whether it lands anywhere: it used to
+                                // fall back into the "Ready to Schedule" stack directly above this
+                                // grid, and that stack is gone. It falls back into the task column
+                                // across the divider instead — Today's untimed tasks, on screen
+                                // beside this pane at the only width this pane is built at. The
+                                // control's own wording still names the stack; see [[T-1286]].
                                 onClearTime: {
                                     CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
                                 }
@@ -555,194 +535,6 @@ private struct iOSScheduleHourRow: View {
 
     private var hourLabel: String {
         TimeFormatters.timeString(from: hour * 60)
-    }
-}
-
-private struct iOSScheduleReadyStack: View {
-    let tasks: [AppTask]
-    /// The day, computed once for the pane, so a slot that has just been filled disappears from
-    /// every row at once and no two rows drawn in one pass disagree about the clock. The start
-    /// *times* are per row, because the block a chip writes is as long as that row's task — see
-    /// `CadenceScheduleSupport.ReadyScheduleContext`.
-    let context: CadenceScheduleSupport.ReadyScheduleContext
-
-    private var visibleTasks: [AppTask] {
-        Array(tasks.prefix(4))
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
-                Image(systemName: "tray.and.arrow.down.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.amber)
-
-                SectionEyebrowLabel(text: "Ready to Schedule")
-
-                Spacer(minLength: 0)
-
-                Text("\(tasks.count)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.amber)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Theme.amber.opacity(0.12))
-                    .clipShape(Capsule())
-            }
-
-            VStack(spacing: 7) {
-                ForEach(visibleTasks) { task in
-                    iOSScheduleReadyTaskRow(task: task, context: context)
-                }
-            }
-
-            if tasks.count > visibleTasks.count {
-                Text("+\(tasks.count - visibleTasks.count) more in Today")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 1)
-            }
-        }
-    }
-}
-
-private struct iOSScheduleReadyTaskRow: View {
-    @Bindable var task: AppTask
-    let context: CadenceScheduleSupport.ReadyScheduleContext
-    @Environment(\.modelContext) private var modelContext
-    // T-201: Today's page hosts the inspector (`iOSTaskInspectorHost`), not this row. "Ready to
-    // schedule" is by definition a filtered stack — scheduling, completing or cancelling the task
-    // takes it out of the stack, which is exactly what this row's own sheet could not survive.
-    @Environment(\.iOSTaskInspector) private var taskInspector
-
-    /// The chips this row may actually offer. `setScheduledSlot` writes only the start, so the
-    /// block that lands is `task.timelineDurationMinutes` tall — the length the free-time check has
-    /// to be made against, and the length the row's own subtitle already advertises.
-    private var slots: [Int] {
-        context.slots(forDurationMinutes: task.timelineDurationMinutes)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .top, spacing: 8) {
-                iOSTaskCompletionCircle(isDone: false, tint: rowTint)
-                    .frame(width: 13, height: 13)
-                    .padding(.top, 3)
-
-                Button {
-                    taskInspector(task)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(TaskTitleSupport.displayTitle(task.title))
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-
-                        Text(task.estimatedMinutes > 0 ? estimateLabel : "No estimate")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    taskInspector(task)
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.dim.opacity(0.85))
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open task details")
-            }
-
-            // 26pt of plate inside a 44pt hit area, the trick `iOSIconButton` and the composer's
-            // cancel control already use — the chips are the row's whole point, so they get a
-            // finger-sized target without a band of 44pt plates dominating the stack. Expanded
-            // vertically only: the chips sit 5pt apart, so a symmetric inset would have made
-            // neighbouring targets overlap and the wrong hour win the tap.
-            HStack(spacing: 5) {
-                ForEach(slots, id: \.self) { startMin in
-                    Button {
-                        schedule(at: startMin)
-                    } label: {
-                        Text(TimeFormatters.timeString(from: startMin))
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Theme.blue)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 26)
-                            .background(Theme.blue.opacity(0.11))
-                            .clipShape(
-                                RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
-                            )
-                            .padding(.vertical, 9)
-                            .contentShape(Rectangle())
-                            .padding(.vertical, -9)
-                    }
-                    .buttonStyle(.plain)
-                    // The same name the row above it draws. This chip had its own fallback —
-                    // `task.title.isEmpty ? "task" : task.title` — so an untitled task was
-                    // "Untitled Task" on screen and "task" to VoiceOver, two names for one row,
-                    // and the fallback also missed a whitespace-only title that `displayTitle`
-                    // treats as blank (T-590).
-                    .accessibilityLabel("Schedule \(TaskTitleSupport.displayTitle(task.title)) at \(TimeFormatters.timeString(from: startMin))")
-                }
-            }
-        }
-        .padding(.horizontal, 2)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Theme.rowSeparator)
-                .frame(height: 1)
-        }
-    }
-
-    private func schedule(at startMin: Int) {
-        CadenceTaskDateEditing.setScheduledSlot(
-            dateKey: DateFormatters.todayKey(),
-            startMin: startMin,
-            for: task,
-            in: modelContext
-        )
-    }
-
-    /// **T-601(c). This was `Theme.priorityColor` re-typed, with one case changed.**
-    ///
-    /// Three of the four arms were the shared function's, and `.none` returned
-    /// `Theme.dim.opacity(0.76)` where the shared one returns `Theme.dim`. It reads as taste, so
-    /// the history was checked before it was removed rather than after:
-    ///
-    /// - It arrives whole in `19fbf8b` (2026-06-12), a bulk "refactor macOS task and timeline
-    ///   views" commit that says nothing about it, in a row whose `rowTint` fed **two** things —
-    ///   this circle and a `strokeBorder(rowTint.opacity(0.22))` around the card.
-    /// - `fcc8300` (2026-08-04) deleted that border along with every other hard card border in the
-    ///   app. The second consumer went in a sweep about elevation; the 0.76 stayed because nothing
-    ///   in that sweep was looking at it.
-    /// - Nothing names it. No comment, no test, no sibling: the only other `0.76` in the tree is
-    ///   `Theme.surface.opacity(0.76)` on an unrelated macOS popover.
-    /// - The same `iOSTaskCompletionCircle` on the board card, the calendar chip and the block
-    ///   sheet resolves an unprioritised task through `CadenceTaskCompletionGlyph`, which is
-    ///   `Theme.priorityColor(.none)` — full-strength `Theme.dim`. So this row was the only place
-    ///   in the app where "no priority" was a *fainter* grey than "no priority" everywhere else.
-    ///
-    /// A value that outlived its second reader, that nothing explains, and that one surface holds
-    /// against nine is drift, not taste. `Theme.dim` is already the muted token; dimming it again
-    /// by an unnamed fraction is a second opinion about the same decision.
-    private var rowTint: Color {
-        Theme.priorityColor(task.priority)
-    }
-
-    private var estimateLabel: String {
-        "\(CadenceTaskPresentationSupport.estimateLabel(for: task)) estimate"
     }
 }
 

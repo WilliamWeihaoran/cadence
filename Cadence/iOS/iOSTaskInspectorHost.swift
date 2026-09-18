@@ -26,7 +26,8 @@ import SwiftUI
 /// pattern for a broken one in the name of uniformity.
 ///
 /// What *was* converted is the set that owned presentation from a row or a card: `iOSTaskRow`,
-/// `iOSBoardTaskCard`, `iOSTimelineTaskBlock` and Today's `iOSScheduleReadyTaskRow`.
+/// `iOSBoardTaskCard`, `iOSTimelineTaskBlock` and Today's `iOSScheduleReadyTaskRow` — the last of
+/// which no longer exists, since T-1273 removed the "Ready to Schedule" stack it was a row of.
 
 /// Opens the task inspector on the nearest host. Written as a callable action rather than a binding
 /// so a call site cannot hold the selection, which is the whole point of the change.

@@ -190,9 +190,10 @@ struct CadenceEmptyTitleFallbackSweepTests {
     ///
     /// `strippingComments`, not `codeOnly`: `codeOnly` blanks string literals as well, so the
     /// `? "…" :` in the needle could never match and the sweep would be permanently green.
-    /// Three files discuss this exact ternary in prose — `DeleteConfirmationManager`,
-    /// `iOSTodaySchedulePanel` and `CadenceEventTitleSupport` — so the stripper is load-bearing
-    /// rather than decorative, and `theSweepReadsCodeAndNotTheProseAboutIt` pins that.
+    /// Files discuss this exact ternary in prose — `DeleteConfirmationManager` and
+    /// `CadenceEventTitleSupport`, and `iOSTodaySchedulePanel` did too until T-1273 deleted the
+    /// chip its paragraph was about — so the stripper is load-bearing rather than decorative, and
+    /// `theSweepReadsCodeAndNotTheProseAboutIt` pins that.
     @Test func noSurfaceHandSpellsAnEmptyTitleFallback() throws {
         let instrument = try Self.inlineTitleFallbackInstrument()
         var paths: [String] = []

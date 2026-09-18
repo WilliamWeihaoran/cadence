@@ -66,16 +66,18 @@ nonisolated enum CadenceCalendarSettingsCopy {
     /// of which is the **Timeline** panel and not a calendar view. macOS now says "Calendar and
     /// Timeline day columns gently highlight …" and iOS says "Calendar day columns gently
     /// highlight …", because mobile draws the band on the Calendar's day columns and nowhere else:
-    /// iPad's Timeline pane reads the same two preference keys but spends them on
-    /// `ReadyScheduleContext`'s slot suggestions, not on a band. The two sentences name their own
-    /// surfaces and cannot be converged without one of them becoming false.
+    /// iPad reads the same two preference keys for scheduling and macOS does not. The two sentences
+    /// name their own surfaces and cannot be converged without one of them becoming false.
     ///
     /// Both sentences also used to read as unconditional (T-696): the band is gated by
     /// `CalendarWorkHoursPreferences.shouldShowHighlight(on:)`, which is false on Saturday and
     /// Sunday, and neither surface said "weekdays". iOS's sentence additionally used to describe
     /// only the band (T-697), leaving out that the same window governs where "Ready to Schedule"
-    /// proposes times and where a non-today day column opens — on *every* day, not just weekdays,
-    /// since that half of the rule never checks the calendar.
+    /// proposed times and where a non-today day column opens — on *every* day, not just weekdays,
+    /// since that half of the rule never checks the calendar. **T-1273** deleted "Ready to
+    /// Schedule", so the second sentence now names only the opening hour; the "every day" it is
+    /// still spelled with belongs to `initialTimelineHour`, which never checked the calendar
+    /// either.
     static let workdayBoundaryTitle = "Workday boundary"
 
     /// The accessible name of the calendar row's link menu — an icon-only control on both

@@ -44,7 +44,8 @@ done — moved the task out of its section, SwiftUI removed the row, and the pan
 control experiment is the one that dates the bug: **Start** ran the identical `onSetStatus` path and
 left the panel open, because an in-progress task stays in the same section. Nothing was calling
 `dismiss()`; the defect was ownership. Four surfaces had it — `iOSTaskRow`, `iOSBoardTaskCard`,
-`iOSTimelineTaskBlock` and Today's `iOSScheduleReadyTaskRow` (T-201, `4562d4e`) — which is what a
+`iOSTimelineTaskBlock` and Today's `iOSScheduleReadyTaskRow` (T-201, `4562d4e`; the last of those
+went with the Ready to Schedule stack in T-1273) — which is what a
 pattern reached for by habit looks like, and why this is written down: the next agent adding a task
 surface will otherwise reach for `@State showDetail` and add a fifth.
 

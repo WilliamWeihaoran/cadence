@@ -451,13 +451,16 @@ private struct iOSDormantCalendarLinkRow: View {
 /// Saturday and Sunday, and the sentence used to read as if the band always drew.
 ///
 /// **T-697.** These same two keys reach further than the band on this platform, which is exactly
-/// what macOS's copy cannot say about itself (macOS never reads them for scheduling): iPad's
-/// Timeline pane spends them on `CadenceScheduleSupport.ReadyScheduleContext` — the "Ready to
-/// Schedule" chips propose start times inside this window, widening past it only once it is full —
-/// and on `initialTimelineHour`, the hour a non-today day column opens at. Unlike the band, neither
-/// of those checks the day of the week, so the second sentence below says "every day" rather than
-/// "on weekdays": a user who narrows this window to adjust a highlight is also moving where the
-/// app proposes to put their work, seven days a week.
+/// what macOS's copy cannot say about itself (macOS never reads them for scheduling): they also
+/// feed `CadenceScheduleSupport.initialTimelineHour`, the hour a day column that is not today
+/// opens at. Unlike the band, that half never checks the day of the week, so the second sentence
+/// below says "every day" rather than "on weekdays".
+///
+/// **T-1273 took the other half of that sentence away.** It used to name the "Ready to Schedule"
+/// chips first — they proposed start times inside this window — and that stack, the context type
+/// that resolved the window for it and the slot arithmetic behind both are all gone with the Today
+/// Timeline tab's staging area. The sentence is shorter by one clause and no longer promises a
+/// surface the user cannot find.
 private struct iOSCalendarWorkHoursSection: View {
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey)
     private var startMinute = CalendarWorkHoursPreferences.defaultStartMinute
@@ -489,7 +492,7 @@ private struct iOSCalendarWorkHoursSection: View {
                             Text(CadenceCalendarSettingsCopy.workdayBoundaryTitle)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Calendar day columns gently highlight \(workHoursLabel) on weekdays. Ready to Schedule and the day timeline's opening hour use this window every day.")
+                            Text("Calendar day columns gently highlight \(workHoursLabel) on weekdays. The day timeline's opening hour uses this window every day.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)

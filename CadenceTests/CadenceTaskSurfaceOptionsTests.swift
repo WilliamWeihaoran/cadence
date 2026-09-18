@@ -229,8 +229,10 @@ struct CadenceTaskSurfaceOptionsTests {
     /// **Two neighbouring lines are deliberately *not* this one, and the needle separates them
     /// without an exception list.** `MarkdownRenderedBlockTruncation.overflowLabel(unit:)` draws
     /// `"+ 4 more rows"` — spaced, pluralised, naming the unit that was cut, under a rendered table
-    /// rather than beside a list of chips; `iOSTodaySchedulePanel` draws `"+3 more in Today"`,
-    /// which names *where* the rest are. Both continue past the word `more`, and the needle is
+    /// rather than beside a list of chips; `iOSTodaySchedulePanel` drew `"+3 more in Today"`,
+    /// which named *where* the rest were, until T-1273 removed the stack it counted for. Both
+    /// continue past the word `more` — the second is kept as a witness rather than dropped with
+    /// its surface, because what it proves is a property of the *needle*, not of that file. Both
     /// anchored on the literal's closing quote, so neither can be swept up by a change to the list
     /// of files.
     ///

@@ -157,15 +157,19 @@ struct CadenceTaskInspectorHostTests {
                 "Cadence/iOS/iOSTodaySchedulePanel.swift": 0
             ]
         )
-        // …and each asks the host instead. `iOSScheduleReadyTaskRow` asks twice: the title button
-        // and the trailing info button are two controls onto one panel.
+        // …and each asks the host instead. `iOSTodaySchedulePanel` reads **zero** since T-1273:
+        // it used to ask twice, from `iOSScheduleReadyTaskRow`'s title button and its trailing info
+        // button, and the whole "Ready to Schedule" stack those two lived in is gone. The blocks
+        // still drawn on that pane are `iOSTimelineTaskBlock`, which asks from the file above it.
+        // The entry stays at `0` rather than leaving the list, for the same reason the four `0`s in
+        // the check above stay: this pane presenting an inspector again is the regression.
         try expectOccurrences(
             of: "taskInspector(task)",
             at: [
                 "Cadence/iOS/iOSTaskViews.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1,
                 "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
-                "Cadence/iOS/iOSTodaySchedulePanel.swift": 2
+                "Cadence/iOS/iOSTodaySchedulePanel.swift": 0
             ]
         )
         try expectOccurrences(
@@ -174,7 +178,7 @@ struct CadenceTaskInspectorHostTests {
                 "Cadence/iOS/iOSTaskViews.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1,
                 "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
-                "Cadence/iOS/iOSTodaySchedulePanel.swift": 1
+                "Cadence/iOS/iOSTodaySchedulePanel.swift": 0
             ]
         )
     }

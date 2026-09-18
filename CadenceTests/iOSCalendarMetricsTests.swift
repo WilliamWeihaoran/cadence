@@ -279,11 +279,17 @@ struct iOSCalendarMetricsTests {
         #expect(!panel.contains("0.9 : 0.45"))
 
         // One 7pt radius, one spelling — the file's only hardcoded radius is gone, and the old
-        // `radiusControl - 3` derivation is gone with it: both sites now read the named token.
+        // `radiusControl - 3` derivation is gone with it: the site reads the named token.
+        //
+        // **One site, not two, since T-1273.** The pair was the "Creating here" marker and the
+        // ready-to-schedule slot chip twelve views down; the chip went with the whole stack, so
+        // what is left is the marker. The count stays asserted rather than loosened to `> 0`: the
+        // thing this line is guarding against is a *second* spelling appearing, and `> 0` cannot
+        // see one.
         #expect(CadenceSourceScan.matchCount("cornerRadius: 7", in: panel) == 0)
         #expect(CadenceSourceScan.matchCount("Theme\\.radiusControl - 3", in: panel) == 0)
         #expect(
-            CadenceSourceScan.matchCount("Theme\\.radiusControlCompact", in: panel) == 2
+            CadenceSourceScan.matchCount("Theme\\.radiusControlCompact", in: panel) == 1
         )
     }
 
@@ -604,23 +610,27 @@ struct iOSCalendarMetricsTests {
                 == Theme.priorityColor(.none)
         )
 
+        // **The forked row itself is gone (T-1273).** It was `iOSScheduleReadyTaskRow`, one of the
+        // two views in the "Ready to Schedule" stack, and the stack came off the Today Timeline tab
+        // whole. So the file half of this is now a negative: the pane draws no priority ramp of any
+        // kind, hand-rolled or shared, because it draws no task row.
         let panel = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
         )
-        // Non-vacuity: the row whose tint this is.
-        #expect(panel.contains("iOSTaskCompletionCircle(isDone: false, tint: rowTint)"))
+        // Non-vacuity: the right file, past the stripper, still holding the pane.
+        #expect(panel.contains("struct iOSSchedulePanel: View"))
 
         #expect(
-            panel.contains("Theme.priorityColor(task.priority)"),
-            "the schedule row does not read the shared priority ramp"
-        )
-        #expect(
             CadenceSourceScan.matchCount(#"Theme\.dim\.opacity\(0\.76\)"#, in: panel) == 0,
-            "the schedule row still dims Theme.dim a second time"
+            "the schedule pane dims Theme.dim a second time again"
         )
         #expect(
             CadenceSourceScan.matchCount(#"case \.medium:"#, in: panel) == 0,
-            "the schedule row switches on priority again"
+            "the schedule pane switches on priority again"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"Theme\.priorityColor\("#, in: panel) == 0,
+            "the schedule pane tints by priority again — decide which ramp before adding one back"
         )
     }
 

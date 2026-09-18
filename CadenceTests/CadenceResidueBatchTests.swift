@@ -326,17 +326,21 @@ struct IOSTaskDetailSheetResidueTests {
 /// hover state to a separator weight, and the next person to retune the rule between two rows would
 /// silently retune a card outline too.
 struct CadenceRowSeparatorWeightTests {
-    /// The four rules, and how many times each now reads the shared name. Named individually
-    /// rather than swept, because the claim is about these four and a sweep would have to decide
-    /// what counts as a separator to say anything at all.
+    /// The rules that draw this weight, and how many times each now reads the shared name. Named
+    /// individually rather than swept, because the claim is about this set and a sweep would have
+    /// to decide what counts as a separator to say anything at all.
     ///
     /// `CadenceFieldRows.swift` reads **2**, not 1, since T-675: `CadenceFieldDivider` — the
     /// between-row rule inside a `CadenceFieldSection`, the same file's `CadenceFieldSectionChrome`
     /// already drew its `.ruled` top edge at this weight — used to hand-type `0.55` beside it.
+    ///
+    /// **It was four sites until T-1273.** `iOSTodaySchedulePanel` drew the fourth under each row
+    /// of the "Ready to Schedule" stack, and that stack came off the Today Timeline tab whole. The
+    /// file is not kept here at `0`: a `0` in this map would read as "this surface must never draw
+    /// a separator", which is a rule nobody decided — the pane simply has no rows any more.
     private static let separatorSites = [
         "Cadence/Shared/Components/CadenceFieldRows.swift": 2,
         "Cadence/iOS/iOSTaskDetailComponents.swift": 1,
-        "Cadence/iOS/iOSTodaySchedulePanel.swift": 1,
         "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1,
     ]
 
@@ -349,7 +353,7 @@ struct CadenceRowSeparatorWeightTests {
 
     /// The call sites read the name — which is the assertion above cannot make. A value-only pin
     /// stays green while a fifth row spells `0.35` out again.
-    @Test func allFourRowSeparatorsReadTheOneName() throws {
+    @Test func everyRowSeparatorReadsTheOneName() throws {
         for (path, expectedCount) in Self.separatorSites {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
             #expect(source.count > 400, "\(path) read as \(source.count) characters")

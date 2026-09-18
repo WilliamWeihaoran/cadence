@@ -931,18 +931,20 @@ struct CadenceControlAccessibilityLabelTests {
         )
     }
 
-    /// The two labels by value, because the sweep only knows that *no* hand-rolled fallback is
-    /// left — it would stay green if either label were deleted outright.
+    /// The label by value, because the sweep only knows that *no* hand-rolled fallback is left — it
+    /// would stay green if the label were deleted outright.
+    ///
+    /// **It used to pin two (T-1273).** The other was the "Ready to Schedule" chip in
+    /// `iOSTodaySchedulePanel`, the instance the ticket named; the stack that drew it is gone, and
+    /// with it the one control on that pane that spoke a task's name. The clear-time control below
+    /// is the survivor, and it is the one the *sweep* found rather than the one the ticket listed,
+    /// which is why deleting the named half leaves the rule with a witness at all.
     @Test func theTwoScheduleControlsNameTheirTaskTheWayTheScreenDoes() throws {
         let panel = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
         #expect(
-            panel.contains(
-                #"accessibilityLabel("Schedule \(TaskTitleSupport.displayTitle(task.title)) at \(TimeFormatters.timeString(from: startMin))")"#
-            ),
-            "the ready-to-schedule chip no longer names its task from the shared display title"
+            !CadenceSourceScan.strippingComments(panel).contains("accessibilityLabel(\"Schedule "),
+            "the ready-to-schedule chip is back on a pane T-1273 emptied of everything but the grid"
         )
-        // The visible name it now agrees with, in the same view.
-        #expect(panel.contains("Text(TaskTitleSupport.displayTitle(task.title))"))
 
         let timeline = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         #expect(

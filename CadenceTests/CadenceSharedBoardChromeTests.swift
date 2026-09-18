@@ -650,7 +650,11 @@ struct CadenceSectionEyebrowConvergenceTests {
             "Cadence/macOS/Views/CommitmentSharedViews.swift": 1,
             "Cadence/Shared/Components/HabitProgressViews.swift": 1,
             "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
-            "Cadence/iOS/iOSTodaySchedulePanel.swift": 1
+            // Zero since T-1273, and a count rather than a deletion for the same reason the
+            // templates pane above is: this pane's one eyebrow headed the "Ready to Schedule"
+            // stack, and the whole stack came off Today's Timeline tab. A pane that grows a
+            // heading again must grow the shared one.
+            "Cadence/iOS/iOSTodaySchedulePanel.swift": 0
         ])
     }
 

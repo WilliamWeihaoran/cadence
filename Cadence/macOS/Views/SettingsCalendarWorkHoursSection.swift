@@ -28,7 +28,8 @@ import SwiftUI
 /// than making this sentence quietly wrong again.
 ///
 /// **T-697.** This window is not only the band's — the same two `calendar.workHours.*.v1` keys
-/// also feed `CadenceScheduleSupport.readyScheduleSlots` and `initialTimelineHour` on the phone,
+/// also feed `CadenceScheduleSupport.initialTimelineHour` on the phone (they fed
+/// `readyScheduleSlots` too until T-1273 removed the stack that read it),
 /// which is a different fact from a different platform and stays out of *this* sentence for the
 /// same reason "Weekly" did above: macOS never reads these keys for scheduling, only for the band,
 /// so claiming otherwise here would be wrong on this surface. See `iOSCalendarSettingsSection`'s
