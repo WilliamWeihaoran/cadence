@@ -78,22 +78,29 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// a snapshot while `commitDelete`'s is a rollback.
     ///
     /// The delete half is unconditional: rows marked deleted come back, which is what the cascades
-    /// rely on. The edit half is *not* undone where anyone can see it until something refreshes the
-    /// object: immediately after `rollback()` the live `Area` still answers with the assigned
-    /// value, and only a fetch brings it back in line with the store. The store itself was never
-    /// wrong.
+    /// rely on.
     ///
-    /// **The assertion order below is load-bearing.** The first version of this test fetched before
-    /// reading the field and therefore measured the opposite result, which is exactly the trap: a
-    /// fetch anywhere between the rollback and the read hides the staleness.
+    /// **The edit half changed under us, and this test is what caught it (T-1279).** Until Xcode 26
+    /// an edit was *not* undone where anyone could see it until something refreshed the object:
+    /// immediately after `rollback()` the live `Area` still answered with the assigned value, and
+    /// only a fetch brought it back in line. Under **Xcode 27 the live reference is restored
+    /// immediately** — measured 2026-09-18 on the first run after the upgrade, this test failing
+    /// with `kept.name → "Work"` where it had asserted `"Work & Life"`. Nothing in this repository
+    /// changed; SwiftData did. The assertions below now pin the new behaviour, and the old one is
+    /// recorded here rather than deleted, because a pin with no history is a pin nobody can date.
     ///
-    /// So an editor cannot use `rollback()` and then truthfully say "Nothing was changed" — nothing
-    /// guarantees a fetch happens first, and `EditAreaSheet` binds straight to the model rather
-    /// than through a `@Query`. That is a *secondary* reason, though. The one that does not depend
-    /// on SwiftData's refresh timing is `arefusedListEditLeavesUnrelatedPendingWorkAlone`: this is
-    /// the app's single `ModelContext`, and a rollback discards work the editor knows nothing
-    /// about.
-    @Test func rollbackRestoresAnEditOnlyOnceSomethingRefreshesTheObject() throws {
+    /// **The assertion order below is still load-bearing**, for the opposite reason it used to be.
+    /// It reads the field *before* any fetch, which is the only position from which the two
+    /// behaviours are distinguishable at all — a fetch anywhere in between makes them identical and
+    /// this test would have gone on passing through the change without noticing.
+    ///
+    /// **What did NOT change is the reason `commitEdit` uses a field snapshot.** The refresh-timing
+    /// argument above was always the *secondary* one. The primary is
+    /// `arefusedListEditLeavesUnrelatedPendingWorkAlone`: this app has a single `ModelContext`, and
+    /// `rollback()` discards work the editor knows nothing about. That objection is untouched by
+    /// the framework fix, so the snapshot stays. Do not read this test going green on the new
+    /// behaviour as permission to swap `commitEdit` back to a rollback undo.
+    @Test func rollbackRestoresAnEditImmediatelyAndTheSingleContextObjectionStillStands() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)
         let kept = Area(name: "Work")
@@ -106,21 +113,25 @@ struct CadenceEditorSaveCommitSurfaceTests {
         modelContext.delete(removed)
         modelContext.rollback()
 
-        // Read the field before anything fetches.
+        // Read the field before anything fetches — the only position from which the pre-Xcode-27
+        // behaviour and this one differ.
         #expect(
-            kept.name == "Work & Life",
+            kept.name == "Work",
             """
-            rollback now restores a live reference immediately. If that is genuinely fixed, \
-            commitEdit may offer a rollback undo again — but the single-context objection stands.
+            rollback stopped restoring a live reference immediately. That is the pre-Xcode-27 \
+            behaviour returning, not a bug in this repository — check the toolchain before \
+            changing any code, and see this test's doc comment for what it used to assert.
             """
         )
 
-        // The fetch is both the delete assertion and the thing that refreshes `kept`.
+        // The delete assertion. It used to double as the thing that refreshed `kept`; since the
+        // restore is now immediate it no longer has that second job, and the read below is kept
+        // anyway so that a regression to the old behaviour still fails somewhere.
         #expect(
             try modelContext.fetch(FetchDescriptor<Area>()).count == 2,
             "rollback did not undo the delete, so commitDelete's undo is wrong too"
         )
-        #expect(kept.name == "Work", "the fetch did not bring the live reference back in line")
+        #expect(kept.name == "Work", "the live reference does not agree with the store after a fetch")
 
         #expect(
             try ModelContext(modelContainer).fetch(FetchDescriptor<Area>())

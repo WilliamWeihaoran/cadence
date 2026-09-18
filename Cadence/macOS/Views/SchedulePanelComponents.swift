@@ -189,10 +189,17 @@ struct TaskDetailPopover: View {
     /// The delete half of T-634, and the mirror image of the restore above.
     ///
     /// `commitDelete` undoes with `rollback()`, which un-deletes the row in the store — but
-    /// `deleteSubtask` had also *edited* `task.subtasks` to drop it, and a rollback's undo of an
-    /// edit is invisible until something refetches (T-402). So the row would come off the screen
-    /// and stay in the store: gone until the next launch brought it back. Pinned by
-    /// `arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack`.
+    /// `deleteSubtask` had also *edited* `task.subtasks` to drop it, and through Xcode 26 a
+    /// rollback's undo of an edit was invisible until something refetched (T-402). So the row came
+    /// off the screen and stayed in the store: gone until the next launch brought it back.
+    /// **Xcode 27 restores the relationship immediately** (T-1279), which makes re-applying
+    /// `restored` an idempotent no-op rather than the repair — pinned, both halves, by
+    /// `arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack`. It stays
+    /// for the reason that never depended on refresh timing: `commitDelete` rolls back the one
+    /// app-wide `ModelContext`, so re-applying this parent's own array is how *this* caller repairs
+    /// *its* object without depending on what else the rollback swept up. Whether that still earns
+    /// its keep here and at every sibling call site is the survey in T-1280 — do not delete it
+    /// piecemeal, and mind the toolchain floor.
     private func deleteSubtask(_ subtask: Subtask) {
         let restored = task.subtasks ?? []
         CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)

@@ -9,15 +9,15 @@ import SwiftData
 /// The reason that holds unconditionally is that this is the app's single `ModelContext`:
 /// `rollback()` would discard pending work that has nothing to do with the editor.
 ///
-/// The second reason is measured, and it is why this type was written after the first version of
+/// The second reason is historical, and it is why this type was written after the first version of
 /// the fix reached for a rollback by analogy with the cascades. `rollback()` un-**deletes**
 /// unconditionally — `CadenceListCascadeRollbackTests` pins that, and it is why `commitDelete` is
-/// right — but its undo of an *edit* is not visible on an already-materialised reference until a
-/// fetch refreshes it. The store is correct the whole time; the object every SwiftUI view is
-/// reading is not. An editor that rolled back and then said "Nothing was changed" would be relying
-/// on a fetch nobody scheduled. See
-/// `CadenceEditorSaveCommitSurfaceTests.rollbackRestoresAnEditOnlyOnceSomethingRefreshesTheObject`,
-/// whose assertion order is itself load-bearing.
+/// right — but through Xcode 26 its undo of an *edit* was not visible on an already-materialised
+/// reference until a fetch refreshed it. **Xcode 27 restores the live reference at once** (T-1279),
+/// so that reason has expired. The first one has not, and it is the whole justification now: do not
+/// read the framework fix as permission to swap this type for a rollback. See
+/// `CadenceEditorSaveCommitSurfaceTests.rollbackRestoresAnEditImmediatelyAndTheSingleContextObjectionStillStands`,
+/// which keeps the old behaviour in its own doc comment.
 ///
 /// **Raw strings, not the computed façades.** `statusRaw` and `sectionConfigsRaw` are the stored
 /// properties; `status` coerces an unrecognised value to `.active` on read and `sectionConfigs`

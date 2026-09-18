@@ -85,16 +85,16 @@ enum CadencePendingChangePersistence {
     ///    refused rename must not take the note someone is typing behind the popover with it —
     ///    `arefusedListEditLeavesUnrelatedPendingWorkAlone` is that assertion, and it does not
     ///    depend on any SwiftData timing.
-    /// 2. **Its edit undo is not visible until something refreshes the object.** Measured:
+    /// 2. **It once had a second defect, and that one expired without licensing a rollback.**
     ///    `rollback()` un-*deletes* unconditionally — which is what makes it right for
-    ///    `commitDelete`, and what `CadenceListCascadeRollbackTests` pins — but after
-    ///    `area.name = "New"; rollback()` the live `Area` still answers `"New"` and only a *fetch*
-    ///    brings it back to `"Old"`. The store is correct throughout. So an editor that rolled back
-    ///    and then reported `editFailureNotice` would be relying on a fetch nobody scheduled, and
-    ///    `EditAreaSheet` binds straight to the model rather than through a `@Query`.
-    ///    `CadenceEditorSaveCommitSurfaceTests.rollbackRestoresAnEditOnlyOnceSomethingRefreshesTheObject`
-    ///    pins both halves — including the assertion order, because a fetch placed before the read
-    ///    hides the whole effect.
+    ///    `commitDelete`, and what `CadenceListCascadeRollbackTests` pins — but through Xcode 26,
+    ///    after `area.name = "New"; rollback()` the live `Area` still answered `"New"` and only a
+    ///    *fetch* brought it back to `"Old"`, while the store was correct throughout. **Xcode 27
+    ///    restores the live reference immediately** (T-1279). Reason 1 never depended on that
+    ///    timing, so `commitEdit` keeps the field snapshot regardless of toolchain.
+    ///    `CadenceEditorSaveCommitSurfaceTests.rollbackRestoresAnEditImmediatelyAndTheSingleContextObjectionStillStands`
+    ///    pins the behaviour now and records the old one, including why the assertion order is
+    ///    still load-bearing.
     ///
     /// - Parameter commit: See `commitInsert(of:in:commit:)`.
     static func commitEdit(

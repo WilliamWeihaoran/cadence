@@ -118,11 +118,11 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   **load-bearing** reason, and the one to lead with: this app has a single `ModelContext`, so a
   rollback discards pending work the editor knows nothing about. Pinned by
   `arefusedListEditLeavesUnrelatedPendingWorkAlone`, and independent of SwiftData's behaviour.
-  The *secondary* reason is measured and conditional (T-402): `rollback()` corrects the store at
-  once, but a live `PersistentModel` keeps the assigned value until something **fetches** —
-  `area.name = "New"; rollback(); area.name` still reads `"New"`. Pinned by
-  `rollbackRestoresAnEditOnlyOnceSomethingRefreshesTheObject`, whose assertion order is itself
-  load-bearing: a fetch placed before the read measures the opposite. A fourth `rollback()` must
+  The *secondary* reason expired with Xcode 27 (T-402's finding, superseded by T-1279): a live
+  `PersistentModel` kept an assigned value until something **fetched**; it is restored at once now.
+  Pinned by `rollbackRestoresAnEditImmediatelyAndTheSingleContextObjectionStillStands`, whose
+  assertion order stays load-bearing — reading before any fetch is the only position from which the
+  two toolchains differ. Not permission to drop the snapshot; reason one is untouched. A fourth `rollback()` must
   be a delete — `everyRollbackCallSiteInTheAppIsADeleteCommit` is red on a new one.
 
 ## Page Headers

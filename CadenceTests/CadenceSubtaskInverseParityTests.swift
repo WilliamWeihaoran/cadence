@@ -186,12 +186,24 @@ struct CadenceSubtaskInverseParityTests {
 
     /// The same question on the delete side, and it answers the opposite way round.
     ///
-    /// `commitDelete` undoes with `rollback()`, which un-deletes the row — but `deleteSubtask` also
-    /// *edited* `parent.subtasks` to drop it, and a rollback's undo of an edit is not visible on an
-    /// already-materialised object until something refetches (T-402, pinned by
-    /// `rollbackRestoresAnEditOnlyOnceSomethingRefreshesTheObject`). So a refused delete would take
-    /// the row off the screen while the store still holds it: the user's subtask silently comes
-    /// back on the next launch. Same repair, same captured array.
+    /// `commitDelete` undoes with `rollback()`, which un-deletes the row — and `deleteSubtask` also
+    /// *edited* `parent.subtasks` to drop it.
+    ///
+    /// **Until Xcode 27 that edit was not undone where anyone could see it** until something
+    /// refetched (T-402), so a refused delete took the row off the screen while the store still
+    /// held it and the user's subtask silently came back on the next launch. The captured array
+    /// existed to repair exactly that.
+    ///
+    /// **Xcode 27 restores the relationship immediately (T-1279)** — measured 2026-09-18, this test
+    /// failing on `(task.subtasks ?? []).isEmpty → false` right after the refused commit. So the
+    /// screen is no longer wrong on its own, and the assertions below pin the new behaviour.
+    ///
+    /// **The captured array stays anyway, and not out of caution.** `commitDelete` rolls back the
+    /// whole single `ModelContext`, so it discards pending work the caller knows nothing about;
+    /// putting the parent's own array back is what lets a caller repair its own object without
+    /// depending on what else the rollback swept up. That reason never depended on refresh timing.
+    /// Whether the repair is now redundant *for this specific case* is a real question and is
+    /// [[T-1280]], not something to infer from this test going green.
     @Test func arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack() throws {
         let container = try makeContainer()
         let modelContext = ModelContext(container)
@@ -218,10 +230,19 @@ struct CadenceSubtaskInverseParityTests {
             }
         }
 
-        // The rollback put the row back in the store; it did not put it back on the parent.
+        // The rollback put the row back in the store AND, since Xcode 27, back on the parent.
         #expect(try fetchSubtasks(in: container).count == 1)
-        #expect((task.subtasks ?? []).isEmpty)
+        #expect(
+            (task.subtasks ?? []).map(\.title) == ["Find the passport"],
+            """
+            the parent's array was not restored by the rollback. That is the pre-Xcode-27 \
+            behaviour returning — check the toolchain before changing any code, and see this \
+            test's doc comment for what it used to assert.
+            """
+        )
 
+        // Re-applying the captured array is still what a caller does, and it must remain a no-op
+        // rather than a duplicate or a second insertion.
         task.subtasks = restored
         #expect((task.subtasks ?? []).map(\.title) == ["Find the passport"])
     }
