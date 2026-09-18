@@ -214,4 +214,135 @@ struct iPadTodayRailSurfaceTests {
         // `Theme.surface` under its header and under its list.
         #expect(CadenceSourceScan.matchCount(#"\.background\(Theme\.surface\)"#, in: today) >= 2)
     }
+
+    // MARK: - T-1277: the Notes half opens a note in place
+
+    /// **Tapping a note in Today's right-hand pane used to leave Today.**
+    ///
+    /// The owner: *"when i click on the notes here shown in the picture, it opens up a whole new
+    /// page to edit the notes. i dont want that. i want it to open that note right in that right
+    /// panel."* `open(_:)` in `iOSNotesView` sent every one-column host to `presentedNote`, and Today's
+    /// inspector is a one-column host — 320pt at its floor is under
+    /// `CadenceNotesListMetrics.twoColumnMinimumWidth` — so a `.fullScreenCover` covered the task
+    /// column that is the entire reason the split exists.
+    ///
+    /// The fork is on the **size class**, not the layout, and that is the half worth pinning: a
+    /// phone's one-column form must still present a cover, because there the list is the whole
+    /// screen and there is nothing behind it to keep.
+    ///
+    /// Source shape rather than behaviour, for this suite's usual reason — `Cadence/iOS/` is behind
+    /// `#if os(iOS)` and this target builds for macOS.
+    @Test func aRegularWidthOneColumnPaneOpensANoteInItselfAndAPhoneStillPushesOne() throws {
+        let notes = try source("Cadence/iOS/iOSNotesView.swift")
+        #expect(notes.contains("struct iOSNotesView: View {"), "non-vacuity: wrong file read")
+
+        let signature = try #require(
+            notes.range(of: "private func open(_ note: Note) {"),
+            "iOSNotesView.open(_:) is gone"
+        )
+        let open = try #require(
+            CadenceSourceScan.matchedBody(after: signature.lowerBound, in: notes, open: "{", close: "}"),
+            "open(_:)'s braces never balanced"
+        )
+
+        // The layout guard first — a two-column host still just selects, because the editor beside
+        // the list is already showing what was tapped.
+        #expect(dense(open).contains("guardnotesLayout==.oneColumnelse{return}"))
+        // Then the size class. The regular-width arm sets the flag and returns before either
+        // presentation state below it can be written.
+        #expect(dense(open).contains("guardisCompactWidthelse{showsInlineEditor=truereturn}"))
+        // And the phone's two presentations are still there, on the far side of that guard.
+        #expect(open.contains("selectedMeetingNote = note"))
+        #expect(open.contains("presentedNote = note"))
+        #expect(
+            CadenceSourceScan.matchCount(#"presentedNote = note"#, in: notes) == 1,
+            "a second site presents the cover; the size-class fork is no longer the only way in"
+        )
+
+        // The pane draws the note instead of the index, rather than over it.
+        #expect(dense(notes).contains("case.oneColumn:ifisShowingInlineEditor{editorPane}else{sidebar}"))
+        #expect(
+            notes.contains(
+                "showsInlineEditor && notesLayout == .oneColumn && !isCompactWidth && selectedNote != nil"
+            ),
+            "the inline editor no longer checks all three of the conditions it may draw under"
+        )
+    }
+
+    /// **The way back, and why it cannot be the system's.** Nothing is pushed — the pane swapped its
+    /// own contents — so there is no navigation stack to pop, and `iPadTodayInspectorSwitcher` is
+    /// the only row above this pane. The header's existing back control is what returns the index,
+    /// and the inline case is ordered *first* so it wins over the pushed-compact-screen case.
+    ///
+    /// Switching tabs also returns the index: the tab strip is the one control on that header that
+    /// names a destination, so it must not land inside an editor for a note nobody tapped.
+    @Test func theNotesHeaderCarriesTheWayBackOutOfTheInlineEditor() throws {
+        let notes = try source("Cadence/iOS/iOSNotesView.swift")
+
+        #expect(
+            notes.contains("onBack: backAction,"),
+            "the notes header no longer takes the resolved back action"
+        )
+
+        let signature = try #require(
+            notes.range(of: "private var backAction: (() -> Void)? {"),
+            "backAction is gone"
+        )
+        let action = try #require(
+            CadenceSourceScan.matchedBody(after: signature.lowerBound, in: notes, open: "{", close: "}"),
+            "backAction's braces never balanced"
+        )
+        #expect(dense(action).contains("ifisShowingInlineEditor{returncloseInlineEditor}"))
+        #expect(dense(action).contains("guardisCompactWidth,!isCompactTabRootelse{returnnil}"))
+        // Order, not just presence: the inline arm must be the one that answers when both could.
+        let inline = try #require(action.range(of: "isShowingInlineEditor"))
+        let pushed = try #require(action.range(of: "isCompactTabRoot"))
+        #expect(inline.lowerBound < pushed.lowerBound, "the pushed-screen arm now answers first")
+
+        // Leaving drops first responder before the view that owns the text view goes away.
+        let closeSignature = try #require(
+            notes.range(of: "private func closeInlineEditor() {"),
+            "closeInlineEditor is gone"
+        )
+        let close = try #require(
+            CadenceSourceScan.matchedBody(after: closeSignature.lowerBound, in: notes, open: "{", close: "}"),
+            "closeInlineEditor's braces never balanced"
+        )
+        #expect(dense(close).contains("isEditorFocused=false"))
+        #expect(dense(close).contains("showsInlineEditor=false"))
+
+        // The tab strip is the other way out.
+        #expect(
+            dense(notes).contains(".onChange(of:activeTab){_,_inisEditorFocused=falseshowsInlineEditor=falseselectDefaultNote()}"),
+            "switching tabs no longer returns the index"
+        )
+    }
+
+    /// **A note keeps its chrome whichever column it was reached from**, which is
+    /// `iOSNoteEditorCover`'s own stated rule. The cover carries the AI and export controls in its
+    /// navigation bar; the inline pane has no navigation bar, so the header carries them instead —
+    /// otherwise deleting the cover from this host would quietly delete two of the note's actions.
+    @Test func aNoteOpenedInThePaneKeepsTheControlsTheCoverWouldHaveGivenIt() throws {
+        let notes = try source("Cadence/iOS/iOSNotesView.swift")
+        let condition = "if showsHeaderTemplateMenu || isShowingInlineEditor, let note = selectedNote {"
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"if showsHeaderTemplateMenu \|\| isShowingInlineEditor, let note = selectedNote \{"#,
+                in: notes
+            ) == 2,
+            "the AI and export controls are not both offered to the in-pane editor"
+        )
+        #expect(notes.contains(condition))
+        #expect(notes.contains("iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)"))
+        #expect(notes.contains("iOSNoteExportMenu(note: note)"))
+
+        // The template control is deliberately *not* in that pair: `editorPane` hands it to the
+        // editor's own format row whenever the header is not carrying it, so it moves rather than
+        // disappearing. Pinned so a later pass does not "fix" the asymmetry into a duplicate.
+        #expect(notes.contains("templateKind: showsHeaderTemplateMenu ? nil : activeTab.coreTab?.noteKind"))
+        #expect(
+            notes.contains("if showsHeaderTemplateMenu, let coreTab = activeTab.coreTab, let note = selectedNote {"),
+            "the header template menu changed gate; recheck it against the editor's format row"
+        )
+    }
 }

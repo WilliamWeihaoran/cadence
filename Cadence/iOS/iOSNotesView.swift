@@ -87,8 +87,31 @@ struct iOSNotesView: View {
     /// as macOS's pages do: a day you jumped to from the date picker but have not written in yet
     /// has no row, and must still stay open in the editor.
     @State private var selectedNoteID: UUID?
-    /// Compact width only. The sidebar is the screen there, so the editor is presented over it.
+    /// **Compact width only, and strictly so since T-1277.** The sidebar is the screen on a phone,
+    /// so the editor is presented over it and the system's own dismissal is the way back. A
+    /// regular-width host narrow enough to draw one column used to come through here too — which is
+    /// how tapping a note in the iPad Today inspector threw away the split it was tapped inside.
+    /// That case is `showsInlineEditor` now.
     @State private var presentedNote: Note?
+    /// **T-1277: the one-column form at regular width edits in place.**
+    ///
+    /// The owner's words were *"i want it to open that note right in that right panel"*, about the
+    /// Notes half of Today's two-pane inspector: a tap there presented a full-screen cover, so the
+    /// task column that is the entire reason for the split went off screen to read a note beside
+    /// it. On a phone the pushed editor is right and is untouched — see `presentedNote` — so this
+    /// is forked on the size class and not on the layout alone.
+    ///
+    /// What it draws is not a new editor. At `twoColumn` this host already puts
+    /// `iOSMarkdownEditingSurface` beside the list; a pane under
+    /// `CadenceNotesListMetrics.twoColumnMinimumWidth` cannot hold both at once, so the two **take
+    /// turns in the same pane** and the header's back control is the toggle. That is also why the
+    /// way back is not a system back button: nothing was pushed, so there is no navigation stack to
+    /// pop — the pane is still the inspector's, with `iPadTodayInspectorSwitcher` above it.
+    ///
+    /// Deliberately *not* reset when the layout changes. Widening the host to `twoColumn` shows the
+    /// list and the open note together, and narrowing it again returns to the note you were reading
+    /// rather than to the top of the index.
+    @State private var showsInlineEditor = false
     @State private var selectedMeetingNote: Note?
     /// Set by a notepad row's menu; the `iOSNoteDeletion` modifier owns the confirmation and the
     /// delete.
@@ -128,6 +151,14 @@ struct iOSNotesView: View {
     /// narrow to split, which is what Today's inspector is.
     private var notesLayout: CadenceNotesLayout {
         CadenceNotesListMetrics.layout(isRegularWidth: !isCompactWidth, hostWidth: hostWidth)
+    }
+
+    /// Whether the one-column pane is currently showing the note instead of the index. See
+    /// `showsInlineEditor`, which is the flag; this is the flag *and* the three conditions under
+    /// which it may draw, so a host that changes shape falls back to the list without the flag
+    /// having to be cleared from four places.
+    private var isShowingInlineEditor: Bool {
+        showsInlineEditor && notesLayout == .oneColumn && !isCompactWidth && selectedNote != nil
     }
 
     /// The template menu sits in the header where there is room for it, and in the editor's format
@@ -182,6 +213,11 @@ struct iOSNotesView: View {
         }
         .onChange(of: activeTab) { _, _ in
             isEditorFocused = false
+            // Back to the index, not into the new tab's default note (T-1277). The tab strip is the
+            // one control on this header that names a *destination*, and `selectDefaultNote` picks
+            // a note without anyone having chosen it — landing straight in an editor for a note you
+            // did not tap would make the strip unusable as a way out of the one you did.
+            showsInlineEditor = false
             selectDefaultNote()
         }
         // Dropping focus first is the same rule `apply(_:to:)` spells out: the editing surface
@@ -227,12 +263,14 @@ struct iOSNotesView: View {
     /// do, and it cost a whole row to do it. Title and tabs share one row now.
     ///
     /// On a pushed compact screen the navigation bar is hidden, so the header carries the back
-    /// control. As the Notes tab's root, and anywhere on iPad, there is nothing to go back to.
+    /// control. As the Notes tab's root, and anywhere on iPad, there is nothing to go back to —
+    /// except the one case T-1277 added, where the pane itself is showing a note instead of the
+    /// index and the same control is what puts the index back. See `backAction`.
     private var notesHeader: some View {
         iOSNotesHeader(
             showsTitle: showsTitle,
             selection: $activeTab,
-            onBack: isCompactWidth && !isCompactTabRoot ? { dismiss() } : nil,
+            onBack: backAction,
             title: {
                 iOSNotesDateTitle(tab: activeTab, dayKey: $selectedDayKey)
             }
@@ -251,16 +289,26 @@ struct iOSNotesView: View {
                 }
             }
             // AI note actions, gated on the same rule and for the same reason: this row already
-            // holds a back control, a date title and four tabs at 390pt. In the one-column form the
-            // editor is a cover with its own navigation bar, and the control rides there instead —
-            // see `iOSNoteEditorCover`. It renders nothing at all without an API key.
-            if showsHeaderTemplateMenu, let note = selectedNote {
+            // holds a back control, a date title and four tabs at 390pt. In the *compact*
+            // one-column form the editor is a cover with its own navigation bar, and the control
+            // rides there instead — see `iOSNoteEditorCover`. It renders nothing at all without an
+            // API key.
+            //
+            // **`|| isShowingInlineEditor` is not a widening of the rule, it is the rule (T-1277).**
+            // `iOSNoteEditorCover` states it outright: "the same editor, the same format row, the
+            // same AI menu, so a note does not gain or lose chrome depending on which column you
+            // reached it from." The regular-width one-column pane now edits in place instead of
+            // presenting that cover, so without this the two controls the cover carried would
+            // simply be missing from the note — which is the cover's own stated defect, arrived at
+            // by deleting the cover. The row has the space: this branch only runs at regular width,
+            // and its narrowest host (Today's inspector) is also the one that suppresses the title.
+            if showsHeaderTemplateMenu || isShowingInlineEditor, let note = selectedNote {
                 iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
             }
             // Export, gated on the same rule and riding the same fallback: at compact width it is
             // in the editor cover's navigation bar. Unlike the AI menu this is never absent — a
             // note can always be written out, there is nothing to opt into.
-            if showsHeaderTemplateMenu, let note = selectedNote {
+            if showsHeaderTemplateMenu || isShowingInlineEditor, let note = selectedNote {
                 iOSNoteExportMenu(note: note)
             }
         }
@@ -275,11 +323,18 @@ struct iOSNotesView: View {
     /// nothing checked that anything *was* left over: this branched on the size class with no width
     /// input, and the Today inspector at its 320pt floor drew a 39pt editor. The floor is
     /// `CadenceNotesListMetrics.twoColumnMinimumWidth`, derived from this column and this divider.
+    /// **The one-column arm is two states since T-1277**, and only at regular width: the index, or
+    /// the note, in the same pane. A phone never reaches the second — `open(_:)` sends it to
+    /// `presentedNote` instead — so the compact form is exactly what it was.
     @ViewBuilder
     private var content: some View {
         switch notesLayout {
         case .oneColumn:
-            sidebar
+            if isShowingInlineEditor {
+                editorPane
+            } else {
+                sidebar
+            }
         case .twoColumn:
             HStack(spacing: 0) {
                 sidebar
@@ -379,7 +434,9 @@ struct iOSNotesView: View {
         }
     }
 
-    /// Regular width only. At compact width the editor is presented over the sidebar instead — see
+    /// Regular width only, in both of the two places it is drawn: beside the list in the
+    /// `twoColumn` form, and *as* the pane in the `oneColumn` form once a row has been tapped
+    /// (T-1277). At compact width the editor is presented over the sidebar instead — see
     /// `presentedNote`.
     @ViewBuilder
     private var editorPane: some View {
@@ -510,22 +567,64 @@ struct iOSNotesView: View {
     // MARK: - Selection and creation
 
     /// In the two-column form selecting a row *is* opening it — `editorPane` beside the list is
-    /// already showing it. In the one-column form there is no pane, so the editor is presented over
-    /// the list. That form is now reachable at regular width too (a host under
-    /// `CadenceNotesListMetrics.twoColumnMinimumWidth`), and this guard has to follow the layout
-    /// rather than the size class or a tapped row in Today's inspector would set `selectedNoteID`
-    /// and show nothing at all.
+    /// already showing it. In the one-column form there is no pane beside the list, so the note has
+    /// to be shown somewhere else, and **where** is the size class's answer rather than the
+    /// layout's (T-1277):
+    ///
+    /// - **Compact**: over the list, as a presented cover. The list is the whole screen there,
+    ///   there is nothing behind it worth keeping, and the cover's own chrome is the way out.
+    /// - **Regular**: in the pane itself. The pane is one half of a split whose other half is the
+    ///   point — Today's task column — and a cover threw that away. Same editor as `twoColumn`
+    ///   draws, taking the pane's turn instead of standing beside the list.
+    ///
+    /// The first guard follows the *layout* and not the size class, or a tapped row in Today's
+    /// inspector would set `selectedNoteID` and show nothing at all; the second follows the size
+    /// class, because which of the two a one-column host wants is a question about the device.
     private func open(_ note: Note) {
         selectedNoteID = note.id
         guard notesLayout == .oneColumn else { return }
+        guard isCompactWidth else {
+            showsInlineEditor = true
+            return
+        }
         // One branch, and it is deliberate: an event note is bound to a calendar event, and
         // `iOSEventNoteEditorSheet` is the editor that carries that event's title and refreshes its
         // metadata. The other three kinds have no such attachment and open in the plain editor.
+        //
+        // It has no counterpart in the regular-width branch above, and that is not an omission: the
+        // `twoColumn` form has never had one either — an event note selected there opens in
+        // `editorPane` like the other three. The inline form is that same pane, so forking it here
+        // would have made one iPad disagree with another about what tapping a meeting note does.
         if activeTab == .events {
             selectedMeetingNote = note
         } else {
             presentedNote = note
         }
+    }
+
+    /// The way back to the index, and the reason the control is in the header rather than being the
+    /// system's. Nothing is pushed in the inline form — the pane swapped its contents — so there is
+    /// no navigation stack to pop, and the pane's own header is the only row above the editor.
+    /// `iOSHeaderBackButton` is the same control the pushed compact screen uses for the same job.
+    ///
+    /// Ordered, not combined: the inline editor wins when both could apply. They cannot in fact
+    /// both apply — `isShowingInlineEditor` is false at compact width — but reading it as a
+    /// fallthrough chain is what keeps that true by construction rather than by coincidence.
+    private var backAction: (() -> Void)? {
+        if isShowingInlineEditor {
+            return closeInlineEditor
+        }
+        guard isCompactWidth, !isCompactTabRoot else { return nil }
+        return { dismiss() }
+    }
+
+    /// Drops focus before swapping the pane back to the list, the same rule `apply(_:to:)` and the
+    /// two `onChange` handlers above state: the editing surface is a `UITextView` behind a
+    /// representable, and leaving it first responder while the view that owns it goes away leaves
+    /// the keyboard up over a list.
+    private func closeInlineEditor() {
+        isEditorFocused = false
+        showsInlineEditor = false
     }
 
     /// Keeps the three standing notes for `selectedDayKey` on disk. Creating a day's note by

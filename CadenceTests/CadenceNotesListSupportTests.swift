@@ -738,15 +738,25 @@ struct CadenceNotesTwoColumnFloorTests {
 
         let code = try notesStrippingComments(notesSource("Cadence/iOS/iOSNotesView.swift"))
 
-        // Declaration, plus the three decisions: the column split, whether a tapped row presents the
-        // editor over the list, and where the template control lives.
-        #expect(code.components(separatedBy: "notesLayout").count - 1 == 4)
-        // Declaration, the `!isCompactWidth` inside `notesLayout`, the back control, the row metrics.
-        #expect(code.components(separatedBy: "isCompactWidth").count - 1 == 4)
+        // Declaration, plus the four decisions: the column split, whether a tapped row shows the
+        // editor instead of the list, where the template control lives, and — since T-1277 — the
+        // guard on the in-pane editor, which may only draw in the one-column form.
+        #expect(code.components(separatedBy: "notesLayout").count - 1 == 5)
+        // Declaration, the `!isCompactWidth` inside `notesLayout`, the row metrics, and the three
+        // genuinely device-shaped decisions T-1277 leaves it with: `isShowingInlineEditor` (a phone
+        // never edits in the pane), `open(_:)`'s fork between the pane and the presented cover, and
+        // the back control.
+        //
+        // **The split this pair asserts is unchanged and is the point.** Every "how many columns"
+        // question is still `notesLayout`; what T-1277 added to `isCompactWidth` is not a layout
+        // branch but the question the layout cannot answer — a 320pt pane and a 390pt phone are the
+        // same *shape*, and the pushed editor is right on exactly one of them.
+        #expect(code.components(separatedBy: "isCompactWidth").count - 1 == 6)
         // Measured rather than wrapped in a `GeometryReader`, and measured exactly once.
         #expect(code.components(separatedBy: "onGeometryChange").count - 1 == 1)
-        // The one-column form is reused, not rebuilt: the editor is still presented over the list by
-        // the same `fullScreenCover` the phone has always used.
+        // The one-column form is reused, not rebuilt: the *phone's* editor is still presented over
+        // the list by the same `fullScreenCover` it has always used. `iPadTodayRailSurfaceTests`
+        // owns the other arm — the regular-width pane that edits in place instead.
         #expect(code.contains("fullScreenCover(item: $presentedNote)"))
     }
 }
