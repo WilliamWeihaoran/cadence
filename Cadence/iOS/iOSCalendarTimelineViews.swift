@@ -625,11 +625,7 @@ private struct iOSCalendarTimeRail: View {
                     Text(TimeFormatters.timeString(from: hour * 60))
                         .font(.system(size: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium))
                         .foregroundStyle(
-                            Theme.dim.opacity(
-                                hour % iOSCalendarTimelineMetrics.hourEmphasisInterval == 0
-                                    ? iOSCalendarTimelineMetrics.hourLabelOpacity
-                                    : iOSCalendarTimelineMetrics.hourLabelMutedOpacity
-                            )
+                            Theme.dim.opacity(CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour))
                         )
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .frame(height: hourHeight, alignment: .top)
@@ -665,12 +661,14 @@ private struct iOSCalendarTimelineColumnGridLines: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(0...CadenceScheduleSupport.calendarHourCount, id: \.self) { index in
+                // The rung is a fact about the *hour*, not about the row's index: this canvas
+                // starts at `calendarStartHour` and the weight is asked for in those terms, so a
+                // canvas that one day starts elsewhere cannot slide the rung off the clock.
+                let hour = CadenceScheduleSupport.calendarStartHour + index
                 Rectangle()
                     .fill(
                         Theme.borderSubtle.opacity(
-                            index % iOSCalendarTimelineMetrics.hourEmphasisInterval == 0
-                                ? iOSCalendarHairlineMetrics.hourMajorOpacity
-                                : iOSCalendarHairlineMetrics.hourMinorOpacity
+                            CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour)
                         )
                     )
                     .frame(width: colWidth, height: iOSCalendarHairlineMetrics.width)

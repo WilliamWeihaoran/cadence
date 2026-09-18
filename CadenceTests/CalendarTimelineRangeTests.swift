@@ -451,49 +451,129 @@ struct CalendarTimelineRangeTests {
         #expect(CadenceScheduleSupport.timelineScrollOffset(forHour: 0, hourHeight: 58) == CGFloat(0))
     }
 
-    // MARK: - The hour ladder each platform draws (T-619)
+    // MARK: - The hour ladder both platforms draw (T-619 → T-1129)
 
-    /// **The two ladders' "major" and "minor" are not the same two lines**, which is why the ratio
-    /// [[T-619]] filed — macOS `0.36×0.95 / 0.30×0.85` against iOS `0.46×0.5 / 0.20×0.5`, and the
-    /// `0.684 / 0.510` an equal-ink derivation came back with — was answering a question neither
-    /// screen asks. macOS's pair is *hour against half-hour*; iOS's is *every third hour against
-    /// the two between*. Equalising them would have made a half-hour tick agree with an ordinary
-    /// hour line.
+    /// **Every third hour is a rung; the other sixteen are texture — and the sixteen are the half
+    /// the assertion has to exercise.**
     ///
-    /// Pinned positionally rather than by count: what matters is **which** weight sits with the
-    /// half-hour offset and **which** sits behind the `% interval` selection, and a count survives
-    /// a swap that keeps both names in the file.
-    @Test func theTwoPlatformsMinorHourLineMeansDifferentThings() throws {
-        let mac = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvasSupportViews.swift")
-        )
+    /// This is the check the standing failure mode is aimed at. "The rung exists" is true of a
+    /// ladder that draws *every* line heavy, of one that emphasises every second hour, and of one
+    /// whose two branches hand back the same number — so the population is walked whole, both
+    /// halves are named, and the weight each half resolves to is asserted rather than assumed. A
+    /// uniformly-heavy ladder has `emphasised.count == 25` here; a flat one 0; a `% 2` cadence 13;
+    /// a `% 4` cadence 7.
+    ///
+    /// The hours walked are the ones a canvas actually rules: `calendarStartHour` through
+    /// `calendarEndHour` **inclusive**, because the iOS grid draws a closing line under the last
+    /// hour and the Mac's `ForEach` stops one short of it. 24 is a rung either way.
+    @Test func theHourLadderEmphasisesEveryThirdHourAndNothingElse() {
+        let hours = Array(CadenceScheduleSupport.calendarStartHour...CadenceScheduleSupport.calendarEndHour)
+        #expect(hours.count == 25)
+
+        let emphasised = hours.filter { CadenceCalendarHourLadderMetrics.isEmphasised(hour: $0) }
+        let ordinary = hours.filter { !CadenceCalendarHourLadderMetrics.isEmphasised(hour: $0) }
+
+        #expect(emphasised == [0, 3, 6, 9, 12, 15, 18, 21, 24])
+        #expect(ordinary.count == 16)
+        #expect(ordinary.allSatisfy { $0 % 3 != 0 })
+        #expect(emphasised.count + ordinary.count == hours.count)
+
+        // Both halves resolve to their own weight. Without this an `isEmphasised` that answered
+        // correctly would still pass while every line was drawn at one opacity.
+        for hour in emphasised {
+            #expect(CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour) == 0.46)
+            #expect(CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour) == 0.9)
+        }
+        for hour in ordinary {
+            #expect(CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour) == 0.20)
+            #expect(CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour) == 0.45)
+        }
+
+        // The gap is the effect. A pair collapsed onto one value satisfies every assertion above
+        // about *which* hours are rungs and none of these.
+        #expect(CadenceCalendarHourLadderMetrics.emphasisedRuleOpacity > CadenceCalendarHourLadderMetrics.ordinaryRuleOpacity)
+        #expect(CadenceCalendarHourLadderMetrics.emphasisedLabelOpacity > CadenceCalendarHourLadderMetrics.ordinaryLabelOpacity)
+        let ruleStep = CadenceCalendarHourLadderMetrics.emphasisedRuleOpacity
+            / CadenceCalendarHourLadderMetrics.ordinaryRuleOpacity
+        #expect(abs(ruleStep - 2.3) < 0.0005)
+        #expect(CadenceCalendarHourLadderMetrics.emphasisInterval == 3)
+    }
+
+    /// **The Mac's canvas draws the rung, and the flat ladder it replaces is unspellable here.**
+    ///
+    /// [[T-1129]]: the repository owner chose *"bring iOS's every-third-hour rung to the Mac"* over
+    /// leaving the Mac flat and over dropping the rung on iOS. Before that the loop discarded its
+    /// hour (`ForEach(…) { _ in }`) and every rule was one weight — which is the shape a row has to
+    /// have to be flat, because a row that cannot see which hour it is cannot draw a rung. So the
+    /// binding of the hour is asserted, and so is the fact that the weight is a *function of it*:
+    /// naming either raw weight inside this view would be a call site that had already picked one,
+    /// which is a uniformly-heavy ladder by another spelling.
+    @Test func theMacsTimedCanvasDrawsARungRatherThanOneWeightAtEveryHour() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvasSupportViews.swift")
+        let mac = CadenceSourceScan.strippingComments(raw)
+        #expect(mac != raw)
+        #expect(mac.count == raw.count)
+
         let ladder = try #require(
             CadenceSourceScan.declarationBody("struct TimelineHourGridLines: View", in: mac),
             "could not find TimelineHourGridLines"
         )
 
-        // macOS: one line per hour row, and the *only* thing that selects the lighter weight is the
-        // half-hour tick — there is no every-Nth-hour emphasis on this platform at all.
-        #expect(ladder.contains("ForEach(metrics.startHour..<metrics.endHour"))
-        #expect(ladder.contains("CalendarVisualStyle.majorGridOpacity"))
-        #expect(CadenceSourceScan.matchCount("hourEmphasisInterval", in: ladder) == 0)
-        #expect(CadenceSourceScan.matchCount("%\\s*\\d+\\s*==\\s*0", in: ladder) == 0)
+        #expect(ladder.contains("ForEach(metrics.startHour..<metrics.endHour, id: \\.self) { hour in"))
+        #expect(CadenceSourceScan.matchCount(#"ruleOpacity\(hour: hour\)"#, in: ladder) == 1)
+        #expect(CadenceSourceScan.matchCount("emphasisedRuleOpacity", in: ladder) == 0)
+        #expect(CadenceSourceScan.matchCount("ordinaryRuleOpacity", in: ladder) == 0)
+        #expect(CadenceSourceScan.matchCount("gridRuleOpacity", in: ladder) == 0)
 
-        let minor = try #require(
-            ladder.range(of: "CalendarVisualStyle.minorGridOpacity"),
-            "the half-hour tick no longer reads the minor weight"
+        // The Mac's half-hour tick stays — the decision said so, and it is a different line. Pinned
+        // positionally, as it was before: which weight sits with the half-hour offset, behind the
+        // `showHalfHourMarks` gate. A count survives a swap that keeps both names in the file.
+        let tick = try #require(
+            ladder.range(of: "CalendarVisualStyle.halfHourTickOpacity"),
+            "the half-hour tick no longer reads its own weight"
         )
         let halfHour = try #require(
             ladder.range(of: "metrics.hourHeight / 2"),
             "the half-hour tick no longer offsets by half an hour"
         )
-        // The minor weight is the half-hour tick's, not a second hour line's: the offset follows it
-        // inside the same overlay, and the gate that hides it is `showHalfHourMarks`.
-        #expect(minor.upperBound < halfHour.lowerBound)
+        #expect(tick.upperBound < halfHour.lowerBound)
         #expect(ladder.contains("if showHalfHourMarks {"))
+    }
 
-        // iOS: the lighter weight is an ordinary *hour*, chosen by the shared cadence, and no iOS
-        // timed surface draws a half-hour line at all.
+    /// **A rung is a rule *and* a label, so all four rails step with the canvas beside them.**
+    ///
+    /// Both Mac rails used to set one weight at every hour — `Theme.dim`, bare — beside a canvas
+    /// that was itself flat, which was at least consistent. Half of [[T-1129]] would have left a
+    /// heavy rule against a uniform column of labels, which is a worse ladder than either.
+    @Test func allFourHourRailsStepTheirLabelsOnTheRungTheirRulesStepOn() throws {
+        let rails = [
+            ("Cadence/macOS/Views/CalendarPageComponents.swift", "struct CalTimeRailLabel: View"),
+            ("Cadence/macOS/Views/SchedulePanelSupportViews.swift", "struct ScheduleTimeRailRow: View")
+        ]
+        for (relativePath, declaration) in rails {
+            let raw = try CadenceSourceScan.sourceFile(relativePath)
+            let source = CadenceSourceScan.strippingComments(raw)
+            #expect(source != raw)
+            #expect(source.count == raw.count)
+            let rail = try #require(
+                CadenceSourceScan.declarationBody(declaration, in: source),
+                "could not find \(declaration)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"Theme\.dim\.opacity\(\s*CadenceCalendarHourLadderMetrics\.labelOpacity\(hour: hour\)"#,
+                    in: rail
+                ) == 1,
+                "\(declaration) does not weigh its label by the hour"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"foregroundStyle\(Theme\.dim\)"#, in: rail) == 0,
+                "\(declaration) still sets one weight at every hour"
+            )
+        }
+
+        // The two iOS rails, which had the cadence first and must not have been left behind by the
+        // hoist. Read as text: `Cadence/iOS/` is invisible to this macOS-built target.
         for relativePath in [
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
             "Cadence/iOS/iOSTodaySchedulePanel.swift"
@@ -501,35 +581,111 @@ struct CalendarTimelineRangeTests {
             let source = CadenceSourceScan.strippingComments(
                 try CadenceSourceScan.sourceFile(relativePath)
             )
-            #expect(source.contains("iOSCalendarTimelineMetrics.hourEmphasisInterval"))
-            #expect(source.contains("iOSCalendarHairlineMetrics.hourMinorOpacity"))
+            #expect(source.contains("CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour)"))
+            #expect(CadenceSourceScan.matchCount("hourLabelMutedOpacity", in: source) == 0)
+        }
+    }
+
+    /// **The cadence is spelled in exactly one file in the product tree, and it is the shared one.**
+    ///
+    /// This is the check [[T-596]] did not have. That defect was not a wrong number: it was the
+    /// `% 3` being copied to a second surface while the weights it selects between were not, so the
+    /// two surfaces agreed on *when* to shout and disagreed about *what* shouting meant. [[T-1129]]
+    /// made the Mac a third such surface, which is why the ticket bound its builder to derive once
+    /// in `Cadence/Shared/` rather than copy again.
+    ///
+    /// Swept over the whole tree rather than over a list of the files known to draw ladders — a
+    /// list is what stops matching its population the moment a fifth surface appears. The assertion
+    /// is an identity, not an allowlist: the single file that spells the modulo must be the
+    /// declaration itself.
+    @Test func theHourCadenceIsDerivedOnceAndEveryTimedSurfaceReadsIt() throws {
+        let declaration = "Cadence/Shared/CadenceCalendarHourLadderMetrics.swift"
+        let spellsItsOwnCadence = try CadenceScanInstrument(
+            "hand-spelled hour cadence",
+            fires: "hour % iOSCalendarTimelineMetrics.hourEmphasisInterval == 0 ? major : minor",
+            andNotOn: "Theme.borderSubtle.opacity(CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour))",
+            by: {
+                CadenceSourceScan.matchCount(
+                    #"\b(hour|index)\b\s*%[^\n]*==\s*0"#,
+                    in: CadenceSourceScan.codeOnly($0)
+                ) > 0
+            }
+        )
+
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        let offenders = try spellsItsOwnCadence.sweep(
+            files,
+            atLeast: 500,
+            including: declaration,
+            read: { try CadenceSourceScan.sourceFile($0) }
+        )
+        #expect(offenders == [declaration])
+
+        // And the other half of "derive once, both read": every surface that draws an hour ladder
+        // reads it. Named because they are what the decision changed, and checked against the
+        // sweep above, which is what catches a sixth.
+        for relativePath in [
+            "Cadence/macOS/Views/TimelineDayCanvasSupportViews.swift",
+            "Cadence/macOS/Views/CalendarPageComponents.swift",
+            "Cadence/macOS/Views/SchedulePanelSupportViews.swift",
+            "Cadence/iOS/iOSCalendarTimelineViews.swift",
+            "Cadence/iOS/iOSTodaySchedulePanel.swift"
+        ] {
+            let source = CadenceSourceScan.strippingComments(
+                try CadenceSourceScan.sourceFile(relativePath)
+            )
             #expect(
-                CadenceSourceScan.matchCount("hourHeight / 2", in: source) == 0,
-                "\(relativePath) has grown a half-hour line"
+                source.contains("CadenceCalendarHourLadderMetrics."),
+                "\(relativePath) no longer reads the shared ladder"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("hourHeight / 2", in: source)
+                    == (relativePath.hasSuffix("TimelineDayCanvasSupportViews.swift") ? 1 : 0),
+                "\(relativePath) disagrees with the app about who subdivides the hour"
             )
         }
     }
 
-    /// What the ladders weigh, as ink per line — opacity × line width, the proxy [[T-619]] used.
+    /// **What the three lines of the Mac's ladder weigh, in ink per line — opacity × line width,
+    /// the proxy [[T-619]] filed its measurement in.**
     ///
-    /// The comparison that *is* like-for-like is the line both platforms draw at every hour, and it
-    /// does not nearly match: macOS's is heavier than iOS's **heaviest** hour. Stated as an
-    /// inequality with the measured multiple beside it so the filed tickets have a number to argue
-    /// from; it is not an assertion that they ought to be equal.
-    @Test func theEveryHourLineIsHeavierOnMacThanOnIOS() {
-        let macHour = CalendarVisualStyle.majorGridOpacity * Double(CalendarVisualStyle.majorGridLineWidth)
-        let macHalfHour = CalendarVisualStyle.minorGridOpacity * Double(CalendarVisualStyle.minorGridLineWidth)
-        let iOSEmphasised = iOSCalendarHairlineMetrics.hourMajorOpacity * Double(iOSCalendarHairlineMetrics.width)
-        let iOSOrdinary = iOSCalendarHairlineMetrics.hourMinorOpacity * Double(iOSCalendarHairlineMetrics.width)
+    /// The ordering is the assertion: rung, then ordinary hour, then half-hour tick. It is not a
+    /// preference. A tick heavier than the hour it bisects turns the grid into 30-minute rows with
+    /// a light line at the top of each — which is what leaving the tick at its shipped 0.30 would
+    /// have done once the ordinary hour came down to the shared weight, and is why
+    /// `CalendarVisualStyle.halfHourTickOpacity` is derived from that weight rather than typed.
+    ///
+    /// The cross-platform figure is here too, because it is the reason the Mac can take iOS's
+    /// opacities without going faint: the Mac draws them at 0.95pt against iOS's 0.5pt hairline, so
+    /// every line on the Mac's ladder still carries about 1.9× the ink of the iOS line that settled
+    /// the number. The widths stay per-platform — [[T-619]] measured them and declined to converge
+    /// them, and this ticket did not reopen that.
+    @Test func theMacLaddersThreeLinesStayInOrderAndKeepIOSsPairAtTheMacsWidth() {
+        let rung = CadenceCalendarHourLadderMetrics.emphasisedRuleOpacity
+            * Double(CalendarVisualStyle.hourRuleWidth)
+        let hour = CadenceCalendarHourLadderMetrics.ordinaryRuleOpacity
+            * Double(CalendarVisualStyle.hourRuleWidth)
+        let tick = CalendarVisualStyle.halfHourTickOpacity
+            * Double(CalendarVisualStyle.halfHourTickWidth)
 
-        #expect(abs(macHour - 0.342) < 0.0005)
-        #expect(abs(macHalfHour - 0.255) < 0.0005)
-        #expect(abs(iOSEmphasised - 0.230) < 0.0005)
-        #expect(abs(iOSOrdinary - 0.100) < 0.0005)
+        #expect(abs(rung - 0.437) < 0.0005)
+        #expect(abs(hour - 0.190) < 0.0005)
+        #expect(abs(tick - 0.142) < 0.0005)
+        #expect(rung > hour)
+        #expect(hour > tick)
 
-        #expect(macHour > iOSEmphasised)
-        #expect(macHour / iOSEmphasised > 1.4)
-        #expect(macHour / iOSOrdinary > 3.4)
+        // The tick keeps the ratio to the hour rule it shipped at — 0.30×0.85 against 0.36×0.95.
+        #expect(abs(tick / hour - 0.30 * 0.85 / (0.36 * 0.95)) < 0.0005)
+
+        // iOS draws the same two opacities at its own hairline width, unchanged by this ticket.
+        let iOSRung = CadenceCalendarHourLadderMetrics.emphasisedRuleOpacity
+            * Double(iOSCalendarHairlineMetrics.width)
+        let iOSHour = CadenceCalendarHourLadderMetrics.ordinaryRuleOpacity
+            * Double(iOSCalendarHairlineMetrics.width)
+        #expect(abs(iOSRung - 0.230) < 0.0005)
+        #expect(abs(iOSHour - 0.100) < 0.0005)
+        #expect(abs(rung / iOSRung - 1.9) < 0.0005)
+        #expect(abs(hour / iOSHour - 1.9) < 0.0005)
     }
 
     /// **All four hour rails name the hour the same way, and it is the user's way ([[T-1130]]).**

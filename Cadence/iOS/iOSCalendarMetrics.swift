@@ -70,14 +70,6 @@ nonisolated enum iOSCalendarTimelineMetrics {
     /// surface that measured to match the surface that did not.
     static let hourLabelTrailingInset: CGFloat = 8
 
-    /// How often the ladder says the hour louder: every third label, and every third line.
-    ///
-    /// Stated once because **both** timed surfaces already count to three — Today's timeline and the
-    /// Calendar grid spell the identical `% 3` and then disagree about what the emphasis *is* (see
-    /// `iOSCalendarHairlineMetrics`). A cadence and the weights it selects between belong together;
-    /// splitting them is how one of the two got copied without the other.
-    static let hourEmphasisInterval: Int = 3
-
     /// How far the now-line is held off each edge of a day column ([[T-1131]]).
     ///
     /// 4, which is `TimelineBlockStyle.calendar`'s `leadingInset`/`trailingInset` — the pair the
@@ -90,13 +82,6 @@ nonisolated enum iOSCalendarTimelineMetrics {
     /// the rule spans that lane exactly, so an inset here would leave the two lines starting at
     /// different x on the same row.
     static let nowLineInset: CGFloat = 4
-
-    /// The `12 AM` label on an emphasised hour, and on the two between.
-    ///
-    /// The one part of the ladder the two surfaces already agreed on, to the digit. Named so the
-    /// agreement is a read rather than a coincidence that survived.
-    static let hourLabelOpacity: Double = 0.9
-    static let hourLabelMutedOpacity: Double = 0.45
 
     // MARK: The day header band
 
@@ -181,8 +166,9 @@ nonisolated enum iOSCalendarTimelineMetrics {
 ///   bottom and its columns, the hour rail down its trailing side. Those two lines **meet**, at the
 ///   top-left corner of the canvas, which is why one of them being lighter than the other was
 ///   visible rather than merely inconsistent.
-/// - **`hourMajor`/`hourMinor`** are the ladder, selected between by
-///   `iOSCalendarTimelineMetrics.hourEmphasisInterval`.
+/// The ladder itself used to be a third entry here — a major/minor pair, selected between by a
+/// cadence stated a few lines up in this file. It is `CadenceCalendarHourLadderMetrics` now,
+/// because [[T-1129]] gave the Mac the same rung and the cadence had to travel with its weights.
 ///
 /// Two calendar hairlines are deliberately **not** here. The Board's column separator is
 /// `iOSCalendarBoardMetrics`', because it already agrees with the Mac's Board rather than with this
@@ -210,10 +196,10 @@ nonisolated enum iOSCalendarHairlineMetrics {
     /// already drew, and the third is the one that meets them.
     static let pinnedEdgeOpacity: Double = 0.65
 
-    /// The hour ladder. Every third line reads as a rung and the two between it as texture; the
-    /// gap between the two weights is the whole effect, so they are stated as a pair.
-    static let hourMajorOpacity: Double = 0.46
-    static let hourMinorOpacity: Double = 0.20
+    /// The hour ladder is **not** here any more: its cadence and its two weights are
+    /// `CadenceCalendarHourLadderMetrics`, which the Mac's timed canvas reads too ([[T-1129]]).
+    /// The figures are unchanged — 0.46 against 0.20, every third hour — and the move is what
+    /// stopped the Mac growing a second spelling of them.
 }
 
 // MARK: - The month grid

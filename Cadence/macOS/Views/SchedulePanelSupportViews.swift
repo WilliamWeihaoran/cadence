@@ -15,6 +15,10 @@ import SwiftUI
 /// neither clock face needs `timeLabelWidth` or `timeLabelPad` moved. `blockInset` is derived from
 /// the pair, so changing either would have shifted every block on the panel.
 /// `theMacHourRailsFitTheWidestLabelOnEitherClockFace` holds those figures.
+///
+/// **The weight is the ladder's, not this row's ([[T-1129]]).** Every third hour reads louder here
+/// and on the canvas beside it, from the one `CadenceCalendarHourLadderMetrics` both platforms now
+/// read — see `CalTimeRailLabel`, the other Mac rail, for the decision.
 struct ScheduleTimeRailRow: View {
     let hour: Int
     let hourHeight: CGFloat
@@ -22,7 +26,9 @@ struct ScheduleTimeRailRow: View {
     var body: some View {
         Text(hourLabel)
             .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(Theme.dim)
+            .foregroundStyle(
+                Theme.dim.opacity(CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour))
+            )
             .frame(width: timeLabelWidth, height: hourHeight, alignment: .topTrailing)
             .padding(.trailing, timeLabelPad)
             .offset(y: -6)

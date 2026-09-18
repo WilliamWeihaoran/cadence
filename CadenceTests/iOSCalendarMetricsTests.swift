@@ -258,19 +258,22 @@ struct iOSCalendarMetricsTests {
         // Non-vacuity: the right file, and the row that draws the ladder.
         #expect(panel.contains("private struct iOSScheduleHourRow: View"))
 
-        #expect(panel.contains("iOSCalendarHairlineMetrics.hourMajorOpacity"))
-        #expect(panel.contains("iOSCalendarHairlineMetrics.hourMinorOpacity"))
+        // The ladder left this file's vocabulary in T-1129, when the Mac grew the same rung: the
+        // cadence and its two weights are `CadenceCalendarHourLadderMetrics` now, read by both
+        // platforms. The figures are unchanged; what moved is where they are stated.
+        #expect(panel.contains("CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour)"))
+        #expect(panel.contains("CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour)"))
         #expect(panel.contains("iOSCalendarHairlineMetrics.width"))
-        #expect(panel.contains("iOSCalendarTimelineMetrics.hourLabelOpacity"))
-        #expect(panel.contains("iOSCalendarTimelineMetrics.hourLabelMutedOpacity"))
 
-        // The cadence is read at both places that counted to three, rather than spelled twice.
+        // The cadence is *not* spelled here at all any more — neither as a literal nor through a
+        // per-platform alias. Two reads of the shared weight functions, and no local modulo.
         #expect(
             CadenceSourceScan.matchCount(
-                "iOSCalendarTimelineMetrics\\.hourEmphasisInterval",
+                "CadenceCalendarHourLadderMetrics\\.(rule|label)Opacity",
                 in: panel
             ) == 2
         )
+        #expect(CadenceSourceScan.matchCount("hourEmphasisInterval", in: panel) == 0)
         #expect(CadenceSourceScan.matchCount("% 3 == 0", in: panel) == 0)
         #expect(!panel.contains("0.55 : 0.25"))
         #expect(!panel.contains("0.9 : 0.45"))
@@ -357,26 +360,30 @@ struct iOSCalendarMetricsTests {
     /// being re-spelled `% 3` wherever a line is drawn. Today's timeline spells the identical
     /// cadence; that is how it came to spell a *different* pair of weights (T-596).
     @Test func theHourLadderIsOneCadenceAndTwoWeights() throws {
-        #expect(iOSCalendarTimelineMetrics.hourEmphasisInterval == 3)
-        #expect(iOSCalendarHairlineMetrics.hourMajorOpacity == 0.46)
-        #expect(iOSCalendarHairlineMetrics.hourMinorOpacity == 0.20)
-        #expect(iOSCalendarHairlineMetrics.hourMajorOpacity > iOSCalendarHairlineMetrics.hourMinorOpacity)
-        #expect(iOSCalendarTimelineMetrics.hourLabelOpacity > iOSCalendarTimelineMetrics.hourLabelMutedOpacity)
+        // The figures are the same three they have been since T-596; they are stated in
+        // `Cadence/Shared/` now because T-1129 gave the Mac the same rung, and a cadence that
+        // travels without its weights is how this file came to hold two of them (see below).
+        #expect(CadenceCalendarHourLadderMetrics.emphasisInterval == 3)
+        #expect(CadenceCalendarHourLadderMetrics.emphasisedRuleOpacity == 0.46)
+        #expect(CadenceCalendarHourLadderMetrics.ordinaryRuleOpacity == 0.20)
+        #expect(CadenceCalendarHourLadderMetrics.emphasisedRuleOpacity > CadenceCalendarHourLadderMetrics.ordinaryRuleOpacity)
+        #expect(CadenceCalendarHourLadderMetrics.emphasisedLabelOpacity > CadenceCalendarHourLadderMetrics.ordinaryLabelOpacity)
 
         let timeline = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         )
         #expect(timeline.contains("private struct iOSCalendarTimelineColumnGridLines: View"))
-        #expect(timeline.contains("iOSCalendarHairlineMetrics.hourMajorOpacity"))
-        #expect(timeline.contains("iOSCalendarHairlineMetrics.hourMinorOpacity"))
-        #expect(timeline.contains("iOSCalendarTimelineMetrics.hourLabelOpacity"))
-        // The cadence is read at both of the places that count to three — the lines and the labels.
+        #expect(timeline.contains("CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour)"))
+        #expect(timeline.contains("CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour)"))
+        // Two reads of the shared weight functions — the lines and the labels — and no local
+        // spelling of the cadence at either.
         #expect(
             CadenceSourceScan.matchCount(
-                "iOSCalendarTimelineMetrics\\.hourEmphasisInterval",
+                "CadenceCalendarHourLadderMetrics\\.(rule|label)Opacity",
                 in: timeline
             ) == 2
         )
+        #expect(CadenceSourceScan.matchCount("hourEmphasisInterval", in: timeline) == 0)
         #expect(CadenceSourceScan.matchCount("% 3 == 0", in: timeline) == 0)
     }
 

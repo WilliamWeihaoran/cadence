@@ -297,10 +297,42 @@ struct TimelineBlockStyle {
 }
 
 enum CalendarVisualStyle {
-    static let majorGridOpacity: Double = 0.36
-    static let minorGridOpacity: Double = 0.30
-    static let majorGridLineWidth: CGFloat = 0.95
-    static let minorGridLineWidth: CGFloat = 0.85
+    /// The rule that closes a grid cell or a band of pinned chrome: a month cell's bottom edge, and
+    /// the day-header band's.
+    ///
+    /// **This was `majorGridOpacity`, and it stopped being the hour ladder's in [[T-1129]].** The
+    /// ladder used to draw every hour at this weight and call it "major" against a "minor"
+    /// half-hour; it now reads `CadenceCalendarHourLadderMetrics`, where "major" means a rung and
+    /// the Mac and iOS agree on what the pair says. The name moved with the meaning so the next
+    /// agent cannot wire a ladder back to the month grid's edge by reaching for the familiar word.
+    static let gridRuleOpacity: Double = 0.36
+
+    /// The hour rule across a timed canvas, at every hour — rung or not.
+    ///
+    /// **A real platform figure, and it is why the Mac can take iOS's opacity pair without going
+    /// faint.** iOS draws its ladder at `iOSCalendarHairlineMetrics.width`, 0.5pt; this is 0.95,
+    /// so the same opacity carries roughly 1.9× the ink on the Mac. [[T-619]] measured the
+    /// widths and declined to converge them: a Mac window is read from further away than a phone
+    /// held at arm's length, and a hairline is not the same physical thing on the two.
+    static let hourRuleWidth: CGFloat = 0.95
+
+    /// The half-hour tick, drawn only at the deepest of the three zoom levels, where an hour can be
+    /// 200pt tall.
+    ///
+    /// **It stays, and it is the Mac's alone** ([[T-1129]]): no iOS timed surface subdivides the
+    /// hour, and the decision that gave the Mac the rung said so explicitly, because a tick and a
+    /// rung are different lines and do not conflict.
+    ///
+    /// What *did* have to move is its weight, and it moved the least it could. The tick used to be
+    /// 0.30 at 0.85pt against an hour rule of 0.36 at 0.95 — three-quarters of the hour's ink. With
+    /// the ordinary hour now at `CadenceCalendarHourLadderMetrics.ordinaryRuleOpacity`, leaving the
+    /// tick at 0.30 would have made the half-hour **heavier** than the hour it bisects, and a grid
+    /// whose loudest line falls on the half hour reads as 30-minute rows with a light line at the
+    /// top of each. So the tick keeps the *ratio* it shipped at — `0.30 / 0.36` of the hour rule,
+    /// at the same 0.85pt — and the three lines stay ordered: rung, hour, tick.
+    static let halfHourTickWidth: CGFloat = 0.85
+    static let halfHourTickOpacity: Double =
+        CadenceCalendarHourLadderMetrics.ordinaryRuleOpacity * (0.30 / 0.36)
     static let dividerOpacity: Double = 0.18
     static let columnGridOpacity: Double = 0.09
     static let timelineDaySeparatorOpacity: Double = 0.16

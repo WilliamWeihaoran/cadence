@@ -145,6 +145,11 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
 - Use one hover/selection layer at one radius.
 - The shared board header is `CadenceBoardColumnHeader` in `Shared/Components/`.
 - The shared estimate popover is `EstimatePickerPopoverContent`; platform wrappers should delegate.
+- The hour ladder on a timed grid is `CadenceCalendarHourLadderMetrics` (T-1129): one cadence
+  (every third hour) and the two weights it selects between, for the rule and for the rail label.
+  All five drawing surfaces read `ruleOpacity(hour:)` / `labelOpacity(hour:)`; no file spells its
+  own `% 3`, and a sweep fails a second one. Line **widths** stay per-platform. macOS's half-hour
+  tick is macOS's alone and is derived from the shared ordinary weight so it stays below it.
 - The now-line on a timed grid is `CadenceTimelineNowLine` (T-1131), drawn by macOS's
   `TimelineCurrentTimeOverlay` adapter and by both iOS timed surfaces. It takes a
   **minute-to-Y closure**, not an hour height: each canvas passes the same function its own

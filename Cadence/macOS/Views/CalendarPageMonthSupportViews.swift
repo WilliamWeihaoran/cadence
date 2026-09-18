@@ -385,7 +385,7 @@ struct MonthDayCell: View {
         }
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.gridRuleOpacity))
                 .frame(height: 0.5)
         }
     }

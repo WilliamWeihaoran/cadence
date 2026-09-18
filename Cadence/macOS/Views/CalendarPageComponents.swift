@@ -20,6 +20,14 @@ import Foundation
 /// and the widest 24-hour one `08:00` at 30.50pt, against `calTimeWidth`'s 44pt box. Both clear it,
 /// and the 24-hour face is the *narrower* of the two, so no clock setting makes the rail tighter.
 /// `theMacHourRailsFitTheWidestLabelOnEitherClockFace` holds both figures.
+/// One hour of the Calendar timeline's rail.
+///
+/// **The label follows the ladder's rung ([[T-1129]]).** It used to be one weight at every hour,
+/// beside a canvas whose lines were one weight too; both iOS rails already stepped 0.9 against 0.45
+/// on the same `% 3` the rules step on, and the owner's answer to [[T-619]] was to bring that rung
+/// to the Mac rather than flatten iOS. The pair and the cadence are
+/// `CadenceCalendarHourLadderMetrics`, read by all four rails in the app — a heavy rule beside a
+/// uniformly-weighted column of labels would be half a rung.
 struct CalTimeRailLabel: View {
     let hour: Int
     let hourHeight: CGFloat
@@ -32,7 +40,9 @@ struct CalTimeRailLabel: View {
 
             Text(TimeFormatters.timeString(from: hour * 60))
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
+                .foregroundStyle(
+                    Theme.dim.opacity(CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour))
+                )
                 .frame(width: calTimeWidth, alignment: .topTrailing)
                 .padding(.trailing, calTimeInset)
                 .padding(.top, 2)
@@ -249,7 +259,7 @@ struct MonthWeeksView: View {
                                 }
                                 .overlay(alignment: .bottom) {
                                     Rectangle()
-                                        .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.majorGridOpacity))
+                                        .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.gridRuleOpacity))
                                         .frame(height: 0.5)
                                 }
                         }
