@@ -17,6 +17,16 @@
 	</array>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<!-- T-626. iOS-only in effect, and shared in file because there is no way to make it
+	     otherwise: INFOPLIST_KEY_UIBackgroundModes is not one of the INFOPLIST_KEY_* settings
+	     Xcode's generator knows, so a build-setting spelling (sdk-conditional or not) resolves and
+	     is then silently dropped from the built bundle. Measured 2026-09-14. macOS ships the key
+	     and ignores it, exactly as it already ships and ignores the three UIKit keys below.
+	     Pinned by AppStoreReviewReadinessTests.appInfoPlistContainsReviewReadyPrivacyKeys. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

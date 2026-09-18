@@ -26,46 +26,60 @@ struct AppStoreReviewReadinessTests {
         #expect(apiReasons(for: "NSPrivacyAccessedAPICategoryFileTimestamp", in: manifest) == ["C617.1"])
     }
 
-    /// **Why `UIBackgroundModes` must be absent, and what to do the day it must not be (T-626).**
+    /// **`UIBackgroundModes` is declared now, and this assertion was re-pointed rather than
+    /// deleted (T-626).**
     ///
-    /// The `nil` on the third line is a *deliberate review-hygiene assertion*, not an artefact of
-    /// nobody having needed the key yet. A macOS app that declares background modes it does not use
-    /// invites a rejection, and there is exactly **one** `Cadence/Info.plist` for the whole app
-    /// target — `INFOPLIST_FILE` names it in both Debug and Release, for every platform the target
-    /// builds — so anything added here for iOS also ships in the Mac App Store bundle.
+    /// It used to read `== nil`, a deliberate review-hygiene check with a stated intent — *the
+    /// macOS bundle declares no background mode* — and a stated instruction for the day iOS needed
+    /// one: satisfy the intent by splitting the plist per platform or conditionalising the key.
+    /// **The conditional route was tried and measured on 2026-09-14, and it does not exist.**
+    /// `INFOPLIST_KEY_UIBackgroundModes` is not one of the `INFOPLIST_KEY_*` settings Xcode's
+    /// generator recognises — `CoreBuildSystem.xcspec` declares twelve `INFOPLIST_KEY_UI*` settings
+    /// and that is not among them — so an `[sdk=iphoneos*]`-qualified spelling resolves in
+    /// `-showBuildSettings`, builds green, and is dropped from the bundle with no diagnostic at
+    /// all. One route reaches the built plist, and it is this file, which both platforms share.
     ///
-    /// That is the gate on T-626 (iOS omits the `remote-notification` background mode CloudKit
-    /// silent sync needs). Today it costs nothing: iOS is not a distribution channel —
-    /// `docs/apple-release-readiness.md` covers the Mac App Store and Developer ID and mentions no
-    /// iOS device at all — and iOS does not register either, because
-    /// `CadenceRemoteNotificationRegistrar`'s only caller lives in `Cadence/macOS/`, which
-    /// `CadenceLaunchWiringTests.onlyTheRegistrarAsksAppKitToRegister` pins.
+    /// **The premise the `nil` rested on was then checked rather than inherited.** The shipping
+    /// macOS bundle at `/Applications/Cadence.app` already carries `UILaunchScreen`,
+    /// `UISupportedInterfaceOrientations` and `UISupportedInterfaceOrientations~ipad` — three
+    /// UIKit-only keys, out of this same shared file — and macOS reads none of them: it has no
+    /// `UIBackgroundModes` mechanism, spelling its own launch behaviour `LSBackgroundOnly` and
+    /// `LSUIElement`. The new key is the fourth member of a class this bundle already ships.
     ///
-    /// **When iOS does ship, address this assertion's intent rather than deleting the line.** The
-    /// intent is "the macOS bundle declares no background mode". Satisfy it by splitting the plist
-    /// per platform, or by conditionalising the key, and re-point this `#expect` at whatever the
-    /// macOS bundle actually gets. A change that simply drops the expectation has removed the
-    /// check, not satisfied it.
+    /// **So the check is a check and not a hole:** the declared modes are *exactly*
+    /// `["remote-notification"]`. A second mode is a new claim about what the app does while the
+    /// user is elsewhere, which is the thing a reviewer actually reads, and this fails on it. The
+    /// one mode that is there is what CloudKit's silent sync needs, and
+    /// `CadenceLaunchWiringTests.onlyTheRegistrarAsksTheSystemToRegister` pins the other half of
+    /// it — that both platforms subscribe through one call site.
     @Test func appInfoPlistContainsReviewReadyPrivacyKeys() throws {
         let info = try plistDictionary(at: "Cadence/Info.plist")
 
-        // **These three moved to build settings, and that was measured, not assumed (T-665).** The
-        // duplicates were removed from this file after inspecting built `.app` bundles on both
-        // platforms in both configurations: the `INFOPLIST_KEY_*` spelling wins for these, so the
+        // Exactly the one mode CloudKit's silent sync needs, no more; the header above is why this
+        // reads as a list rather than as `nil` (T-626).
+        #expect(
+            info["UIBackgroundModes"] as? [String] == ["remote-notification"],
+            "the declared background modes are no longer exactly the one CloudKit silent sync needs; see T-626"
+        )
+
+        // **Three other keys moved to build settings, and that was measured, not assumed (T-665).**
+        // The duplicates were removed from this file after inspecting built `.app` bundles on both
+        // platforms in both configurations: the `INFOPLIST_KEY_*` spelling wins for those, so the
         // file's copies were dead weight. `CFBundleIconName` went the other way -- deleting it here
         // left the key **missing entirely** from the built iOS plist -- so it stays in the file and
-        // is asserted below. Asserting the file for a key the build settings own is asserting the
+        // is asserted here. Asserting the file for a key the build settings own is asserting the
         // losing side.
-        #expect(info["UIBackgroundModes"] == nil, "the macOS bundle now declares a background mode; see T-626")
         #expect(info["CFBundleIconName"] as? String == "AppIcon")
 
         // **And the other half, because this file is not the shipped plist.**
         // `GENERATE_INFOPLIST_FILE = YES` on the app target, so the bundle's Info.plist is this
         // file *merged with* the target's `INFOPLIST_KEY_*` build settings — two of the keys
-        // asserted above are already spelled in both places. Ticking Background Modes in Xcode's
-        // capability editor writes `INFOPLIST_KEY_UIBackgroundModes` into `project.pbxproj` and
-        // never touches `Cadence/Info.plist`, so the `nil` above would stay true while the mode
-        // shipped. That is the accident T-626 must not be implemented by.
+        // asserted above are already spelled in both places. The background-mode line below used
+        // to guard an accident (the capability editor writing the key into `project.pbxproj`
+        // while the `nil` above stayed true); measurement turned it into the opposite guard, and
+        // it is worth more as one. That spelling is not a setting Xcode knows, so it never reaches
+        // the bundle — a `remote-notification` declared there is a background mode the app appears
+        // to have and does not, which on iOS is a device that never receives a silent push.
         let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
         #expect(
             project.contains("INFOPLIST_KEY_ITSAppUsesNonExemptEncryption"),
@@ -73,7 +87,7 @@ struct AppStoreReviewReadinessTests {
         )
         #expect(
             !project.contains("INFOPLIST_KEY_UIBackgroundModes"),
-            "a background mode is reaching the bundle through build settings; see T-626"
+            "a background mode is spelled as a build setting, where Xcode silently drops it; see T-626"
         )
         #expect(
             project.contains("INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO"),

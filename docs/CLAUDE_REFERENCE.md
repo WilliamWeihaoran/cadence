@@ -1184,11 +1184,16 @@ Local notification scheduling (`Cadence/Services/NotificationScheduling.swift` +
 **Remote notifications are a second, unrelated mechanism, and the app does use them.** Cadence
 ships `com.apple.developer.aps-environment` (`$(APS_ENVIRONMENT)` → `development` in Debug,
 `production` in Release) and `CadenceRemoteNotificationRegistrar.registerIfNeeded()` calls
-`registerForRemoteNotifications()` from `CadenceAppDelegate.applicationDidFinishLaunching` on
-macOS — skipped under XCTest, UI-test mode, and `CADENCE_LOCAL_STORE_ONLY`. This is **CloudKit's
-silent push** and nothing else: it tells the app the private database changed. There is no
-`didReceiveRemoteNotification` handler, no payload of Cadence's own, no server Cadence operates,
-and no user-visible alert, sound, or badge from it.
+`registerForRemoteNotifications()` once per platform — from
+`CadenceAppDelegate.applicationDidFinishLaunching` on macOS and from `CadenceIOSAppDelegate`'s
+`didFinishLaunchingWithOptions` on iOS — skipped under XCTest, UI-test mode, and
+`CADENCE_LOCAL_STORE_ONLY`. The registrar is shared, in `Cadence/Services/`; the platform
+difference is one `Application` typealias, so there is exactly one such call site in the tree.
+iOS also declares the `remote-notification` background mode in `Cadence/Info.plist`, which macOS
+ships and ignores (T-626). This is **CloudKit's silent push** and nothing else: it tells the app
+the private database changed. There is no `didReceiveRemoteNotification` handler on either
+platform — SwiftData's mirroring takes delivery of its own pushes — no payload of Cadence's own,
+no server Cadence operates, and no user-visible alert, sound, or badge from it.
 
 Do not collapse the two. `docs/app-review-notes.md` said "Cadence does not use push notifications"
 for a long time while `AppStoreReviewReadinessTests` asserted the entitlement in the same repo —

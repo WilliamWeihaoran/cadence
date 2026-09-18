@@ -11,6 +11,11 @@ struct CadenceApp: App {
     let sharedModelContainer: ModelContainer?
 #if os(macOS)
     @NSApplicationDelegateAdaptor(CadenceAppDelegate.self) private var appDelegate
+#else
+    // T-626. There was no adaptor on this side at all, so `CadenceIOSAppDelegate`'s only job —
+    // subscribing to CloudKit's silent pushes — never ran on an iPhone and the device only learned
+    // of a remote change when something else happened to poke the store.
+    @UIApplicationDelegateAdaptor(CadenceIOSAppDelegate.self) private var appDelegate
 #endif
 
     init() {
@@ -18,9 +23,10 @@ struct CadenceApp: App {
         // is the one production caller of `CadenceRemoteNotificationRegistrar.registerIfNeeded()`,
         // and this initializer used to call it too — two launch callers for one registrar, while
         // every doc and commit message described the delegate as *the* registration site (T-468).
-        // `@NSApplicationDelegateAdaptor` above guarantees the delegate exists on macOS, so nothing
-        // is lost by leaving it to the one owner. Pinned by
-        // `CadenceLaunchWiringTests.exactlyOneProductionCallSiteRegistersForSilentPush`.
+        // The two adaptors above guarantee a delegate exists on each platform, so nothing is lost
+        // by leaving it to the one owner per platform. Pinned by
+        // `CadenceLaunchWiringTests.exactlyOneLaunchCallerPerPlatformRegistersForSilentPush`, which
+        // since T-626 requires exactly one launch caller **per platform** rather than one in total.
         //
         // Touch the singleton now so its init runs and registers the UNUserNotificationCenterDelegate
         // early. Deliberately does NOT call requestAuthorization() here — that stays gated behind an
