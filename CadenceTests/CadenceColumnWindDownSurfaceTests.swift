@@ -410,7 +410,7 @@ private func sourceFile(_ relativePath: String) throws -> String {
 /// prose. Crude on purpose: a `//` inside a string literal is blanked too, which can only make
 /// these checks stricter about what counts as a comment, never looser about live code.
 private func strippingComments(_ source: String) throws -> String {
-    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
-    // what this copy used, because correcting it is T-1270 and not this change.
-    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
+    // T-1269/T-1270: one pass per pattern, in CadenceSourceScan, on the guarded
+    // `(?<!:)//` that the slashes in a URL cannot trigger.
+    return CadenceSourceScan.strippingComments(source)
 }

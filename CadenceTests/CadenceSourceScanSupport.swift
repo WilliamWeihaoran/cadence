@@ -34,49 +34,30 @@ enum CadenceSourceScan {
     /// comments first, so a `/*` written inside a `//` line is already blank when the block pass
     /// looks for it.
     ///
-    /// Which spelling of the line-comment pattern a caller wants.
+    /// **The line-comment pattern is `(?<!:)//`, and the lookbehind is load-bearing.** The bare
+    /// `//` that the 54 copied strippers used blanks from the slashes in `https://` to the end of
+    /// the line, taking the line's `{`, its closing paren, or the rest of a declaration with it.
+    /// The two are not interchangeable and the difference is measured: stripping every `.swift`
+    /// file under `Cadence/` and `CadenceTests/` with each spelling, **48 of 915 come out
+    /// different** — among them `AIProvider.swift`, `CadenceDeepLink.swift`,
+    /// `MarkdownImageAssetService.swift`, `AppStoreReviewReadiness.swift` and
+    /// `iOSSampleDataSupport.swift`. `CadenceDeepLink.url` is the clearest of them: its `.calendar`
+    /// case is a `guard … else { return URL(string: "cadence://calendar")! }`, and the bare
+    /// spelling eats that line's closing `}` outright — which is exactly how a brace-matched body
+    /// scan closes early and reads a body that stops short of the code it exists to check.
     ///
-    /// **These two are not interchangeable, and the difference is measured.** Stripping every
-    /// `.swift` file under `Cadence/` and `CadenceTests/` with each spelling and comparing the
-    /// results: **48 of 915 files come out different**, among them `AIProvider.swift`,
-    /// `CadenceDeepLink.swift`, `MarkdownImageAssetService.swift` and `AppStoreReviewReadiness.swift`.
-    /// Every one of them holds a `https://` on a line that carries code, and `plain` blanks from
-    /// those two slashes to the end of the line — taking the line's `{`, its closing paren, or the
-    /// rest of a declaration with it.
-    ///
-    /// So `guarded` is the correct one and `plain` is a bug. It is still spelled here, and is still
-    /// what the 54 copied strippers pass, because **changing what a scan reads is a different
-    /// change from making it fast** — moving 54 helpers onto the correct spelling alters what 48
-    /// files' assertions see, and that belongs in its own commit with its own test run, not smuggled
-    /// in under a performance fix. [[T-1270]] carries it.
-    enum LineCommentSpelling {
-        /// `(?<!:)//` — does not fire on the slashes in a URL. Correct; the default.
-        case guarded
-        /// Bare `//`. What the 54 copied strippers used before they were routed here.
-        case plain
-
-        var spelling: String {
-            switch self {
-            case .guarded: return "(?<!:)//[^\n]*"
-            case .plain: return "//[^\n]*"
-            }
-        }
-    }
-
-    /// The two comment shapes per spelling, compiled once. Order matters and is the old loop's
-    /// order: line comments first, so a `/*` written inside a `//` line is already blank when the
-    /// block pass looks for it.
-    private static let compiledPatterns: [String: [NSRegularExpression]] = {
-        var table: [String: [NSRegularExpression]] = [:]
-        for spelling in [LineCommentSpelling.guarded, .plain] {
-            let spellings = [spelling.spelling, "/\\*(?s:.)*?\\*/"]
-            let compiled = spellings.compactMap { try? NSRegularExpression(pattern: $0) }
-            // A pattern that stopped compiling would leave comments in the text and every scan
-            // built on this reading prose as code. Loud here beats green there.
-            precondition(compiled.count == spellings.count, "a comment pattern stopped compiling")
-            table[spelling.spelling] = compiled
-        }
-        return table
+    /// [[T-1269]] routed the 54 copies here and kept the bare spelling reachable through a
+    /// `lineComments:` parameter, because changing what a scan reads is a different change from
+    /// making it fast. [[T-1270]] moved every one of them onto this pattern; the parameter and its
+    /// `.plain` case then had no callers left and are gone, because a named, callable bug spelling
+    /// is an invitation for the next copied stripper to pass it.
+    private static let compiledPatterns: [NSRegularExpression] = {
+        let spellings = ["(?<!:)//[^\n]*", "/\\*(?s:.)*?\\*/"]
+        let compiled = spellings.compactMap { try? NSRegularExpression(pattern: $0) }
+        // A pattern that stopped compiling would leave comments in the text and every scan
+        // built on this reading prose as code. Loud here beats green there.
+        precondition(compiled.count == spellings.count, "a comment pattern stopped compiling")
+        return compiled
     }()
 
     /// Blanks `//` line comments and `/* */` block comments with spaces of equal length, so
@@ -103,14 +84,14 @@ enum CadenceSourceScan {
     ///   match runs to its end of line, so the character before the following match is never inside
     ///   the preceding one.
     ///
-    /// Checked rather than argued, **per spelling**: for a fixed line-comment pattern, the one-pass
-    /// form and the from-the-start loop produce byte-identical output over every `.swift` file in
-    /// the tree.
+    /// Checked rather than argued: for a fixed line-comment pattern, the one-pass form and the
+    /// from-the-start loop produce byte-identical output over every `.swift` file in the tree —
+    /// measured for both line-comment spellings, while both still existed.
     ///
     /// An earlier draft of this comment also claimed the two *spellings* agree with each other.
-    /// They do not: measured over 915 files, `plain` and `guarded` disagree on **48** of them. See
-    /// `LineCommentSpelling`. That is why this takes the spelling as a parameter instead of quietly
-    /// moving every caller onto the correct one.
+    /// They do not: measured over 915 files, the bare `//` and the guarded `(?<!:)//` disagree on
+    /// **48** of them, which is why [[T-1270]] moved the callers in its own commit with its own
+    /// test run rather than under [[T-1269]]'s performance fix. See `compiledPatterns`.
     ///
     /// The width stays a **Character** count, because that is what callers depend on:
     /// `CadenceCommitSurfaceScan.scanned` asserts `stripped.count == raw.count`. It is deliberately
@@ -118,13 +99,9 @@ enum CadenceSourceScan {
     /// it occupied (measured: one 170,209-byte file strips to 169,807), so byte offsets are **not**
     /// preserved here and nothing may start relying on them. Character offsets and the character
     /// count are.
-    static func strippingComments(
-        _ source: String,
-        lineComments spelling: LineCommentSpelling = .guarded
-    ) -> String {
+    static func strippingComments(_ source: String) -> String {
         var result = source
-        guard let patterns = compiledPatterns[spelling.spelling] else { return result }
-        for regex in patterns {
+        for regex in compiledPatterns {
             let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))
             guard !matches.isEmpty else { continue }
             var blanked = ""

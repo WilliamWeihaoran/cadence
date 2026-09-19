@@ -516,9 +516,9 @@ private func t20SourceFile(_ relativePath: String) throws -> String {
 }
 
 private func t20StrippingComments(_ source: String) throws -> String {
-    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
-    // what this copy used, because correcting it is T-1270 and not this change.
-    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
+    // T-1269/T-1270: one pass per pattern, in CadenceSourceScan, on the guarded
+    // `(?<!:)//` that the slashes in a URL cannot trigger.
+    return CadenceSourceScan.strippingComments(source)
 }
 
 // MARK: - T-286: the seven panes T-20 left outside the vocabulary

@@ -484,7 +484,7 @@ private func desktopSurfaceSourceFile(_ relativePath: String) throws -> String {
 private func desktopSurfaceStrippingComments(_ source: String) throws -> String {
     // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
     // what this copy used, because correcting it is T-1270 and not this change.
-    return CadenceSourceScan.strippingComments(source, lineComments: .guarded)
+    return CadenceSourceScan.strippingComments(source)
 }
 
 /// Collapses every run of whitespace to one space, so a one-line body can be asserted exactly

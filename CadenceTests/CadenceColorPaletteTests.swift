@@ -282,9 +282,9 @@ private func paletteSourceFile(_ relativePath: String) throws -> String {
 /// Blanks `//` and `/* */` comments so the assertions read code rather than prose — every doc
 /// comment here quotes the literals its declaration must not contain.
 private func paletteStrippingSwiftComments(_ source: String) -> String {
-    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
-    // what this copy used, because correcting it is T-1270 and not this change.
-    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
+    // T-1269/T-1270: one pass per pattern, in CadenceSourceScan, on the guarded
+    // `(?<!:)//` that the slashes in a URL cannot trigger.
+    return CadenceSourceScan.strippingComments(source)
 }
 
 /// The `[...]` literal of `<name>`, brackets excluded — stored or computed.

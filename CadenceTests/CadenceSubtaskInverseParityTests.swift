@@ -639,9 +639,9 @@ private func subtaskSourceFile(_ relativePath: String) throws -> String {
 /// Blanks `//` line comments and `/* */` block comments with spaces of equal length, so the scanned
 /// string is never shorter than the raw one and a length check is a real check.
 private func strippingSwiftComments(_ source: String) -> String {
-    // T-1269: one pass per pattern, in CadenceSourceScan. The spelling is pinned to
-    // what this copy used, because correcting it is T-1270 and not this change.
-    return CadenceSourceScan.strippingComments(source, lineComments: .plain)
+    // T-1269/T-1270: one pass per pattern, in CadenceSourceScan, on the guarded
+    // `(?<!:)//` that the slashes in a URL cannot trigger.
+    return CadenceSourceScan.strippingComments(source)
 }
 
 /// Both sides of the subtask relationship as the **store** holds them, read back through a fresh
