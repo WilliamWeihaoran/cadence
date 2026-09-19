@@ -93,6 +93,7 @@
 		B10000002FCE000000000222 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000116 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift */; };
 		B10000002FCE000000000223 /* Cadence/Services/CadenceCalendarWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000117 /* Cadence/Services/CadenceCalendarWidgetSupport.swift */; };
 		B10000002FCE000000000224 /* Cadence/Services/CadenceHabitCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000118 /* Cadence/Services/CadenceHabitCompletionStore.swift */; };
+		B10000002FCE0000000002A1 /* Cadence/Shared/CadencePendingChangePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000231 /* Cadence/Shared/CadencePendingChangePersistence.swift */; };
 		B10000002FCE000000000230 /* Cadence/Models/TaskOrdering.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000130 /* Cadence/Models/TaskOrdering.swift */; };
 		B10000002FCE000000000299 /* Cadence/Shared/Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000199 /* Cadence/Shared/Theme.swift */; };
 		B10000002FCE0000000002A0 /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000022B /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift */; };
@@ -714,6 +715,7 @@
 				B10000002FCE000000000224 /* Cadence/Services/CadenceHabitCompletionStore.swift in Sources */,
 				B10000002FCE000000000206 /* Cadence/Services/CadenceWidgetIntents.swift in Sources */,
 				B10000002FCE0000000002A0 /* Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift in Sources */,
+				B10000002FCE0000000002A1 /* Cadence/Shared/CadencePendingChangePersistence.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -284,6 +284,163 @@ struct CadenceHabitCompletionDuplicateTests {
         #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).isEmpty)
     }
 
+    // MARK: - A refused commit (T-1295)
+
+    /// A commit that refuses. `ModelContext.save()` cannot be made to throw out of an in-memory
+    /// container, which is why `toggle` takes its commit as a parameter at all — the same reason
+    /// `CadencePendingChangePersistence` gives for its own `commit:`.
+    private struct CommitRefused: Error {}
+
+    private static func refuse(_ modelContext: ModelContext) throws {
+        throw CommitRefused()
+    }
+
+    /// [[T-1295]]: a refused check-in used to leave the insert **pending** in the app's one
+    /// `ModelContext`, with `habit.completions` already holding the row.
+    ///
+    /// Both in-app callers spell this `_ = try? CadenceHabitCompletionStore.toggle(…)`, and
+    /// [[T-322]] settled that they may — a tick the user can retry with a second tap is not a
+    /// failure they can act on. What [[T-322]] did not settle is what is left behind: this app has
+    /// one context, so a swallowed refusal handed the row to whichever unrelated `save()` ran
+    /// next, from a screen that never mentioned habits, while the day was already drawn checked
+    /// in. The last two assertions are that event, run forwards.
+    ///
+    /// **Toolchain-independent by construction.** The insert side undoes through `commitInsert`,
+    /// which deletes the objects it was handed and never calls `rollback()`, and the array is
+    /// re-applied by `toggle` itself. Nothing here reads a relationship that a rollback might or
+    /// might not have restored, so there is no Xcode 26 / 27 answer to pick between ([[T-1296]]).
+    @Test func arefusedCheckInLeavesNothingPendingAndTheDayUnchecked() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let habit = Habit(title: "Meditate")
+        context.insert(habit)
+        try context.save()
+
+        // Somebody else's uncommitted edit, open in the same single context. `commitInsert` undoes
+        // only what it was handed, so this must survive — a refused habit tick that rolled the
+        // context back would take the rename with it.
+        habit.title = "Meditate for ten minutes"
+
+        #expect(throws: CommitRefused.self) {
+            try CadenceHabitCompletionStore.toggle(
+                habit,
+                on: "2026-03-09",
+                modelContext: context,
+                commit: Self.refuse
+            )
+        }
+
+        #expect(
+            habit.isDone(on: "2026-03-09") == false,
+            "the day still reads as checked in off a row the store refused"
+        )
+        #expect((habit.completions ?? []).isEmpty, "the refused row is still on the habit")
+        #expect(
+            habit.title == "Meditate for ten minutes",
+            "the refused check-in discarded an unrelated pending edit"
+        )
+
+        // The defect itself: the next unrelated save anywhere in the app must not commit it.
+        try context.save()
+        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).isEmpty)
+    }
+
+    /// The uncheck direction, which is the same defect with the rows pending-*deleted*.
+    ///
+    /// **The captured array, and why this stays green on both toolchains.** `commitDelete` undoes
+    /// with `rollback()`, and `rollback()` is where Xcode 26 and 27 disagree: through 26 an
+    /// already-materialised relationship stayed as the delete left it until something refetched,
+    /// and 27 restores it immediately ([[T-1279]], [[T-1296]]). `toggle` re-applies the habit's
+    /// own captured array for the reason [[T-1280]]'s survey kept the one in `deleteSubtask` — it
+    /// repairs *this* habit without depending on what else the rollback swept up — and re-applying
+    /// it leaves exactly one row whether the rollback had already put it back or not. So the count
+    /// below is pinned at 1 rather than bounded: no toolchain can make it 0 or 2.
+    ///
+    /// The final `save()` is the invariant that needs no such argument: after a refused uncheck
+    /// there must be nothing pending for it to commit.
+    @Test func arefusedUncheckLeavesTheRowInTheStoreAndTheDayStillChecked() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let habit = Habit(title: "Stretch")
+        context.insert(habit)
+        try context.save()
+        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context))
+        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 1)
+
+        #expect(throws: CommitRefused.self) {
+            try CadenceHabitCompletionStore.toggle(
+                habit,
+                on: "2026-03-09",
+                modelContext: context,
+                commit: Self.refuse
+            )
+        }
+
+        #expect(habit.isDone(on: "2026-03-09"), "the day was drawn clear over a delete the store refused")
+        #expect(
+            (habit.completions ?? []).count == 1,
+            "the captured array put the row back twice, or not at all"
+        )
+
+        try context.save()
+        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 1)
+    }
+
+    /// The uncheck undo has to reach **every** row for the day, not just the first.
+    ///
+    /// Clearing a day deletes each duplicate a second device contributed, so a refusal has to hand
+    /// all of them back — a repair that restored one row would leave the habit reading as done off
+    /// a shorter array than the store holds, which is the [[T-359]] disagreement re-created by the
+    /// failure path instead of by CloudKit.
+    @Test func arefusedUncheckOfADuplicatedDayHandsBackEveryRow() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let habit = Habit(title: "Read")
+        context.insert(habit)
+        Self.syncedRow(habit, on: "2026-03-09", context: context)
+        Self.syncedRow(habit, on: "2026-03-09", context: context)
+        try context.save()
+
+        #expect(throws: CommitRefused.self) {
+            try CadenceHabitCompletionStore.toggle(
+                habit,
+                on: "2026-03-09",
+                modelContext: context,
+                commit: Self.refuse
+            )
+        }
+
+        #expect((habit.completions ?? []).count == 2, "the refused uncheck lost a duplicate row")
+        #expect(habit.isDone(on: "2026-03-09"))
+
+        try context.save()
+        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 2)
+    }
+
+    /// Non-vacuity for the seam: the default `commit:` really is `ModelContext.save()`, so the
+    /// three refusals above are testing the same path the app takes and not a parameter nobody
+    /// uses. `theSharedToggleWritesOneRowAndClearsEveryRowForTheDay` calls `toggle` without a
+    /// `commit:` throughout; this asserts the store agrees, from a second context.
+    @Test func theDefaultCommitIsARealSaveAndNotTheTestSeam() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let habit = Habit(title: "Walk")
+        context.insert(habit)
+        try context.save()
+
+        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context))
+        #expect(!context.hasChanges, "the default commit left the check-in pending in the context")
+        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 1)
+
+        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context) == false)
+        #expect(!context.hasChanges, "the default commit left the uncheck pending in the context")
+        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).isEmpty)
+    }
+
     // MARK: - Every call site goes through it
 
     /// The [[T-374]] half. Four files used to open-code this toggle, and the property that matters

@@ -24,7 +24,16 @@ import SwiftData
 ///   context back, which is the only way to make them visible again.
 ///
 /// This is the unit `docs/TODO.md` [[T-322]]'s sweep should be built from, not a second copy of it.
-enum CadencePendingChangePersistence {
+///
+/// **`nonisolated` because a commit is not a main-actor question** (T-1295). The app target sets
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which would isolate this type to the main actor in
+/// the app and leave it nonisolated in `CadenceMCPServer`, whose build does not set it — two
+/// isolations for one file. Everything below touches only `ModelContext` and `PersistentModel`,
+/// both nonisolated, so the annotation costs nothing and makes the helper reachable from the
+/// `nonisolated` writers that need it: `CadenceHabitCompletionStore.toggle` is compiled into the
+/// widget extension, and calling a main-actor `commitInsert` from it was four warnings against a
+/// zero baseline. Nonisolated members stay callable from every main-actor caller here unchanged.
+nonisolated enum CadencePendingChangePersistence {
 
     /// Commits a pending insert. If the commit throws, the objects are removed from the context
     /// again, so no caller is left showing a row the store does not hold.

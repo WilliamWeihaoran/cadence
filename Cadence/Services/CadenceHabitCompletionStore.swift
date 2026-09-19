@@ -55,36 +55,78 @@ nonisolated enum CadenceHabitCompletionStore {
         return removed
     }
 
-    /// Check `habit` in on `dateKey`, or clear it if it is already checked in, then save.
+    /// Check `habit` in on `dateKey`, or clear it if it is already checked in, then commit.
     ///
-    /// Returns whether the habit reads as checked in afterwards. Throws whatever the save throws —
-    /// the widget intent needs that failure, and the two in-app callers deliberately swallow it
-    /// ([[T-322]]: a habit tick the user can retry with a second tap is not a save whose failure
-    /// they can act on).
+    /// Returns whether the habit reads as checked in afterwards. Throws whatever the commit throws.
+    ///
+    /// **The throw and the undo are two different questions, and [[T-322]] only settled the first.**
+    /// The widget intent reports the failure and the two in-app callers deliberately swallow it —
+    /// "a habit tick the user can retry with a second tap is not a save whose failure they can act
+    /// on" — and that stays. What did not follow from it, and was the defect [[T-1295]] names, is
+    /// that a refused commit used to leave the change *pending*. This app has one `ModelContext`,
+    /// so an uncommitted insert waits there for the next unrelated `save()` anywhere to take it,
+    /// with `habit.completions` already holding the row and the day already drawn checked in; the
+    /// uncheck direction is the same shape with the rows pending-*deleted*. Swallowing an error is
+    /// only defensible when there is nothing left to swallow.
+    ///
+    /// So both directions commit through `CadencePendingChangePersistence` and both put
+    /// `habit.completions` back themselves:
+    ///
+    /// - **Insert.** `commitInsert` un-inserts the row it was handed, and that undo does not reach
+    ///   the parent's array — the same measured gap `iOSTaskDetailSheet.addSubtask` captures
+    ///   `task.subtasks` for. Leaving the deleted row in `habit.completions` is exactly what
+    ///   `detach` below exists to prevent: the day still reads as done off a row the store refused.
+    /// - **Delete.** `commitDelete` rolls the context back, which is the only way to un-delete
+    ///   rows, and the captured array is re-applied for the reason [[T-1280]]'s survey kept the one
+    ///   in `deleteSubtask`: it repairs *this* habit's own array without depending on what the
+    ///   toolchain does with a rolled-back relationship. Through Xcode 26 `rollback()` did not
+    ///   restore an already-materialised reference before a refetch; Xcode 27 does ([[T-1279]]).
+    ///   Re-applying the array is correct on both and a no-op on the one that already did it.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter for
+    ///   the reason `CadencePendingChangePersistence.commitInsert(of:in:commit:)` gives — a
+    ///   `save()` that throws cannot be provoked out of an in-memory container, so without it the
+    ///   undo path above is one no test can reach.
     @discardableResult
     static func toggle(
         _ habit: Habit,
         on dateKey: String,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws -> Bool {
         let existing = completions(for: habit, on: dateKey)
-        let isCheckedIn: Bool
+        let restored = habit.completions ?? []
+
         if existing.isEmpty {
             let completion = HabitCompletion(date: dateKey, habit: habit)
             modelContext.insert(completion)
-            habit.completions = (habit.completions ?? []) + [completion]
-            isCheckedIn = true
-        } else {
-            // Clearing a day takes *every* row for it, including duplicates a second device
-            // contributed — otherwise unchecking would leave the habit still reading as done.
-            for completion in existing {
-                detach(completion)
-                modelContext.delete(completion)
+            habit.completions = restored + [completion]
+            do {
+                try CadencePendingChangePersistence.commitInsert(
+                    of: completion,
+                    in: modelContext,
+                    commit: commit
+                )
+            } catch {
+                habit.completions = restored
+                throw error
             }
-            isCheckedIn = false
+            return true
         }
-        try modelContext.save()
-        return isCheckedIn
+
+        // Clearing a day takes *every* row for it, including duplicates a second device
+        // contributed — otherwise unchecking would leave the habit still reading as done.
+        for completion in existing {
+            detach(completion)
+            modelContext.delete(completion)
+        }
+        do {
+            try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
+        } catch {
+            habit.completions = restored
+            throw error
+        }
+        return false
     }
 
     /// `[Type]?` to-many relationships are appended by assigning a new array, and severed the same
