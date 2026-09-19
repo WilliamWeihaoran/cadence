@@ -321,6 +321,82 @@ enum CadenceSourceScan {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }
         return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
     }
+
+    /// The chain of declarations enclosing line `index` of `lines`, outermost first, joined with
+    /// `.` — `"TimelineBlockStyle.schedule"`, `"CadenceTextView.drawMarkdownImages"`. `""` for a
+    /// line at file scope.
+    ///
+    /// **T-1297.** A sweep that excuses one source site has to say *which* site, and the obvious
+    /// handle — the file plus the line number — is the one property of a line that every unrelated
+    /// edit above it changes. `CadenceRadiusControlSweepTests` held its two exemptions that way and
+    /// went red twice on sites it had already excused, most recently when [[T-1293]] added seven
+    /// comment lines above one of them. This is the stable handle with the same discriminating
+    /// power: it survives any number of lines inserted above the site, and still names a
+    /// *different* declaration in the same file differently, which is the whole reason the line
+    /// number was there.
+    ///
+    /// **`lines` must come from `codeOnly`.** The walk steps outward by strictly decreasing
+    /// indentation, so a doc comment sitting at a declaration's own indent would close the step
+    /// before the declaration it documents could be read; blanked to spaces it is skipped as empty.
+    ///
+    /// Canaries: `theDeclarationPathScannerStepsOutOfStatementsRatherThanNamingThem` and
+    /// `theDeclarationAnchorSurvivesLinesInsertedAboveTheSiteItExcuses`, in
+    /// `CadenceRadiusControlSweepTests`, both over fixtures of their own.
+    static func enclosingDeclarationPath(ofLine index: Int, in lines: [String]) -> String {
+        guard lines.indices.contains(index) else { return "" }
+        var names: [String] = []
+        var limit = indentationWidth(of: lines[index])
+        for cursor in stride(from: index - 1, through: 0, by: -1) {
+            let line = lines[cursor]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            // A line that *begins* with `)` or `]` closes a parameter or argument list opened
+            // above it, so it is the tail of a declaration rather than a scope of its own.
+            // Stepping out at its indent is what loses a multi-line signature: a real
+            // `private func drawMarkdownImages(` sits at the same indent as the `) {` four lines
+            // below it, and a walk that narrowed to that indent could no longer see it. `}` is
+            // deliberately not in this set — it closes a sibling block, and skipping past it
+            // would let the walk read that block's own local bindings.
+            guard !(trimmed.hasPrefix(")") || trimmed.hasPrefix("]")) else { continue }
+            let indent = indentationWidth(of: line)
+            guard indent < limit else { continue }
+            limit = indent
+            if let name = declarationName(of: trimmed) { names.append(name) }
+        }
+        return names.reversed().joined(separator: ".")
+    }
+
+    private static func indentationWidth(of line: String) -> Int {
+        line.prefix { $0 == " " || $0 == "\t" }.count
+    }
+
+    /// The name a line **declares**, or `nil` when the line is a statement.
+    ///
+    /// Anchored at the start of the trimmed line, which is the part that matters: `if let image =`
+    /// and `guard let info =` bind names too, and a scanner that read them as declarations would
+    /// answer `…drawMarkdownImages.image` for a site inside the branch and stop matching the
+    /// exemption the first time the branch was rewritten.
+    ///
+    /// Left as `try?` rather than `compiledPatterns`' `precondition`, because the two fail in
+    /// opposite directions: a comment pattern that stops compiling leaves prose in the text and
+    /// every scan built on it goes quietly green, whereas a name pattern that stops compiling
+    /// makes every path empty, so every exemption stops matching and its sweep goes red.
+    private static let declarationNameExpression = try? NSRegularExpression(
+        pattern: "^(?:@[A-Za-z_][\\w.]*(?:\\([^)]*\\))?\\s+)*"
+            + "(?:(?:public|private|fileprivate|internal|open|final|static|class|override|lazy|"
+            + "weak|unowned|mutating|nonisolated|indirect|convenience|required)\\s+)*"
+            + "(?:struct|class|enum|extension|protocol|actor|func|var|let|case|typealias)\\b\\s*"
+            + "([A-Za-z_]\\w*)"
+    )
+
+    private static func declarationName(of trimmed: String) -> String? {
+        guard let expression = declarationNameExpression else { return nil }
+        guard let match = expression.firstMatch(
+            in: trimmed,
+            range: NSRange(trimmed.startIndex..., in: trimmed)
+        ), let name = Range(match.range(at: 1), in: trimmed) else { return nil }
+        return String(trimmed[name])
+    }
 }
 
 /// A source-text detector bundled with the two witnesses that prove it can still tell the
