@@ -119,8 +119,10 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift": (3, 0),
             "Cadence/iOS/iOSListEditorViews.swift": (2, 0),
             "Cadence/iOS/iOSSettingsOverviewSections.swift": (4, 0),
-            "Cadence/iOS/iOSTaskDetailComponents.swift": (2, 0),
-            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (6, 1),
+            // T-1278 moved the priority picker from the sections file's Priority *row* onto the
+            // title card's mark control, which is why one call crossed between these two lines.
+            "Cadence/iOS/iOSTaskDetailComponents.swift": (3, 0),
+            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (5, 1),
             "Cadence/iOS/iOSTaskRowActionViews.swift": (3, 3),
             "Cadence/iOS/iOSTaskViews.swift": (1, 0),
             "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),

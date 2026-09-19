@@ -78,6 +78,14 @@ struct CadenceFieldSection<Content: View>: View {
     /// properties group and its action row are both this: the heading they used to carry said
     /// "Overview", which named nothing the rows did not.
     let title: String?
+    /// A live figure drawn on the far end of the label line — `2 of 5` subtasks.
+    ///
+    /// **The same slot macOS's `TaskInspectorGroupLabel` already has**, grown here rather than
+    /// hand-stacked at the call site (T-1278): an eyebrow with a count beside it is a label, not a
+    /// second component, and a call site that built its own would also have to re-choose the gap
+    /// `CadenceSectionLabelMetrics.labelToNamedBlock` already owns. Ignored when `title` is `nil` —
+    /// a count with nothing to count beside it names nothing.
+    var trailing: String? = nil
     var style: CadenceFieldSectionStyle = .card
     var contentSpacing: CGFloat = 0
     @ViewBuilder let content: () -> Content
@@ -88,7 +96,18 @@ struct CadenceFieldSection<Content: View>: View {
             spacing: title == nil ? 0 : CadenceSectionLabelMetrics.labelToNamedBlock
         ) {
             if let title {
-                SectionEyebrowLabel(text: title)
+                HStack(spacing: 8) {
+                    SectionEyebrowLabel(text: title)
+
+                    Spacer(minLength: 0)
+
+                    if let trailing {
+                        Text(trailing)
+                            .font(SectionEyebrowLabel.Size.standard.font)
+                            .foregroundStyle(Theme.dim)
+                            .monospacedDigit()
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: contentSpacing) {

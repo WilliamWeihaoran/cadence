@@ -212,6 +212,16 @@ struct CadenceSubtaskProgress: Hashable {
         "\(completed)/\(total)"
     }
 
+    /// The same figure spelled out, for a section label with room for words — `2 of 5`.
+    ///
+    /// Distinct from `compactLabel` on purpose: `2/5` is a badge on a task row, where the space is
+    /// a chip's worth; the iOS inspector's Subtasks eyebrow is a whole line and reads as a sentence
+    /// fragment beside it (T-1278). Same numbers, one place, so the two cannot disagree about which
+    /// subtasks count as done.
+    var countLabel: String {
+        "\(completed) of \(total)"
+    }
+
     var label: String {
         total == 1 ? "\(completed)/1 subtask" : "\(completed)/\(total) subtasks"
     }
@@ -339,7 +349,15 @@ enum CadenceTaskPresentationSupport {
     }
 
     static func subtaskProgress(for task: AppTask) -> CadenceSubtaskProgress? {
-        let subtasks = task.subtasks ?? []
+        subtaskProgress(for: task.subtasks ?? [])
+    }
+
+    /// The same count, for a caller that was handed the subtasks rather than the task.
+    ///
+    /// The iOS inspector's Subtasks section takes `[Subtask]` — it is given the *sorted* list, which
+    /// is not `task.subtasks` — so without this it would have had to count `isDone` itself, which is
+    /// the second spelling of "how far along is this task" the row and the panel must not develop.
+    static func subtaskProgress(for subtasks: [Subtask]) -> CadenceSubtaskProgress? {
         guard !subtasks.isEmpty else { return nil }
         return CadenceSubtaskProgress(
             completed: subtasks.filter(\.isDone).count,
@@ -422,6 +440,16 @@ enum CadenceTaskPresentationSupport {
 
     static func estimateLabel(for task: AppTask) -> String {
         estimateLabel(minutes: task.estimatedMinutes)
+    }
+
+    /// What a **control** for the estimate says, which is not what a badge says: an unset estimate
+    /// reads "No estimate" rather than `0m`, because the control has to offer the empty state as a
+    /// readable value and `0m` is a duration the user cannot have chosen.
+    ///
+    /// One spelling, read by `EstimatePickerControl` and by the iOS inspector's Estimate row
+    /// (T-1278) — the row was about to be the third place in the tree typing this ternary out.
+    static func estimateValueLabel(minutes: Int) -> String {
+        minutes > 0 ? estimateLabel(minutes: minutes) : "No estimate"
     }
 
     static func scheduledDateLabel(for task: AppTask, todayKey: String = DateFormatters.todayKey()) -> String {

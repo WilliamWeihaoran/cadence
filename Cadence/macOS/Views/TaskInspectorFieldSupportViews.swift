@@ -334,30 +334,6 @@ struct TaskInspectorSectionGroup<Content: View>: View {
     }
 }
 
-/// Header priority affordance: the shared "!" mark convention on a tinted, clickable surface.
-/// Deliberately not a flag glyph — the marks are the app-wide priority language.
-struct TaskPriorityMarkControl: View {
-    let priority: TaskPriority
-
-    private var isSet: Bool { priority != .none }
-    private var tint: Color { isSet ? Theme.priorityColor(priority) : Theme.dim }
-
-    var body: some View {
-        Text(TaskTitleSupport.priorityMark(for: priority))
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(tint)
-            .lineLimit(1)
-            .frame(minWidth: 28, minHeight: 28)
-            .background(isSet ? tint.opacity(0.10) : Theme.surfaceElevated)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
-                    .strokeBorder(isSet ? tint.opacity(0.30) : Theme.borderSubtle, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
-            .contentShape(Rectangle())
-    }
-}
-
 /// The inspector's single hover layer: one neutral wash, one radius, no border.
 ///
 /// It fills with the same `TaskHoverVisuals` raise the task rows elsewhere in the app use, so a

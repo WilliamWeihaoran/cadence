@@ -2,18 +2,19 @@
 import SwiftData
 import SwiftUI
 
-/// The inspector's identity block: completion control + title + estimate on one row.
+/// The inspector's identity block: completion control + title + priority on one row.
 ///
 /// **The control on the left settles the task**, and it is the only thing in the sheet that
 /// writes `.done`. T-344 decided what it means on a *cancelled* task: it is a settled/open toggle,
 /// so it restores that task to todo rather than completing it — see
-/// `CadenceTaskMutationSupport.toggleCompletion` for why that way round. macOS makes the equivalent
-/// tile its priority control and puts completion in the foot buttons; iOS goes the other way on
+/// `CadenceTaskMutationSupport.toggleCompletion` for why that way round. macOS makes its *leading*
+/// tile the priority control and puts completion in the foot buttons; iOS goes the other way on
 /// purpose. Completing is the dominant touch action, and every task row on this platform already
 /// teaches "tinted circle, tap to complete" — the sheet having a *different* meaning for the same
-/// glyph would be the surprise. Priority is what the
-/// circle is tinted by, exactly as in `iOSTaskRow`, and is edited in the one place it is editable:
-/// the Priority row below.
+/// glyph would be the surprise. Priority is what the circle is tinted by, exactly as in
+/// `iOSTaskRow`, and since T-1278 it is edited from the trailing end of this same row: the two
+/// platforms now put the same mark control on the title line, just at opposite ends of it, each
+/// beside the control that platform's users reach for first.
 ///
 /// The five-chip strip that used to sit under the title is gone. Not one of those chips was a
 /// button — they were painted to look exactly like the tappable chips elsewhere in the app, sat
@@ -22,6 +23,8 @@ import SwiftUI
 struct iOSTaskEditorTitleCard: View {
     @Bindable var task: AppTask
     let onToggleCompletion: () -> Void
+
+    @State private var showPriorityPicker = false
 
     /// Every figure in this row comes from `iOSTaskInspectorMetrics` and none of them from
     /// `horizontalSizeClass`. The row used to size its circle, its title and the gap above the
@@ -78,11 +81,56 @@ struct iOSTaskEditorTitleCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Fixed-size, so a long title wraps rather than squeezing the estimate — the same
-            // arrangement `TaskDetailHeaderSection` settled on. An estimate is a property of the
-            // task like its priority, not a date, so it does not belong in the schedule well.
-            EstimatePickerControl(value: $task.estimatedMinutes)
-                .fixedSize()
+            priorityControl
+        }
+    }
+
+    /// **The trailing slot on the title row, and since T-1278 it is the priority.** It held the
+    /// estimate chip; the estimate is a row in the field list now. Fixed-size either way, so a long
+    /// title wraps rather than squeezing what sits beside it — the arrangement
+    /// `TaskDetailHeaderSection` settled on, which is also where the priority sits on macOS.
+    ///
+    /// **Marks, not a flag.** The owner asked for a flag "like macOS", and on macOS `flag.fill` is
+    /// the **due date** — it is the glyph one row below this in the field list, and it goes red when
+    /// the deadline passes. Priority has been the `!` / `!!` / `!!!` convention app-wide for as long
+    /// as `TaskPriorityMarkControl` has carried the comment saying so. Shown both, the owner chose
+    /// one style across devices, so this draws the shared control itself rather than a copy of its
+    /// shape: `Theme.priorityColor` at 10% fill and 30% border, `radiusControlCompact`, and the
+    /// glyph from `TaskTitleSupport.priorityMark(for:)`. macOS is unchanged by that choice.
+    ///
+    /// The tile is 28pt on both platforms because it is one view; the 44pt touch target is added
+    /// here, where the platform difference actually is.
+    private var priorityControl: some View {
+        Button {
+            showPriorityPicker = true
+        } label: {
+            TaskPriorityMarkControl(priority: task.priority)
+                .iOSExpandedHitArea(8)
+        }
+        .buttonStyle(.iosPressable)
+        .fixedSize()
+        .accessibilityLabel("Priority")
+        .accessibilityValue(task.priority.label)
+        .popover(isPresented: $showPriorityPicker) {
+            iOSChoicePopoverList(
+                rows: TaskPriority.allCases.map { priority in
+                    iOSChoiceRow(
+                        value: priority,
+                        // Words, and no glyph. The control that opened this popover draws the
+                        // mark; a picker *names* the levels — the same call
+                        // `CadenceTaskComposerSupport.priorityValueLabel` makes for the create
+                        // sheet's tile, where "the `!!` mark named the field rather than the
+                        // value". A `flag.fill` here would be the collision with the Due row that
+                        // T-1278 chose marks to avoid, and `iOSChoiceRow`'s leading slot takes an
+                        // SF Symbol, not a run of exclamation marks. The tint carries the level.
+                        title: priority.label,
+                        systemImage: nil,
+                        color: Theme.priorityColor(priority)
+                    )
+                },
+                selection: $task.priority,
+                isPresented: $showPriorityPicker
+            )
         }
     }
 }

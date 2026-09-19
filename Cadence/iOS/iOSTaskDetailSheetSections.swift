@@ -2,110 +2,32 @@
 import SwiftData
 import SwiftUI
 
-/// Priority and milestone: the two properties that are neither a date nor placement.
+/// **The inspector's one quiet field list** — do date, due date, time, estimate, repeat (and its end
+/// condition), milestone, and whatever the focus timer has logged.
 ///
-/// The group carries no heading, because both rows already name themselves — the well it replaced
-/// was titled "Overview", which named nothing that the rows below it did not already say. Each row
-/// is the **only** control for its field: priority is displayed by the completion circle in the
-/// header and edited here, and nothing else in the sheet writes either value.
-struct iOSTaskPropertiesSection: View {
-    @Bindable var task: AppTask
-    let availableGoals: [Goal]
-
-    @State private var showPriorityPicker = false
-    @State private var showMilestonePicker = false
-
-    private var selectedGoal: Goal? { task.goal }
-
-    var body: some View {
-        // No `contentSpacing`: `iOSEditorDivider` already pads itself by 9pt on each side, so
-        // adding 10 more on both sides counted the same gap twice and gave a 44pt row an 83pt
-        // pitch. The divider owns the spacing between rows; the section does not add to it.
-        iOSEditorSection(title: nil, style: .ruled) {
-            priorityRow
-            iOSEditorDivider()
-            milestoneRow
-        }
-    }
-
-    /// The one place priority is set. Its icon is `Theme.dim` like every other ordinary field —
-    /// the priority *value* still shows in the picker and in the completion circle's tint, which
-    /// is where a priority colour actually earns its place.
-    private var priorityRow: some View {
-        iOSEditorFieldRow(label: "Priority", systemImage: "flag.fill", color: Theme.dim) {
-            iOSChoiceValueButton(
-                title: task.priority.label,
-                color: task.priority == .none ? Theme.dim : Theme.text,
-                // The row is 44pt, but the row is not what you tap — this button is. Without the
-                // floor the target is the height of one line of 13pt text, about 18pt.
-                minHeight: 44
-            ) {
-                showPriorityPicker = true
-            }
-            .popover(isPresented: $showPriorityPicker) {
-                iOSChoicePopoverList(
-                    rows: TaskPriority.allCases.map { priority in
-                        iOSChoiceRow(
-                            value: priority,
-                            title: priority.label,
-                            systemImage: "flag.fill",
-                            color: Theme.priorityColor(priority)
-                        )
-                    },
-                    selection: $task.priority,
-                    isPresented: $showPriorityPicker
-                )
-            }
-        }
-    }
-
-    private var milestoneRow: some View {
-        iOSEditorFieldRow(label: "Milestone", systemImage: "target", color: Theme.dim) {
-            iOSChoiceValueButton(
-                title: selectedGoal.map { $0.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : $0.title } ?? "None",
-                color: selectedGoal == nil ? Theme.dim : Theme.text,
-                minHeight: 44
-            ) {
-                showMilestonePicker = true
-            }
-            .popover(isPresented: $showMilestonePicker) {
-                iOSChoicePopoverList(
-                    rows: [iOSChoiceRow<UUID?>(value: nil, title: "None", systemImage: "circle.dashed", color: Theme.dim)]
-                        + availableGoals.map { goal in
-                            iOSChoiceRow(
-                                value: Optional(goal.id),
-                                title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultMilestoneTitle),
-                                systemImage: goal.icon,
-                                // A goal's colour is the user's own, and it is what tells two
-                                // milestones apart in a list of them.
-                                color: Color(hex: goal.colorHex)
-                            )
-                        },
-                    selection: goalSelection,
-                    isPresented: $showMilestonePicker
-                )
-            }
-        }
-    }
-
-    private var goalSelection: Binding<UUID?> {
-        Binding(
-            get: { task.goal?.id },
-            set: { goalID in
-                task.goal = goalID.flatMap { id in availableGoals.first { $0.id == id } }
-            }
-        )
-    }
-}
-
-/// "SCHEDULE" — do date, time, due date, repeat, and whatever the focus timer has logged.
+/// **T-1278, chosen by the owner from three drawn mockups.** It was two groups: an untitled
+/// "properties" pair (Priority, Milestone) above a "SCHEDULE" well. Two of the three drafts — a chip
+/// summary strip and a 2×2 tile grid — were rejected for the same reason, that each introduced a
+/// tile or card layer this app does not otherwise draw, against the standing *one hover/selection
+/// layer at one radius* rule. What is left is the layer the app already has: labelled rows on the
+/// sheet's own plate with a hairline between them and no box around them, which is exactly what
+/// `iOSEditorSection(style: .ruled)` is for.
 ///
-/// Each date is **one** control: the chip states the day and its popover offers Today / Tomorrow /
+/// **No heading, because every row names itself.** The group the properties pair used to carry was
+/// titled "Overview" and was deleted for saying nothing the rows did not; "Schedule" over a list
+/// that now also holds an estimate and a milestone would be the same mistake with a truer-sounding
+/// word.
+///
+/// **Priority is not here.** It moved to the title row as the `!` / `!!` / `!!!` mark control both
+/// platforms now share — see `iOSTaskEditorTitleCard`. Nothing else in the sheet writes it.
+///
+/// Each date is **one** control: the picker states the day and its popover offers Today / Tomorrow /
 /// This Weekend, a month grid, and Clear. The toggle that used to sit beside it was a second
 /// affordance for the same field, and the pair could disagree — the toggle said "on" while the
 /// picker below it showed a day the task did not have.
-struct iOSTaskScheduleSection: View {
+struct iOSTaskFieldListSection: View {
     @Bindable var task: AppTask
+    let availableGoals: [Goal]
     let recurrenceSelection: Binding<TaskRecurrenceRule>
     /// The one way this section writes an end condition, and deliberately a callback rather than
     /// three bindings: every end edit has to reach
@@ -127,9 +49,11 @@ struct iOSTaskScheduleSection: View {
     @State private var showTimePicker = false
     @State private var showEndModePicker = false
     @State private var showEndCountPicker = false
+    @State private var showEstimatePicker = false
+    @State private var showMilestonePicker = false
 
     /// Colour is spent only on what is wrong. A do date in the past and an overdue deadline are the
-    /// two things in this well that are, so everything else — including a do date of *today*, which
+    /// two things in this list that are, so everything else — including a do date of *today*, which
     /// is the common case — is `Theme.dim`.
     private var isOverdo: Bool {
         guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
@@ -144,43 +68,27 @@ struct iOSTaskScheduleSection: View {
         task.scheduledStartMin >= 0
     }
 
-    var body: some View {
-        // Divider-separated rows, so no `contentSpacing` — see the note on the properties section.
-        iOSEditorSection(title: "Schedule", style: .ruled) {
-            iOSEditorFieldRow(
-                label: "Do",
-                systemImage: "sun.max.fill",
-                color: isOverdo ? Theme.red : Theme.dim
-            ) {
-                CadenceDatePicker(
-                    selection: doDateBinding,
-                    placeholder: hasScheduledDate.wrappedValue ? nil : "No do date",
-                    minHeight: 44,
-                    showsClear: hasScheduledDate.wrappedValue,
-                    onClear: { hasScheduledDate.wrappedValue = false }
-                )
-            }
+    private var selectedGoal: Goal? { task.goal }
 
+    var body: some View {
+        // Divider-separated rows, so no `contentSpacing`: `iOSEditorDivider` already pads itself by
+        // 6pt on each side, and adding more on both sides counts the same gap twice. The divider
+        // owns the spacing between rows; the section does not add to it.
+        iOSEditorSection(title: nil, style: .ruled) {
+            doRow
+
+            iOSEditorDivider()
+            dueRow
+
+            // The time belongs to the do date and cannot mean anything without one, so it appears
+            // with it rather than sitting empty above a task that has no day.
             if hasScheduledDate.wrappedValue {
                 iOSEditorDivider()
                 timeRow
             }
 
             iOSEditorDivider()
-
-            iOSEditorFieldRow(
-                label: "Due",
-                systemImage: "flag.fill",
-                color: isOverdue ? Theme.red : Theme.dim
-            ) {
-                CadenceDatePicker(
-                    selection: dueDateBinding,
-                    placeholder: hasDueDate.wrappedValue ? nil : "No due date",
-                    minHeight: 44,
-                    showsClear: hasDueDate.wrappedValue,
-                    onClear: { hasDueDate.wrappedValue = false }
-                )
-            }
+            estimateRow
 
             iOSEditorDivider()
             repeatRow
@@ -206,18 +114,44 @@ struct iOSTaskScheduleSection: View {
                 }
             }
 
-            // Logged time is **measured**, not typed: the focus timer writes it. This row used to
-            // be an editable minutes picker, which invited a user to overwrite a measurement by
-            // hand — macOS deleted its equivalent "Actual" row for the same reason. It appears
-            // only when there is something to report.
-            if let logged = CadenceTaskInspectorSupport.loggedLabel(minutes: task.actualMinutes) {
-                iOSEditorDivider()
-                iOSEditorFieldRow(label: "Logged", systemImage: "timer", color: Theme.dim) {
-                    Text(logged)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                }
-            }
+            iOSEditorDivider()
+            milestoneRow
+
+            loggedRow
+        }
+    }
+
+    // MARK: - Dates
+
+    private var doRow: some View {
+        iOSEditorFieldRow(
+            label: "Do",
+            systemImage: "sun.max.fill",
+            color: isOverdo ? Theme.red : Theme.dim
+        ) {
+            CadenceDatePicker(
+                selection: doDateBinding,
+                placeholder: hasScheduledDate.wrappedValue ? nil : "No do date",
+                minHeight: 44,
+                showsClear: hasScheduledDate.wrappedValue,
+                onClear: { hasScheduledDate.wrappedValue = false }
+            )
+        }
+    }
+
+    private var dueRow: some View {
+        iOSEditorFieldRow(
+            label: "Due",
+            systemImage: "flag.fill",
+            color: isOverdue ? Theme.red : Theme.dim
+        ) {
+            CadenceDatePicker(
+                selection: dueDateBinding,
+                placeholder: hasDueDate.wrappedValue ? nil : "No due date",
+                minHeight: 44,
+                showsClear: hasDueDate.wrappedValue,
+                onClear: { hasDueDate.wrappedValue = false }
+            )
         }
     }
 
@@ -270,6 +204,40 @@ struct iOSTaskScheduleSection: View {
             }
         }
     }
+
+    // MARK: - Estimate
+
+    /// **The estimate is a row now, not a chip beside the title (T-1278).** It sat in the title row
+    /// because "an estimate is a property of the task the way its priority is" — which is true, and
+    /// is why the *priority* is what sits there now: there is one trailing slot on that line and
+    /// the two platforms had to agree on what fills it. The estimate reads as a field the moment it
+    /// is asked "how long", which is the question every other row on this list answers.
+    ///
+    /// It opens the shared roller directly rather than drawing `EstimatePickerControl`: that
+    /// control carries its own `timer` glyph and its own filled pill, and in a row already labelled
+    /// `timer` that is the glyph twice and the only tile in a list with no tiles. The words are
+    /// `CadenceTaskPresentationSupport.estimateValueLabel`, which is what the pill says too.
+    private var estimateRow: some View {
+        iOSEditorFieldRow(label: "Estimate", systemImage: "timer", color: Theme.dim) {
+            iOSChoiceValueButton(
+                title: CadenceTaskPresentationSupport.estimateValueLabel(minutes: task.estimatedMinutes),
+                color: task.estimatedMinutes > 0 ? Theme.text : Theme.dim,
+                minHeight: 44
+            ) {
+                showEstimatePicker = true
+            }
+            .popover(isPresented: $showEstimatePicker) {
+                EstimatePickerPopoverContent(value: $task.estimatedMinutes) {
+                    showEstimatePicker = false
+                }
+                // Same reason as `CadenceDatePicker`: compact width otherwise promotes this to a
+                // full-height sheet wrapped around a 260pt panel.
+                .presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+
+    // MARK: - Repeat
 
     private var repeatRow: some View {
         iOSEditorFieldRow(label: "Repeat", systemImage: task.recurrenceRule.systemImage, color: Theme.dim) {
@@ -406,8 +374,103 @@ struct iOSTaskScheduleSection: View {
             set: { applyRecurrenceEnd(.afterCount, "", CadenceTaskRecurrenceEndPresentation.normalizedEndCount($0)) }
         )
     }
+
+    // MARK: - Milestone
+
+    /// **Labelled "Milestone", which is the mockup's "Goal" in this app's own words.** The model
+    /// type is `Goal` and the drawn mockup said Goal; every surface that names one to a *user* says
+    /// milestone — `CadenceTitleNormalization.defaultMilestoneTitle` is "Untitled Milestone" and
+    /// `CadenceTaskControlAccessibility.milestone` exists precisely so a chip cannot be the one
+    /// place it is called something else. A row reading "Goal" over a picker offering "Untitled
+    /// Milestone" would be that place.
+    private var milestoneRow: some View {
+        iOSEditorFieldRow(label: "Milestone", systemImage: "target", color: Theme.dim) {
+            iOSChoiceValueButton(
+                title: selectedGoal.map { $0.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : $0.title } ?? "None",
+                color: selectedGoal == nil ? Theme.dim : Theme.text,
+                minHeight: 44
+            ) {
+                showMilestonePicker = true
+            }
+            .popover(isPresented: $showMilestonePicker) {
+                iOSChoicePopoverList(
+                    rows: [iOSChoiceRow<UUID?>(value: nil, title: "None", systemImage: "circle.dashed", color: Theme.dim)]
+                        + availableGoals.map { goal in
+                            iOSChoiceRow(
+                                value: Optional(goal.id),
+                                title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultMilestoneTitle),
+                                systemImage: goal.icon,
+                                // A goal's colour is the user's own, and it is what tells two
+                                // milestones apart in a list of them.
+                                color: Color(hex: goal.colorHex)
+                            )
+                        },
+                    selection: goalSelection,
+                    isPresented: $showMilestonePicker
+                )
+            }
+        }
+    }
+
+    private var goalSelection: Binding<UUID?> {
+        Binding(
+            get: { task.goal?.id },
+            set: { goalID in
+                task.goal = goalID.flatMap { id in availableGoals.first { $0.id == id } }
+            }
+        )
+    }
+
+    // MARK: - Logged
+
+    /// **Logged time keeps a row of its own, and T-1278 had to decide that rather than inherit it.**
+    /// None of the three mockups drew it — they were drawn from the fields a user *sets*, and this
+    /// is the one figure in the sheet nobody sets: the focus timer writes `actualMinutes` and this
+    /// row reports it. It used to be an editable minutes picker, which invited a user to overwrite a
+    /// measurement by hand, and macOS deleted its equivalent "Actual" row for that reason.
+    ///
+    /// The two alternatives were both worse. Dropping it strands the only readout of time this app
+    /// measured, with no other surface in the sheet showing it. Folding it into the Estimate row's
+    /// value ("30m · 12m logged") puts a measurement and an editable field on one line under one
+    /// label, so the row would no longer have a single answer — and the Estimate row is a *control*,
+    /// which this is deliberately not.
+    ///
+    /// So: its own row, last, and only when there is something to report — which is what
+    /// `loggedLabel` returning `nil` on zero already encodes, so on the common task the list ends at
+    /// Milestone and costs nothing.
+    @ViewBuilder
+    private var loggedRow: some View {
+        if let logged = CadenceTaskInspectorSupport.loggedLabel(minutes: task.actualMinutes) {
+            iOSEditorDivider()
+            iOSEditorFieldRow(label: "Logged", systemImage: "stopwatch", color: Theme.dim) {
+                Text(logged)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+            }
+        }
+    }
 }
 
+/// **The subtasks, as one grouped surface (T-1278).** The owner took the field list from mockup B
+/// and the subtasks from mockup C: *"make sure to show subtask just like how option C is doing"*.
+///
+/// **This block is the one surface the redesign keeps, and it survives the rule that killed the
+/// other two mockups because it is a container for a list rather than a decoration.** A and C were
+/// rejected for introducing tile/card layers around fields that are not lists; a run of checkable
+/// rows genuinely is one thing, and boxing it is what tells a reader where the list ends and the
+/// Notes begin. One surface, one radius, no border, no hover layer.
+///
+/// `Theme.surfaceElevated`, **not** the `Theme.surface` the mockup named: the form this block sits
+/// in is already drawn on `Theme.surface` (`iOSTaskDetailSheet.editorScrollView`), so a
+/// `Theme.surface` block inside it is the same colour on the same colour and there is no block at
+/// all. `surfaceElevated` is the ramp's next stop and is what `Theme`'s own note calls the fill for
+/// content nested inside an already-elevated surface. The mockups were drawn standalone against
+/// `Theme.bg`, where `surface` *is* the readable step; inside the card it is one step short.
+///
+/// The count beside the label is live and comes from the same `CadenceSubtaskProgress` the task row
+/// draws its `2/5` badge from, so the panel and the row cannot disagree about how far along a task
+/// is. There is no count at all when there are no subtasks — `subtaskProgress` returns `nil` on an
+/// empty list, which is right: `0 of 0` is a figure about nothing.
 struct iOSTaskSubtasksSection: View {
     let subtasks: [Subtask]
     let newSubtaskTitle: Binding<String>
@@ -418,57 +481,83 @@ struct iOSTaskSubtasksSection: View {
     let onAdd: () -> Void
     let onDelete: (Subtask) -> Void
 
+    private var progressLabel: String? {
+        CadenceTaskPresentationSupport.subtaskProgress(for: subtasks)?.countLabel
+    }
+
     var body: some View {
-        iOSEditorSection(title: "Subtasks", style: .ruled, contentSpacing: 10) {
-            subtaskList
-            subtaskComposer
+        iOSEditorSection(
+            title: "Subtasks",
+            trailing: progressLabel,
+            style: .ruled,
+            contentSpacing: 10
+        ) {
+            subtaskBlock
+
             if let failureNotice {
                 CadenceInlineFailureNotice(text: failureNotice)
             }
         }
     }
 
-    @ViewBuilder
-    private var subtaskList: some View {
-        if !subtasks.isEmpty {
-            VStack(spacing: 0) {
-                ForEach(subtasks) { subtask in
-                    iOSSubtaskRow(subtask: subtask) {
-                        onDelete(subtask)
-                    }
+    /// The rows and the composer are one block, in that order, so "Add subtask" reads as the last
+    /// line of the list rather than as a separate control parked under it. The composer used to be
+    /// a filled well with a blue `+` tile beside it — two more surfaces at two more radii, directly
+    /// under a section that is now a surface of its own.
+    private var subtaskBlock: some View {
+        VStack(spacing: 0) {
+            ForEach(subtasks) { subtask in
+                iOSSubtaskRow(subtask: subtask) {
+                    onDelete(subtask)
                 }
             }
+
+            addSubtaskRow
         }
+        .padding(.horizontal, 10)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 
-    /// No "No subtasks" placeholder: the field directly below it is captioned "Add subtask", which
-    /// says the same thing and can be typed into.
-    private var subtaskComposer: some View {
-        HStack(spacing: 8) {
+    /// No "No subtasks" placeholder: this row is captioned "Add subtask", which says the same thing
+    /// and can be typed into. It is shaped like the rows above it — leading glyph in the check
+    /// circle's slot, then the field — so the block reads as one list.
+    private var addSubtaskRow: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "plus")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+
             TextField("Add subtask", text: newSubtaskTitle)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.text)
-                .padding(.horizontal, 10)
-                .frame(minHeight: 44)
-                .background(Theme.surfaceElevated.opacity(0.55))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                .submitLabel(.done)
                 .onSubmit(onAdd)
 
+            Spacer(minLength: 8)
+
+            // Kept as a control rather than relying on the keyboard's return key alone: the field
+            // is inside a scrolling sheet, and the hardware-keyboard and VoiceOver paths both need
+            // something to press. Dimmed rather than absent while there is nothing to add, so the
+            // row does not change width as the user types.
             Button(action: onAdd) {
-                Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.onColor(for: Theme.blue))
-                    .frame(width: 44, height: 44)
-                    .background(canAddSubtask ? Theme.blue : Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(canAddSubtask ? Theme.blue : Theme.dim)
+                    .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
+                    .iOSExpandedHitArea(8)
             }
             .buttonStyle(.iosPressable)
             .disabled(!canAddSubtask)
             .opacity(canAddSubtask ? 1 : 0.45)
             .accessibilityLabel("Add subtask")
         }
+        .padding(.horizontal, 2)
+        .frame(minHeight: 44)
     }
 }
 

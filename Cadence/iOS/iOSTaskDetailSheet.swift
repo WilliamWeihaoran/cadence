@@ -183,15 +183,18 @@ struct iOSTaskDetailSheet: View {
         .tint(Theme.blue)
     }
 
-    /// Same order as macOS's inspector, for the same reasons: what the task *is* (title, tags,
-    /// where it lives), then when it happens, then the work inside it, then its notes, then the
-    /// actions that change its state.
+    /// Same order as macOS's inspector, for the same reasons: what the task *is* (title, where it
+    /// lives, its tags), then its fields, then the work inside it, then its notes, then the actions
+    /// that change its state.
+    ///
+    /// **T-1278 merged two groups into one.** The untitled Priority/Milestone pair and the SCHEDULE
+    /// well were a card's worth of chrome apart while holding eight fields of the same kind; they
+    /// are one hairline list now, with the priority moved onto the title row.
     private var taskForm: some View {
         VStack(alignment: .leading, spacing: iOSTaskInspectorMetrics.sectionSpacing) {
             saveFailureNoticeRow
             headerBlock
-            propertiesSection
-            scheduleSection
+            fieldListSection
             subtasksSection
             notesSection
             statusActionsSection
@@ -208,15 +211,18 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
-    /// Title row, then the task's tags and its `List › Section` line indented to the title column —
+    /// Title row, then the task's `List › Section` line and its tags indented to the title column —
     /// the same identity block `TaskDetailHeaderSection` draws on macOS.
+    ///
+    /// **The breadcrumb comes first as of T-1278**, so the block reads *circle · title · list name*
+    /// the way the chosen mockup drew it. Where a task lives is part of naming it; the tags are an
+    /// editable set below, and they were sitting between the title and the one line that says which
+    /// list you are looking at.
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             iOSTaskEditorTitleCard(task: task, onToggleCompletion: toggleCompletion)
 
             VStack(alignment: .leading, spacing: 8) {
-                iOSTaskTagStrip(task: task, allTags: tags, newTagName: $newTagName)
-
                 iOSTaskPlacementBreadcrumb(
                     task: task,
                     containerSelection: $containerSelection,
@@ -224,6 +230,8 @@ struct iOSTaskDetailSheet: View {
                     projects: projects,
                     availableSectionNames: availableSectionNames
                 )
+
+                iOSTaskTagStrip(task: task, allTags: tags, newTagName: $newTagName)
             }
             // Completion-circle width plus the title row's spacing, so everything under the title
             // lines up with the title text rather than with the circle. Derived in
@@ -249,13 +257,10 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
-    private var propertiesSection: some View {
-        iOSTaskPropertiesSection(task: task, availableGoals: availableGoals)
-    }
-
-    private var scheduleSection: some View {
-        iOSTaskScheduleSection(
+    private var fieldListSection: some View {
+        iOSTaskFieldListSection(
             task: task,
+            availableGoals: availableGoals,
             recurrenceSelection: recurrenceSelection,
             applyRecurrenceEnd: selectRecurrenceEnd,
             hasScheduledDate: $hasScheduledDate,

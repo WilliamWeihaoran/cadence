@@ -18,10 +18,11 @@ import Testing
 /// `iOSDateJumpTitle` held the only two spellings under `Cadence/iOS/`, but `.cadencePlain` is also
 /// applied *unconditionally* by two shared components that iOS renders — `CadenceDatePicker` (its
 /// trigger button plus `MonthCalendarPanel` and `CadenceQuickDatePopover`, reached from about ten
-/// iOS call sites) and `EstimatePickerControl`, whose five call sites are **all** under
+/// iOS call sites) and `EstimatePickerControl`, whose four call sites are **all** under
 /// `Cadence/iOS/`. Fencing each caller would have been nine fences and would not have stopped the
-/// tenth. So `CadencePlainButtonStyle` itself degrades to the platform's press feedback instead,
-/// macOS untouched.
+/// tenth. (Five when this was written: T-1278 moved the task inspector's estimate off the title
+/// row into a field row that opens the same shared roller directly.) So `CadencePlainButtonStyle`
+/// itself degrades to the platform's press feedback instead, macOS untouched.
 ///
 /// **Everything here is a source scan, and it has to be.** `CadenceTests` builds for macOS, where
 /// `iOSPressableButtonStyle` does not exist (`iOSDesignSystem.swift` is a whole-file

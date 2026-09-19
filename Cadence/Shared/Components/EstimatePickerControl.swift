@@ -49,7 +49,7 @@ struct EstimatePickerControl: View {
     }
 
     private var label: String {
-        value > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: value) : "No estimate"
+        CadenceTaskPresentationSupport.estimateValueLabel(minutes: value)
     }
 }
 
