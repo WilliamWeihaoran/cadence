@@ -68,6 +68,14 @@ struct iOSTodayTaskSections: View {
         .metrics(layout: layout)
     }
 
+    /// Derived here rather than taken as a parameter, the same way `iOSSchedulePanel` derives it:
+    /// both hosts of this view already compute their own from `DateFormatters.todayKey()`, and a
+    /// sixth parameter that can only ever be handed today's key is a parameter that can be handed
+    /// the wrong one. It exists for `dayAlreadyStatedBySurface` — see `iOSTaskRow`.
+    private var todayKey: String {
+        DateFormatters.todayKey()
+    }
+
     /// The readable-column cap belongs to the **host**, not to this view: it has to hold the page
     /// header and the options bar as well, or a narrow iPad pane would cap the rows at 520 and let
     /// the header above them run the full width of the pane. Both hosts read it from here so it is
@@ -224,21 +232,32 @@ struct iOSTodayTaskSections: View {
                 // thing saying where the work lived. With Overdue gone every header prints its own
                 // list's name, so a chip under it is that name twice. The surface option is still
                 // read, by the Completed group, which is flat and does need it.
+                // `dayAlreadyStatedBySurface: todayKey` drops a sun pill that would read "Today"
+                // on the page called Today, and leaves every other reading — including a red "3
+                // days ago" on a task this page is still holding — exactly where it was. macOS's
+                // Today has answered this way since T-304's follow-up; this is the same knob
+                // reading the same shared equality (T-1272).
                 iOSTaskGroupSection(
                     title: group.title,
                     color: group.accent,
                     tasks: group.tasks,
                     showsContainer: false,
+                    dayAlreadyStatedBySurface: todayKey,
                     dropIdentity: group.dropIdentity
                 )
             }
 
             if showsCompleted {
+                // Same key as the groups above, and for the reason
+                // `TasksPanelCompletedSectionView` states on macOS: a task finished today and
+                // planned for today does not get to say "Today" on the Today page just because it
+                // is in the Completed section.
                 iOSTaskGroupSection(
                     title: CadenceTodayPresentationSupport.completedSectionTitle,
                     color: CadenceTodayPresentationSupport.completedSectionAccent,
                     tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
                     showsContainer: showsContainer,
+                    dayAlreadyStatedBySurface: todayKey,
                     opacity: 0.62,
                     dropIdentity: .completion,
                     hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)

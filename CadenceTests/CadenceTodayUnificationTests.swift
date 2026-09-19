@@ -1222,6 +1222,56 @@ struct CadenceTodayListGroupingTests {
         #expect(sections.contains("struct TasksPanelCompletedSectionView: View"), "non-vacuity")
     }
 
+    /// **And iOS says it the same way, through the same knob (T-1272).**
+    ///
+    /// The owner reported it a second time, on the phone — *"on the today's page, no need to show
+    /// the 'Today' pill for tasks"* — because only macOS had ever been wired. `iOSTaskRow` had no
+    /// `dayAlreadyStatedBySurface` at all and asked `rowDatePlan(for: task)`, which cannot be told
+    /// what the surface has already said.
+    ///
+    /// Pinned on the three things a test can reach without SwiftUI: the row asks the shared
+    /// equality, the group section forwards the key, and Today's one section list — the single
+    /// component **both** the phone and the iPad column draw — hands it down for the open groups
+    /// and for Completed Today. The arithmetic itself is already pinned by
+    /// `todaysRowsDropTheDoDateChipOnlyWhenItWouldSayToday` above; it is the same function.
+    @Test func iOSTodaySectionsHandTheRowTheDayThePageHasAlreadyNamed() throws {
+        let row = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        #expect(row.contains("struct iOSTaskRow: View"), "non-vacuity: wrong file read")
+        #expect(row.contains("CadenceBoardCardMetadata.repeatsSurfaceDay("))
+        // The suppression goes in as an empty do date, so the plan stays the only place that
+        // counts chips — the same shape `MacTaskRow.statedDoDate` uses.
+        #expect(row.contains("scheduledDate: statedDoDate"))
+        #expect(!row.contains("rowDatePlan(for: task)"),
+                "the iOS row is back on the plan that cannot be told what the surface already said")
+
+        let section = try strippingComments(sourceFile("Cadence/iOS/iOSTaskGroupSection.swift"))
+        #expect(section.contains("struct iOSTaskGroupSection: View"), "non-vacuity")
+        #expect(section.contains("dayAlreadyStatedBySurface: dayAlreadyStatedBySurface"))
+
+        // Twice: the day's list groups, and Completed Today. A finished task planned for today
+        // does not get to say "Today" either.
+        try expectCallSites(
+            of: "dayAlreadyStatedBySurface: todayKey",
+            at: ["Cadence/iOS/iOSTodayTaskSections.swift": 2]
+        )
+
+        // And nowhere else on iOS, which is the scope half of the ticket: the same pill on Tasks,
+        // Lists and search results is carrying real information, and none of those surfaces names a
+        // day. The other two files are the board's, and they predate this: `iOSBoardTaskCard`
+        // declares the knob and `iOSCalendarBoardView` hands it a *column's* `dateKey` — a
+        // different surface naming a different day, by the same equality.
+        let sweep = try swiftFiles(under: "Cadence/iOS").filter { path in
+            try strippingComments(sourceFile(path)).contains("dayAlreadyStatedBySurface")
+        }
+        #expect(Set(sweep) == [
+            "Cadence/iOS/iOSBoardCards.swift",
+            "Cadence/iOS/iOSCalendarBoardView.swift",
+            "Cadence/iOS/iOSTaskGroupSection.swift",
+            "Cadence/iOS/iOSTaskViews.swift",
+            "Cadence/iOS/iOSTodayTaskSections.swift"
+        ], "an iOS surface started or stopped suppressing the do-date pill: \(sweep)")
+    }
+
     /// `repeatsSurfaceDay` is the shared predicate the calendar boards already use for the same
     /// question, so the answer cannot differ between a day column and the Today page.
     private func suppressed(_ scheduledDate: String, on day: String?) -> String {

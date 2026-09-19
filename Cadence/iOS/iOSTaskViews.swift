@@ -13,6 +13,18 @@ struct iOSTaskRow: View {
     /// Off for surfaces that are already scoped to one list, where naming it on every row is
     /// noise — the same knob, and the same reason, as `KanbanCard.showsContainerChip` on macOS.
     var showsContainer: Bool = true
+    /// The day this row's surface has already named, if it names one — `MacTaskRow`'s knob, under
+    /// its own name, asked of the same shared function. Today passes `todayKey`, and the sun pill
+    /// that would otherwise read "Today" on every row of the page called Today goes away: *"on the
+    /// today's page, no need to show the 'Today' pill for tasks"* (T-1272). The standing
+    /// page-header rule one level down, on a row badge.
+    ///
+    /// **An equality, not a surface flag**, which is the whole reason it is safe here: a task
+    /// do-dated *yesterday* and still open on Today does not match, so it keeps its pill and keeps
+    /// it red — and that pill is the only thing on the row saying the work is late. A blunter
+    /// "Today hides the sun" would have taken it. See `CadenceBoardCardMetadata.repeatsSurfaceDay`,
+    /// which both calendar boards and macOS's Today already ask.
+    var dayAlreadyStatedBySurface: String? = nil
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
@@ -440,7 +452,23 @@ struct iOSTaskRow: View {
     /// macOS reads the same answer from the same function. Which chip wins is a fact about a task,
     /// not about a platform.
     private var datePlan: CadenceTaskRowDatePlan {
-        CadenceTaskPresentationSupport.rowDatePlan(for: task)
+        CadenceTaskPresentationSupport.rowDatePlan(
+            scheduledDate: statedDoDate,
+            dueDate: task.dueDate
+        )
+    }
+
+    /// The do date this row still has something to say about — `""` when it does not.
+    ///
+    /// The suppression goes in as an **empty do date** rather than as a branch after the plan, for
+    /// the reason `MacTaskRow.statedDoDate` gives: a row with no sun to draw has nothing to merge,
+    /// so the plan stays the only place that counts chips. A task do-dated and due on the same
+    /// suppressed day still keeps its flag, because the deadline is a different fact.
+    private var statedDoDate: String {
+        CadenceBoardCardMetadata.repeatsSurfaceDay(
+            task.scheduledDate,
+            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+        ) ? "" : task.scheduledDate
     }
 
     /// `CadenceDueUrgency` rather than an inline `dueDate < todayKey`: the inline spelling had no

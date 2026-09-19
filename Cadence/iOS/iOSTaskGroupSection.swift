@@ -61,6 +61,10 @@ struct iOSTaskGroupSection: View {
     /// row. Ask `CadenceTaskSurfaceOptions.showsContainerChip(on:)` rather than deciding here, so
     /// the answer cannot come out one way on the phone's Inbox and another on the iPad's.
     var showsContainer: Bool = true
+    /// Forwarded to `iOSTaskRow.dayAlreadyStatedBySurface`. See there: Today hands its own
+    /// `yyyy-MM-dd` down so no row on the page called Today draws a pill reading "Today". Every
+    /// other surface leaves it `nil` and gets the full strip.
+    var dayAlreadyStatedBySurface: String? = nil
     /// Completed groups are dimmed as a whole rather than row by row.
     var opacity: Double = 1
     /// See `iOSTaskGroupHeader.dropIdentity`. It also decides whether an *empty* group renders at
@@ -105,8 +109,12 @@ struct iOSTaskGroupSection: View {
                 if !tasks.isEmpty {
                     VStack(spacing: 7) {
                         ForEach(tasks) { task in
-                            iOSTaskRow(task: task, showsContainer: showsContainer)
-                                .opacity(opacity)
+                            iOSTaskRow(
+                                task: task,
+                                showsContainer: showsContainer,
+                                dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+                            )
+                            .opacity(opacity)
                         }
 
                         // The line that makes the cap disclosed rather than silent. Not a button:
