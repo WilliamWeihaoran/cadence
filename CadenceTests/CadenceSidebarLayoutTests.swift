@@ -308,6 +308,45 @@ struct SidebarStaticDestinationBridgeTests {
         #expect(customisable.subtracting(rendered).isEmpty)
     }
 
+    /// **Nothing labels the iPad sidebar's lists region, and the Lists page still has a door
+    /// (T-1275).**
+    ///
+    /// The owner: *"on ipados on the left sidebar there shouldnt be a section called just lists cuz
+    /// we're gonna show all the lists there anyways"* — the standing page-header rule at sidebar
+    /// scale. `listsRegion` drew an `iOSSidebarButton` for `.lists` immediately above its
+    /// `ScrollView`, which is where a heading goes.
+    ///
+    /// **The second half is why this is a pin and not a deletion.** `iOSListsView` is the only
+    /// surface in the app that creates an area or a project, so the row is also the only route to
+    /// list creation at regular width; the sidebar's own context menu edits an existing list and
+    /// Settings → Lists only reopens and deletes one. So the row moved below the region, into the
+    /// secondary nav group, where it is a destination among destinations rather than a label over
+    /// rows. Delete it from there and list creation becomes unreachable on iPad — the shape of
+    /// T-1113 on the other platform.
+    ///
+    /// **`.lists` stays out of `CadenceSidebarLayout`'s shared groups**, which is the convergence
+    /// half: macOS has no Lists page, and its column heads its own list region with nothing.
+    @Test func theIPadListsRegionIsHeadedByNothingAndTheListsPageKeepsItsRow() throws {
+        let code = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSRootSidebar.swift"))
+        #expect(code.contains("private var listsRegion: some View"), "non-vacuity: wrong file read")
+
+        let region = try cadenceFunctionBody("private var listsRegion: some View", in: code)
+        #expect(!region.contains("iOSSidebarButton("),
+                "the lists region is headed by a nav row again — that row is the heading T-1275 removed")
+        #expect(region.contains("emptyListsRow"),
+                "the region stopped saying what is missing when it holds nothing")
+
+        // The door, in the group below the region, on both styles.
+        #expect(code.contains("[.lists] + CadenceSidebarLayout.secondaryRowDestinations"))
+        #expect(code.contains("[.lists] + CadenceSidebarLayout.secondaryDestinations"))
+
+        // And not by widening the shared list, which macOS reads too.
+        #expect(!CadenceSidebarLayout.navigationDestinations.contains(.lists))
+        #expect(CadenceFeatureDestination.lists.macSidebarItem == nil)
+        // The row still lights up when it is the selection: `navRow` answers `.lists` with itself.
+        #expect(CadenceSidebarLayout.navRow(for: .lists) == .lists)
+    }
+
     /// Every row the sidebar draws must resolve to a selection, or it is a button that navigates
     /// nowhere.
     @Test func everyNavRowResolvesToASelection() {

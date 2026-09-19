@@ -216,7 +216,7 @@ struct iOSSidebar: View {
             // row of two glyphs. Rail is already all glyphs at 58pt, where two across plus the
             // gap does not fit, so it keeps all four stacked.
             if style == .expanded {
-                navGroup(CadenceSidebarLayout.secondaryRowDestinations, counts: counts)
+                navGroup(secondaryRowDestinations, counts: counts)
                     .padding(.top, iOSSidebarMetrics.groupSpacing)
 
                 footerGlyphRow
@@ -224,7 +224,7 @@ struct iOSSidebar: View {
                     .padding(.top, iOSSidebarMetrics.rowSpacing)
                     .padding(.bottom, 12)
             } else {
-                navGroup(CadenceSidebarLayout.secondaryDestinations, counts: counts)
+                navGroup(secondaryDestinations, counts: counts)
                     .padding(.top, iOSSidebarMetrics.groupSpacing)
                     .padding(.bottom, 12)
             }
@@ -260,6 +260,36 @@ struct iOSSidebar: View {
 
     // MARK: - Nav groups
 
+    /// `CadenceSidebarLayout`'s secondary rows, with **Lists** ahead of them.
+    ///
+    /// **Lists is iOS-only and cannot be in the shared list.** macOS has no Lists page at all — it
+    /// creates a list from the `+` on a context header and reads archived ones nowhere — so
+    /// `CadenceSidebarLayout.secondaryDestinations` must not grow a destination one platform cannot
+    /// route. This is the same single exception the row has always been; what changed is only
+    /// where it sits (T-1275).
+    ///
+    /// It used to head the scrolling lists region, which made it read as that region's heading:
+    /// *"on ipados on the left sidebar there shouldnt be a section called just lists cuz we're
+    /// gonna show all the lists there anyways"*. Below the region it is a destination among
+    /// destinations, which is what it always was — and the macOS column, which heads its list
+    /// region with nothing, is the one this converges on rather than diverges from.
+    ///
+    /// **Deleting it outright was the literal reading and it is a regression.** `iOSListsView` is
+    /// the only surface in the app that creates an area or a project
+    /// (`iOSListCreateButtonsRow`), and this row is its only door at regular width — the sidebar's
+    /// own context menu offers *edit*, and Settings' Lists category only reopens and deletes ones
+    /// that already exist. Removing the door is the shape of T-1113 on the other platform, where a
+    /// region that drew nothing on a fresh install took the only route to `CreateListSheet` with it.
+    private var secondaryRowDestinations: [CadenceFeatureDestination] {
+        [.lists] + CadenceSidebarLayout.secondaryRowDestinations
+    }
+
+    /// The rail's stack, which keeps all four secondary glyphs rather than splitting two into a
+    /// footer row. Same prepend, same reason.
+    private var secondaryDestinations: [CadenceFeatureDestination] {
+        [.lists] + CadenceSidebarLayout.secondaryDestinations
+    }
+
     private func navGroup(
         _ destinations: [CadenceFeatureDestination],
         counts: CadenceSidebarCountInputs
@@ -283,28 +313,19 @@ struct iOSSidebar: View {
 
     // MARK: - Lists
 
-    /// The single scrolling region, pinned under a **Lists** row.
+    /// The single scrolling region, and **nothing above it (T-1275).**
     ///
-    /// That row is the one place this column parts from macOS, and it earns the place: iOS has a
-    /// real Lists page — creating, archiving, restoring and reordering all live there, and archived
-    /// lists are readable nowhere else — where macOS has none, and puts a per-context `+` in the
-    /// header instead. A `+` here would have to ignore the context it sits under, because
-    /// `iOSListEditorSheet` takes no seed, so it would be a control that lies about what it does.
+    /// It was pinned under a row reading "Lists", which the owner read as a heading over the rows
+    /// it sat on: *"there shouldnt be a section called just lists cuz we're gonna show all the
+    /// lists there anyways"*. It is the standing page-header rule at sidebar scale, and the macOS
+    /// column already heads its own list region with nothing. The Lists *destination* is still a
+    /// row — it is the first of the secondary nav rows below the region now, because it is the
+    /// only door to the one surface that can make a list. See `secondaryRowDestinations`.
+    ///
+    /// The context headers inside the region stay: those name something the rows under them do not
+    /// say, which is the difference between a heading and a label.
     private var listsRegion: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSSidebarButton(
-                title: CadenceSidebarLayout.rowTitle(for: .lists),
-                systemImage: CadenceFeatureDestination.lists.systemImage,
-                tint: tint(for: .lists),
-                count: nil,
-                isSelected: selection == .lists,
-                style: style
-            ) {
-                selection = .lists
-            }
-            .padding(.horizontal, style.horizontalPadding)
-            .padding(.top, iOSSidebarMetrics.groupSpacing)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: iOSSidebarMetrics.sectionSpacing) {
                     ForEach(listSections) { section in
@@ -346,8 +367,10 @@ struct iOSSidebar: View {
         }
     }
 
-    /// A statement, not a button. The way to make a list is the Lists row directly above it, which
-    /// is already on screen — a second create affordance here would be two doors to one page.
+    /// A statement, not a button. The way to make a list is the Lists row below the region, which
+    /// is pinned and so is always on screen — a second create affordance here would be two doors to
+    /// one page. It said "directly above it" until T-1275 moved that row under the region; what it
+    /// says about what is missing is unchanged, and still `CadenceEmptyStateCopy`'s one spelling.
     @ViewBuilder
     private var emptyListsRow: some View {
         if style == .expanded {
