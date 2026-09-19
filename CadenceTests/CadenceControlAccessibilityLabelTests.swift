@@ -940,6 +940,11 @@ struct CadenceControlAccessibilityLabelTests {
     /// with it the one control on that pane that spoke a task's name. The clear-time control below
     /// is the survivor, and it is the one the *sweep* found rather than the one the ticket listed,
     /// which is why deleting the named half leaves the rule with a witness at all.
+    ///
+    /// **The surviving label's own wording moved with it (T-1286).** It said "back to ready to
+    /// schedule" for one commit longer than the stack existed, which is the failure mode a
+    /// by-value pin exists to make visible rather than to prevent: the pin went red until the
+    /// sentence named the place a cleared task actually lands, Today's task column.
     @Test func theTwoScheduleControlsNameTheirTaskTheWayTheScreenDoes() throws {
         let panel = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
         #expect(
@@ -950,7 +955,7 @@ struct CadenceControlAccessibilityLabelTests {
         let timeline = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         #expect(
             timeline.contains(
-                #"accessibilityLabel("Move \(TaskTitleSupport.displayTitle(task.title)) back to ready to schedule")"#
+                #"accessibilityLabel("Move \(TaskTitleSupport.displayTitle(task.title)) back to Today's tasks")"#
             ),
             "the clear-time control no longer names its task from the shared display title"
         )

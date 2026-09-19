@@ -990,9 +990,15 @@ struct iOSTimelineTaskBlock: View {
     /// what it is given. Today's pane stacks blocks inside an hour row that sizes to its content,
     /// where an infinite max height lets one block swallow the row.
     var fillsAvailableHeight: Bool = true
-    /// Today's pane keeps a "back to Ready to Schedule" control on the block, because the stack it
-    /// would go back to is a few points above it on the same pane. The Calendar grid has no such
-    /// stack, so it passes `nil` — an absent control, not a disabled one.
+    /// Today's pane keeps a "back to Today's tasks" control on the block, because the column it
+    /// would go back to is one divider to the left, on screen whenever this control is — that pane
+    /// is only ever built at the two-pane width. The Calendar grid draws whichever day you are
+    /// looking at and has no task column beside it, so it passes `nil` — an absent control, not a
+    /// disabled one.
+    ///
+    /// **It used to say "back to Ready to Schedule" (T-1286).** T-1273 deleted that stack; what it
+    /// did not change is that clearing a block's time still lands the task somewhere you can see.
+    /// The destination moved one divider left; only its name was stale.
     var onClearTime: (() -> Void)? = nil
     /// Non-`nil` only on a surface that can turn two blocks into one: the Calendar screen's day
     /// columns. Today's schedule pane passes `nil` and is byte-for-byte unchanged — it stacks its
@@ -1145,7 +1151,7 @@ struct iOSTimelineTaskBlock: View {
             // The *full* fallback, where the block beside it draws the compact one. That is the
             // compact spelling's own stated reason — "a row with no width for the noun" — and a
             // spoken label has no width, so "Untitled Task" is the right form of the same name.
-            .accessibilityLabel("Move \(TaskTitleSupport.displayTitle(task.title)) back to ready to schedule")
+            .accessibilityLabel("Move \(TaskTitleSupport.displayTitle(task.title)) back to Today's tasks")
         }
     }
 }

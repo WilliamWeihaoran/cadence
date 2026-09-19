@@ -430,7 +430,8 @@ private struct iOSScheduleHourRow: View {
                                 // grid, and that stack is gone. It falls back into the task column
                                 // across the divider instead — Today's untimed tasks, on screen
                                 // beside this pane at the only width this pane is built at. The
-                                // control's own wording still names the stack; see [[T-1286]].
+                                // control's wording names that column now (T-1286); it named the
+                                // stack for one commit longer than the stack existed.
                                 onClearTime: {
                                     CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
                                 }
