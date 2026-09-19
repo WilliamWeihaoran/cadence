@@ -323,7 +323,6 @@ struct CadenceSharedTaskRowJobsTests {
                 "the month agenda's row no longer reads the day from the section that heads it")
     }
 
-
     // MARK: - T-173: what a board card lists beneath the task
 
     private func task(unfinished: Int, finished: Int = 0, isDone: Bool = false) -> AppTask {
