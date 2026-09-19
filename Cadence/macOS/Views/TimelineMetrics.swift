@@ -9,7 +9,14 @@ struct TimelineMetrics {
     var totalMinutes: Int { (endHour - startHour) * 60 }
     var totalHeight: CGFloat { CGFloat(endHour - startHour) * hourHeight }
 
-    func snap5(_ mins: Int) -> Int { (mins / 5) * 5 }
+    /// The canvas's minute grid — `CadenceScheduleSupport.pointerTimeGridMinutes`, asked of the
+    /// shared pair rather than re-typed here, so the two platforms' grids can be read side by side
+    /// with the reason they differ (T-1293). It used to be a bare `(mins / 5) * 5` named `snap5`,
+    /// which said the number and nothing about where it came from.
+    func snapToGrid(_ mins: Int) -> Int {
+        let grid = max(1, CadenceScheduleSupport.pointerTimeGridMinutes)
+        return (mins / grid) * grid
+    }
 
     func yToMins(_ y: CGFloat) -> Int {
         clampStart(Int(y / hourHeight * 60) + startHour * 60)
@@ -29,7 +36,7 @@ struct TimelineMetrics {
     }
 
     func snappedMinute(fromY y: CGFloat) -> Int {
-        snap5(yToMins(y))
+        snapToGrid(yToMins(y))
     }
 
     func yOffset(for minute: Int) -> CGFloat {

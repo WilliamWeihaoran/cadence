@@ -34,8 +34,13 @@ struct CadenceStartTimeFieldRow: View {
 
     @State private var isPickerPresented = false
 
-    /// Every quarter hour of the day, which is the granularity all three sheets already offered.
-    private static let selectableMinutes = Array(stride(from: 0, to: 24 * 60, by: 15))
+    /// Every quarter hour of the day, which is the granularity all three sheets already offered —
+    /// and, since T-1293, the same `touchTimeGridMinutes` a tap or a drop on the phone's timeline
+    /// lands on. That is not a coincidence worth re-typing: a picker that could not re-select the
+    /// minute the timeline just created would leave a time on screen the user cannot get back to.
+    private static let selectableMinutes = Array(
+        stride(from: 0, to: 24 * 60, by: CadenceScheduleSupport.touchTimeGridMinutes)
+    )
 
     var body: some View {
         CadenceFieldRow(label: Self.label, systemImage: "clock.fill", color: Theme.blue) {

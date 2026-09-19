@@ -414,7 +414,14 @@ struct CadenceCalendarConsistencySurfaceTests {
 
         // The component really does own the control the three sheets handed over.
         let component = try scannedSource("Cadence/Shared/Components/CadenceStartTimeFieldRow.swift")
-        #expect(component.contains("stride(from: 0, to: 24 * 60, by: 15)"))
+        // T-1293 replaced the literal 15 with the named touch grid, so the spelling moved. The
+        // granularity is asserted as a value below rather than as source text, which is the part
+        // this test was ever about.
+        #expect(component.contains("stride(from: 0, to: 24 * 60, by: CadenceScheduleSupport.touchTimeGridMinutes)"))
+        #expect(
+            CadenceScheduleSupport.touchTimeGridMinutes == 15,
+            "the picker offers the grid a tap on the phone timeline lands on, and it left the quarter hour"
+        )
         #expect(component.contains("CadenceChoicePopoverList("))
         #expect(CadenceSourceScan.matchCount(#"TimeFormatters\.timeString\(from:"#, in: component) == 2)
         #expect(

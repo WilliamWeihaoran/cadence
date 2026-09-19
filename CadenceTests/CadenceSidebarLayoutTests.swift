@@ -308,6 +308,116 @@ struct CadenceSidebarLayoutTests {
             }
         }
     }
+
+    // MARK: - The move menu (T-1292)
+
+    /// **A one-step move is measured in the rows the stored order actually places.**
+    ///
+    /// iOS Settings → Navigation offered Move Up / Move Down over the *whole* customisable list,
+    /// which ends with Focus. A step down is "move the row below me above me", so Move Down on the
+    /// last labelled nav row named Focus — a footer glyph — and the item was enabled.
+    ///
+    /// **It was not even a no-op, which is the part that decided the fix.** The write goes through
+    /// and changes `orderRaw`, so the record's `updatedAt` moves and every synced device takes a
+    /// new string; what it does not change is anything anyone can see, because both sidebar groups
+    /// and this screen's own list resolve identically from it. All four of those are asserted
+    /// below, because "the tap is harmless" is the argument for leaving the item enabled and it is
+    /// false.
+    @Test func aStepIsMeasuredInTheOrderableRowsAndTheLastOneHasNoStepDown() throws {
+        let rows = CadenceSidebarLayoutPreferenceStore.orderedCustomisableDestinations(for: .declared)
+        let orderable = rows.filter(CadenceSidebarLayout.isOrderable)
+
+        #expect(rows == [.today, .allTasks, .calendar, .notes, .goals, .habits, .focus])
+        #expect(orderable == [.today, .allTasks, .calendar, .notes, .goals, .habits])
+
+        // The two ends, in the list the menu now measures in.
+        #expect(CadenceOrderReassignment.neighbourStep(moving: .habits, by: 1, within: orderable) == nil)
+        #expect(CadenceOrderReassignment.neighbourStep(moving: .today, by: -1, within: orderable) == nil)
+
+        // And the step above the boundary still exists, so disabling the end did not disable the
+        // list: Habits rises past Goals, which is the same move read from the other row.
+        let up = try #require(CadenceOrderReassignment.neighbourStep(moving: .habits, by: -1, within: orderable))
+        let raised = try #require(
+            CadenceSidebarLayoutPreferenceStore.order(in: .declared, moving: up.dragged, before: up.target)
+        )
+        #expect(raised == [.today, .allTasks, .calendar, .notes, .habits, .goals, .focus])
+
+        // The defect, spelled out: over the whole list the step exists and targets the glyph.
+        let overTheWholeList = try #require(
+            CadenceOrderReassignment.neighbourStep(moving: .habits, by: 1, within: rows)
+        )
+        #expect(overTheWholeList.dragged == .focus)
+        #expect(overTheWholeList.target == .habits)
+
+        // And Focus's own Move Up was the **same** pair, which is why one fix answers both halves
+        // of the ticket: the two enabled items a user could reach for wrote one identical order.
+        let focusUp = try #require(CadenceOrderReassignment.neighbourStep(moving: .focus, by: -1, within: rows))
+        #expect(focusUp.dragged == overTheWholeList.dragged)
+        #expect(focusUp.target == overTheWholeList.target)
+
+        let written = try #require(
+            CadenceSidebarLayoutPreferenceStore.order(
+                in: .declared,
+                moving: overTheWholeList.dragged,
+                before: overTheWholeList.target
+            )
+        )
+        #expect(written != rows, "the tap wrote nothing at all, so this ticket described something else")
+
+        // Nothing reads the difference: neither sidebar group, nor the Settings list itself.
+        for group in CadenceSidebarLayout.NavGroup.allCases {
+            #expect(
+                CadenceSidebarLayout.resolvedDestinations(
+                    in: group,
+                    customisable: CadenceSidebarLayout.customisableDestinations,
+                    storedOrder: written
+                ) == CadenceSidebarLayout.destinations(in: group),
+                "a footer glyph moved inside the stored order changed what \(group) draws"
+            )
+        }
+        #expect(
+            CadenceSidebarLayoutPreferenceStore.orderedCustomisableDestinations(for: .init(order: written)) == rows
+        )
+    }
+
+    /// The iOS half of T-1292, pinned on the source for the same reason T-1287's macOS half is: the
+    /// alternative is a SwiftUI snapshot.
+    ///
+    /// Two things are asserted, and they are different claims. **The menu exists only on an
+    /// orderable row** — branched, not greyed, because two items that can never become enabled are
+    /// worse than a long press that opens nothing, and because the Mac's Settings row answers the
+    /// same question by dropping the handle rather than disabling it. **The greying is derived from
+    /// `neighbourStep`**, the primitive the move itself calls, rather than re-answered as
+    /// `rows.first`/`rows.last`; the re-answer is what was wrong, not the list it was answered over.
+    @Test func theIOSMoveMenuIsOfferedOnlyWhereAMoveExists() throws {
+        let file = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSidebarLayoutSettingsSection.swift")
+        )
+        let section = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSidebarLayoutSettingsSection: View", in: file)
+        )
+
+        // One menu in the file, and it is inside the orderable branch.
+        #expect(CadenceSourceScan.matchCount("contextMenu", in: section) == 1)
+        let row = try #require(CadenceSourceScan.declarationBody("private func row(", in: section))
+        #expect(row.contains("if CadenceSidebarLayout.isOrderable(destination) {"))
+        #expect(row.contains(".contextMenu {"))
+        #expect(CadenceSourceScan.matchCount("\\.disabled\\(", in: row) == 2)
+
+        // Both items grey themselves by asking whether the move exists.
+        #expect(row.contains("!canMove(destination, by: -1, in: orderable)"))
+        #expect(row.contains("!canMove(destination, by: 1, in: orderable)"))
+        let canMove = try #require(CadenceSourceScan.declarationBody("private func canMove(", in: section))
+        #expect(canMove.contains("CadenceOrderReassignment.neighbourStep("))
+        #expect(canMove.contains("within: orderable"))
+
+        // The rule is not answered a second time anywhere in the file.
+        #expect(!section.contains("rows.first == destination"))
+        #expect(!section.contains("rows.last == destination"))
+
+        // And the list the menu measures in is the shared predicate's, not a hand-written one.
+        #expect(section.contains("rows.filter { CadenceSidebarLayout.isOrderable($0) }"))
+    }
 }
 
 #if os(macOS)

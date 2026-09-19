@@ -23,6 +23,30 @@ enum CadenceScheduleSupport {
 
     static var calendarHourCount: Int { calendarEndHour - calendarStartHour }
 
+    /// The minute grid a time lands on when the user places it by hand. **Two numbers, and the
+    /// difference is the gesture rather than the platform (T-1293).**
+    ///
+    /// The Mac's timeline drag sets *both ends* of a block in one gesture, with a live preview the
+    /// user can nudge before releasing, under a pointer that resolves a 5-minute step at any hour
+    /// height the canvas offers. Five is also the shortest block the canvas can draw
+    /// (`TimelineDayRange.minimumDuration`), so a coarser grid would take 10-, 20- and 25-minute
+    /// blocks away from the one gesture that can make them. iOS's timeline never drags: it taps or
+    /// drops, which commits a *start* with no preview and no chance to adjust, on a 58pt hour row
+    /// where five minutes is under five points — narrower than the finger that is hiding it.
+    ///
+    /// So they are not two answers to one question. They are one rule — *snap to what the input can
+    /// actually aim at* — and the app already agrees with itself on both sides of it: every typed
+    /// time control on the phone (`CadenceStartTimeFieldRow`) offers exactly the touch grid, and
+    /// the Mac's own stepper moves in quarter hours while its canvas resolves finer, which is the
+    /// ordinary relationship between a keyboard control and direct manipulation.
+    ///
+    /// **The limit of the claim:** an iPad driven by a trackpad gets the touch grid anyway, because
+    /// the surface is chosen when the view is built and cannot ask what is touching it. The picker
+    /// beside it offers quarter hours on that device too, so the coarse answer is at least the one
+    /// the rest of the screen can express.
+    static let pointerTimeGridMinutes = 5
+    static let touchTimeGridMinutes = 15
+
     // `includeCompleted` is deliberately **not** defaulted on any function below.
     //
     // There were five siblings over the same data carrying three different default polarities
@@ -127,14 +151,16 @@ enum CadenceScheduleSupport {
     /// second copy of it is how the tap and the drop come to disagree about which quarter-hour the
     /// same pixel is.
     ///
-    /// `snapMinutes` is the grid the answer lands on — 15 on iOS's day column, which is the
-    /// resolution its blocks are drawn and edited at. The clamp keeps the answer inside a row the
-    /// canvas actually has, and stops `endHour` short by one snap so a block seeded at the very
-    /// bottom still has somewhere to be.
+    /// `snapMinutes` is the grid the answer lands on. It defaults to `touchTimeGridMinutes`, which
+    /// is the grid of every caller this function has — iOS's day-column tap and the dropped `+` —
+    /// and which is the resolution its blocks are drawn and edited at; `pointerTimeGridMinutes` is
+    /// the other half of that rule and is documented beside it. The clamp keeps the answer inside a
+    /// row the canvas actually has, and stops `endHour` short by one snap so a block seeded at the
+    /// very bottom still has somewhere to be.
     static func timelineMinute(
         atY y: CGFloat,
         hourHeight: CGFloat,
-        snapMinutes: Int = 15,
+        snapMinutes: Int = touchTimeGridMinutes,
         startHour: Int = calendarStartHour,
         endHour: Int = calendarEndHour
     ) -> Int {

@@ -158,20 +158,68 @@ struct TimelineMetricsTests {
 
     // MARK: - 5. Snapping behavior at grid boundaries
 
-    @Test func snapFiveKeepsExactIncrementsAndFloorsOffIncrements() {
+    @Test func theCanvasGridKeepsExactIncrementsAndFloorsOffIncrements() {
         let metrics = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: 60)
-        #expect(metrics.snap5(600) == 600)
-        #expect(metrics.snap5(605) == 605)
-        #expect(metrics.snap5(604) == 600)
-        #expect(metrics.snap5(601) == 600)
-        #expect(metrics.snap5(609) == 605)
+        #expect(metrics.snapToGrid(600) == 600)
+        #expect(metrics.snapToGrid(605) == 605)
+        #expect(metrics.snapToGrid(604) == 600)
+        #expect(metrics.snapToGrid(601) == 600)
+        #expect(metrics.snapToGrid(609) == 605)
+    }
+
+    /// **The two platforms snap to different grids on purpose (T-1293).**
+    ///
+    /// The Mac drags — both ends of a block in one gesture, previewed before it commits, under a
+    /// pointer — so its grid is also the shortest block the drag can make, and that is the shortest
+    /// block the canvas draws. iOS taps and drops: one *start*, no preview, on a 58pt hour row
+    /// where five minutes is under five points. One rule, *snap to what the input can aim at*, and
+    /// two answers to it.
+    ///
+    /// This test exists to make a convergence deliberate rather than tidy. Anyone who makes these
+    /// two numbers equal has to come here and say which gesture changed, and the last assertion is
+    /// the one that costs something: the phone's typed picker offers exactly the minutes the
+    /// phone's timeline can produce, so raising the touch grid strands times the picker can no
+    /// longer re-select and lowering it strands times the timeline can no longer reach.
+    @Test func theTwoTimelineGridsDifferBecauseTheGesturesDo() throws {
+        #expect(CadenceScheduleSupport.pointerTimeGridMinutes == 5)
+        #expect(CadenceScheduleSupport.touchTimeGridMinutes == 15)
+
+        // macOS's canvas asks the pointer grid, through `snapToGrid` and through the y-based form
+        // every drag, drop and resize on that surface actually calls.
+        let metrics = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: 60)
+        #expect(metrics.snapToGrid(609) == 605)
+        #expect(metrics.snappedMinute(fromY: 609) == 605)
+
+        // The shortest block a drag can make is the shortest block the canvas can draw. Coarsen the
+        // pointer grid alone and the minimum becomes unreachable by the one gesture that creates
+        // blocks; fine it alone and a drag can ask for a block shorter than the canvas draws.
+        #expect(TimelineDayRange.minimumDuration == CadenceScheduleSupport.pointerTimeGridMinutes)
+
+        // iOS's tap and its dropped `+` both land on the touch grid, which is the shared
+        // function's default. On the pointer grid the same pixel would read 70.
+        #expect(CadenceScheduleSupport.timelineMinute(atY: 71, hourHeight: 58) == 60)
+        #expect(
+            CadenceScheduleSupport.timelineMinute(
+                atY: 71,
+                hourHeight: 58,
+                snapMinutes: CadenceScheduleSupport.pointerTimeGridMinutes
+            ) == 70
+        )
+
+        // And the phone's typed control offers exactly the grid its timeline produces.
+        let picker = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceStartTimeFieldRow.swift")
+        )
+        #expect(picker.contains("by: CadenceScheduleSupport.touchTimeGridMinutes"))
+        #expect(!picker.contains("by: 15"), "the picker re-typed the grid it shares with the timeline")
     }
 
     @Test func snappedMinuteFromYMatchesExactHourBoundaryAndJustOffBoundary() {
         let metrics = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: 60)
         // Exactly on an hour boundary (10:00 == minute 600, y == 600 at hourHeight 60).
         #expect(metrics.snappedMinute(fromY: CGFloat(600)) == 600)
-        // Just one pixel off should still floor to the nearest 5-minute grid line.
+        // Just one pixel off should still floor to the canvas's grid line (five minutes: see
+        // `theTwoTimelineGridsDifferBecauseTheGesturesDo`).
         #expect(metrics.snappedMinute(fromY: CGFloat(601)) == 600)
         #expect(metrics.snappedMinute(fromY: CGFloat(604)) == 600)
         #expect(metrics.snappedMinute(fromY: CGFloat(606)) == 605)

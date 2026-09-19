@@ -40,7 +40,9 @@ struct CadenceRadiusControlSweepTests {
     /// through in the type's own doc comment above. Held as file+line so a *different* line in the
     /// same file — a genuine control-radius site added later — is not swept under the same excuse.
     static let exemptions: Set<ExemptSite> = [
-        ExemptSite(file: "Cadence/macOS/Views/TimelineMetrics.swift", line: 280),
+        // 280 until T-1293 named the snap grid seven lines above it. An exemption anchored to a
+        // line number moves whenever anything above it does; see T-1297.
+        ExemptSite(file: "Cadence/macOS/Views/TimelineMetrics.swift", line: 287),
         ExemptSite(file: "Cadence/macOS/Editor/MarkdownEditorTextViewDecorations.swift", line: 221),
     ]
 
