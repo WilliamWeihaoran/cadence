@@ -178,6 +178,23 @@ struct iOSSchedulePanel: View {
     /// `CadenceScheduleSupport.initialTimelineHour`; this pane always shows today, so it always
     /// takes the "current hour, one hour of context above it" branch.
     ///
+    /// **It keeps the clock, and that is a decision rather than an oversight** ([[T-1281]]).
+    /// T-1271 put "the span's first timed item" *above* "now" on the Calendar's timeline, and the
+    /// obvious reading is that this pane is one surface behind. It is not, because the two rules
+    /// are answering about different spans. The Calendar draws a week the user navigated to: "now"
+    /// is one column in seven there and may not be drawn at all, so the earliest block is the only
+    /// thing that reliably says where the content is. This pane draws **one** column and it is
+    /// always today — "now" is not a column here, it is the subject — and the red rule this pane
+    /// also draws is standing in it, saying why the view is where it is. The day's first block
+    /// winning would mean a pane opened at 09:00 all afternoon, with the hours you are actually in
+    /// scrolled off the bottom, which is the same complaint T-1271 fixed pointing the other way.
+    /// A pane with nothing on it opens on the empty hour you are in, which reads as "nothing on
+    /// now" — true, and one flick from the rest of the day.
+    ///
+    /// So `firstTimedMinute` is deliberately **not** passed, and `showsToday: true` is the whole
+    /// argument list. The two iPad timelines share the arithmetic and differ in which rung it
+    /// lands on, because they differ in what they are showing.
+    ///
     /// Driven by the scroll view's own reported content height rather than `onAppear`, for the
     /// reason `ecaf80f` records: `onAppear` can run before the content has a size, and a scroll
     /// against nothing silently does nothing while looking like it worked. Nothing here is written

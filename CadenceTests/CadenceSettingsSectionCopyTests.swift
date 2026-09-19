@@ -635,27 +635,38 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceSourceScan.matchCount("gently highlight", in: mac) == 1)
     }
 
-    /// **T-696/T-697, as T-1273 left them.** iOS's subtitle carries both fixes: "on weekdays" for
-    /// the band's real gate, and a second sentence for the reach T-697 found. That reach was two
-    /// readers — the slot arithmetic behind "Ready to Schedule", and `initialTimelineHour` — and
-    /// T-1273 deleted the first along with the stack that was its only caller. The sentence names
-    /// the one that is left, and still says "every day" rather than repeating "on weekdays",
-    /// because `initialTimelineHour` never checked the calendar.
+    /// **T-696/T-697, as T-1273 and T-1281 left them.** iOS's subtitle carries both fixes: "on
+    /// weekdays" for the band's real gate, and a second sentence for the reach T-697 found. That
+    /// reach was two readers — the slot arithmetic behind "Ready to Schedule", and
+    /// `initialTimelineHour` — and T-1273 deleted the first along with the stack that was its only
+    /// caller.
     ///
-    /// The second half pins that the deleted clause is *gone*, not merely no longer first: a
-    /// subtitle still advertising a stack the user cannot find is the failure the removal was for.
+    /// **T-1281 rewrote the sentence that was left.** It used to say the opening hour "uses this
+    /// window every day", which was true of a two-rung rule; T-1271 put the span's first timed item
+    /// above both rungs, so this window is now reached only by a column that shows neither today
+    /// nor anything timed. The third `#expect` is the one that matters: "every day" is the
+    /// overclaim, and a sentence that reacquires it is a sentence that has stopped describing
+    /// `initialTimelineHour`.
+    ///
+    /// The "Ready to Schedule" half pins that the deleted clause is *gone*, not merely no longer
+    /// first: a subtitle still advertising a stack the user cannot find is the failure the removal
+    /// was for.
     @Test func theIOSWorkHoursSentenceNamesTheWeekendGapAndTheSchedulingReach() throws {
         let phone = try Self.strippedSource(at: Self.workHoursSurfaces[1])
         #expect(
             phone.contains(
                 "Text(\"Calendar day columns gently highlight \\(workHoursLabel) on weekdays. " +
-                "The day timeline's opening hour uses this window every day.\")"
+                "A day column showing neither today nor anything timed opens at the start of this window.\")"
             ),
             "the iOS work-hours subtitle no longer names both the weekday gate and the scheduling reach"
         )
         #expect(
             !phone.contains("Ready to Schedule"),
             "the iOS work-hours subtitle still names the stack T-1273 removed"
+        )
+        #expect(
+            !phone.contains("uses this window every day"),
+            "the iOS work-hours subtitle claims the opening hour again, which is the third rung now"
         )
     }
 

@@ -461,6 +461,13 @@ private struct iOSDormantCalendarLinkRow: View {
 /// that resolved the window for it and the slot arithmetic behind both are all gone with the Today
 /// Timeline tab's staging area. The sentence is shorter by one clause and no longer promises a
 /// surface the user cannot find.
+///
+/// **T-1281: it is the third rung, not the rule.** The sentence said the opening hour "uses this
+/// window every day", which was true while `initialTimelineHour` had two rungs. T-1271 put the
+/// span's first timed item above both, so this window is now reached only by a column with nothing
+/// timed on it *and* no "now" to honour — a day the user scrolled to, that is empty. Saying "every
+/// day" promised a control over every timeline the setting has not had since, which is the same
+/// overclaim "Weekly calendar views" was on the Mac.
 private struct iOSCalendarWorkHoursSection: View {
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey)
     private var startMinute = CalendarWorkHoursPreferences.defaultStartMinute
@@ -492,7 +499,7 @@ private struct iOSCalendarWorkHoursSection: View {
                             Text(CadenceCalendarSettingsCopy.workdayBoundaryTitle)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Calendar day columns gently highlight \(workHoursLabel) on weekdays. The day timeline's opening hour uses this window every day.")
+                            Text("Calendar day columns gently highlight \(workHoursLabel) on weekdays. A day column showing neither today nor anything timed opens at the start of this window.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)

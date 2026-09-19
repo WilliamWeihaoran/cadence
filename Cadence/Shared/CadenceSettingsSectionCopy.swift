@@ -73,11 +73,15 @@ nonisolated enum CadenceCalendarSettingsCopy {
     /// `CalendarWorkHoursPreferences.shouldShowHighlight(on:)`, which is false on Saturday and
     /// Sunday, and neither surface said "weekdays". iOS's sentence additionally used to describe
     /// only the band (T-697), leaving out that the same window governs where "Ready to Schedule"
-    /// proposed times and where a non-today day column opens — on *every* day, not just weekdays,
-    /// since that half of the rule never checks the calendar. **T-1273** deleted "Ready to
-    /// Schedule", so the second sentence now names only the opening hour; the "every day" it is
-    /// still spelled with belongs to `initialTimelineHour`, which never checked the calendar
-    /// either.
+    /// proposed times and where a non-today day column opens. **T-1273** deleted "Ready to
+    /// Schedule", so the second sentence names only the opening hour.
+    ///
+    /// **T-1281 took "every day" out of it.** That phrase was accurate while
+    /// `CadenceScheduleSupport.initialTimelineHour` had two rungs and this window was the one a
+    /// non-today column always took. T-1271 added the span's first timed item above both, so the
+    /// window is now the *third* rung — reached only by a column that is neither today's nor
+    /// holding anything timed — and a sentence promising the opening hour of every day was
+    /// claiming more control than the setting has. The replacement names the condition instead.
     static let workdayBoundaryTitle = "Workday boundary"
 
     /// The accessible name of the calendar row's link menu — an icon-only control on both
