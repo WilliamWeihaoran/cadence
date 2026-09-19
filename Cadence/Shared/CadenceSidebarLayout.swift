@@ -40,18 +40,17 @@ enum CadenceSidebarLayout {
         .focus, .settings
     ]
 
-    /// The rows Settings → Sidebar offers a handle for: a visibility toggle, a place in the stored
-    /// order, and a colour override.
+    /// The rows Settings → Sidebar offers controls for: a visibility toggle and a colour override
+    /// for all of them, and a place in the stored order for the ones `isOrderable(_:)` admits.
     ///
     /// The nav group plus Focus. Settings itself is deliberately absent — it is the only door to
     /// the screen that would hide it — and `.lists`, `.search` and `.inbox` are absent because they
     /// are not rows (see `navigationDestinations`).
     ///
-    /// Focus is in the set for the half of it that still bites: hiding Focus drops its footer
-    /// glyph, which it has always done. Its *order* is inert, because the footer draws
-    /// `footerGlyphDestinations` in that list's own order — noted in `docs/TODO.md` T-1287 rather
-    /// than quietly removed, since taking the row out of Settings would also take Focus's colour
-    /// picker with it.
+    /// Focus is in the set for the two halves of it that bite: hiding Focus drops its footer glyph,
+    /// and the colour picker tints it. What it is **not** offered is a place in the order — see
+    /// `isOrderable(_:)`, which is the T-1287 half. Taking the whole row out of Settings would have
+    /// taken the two working controls with it, so the row stays and the handle goes.
     ///
     /// Spelled here rather than derived from macOS's `SidebarStaticDestination`, which is not
     /// visible to iOS; `CadenceSidebarLayoutTests` pins the two against each other.
@@ -76,6 +75,30 @@ enum CadenceSidebarLayout {
     /// the footer. That is a coincidence of the current membership, not a licence to delete either
     /// list: a future destination placed below the lists goes in `secondaryDestinations` alone.
     static let footerGlyphDestinations: [CadenceFeatureDestination] = [.settings, .focus]
+
+    /// Whether Settings may offer this destination a **place in the order**, as distinct from the
+    /// visibility toggle and the colour picker, which every `customisableDestinations` member gets.
+    ///
+    /// A footer glyph has none. The footer draws `footerGlyphDestinations` in that list's own
+    /// order — Settings leading, Focus trailing — so a Focus row dragged to the top of the Settings
+    /// list redrew in exactly the same place and moved nothing, for as long as the footer row has
+    /// existed (T-1287). The handle was the untrue part, not the row.
+    ///
+    /// **Derived from the two lists that decide the rendering rather than spelled as a third**, so
+    /// the handle cannot go on claiming an order the footer does not read: a destination promoted
+    /// out of the footer into a labelled row gets its handle back by moving between those lists,
+    /// and one demoted into the footer loses it the same way.
+    ///
+    /// The other direction was considered and rejected: teaching the footer to sort by the stored
+    /// order. `.settings` is deliberately absent from `customisableDestinations` — it is the only
+    /// door to the screen that would hide it — so it never appears in the stored order at all, and
+    /// there is nothing in the Settings list to drag Focus above or below to say where it goes in
+    /// the footer. Any rule mapping a nav-row drag onto a two-glyph footer would be invented rather
+    /// than expressed, and it would re-seat the shipped `[.settings, .focus]` for every user who
+    /// has ever dragged anything, to swap two icons nobody asked to swap.
+    static func isOrderable(_ destination: CadenceFeatureDestination) -> Bool {
+        customisableDestinations.contains(destination) && !footerGlyphDestinations.contains(destination)
+    }
 
     /// `secondaryDestinations` minus the ones that become footer glyphs, in the original order.
     /// Empty today; see `footerGlyphDestinations`.

@@ -23,8 +23,16 @@ struct iOSCalendarDayInspector: View {
     @State private var selectedBundle: TaskBundle?
     @State private var selectedEvent: iOSCalendarEventSelection?
 
+    /// The day this pane is built for, as a `yyyy-MM-dd` key — the pane's own date, never
+    /// `DateFormatters.todayKey()`. Handed to the rows that are here *because* their do date is
+    /// this day, so the sun pill stops repeating the date the grid beside or above this pane has
+    /// lit up. See `iOSTaskRow.dayAlreadyStatedBySurface`.
+    private var dayKey: String {
+        DateFormatters.dateKey(from: date)
+    }
+
     private var timedTasks: [AppTask] {
-        tasks.filter { $0.scheduledDate == DateFormatters.dateKey(from: date) && $0.scheduledStartMin >= 0 }
+        tasks.filter { $0.scheduledDate == dayKey && $0.scheduledStartMin >= 0 }
     }
 
     private var hasItems: Bool {
@@ -98,22 +106,35 @@ struct iOSCalendarDayInspector: View {
                         }
 
                         if !timedTasks.isEmpty {
+                            // Admitted by `scheduledDate == dayKey`, so every row here is do-dated
+                            // this pane's day and the sun pill can only restate it.
                             iOSCalendarInspectorSection(title: "Timed", color: Theme.blue) {
                                 ForEach(timedTasks) { task in
-                                    iOSTaskRow(task: task)
+                                    iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey)
                                 }
                             }
                         }
 
                         if !unscheduledTasks.isEmpty {
+                            // `CadenceScheduleSupport.unscheduledTasksByDate` buckets on
+                            // `scheduledDate`, so the same holds: this section *is* "do-dated this
+                            // day", spelled once in its heading instead of once per row.
                             iOSCalendarInspectorSection(title: "Do Date", color: Theme.purple) {
                                 ForEach(unscheduledTasks) { task in
-                                    iOSTaskRow(task: task)
+                                    iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey)
                                 }
                             }
                         }
 
                         if !dueOnlyTasks.isEmpty {
+                            // **No `dayAlreadyStatedBySurface` here, deliberately** (T-1289).
+                            // `CadenceScheduleSupport.dueOnlyTasks(on:from:)` admits a task on
+                            // `dueDate == dateKey && scheduledDate != dateKey`: it is in this
+                            // section for its *deadline*, and its do date, when it has one, is some
+                            // other day. The equality could therefore never fire — and the pill it
+                            // would be aimed at is the one fact this section does not state, that
+                            // work due today is planned for Thursday. Passing the argument here
+                            // would be dead code that reads like a rule.
                             iOSCalendarInspectorSection(title: "Due", color: Theme.red) {
                                 ForEach(dueOnlyTasks) { task in
                                     iOSTaskRow(task: task)

@@ -291,14 +291,24 @@ struct iOSCalendarMonthAgendaList: View {
             )
 
             ForEach(section.items) { item in
-                agendaRow(item)
+                agendaRow(item, dayKey: section.key)
             }
         }
         .opacity(calendar.isDate(section.date, equalTo: monthDate, toGranularity: .month) ? 1 : 0.55)
     }
 
+    /// `dayKey` is the section's own key, threaded down for `iOSTaskRow`'s
+    /// `dayAlreadyStatedBySurface` (T-1289). A scrolling agenda still names each day: the header
+    /// directly above these rows reads `SAT · AUG 15`, exactly as a Calendar Board day column's
+    /// does, so this is the board's case and not a range.
+    ///
+    /// The equality is safe on the bucketing too. `CadenceScheduleSupport.monthTasksByDate` files a
+    /// task under its `scheduledDate` when it has one and only falls back to `dueDate` when it does
+    /// not — so a task listed here either *is* do-dated this section's day, or has no do date and
+    /// so no sun pill to lose. A task do-dated Thursday and due Saturday appears under Thursday,
+    /// where the pill is the section's own day, and its flag is untouched either way.
     @ViewBuilder
-    private func agendaRow(_ item: iOSCalendarBoardColumnItem) -> some View {
+    private func agendaRow(_ item: iOSCalendarBoardColumnItem, dayKey: String) -> some View {
         switch item {
         case .event(let eventItem):
             Button {
@@ -326,7 +336,7 @@ struct iOSCalendarMonthAgendaList: View {
             .buttonStyle(.iosPressable)
 
         case .task(let task):
-            iOSTaskRow(task: task)
+            iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey)
         }
     }
 

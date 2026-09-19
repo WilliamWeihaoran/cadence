@@ -383,6 +383,87 @@ struct SidebarStaticDestinationBridgeTests {
         #expect(CadenceSidebarLayout.navRow(for: .lists) == .lists)
     }
 
+    /// **T-1287: Settings offered Focus a drag handle that moved nothing.**
+    ///
+    /// The footer renders `footerGlyphDestinations` in that list's own order — Settings leading,
+    /// Focus trailing — so the stored order has never reached it. Focus's Settings row drew the
+    /// grip and was `.draggable` anyway, and dragging it redrew the list in exactly the same
+    /// sequence.
+    ///
+    /// **The row stays.** Its visibility toggle drops the footer glyph and its colour picker tints
+    /// it, and both are live; removing the row to remove the handle would have taken those with it.
+    /// So `customisableDestinations` still admits Focus and `isOrderable` is the narrower question
+    /// the handle asks.
+    ///
+    /// The rejected alternative was teaching the footer to sort by the stored order. `.settings` is
+    /// deliberately not customisable — the only door to the screen that would hide it — so it never
+    /// appears in the stored order and there is nothing in the Settings list to drag Focus past to
+    /// say where it goes down there. That is asserted below, because it is the reason the cheaper
+    /// branch is also the correct one rather than merely the cheaper one.
+    @Test func settingsOffersAHandleOnlyForRowsTheStoredOrderActuallyMoves() {
+        for destination in CadenceSidebarLayout.navigationDestinations {
+            let expected = CadenceSidebarLayout.customisableDestinations.contains(destination)
+                && !CadenceSidebarLayout.footerGlyphDestinations.contains(destination)
+            #expect(CadenceSidebarLayout.isOrderable(destination) == expected)
+        }
+
+        // The six labelled nav rows order; the two footer glyphs do not.
+        #expect(CadenceSidebarLayout.navigationDestinations.filter(CadenceSidebarLayout.isOrderable)
+                == [.today, .allTasks, .calendar, .notes, .goals, .habits])
+        #expect(!CadenceSidebarLayout.isOrderable(.focus))
+        #expect(!CadenceSidebarLayout.isOrderable(.settings))
+
+        // Not a row at all is not orderable either, so the handle cannot appear beside something
+        // the sidebar never draws.
+        for destination in [CadenceFeatureDestination.lists, .search, .inbox] {
+            #expect(!CadenceSidebarLayout.isOrderable(destination))
+        }
+
+        // Why the footer cannot be taught to honour the order: the one destination whose place in
+        // it a drag would have to express is absent from everything the user can drag.
+        #expect(!CadenceSidebarLayout.customisableDestinations.contains(.settings))
+        #expect(CadenceSidebarLayout.footerGlyphDestinations.contains(.settings))
+    }
+
+    /// The Settings row's half of T-1287, pinned on the source because the alternative is a
+    /// SwiftUI snapshot: the grip and the `.draggable` are gated on `isOrderable`, and the **drop
+    /// target is not**.
+    ///
+    /// The ungated drop is deliberate and is the part most likely to be "tidied" away. The drop
+    /// means *insert before this row*, so the last row in the Settings list is the only way to say
+    /// "go to the bottom of the nav group" — and Focus sorts last there, because
+    /// `orderedCustomisableDestinations` walks the secondary group after the primary one. Gate the
+    /// drop as well and the bottom slot becomes unreachable.
+    @Test func theSettingsRowGatesTheGripAndTheDragButNotTheDrop() throws {
+        let file = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsSupportViews.swift")
+        )
+        let rowView = try #require(
+            CadenceSourceScan.declarationBody("struct SidebarTabSettingsRow: View", in: file)
+        )
+
+        // The question is asked of the shared layout, not answered a second time here.
+        #expect(rowView.contains("CadenceSidebarLayout.isOrderable(destination.feature)"))
+
+        // Exactly one `.draggable`, and it is on the orderable branch.
+        #expect(CadenceSourceScan.matchCount("draggable\\(", in: rowView) == 1)
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: rowView))
+        #expect(body.contains("if isOrderable {"))
+        #expect(body.contains("row.draggable(destination.rawValue)"))
+
+        // The shared row carries the drop target and no drag, so a row without a handle can still
+        // be dropped onto.
+        let row = try #require(CadenceSourceScan.declarationBody("private var row: some View", in: rowView))
+        #expect(row.contains(".dropDestination(for: String.self)"))
+        #expect(!row.contains("draggable"),
+                "the drag moved back onto the unconditional path, so Focus can be dragged again")
+
+        // The grip itself is gated too — a row that cannot be dragged must not draw the affordance
+        // for dragging.
+        #expect(row.contains("if isOrderable {"))
+        #expect(CadenceSourceScan.matchCount("line\\.3\\.horizontal", in: row) == 1)
+    }
+
     /// Every row the sidebar draws must resolve to a selection, or it is a button that navigates
     /// nowhere.
     @Test func everyNavRowResolvesToASelection() {

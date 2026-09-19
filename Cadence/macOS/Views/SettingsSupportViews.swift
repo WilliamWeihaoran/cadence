@@ -246,7 +246,40 @@ struct SidebarTabSettingsRow: View {
 
     @State private var isDropTarget = false
 
+    /// Whether this row gets the grip and the `.draggable` — `CadenceSidebarLayout.isOrderable`,
+    /// asked of the shared destination rather than answered again here (T-1287).
+    ///
+    /// Focus drew both and moved nothing: the sidebar footer renders
+    /// `CadenceSidebarLayout.footerGlyphDestinations` in that list's own order, so dragging the
+    /// Focus row anywhere redrew this list identically and left the two footer glyphs where they
+    /// were. The row itself stays — its visibility toggle drops the glyph and its colour picker
+    /// tints it, and both are live — so what goes is the affordance for the one thing it cannot do.
+    private var isOrderable: Bool {
+        CadenceSidebarLayout.isOrderable(destination.feature)
+    }
+
+    /// What the row says under its label.
+    ///
+    /// A footer glyph says *where* it is visible, which is also why it has no grip: it is not one
+    /// of the ordered rows. The hidden sentence is shared, because hidden is hidden either way.
+    private var statusText: String {
+        guard isVisible else { return "Hidden from sidebar" }
+        return isOrderable ? "Visible in sidebar" : "Visible in the sidebar footer"
+    }
+
+    /// Draggable only where the drag lands somewhere, and branched here rather than inside a
+    /// closure: `.draggable` has no disabled state, and a drag that lifts the row and drops it back
+    /// where it started is a worse answer than one the row never offered. Both branches render the
+    /// same `row`, so the two spellings cannot drift.
     var body: some View {
+        if isOrderable {
+            row.draggable(destination.rawValue)
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: 14) {
             RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
                 .fill(Color(hex: tintHex).opacity(0.15))
@@ -261,7 +294,7 @@ struct SidebarTabSettingsRow: View {
                 Text(destination.label)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.text)
-                Text(isVisible ? "Visible in sidebar" : "Hidden from sidebar")
+                Text(statusText)
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.dim)
             }
@@ -277,9 +310,11 @@ struct SidebarTabSettingsRow: View {
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
+            if isOrderable {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+            }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 2)
@@ -291,7 +326,12 @@ struct SidebarTabSettingsRow: View {
             RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .strokeBorder(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
         )
-        .draggable(destination.rawValue)
+        // **The drop target stays on every row, Focus included**, and that is not an oversight.
+        // The drop is "insert *before* this row", so the last row in the list is the only way to
+        // say "go to the bottom of the nav group" — Focus sorts last here
+        // (`orderedCustomisableDestinations` walks the secondary group after the primary one), so
+        // taking its drop target away would make the bottom slot unreachable. Dropping *onto* an
+        // unorderable row moves the dragged row; it does not claim to move this one.
         .dropDestination(for: String.self) { items, _ in
             guard let raw = items.first, let dragged = SidebarStaticDestination(rawValue: raw) else { return false }
             onDropBefore(dragged)

@@ -273,6 +273,57 @@ struct CadenceSharedTaskRowJobsTests {
         )
     }
 
+    /// **T-1289: the other two iOS panes that name a day, asked one site at a time.**
+    ///
+    /// The calendar's day inspector and its month agenda drew the sun pill on rows already gathered
+    /// under the day the pane names. Four call sites, and the answer is **not** the same at all
+    /// four — which is why this pins counts per file rather than sweeping for the argument:
+    ///
+    /// - The inspector's **Timed** and **Do Date** sections admit on `scheduledDate == dayKey`
+    ///   (`timedTasks`' own filter, and `CadenceScheduleSupport.unscheduledTasksByDate`'s bucket),
+    ///   so the pill there can only restate the pane. Two sites, suppressed.
+    /// - The inspector's **Due** section is the one that must keep it.
+    ///   `CadenceScheduleSupport.dueOnlyTasks(on:from:)` admits on
+    ///   `dueDate == dateKey && scheduledDate != dateKey`, so a row here is present for its
+    ///   deadline and its do date, if any, is a *different* day. The equality could never fire, and
+    ///   the pill it would aim at carries the fact the section does not state.
+    /// - The month agenda is a scrolling list, but each section carries the board's own day header
+    ///   above its rows, so it is the day-column case. `monthTasksByDate` files a task under
+    ///   `scheduledDate` first and only falls back to `dueDate` when there is none, so a listed row
+    ///   either is do-dated that section's day or has no do date to suppress.
+    @Test func theCalendarDayPanesStateTheirOwnDayAndTheDueSectionStillDoesNot() throws {
+        // Three `iOSTaskRow(` call sites in the inspector, and exactly two of them suppress.
+        let inspector = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarInspectorView.swift"))
+        #expect(inspector.contains("struct iOSCalendarDayInspector: View"), "non-vacuity: wrong file read")
+        #expect(inspector.components(separatedBy: "iOSTaskRow(").count - 1 == 3)
+        #expect(inspector.contains("iOSTaskRow(task: task)"),
+                "the Due section stopped drawing the do-date pill for a day it never named")
+
+        try expectOccurrences(
+            of: "dayAlreadyStatedBySurface: dayKey",
+            at: [
+                "Cadence/iOS/iOSCalendarInspectorView.swift": 2,
+                "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": 1,
+            ]
+        )
+
+        // And the key is the pane's, never the clock's. A day inspector parked on last Tuesday
+        // states last Tuesday; `todayKey()` here would suppress the pill on the wrong rows.
+        try expectOccurrences(
+            of: "todayKey",
+            at: [
+                "Cadence/iOS/iOSCalendarInspectorView.swift": 0,
+                "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": 0,
+            ]
+        )
+        #expect(inspector.contains("DateFormatters.dateKey(from: date)"))
+
+        let agenda = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarMonthAgendaViews.swift"))
+        #expect(agenda.contains("agendaRow(item, dayKey: section.key)"),
+                "the month agenda's row no longer reads the day from the section that heads it")
+    }
+
+
     // MARK: - T-173: what a board card lists beneath the task
 
     private func task(unfinished: Int, finished: Int = 0, isDone: Bool = false) -> AppTask {

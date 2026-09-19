@@ -1257,15 +1257,20 @@ struct CadenceTodayListGroupingTests {
 
         // And nowhere else on iOS, which is the scope half of the ticket: the same pill on Tasks,
         // Lists and search results is carrying real information, and none of those surfaces names a
-        // day. The other two files are the board's, and they predate this: `iOSBoardTaskCard`
+        // day. Two of the other files are the board's, and they predate this: `iOSBoardTaskCard`
         // declares the knob and `iOSCalendarBoardView` hands it a *column's* `dateKey` — a
-        // different surface naming a different day, by the same equality.
+        // different surface naming a different day, by the same equality. The last two are the
+        // calendar's day inspector and month agenda, which T-1272 left alone and T-1289 answered
+        // site by site; `CadenceSharedTaskRowJobsTests` holds the per-site reasoning, including the
+        // inspector's Due section, which names a *deadline* and so keeps its pill.
         let sweep = try swiftFiles(under: "Cadence/iOS").filter { path in
             try strippingComments(sourceFile(path)).contains("dayAlreadyStatedBySurface")
         }
         #expect(Set(sweep) == [
             "Cadence/iOS/iOSBoardCards.swift",
             "Cadence/iOS/iOSCalendarBoardView.swift",
+            "Cadence/iOS/iOSCalendarInspectorView.swift",
+            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
             "Cadence/iOS/iOSTaskGroupSection.swift",
             "Cadence/iOS/iOSTaskViews.swift",
             "Cadence/iOS/iOSTodayTaskSections.swift"
