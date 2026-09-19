@@ -32,6 +32,20 @@ area.tasks = (area.tasks ?? []) + [task]
 - Keep computed properties side-effect free.
 - Relationship inverse behavior matters during deletion. If touching relationships, inspect deletion helpers and any crash reports involving CoreData/SwiftData faults.
 
+## A New `@Model` Needs A CloudKit Console Deploy
+
+SwiftData auto-creates a record type in the **Development** database as a debug build runs; the
+**Production** database gets it only when a human presses *Deploy Schema Changes* in the CloudKit
+Console. That is owner-only, Production has been live since 2026-09-05, and between the commit and
+that press a TestFlight or App Store build talks to a schema with no `CD_<NewModel>` — that one
+type silently does not sync while every older type syncs normally. Add the type, then record that a
+deploy is owed in `docs/apple-release-readiness.md`, which is where the owner reads it.
+
+**Degrade to a device-local fallback and add no notice.** Nothing can tell "not deployed" from "no
+row has synced yet", which is also every new device for the first seconds of every CloudKit launch
+— the two-readings problem the tag seed records (T-528). `CadenceSidebarLayoutPreferenceStore`
+(T-1274) is the worked example and `CadenceSidebarLayoutPreferenceTests` pins it; T-1290 is why.
+
 ## Important Models
 
 `CadenceSchema.swift` is the authoritative list. Live models:

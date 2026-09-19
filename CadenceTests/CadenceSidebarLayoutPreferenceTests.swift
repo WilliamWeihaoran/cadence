@@ -262,6 +262,109 @@ struct CadenceSidebarLayoutPreferenceTests {
         #expect(try context.fetch(FetchDescriptor<SidebarLayoutPreference>()).isEmpty)
     }
 
+    // MARK: - T-1290: the record type that Production does not have yet
+
+    /// **What a device reads before anyone presses *Deploy Schema Changes*.**
+    ///
+    /// SwiftData creates a record type in the **Development** database as a debug build runs; the
+    /// **Production** database gets it only when a human deploys the schema in the CloudKit
+    /// Console. Until then a TestFlight or App Store build talks to a Production schema with no
+    /// `CD_SidebarLayoutPreference`, and this row alone does not sync while every older type does.
+    ///
+    /// **The degradation is testable because the app never asks CloudKit anything here.** A
+    /// `ModelContainer` builds its local store from `CadenceSchema.schema`, not from whatever the
+    /// Production schema happens to hold, so the entity exists locally either way and every read
+    /// on this path is a local fetch. That makes "the record type is not deployed" arrive at this
+    /// store as *zero rows* — the same shape as "no device has written one yet" — which is exactly
+    /// what this suite can construct. `CadenceTestStore.container()` is `cloudKitDatabase: .none`,
+    /// a store with no mirroring at all, and the layout still survives a write and a re-read from
+    /// a **second** `ModelContext`, so what is asserted below is the store's answer rather than
+    /// one live object's memory of it.
+    ///
+    /// What this does **not** measure is the mirroring layer: whether a refused export of an
+    /// unknown record type stays confined to this type. Nothing in a unit test can reach that.
+    @Test func anUndeployedRecordTypeIsJustAnEmptyFetchAndTheLayoutSurvivesLocally() throws {
+        // The read half: nothing arrived, nothing is device-local either, and the sidebar still
+        // gets a complete drawable layout rather than an error or a blank one.
+        let nothing = CadenceSidebarLayoutPreferenceStore.layout(from: [])
+        #expect(nothing == .declared)
+        #expect(
+            Set(CadenceSidebarLayoutPreferenceStore.orderedCustomisableDestinations(for: nothing))
+                == CadenceSidebarLayout.customisableDestinations,
+            "a device with no synced row lost rows from its sidebar"
+        )
+
+        // The write half: the user's own drag lands and stays landed on this device.
+        let container = try CadenceTestStore.container()
+        try CadenceSidebarLayoutPreferenceStore.write(
+            .init(order: [.habits, .today], hidden: [.goals]),
+            records: [],
+            in: ModelContext(container),
+            now: Date(timeIntervalSince1970: 10)
+        )
+
+        let stored = try ModelContext(container).fetch(FetchDescriptor<SidebarLayoutPreference>())
+        #expect(stored.count == 1)
+        let drawn = CadenceSidebarLayoutPreferenceStore.layout(
+            from: stored,
+            legacyOrderRaw: "calendar,notes",
+            legacyHiddenRaw: "today"
+        )
+        #expect(drawn.order == [.habits, .today])
+        #expect(drawn.hidden == [.goals], "the device-local fallback outranked the row this device wrote")
+    }
+
+    /// **And what happens on the day the schema is finally deployed.**
+    ///
+    /// Each device wrote its own row while the type was invisible to the others, so the deploy
+    /// delivers two rows at once. That is the duplicate case the reader was built for and not a new
+    /// one: newest `updatedAt` wins, every device picks the same row, and the loser is **left
+    /// alone** rather than deleted — deleting a row another device is mid-sync with is how a
+    /// preference becomes a data-loss bug, and it is why a late deploy costs a layout at most and
+    /// never a store.
+    @Test func theDeployArrivingLateReconcilesBothDevicesRowsWithoutDeletingEither() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let fromTheMac = SidebarLayoutPreference(
+            orderRaw: "habits,today",
+            updatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let fromTheiPhone = SidebarLayoutPreference(
+            orderRaw: "notes,today",
+            hiddenRaw: "goals",
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+        context.insert(fromTheMac)
+        context.insert(fromTheiPhone)
+        try context.save()
+
+        let arrived = try context.fetch(FetchDescriptor<SidebarLayoutPreference>())
+        #expect(arrived.count == 2)
+        let resolved = CadenceSidebarLayoutPreferenceStore.layout(
+            from: arrived,
+            legacyOrderRaw: "calendar",
+            legacyHiddenRaw: "habits"
+        )
+        #expect(resolved.order == [.notes, .today], "the older row won")
+        #expect(resolved.hidden == [.goals])
+
+        // The next edit goes to the row every device already agreed on, so no third row appears.
+        try CadenceSidebarLayoutPreferenceStore.write(
+            .init(order: [.today, .notes], hidden: []),
+            records: arrived,
+            in: context,
+            now: Date(timeIntervalSince1970: 300)
+        )
+
+        let after = try ModelContext(container).fetch(FetchDescriptor<SidebarLayoutPreference>())
+        #expect(after.count == 2, "the reconciliation minted or removed a row")
+        #expect(
+            after.contains { $0.orderRaw == "habits,today" },
+            "the losing row was deleted instead of being left alone"
+        )
+        #expect(CadenceSidebarLayoutPreferenceStore.layout(from: after).order == [.today, .notes])
+    }
+
     // MARK: - The model is additive
 
     /// CloudKit has been in Production since 2026-09-05 with no `SchemaMigrationPlan`, so the
