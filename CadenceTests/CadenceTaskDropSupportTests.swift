@@ -385,4 +385,122 @@ struct CadenceTaskDropSupportTests {
 
         #expect(seed.doDateKey == "")
     }
+
+    // MARK: - What a region offers (T-1276)
+
+    /// The Today page's whole task region offers the day and **only** the day.
+    ///
+    /// Naming a list would be inventing one: Today draws work from all of them, so no list is
+    /// shared by the rows the region encloses. The rule a container may follow is the header rule —
+    /// what every row under it shares — and on Today that is exactly "planned for today".
+    @Test func theTodayRegionOffersTheDayAndNoList() {
+        let key = CadenceTaskDropSupport.dropKey(forGroup: .todayDate(.plannedToday))
+        #expect(key == "date:today")
+
+        let seed = CadenceTaskDropSupport.seed(forDropKey: key ?? "", todayKey: "2026-09-18")
+        #expect(seed.doDateKey == "2026-09-18")
+        #expect(seed.container == .inbox)
+        #expect(seed.dueDateKey == "")
+        #expect(seed.priority == .none)
+
+        // The caption prints no placement at all, because the key names no list — the composer's
+        // own chip is where the Inbox default belongs.
+        #expect(
+            CadenceTaskDropSupport.placementCaption(
+                forDropKey: key ?? "",
+                todayKey: "2026-09-18",
+                listName: ""
+            ) == "Do Today"
+        )
+    }
+
+    /// **No region may seed a priority.** `dropKey(forGroup:)` keeps `.priority` reachable for the
+    /// one surface that groups by the field itself; a panel-sized target is not that surface, and
+    /// a judgement about importance is not something a release point can express.
+    @Test func noRegionIdentitySeedsAPriority() {
+        let regionIdentities: [CadenceTaskGroupDropIdentity] = [
+            .todayDate(.plannedToday),
+            .list(key: "inbox", name: "Inbox"),
+            .timelineDay(dateKey: "2026-09-20"),
+            .completion
+        ]
+        for identity in regionIdentities {
+            let key = CadenceTaskDropSupport.dropKey(forGroup: identity) ?? ""
+            #expect(!key.contains("priority:"), "\(identity) seeds a priority")
+            #expect(
+                CadenceTaskDropSupport.seed(forDropKey: key, todayKey: "2026-09-18").priority == .none
+            )
+        }
+    }
+
+    // MARK: - The timeline's extra half: a time
+
+    /// A day column names its day; the minute is appended once the finger has come down, because a
+    /// column is one target and every minute in it is the same one.
+    @Test func aTimelineColumnOffersItsDayAndTheDroppedMinute() {
+        let key = CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-20"))
+        #expect(key == "date:2026-09-20")
+
+        let withMinute = CadenceTaskDropSupport.key(key ?? "", appendingSlotMinute: 9 * 60 + 30)
+        #expect(withMinute == "date:2026-09-20|time:570")
+
+        let seed = CadenceTaskDropSupport.seed(forDropKey: withMinute, todayKey: "2026-09-18")
+        #expect(seed.doDateKey == "2026-09-20")
+        #expect(seed.scheduledStartMin == 570)
+        // A timeline names no list. See `dropKey(forGroup:)`.
+        #expect(seed.container == .inbox)
+    }
+
+    /// **A time with no day is not a time.** `TaskCreationService` drops `scheduledStartMin` when
+    /// the do date is empty, so a seed that kept one would show the user an hour the store then
+    /// threw away — and the caption is derived from the seed, so it would print it too. The
+    /// reachable route is a column whose day has gone by: `dateValue` drops the day and the minute
+    /// is left behind.
+    @Test func aMinuteWithoutADayIsDropped() {
+        let stale = CadenceTaskDropSupport.key(
+            CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-01")) ?? "",
+            appendingSlotMinute: 600
+        )
+        let seed = CadenceTaskDropSupport.seed(forDropKey: stale, todayKey: "2026-09-18")
+
+        #expect(seed.doDateKey == "")
+        #expect(seed.scheduledStartMin == -1)
+        #expect(CadenceTaskDropSupport.placementCaption(forDropKey: stale, todayKey: "2026-09-18", listName: "").isEmpty)
+    }
+
+    /// The caption carries the hour, and carries it **with** the day rather than beside it: the
+    /// drop seeds both or neither, so a third `·`-separated field would read as a third promise.
+    @Test func theTimelineCaptionNamesTheHourWithTheDay() {
+        let key = CadenceTaskDropSupport.key("date:today", appendingSlotMinute: 14 * 60 + 15)
+        let caption = CadenceTaskDropSupport.placementCaption(
+            forDropKey: key,
+            todayKey: "2026-09-18",
+            listName: ""
+        )
+
+        #expect(caption.hasPrefix("Do Today at "))
+        #expect(caption.contains(TimeFormatters.timeString(from: 14 * 60 + 15)))
+        #expect(!caption.contains("·"))
+    }
+
+    /// Out-of-range text is ignored rather than clamped: a clamp would invent 00:00 for a key
+    /// nobody meant to write, while an ignored part leaves the drop seeding the day alone.
+    @Test func anUnreadableMinuteLeavesTheDayAlone() {
+        for part in ["time:abc", "time:-30", "time:1440"] {
+            let seed = CadenceTaskDropSupport.seed(
+                forDropKey: "date:today|\(part)",
+                todayKey: "2026-09-18"
+            )
+            #expect(seed.doDateKey == "2026-09-18")
+            #expect(seed.scheduledStartMin == -1, "\(part) was not ignored")
+        }
+    }
+
+    /// `key(_:appendingSlotMinute:)` is a no-op on every target that has no slot rule, which is all
+    /// of them but one — so the one composition path is safe for every call site.
+    @Test func appendingNoMinuteChangesNothing() {
+        #expect(CadenceTaskDropSupport.key("list:inbox", appendingSlotMinute: nil) == "list:inbox")
+        #expect(CadenceTaskDropSupport.key("", appendingSlotMinute: 600).isEmpty)
+        #expect(CadenceTaskDropSupport.key("list:inbox", appendingSlotMinute: -1) == "list:inbox")
+    }
 }

@@ -275,6 +275,31 @@ struct iOSTodayTaskSections: View {
     }
 }
 
+extension View {
+    /// Today's scrolling task region as a destination for a dropped `+` (T-1276).
+    ///
+    /// **What it claims is the day, and only the day: "Do Today".** That is the one attribute every
+    /// row on this page shares — Today groups by list, and the lists differ — so it is exactly what
+    /// the group-header rule permits a container to hand over, read out of the same
+    /// `CadenceTaskDropSupport.dropKey(forGroup:)` table as everything else. It deliberately names
+    /// no list: the page draws work from all of them, and picking one would be inventing a
+    /// placement the region never named. A task seeded this way lands in the Inbox, planned for
+    /// today, and is therefore still on the page it was dropped on — the outcome
+    /// `CadenceTaskGroupDropIdentity.todayList` exists to guarantee for the groups inside it.
+    ///
+    /// Anything narrower still wins: the list groups, their headers and their rows are all smaller
+    /// frames inside this one, and `CadenceCaptureDropHitTest` takes the smallest. So this catches
+    /// the gap between groups, the run of blank space under the last one, and the empty state —
+    /// which is the whole of the complaint.
+    ///
+    /// Declared here, beside the list both hosts draw, rather than typed at the two call sites: the
+    /// phone's Today and the iPad column have drifted apart on every number this file has since
+    /// taken back, and "which region a drop lands in" is not a thing they may answer differently.
+    func iOSTodayTaskRegionDropTarget() -> some View {
+        iOSNewTaskDropRegion(.todayDate(.plannedToday))
+    }
+}
+
 /// The list a past-due summary card opens, as Today presents it.
 ///
 /// It is `iOSListDetailView` and nothing else — the same page the Lists tab pushes, at the page the

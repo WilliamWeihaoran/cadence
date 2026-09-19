@@ -34,6 +34,10 @@ final class iOSCaptureInteraction {
     private(set) var selection: CadenceCaptureAction?
     /// Which registered drop target the finger is over, while dragging.
     private(set) var dropTargetID: UUID?
+    /// The minute inside that target the finger is over, on the one kind of target where *where*
+    /// matters — a calendar day column. `nil` everywhere else, and on no target at all. See
+    /// `CadenceCaptureDropSlotRule`.
+    private(set) var dropSlotMinute: Int?
 
     /// What a finished press asked for, waiting for the host that presents it.
     ///
@@ -68,6 +72,7 @@ final class iOSCaptureInteraction {
         finger = location
         selection = nil
         dropTargetID = nil
+        dropSlotMinute = nil
         phase = .pressing
         armHold()
     }
@@ -115,8 +120,7 @@ final class iOSCaptureInteraction {
     private func reset() {
         phase = .idle
         selection = nil
-        iOSCaptureDragTargeting.shared.currentTargetID = nil
-        dropTargetID = nil
+        clearTargeting()
     }
 
     private func armHold() {
@@ -149,21 +153,36 @@ final class iOSCaptureInteraction {
         switch phase {
         case .palette:
             selection = CadenceCapturePaletteGeometry.action(atOffset: paletteOffset, metrics: metrics)
-            dropTargetID = nil
-            iOSCaptureDragTargeting.shared.currentTargetID = nil
+            clearTargeting()
         case .dragging:
             selection = nil
             let target = CadenceCaptureDropHitTest.target(
                 at: finger,
                 among: iOSNewTaskDropFrameRegistry.shared.candidates()
             )
+            // Resolved here, once per moved touch, rather than by each target reading the finger:
+            // a published point every drop target watched would re-render every registered surface
+            // on every frame of the drag, which is the churn `iOSCaptureDragTargeting`'s split from
+            // the frame registry exists to prevent. One reader — the ghost that is open — and it
+            // reads a minute rather than a coordinate.
+            let slotMinute = target.flatMap {
+                iOSNewTaskDropFrameRegistry.shared.slotMinute(for: $0, at: finger)
+            }
             dropTargetID = target
+            dropSlotMinute = slotMinute
             iOSCaptureDragTargeting.shared.currentTargetID = target
+            iOSCaptureDragTargeting.shared.currentSlotMinute = slotMinute
         case .idle, .pressing:
             selection = nil
-            dropTargetID = nil
-            iOSCaptureDragTargeting.shared.currentTargetID = nil
+            clearTargeting()
         }
+    }
+
+    private func clearTargeting() {
+        dropTargetID = nil
+        dropSlotMinute = nil
+        iOSCaptureDragTargeting.shared.currentTargetID = nil
+        iOSCaptureDragTargeting.shared.currentSlotMinute = nil
     }
 }
 
@@ -179,6 +198,13 @@ final class iOSCaptureDragTargeting {
     static let shared = iOSCaptureDragTargeting()
 
     var currentTargetID: UUID?
+    /// The minute the finger is over inside a **slotted** target, and `nil` for every other kind.
+    ///
+    /// Read only by the ghost that is currently open — `iOSNewTaskDropTargetModifier` reaches for
+    /// it behind an `isCustomDragTarget` check, so a target that is not the one under the finger
+    /// never observes it and never re-renders for it. That guard is load-bearing: this changes on
+    /// every frame of a drag down a day column.
+    var currentSlotMinute: Int?
 
     private init() {}
 }
@@ -196,9 +222,16 @@ final class iOSNewTaskDropFrameRegistry {
     struct Placement {
         var dropKey: String
         var listName: String
+        /// Non-nil only where the vertical position inside the frame is itself part of the answer —
+        /// a calendar day column, whose axis is a time. See `CadenceCaptureDropSlotRule`.
+        var slot: CadenceCaptureDropSlotRule?
     }
 
     private var frames: [UUID: CGRect] = [:]
+    /// The global Y of the **whole** target, before the enclosing scroll view clipped `frames`.
+    /// Only a slotted target reads it, and only it could: a minute measured from a clipped top
+    /// would slide by a whole scroll offset. See `setFrame(_:slotOriginY:for:)`.
+    private var slotOrigins: [UUID: CGFloat] = [:]
     private var placements: [UUID: Placement] = [:]
     /// Ids whose surface is currently the one on screen. See `iOSNewTaskDropTargetsAreLive`.
     private var live: Set<UUID> = []
@@ -207,13 +240,22 @@ final class iOSNewTaskDropFrameRegistry {
 
     private init() {}
 
-    func setFrame(_ frame: CGRect, for id: UUID) {
+    /// `frame` is what a finger can reach — clipped to the scroll view showing it — and
+    /// `slotOriginY` is the top of the target itself. They differ only inside a scroller, and only
+    /// a slotted target cares that they do.
+    func setFrame(_ frame: CGRect, slotOriginY: CGFloat, for id: UUID) {
         if frames[id] == nil { order.append(id) }
         frames[id] = frame
+        slotOrigins[id] = slotOriginY
     }
 
-    func setPlacement(dropKey: String, listName: String, for id: UUID) {
-        placements[id] = Placement(dropKey: dropKey, listName: listName)
+    func setPlacement(
+        dropKey: String,
+        listName: String,
+        slot: CadenceCaptureDropSlotRule? = nil,
+        for id: UUID
+    ) {
+        placements[id] = Placement(dropKey: dropKey, listName: listName, slot: slot)
     }
 
     func setLive(_ isLive: Bool, for id: UUID) {
@@ -222,19 +264,39 @@ final class iOSNewTaskDropFrameRegistry {
 
     func unregister(_ id: UUID) {
         frames[id] = nil
+        slotOrigins[id] = nil
         placements[id] = nil
         live.remove(id)
         order.removeAll { $0 == id }
     }
 
+    /// **A target with nothing to hand over is not a target.** The empty key is how a call site
+    /// says "not today" about a destination it still draws — the calendar timeline's columns are
+    /// the case: the same view is a live target on a future day and no target at all on a day that
+    /// has gone by, and re-registering it under a new id every time the grid scrolls would be a
+    /// view-identity change to express a fact about a date. It is the same rule
+    /// `CadenceTaskDropSupport.dropKey(forGroup:)` states with `nil`, applied one layer down.
     func candidates() -> [CadenceCaptureDropHitTest.Candidate] {
         order.compactMap { id in
-            guard live.contains(id), let frame = frames[id] else { return nil }
+            guard live.contains(id),
+                  let frame = frames[id],
+                  !frame.isNull,
+                  let placement = placements[id],
+                  !placement.dropKey.isEmpty
+            else { return nil }
             return CadenceCaptureDropHitTest.Candidate(id: id, frame: frame)
         }
     }
 
     func placement(for id: UUID) -> Placement? { placements[id] }
+
+    /// The minute `point` picks out inside a slotted target, or `nil` when the target has no slot
+    /// rule. The offset is taken from the registered frame, which is the only thing here that knows
+    /// where the column starts on screen — so no view has to be asked anything at drop time.
+    func slotMinute(for id: UUID, at point: CGPoint) -> Int? {
+        guard let rule = placements[id]?.slot, let originY = slotOrigins[id] else { return nil }
+        return rule.minute(atOffsetY: point.y - originY)
+    }
 }
 
 extension EnvironmentValues {
@@ -333,19 +395,27 @@ struct iOSCaptureRadialMenuButton: View {
             }
             .onEnded { value in
                 interaction.moved(to: value.location)
+                // Both read before `ended()`, which resets them: the release point has already
+                // been resolved by the `moved(to:)` above, and the minute is as much a part of
+                // "where this landed" as the target is.
                 let target = interaction.dropTargetID
-                commit(interaction.ended(), droppedOn: target)
+                let slotMinute = interaction.dropSlotMinute
+                commit(interaction.ended(), droppedOn: target, atMinute: slotMinute)
             }
     }
 
-    private func commit(_ outcome: CadenceCapturePressOutcome, droppedOn target: UUID?) {
+    private func commit(
+        _ outcome: CadenceCapturePressOutcome,
+        droppedOn target: UUID?,
+        atMinute slotMinute: Int?
+    ) {
         switch outcome {
         case .tap:
-            interaction.request(.task(seed(for: .tap, droppedOn: nil)))
+            interaction.request(.task(seed(for: .tap, droppedOn: nil, atMinute: nil)))
         case .action(let action):
             interaction.request(kind(for: action))
         case .drop:
-            interaction.request(.task(seed(for: .drop, droppedOn: target)))
+            interaction.request(.task(seed(for: .drop, droppedOn: target, atMinute: slotMinute)))
         case .dismissed, .none:
             break
         }
@@ -353,7 +423,7 @@ struct iOSCaptureRadialMenuButton: View {
 
     private func kind(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind {
         switch action {
-        case .task: return .task(seed(for: .action(.task), droppedOn: nil))
+        case .task: return .task(seed(for: .action(.task), droppedOn: nil, atMinute: nil))
         case .event: return .event
         case .note: return .note
         }
@@ -370,12 +440,17 @@ struct iOSCaptureRadialMenuButton: View {
     /// reverses.
     private func seed(
         for outcome: CadenceCapturePressOutcome,
-        droppedOn target: UUID?
+        droppedOn target: UUID?,
+        atMinute slotMinute: Int?
     ) -> CadenceTaskComposerSeed {
         let placement = target.flatMap { iOSNewTaskDropFrameRegistry.shared.placement(for: $0) }
+        // The minute is appended to the key rather than written onto the seed afterwards, so it
+        // travels the same `dropKey` → `seed` → caption path as everything else a drop inherits —
+        // which is what stops the ghost's words and the composer's chips disagreeing about the
+        // hour. `key(_:appendingSlotMinute:)` is a no-op on every target without a slot rule.
         return CadenceCaptureSeedResolver.seed(
             for: outcome,
-            dropKey: placement?.dropKey,
+            dropKey: placement.map { CadenceTaskDropSupport.key($0.dropKey, appendingSlotMinute: slotMinute) },
             todayKey: DateFormatters.todayKey()
         )
     }

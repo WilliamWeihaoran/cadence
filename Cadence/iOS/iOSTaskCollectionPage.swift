@@ -98,6 +98,15 @@ struct iOSTaskCollectionPage: View {
             .padding(.bottom, metrics.bottomPadding)
         }
         .scrollIndicators(.hidden)
+        // **The panel is a destination too, not only the rows and headers in it** (T-1276). The
+        // identity is the one the "Active" header and the empty state already take, so all three
+        // promise the same thing and the narrower two keep winning on area: Inbox's region offers
+        // "Inbox", and All Tasks' `.completion` resolves to no key, so that page registers no
+        // region at all — a status is not a placement, whatever size the frame is.
+        //
+        // On the scroll view rather than its content: the content is taller than the page, and a
+        // region has to publish the rectangle a finger can actually be in.
+        .iOSNewTaskDropRegion(collection.activeGroupIdentity)
         .background(Theme.bg.ignoresSafeArea())
         // **Access can change while this page is on screen, and on iOS it changes somewhere else.**
         // Appearance alone is not enough: revoking Reminders access happens in the Settings app,

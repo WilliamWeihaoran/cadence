@@ -359,6 +359,10 @@ struct iOSTodayView: View {
                 .padding(iOSTodayTaskSections.contentPadding(layout: .twoPane))
         }
         .scrollIndicators(.hidden)
+        // On the scroll view, not on its content: the content is taller than the pane, so a region
+        // registered around it would publish a frame running off the bottom of the screen and open
+        // its ghost somewhere nobody can see. This frame is the pane the finger is actually over.
+        .iOSTodayTaskRegionDropTarget()
         .background(Theme.surface)
     }
 

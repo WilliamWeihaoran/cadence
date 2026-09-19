@@ -117,6 +117,36 @@ enum CadenceScheduleSupport {
         return min(max(minute / 60, startHour), lastRow)
     }
 
+    /// The minute a point `y` points at, on a day canvas whose hour rows are `hourHeight` tall.
+    ///
+    /// The inverse of the `yOffset` every timed surface already draws its blocks with, and the one
+    /// answer to "where in the day did that land". It was private to `iOSCalendarTimelineDayColumn`,
+    /// which is fine while a tap is the only gesture that asks — a tap is resolved inside the view
+    /// that was tapped. A **dropped `+`** is resolved outside every view, against published frames
+    /// (`CadenceCaptureDropHitTest`), so the same arithmetic has to be reachable from there; and a
+    /// second copy of it is how the tap and the drop come to disagree about which quarter-hour the
+    /// same pixel is.
+    ///
+    /// `snapMinutes` is the grid the answer lands on — 15 on iOS's day column, which is the
+    /// resolution its blocks are drawn and edited at. The clamp keeps the answer inside a row the
+    /// canvas actually has, and stops `endHour` short by one snap so a block seeded at the very
+    /// bottom still has somewhere to be.
+    static func timelineMinute(
+        atY y: CGFloat,
+        hourHeight: CGFloat,
+        snapMinutes: Int = 15,
+        startHour: Int = calendarStartHour,
+        endHour: Int = calendarEndHour
+    ) -> Int {
+        let snap = max(1, snapMinutes)
+        let minimum = startHour * 60
+        guard hourHeight > 0 else { return minimum }
+        let raw = minimum + Int((max(0, y) / hourHeight) * 60)
+        let snapped = (raw / snap) * snap
+        let maximum = max(minimum, endHour * 60 - snap)
+        return min(max(snapped, minimum), maximum)
+    }
+
     static func tasks(
         inHourRow hour: Int,
         from tasks: [AppTask],

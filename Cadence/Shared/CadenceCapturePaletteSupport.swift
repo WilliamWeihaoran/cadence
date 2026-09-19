@@ -383,6 +383,53 @@ nonisolated enum CadenceCaptureDropHitTest: Sendable {
     }
 }
 
+/// How a region-sized drop target turns *where in it* the finger came down into the minute it
+/// seeds.
+///
+/// Every other drop target answers the same thing wherever you release inside it — a task row's
+/// list does not change halfway down the row. A calendar day column is the exception the vocabulary
+/// had no room for: its whole vertical axis **is** a time, so one registration has to be able to
+/// give a different answer per pixel. Carrying the geometry as a value rather than a closure is
+/// what keeps the answer testable off-device and identical to the one the column's own tap gives —
+/// both go through `CadenceScheduleSupport.timelineMinute(atY:…)`.
+///
+/// `offsetY` is measured from the **top of the registered frame**, which is what the registry can
+/// compute from a global finger position without the column being asked anything.
+struct CadenceCaptureDropSlotRule: Equatable, Sendable {
+    var hourHeight: CGFloat
+    var snapMinutes: Int
+    var startHour: Int
+    var endHour: Int
+
+    init(
+        hourHeight: CGFloat,
+        snapMinutes: Int = 15,
+        startHour: Int = CadenceScheduleSupport.calendarStartHour,
+        endHour: Int = CadenceScheduleSupport.calendarEndHour
+    ) {
+        self.hourHeight = hourHeight
+        self.snapMinutes = snapMinutes
+        self.startHour = startHour
+        self.endHour = endHour
+    }
+
+    func minute(atOffsetY offsetY: CGFloat) -> Int {
+        CadenceScheduleSupport.timelineMinute(
+            atY: offsetY,
+            hourHeight: hourHeight,
+            snapMinutes: snapMinutes,
+            startHour: startHour,
+            endHour: endHour
+        )
+    }
+
+    /// Where the ghost for `minute` sits inside the frame — the inverse, so the block a drop draws
+    /// and the minute it seeds cannot drift apart.
+    func offsetY(forMinute minute: Int) -> CGFloat {
+        CGFloat(minute - startHour * 60) / 60 * hourHeight
+    }
+}
+
 // MARK: - What a finished press seeds
 
 /// The composer seed a finished capture press commits to.

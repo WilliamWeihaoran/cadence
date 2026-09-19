@@ -501,6 +501,75 @@ struct CadenceCapturePaletteTests {
         #expect(CadenceCaptureDropHitTest.target(at: .zero, among: []) == nil)
     }
 
+    /// **A row inside a panel wins however the two were registered** ([[T-1276]]).
+    ///
+    /// The region targets T-1276 added are by construction the largest thing under the finger, and
+    /// a scroll view registers before the rows inside it — so "smallest area" and "latest
+    /// registration" now point in opposite directions on every task surface, and the tie-break must
+    /// not be the one that decides. Drawn from both orders because the registration order of two
+    /// views in a SwiftUI tree is not something a call site is in a position to guarantee.
+    @Test func theMoreSpecificTargetWinsHoweverTheyWereRegistered() {
+        let panel = CadenceCaptureDropHitTest.Candidate(
+            id: UUID(),
+            frame: CGRect(x: 0, y: 0, width: 390, height: 700)
+        )
+        let row = CadenceCaptureDropHitTest.Candidate(
+            id: UUID(),
+            frame: CGRect(x: 16, y: 120, width: 358, height: 52)
+        )
+        let overTheRow = CGPoint(x: 100, y: 140)
+
+        #expect(CadenceCaptureDropHitTest.target(at: overTheRow, among: [panel, row]) == row.id)
+        #expect(CadenceCaptureDropHitTest.target(at: overTheRow, among: [row, panel]) == row.id)
+        // And the panel still answers for the blank space the rows do not cover, which is the whole
+        // of what T-1276 was asked for.
+        #expect(CadenceCaptureDropHitTest.target(at: CGPoint(x: 100, y: 600), among: [panel, row]) == panel.id)
+    }
+
+    // MARK: - Where in a slotted region the finger came down
+
+    /// A day column's y axis is a time, so one registration has to answer differently per pixel —
+    /// and it has to answer with the same quarter-hour the column's own tap does, which is why both
+    /// go through `CadenceScheduleSupport.timelineMinute(atY:…)`.
+    @Test func aSlotRuleResolvesTheSameMinuteTheColumnsOwnTapWould() {
+        let rule = CadenceCaptureDropSlotRule(hourHeight: 58)
+
+        #expect(rule.minute(atOffsetY: 0) == 0)
+        #expect(rule.minute(atOffsetY: 58 * 9) == 9 * 60)
+        // Snapped to the quarter-hour the blocks are drawn and edited at, downwards.
+        #expect(rule.minute(atOffsetY: 58 * 9 + 20) == 9 * 60 + 15)
+        #expect(
+            rule.minute(atOffsetY: 58 * 9.5) ==
+                CadenceScheduleSupport.timelineMinute(atY: 58 * 9.5, hourHeight: 58)
+        )
+    }
+
+    /// Above the canvas and below it both clamp into a row that exists — a finger can be dragged
+    /// past either edge, and the last quarter-hour is held back so a seeded block has somewhere to
+    /// be.
+    @Test func aSlotRuleClampsToARowTheCanvasActuallyHas() {
+        let rule = CadenceCaptureDropSlotRule(hourHeight: 58)
+
+        #expect(rule.minute(atOffsetY: -400) == 0)
+        #expect(rule.minute(atOffsetY: 58 * 40) == 24 * 60 - 15)
+    }
+
+    /// The ghost is drawn at the minute it seeds, so the two directions have to be inverses. A
+    /// block promised at 09:30 and drawn at 08:00 is the one place in this feature where position
+    /// would lie.
+    @Test func theGhostsOffsetAndTheSeededMinuteAreInverses() {
+        let rule = CadenceCaptureDropSlotRule(hourHeight: 58)
+        for minute in stride(from: 0, to: 24 * 60, by: 15) {
+            #expect(rule.minute(atOffsetY: rule.offsetY(forMinute: minute)) == minute)
+        }
+    }
+
+    /// A zero-height canvas has no axis to read, so it answers its first hour rather than dividing
+    /// by zero. Reachable: `onGeometryChange` publishes before a pinch-driven `hourHeight` settles.
+    @Test func aCollapsedSlotRuleAnswersItsFirstHour() {
+        #expect(CadenceCaptureDropSlotRule(hourHeight: 0).minute(atOffsetY: 300) == 0)
+    }
+
     /// Equal-sized overlapping targets go to the later registration, which is the one drawn on top.
     @Test func aTieGoesToTheLaterCandidate() {
         let first = UUID()
@@ -638,24 +707,33 @@ struct CadenceCapturePaletteTests {
         #expect(button.contains("CadenceTaskComposerSeed(") == false)
         // And it reads the key off the target it was actually handed. `dropKey: nil` here would
         // compile, would keep every value assertion green, and would make every drop a tap.
-        #expect(button.contains("dropKey: placement?.dropKey"))
+        //
+        // **T-1276 wrapped the read rather than replacing it**: a calendar day column resolves a
+        // minute as well as a day, and the minute is appended to the target's own key by
+        // `CadenceTaskDropSupport.key(_:appendingSlotMinute:)`. `placement.map` is still the only
+        // route from a drop target into a seed, which is what this line exists to hold — a bare
+        // `CadenceTaskComposerSeed(` above already fails, and a `dropKey: nil` would fail here.
+        #expect(button.contains("placement.map { CadenceTaskDropSupport.key($0.dropKey, appendingSlotMinute: slotMinute) }"))
 
         // **Each arm hands the resolver the outcome it really got.** The resolver decides by
         // outcome, so a `.tap` arm that reported `.drop` — or handed over the drag's target —
         // would route the tap straight back through the inheriting branch. That is the shape of
         // the reversal this ticket is undoing, and it is one token wide.
+        //
+        // The minute travels beside the target for the same reason and is pinned the same way: a
+        // `.tap` arm passing `slotMinute` would put an hour on a task nobody dragged anywhere.
         let commit = try cadenceFunctionBody(
-            "private func commit(_ outcome: CadenceCapturePressOutcome, droppedOn target: UUID?)",
+            "private func commit(",
             in: button
         )
-        #expect(commit.contains("seed(for: .tap, droppedOn: nil)"))
-        #expect(commit.contains("seed(for: .drop, droppedOn: target)"))
+        #expect(commit.contains("seed(for: .tap, droppedOn: nil, atMinute: nil)"))
+        #expect(commit.contains("seed(for: .drop, droppedOn: target, atMinute: slotMinute)"))
 
         let kind = try cadenceFunctionBody(
             "private func kind(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind",
             in: button
         )
-        #expect(kind.contains("seed(for: .action(.task), droppedOn: nil)"))
+        #expect(kind.contains("seed(for: .action(.task), droppedOn: nil, atMinute: nil)"))
         #expect(kind.contains("case .event: return .event"))
     }
 

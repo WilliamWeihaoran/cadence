@@ -197,6 +197,38 @@ private struct iOSNewTaskGhostRow: View {
 /// at it is `iOSCaptureInteraction`'s own hit test against `iOSNewTaskDropFrameRegistry` — a
 /// task-reorder or bundle drag is a `Transferable` string travelling through SwiftUI's own
 /// machinery and never touches this registry at all.
+/// Where a create-task drop target draws its ghost, which is a consequence of **what kind of thing
+/// the target is** rather than a style knob.
+///
+/// A row or a header is a line in a list, and the honest picture of a drop on one is a gap opening
+/// under it. A *region* — a whole task panel, a whole day column — is not a line and has no "under
+/// it": appending a ghost below a scroll view's content puts it past the fold, where the drag that
+/// summoned it cannot see it. So the two cases are laid out differently, and the third is different
+/// again because on a timeline the ghost's position is not decoration: the vertical axis is a time,
+/// the drop seeds that time, and drawing the block anywhere else would be the one place in this
+/// feature where position lies.
+enum iOSNewTaskDropGhost: Equatable {
+    /// A gap under the pointed row or header. See `iOSNewTaskDropTargetModifier`.
+    case insertion
+    /// Centred over the region. Nothing about the position is a claim — the caption carries all of
+    /// it — and there is deliberately **no** outline around the region as well: one layer, at one
+    /// radius, and it is the ghost's.
+    case region
+    /// Pinned to the minute the finger is over, on a canvas whose y axis is a time.
+    case slot(CadenceCaptureDropSlotRule)
+}
+
+/// Where a drop target is: the part of it a finger can reach, and — separately — the top of the
+/// whole thing, which is what a slotted minute is measured from. See `setFrame(_:slotOriginY:for:)`.
+///
+/// A file-level type rather than one nested in the modifier, because `onGeometryChange(for:)` wants
+/// a `Sendable` value and a type declared inside a `ViewModifier` picks that modifier's main-actor
+/// isolation up along with it.
+nonisolated private struct iOSNewTaskDropGeometry: Equatable, Sendable {
+    var frame: CGRect
+    var slotOriginY: CGFloat
+}
+
 private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// Evaluated at drop time, not at layout time, so a row whose list or date changed while the
     /// drag was in flight seeds what it now says rather than what it said when it last rendered.
@@ -208,6 +240,7 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// Aligns the ghost with the host row's own content inset, so the gap looks like part of the
     /// list rather than a floating card.
     let horizontalInset: CGFloat
+    let ghost: iOSNewTaskDropGhost
 
     /// Separate from `isCustomDragTarget` so the open/close is driven by an explicit
     /// `withAnimation(.spring(…))`, the same way reorder moves are animated everywhere else.
@@ -219,29 +252,32 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// overlap the visible one and a drag could land on a row nobody can see.
     @Environment(\.iOSNewTaskDropTargetsAreLive) private var isLive
 
+    /// What this target publishes about itself. One `Equatable` value rather than three
+    /// `onChange`s, so a pinch that changes `hourHeight` republishes the slot rule with the key.
+    private struct PublishedPlacement: Equatable {
+        var dropKey: String
+        var listName: String
+        var slot: CadenceCaptureDropSlotRule?
+    }
+
+    private var slotRule: CadenceCaptureDropSlotRule? {
+        guard case .slot(let rule) = ghost else { return nil }
+        return rule
+    }
+
     func body(content: Content) -> some View {
         // Read once per render rather than per event: the drag hit-tests against a registry, so
         // the registry has to have been *told* what this row would seed. SwiftUI re-runs this body
         // when the row's model changes, so the published answer is the same one the row is drawing.
-        let placementKey = dropKey()
-        let placementListName = listName()
+        let published = PublishedPlacement(dropKey: dropKey(), listName: listName(), slot: slotRule)
         let isCustomDragTarget = iOSCaptureDragTargeting.shared.currentTargetID == registrationID
+        // **Behind the targeted check on purpose.** `currentSlotMinute` changes on every frame of a
+        // drag; `@Observable` subscribes a view to what its body actually read, so a target that is
+        // not the one under the finger must not reach for it. Short-circuiting here is what keeps
+        // that churn to the single ghost that is open.
+        let slotMinute = isCustomDragTarget ? iOSCaptureDragTargeting.shared.currentSlotMinute : nil
 
-        return VStack(spacing: 0) {
-            content
-            if showsGhost {
-                iOSNewTaskGhostRow(
-                    caption: CadenceTaskDropSupport.placementCaption(
-                        forDropKey: dropKey(),
-                        todayKey: DateFormatters.todayKey(),
-                        listName: listName()
-                    )
-                )
-                .padding(.horizontal, horizontalInset)
-                .padding(.vertical, 6)
-                .transition(.opacity)
-            }
-        }
+        return layout(content: content, slotMinute: slotMinute)
         // **The target is the whole block, not the glyphs inside it.** Without this a stack only
         // hit-tests where it actually drew something — so `iOSTaskGroupHeader`, an `HStack` of an
         // eyebrow label, a `Spacer` and a count badge, accepted a dropped `+` on the two ends of
@@ -257,13 +293,34 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
         // `UIDragInteraction`'s lift *is* a ~350ms long press, so it wants the same window the
         // palette does and the two cannot share a touch. The `.onDrop` half went with it rather
         // than being left as a second, sourceless path into the same ghost.
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-            iOSNewTaskDropFrameRegistry.shared.setFrame(frame, for: registrationID)
+        .onGeometryChange(for: iOSNewTaskDropGeometry.self) { proxy in
+            let frame = proxy.frame(in: .global)
+            // **Clipped to the scroll view showing it.** A target that is taller than its viewport
+            // — a day column is 24 hours tall — still has a global frame for the half of it that
+            // is scrolled out of sight, and that half sits behind the pinned day-header band and
+            // the page header above it. A finger released up there is not over the column; without
+            // the clip the hit test says it is, and a slotted target then seeds an hour from a
+            // part of the canvas nobody was looking at. `bounds(of:)` is `nil` when there is no
+            // enclosing scroller, which is the ordinary case and needs no clip.
+            guard let visible = proxy.bounds(of: .scrollView) else {
+                return iOSNewTaskDropGeometry(frame: frame, slotOriginY: frame.minY)
+            }
+            return iOSNewTaskDropGeometry(
+                frame: frame.intersection(visible.offsetBy(dx: frame.minX, dy: frame.minY)),
+                slotOriginY: frame.minY
+            )
+        } action: { geometry in
+            iOSNewTaskDropFrameRegistry.shared.setFrame(
+                geometry.frame,
+                slotOriginY: geometry.slotOriginY,
+                for: registrationID
+            )
         }
-        .onChange(of: [placementKey, placementListName], initial: true) { _, _ in
+        .onChange(of: published, initial: true) { _, _ in
             iOSNewTaskDropFrameRegistry.shared.setPlacement(
-                dropKey: placementKey,
-                listName: placementListName,
+                dropKey: published.dropKey,
+                listName: published.listName,
+                slot: published.slot,
                 for: registrationID
             )
         }
@@ -282,6 +339,56 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
             }
         }
     }
+
+    @ViewBuilder
+    private func layout(content: Content, slotMinute: Int?) -> some View {
+        switch ghost {
+        case .insertion:
+            VStack(spacing: 0) {
+                content
+                if showsGhost {
+                    ghostRow(slotMinute: nil)
+                        .padding(.horizontal, horizontalInset)
+                        .padding(.vertical, 6)
+                        .transition(.opacity)
+                }
+            }
+        case .region:
+            // An overlay, so the region's own content neither moves nor resizes when the ghost
+            // opens. A panel that reflowed under the finger would move the very rows the drag is
+            // being aimed between.
+            content.overlay(alignment: .center) {
+                if showsGhost {
+                    ghostRow(slotMinute: nil)
+                        .padding(.horizontal, max(horizontalInset, 16))
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
+        case .slot(let rule):
+            content.overlay(alignment: .top) {
+                if showsGhost {
+                    ghostRow(slotMinute: slotMinute)
+                        .padding(.horizontal, horizontalInset)
+                        .offset(y: rule.offsetY(forMinute: slotMinute ?? rule.startHour * 60))
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+    }
+
+    /// The caption is rebuilt from the same key the drop will commit, minute included, so the words
+    /// under the finger and the chips in the composer cannot come apart.
+    private func ghostRow(slotMinute: Int?) -> some View {
+        iOSNewTaskGhostRow(
+            caption: CadenceTaskDropSupport.placementCaption(
+                forDropKey: CadenceTaskDropSupport.key(dropKey(), appendingSlotMinute: slotMinute),
+                todayKey: DateFormatters.todayKey(),
+                listName: listName()
+            )
+        )
+    }
 }
 
 extension View {
@@ -289,6 +396,7 @@ extension View {
     /// in `CadenceTaskDropSupport`; `listName` resolves the one thing that vocabulary cannot carry.
     func iOSNewTaskDropTarget(
         horizontalInset: CGFloat = 11,
+        ghost: iOSNewTaskDropGhost = .insertion,
         listName: @escaping () -> String = { "" },
         dropKey: @escaping () -> String
     ) -> some View {
@@ -296,7 +404,8 @@ extension View {
             iOSNewTaskDropTargetModifier(
                 dropKey: dropKey,
                 listName: listName,
-                horizontalInset: horizontalInset
+                horizontalInset: horizontalInset,
+                ghost: ghost
             )
         )
     }
@@ -311,17 +420,40 @@ extension View {
     @ViewBuilder
     func iOSNewTaskDropTarget(
         group identity: CadenceTaskGroupDropIdentity?,
-        horizontalInset: CGFloat = 0
+        horizontalInset: CGFloat = 0,
+        ghost: iOSNewTaskDropGhost = .insertion
     ) -> some View {
         if let identity, let key = CadenceTaskDropSupport.dropKey(forGroup: identity) {
             iOSNewTaskDropTarget(
                 horizontalInset: horizontalInset,
+                ghost: ghost,
                 listName: { CadenceTaskDropSupport.listName(forGroup: identity) },
                 dropKey: { key }
             )
         } else {
             self
         }
+    }
+
+    /// The **region** flavour: a whole panel as a destination, for a drop that landed in the right
+    /// neighbourhood without landing on anything in particular (T-1276).
+    ///
+    /// The owner's ask — *"into today's task panel but not necessarily where a task is present"* —
+    /// and the reason it is safe to grant is the header rule one level further out: a region may
+    /// offer exactly what **every** row inside it shares, and nothing else. Today's panel shares a
+    /// day; a list's panel shares a list; All Tasks' shares only "not done", which is not a
+    /// placement, so `dropKey(forGroup:)` refuses it and no target is registered at all.
+    ///
+    /// A row or header inside one of these wins the hit test on area alone —
+    /// `CadenceCaptureDropHitTest` takes the smallest containing frame, and a region is by
+    /// construction the largest thing under the finger — so registration order does not have to be
+    /// arranged, and `theMoreSpecificTargetWinsHoweverTheyWereRegistered` pins that it cannot start
+    /// mattering.
+    func iOSNewTaskDropRegion(
+        _ identity: CadenceTaskGroupDropIdentity?,
+        horizontalInset: CGFloat = 16
+    ) -> some View {
+        iOSNewTaskDropTarget(group: identity, horizontalInset: horizontalInset, ghost: .region)
     }
 }
 #endif

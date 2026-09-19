@@ -55,6 +55,9 @@ struct iOSCompactTodayView: View {
             .padding(iOSTodayTaskSections.contentPadding(layout: .compact))
         }
         .scrollIndicators(.hidden)
+        // The same region the iPad column registers, on the scroll view for the same reason. See
+        // `iOSTodayTaskRegionDropTarget`.
+        .iOSTodayTaskRegionDropTarget()
         .background(Theme.bg.ignoresSafeArea())
     }
 

@@ -361,6 +361,13 @@ struct iOSListDetailView: View {
             .padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)
         }
         .scrollIndicators(.hidden)
+        // **The list itself, for the blank space between its columns** (T-1276) — the same identity
+        // the page's empty state takes above, which is what a page scoped to one list has to give
+        // and all it has: the section headers inside name a column each, and they keep winning on
+        // area wherever one is under the finger.
+        .iOSNewTaskDropRegion(
+            CadenceTaskDropSupport.groupIdentity(container: containerSelection, listName: title)
+        )
     }
 
 }

@@ -28,6 +28,10 @@ enum CadenceTaskGroupDropIdentity: Equatable {
     /// A kanban section inside a list. Carries the list too: a section belongs to one.
     case section(listKey: String, listName: String, name: String)
     case priority(TaskPriority)
+    /// One day column of the calendar timeline. `dateKey` is the column's own `yyyy-MM-dd` day; the
+    /// minute is **not** here, because a column is one registration and the minute is a function of
+    /// where in it the finger came down — see `CadenceCaptureDropSlotRule`.
+    case timelineDay(dateKey: String)
 }
 
 /// What "create a task with the destination's attributes" actually resolves to.
@@ -110,9 +114,11 @@ enum CadenceTaskDropSupport {
             switch kind {
             // Both of these are defined by a day in the past. See `dateValue`.
             case .overdue, .pastDo: return nil
-            // These four named Today's date sections while it had them. Today groups by list only
-            // now, so nothing in the app builds a `.todayDate`; the keys stay because this table is
-            // the vocabulary a drop speaks, not a list of live headers.
+            // `.dueToday` named one of Today's date sections while it had them; Today groups by
+            // list now, so no header builds it. `.plannedToday` is live again, and not as a
+            // header: it is what the **Today page's whole task region** is (T-1276). "A task
+            // dropped anywhere on Today is planned for today" is the one attribute every row on
+            // that page shares, which is precisely the header rule one level further out.
             case .dueToday: return "due:today"
             case .plannedToday: return "date:today"
             }
@@ -139,7 +145,21 @@ enum CadenceTaskDropSupport {
             // `CadenceTaskDisplayGroup.dropKey` with exactly this string. Priority is withheld from
             // a *row's* key because it is a judgement about that one task; a priority group header
             // is the field itself, and dropping on it is asking for it by name.
+            //
+            // **No region may reach this case.** A panel-sized target is not the priority field,
+            // and seeding a judgement from "you released the finger somewhere inside this pane"
+            // is exactly the back door T-1276 was told to keep shut.
             return "priority:\(priority.rawValue)"
+        case .timelineDay(let dateKey):
+            // The day and nothing else. The column names no list — a timeline draws work from
+            // every list at once — so there is nothing else here that is true of every block in
+            // it. The *time* is appended at drop time by `key(_:appendingSlotMinute:)`.
+            //
+            // A day already gone by resolves to nothing, through the same `dateValue` guard a row
+            // in an Overdue group goes through, so the key is still emitted and the caption comes
+            // back empty. The call site is what must not register a past column at all — see
+            // `iOSCalendarTimelineDayColumn`.
+            return "date:\(dateKey)"
         }
     }
 
@@ -148,7 +168,7 @@ enum CadenceTaskDropSupport {
         switch identity {
         case .list(_, let name), .todayList(_, let name): return name
         case .section(_, let listName, _): return listName
-        case .todayDate, .completion, .priority: return ""
+        case .todayDate, .completion, .priority, .timelineDay: return ""
         }
     }
 
@@ -241,7 +261,28 @@ enum CadenceTaskDropSupport {
         if seed.container == .inbox {
             seed.sectionName = TaskSectionDefaults.defaultName
         }
+        // **A time with no day is not a time.** `TaskCreationService` already drops
+        // `scheduledStartMin` when `scheduledDateKey` is empty, so a seed that kept one would be a
+        // field the composer shows and the store then throws away — and the caption, which is
+        // derived from this seed, would print an hour the task will not have. The case is reachable
+        // without anyone spelling it wrong: a timeline column whose day has since gone by emits its
+        // `date:` part and `dateValue` drops it, leaving the `time:` behind.
+        if seed.doDateKey.isEmpty {
+            seed.scheduledStartMin = -1
+        }
         return seed
+    }
+
+    /// The same key with the minute a slotted region resolved under the finger, or unchanged when
+    /// there is none.
+    ///
+    /// Separate from `dropKey(forGroup:)` because it is the one part of a key that is **not** a
+    /// property of the destination: a day column is one registration and every minute in it is the
+    /// same target, so the minute is only known once the finger has come down. See
+    /// `CadenceCaptureDropSlotRule`.
+    static func key(_ key: String, appendingSlotMinute minute: Int?) -> String {
+        guard let minute, minute >= 0, !key.isEmpty else { return key }
+        return "\(key)\(separator)time:\(minute)"
     }
 
     /// The seed a released **capture drag** commits to: the placement it landed on, or — when it
@@ -277,6 +318,15 @@ enum CadenceTaskDropSupport {
         } else if part.hasPrefix("due:") {
             if let dateKey = dateValue(String(part.dropFirst(4)), todayKey: todayKey) {
                 seed.dueDateKey = dateKey
+            }
+        } else if part.hasPrefix("time:") {
+            // Minutes from midnight, the spelling `AppTask.scheduledStartMin` is already stored in,
+            // so nothing between here and the store has to convert. Out-of-range text is ignored
+            // rather than clamped: a clamp would invent 00:00 for a key nobody meant to write, and
+            // an ignored part leaves the drop seeding the day alone — which is what a timeline
+            // column with an unreadable minute honestly offers.
+            if let minute = Int(part.dropFirst(5)), (0...1439).contains(minute) {
+                seed.scheduledStartMin = minute
             }
         } else if part.hasPrefix("priority:") {
             // No row emits this — `dropKey(for:)` deliberately withholds priority. It is read
@@ -357,7 +407,18 @@ enum CadenceTaskDropSupport {
 
         var parts: [String] = []
         if !placement.isEmpty { parts.append(placement.joined(separator: " › ")) }
-        if !seed.doDateKey.isEmpty { parts.append("Do \(dayLabel(seed.doDateKey, todayKey: todayKey))") }
+        if !seed.doDateKey.isEmpty {
+            // **The time rides with the day, not beside it.** A timeline drop seeds both or
+            // neither — `seed(forDropKey:todayKey:)` drops an orphaned minute — and "Do Today ·
+            // 9:30 AM" in a `·`-separated list of placements reads as a fourth, separate field.
+            // `TimeFormatters` because this is a clock time shown to a person, and this layer may
+            // not mint a formatter of its own.
+            var day = "Do \(dayLabel(seed.doDateKey, todayKey: todayKey))"
+            if seed.scheduledStartMin >= 0 {
+                day += " at \(TimeFormatters.timeString(from: seed.scheduledStartMin))"
+            }
+            parts.append(day)
+        }
         if !seed.dueDateKey.isEmpty { parts.append("Due \(dayLabel(seed.dueDateKey, todayKey: todayKey))") }
         // Only a priority *group* header emits `priority:` — no row does, deliberately. Spelled
         // "High priority" rather than bare "High" because it sits in a list beside "Inbox" and

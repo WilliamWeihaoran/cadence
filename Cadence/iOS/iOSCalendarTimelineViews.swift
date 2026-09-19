@@ -787,6 +787,44 @@ private struct iOSCalendarTimelineDayColumn: View {
             nowLine
         }
         .frame(width: colWidth, height: timelineHeight, alignment: .topLeading)
+        // **The column is a drop target, and the minute is part of what it hands over** (T-1276).
+        // The owner asked for a `+` dropped "onto the calendar timeline" to inherit what it landed
+        // on, and what a day column has to give is a day *and* a time — the same two the column's
+        // own tap already resolves, through the same `CadenceScheduleSupport.timelineMinute`, so
+        // the tap and the drop cannot name different quarter-hours for one pixel.
+        //
+        // It names **no list**: a timeline draws work from every list at once, so there is nothing
+        // here that is true of every block in the column. It names no priority either — see
+        // `dropKey(forGroup:)`, which withholds that from every container.
+        //
+        // Blocks inside the column stay the more specific answer by area alone; nothing here has to
+        // be ordered against them.
+        .iOSNewTaskDropTarget(
+            horizontalInset: 9,
+            ghost: .slot(
+                CadenceCaptureDropSlotRule(
+                    hourHeight: hourHeight,
+                    startHour: CadenceScheduleSupport.calendarStartHour,
+                    endHour: CadenceScheduleSupport.calendarEndHour
+                )
+            ),
+            dropKey: { dropKey }
+        )
+    }
+
+    /// What this column offers a dropped `+`, or `""` — no target — on a day that has already gone
+    /// by.
+    ///
+    /// **A past column must not light up.** `CadenceTaskDropSupport.dateValue` drops a day earlier
+    /// than today, exactly as it does for a row in an Overdue group, so the key would resolve to an
+    /// empty seed and the ghost would print an empty caption: a region that accepts and then hands
+    /// over nothing, which is the one thing the group-header rule says a container may never be.
+    /// The grid can be scrolled to any week, so this is a reachable state and not a defensive
+    /// branch. An empty key registers no target at all — see `iOSNewTaskDropTargetModifier`.
+    private var dropKey: String {
+        let key = DateFormatters.dateKey(from: date)
+        guard key >= DateFormatters.todayKey() else { return "" }
+        return CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: key)) ?? ""
     }
 
     /// The red rule at the current minute, the same one macOS has always drawn ([[T-1131]]).
@@ -915,12 +953,12 @@ private struct iOSCalendarTimelineDayColumn: View {
         max(24, CGFloat(end - start) / 60.0 * hourHeight - 4)
     }
 
+    /// Read, not re-typed: `CadenceCaptureDropSlotRule` resolves a *dropped* `+` against the same
+    /// arithmetic, from outside every view, and two copies of it is how the tap and the drop come
+    /// to place the same pixel in different quarter-hours. See
+    /// `CadenceScheduleSupport.timelineMinute(atY:…)`.
     private func minute(for yPosition: CGFloat) -> Int {
-        let rawMinute = CadenceScheduleSupport.calendarStartHour * 60 + Int((max(0, yPosition) / hourHeight) * 60)
-        let snapped = (rawMinute / 15) * 15
-        let minimum = CadenceScheduleSupport.calendarStartHour * 60
-        let maximum = CadenceScheduleSupport.calendarEndHour * 60 - 15
-        return min(max(snapped, minimum), maximum)
+        CadenceScheduleSupport.timelineMinute(atY: yPosition, hourHeight: hourHeight)
     }
 }
 
