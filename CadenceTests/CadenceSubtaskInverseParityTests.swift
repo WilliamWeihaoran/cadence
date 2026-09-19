@@ -134,6 +134,15 @@ struct CadenceSubtaskInverseParityTests {
 
             let openCoded = occurrences(of: "modelContext.delete(subtask)", in: code)
             #expect(openCoded == 0, "\(relativePath) still deletes a subtask directly \(openCoded) times")
+
+            // **Both captured-array repairs, scanned together, because [[T-1280]] decided to keep
+            // them and the likeliest way to lose one is a tidy-up on one platform only.** Two per
+            // file: `addSubtask`'s, which `commitInsert`'s `delete(model)` undo cannot reach and
+            // which no toolchain has ever made redundant, and `deleteSubtask`'s, which Xcode 27
+            // turned into an idempotent no-op on this toolchain and which is still the repair on
+            // Xcode 26. Deleting either is a regression, not a cleanup.
+            let repairs = occurrences(of: "task.subtasks = restored", in: code)
+            #expect(repairs == 2, "\(relativePath) carries \(repairs) captured-array repairs, expected 2")
         }
     }
 
@@ -202,9 +211,18 @@ struct CadenceSubtaskInverseParityTests {
     /// whole single `ModelContext`, so it discards pending work the caller knows nothing about;
     /// putting the parent's own array back is what lets a caller repair its own object without
     /// depending on what else the rollback swept up. That reason never depended on refresh timing.
-    /// Whether the repair is now redundant *for this specific case* is a real question and is
-    /// [[T-1280]], not something to infer from this test going green.
-    @Test func arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack() throws {
+    ///
+    /// **[[T-1280]] asked whether it is redundant now and answered no, for the whole family.** The
+    /// two `deleteSubtask` surfaces are the only captured-array repairs in the repository sitting
+    /// under a `rollback()` at all; every other one is guarded by `commitInsert` or `commitEdit`,
+    /// neither of which rolls anything back, so no toolchain change can reach them. The inverse
+    /// shape is the commoner one and was the survey's other finding: `delete(_:modelContext:)`'s
+    /// `detachRelationships`, `deleteBundle`, `CadenceTodayRolloverSupport.rollOver` and the two
+    /// cascade families all edit a to-many and carry **no** repair — they have always relied on
+    /// exactly the rollback behaviour this test now measures. And the toolchain floor decides the
+    /// rest: on Xcode 26 the repair is still the repair, so a green run here is not permission to
+    /// delete it.
+    @Test func arefusedSubtaskDeleteIsRepairedByTheCapturedArrayOnEveryToolchain() throws {
         let container = try makeContainer()
         let modelContext = ModelContext(container)
 
@@ -230,19 +248,27 @@ struct CadenceSubtaskInverseParityTests {
             }
         }
 
-        // The rollback put the row back in the store AND, since Xcode 27, back on the parent.
+        // Invariant on every toolchain: the rollback put the row back in the store.
         #expect(try fetchSubtasks(in: container).count == 1)
+
+        // Toolchain-dependent, so captured and bounded rather than pinned. Xcode 27 restores the
+        // parent's array with the rollback; Xcode 26 leaves it empty until the caller puts it
+        // back. CI runs 26, the owner's Mac runs 27, and pinning either answer turns the other
+        // red — which is what T-1296 was filed for, after it happened in both directions.
+        let parentBeforeTheRepair = (task.subtasks ?? []).map(\.title)
         #expect(
-            (task.subtasks ?? []).map(\.title) == ["Find the passport"],
+            parentBeforeTheRepair == ["Find the passport"] || parentBeforeTheRepair.isEmpty,
             """
-            the parent's array was not restored by the rollback. That is the pre-Xcode-27 \
-            behaviour returning — check the toolchain before changing any code, and see this \
-            test's doc comment for what it used to assert.
+            after a refused delete the parent held \(parentBeforeTheRepair), which is neither the \
+            restored row nor an empty array. No toolchain has produced a third answer, so this is \
+            a real change — read this test's doc comment before changing any code.
             """
         )
 
-        // Re-applying the captured array is still what a caller does, and it must remain a no-op
-        // rather than a duplicate or a second insertion.
+        // **The assertion that carries the ticket, and it holds on both toolchains.** Re-applying
+        // the captured array leaves exactly one row whether the rollback had already put it back
+        // (27) or not (26) — no duplicate, no second insertion. That is precisely why T-1280 kept
+        // the repair instead of deleting it on 27's behalf.
         task.subtasks = restored
         #expect((task.subtasks ?? []).map(\.title) == ["Find the passport"])
     }

@@ -80,27 +80,33 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// The delete half is unconditional: rows marked deleted come back, which is what the cascades
     /// rely on.
     ///
-    /// **The edit half changed under us, and this test is what caught it (T-1279).** Until Xcode 26
-    /// an edit was *not* undone where anyone could see it until something refreshed the object:
-    /// immediately after `rollback()` the live `Area` still answered with the assigned value, and
-    /// only a fetch brought it back in line. Under **Xcode 27 the live reference is restored
-    /// immediately** — measured 2026-09-18 on the first run after the upgrade, this test failing
-    /// with `kept.name → "Work"` where it had asserted `"Work & Life"`. Nothing in this repository
-    /// changed; SwiftData did. The assertions below now pin the new behaviour, and the old one is
-    /// recorded here rather than deleted, because a pin with no history is a pin nobody can date.
+    /// **The edit half differs by toolchain, and this test has now caught it in both directions.**
+    /// Through **Xcode 26** an edit is not undone where anyone can see it until something refreshes
+    /// the object: immediately after `rollback()` the live `Area` still answers with the assigned
+    /// value, and only a fetch brings it back in line. Under **Xcode 27 the live reference is
+    /// restored at once**. Measured 2026-09-18 on the first local run after the upgrade (this test
+    /// failed with `kept.name → "Work"` where it asserted `"Work & Life"`), and measured again on
+    /// 2026-09-19 in the opposite direction when the flipped pin turned CI red with
+    /// `kept.name → "Work & Life"` where it asserted `"Work"` (T-1279, then T-1296).
     ///
-    /// **The assertion order below is still load-bearing**, for the opposite reason it used to be.
-    /// It reads the field *before* any fetch, which is the only position from which the two
-    /// behaviours are distinguishable at all — a fetch anywhere in between makes them identical and
-    /// this test would have gone on passing through the change without noticing.
+    /// **This repository builds on both, so neither value can be pinned.** CI's runner image ships
+    /// Xcode 26 only — there is no 27 on it to select — and the owner's Mac runs 27. A test that
+    /// asserts either answer is red in the other place, which is exactly what happened twice.
+    /// So the pre-fetch read below is **captured and bounded** rather than pinned: it must be one
+    /// of the two answers a toolchain has actually given, and a third one still fails.
+    ///
+    /// **The assertion order below is still load-bearing.** It reads the field *before* any fetch,
+    /// which is the only position from which the two behaviours are distinguishable at all — a
+    /// fetch anywhere in between makes them identical, and this test would have gone on passing
+    /// through the 27 change without noticing.
     ///
     /// **What did NOT change is the reason `commitEdit` uses a field snapshot.** The refresh-timing
     /// argument above was always the *secondary* one. The primary is
     /// `arefusedListEditLeavesUnrelatedPendingWorkAlone`: this app has a single `ModelContext`, and
     /// `rollback()` discards work the editor knows nothing about. That objection is untouched by
-    /// the framework fix, so the snapshot stays. Do not read this test going green on the new
-    /// behaviour as permission to swap `commitEdit` back to a rollback undo.
-    @Test func rollbackRestoresAnEditImmediatelyAndTheSingleContextObjectionStillStands() throws {
+    /// either toolchain's behaviour, so the snapshot stays. Do not read this test going green as
+    /// permission to swap `commitEdit` back to a rollback undo.
+    @Test func rollbackUndoesAnEditInTheStoreAndTheSingleContextObjectionStillStands() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)
         let kept = Area(name: "Work")
@@ -113,24 +119,28 @@ struct CadenceEditorSaveCommitSurfaceTests {
         modelContext.delete(removed)
         modelContext.rollback()
 
-        // Read the field before anything fetches — the only position from which the pre-Xcode-27
-        // behaviour and this one differ.
+        // The one read whose answer depends on the toolchain, captured rather than pinned.
+        // Xcode 26 answers "Work & Life" — the store is already right, the live reference is not
+        // refreshed yet. Xcode 27 answers "Work" — the restore reaches the reference at once.
+        let liveNameBeforeAnyFetch = kept.name
         #expect(
-            kept.name == "Work",
+            liveNameBeforeAnyFetch == "Work" || liveNameBeforeAnyFetch == "Work & Life",
             """
-            rollback stopped restoring a live reference immediately. That is the pre-Xcode-27 \
-            behaviour returning, not a bug in this repository — check the toolchain before \
-            changing any code, and see this test's doc comment for what it used to assert.
+            after a rollback the live reference held \(liveNameBeforeAnyFetch), which is neither \
+            the restored value nor the uncommitted one. No toolchain has produced a third answer, \
+            so this is a real change — read this test's doc comment before changing any code.
             """
         )
 
-        // The delete assertion. It used to double as the thing that refreshed `kept`; since the
-        // restore is now immediate it no longer has that second job, and the read below is kept
-        // anyway so that a regression to the old behaviour still fails somewhere.
+        // Invariant on every toolchain, and the half that decides `commitDelete`: rollback
+        // un-deletes in the store.
         #expect(
             try modelContext.fetch(FetchDescriptor<Area>()).count == 2,
             "rollback did not undo the delete, so commitDelete's undo is wrong too"
         )
+
+        // Also invariant: whatever the reference said a moment ago, it agrees with the store once
+        // something has fetched. On Xcode 26 the fetch above is what refreshes it.
         #expect(kept.name == "Work", "the live reference does not agree with the store after a fetch")
 
         #expect(

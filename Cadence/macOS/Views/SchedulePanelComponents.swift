@@ -194,12 +194,20 @@ struct TaskDetailPopover: View {
     /// off the screen and stayed in the store: gone until the next launch brought it back.
     /// **Xcode 27 restores the relationship immediately** (T-1279), which makes re-applying
     /// `restored` an idempotent no-op rather than the repair — pinned, both halves, by
-    /// `arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack`. It stays
+    /// `arefusedSubtaskDeleteIsRepairedByTheCapturedArrayOnEveryToolchain`. It stays
     /// for the reason that never depended on refresh timing: `commitDelete` rolls back the one
     /// app-wide `ModelContext`, so re-applying this parent's own array is how *this* caller repairs
-    /// *its* object without depending on what else the rollback swept up. Whether that still earns
-    /// its keep here and at every sibling call site is the survey in T-1280 — do not delete it
-    /// piecemeal, and mind the toolchain floor.
+    /// *its* object without depending on what else the rollback swept up.
+    ///
+    /// **[[T-1280]] asked that of every captured-array repair in the mutation support and kept all
+    /// of them.** This line and its twin in `iOSTaskDetailSheet.deleteSubtask` are the only two
+    /// that sit under a `rollback()` at all, so they are the only two Xcode 27 could have made
+    /// redundant. Every other captured array is guarded by `commitInsert`, whose undo is
+    /// `delete(model)` and never reaches the parent's array (the T-296 window, pinned by
+    /// `arefusedSubtaskInsertLeavesAPhantomOnTheParentUntilTheCallerDropsIt`), or by `commitEdit`,
+    /// where putting the array back *is* the undo — neither shape has anything to do with a
+    /// rollback's timing. And the floor is whichever Xcode a contributor has: on 26 this line is
+    /// still the repair, so deleting it on 27's behalf is a regression rather than a cleanup.
     private func deleteSubtask(_ subtask: Subtask) {
         let restored = task.subtasks ?? []
         CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)

@@ -85,14 +85,15 @@ enum CadencePendingChangePersistence {
     ///    refused rename must not take the note someone is typing behind the popover with it —
     ///    `arefusedListEditLeavesUnrelatedPendingWorkAlone` is that assertion, and it does not
     ///    depend on any SwiftData timing.
-    /// 2. **It once had a second defect, and that one expired without licensing a rollback.**
+    /// 2. **It has a second defect on some toolchains, and neither answer licenses a rollback.**
     ///    `rollback()` un-*deletes* unconditionally — which is what makes it right for
     ///    `commitDelete`, and what `CadenceListCascadeRollbackTests` pins — but through Xcode 26,
     ///    after `area.name = "New"; rollback()` the live `Area` still answered `"New"` and only a
-    ///    *fetch* brought it back to `"Old"`, while the store was correct throughout. **Xcode 27
-    ///    restores the live reference immediately** (T-1279). Reason 1 never depended on that
-    ///    timing, so `commitEdit` keeps the field snapshot regardless of toolchain.
-    ///    `CadenceEditorSaveCommitSurfaceTests.rollbackRestoresAnEditImmediatelyAndTheSingleContextObjectionStillStands`
+    ///    *fetch* brings it back to `"Old"`, while the store is correct throughout. **Xcode 27
+    ///    restores the live reference immediately** (T-1279), and this repository builds on both —
+    ///    CI on 26, the owner's Mac on 27 (T-1296). Reason 1 never depended on that timing, so
+    ///    `commitEdit` keeps the field snapshot regardless of toolchain.
+    ///    `CadenceEditorSaveCommitSurfaceTests.rollbackUndoesAnEditInTheStoreAndTheSingleContextObjectionStillStands`
     ///    pins the behaviour now and records the old one, including why the assertion order is
     ///    still load-bearing.
     ///

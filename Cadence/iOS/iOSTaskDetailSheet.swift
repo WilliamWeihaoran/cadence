@@ -602,10 +602,20 @@ struct iOSTaskDetailSheet: View {
         newSubtaskTitle = ""
     }
 
-    /// The delete half of T-634. `commitDelete`'s `rollback()` un-deletes the row but does not put
-    /// it back on `task.subtasks`, which `deleteSubtask` edited — so without the restore a refused
-    /// delete takes the subtask off the screen and leaves it in the store. Pinned by
-    /// `arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack`.
+    /// The delete half of T-634, and the twin of `TaskDetailPopover.deleteSubtask` on macOS, whose
+    /// doc comment carries the full reasoning.
+    ///
+    /// **This used to say the rollback "does not put it back on `task.subtasks`", and that expired
+    /// on 2026-09-18.** Through Xcode 26 it was true (T-402) and `restored` was the repair: a
+    /// refused delete took the subtask off the screen and left it in the store. **Xcode 27 restores
+    /// the relationship immediately** (T-1279), which T-1279's own sweep of this claim missed here.
+    ///
+    /// `restored` stays, and [[T-1280]] is the survey that decided so rather than a guess: on
+    /// Xcode 26 it is still the repair, and on either toolchain re-applying this parent's own array
+    /// is how *this* caller repairs *its* object without depending on what else `commitDelete`'s
+    /// rollback of the one app-wide `ModelContext` swept up. That it is a no-op on 27 — neither a
+    /// duplicate nor a second insertion — is pinned by
+    /// `arefusedSubtaskDeleteIsRepairedByTheCapturedArrayOnEveryToolchain`.
     private func deleteSubtask(_ subtask: Subtask) {
         let restored = task.subtasks ?? []
         CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)

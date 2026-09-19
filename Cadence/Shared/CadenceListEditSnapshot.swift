@@ -14,9 +14,10 @@ import SwiftData
 /// unconditionally — `CadenceListCascadeRollbackTests` pins that, and it is why `commitDelete` is
 /// right — but through Xcode 26 its undo of an *edit* was not visible on an already-materialised
 /// reference until a fetch refreshed it. **Xcode 27 restores the live reference at once** (T-1279),
-/// so that reason has expired. The first one has not, and it is the whole justification now: do not
+/// so that reason holds on 26 and not on 27 — and this repository builds on both, CI on 26 and the
+/// owner's Mac on 27 (T-1296). The first reason holds everywhere, which is why it leads: do not
 /// read the framework fix as permission to swap this type for a rollback. See
-/// `CadenceEditorSaveCommitSurfaceTests.rollbackRestoresAnEditImmediatelyAndTheSingleContextObjectionStillStands`,
+/// `CadenceEditorSaveCommitSurfaceTests.rollbackUndoesAnEditInTheStoreAndTheSingleContextObjectionStillStands`,
 /// which keeps the old behaviour in its own doc comment.
 ///
 /// **Raw strings, not the computed façades.** `statusRaw` and `sectionConfigsRaw` are the stored
