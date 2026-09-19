@@ -339,11 +339,24 @@ struct CadenceGuardScriptSelftestTests {
     /// Both halves of the check earn their keep here: the body must still make the refusal, and
     /// section 7 of the selftest must still induce it over a fixture log carrying a real
     /// `\.swift:N:C: warning:` — a gate asserted only by a name in a list is a gate nobody has run.
+    ///
+    /// T-1282 adds a fifth, and it is `UNKNOWN-SUITE` asked one step earlier: `NO-SUCH-SIMULATOR`
+    /// refuses an `-destination 'platform=iOS Simulator,name=…'` naming a device this Mac does not
+    /// have. Measured 2026-09-18, that destination returns **exit 70 with `compile errors: 0` and
+    /// `warnings: 0`** over **zero** compiled Swift files, and the shell pipeline around it exits
+    /// 0 — so the only dissent in the whole run is `VACUOUS-COUNT`, which says the count is about
+    /// nothing rather than that the build was. It is worse than an ordinary red because the macOS
+    /// test target never compiles `Cadence/iOS/`: an agent that accepts it has never compiled the
+    /// code it changed, and the macOS suite stays green over the top. Pinning it here is the part
+    /// that does not rot — a device name written into a guide was correct until an Xcode update
+    /// dropped the device, which is exactly how `iPhone 15` came to be typed, so the guard reads
+    /// `simctl` live and the selftest drives it through a fixture in that format.
     static let buildRunnerRefusals = [
         "UNKNOWN-SUITE",
         "PARTIAL-SCOPE",
         "VACUOUS-COUNT",
         "WARNING-BASELINE",
+        "NO-SUCH-SIMULATOR",
     ]
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody

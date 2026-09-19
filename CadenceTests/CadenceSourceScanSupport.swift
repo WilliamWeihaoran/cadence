@@ -8,10 +8,21 @@ import Testing
 /// wrong in a way that still looks right:
 ///
 /// - the comment stripper must be `(?<!:)//`, not `//`. A stripper that blanks from the slashes in
-///   `"https://example.com"` to the end of the line eats that line's `{` and leaves its `}`, so the
-///   brace matching below closes the enclosing function early and the scan silently reads a body
-///   that stops short of the code it exists to check. `LinksView.addLink()` contains exactly that
-///   literal.
+///   `"https://example.com"` to the end of the line takes that line's braces with it, in whichever
+///   direction hurts: eat the `{` and the brace matching below closes the enclosing declaration
+///   early, over a body that stops short of the code the scan exists to check; eat the `}` — which
+///   is what `guard … else { return URL(string: "cadence://calendar")! }` offers it — and the
+///   matching closes *late*, over text from past the end of the declaration. Neither says a word.
+///   **The two canaries are `theCommentStripperBlanksCommentsWithoutShortening` and
+///   `theCommentStripperKeepsABraceMatchedBodyFromClosingEarly`**, in `CadenceOrderAllocationTests`,
+///   and both work on string literals of their own. A third test in that file,
+///   `theFunctionBodyExtractorIsScopedToOneFunction`, catches the regression incidentally — its
+///   fixture holds a `hasPrefix("http://")`. This paragraph used to name
+///   `LinksView.addLink()` instead, and that claim went stale without anything noticing: the only
+///   `https://` left in `LinksView.swift` sits inside a `//` comment, which both spellings blank
+///   identically, and the code-line literal moved to `CadenceSavedLinkPersistence`, which no
+///   brace-matching scan reads. A canary that lives in a production file has a shelf life
+///   ([[T-1291]]).
 /// - the stripper replaces comments with spaces of equal length, so the stripped string is never
 ///   *shorter* than the raw one. Assert `stripped != raw`; `stripped.count < raw.count` is a test
 ///   that passes by never being true.

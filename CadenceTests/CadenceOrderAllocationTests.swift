@@ -198,6 +198,13 @@ struct CadenceOrderAllocationTests {
 
     /// The stripper blanks a real comment while leaving the code beside it alone, and never
     /// shortens the string.
+    ///
+    /// **This is the canary for `CadenceSourceScan`'s `(?<!:)` lookbehind, and it is the only one
+    /// of its two that is a direct unit test on the stripper** ([[T-1291]]). Under the bare `//`
+    /// the 54 routed scans used before [[T-1270]], `stripped` here is `let url = "https:` followed
+    /// by blanks, so the URL-survives assertion is the one that fails — measured, not assumed. It reads
+    /// like a small hygiene test about lengths; it is the thing standing between a one-character
+    /// edit to `compiledPatterns` and 48 files being scanned as text that stops mid-line.
     @Test func theCommentStripperBlanksCommentsWithoutShortening() throws {
         let source = "let url = \"https://example.com\" // a trailing note\nlet n = 1\n"
 
@@ -209,6 +216,48 @@ struct CadenceOrderAllocationTests {
         #expect(!stripped.contains("a trailing note"))
         #expect(stripped.contains("let n = 1"))
     }
+
+    /// T-1291, and it is the other half of the test above: that one proves the URL literal
+    /// survives, and this proves what surviving it is *for*.
+    ///
+    /// The shape is `CadenceDeepLink.url`'s `.calendar` case, which is the clearest instance in
+    /// this tree — a `guard … else { return URL(string: "cadence://calendar")! }` puts the line's
+    /// **closing brace** to the right of a `//` that is not a comment. Blank from those slashes to
+    /// end of line and the `else` block is opened and never closed, so every brace-matched read
+    /// downstream is off by one: the `}` that ought to close the declaration closes the `else`
+    /// instead, and the body runs on past the end of the declaration into whatever follows it.
+    /// That is the failure the lookbehind exists to stop, and the one shape no assertion in this
+    /// suite read until this test — a scan that reads *too much* is silent, because everything it
+    /// was asked to find is still in there.
+    ///
+    /// A string literal, deliberately: the real `CadenceDeepLink.swift` is free to be rewritten,
+    /// and a canary that depends on a production file keeping one line is a canary with a
+    /// shelf life. That is exactly how the stale claim this test replaces came to be wrong.
+    @Test func theCommentStripperKeepsABraceMatchedBodyFromClosingEarly() throws {
+        let source = """
+        enum Sample {
+            var url: URL {
+                switch self {
+                case .calendar(let dateKey):
+                    guard let dateKey else { return URL(string: "cadence://calendar")! }
+                    return URL(string: "cadence://calendar/\\(dateKey)")!
+                }
+            }
+
+            static let sentinel = "past the end of url"
+        }
+        """
+
+        let stripped = CadenceSourceScan.strippingComments(source)
+        #expect(stripped == source, "a URL scheme's slashes are not a comment")
+
+        let body = try #require(CadenceSourceScan.declarationBody("var url: URL", in: stripped))
+        #expect(body.contains("cadence://calendar"), "the body scan lost the line it was about")
+        #expect(
+            !body.contains("past the end of url"),
+            "the body ran past the declaration's closing brace: the stripper ate the guard's `}`"
+        )
+    }
 }
 
 // MARK: - The needle
@@ -218,6 +267,8 @@ struct CadenceOrderAllocationTests {
 ///
 /// The source-reading helpers this file used to carry are now `CadenceSourceScan`, shared with the
 /// other scans that have to read a private method on a SwiftUI view. Their comment stripper is
-/// still spelled `(?<!:)//` for the reason documented there, which `LinksView.addLink()` — with
-/// its `hasPrefix("http://")` — is the reason for.
+/// still spelled `(?<!:)//` for the reason documented there, and the two tests above are what keep
+/// it spelled that way. This sentence used to cite `LinksView.addLink()`'s own
+/// `hasPrefix("http://")`; that line moved to `CadenceSavedLinkPersistence` and the citation was
+/// wrong for as long as nobody checked it ([[T-1291]]).
 private let countingAllocationPattern = #"\.order\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.count\b"#

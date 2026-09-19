@@ -8,6 +8,7 @@
 #   ./scripts/xcb.sh check-test-log <log>                      # the zero-test guard, on its own
 #   ./scripts/xcb.sh check-warnings <log>                      # the diagnostic counters, on their own
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
+#   ./scripts/xcb.sh check-destination <-destination value>   # resolve a simulator, no build
 #   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
 #
 # `-project Cadence.xcodeproj` is supplied for you; pass `-scheme` and `-destination` yourself.
@@ -448,6 +449,176 @@ resolve_only_testing() {
 }
 
 
+# --- the iOS Simulator destination guard (T-1282) ----------------------------
+# The zero-test guard above refuses a run that executed nothing. This refuses a run that COMPILED
+# nothing, which is the same failure one step earlier and wears an even better disguise.
+#
+# Measured 2026-09-18, on this Mac, at 93f9c4e:
+#
+#   xcb.sh <id> raw -scheme Cadence -destination 'platform=iOS Simulator,name=iPhone 15' build
+#     -> XCODEBUILD_EXIT=70, `compile errors: 0`, `warnings: 0`, and the surrounding shell
+#        pipeline exits 0.
+#
+# Xcode 27 ships no iPhone 15, so xcodebuild matched no destination and compiled ZERO Swift files.
+# Everything an agent reads to decide a gate passed said the gate passed; the only dissent was the
+# VACUOUS-COUNT banner and an absent `swift compile tasks:` line, both of which say "this count is
+# about nothing" rather than "this run built nothing".
+#
+# It is worse than an ordinary red because of WHAT it covers up: the macOS test target never
+# compiles `Cadence/iOS/`, so an agent that accepts the fake pass has not merely skipped a gate --
+# it has never compiled the code it changed, and the macOS suite stays green over the top of it.
+# It happened once for real on 2026-09-18 (T-1278's first iOS attempt).
+#
+# WHY HERE AND NOT IN A DOC. `Cadence/iOS/AGENTS.md` now records a working name, and a written-down
+# name rots the next time Apple drops a device: `iPhone 15` was a correct instruction until an Xcode
+# update made it the sentence above. The list of devices this Mac actually has is a question with a
+# live answer, so the guard asks it rather than pinning a name -- and names the available ones in
+# the refusal, the way UNKNOWN-SUITE names the suites the run could have meant.
+#
+# CADENCE_SIMCTL_DEVICES is a testing seam, the same one CADENCE_SUITE_FILES is for the resolver
+# above: `selftest` points it at a fixture in `simctl list devices available` format, so the checks
+# assert against a known device list rather than against whichever simulators this Mac has today.
+SIMULATOR_GATE_EXIT=10
+
+simctl_devices_source() {
+  if [[ -n "${CADENCE_SIMCTL_DEVICES:-}" ]]; then
+    cat -- "$CADENCE_SIMCTL_DEVICES" 2>/dev/null
+  else
+    xcrun simctl list devices available 2>/dev/null
+  fi
+}
+
+# `<runtime>\t<device name>\t<udid>` per available device. The runtime is carried because an
+# `iOS Simulator` destination must be answered out of the iOS runtimes and not out of watchOS's --
+# `Apple Watch Series 11 (46mm)` exists on this Mac and is not an answer to `platform=iOS Simulator`.
+# The two trailing parenthesised fields are stripped by anchoring at end of line, so a device whose
+# NAME holds parentheses (`iPad Pro 13-inch (M5)`, `iPad (A16)`) keeps them.
+available_simulators() {
+  simctl_devices_source | awk '
+    /^-- .* --$/ { rt = substr($0, 4, length($0) - 6); next }
+    rt != "" && match($0, / \([0-9A-Fa-f-]+\) \([A-Za-z ]+\) *$/) {
+      dname = substr($0, 1, RSTART - 1)
+      sub(/^[ \t]+/, "", dname)
+      udid = substr($0, RSTART, RLENGTH)
+      sub(/^ \(/, "", udid)
+      sub(/\).*$/, "", udid)
+      if (dname != "") printf "%s\t%s\t%s\n", rt, dname, udid
+    }'
+}
+
+# Exit $SIMULATOR_GATE_EXIT when a destination names a simulator that does not exist here.
+# Prints the resolved device on the normal path: a guard whose only output is a refusal leaves a
+# caller unable to tell "checked and fine" from "never looked".
+resolve_destinations() {
+  local -a dests; dests=("$@")
+  (( ${#dests} )) || return 0
+
+  # Which of them are even this guard's question. `generic/platform=iOS Simulator` names no device
+  # ON PURPOSE (it is how you build without one), and a macOS destination has nothing to resolve.
+  local -a asked; asked=()
+  local d
+  for d in "${dests[@]}"; do
+    [[ "${d:l}" == generic/* ]] && continue
+    [[ "${d:l}" == *"platform=ios simulator"* ]] && asked+=("$d")
+  done
+  (( ${#asked} )) || return 0
+
+  local -a devices; devices=(${(f)"$(available_simulators)"})
+  # A guard that cannot answer says so and gets out of the way -- the rule the resolver above and
+  # the drift check both follow. An empty list means `simctl` is missing or refused (it is, inside
+  # the App Sandbox), NOT that every device in the request is imaginary.
+  if (( ${#devices} == 0 )) || [[ -z "${devices[1]}" ]]; then
+    say "  -destination: not resolved (simctl listed no devices) -- proceeding"
+    return 0
+  fi
+
+  local spec kv key val name id os rt dname dudid line
+  local -a missing_names missing_ids os_missing
+  missing_names=(); missing_ids=(); os_missing=()
+  for spec in "${asked[@]}"; do
+    name=""; id=""; os=""
+    for kv in ${(s:,:)spec}; do
+      key="${${kv%%=*}:l}"; val="${kv#*=}"
+      case "$key" in
+        name) name="$val" ;;
+        id)   id="$val" ;;
+        os)   os="$val" ;;
+      esac
+    done
+
+    if [[ -n "$id" ]]; then
+      # `id=` is the other way to name one device, and a UDID that no longer exists fails in
+      # exactly the same silent shape as a name that never did.
+      local found_id=0
+      for line in "${devices[@]}"; do
+        [[ "${${line##*$'\t'}:l}" == "${id:l}" ]] || continue
+        found_id=1
+        say "  iOS Simulator destination: ${${line#*$'\t'}%%$'\t'*} (${line%%$'\t'*}, by id)"
+        break
+      done
+      (( found_id )) || missing_ids+=("$id")
+      continue
+    fi
+
+    # `platform=iOS Simulator` alone, or with only an OS, leaves xcodebuild to choose. There is no
+    # name to be wrong about, so there is nothing here to refuse.
+    [[ -z "$name" ]] && continue
+
+    local -a runtimes_with_name; runtimes_with_name=()
+    for line in "${devices[@]}"; do
+      rt="${line%%$'\t'*}"; dname="${${line#*$'\t'}%%$'\t'*}"
+      [[ "${rt:l}" == "ios "* ]] || continue
+      [[ "$dname" == "$name" ]] && runtimes_with_name+=("$rt")
+    done
+
+    if (( ${#runtimes_with_name} == 0 )); then
+      missing_names+=("$name")
+      continue
+    fi
+    # `OS=latest` is xcodebuild's own "whichever" and is never wrong here.
+    if [[ -n "$os" && "${os:l}" != "latest" ]]; then
+      if [[ " ${runtimes_with_name[*]} " != *" iOS $os "* ]]; then
+        os_missing+=("$name|$os|${(j:, :)runtimes_with_name}")
+        continue
+      fi
+    fi
+    say "  iOS Simulator destination: $name (${runtimes_with_name[1]})"
+  done
+
+  (( ${#missing_names} + ${#missing_ids} + ${#os_missing} )) || return 0
+
+  say ""
+  say "!! REFUSING (NO-SUCH-SIMULATOR): a -destination names a simulator this Mac does not have (T-1282)."
+  say "   Nothing was built and no lock was taken. xcodebuild would have matched no destination,"
+  say "   compiled ZERO Swift files and exited 70 with \`compile errors: 0\` and \`warnings: 0\` --"
+  say "   which reads exactly like a passing iOS gate. The macOS test target never compiles"
+  say "   Cadence/iOS/, so nothing downstream would have caught it either."
+  local m
+  for m in "${missing_names[@]}"; do
+    say ""
+    say "   '$m' is not an available iOS Simulator device."
+  done
+  for m in "${missing_ids[@]}"; do
+    say ""
+    say "   id=$m matches no available simulator."
+  done
+  for m in "${os_missing[@]}"; do
+    say ""
+    say "   '${m%%|*}' exists, but not on iOS ${${m#*|}%%|*} -- it is on ${m##*|}."
+  done
+  say ""
+  say "   Available iOS Simulator devices on this Mac:"
+  for line in "${devices[@]}"; do
+    rt="${line%%$'\t'*}"; dname="${${line#*$'\t'}%%$'\t'*}"
+    [[ "${rt:l}" == "ios "* ]] || continue
+    say "     -destination 'platform=iOS Simulator,name=$dname'   ($rt)"
+  done
+  say ""
+  say "   Read them yourself with: xcrun simctl list devices available"
+  return $SIMULATOR_GATE_EXIT
+}
+
+
 # --- selftest ----------------------------------------------------------------
 # `agent-commit.sh selftest` and `mutate.sh selftest` are the precedent: a guard nobody exercises
 # is the hollow instrument this repository keeps finding one layer up, and this one is easy to
@@ -631,6 +802,76 @@ selftest_only_testing() {
   check "…and says out loud that it was downgraded, rather than going quiet" \
     $( [[ "$edout" == *"NOT gated"* && "$edout" == *CADENCE_ALLOW_WARNINGS* ]] && print 1 || print 0 ) "$edout"
 
+  say ""
+  say " 8. the iOS Simulator destination guard (T-1282)"
+  # A fixture in `simctl list devices available` format, because the failure this guard exists to
+  # stop was a PARSE of that format being absent entirely -- and because the real list changes with
+  # every Xcode update, which is the whole reason the guard reads it live instead of pinning a name.
+  # `iPad (A16)` is in it deliberately: a device whose NAME carries parentheses is what a parser
+  # that strips "the last parenthesised thing" gets wrong, and this tree has four of them.
+  # `iPhone 17 Pro` on two runtimes is the OS= case; the watch is the wrong-platform case.
+  print -rl -- \
+    "== Devices ==" \
+    "-- iOS 26.5 --" \
+    "    iPhone 17 Pro (7B642065-86FC-4987-8674-22066D32878C) (Shutdown) " \
+    "    iPad (A16) (ECB5F33A-9099-4811-B190-4F4AADF6D1CB) (Shutdown) " \
+    "-- iOS 18.4 --" \
+    "    iPhone 17 Pro (11111111-2222-3333-4444-555555555555) (Shutdown) " \
+    "-- watchOS 26.5 --" \
+    "    Apple Watch Series 11 (46mm) (DBDE4F95-A9B3-4670-ACD1-707A12F895B5) (Shutdown) " \
+    > "$ws/devices.txt"
+  : > "$ws/no-devices.txt"
+  local sout srn
+  run_destination() {
+    sout=$(CADENCE_SIMCTL_DEVICES="$1" zsh "$here" check-destination "${@:2}" 2>&1); srn=$?
+  }
+
+  run_destination "$ws/devices.txt" "platform=iOS Simulator,name=iPhone 15"
+  check "a device this Mac does not have exits $SIMULATOR_GATE_EXIT, not 0" \
+    $( (( srn == SIMULATOR_GATE_EXIT )) && print 1 || print 0 ) "exit $srn: $sout"
+  check "…and says what it refused" \
+    $( [[ "$sout" == *NO-SUCH-SIMULATOR* && "$sout" == *"'iPhone 15' is not an available iOS Simulator device"* ]] && print 1 || print 0 ) "$sout"
+  # The half the ticket is actually about: a refusal that only says "no" sends the agent back to
+  # guessing, which is how `iPhone 15` was typed in the first place.
+  check "…and NAMES the available ones, as a destination that can be pasted" \
+    $( [[ "$sout" == *"-destination 'platform=iOS Simulator,name=iPhone 17 Pro'"* ]] && print 1 || print 0 ) "$sout"
+  check "…including one whose own name carries parentheses" \
+    $( [[ "$sout" == *"name=iPad (A16)'"* ]] && print 1 || print 0 ) "$sout"
+  check "…and does NOT offer a watchOS device as an iOS Simulator" \
+    $( [[ "$sout" != *"Apple Watch"* ]] && print 1 || print 0 ) "$sout"
+  run_destination "$ws/devices.txt" "platform=iOS Simulator,name=iPhone 15" "platform=iOS Simulator,name=iPhone 14"
+  check "a second missing name really does take a second pass, and no stray zsh assignment line (T-1074)" \
+    $( [[ $srn == SIMULATOR_GATE_EXIT ]] && print -r -- "$sout" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "exit $srn: $sout"
+
+  # The controls, and they matter more than the refusal: a guard that refused any of the four
+  # shapes below would be switched off the same week, and `generic/` is how the repo builds for a
+  # simulator without naming one at all.
+  run_destination "$ws/devices.txt" "platform=iOS Simulator,name=iPhone 17 Pro"
+  check "an available device passes" $( (( srn == 0 )) && print 1 || print 0 ) "exit $srn: $sout"
+  check "…and SAYS it resolved, rather than passing in silence" \
+    $( [[ "$sout" == *"iOS Simulator destination: iPhone 17 Pro"* ]] && print 1 || print 0 ) "$sout"
+  run_destination "$ws/devices.txt" "platform=macOS"
+  check "a macOS destination is not this guard's question" \
+    $( (( srn == 0 )) && [[ "$sout" != *NO-SUCH-SIMULATOR* ]] && print 1 || print 0 ) "exit $srn: $sout"
+  run_destination "$ws/devices.txt" "generic/platform=iOS Simulator"
+  check "a generic/ destination names no device on purpose and is not refused" \
+    $( (( srn == 0 )) && [[ "$sout" != *NO-SUCH-SIMULATOR* ]] && print 1 || print 0 ) "exit $srn: $sout"
+  run_destination "$ws/no-devices.txt" "platform=iOS Simulator,name=iPhone 15"
+  check "an empty device list proceeds instead of refusing everything" \
+    $( (( srn == 0 )) && [[ "$sout" == *"not resolved"* ]] && print 1 || print 0 ) "exit $srn: $sout"
+
+  run_destination "$ws/devices.txt" "platform=iOS Simulator,name=iPad (A16),OS=18.4"
+  check "a device that exists on another runtime is refused, and told which one it is on" \
+    $( (( srn == SIMULATOR_GATE_EXIT )) && [[ "$sout" == *"not on iOS 18.4"* && "$sout" == *"it is on iOS 26.5"* ]] && print 1 || print 0 ) "exit $srn: $sout"
+  run_destination "$ws/devices.txt" "platform=iOS Simulator,name=iPhone 17 Pro,OS=18.4"
+  check "…but a name present on BOTH runtimes at that OS still passes" \
+    $( (( srn == 0 )) && print 1 || print 0 ) "exit $srn: $sout"
+  run_destination "$ws/devices.txt" "platform=iOS Simulator,id=DEADBEEF-0000-0000-0000-000000000000"
+  check "a stale id= is refused too (it fails in the same silent shape)" \
+    $( (( srn == SIMULATOR_GATE_EXIT )) && [[ "$sout" == *"matches no available simulator"* ]] && print 1 || print 0 ) "exit $srn: $sout"
+  run_destination "$ws/devices.txt" "platform=iOS Simulator,id=7B642065-86FC-4987-8674-22066D32878C"
+  check "…and a live id= passes" $( (( srn == 0 )) && print 1 || print 0 ) "exit $srn: $sout"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -683,6 +924,19 @@ if [[ "${1:-}" == "check-only-testing" ]]; then
     say "usage: ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>..."; exit 2
   fi
   resolve_only_testing "${@#-only-testing:}"
+  exit $?
+fi
+
+# The destination guard on its own, for the same two reasons `check-only-testing` is exposed: it
+# is what `selftest` drives, and it answers "does this Mac have that simulator" for a caller that
+# would otherwise find out by reading a vacuous build log. Accepts the value with or without the
+# `-destination` flag in front of it.
+if [[ "${1:-}" == "check-destination" ]]; then
+  shift
+  if (( $# == 0 )); then
+    say "usage: ./scripts/xcb.sh check-destination 'platform=iOS Simulator,name=<device>'..."; exit 2
+  fi
+  resolve_destinations "${@:#-destination}"
   exit $?
 fi
 
@@ -811,6 +1065,23 @@ for (( i = 1; i <= ${#args}; i++ )); do
 done
 if (( ${#only_testing} )); then
   resolve_only_testing "${only_testing[@]}" || exit 8
+fi
+
+# --- resolve -destination before anything expensive (T-1282) -----------------
+# Beside the resolver above and for the same reason: a destination that matches no device costs a
+# whole build to discover, and what it produces then is not a red -- it is `compile errors: 0` over
+# zero compiled files. Every action is checked, `raw` included: the measured fake pass was a
+# `raw ... build`, and this question is about the Mac rather than about the tree, so a scratch tree
+# or a mutation run is answered exactly as the checkout is.
+destinations=()
+for (( i = 1; i <= ${#args}; i++ )); do
+  case "${args[i]}" in
+    -destination=*) destinations+=("${args[i]#-destination=}") ;;
+    -destination)   destinations+=("${args[i+1]:-}") ;;
+  esac
+done
+if (( ${#destinations} )); then
+  resolve_destinations "${destinations[@]}" || exit $SIMULATOR_GATE_EXIT
 fi
 
 # --- the drifted-worktree guard (T-975) --------------------------------------

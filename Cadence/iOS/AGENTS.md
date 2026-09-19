@@ -14,10 +14,11 @@ compact. The full former guide is preserved at `../../docs/IOS_AGENTS_REFERENCE.
   rather than reading the full reference.
 - **The iOS gate needs a simulator that exists on this Mac, and a wrong name fails as a fake pass.**
   `scripts/xcb.sh <id> raw -scheme Cadence -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
-  build`. Xcode 27 ships no iPhone 15 — that name gives `XCODEBUILD_EXIT=70`, `compile errors: 0`
-  and `warnings: 0`, which reads like a pass; only xcb.sh's `VACUOUS-COUNT` line says it compiled
-  nothing. Check `swift compile tasks:` is non-zero, and run `xcrun simctl list devices available`
-  rather than guessing a name. The macOS test target never compiles this directory, so skipping
+  build`. Xcode 27 ships no iPhone 15 — that name gave `XCODEBUILD_EXIT=70`, `compile errors: 0`
+  and `warnings: 0` over zero compiled files, which reads like a pass; only `VACUOUS-COUNT` and an
+  absent `swift compile tasks:` dissented. `xcb.sh` now refuses a device this Mac does not have
+  (`NO-SUCH-SIMULATOR`, exit 10) and names the ones it does, before building — so the name above is
+  a convenience, not the guard. The macOS test target never compiles this directory, so skipping
   this gate means an iOS change was never compiled at all (T-1282).
 
 ## Current Shape
