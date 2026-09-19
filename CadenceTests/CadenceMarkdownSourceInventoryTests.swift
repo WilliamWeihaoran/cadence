@@ -391,6 +391,7 @@ struct CadenceMarkdownSourceInventoryTests {
         "Project",
         "Pursuit",
         "SavedLink",
+        "SidebarLayoutPreference",
         "Subtask",
         "Tag",
         "TaskBundle"
@@ -434,6 +435,10 @@ struct CadenceMarkdownSourceInventoryTests {
         ],
         "Pursuit": ["title", "desc", "icon", "colorHex", "kindRaw", "statusRaw"],
         "SavedLink": ["title", "url"],
+        // Two comma-separated lists of `CadenceFeatureDestination` raw values (T-1274). Never
+        // markdown: nothing binds them to an editor, and the only reader parses them into enum
+        // cases.
+        "SidebarLayoutPreference": ["orderRaw", "hiddenRaw"],
         "Subtask": ["title"],
         "Tag": ["slug", "name", "desc", "colorHex"],
         "TaskBundle": ["title", "dateKey"],

@@ -655,6 +655,46 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(outcome.insertedRecordCount == 1)
     }
 
+    /// **An archive written before a table existed still decodes (T-1274).**
+    ///
+    /// The hazard is Swift's, not this repository's: a synthesized `init(from:)` throws
+    /// `keyNotFound` for a missing key and **does not** fall back to the property's default value.
+    /// So adding a non-optional table to `CadenceArchive` would make every backup the owner
+    /// already has unreadable, silently, with `formatVersion` still saying the document is
+    /// readable. This decodes a current archive with the newest table *deleted from the JSON* —
+    /// which is exactly the shape of a file written yesterday.
+    ///
+    /// Written against the real encoder and decoder rather than a fixture string, so it keeps
+    /// testing the pair the app actually uses.
+    @Test func anArchiveWrittenBeforeTheLayoutTableStillDecodes() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(AppTask(title: "Buy milk"))
+        source.insert(SidebarLayoutPreference(orderRaw: "today,goals"))
+        try source.save()
+
+        let data = try CadenceDataExportService.encode(
+            try CadenceDataExportService.makeArchive(in: source)
+        )
+        var json = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        // Non-vacuity: the key is there to remove, so its absence below is this test's doing.
+        #expect(json["sidebarLayoutPreferences"] != nil)
+        json.removeValue(forKey: "sidebarLayoutPreferences")
+
+        let older = try CadenceDataExportService.decode(
+            try JSONSerialization.data(withJSONObject: json)
+        )
+        #expect(older.sidebarLayoutPreferenceRecords.isEmpty)
+        #expect(older.recordCount(forEntityNamed: "SidebarLayoutPreference") == 0)
+        #expect(older.tasks.count == 1, "the rest of the document came back")
+
+        // And it imports, which is the thing the user is actually trying to do.
+        let destination = ModelContext(try CadenceTestStore.container())
+        let outcome = try CadenceArchiveImportService.apply(older, in: destination)
+        #expect(outcome.insertedRecordCount == 1)
+    }
+
     /// The failure a user reads names the row. "The import failed" over a four-thousand-row
     /// document is not something anyone can act on.
     @Test func everyRefusalNamesTheRowItRefused() {
@@ -1232,7 +1272,11 @@ struct CadenceArchiveImportSurfaceTests {
         let document = Document(title: "Old doc")
         document.area = area
 
-        for model in [context, area, project, pursuit, tag, goal, bundle] as [any PersistentModel] {
+        // T-1274's synced sidebar layout. References nothing, which is why it is only here and not
+        // in the relationship sweep below — but the archive carries it, so the fixture must.
+        let sidebarLayout = SidebarLayoutPreference(orderRaw: "today,goals", hiddenRaw: "habits")
+
+        for model in [context, area, project, pursuit, tag, goal, bundle, sidebarLayout] as [any PersistentModel] {
             modelContext.insert(model)
         }
         for model in [task, subtask, session, note, saved, asset, listLink, habit, completion] as [any PersistentModel] {

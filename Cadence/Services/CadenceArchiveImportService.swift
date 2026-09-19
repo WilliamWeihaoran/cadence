@@ -259,6 +259,10 @@ nonisolated enum CadenceArchiveImportService {
         archiveIDs["PermNote"] = try uniqueIDs(archive.legacyPermNotes, table: "PermNote")
         archiveIDs["EventNote"] = try uniqueIDs(archive.legacyEventNotes, table: "EventNote")
         archiveIDs["Document"] = try uniqueIDs(archive.legacyDocuments, table: "Document")
+        archiveIDs["SidebarLayoutPreference"] = try uniqueIDs(
+            archive.sidebarLayoutPreferenceRecords,
+            table: "SidebarLayoutPreference"
+        )
 
         let destinationIDs = destination.idsByEntityName
         var known: [String: Set<UUID>] = [:]
@@ -729,6 +733,21 @@ nonisolated enum CadenceArchiveImportService {
             }
         )
 
+        // No wiring pass: the layout references nothing but destination raw values, which are
+        // strings this build either recognises or drops when it reads them.
+        _ = upsert(
+            archive.sidebarLayoutPreferenceRecords, into: &destination.sidebarLayoutPreferences,
+            mode: mode, tally: &tally, in: modelContext,
+            make: { _ in SidebarLayoutPreference() },
+            fields: { record, model in
+                model.id = record.id
+                model.orderRaw = record.orderRaw
+                model.hiddenRaw = record.hiddenRaw
+                model.createdAt = record.createdAt
+                model.updatedAt = record.updatedAt
+            }
+        )
+
         worklist.savedLinks = upsert(
             archive.savedLinks, into: &destination.savedLinks,
             mode: mode, tally: &tally, in: modelContext,
@@ -1083,6 +1102,7 @@ nonisolated enum CadenceArchiveImportService {
         var legacyPermNotes: [UUID: PermNote]
         var legacyEventNotes: [UUID: EventNote]
         var legacyDocuments: [UUID: Document]
+        var sidebarLayoutPreferences: [UUID: SidebarLayoutPreference]
 
         init(in modelContext: ModelContext) throws {
             contexts = try Self.index(Context.self, in: modelContext) { $0.id }
@@ -1106,6 +1126,7 @@ nonisolated enum CadenceArchiveImportService {
             legacyPermNotes = try Self.index(PermNote.self, in: modelContext) { $0.id }
             legacyEventNotes = try Self.index(EventNote.self, in: modelContext) { $0.id }
             legacyDocuments = try Self.index(Document.self, in: modelContext) { $0.id }
+            sidebarLayoutPreferences = try Self.index(SidebarLayoutPreference.self, in: modelContext) { $0.id }
         }
 
         /// Keyed by the entity name `CadenceSchema` reports, so validation and the plan can talk
@@ -1133,6 +1154,7 @@ nonisolated enum CadenceArchiveImportService {
                 "PermNote": Set(legacyPermNotes.keys),
                 "EventNote": Set(legacyEventNotes.keys),
                 "Document": Set(legacyDocuments.keys),
+                "SidebarLayoutPreference": Set(sidebarLayoutPreferences.keys),
             ]
         }
 

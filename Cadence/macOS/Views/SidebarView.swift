@@ -24,8 +24,15 @@ struct SidebarView: View {
     @Query private var allTasks: [AppTask]
     @Query private var habits: [Habit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
+    /// The synced layout (T-1274). One row for the whole account; `@Query` rather than a fetch so
+    /// a change made on the iPad redraws this column without anything here asking.
+    @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
+    /// The device-local values this preference replaced, read only as the fallback for a store that
+    /// holds no synced row yet — see `CadenceSidebarLayoutPreferenceStore.layout(from:)`.
     @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
     @AppStorage(CadencePreferenceKeys.sidebarTabOrder) private var sidebarTabOrderRaw = ""
+    /// Still device-local, deliberately: T-1274 synced *which rows and in what order*, which is
+    /// what the owner asked for. Colour is a separate preference and stayed where it was.
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = ""
 
     @Environment(GlobalSearchManager.self) private var globalSearchManager
@@ -90,6 +97,10 @@ struct SidebarView: View {
         .sheet(item: $newListTarget) { target in
             CreateListSheet(context: target.context)
         }
+        // Both halves, because the row under the selection can go away two ways: the user hides it
+        // here, or a sync brings a layout hiding it from another device.
+        .onChange(of: visibleRows) { _, _ in moveSelectionOffAHiddenRow() }
+        .onAppear { moveSelectionOffAHiddenRow() }
     }
 
     // MARK: - Nav groups
@@ -250,44 +261,67 @@ struct SidebarView: View {
 
     // MARK: - Tab visibility / order
 
-    var hiddenTabs: Set<SidebarStaticDestination> {
-        Set(sidebarHiddenTabsRaw.split(separator: ",").compactMap { SidebarStaticDestination(rawValue: String($0)) })
+    /// The user's layout, synced, with the device-local preference as the fallback.
+    ///
+    /// What it carries is **only what the user actually dragged or hid**, never a defaults-filled
+    /// sequence: a defaults-filled order would silently reorder a group nobody has customised —
+    /// Focus climbed above Goals and Habits on a fresh install the one time that was tried.
+    var sidebarLayout: CadenceSidebarLayoutPreferenceStore.Layout {
+        CadenceSidebarLayoutPreferenceStore.layout(
+            from: sidebarLayoutPreferences,
+            legacyOrderRaw: sidebarTabOrderRaw,
+            legacyHiddenRaw: sidebarHiddenTabsRaw
+        )
     }
 
-    /// Every row Settings → Sidebar offers a handle for — a visibility toggle, a place in the
-    /// stored order, and a colour override.
-    private static let customisableDestinations: Set<CadenceFeatureDestination> =
-        Set(SidebarStaticDestination.allCases.map(\.feature))
+    /// Every row this column draws, top to bottom, with the user's order and hidden set applied.
+    /// The fallback below picks from this, so it lands on a row the user is actually looking at.
+    private var visibleRows: [CadenceFeatureDestination] {
+        CadenceSidebarLayout.NavGroup.allCases.flatMap { resolvedDestinations(in: $0) }
+    }
 
-    /// What the user actually dragged, parsed straight from the preference rather than through
-    /// `orderedDestinations(from:)`. That spelling fills the gaps from a stored *default*
-    /// sequence, which would silently reorder a group nobody has customised — Focus would climb
-    /// above Goals and Habits on a fresh install because the old default listed it third.
-    private var storedOrder: [CadenceFeatureDestination] {
-        sidebarTabOrderRaw
-            .split(separator: ",")
-            .compactMap { SidebarStaticDestination(rawValue: String($0))?.feature }
+    private func resolvedDestinations(
+        in group: CadenceSidebarLayout.NavGroup
+    ) -> [CadenceFeatureDestination] {
+        let layout = sidebarLayout
+        return CadenceSidebarLayout.resolvedDestinations(
+            in: group,
+            customisable: CadenceSidebarLayout.customisableDestinations,
+            storedOrder: layout.order,
+            hidden: layout.hidden
+        )
+    }
+
+    /// Moves the selection off a row that has just been hidden.
+    ///
+    /// The rule is `CadenceSidebarLayout.selectionFallback(for:visibleRows:)` — shared with iOS,
+    /// because a detail pane still showing Habits on one device and the first visible row on the
+    /// other is the same preference read two ways. Hiding the page you are on is not rare: it is
+    /// the most likely thing to hide, since it is the one in front of you.
+    private func moveSelectionOffAHiddenRow() {
+        let rows = visibleRows
+        guard let selection,
+              let destination = CadenceFeatureDestination.allCases.first(where: { $0.macSidebarItem == selection }),
+              let fallback = CadenceSidebarLayout.selectionFallback(for: destination, visibleRows: rows),
+              let item = fallback.macSidebarItem
+        else { return }
+        self.selection = item
     }
 
     // MARK: - Nav grouping
 
     // Which destinations sit in which group is `CadenceSidebarLayout`'s decision, not this
-    // view's: the iPad sidebar is being brought to the same structure, and the grouping and
-    // ordering rules are the parts worth having exactly once. The stored `sidebarTabOrder`
-    // sorts *within* a group — reordering in Settings still moves a row, it just can't move it
-    // past the lists into the other group.
+    // view's: both columns render the same structure, and the grouping and ordering rules are the
+    // parts worth having exactly once. The user's stored order sorts *within* a group —
+    // reordering in Settings still moves a row, it just can't move it past the lists into the
+    // footer.
     private func navItems(
         in group: CadenceSidebarLayout.NavGroup,
         counts: CadenceSidebarCountInputs
     ) -> [SidebarNavItem] {
         let tintOverrides = CadenceSidebarTint.overrides(from: sidebarTabColorsRaw)
 
-        return CadenceSidebarLayout.resolvedDestinations(
-            in: group,
-            customisable: Self.customisableDestinations,
-            storedOrder: storedOrder,
-            hidden: Set(hiddenTabs.map(\.feature))
-        )
+        return resolvedDestinations(in: group)
         .compactMap { destination in
             guard let item = destination.macSidebarItem else { return nil }
             return SidebarNavItem(
@@ -296,10 +330,11 @@ struct SidebarView: View {
                 icon: destination.systemImage,
                 // "Tasks", not "All Tasks": the row opens both All and Inbox now.
                 label: CadenceSidebarLayout.rowTitle(for: destination),
-                // Notes and Settings have no `SidebarStaticDestination` case, so Settings →
-                // Sidebar offers them no colour picker and they fall back to the destination's
-                // default. Every row that *does* have one keeps the user's override. The rule is
-                // `CadenceSidebarTint`'s, so the iPad column reads the same preference.
+                // Settings has no `SidebarStaticDestination` case, so Settings → Sidebar offers
+                // it no colour picker and it falls back to the destination's default; Notes
+                // gained one in T-1274 along with its visibility toggle. Every row that has one
+                // keeps the user's override. The rule is `CadenceSidebarTint`'s, so the iPad
+                // column reads the same preference.
                 tint: Color(hex: tintOverrides[destination] ?? destination.defaultColorHex),
                 count: CadenceSidebarLayout.count(for: destination, counts: counts),
                 accessibilityID: "sidebar.destination.\(destination.rawValue)"

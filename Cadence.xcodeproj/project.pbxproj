@@ -23,6 +23,7 @@
 		A10000002FCE00000000020E /* Cadence/Models/PermNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010E /* Cadence/Models/PermNote.swift */; };
 		A10000002FCE00000000020F /* Cadence/Models/Document.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010F /* Cadence/Models/Document.swift */; };
 		A10000002FCE000000000210 /* Cadence/Models/SavedLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000110 /* Cadence/Models/SavedLink.swift */; };
+		A10000002FCE0000000002F1 /* Cadence/Models/SidebarLayoutPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE0000000001F1 /* Cadence/Models/SidebarLayoutPreference.swift */; };
 		A10000002FCE000000000211 /* Cadence/Models/EventNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000111 /* Cadence/Models/EventNote.swift */; };
 		A10000002FCE000000000212 /* Cadence/Shared/DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */; };
 		A10000002FCE000000000213 /* Cadence/Services/CadenceSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */; };
@@ -80,6 +81,7 @@
 		B10000002FCE000000000217 /* Cadence/Models/Document.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000010F /* Cadence/Models/Document.swift */; };
 		B10000002FCE000000000218 /* Cadence/Models/Note.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000011E /* Cadence/Models/Note.swift */; };
 		B10000002FCE000000000219 /* Cadence/Models/SavedLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000110 /* Cadence/Models/SavedLink.swift */; };
+		B10000002FCE0000000002F1 /* Cadence/Models/SidebarLayoutPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE0000000001F1 /* Cadence/Models/SidebarLayoutPreference.swift */; };
 		B10000002FCE00000000021A /* Cadence/Models/EventNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000111 /* Cadence/Models/EventNote.swift */; };
 		B10000002FCE00000000021B /* Cadence/Models/MarkdownImageAsset.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000011D /* Cadence/Models/MarkdownImageAsset.swift */; };
 		B10000002FCE00000000021C /* Cadence/Shared/DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */; };
@@ -155,6 +157,7 @@
 		A10000002FCE00000000010E /* Cadence/Models/PermNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/PermNote.swift; sourceTree = "<group>"; };
 		A10000002FCE00000000010F /* Cadence/Models/Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/Document.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000110 /* Cadence/Models/SavedLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/SavedLink.swift; sourceTree = "<group>"; };
+		A10000002FCE0000000001F1 /* Cadence/Models/SidebarLayoutPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/SidebarLayoutPreference.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000111 /* Cadence/Models/EventNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Models/EventNote.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/DateFormatters.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000113 /* Cadence/Services/CadenceSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceSchema.swift; sourceTree = "<group>"; };
@@ -318,6 +321,7 @@
 				A10000002FCE00000000010F /* Cadence/Models/Document.swift */,
 				A10000002FCE00000000011E /* Cadence/Models/Note.swift */,
 				A10000002FCE000000000110 /* Cadence/Models/SavedLink.swift */,
+				A10000002FCE0000000001F1 /* Cadence/Models/SidebarLayoutPreference.swift */,
 				A10000002FCE000000000111 /* Cadence/Models/EventNote.swift */,
 				A10000002FCE00000000011D /* Cadence/Models/MarkdownImageAsset.swift */,
 				A10000002FCE000000000112 /* Cadence/Shared/DateFormatters.swift */,
@@ -636,6 +640,7 @@
 				A10000002FCE00000000020F /* Cadence/Models/Document.swift in Sources */,
 				A10000002FCE00000000021F /* Cadence/Models/Note.swift in Sources */,
 				A10000002FCE000000000210 /* Cadence/Models/SavedLink.swift in Sources */,
+				A10000002FCE0000000002F1 /* Cadence/Models/SidebarLayoutPreference.swift in Sources */,
 				A10000002FCE000000000211 /* Cadence/Models/EventNote.swift in Sources */,
 				A10000002FCE00000000021E /* Cadence/Models/MarkdownImageAsset.swift in Sources */,
 				A10000002FCE000000000212 /* Cadence/Shared/DateFormatters.swift in Sources */,
@@ -691,6 +696,7 @@
 				B10000002FCE000000000217 /* Cadence/Models/Document.swift in Sources */,
 				B10000002FCE000000000218 /* Cadence/Models/Note.swift in Sources */,
 				B10000002FCE000000000219 /* Cadence/Models/SavedLink.swift in Sources */,
+				B10000002FCE0000000002F1 /* Cadence/Models/SidebarLayoutPreference.swift in Sources */,
 				B10000002FCE00000000021A /* Cadence/Models/EventNote.swift in Sources */,
 				B10000002FCE00000000021B /* Cadence/Models/MarkdownImageAsset.swift in Sources */,
 				B10000002FCE00000000021C /* Cadence/Shared/DateFormatters.swift in Sources */,

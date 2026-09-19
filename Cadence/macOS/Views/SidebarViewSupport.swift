@@ -10,11 +10,19 @@ import SwiftUI
 /// `everyRowSettingsLetsYouCustomiseIsActuallyRendered`. Stored `inbox` entries in
 /// `sidebarHiddenTabs` / `sidebarTabOrder` / `sidebarTabColors` now fail to decode and are dropped,
 /// which is the graceful outcome every reader here already handles with `compactMap`.
+///
+/// **`.notes` joined them in T-1274**, when the nav group became the six rows the owner named —
+/// Today, Tasks, Calendar, Notes, Goals, Habits — and "which one they wanna see" had to include the
+/// one row that had never had a toggle. It is a new raw value, so no stored string changes meaning.
+///
+/// The set is mirrored, not derived, by `CadenceSidebarLayout.customisableDestinations`, which is
+/// what iOS reads; `CadenceSidebarLayoutTests` pins the two against each other.
 enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     case today
     case allTasks
     case focus
     case calendar
+    case notes
     case goals
     case habits
 
@@ -26,6 +34,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .allTasks: return .allTasks
         case .focus: return .focus
         case .calendar: return .calendar
+        case .notes: return .notes
         case .goals: return .goals
         case .habits: return .habits
         }
@@ -37,6 +46,7 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .allTasks: return .allTasks
         case .focus: return .focus
         case .calendar: return .calendar
+        case .notes: return .notes
         case .goals: return .goals
         case .habits: return .habits
         }
@@ -64,20 +74,13 @@ extension SidebarStaticDestination {
         CadenceFeatureDestination.desktopSidebarOrder.compactMap { SidebarStaticDestination(rawValue: $0.rawValue) }
     }
 
-    static func orderedDestinations(from raw: String) -> [SidebarStaticDestination] {
-        let stored = raw
-            .split(separator: ",")
-            .compactMap { SidebarStaticDestination(rawValue: String($0)) }
-        let uniqueStored = stored.reduce(into: [SidebarStaticDestination]()) { partial, item in
-            if !partial.contains(item) { partial.append(item) }
-        }
-        let missing = defaultOrder.filter { !uniqueStored.contains($0) }
-        return uniqueStored + missing
-    }
-
-    static func rawOrderString(from destinations: [SidebarStaticDestination]) -> String {
-        destinations.map(\.rawValue).joined(separator: ",")
-    }
+    // Two helpers went with T-1274: the one that read an order out of a raw string, and the one
+    // that wrote it back. They parsed and wrote
+    // `CadencePreferenceKeys.sidebarTabOrder`, which is no longer the order anything draws:
+    // the order is a synced `SidebarLayoutPreference`, and the one parse is
+    // `CadenceSidebarLayoutPreferenceStore`'s — which deliberately does *not* fill the gaps from
+    // `defaultOrder`, because a defaults-filled order silently reorders a group nobody customised.
+    // The old preference is still read, once, as this device's fallback until a synced row exists.
 
     /// Delegates to `CadenceSidebarTint`, which parses the same string keyed by
     /// `CadenceFeatureDestination` raw values. The two enums share raw values by construction, so

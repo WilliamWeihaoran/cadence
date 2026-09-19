@@ -11,14 +11,21 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
     @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
+    /// The device-local values the synced layout replaced (T-1274), read only as the fallback for
+    /// a store with no synced row yet. The first edit here writes the whole resolved layout into
+    /// the row, so a Mac customised before the change carries its layout across rather than
+    /// resetting to the declared one.
     @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
     @AppStorage(CadencePreferenceKeys.sidebarTabOrder) private var sidebarTabOrderRaw = ""
+    /// Still device-local: T-1274 synced the rows and their order, which is what the owner asked
+    /// for. Colour is a separate preference and stayed where it was.
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = ""
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order) private var tags: [Tag]
+    @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
     @State private var selectedCategory: SettingsCategory = .navigation
     @State private var pendingDeleteArea: Area?
     @State private var pendingDeleteProject: Project?
@@ -30,6 +37,10 @@ struct SettingsView: View {
     /// Set when a context reorder was refused by the store. See `moveContext(_:before:)` — the
     /// rows have already been put back by then, so the pane and this sentence agree.
     @State private var contextOrderFailureNotice: String?
+    /// Set when a sidebar layout edit was refused — by the store, or by the one-visible-row floor.
+    /// It sits under the detail header for the same reason the two above do: the pane it is about
+    /// is what the user is still looking at.
+    @State private var sidebarLayoutNotice: String?
     @State private var showCreateContext = false
     @State private var editingSidebarTab: SidebarStaticDestination?
     @State private var aiAPIKeyDraft = ""
@@ -55,6 +66,9 @@ struct SettingsView: View {
                     }
                     if let contextOrderFailureNotice {
                         CadenceInlineFailureNotice(text: contextOrderFailureNotice)
+                    }
+                    if let sidebarLayoutNotice {
+                        CadenceInlineFailureNotice(text: sidebarLayoutNotice)
                     }
                     selectedSectionContent
                 }
@@ -233,22 +247,59 @@ struct SettingsView: View {
         }
     }
 
+    /// The layout the sidebar is drawing: the synced row if there is one, the device-local values
+    /// otherwise. Both this screen and `SidebarView` read it through the same helper, so the list
+    /// here is the column's own order rather than a second guess at it.
+    private var sidebarLayout: CadenceSidebarLayoutPreferenceStore.Layout {
+        CadenceSidebarLayoutPreferenceStore.layout(
+            from: sidebarLayoutPreferences,
+            legacyOrderRaw: sidebarTabOrderRaw,
+            legacyHiddenRaw: sidebarHiddenTabsRaw
+        )
+    }
+
     private var hiddenTabs: Set<SidebarStaticDestination> {
-        Set(sidebarHiddenTabsRaw.split(separator: ",").compactMap { SidebarStaticDestination(rawValue: String($0)) })
+        Set(sidebarLayout.hidden.compactMap(\.sidebarStaticDestination))
     }
 
     private var orderedSidebarTabs: [SidebarStaticDestination] {
-        SidebarStaticDestination.orderedDestinations(from: sidebarTabOrderRaw)
+        CadenceSidebarLayoutPreferenceStore.orderedCustomisableDestinations(for: sidebarLayout)
+            .compactMap(\.sidebarStaticDestination)
     }
 
+    /// Shows or hides a row, unless that would hide the last visible one — see
+    /// `CadenceSidebarLayoutPreferenceStore.hidden(setting:visible:in:)`. The refusal is a sentence
+    /// on screen rather than a switch that flips itself back, which says nothing.
     private func toggleTab(_ destination: SidebarStaticDestination) {
-        var set = hiddenTabs
-        if set.contains(destination) {
-            set.remove(destination)
-        } else {
-            set.insert(destination)
+        let layout = sidebarLayout
+        let shouldBecomeVisible = layout.hidden.contains(destination.feature)
+        guard let hidden = CadenceSidebarLayoutPreferenceStore.hidden(
+            setting: destination.feature,
+            visible: shouldBecomeVisible,
+            in: layout
+        ) else {
+            sidebarLayoutNotice = CadenceSidebarLayoutPreferenceStore.lastVisibleRowNotice
+            return
         }
-        sidebarHiddenTabsRaw = set.map(\.rawValue).joined(separator: ",")
+        writeSidebarLayout(.init(order: layout.order, hidden: hidden))
+    }
+
+    /// The one commit path for both sidebar-layout controls.
+    ///
+    /// Not `try?`: this inserts the synced row on the first edit, and the row moving under the
+    /// cursor — or the toggle staying off — is the success claim, which is the pair the save-commit
+    /// rule forbids swallowing.
+    private func writeSidebarLayout(_ layout: CadenceSidebarLayoutPreferenceStore.Layout) {
+        do {
+            try CadenceSidebarLayoutPreferenceStore.write(
+                layout,
+                records: sidebarLayoutPreferences,
+                in: modelContext
+            )
+            sidebarLayoutNotice = nil
+        } catch {
+            sidebarLayoutNotice = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 
     private func setTabColor(_ destination: SidebarStaticDestination, hex: String) {
@@ -258,12 +309,13 @@ struct SettingsView: View {
     }
 
     private func moveSidebarTab(_ dragged: SidebarStaticDestination, before target: SidebarStaticDestination) {
-        var current = orderedSidebarTabs
-        guard let fromIndex = current.firstIndex(of: dragged),
-              let toIndex = current.firstIndex(of: target) else { return }
-        let moved = current.remove(at: fromIndex)
-        current.insert(moved, at: toIndex > fromIndex ? toIndex - 1 : toIndex)
-        sidebarTabOrderRaw = SidebarStaticDestination.rawOrderString(from: current)
+        let layout = sidebarLayout
+        guard let order = CadenceSidebarLayoutPreferenceStore.order(
+            in: layout,
+            moving: dragged.feature,
+            before: target.feature
+        ) else { return }
+        writeSidebarLayout(.init(order: order, hidden: layout.hidden))
     }
 
     /// The drop half of the contexts pane's drag reorder.

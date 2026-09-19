@@ -136,6 +136,13 @@ struct iOSSidebar: View {
     /// destination's default — but reading it is what makes the two columns one sidebar rather
     /// than two that happen to agree today.
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
+    /// The synced sidebar layout (T-1274) — which rows the user keeps and in what order. This
+    /// column had no say in it until then: macOS honoured the preference and iPad drew the declared
+    /// list, so one account's two sidebars disagreed by construction.
+    ///
+    /// No device-local fallback is read here, unlike `SidebarView`: the preference it falls back to
+    /// was only ever written by macOS's Settings screen, so on iOS it is empty by definition.
+    @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
 
     private var tintOverrides: [CadenceFeatureDestination: String] {
         CadenceSidebarTint.overrides(from: sidebarTabColorsRaw)
@@ -176,6 +183,40 @@ struct iOSSidebar: View {
         )
     }
 
+    private var sidebarLayout: CadenceSidebarLayoutPreferenceStore.Layout {
+        CadenceSidebarLayoutPreferenceStore.layout(from: sidebarLayoutPreferences)
+    }
+
+    private func resolvedDestinations(
+        in group: CadenceSidebarLayout.NavGroup
+    ) -> [CadenceFeatureDestination] {
+        let layout = sidebarLayout
+        return CadenceSidebarLayout.resolvedDestinations(
+            in: group,
+            customisable: CadenceSidebarLayout.customisableDestinations,
+            storedOrder: layout.order,
+            hidden: layout.hidden
+        )
+    }
+
+    /// Every row this column draws, top to bottom, with the layout applied. `.lists` is not among
+    /// them: it is this platform's own row and nothing can hide it.
+    private var visibleRows: [CadenceFeatureDestination] {
+        CadenceSidebarLayout.NavGroup.allCases.flatMap { resolvedDestinations(in: $0) }
+    }
+
+    /// Moves the selection off a row that has just been hidden, by the same shared rule macOS
+    /// uses — `CadenceSidebarLayout.selectionFallback(for:visibleRows:)`. The layout is synced, so
+    /// the row under the selection can go away because of an edit made on another device.
+    private func moveSelectionOffAHiddenRow() {
+        let rows = visibleRows
+        guard let selection,
+              let destination = CadenceFeatureDestination.allCases.first(where: { $0.item == selection }),
+              let fallback = CadenceSidebarLayout.selectionFallback(for: destination, visibleRows: rows)
+        else { return }
+        self.selection = fallback.item
+    }
+
     private var listSections: [CadenceSidebarLists.Section] {
         CadenceSidebarLists.sections(
             contexts: contexts.filter { !$0.isArchived }.map {
@@ -201,7 +242,7 @@ struct iOSSidebar: View {
             .padding(.top, 12)
             .padding(.bottom, 10)
 
-            navGroup(CadenceSidebarLayout.primaryDestinations, counts: counts)
+            navGroup(resolvedDestinations(in: .primary), counts: counts)
                 .padding(.bottom, iOSSidebarMetrics.groupSpacing)
 
             iOSSidebarRailDivider()
@@ -212,9 +253,10 @@ struct iOSSidebar: View {
             iOSSidebarRailDivider()
                 .padding(.horizontal, style.horizontalPadding)
 
-            // Expanded: Goals and Habits keep labelled rows, Settings and Focus collapse to one
-            // row of two glyphs. Rail is already all glyphs at 58pt, where two across plus the
-            // gap does not fit, so it keeps all four stacked.
+            // Expanded: Settings and Focus collapse to one row of two glyphs, and since T-1274
+            // the only labelled row left down here is Lists — Goals and Habits are nav rows in the
+            // group at the top. Rail is already all glyphs at 58pt, where two across plus the gap
+            // does not fit, so it keeps them stacked.
             if style == .expanded {
                 navGroup(secondaryRowDestinations, counts: counts)
                     .padding(.top, iOSSidebarMetrics.groupSpacing)
@@ -229,6 +271,10 @@ struct iOSSidebar: View {
                     .padding(.bottom, 12)
             }
         }
+        // Both halves, because the row under the selection can go away two ways: the user hides it
+        // in Settings, or a sync brings a layout hiding it from another device.
+        .onChange(of: visibleRows) { _, _ in moveSelectionOffAHiddenRow() }
+        .onAppear { moveSelectionOffAHiddenRow() }
     }
 
     /// Settings and Focus, one row, pushed to opposite ends.
@@ -239,8 +285,15 @@ struct iOSSidebar: View {
     /// destinations in the column, which is why they share one row's height rather than taking
     /// one each; it is not a reason to strip their identity.
     private var footerGlyphRow: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(CadenceSidebarLayout.footerGlyphDestinations.enumerated()), id: \.element) { index, destination in
+        // Filtered through the resolved group so a hidden Focus leaves Settings alone in the footer
+        // rather than leaving a gap, which is what macOS's footer has always done. Ordered by
+        // `footerGlyphDestinations`, because that list — not the user's — decides which glyph
+        // leads.
+        let glyphs = CadenceSidebarLayout.footerGlyphDestinations
+            .filter { resolvedDestinations(in: .secondary).contains($0) }
+
+        return HStack(spacing: 0) {
+            ForEach(Array(glyphs.enumerated()), id: \.element) { index, destination in
                 if index > 0 {
                     Spacer(minLength: 8)
                 }
@@ -281,13 +334,20 @@ struct iOSSidebar: View {
     /// that already exist. Removing the door is the shape of T-1113 on the other platform, where a
     /// region that drew nothing on a fresh install took the only route to `CreateListSheet` with it.
     private var secondaryRowDestinations: [CadenceFeatureDestination] {
-        [.lists] + CadenceSidebarLayout.secondaryRowDestinations
+        ([.lists] + CadenceSidebarLayout.secondaryRowDestinations).filter(isVisibleSecondaryRow)
     }
 
     /// The rail's stack, which keeps all four secondary glyphs rather than splitting two into a
     /// footer row. Same prepend, same reason.
     private var secondaryDestinations: [CadenceFeatureDestination] {
-        [.lists] + CadenceSidebarLayout.secondaryDestinations
+        ([.lists] + CadenceSidebarLayout.secondaryDestinations).filter(isVisibleSecondaryRow)
+    }
+
+    /// Whether a row below the lists survives the user's hidden set (T-1274). `.lists` always
+    /// does: it is this platform's own row, nothing in Settings offers a handle for it, and it is
+    /// the only door to the one surface that creates a list.
+    private func isVisibleSecondaryRow(_ destination: CadenceFeatureDestination) -> Bool {
+        destination == .lists || resolvedDestinations(in: .secondary).contains(destination)
     }
 
     private func navGroup(

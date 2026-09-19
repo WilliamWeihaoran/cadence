@@ -698,6 +698,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
             emptyStoreRowCounter(GoalListLink.self),
             emptyStoreRowCounter(Habit.self),
             emptyStoreRowCounter(HabitCompletion.self),
+            emptyStoreRowCounter(SidebarLayoutPreference.self),
         ]
         var result: [String: Int] = [:]
         for counter in counters {

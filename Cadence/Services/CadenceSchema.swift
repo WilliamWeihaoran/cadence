@@ -23,5 +23,6 @@ nonisolated enum CadenceSchema {
         GoalListLink.self,
         Habit.self,
         HabitCompletion.self,
+        SidebarLayoutPreference.self,
     ])
 }

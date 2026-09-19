@@ -464,7 +464,12 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // now, and a refused link is named at the top of the calendar settings section — the
         // surface the user is still looking at, since nothing is dismissed. The retry is the same
         // row of calendars, and the notice clears on the next write that lands.
-        #expect(total == 67, "the inline notice has \(total) call sites, not the 67 this test was written over")
+        // T-1274 made it 69, one per platform and both bare: the sidebar's rows and their order
+        // are a synced record now, so both Settings screens name a refused layout edit — the store
+        // refusing the write, or the one-visible-row floor refusing the last toggle. Neither is
+        // dismissable for the reason the reorder surfaces are not: the retry is the same toggle or
+        // the same drag, and the next one that lands clears it.
+        #expect(total == 69, "the inline notice has \(total) call sites, not the 69 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

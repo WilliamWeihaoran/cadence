@@ -17,19 +17,46 @@ enum CadenceSidebarLayout {
         var id: String { rawValue }
     }
 
-    /// Four rows, not five. `.inbox` used to sit here, stranded at the bottom of the group with
-    /// Calendar and Notes between it and the other task list — and it was never a separate
-    /// universe: Inbox is All Tasks with one predicate, and the All Tasks *board* had already
-    /// merged the two by rendering Inbox as one of its list columns. The two are one destination
-    /// now (`CadenceTasksPageScope`), reached through this one row.
+    /// Six rows, and **Goals and Habits are among them** (T-1274). They used to be a second stack
+    /// below the lists, which read as a lesser tier of the app rather than as two more places to
+    /// go; the owner asked for one group — *"can you actually put goals and habits to the same
+    /// place as today, tasks, calendar, and notes"* — and this list is that group. They are
+    /// appended rather than interleaved because the declared order is only the starting point now:
+    /// the user's own order sorts this list (`resolvedDestinations`).
     ///
-    /// Today stays its own row: it is a three-pane dashboard, not a filter over the same rows.
+    /// `.inbox` is still not here. It was never a separate universe — Inbox is All Tasks with one
+    /// predicate, and the All Tasks *board* had already merged the two by rendering Inbox as one of
+    /// its list columns. The two are one destination now (`CadenceTasksPageScope`), reached through
+    /// this one row. Today stays its own row: it is a three-pane dashboard, not a filter over the
+    /// same rows.
     static let primaryDestinations: [CadenceFeatureDestination] = [
-        .today, .allTasks, .calendar, .notes
+        .today, .allTasks, .calendar, .notes, .goals, .habits
     ]
 
+    /// What is left below the lists: the two footer glyphs and nothing else. Both members are in
+    /// `footerGlyphDestinations`, so `secondaryRowDestinations` is empty and neither column draws
+    /// a labelled row down there any more.
     static let secondaryDestinations: [CadenceFeatureDestination] = [
-        .goals, .habits, .focus, .settings
+        .focus, .settings
+    ]
+
+    /// The rows Settings → Sidebar offers a handle for: a visibility toggle, a place in the stored
+    /// order, and a colour override.
+    ///
+    /// The nav group plus Focus. Settings itself is deliberately absent — it is the only door to
+    /// the screen that would hide it — and `.lists`, `.search` and `.inbox` are absent because they
+    /// are not rows (see `navigationDestinations`).
+    ///
+    /// Focus is in the set for the half of it that still bites: hiding Focus drops its footer
+    /// glyph, which it has always done. Its *order* is inert, because the footer draws
+    /// `footerGlyphDestinations` in that list's own order — noted in `docs/TODO.md` T-1287 rather
+    /// than quietly removed, since taking the row out of Settings would also take Focus's colour
+    /// picker with it.
+    ///
+    /// Spelled here rather than derived from macOS's `SidebarStaticDestination`, which is not
+    /// visible to iOS; `CadenceSidebarLayoutTests` pins the two against each other.
+    static let customisableDestinations: Set<CadenceFeatureDestination> = [
+        .today, .allTasks, .calendar, .notes, .goals, .habits, .focus
     ]
 
     /// The two **both** sidebars render as glyphs in one footer row rather than as labelled rows —
@@ -43,10 +70,15 @@ enum CadenceSidebarLayout {
     ///
     /// It stays a *view* of `secondaryDestinations` for the half of the original reasoning that
     /// still holds: both platforms have to agree about which destinations exist and in what order,
-    /// and the footer split is a rendering decision on top of that, not a second list.
+    /// and the footer split is a rendering decision on top of that, not a second list. Since
+    /// T-1274 the two lists have the same members — Goals and Habits moved up into the nav group —
+    /// so `secondaryRowDestinations` is empty and both columns draw nothing between the lists and
+    /// the footer. That is a coincidence of the current membership, not a licence to delete either
+    /// list: a future destination placed below the lists goes in `secondaryDestinations` alone.
     static let footerGlyphDestinations: [CadenceFeatureDestination] = [.settings, .focus]
 
-    /// `secondaryDestinations` minus the two that become footer glyphs, in the original order.
+    /// `secondaryDestinations` minus the ones that become footer glyphs, in the original order.
+    /// Empty today; see `footerGlyphDestinations`.
     static var secondaryRowDestinations: [CadenceFeatureDestination] {
         secondaryDestinations.filter { !footerGlyphDestinations.contains($0) }
     }
@@ -99,6 +131,27 @@ enum CadenceSidebarLayout {
     /// reading it from here rather than re-spelling it is what keeps the two sidebars agreeing.
     static func rowTitle(for destination: CadenceFeatureDestination) -> String {
         destination.compactTitle
+    }
+
+    /// Where the selection goes when the row it was on has just been hidden (T-1274), or `nil`
+    /// when it has nowhere to go and nothing to do.
+    ///
+    /// **`nil` is the common answer and it means "leave the selection alone".** A destination whose
+    /// row is still drawn is untouched; so is one that never had a row — `.lists` is the scrolling
+    /// region and `.search` is the header button, and no hidden set can take either away.
+    ///
+    /// Otherwise the selection lands on the **first visible row**, top of the column, rather than
+    /// on a fixed destination: Today itself can be hidden, so a constant fallback would be a
+    /// selection the sidebar does not draw. `visibleRows` is what the sidebar just resolved, so the
+    /// row it moves to is the one the user is looking at.
+    static func selectionFallback(
+        for destination: CadenceFeatureDestination,
+        visibleRows: [CadenceFeatureDestination]
+    ) -> CadenceFeatureDestination? {
+        let row = navRow(for: destination)
+        guard navigationDestinations.contains(row) else { return nil }
+        guard !visibleRows.contains(row) else { return nil }
+        return visibleRows.first
     }
 
     /// One group's rows, with the user's Settings → Sidebar order and hidden set applied.

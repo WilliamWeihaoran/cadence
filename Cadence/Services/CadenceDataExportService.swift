@@ -135,7 +135,8 @@ nonisolated enum CadenceDataExportService {
             legacyWeeklyNotes: try records(WeeklyNote.self, in: modelContext, CadenceArchiveWeeklyNote.init),
             legacyPermNotes: try records(PermNote.self, in: modelContext, CadenceArchivePermNote.init),
             legacyEventNotes: try records(EventNote.self, in: modelContext, CadenceArchiveEventNote.init),
-            legacyDocuments: try records(Document.self, in: modelContext, CadenceArchiveLegacyDocument.init)
+            legacyDocuments: try records(Document.self, in: modelContext, CadenceArchiveLegacyDocument.init),
+            sidebarLayoutPreferences: try records(SidebarLayoutPreference.self, in: modelContext, CadenceArchiveSidebarLayoutPreference.init)
         )
     }
 
@@ -250,6 +251,24 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
     var legacyPermNotes: [CadenceArchivePermNote]
     var legacyEventNotes: [CadenceArchiveEventNote]
     var legacyDocuments: [CadenceArchiveLegacyDocument]
+    /// The synced sidebar layout (T-1274). Usually one row, and the backup carries it for the same
+    /// reason it carries a list's colour: it is a choice the user made, not derived state.
+    ///
+    /// **Optional for one reason, and it is not about the data: every archive written before
+    /// T-1274 has no such key, and Swift's synthesized `init(from:)` *fails* on a missing key
+    /// rather than falling back to a property's default value.** Measured, not assumed — a
+    /// non-optional `= []` here makes every older backup unreadable, which is the one thing an
+    /// archive reader must not do. `anArchiveWrittenBeforeTheLayoutTableStillDecodes` pins it, and
+    /// `formatVersion` is deliberately *not* bumped: a reader that simply gains a table can still
+    /// read everything it could before.
+    ///
+    /// Read it through `sidebarLayoutPreferenceRecords`; nothing should branch on the `nil`.
+    var sidebarLayoutPreferences: [CadenceArchiveSidebarLayoutPreference]?
+
+    /// The layout rows this archive carries — none, for one written before the table existed.
+    var sidebarLayoutPreferenceRecords: [CadenceArchiveSidebarLayoutPreference] {
+        sidebarLayoutPreferences ?? []
+    }
 
     /// Which table holds each `CadenceSchema` entity.
     ///
@@ -279,6 +298,7 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
         "PermNote": \.legacyPermNotes.count,
         "EventNote": \.legacyEventNotes.count,
         "Document": \.legacyDocuments.count,
+        "SidebarLayoutPreference": \.sidebarLayoutPreferenceRecords.count,
     ]
 
     nonisolated func recordCount(forEntityNamed name: String) -> Int? {
@@ -622,6 +642,26 @@ nonisolated struct CadenceArchiveNote: Codable, Equatable, Identifiable, Sendabl
         areaID = model.area?.id
         projectID = model.project?.id
         tagIDs = (model.tags ?? []).map(\.id).sorted { $0.uuidString < $1.uuidString }
+    }
+}
+
+/// The synced sidebar layout, as stored: two comma-separated lists of
+/// `CadenceFeatureDestination` raw values. Deliberately not expanded into arrays of destinations —
+/// an archive is a copy of what the store holds, and an importer that re-encoded the lists would be
+/// deciding what an unrecognised row name means.
+nonisolated struct CadenceArchiveSidebarLayoutPreference: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var orderRaw: String
+    var hiddenRaw: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(_ model: SidebarLayoutPreference) {
+        id = model.id
+        orderRaw = model.orderRaw
+        hiddenRaw = model.hiddenRaw
+        createdAt = CadenceArchiveTimestamp.normalized(model.createdAt)
+        updatedAt = CadenceArchiveTimestamp.normalized(model.updatedAt)
     }
 }
 

@@ -193,18 +193,26 @@ struct iOSSettingsView: View {
         case .appearance:
             iOSAppearanceSettingsSection()
         case .navigation:
-            iOSNavigationSettingsSection(
-                calendarViewMode: Binding(
-                    get: { calendarViewMode },
-                    set: { calendarViewModeRaw = $0.rawValue }
-                ),
-                calendarPresentation: Binding(
-                    get: { calendarPresentation },
-                    set: { calendarPresentationRaw = $0.rawValue }
-                ),
-                calendarZoomLevel: $calendarZoomLevel,
-                listDetailDefaultPage: $listDetailDefaultPage
-            )
+            VStack(alignment: .leading, spacing: 18) {
+                iOSNavigationSettingsSection(
+                    calendarViewMode: Binding(
+                        get: { calendarViewMode },
+                        set: { calendarViewModeRaw = $0.rawValue }
+                    ),
+                    calendarPresentation: Binding(
+                        get: { calendarPresentation },
+                        set: { calendarPresentationRaw = $0.rawValue }
+                    ),
+                    calendarZoomLevel: $calendarZoomLevel,
+                    listDetailDefaultPage: $listDetailDefaultPage
+                )
+
+                // T-1274. The synced sidebar layout, which is the same record macOS's
+                // Settings → Sidebar edits — iOS had no control for it at all, so an
+                // iPhone-and-iPad user obeyed a layout only the Mac could change, the shape
+                // T-579 fixed for the default list page.
+                iOSSidebarLayoutSettingsSection()
+            }
         case .sync:
             iOSSyncSettingsSection(probe: cloudAccount)
         case .calendar:

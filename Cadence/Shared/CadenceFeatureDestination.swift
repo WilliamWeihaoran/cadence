@@ -43,13 +43,18 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
     /// `SidebarStaticDestination.defaultOrder`. `.inbox` is not among them any more: it is a view
     /// inside the Tasks row rather than a row, so offering it a place in the row order would be
     /// offering a control that moves nothing.
+    ///
+    /// It is `CadenceSidebarLayout`'s declared order, group by group, and
+    /// `CadenceSidebarLayoutTests` pins that: the nav group as the sidebar declares it — Notes and,
+    /// since T-1274, Goals and Habits included — then Focus, which is drawn in the footer.
     static let desktopSidebarOrder: [CadenceFeatureDestination] = [
         .today,
         .allTasks,
-        .focus,
         .calendar,
+        .notes,
         .goals,
-        .habits
+        .habits,
+        .focus
     ]
 
     // `workspaceDrawerSections` used to list every destination for the iPad drawer to draw. The

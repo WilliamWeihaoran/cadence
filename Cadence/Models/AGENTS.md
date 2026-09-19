@@ -52,6 +52,13 @@ area.tasks = (area.tasks ?? []) + [task]
   the row. Rationale and the substring-grep trap: `Cadence/Shared/AGENTS.md`.
 - `Note` - the single live note model (see below).
 - `SavedLink`, `MarkdownImageAsset` - list bookmarks and editor image assets.
+- `SidebarLayoutPreference` - the sidebar's visible rows and their order, **synced** (T-1274: the
+  owner chose across devices). Two comma-separated `CadenceFeatureDestination` raw-value strings,
+  not a to-many. Read and written only through `Shared/CadenceSidebarLayoutPreferenceStore.swift`,
+  which owns the duplicate rule (**newest `updatedAt` wins**, `id` breaks a tie, losers are left
+  alone rather than deleted), the device-local fallback, and the one-visible-row floor. A
+  destination the stored strings never name keeps its declared slot and stays visible, so a future
+  enum case needs no migration; an unrecognised token is dropped on read.
 
 Non-`@Model` types that live in this folder: `TaskSectionConfig` / `TaskSectionDefaults`
 (in `AppTask.swift`) and `GoalContributionSummary`. Two more *files* here declare no type at all —

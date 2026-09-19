@@ -190,6 +190,7 @@ enum PrivacyDataResetService {
         try deleteAll(Area.self, in: modelContext)
         try deleteAll(Context.self, in: modelContext)
         try deleteAll(Tag.self, in: modelContext)
+        try deleteAll(SidebarLayoutPreference.self, in: modelContext)
     }
 
     /// The widget half of the reset, as its own function so a test can drive it without the parts

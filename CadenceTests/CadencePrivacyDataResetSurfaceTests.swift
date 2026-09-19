@@ -874,6 +874,7 @@ struct CadencePrivacyDataResetSurfaceTests {
             probe { GoalListLink() },
             probe { Habit(title: "Stretch") },
             probe { HabitCompletion(date: "2026-08-20") },
+            probe { SidebarLayoutPreference(orderRaw: "today,calendar", hiddenRaw: "habits") },
         ]
         return Dictionary(uniqueKeysWithValues: probes.map { ($0.name, $0) })
     }

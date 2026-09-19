@@ -9,6 +9,8 @@ struct GlobalSearchOverlay: View {
 
     @Environment(GlobalSearchManager.self) private var searchManager
     @Environment(CalendarManager.self) private var calendarManager
+    /// The device-local hidden set the synced layout replaced (T-1274), read only as the fallback
+    /// for a store with no synced row yet.
     @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
     /// The palette draws every command and page row in the tint the *sidebar* draws that
     /// destination in, override included — so retinting Today in Settings → Sidebar retints it
@@ -21,6 +23,9 @@ struct GlobalSearchOverlay: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var notes: [Note]
     @Query(sort: \Goal.order) private var goals: [Goal]
     @Query(sort: \Habit.order) private var habits: [Habit]
+    /// The palette must not offer a page the sidebar is hiding, and since T-1274 what the sidebar
+    /// hides is an account-wide record rather than this Mac's preference.
+    @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
 
     @State private var eventResults: [GlobalSearchResult] = []
     @State private var highlightedResultID: String?
@@ -33,7 +38,12 @@ struct GlobalSearchOverlay: View {
     private var query: String { committedQuery.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var hiddenTabs: Set<SidebarStaticDestination> {
-        GlobalSearchOverlayStateSupport.hiddenTabs(from: sidebarHiddenTabsRaw)
+        GlobalSearchOverlayStateSupport.hiddenTabs(
+            of: CadenceSidebarLayoutPreferenceStore.layout(
+                from: sidebarLayoutPreferences,
+                legacyHiddenRaw: sidebarHiddenTabsRaw
+            )
+        )
     }
 
     private var sections: [GlobalSearchSection] {

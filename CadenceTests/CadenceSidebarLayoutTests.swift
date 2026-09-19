@@ -11,9 +11,13 @@ import Testing
 struct CadenceSidebarLayoutTests {
     // MARK: - Structure
 
-    @Test func theTwoGroupsAreTheChosenSevenRowsInOrder() {
-        #expect(CadenceSidebarLayout.primaryDestinations == [.today, .allTasks, .calendar, .notes])
-        #expect(CadenceSidebarLayout.secondaryDestinations == [.goals, .habits, .focus, .settings])
+    /// **Goals and Habits are in the nav group, not a stack below the lists (T-1274).** The owner:
+    /// *"can you actually put goals and habits to the same place as today, tasks, calendar, and
+    /// notes"*. What is left below the lists is the footer pair and nothing else.
+    @Test func theNavGroupIsTheSixRowsTheOwnerNamedAndTheFooterIsWhatIsLeft() {
+        #expect(CadenceSidebarLayout.primaryDestinations == [.today, .allTasks, .calendar, .notes, .goals, .habits])
+        #expect(CadenceSidebarLayout.secondaryDestinations == [.focus, .settings])
+        #expect(CadenceSidebarLayout.secondaryRowDestinations.isEmpty)
     }
 
     /// **The merge, pinned.** All Tasks and Inbox are one destination reached through one row, so
@@ -25,7 +29,7 @@ struct CadenceSidebarLayoutTests {
     /// A verifier recently reverted a committed fix with the whole suite green, because the tests
     /// pinned a helper while nothing observed the call site. This is the call site.
     @Test func theTasksRowIsOneRowAndInboxIsNotASecondOne() {
-        #expect(CadenceSidebarLayout.primaryDestinations.count == 4)
+        #expect(CadenceSidebarLayout.primaryDestinations.count == 6)
         #expect(!CadenceSidebarLayout.primaryDestinations.contains(.inbox))
         #expect(!CadenceSidebarLayout.navigationDestinations.contains(.inbox))
         #expect(CadenceSidebarLayout.navigationDestinations.count == 8)
@@ -70,7 +74,8 @@ struct CadenceSidebarLayoutTests {
     /// would have to change back if that were ever revisited.
     @Test func theFooterGlyphsAreSettingsAndFocusInThatOrder() {
         #expect(CadenceSidebarLayout.footerGlyphDestinations == [.settings, .focus])
-        #expect(CadenceSidebarLayout.secondaryRowDestinations == [.goals, .habits])
+        // Empty since T-1274 — Goals and Habits moved up — so the footer pair *is* the group.
+        #expect(CadenceSidebarLayout.secondaryRowDestinations == [])
 
         // A view of the secondary group, never a second list.
         let secondary = Set(CadenceSidebarLayout.secondaryDestinations)
@@ -111,10 +116,11 @@ struct CadenceSidebarLayoutTests {
 
     // MARK: - Ordering
 
-    /// The rows Settings → Sidebar offers a handle for, on macOS.
-    private let customisable: Set<CadenceFeatureDestination> = [
-        .today, .allTasks, .focus, .calendar, .goals, .habits
-    ]
+    /// The rows Settings → Sidebar offers a handle for. Shared now (T-1274), because iOS edits and
+    /// renders the same layout and had no `SidebarStaticDestination` to derive it from.
+    /// Computed, not stored: a stored default would be initialised in a nonisolated context and
+    /// the value it reads is main-actor isolated, like everything else in this target.
+    private var customisable: Set<CadenceFeatureDestination> { CadenceSidebarLayout.customisableDestinations }
 
     private func resolved(
         _ group: CadenceSidebarLayout.NavGroup,
@@ -138,9 +144,32 @@ struct CadenceSidebarLayoutTests {
     /// feeding a defaults-filled list in would push Focus above Goals and Habits for a user who
     /// has never dragged anything. Only rows the user actually moved may move.
     @Test func aStoredOrderNamingOnlySomeRowsLeavesTheRestWhereTheyWereDeclared() {
-        #expect(resolved(.secondary, storedOrder: [.focus]) == [.focus, .goals, .habits, .settings])
-        #expect(resolved(.secondary, storedOrder: [.habits]) == [.habits, .goals, .focus, .settings])
-        #expect(resolved(.primary, storedOrder: [.calendar]) == [.calendar, .today, .allTasks, .notes])
+        #expect(resolved(.secondary, storedOrder: [.focus]) == [.focus, .settings])
+        #expect(
+            resolved(.primary, storedOrder: [.calendar])
+                == [.calendar, .today, .allTasks, .notes, .goals, .habits]
+        )
+        #expect(
+            resolved(.primary, storedOrder: [.habits])
+                == [.habits, .today, .allTasks, .calendar, .notes, .goals]
+        )
+    }
+
+    /// **A destination the stored order has never seen keeps its declared slot and stays visible.**
+    ///
+    /// This is the rule a future `CadenceFeatureDestination` case depends on: the stored strings
+    /// name what the user moved and what they hid, so a row no string mentions is drawn where the
+    /// layout declares it. The alternative — storing the *visible* list — would hide every new row
+    /// on every device still holding an older list.
+    @Test func aRowTheStoredLayoutHasNeverHeardOfKeepsItsSlotAndStaysVisible() {
+        // Stand-in for "a case this stored order predates": every row but Habits is named, in a
+        // deliberately scrambled order, and Habits still lands where the layout declares it.
+        let named: [CadenceFeatureDestination] = [.notes, .goals, .calendar, .allTasks, .today]
+
+        #expect(resolved(.primary, storedOrder: named) == [.notes, .goals, .calendar, .allTasks, .today, .habits])
+        #expect(resolved(.primary, storedOrder: named, hidden: [.notes]).contains(.habits))
+        // And an unknown token in the stored string is simply not a destination: the parse drops it.
+        #expect(CadenceSidebarLayoutPreferenceStore.destinations(fromRaw: "today,quarterlyReview,goals") == [.today, .goals])
     }
 
     /// A user who reorders in Settings must not lose that. The stored order sorts *within* a
@@ -148,42 +177,49 @@ struct CadenceSidebarLayoutTests {
     /// group.
     @Test func theStoredOrderSortsWithinAGroup() {
         let reordered: [CadenceFeatureDestination] = [
-            .calendar, .today, .allTasks, .habits, .goals, .focus
+            .calendar, .today, .allTasks, .habits, .goals, .notes, .focus
         ]
 
-        #expect(resolved(.primary, storedOrder: reordered) == [.calendar, .today, .allTasks, .notes])
-        #expect(resolved(.secondary, storedOrder: reordered) == [.habits, .goals, .focus, .settings])
+        #expect(
+            resolved(.primary, storedOrder: reordered)
+                == [.calendar, .today, .allTasks, .habits, .goals, .notes]
+        )
+        // Focus is the group's only customisable member and the footer draws the pair in its own
+        // order, so nothing it is given here moves anything. Settings holds its slot regardless.
+        #expect(resolved(.secondary, storedOrder: reordered) == [.focus, .settings])
     }
 
     /// Notes and Settings have no Settings → Sidebar handle, so they hold their declared slot
     /// instead of being swept to the front or the back of whatever the movable rows do.
     @Test func theRowsSettingsCannotMoveKeepTheirSlot() {
         let reversed: [CadenceFeatureDestination] = [
-            .habits, .goals, .calendar, .focus, .allTasks, .today
+            .habits, .goals, .calendar, .focus, .allTasks, .today, .notes
         ]
 
-        // Notes sits at index 3 of the primary group, the last of the four, and holds that slot
-        // however the three movable rows above it are reordered.
-        #expect(resolved(.primary, storedOrder: reversed)[3] == .notes)
+        // Settings is the one row with no handle at all, in either direction: it is the only door
+        // to the screen that would move or hide it.
         #expect(resolved(.secondary, storedOrder: reversed).last == .settings)
+        #expect(resolved(.secondary, storedOrder: reversed, hidden: [.settings]).contains(.settings))
     }
 
     // MARK: - Visibility
 
     @Test func hidingARowRemovesItAndLeavesTheRestInOrder() {
-        #expect(resolved(.primary, hidden: [.allTasks]) == [.today, .calendar, .notes])
-        #expect(resolved(.secondary, hidden: [.goals, .focus]) == [.habits, .settings])
+        #expect(resolved(.primary, hidden: [.allTasks]) == [.today, .calendar, .notes, .goals, .habits])
+        #expect(resolved(.primary, hidden: [.goals, .notes]) == [.today, .allTasks, .calendar, .habits])
+        #expect(resolved(.secondary, hidden: [.focus]) == [.settings])
     }
 
     /// Only a row Settings offers a handle for can be hidden. A stray value for a row it does not
     /// — Settings itself, most of all — must not take the only door to preferences off the screen.
     @Test func aRowSettingsCannotHideStaysOnScreen() {
         #expect(resolved(.secondary, hidden: [.settings]) == CadenceSidebarLayout.secondaryDestinations)
-        #expect(resolved(.primary, hidden: [.notes]) == CadenceSidebarLayout.primaryDestinations)
+        // `.lists` has no row here at all, so a stored value naming it changes nothing either.
+        #expect(resolved(.primary, hidden: [.lists]) == CadenceSidebarLayout.primaryDestinations)
     }
 
     @Test func hidingEveryMovableRowStillLeavesTheFixedOnes() {
-        #expect(resolved(.primary, hidden: customisable) == [.notes])
+        #expect(resolved(.primary, hidden: customisable).isEmpty)
         #expect(resolved(.secondary, hidden: customisable) == [.settings])
     }
 

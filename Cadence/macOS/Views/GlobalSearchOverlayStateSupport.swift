@@ -2,8 +2,13 @@
 import SwiftUI
 
 enum GlobalSearchOverlayStateSupport {
-    static func hiddenTabs(from rawValue: String) -> Set<SidebarStaticDestination> {
-        Set(rawValue.split(separator: ",").compactMap { SidebarStaticDestination(rawValue: String($0)) })
+    /// The rows the palette must not offer, read off the resolved sidebar layout rather than off a
+    /// string (T-1274). The layout is one synced record now, so "hidden" is an account-wide answer
+    /// and the palette has to ask the same helper both sidebars ask.
+    static func hiddenTabs(
+        of layout: CadenceSidebarLayoutPreferenceStore.Layout
+    ) -> Set<SidebarStaticDestination> {
+        Set(layout.hidden.compactMap(\.sidebarStaticDestination))
     }
 
     static func flattenedResults(from sections: [GlobalSearchSection]) -> [GlobalSearchResult] {
