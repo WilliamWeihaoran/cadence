@@ -462,7 +462,11 @@ struct CadenceStoredNoteTitleDefaultTests {
         let migration = try titleSyncStrippingComments(
             titleSyncSource("Cadence/Services/NoteMigrationService.swift")
         ).filter { !$0.isWhitespace }
-        #expect(migration.contains("createPermanentNote(incontext:ModelContext,title:String=\"\")"))
+        // The signature gained a `commit:` seam in [[T-1181]], so the assertion is the *parameter*
+        // rather than the whole head: what this ticket is about is the value of the default, and
+        // pinning the argument list beside it makes an unrelated parameter a failure of this test.
+        #expect(migration.contains("createPermanentNote("), "non-vacuity: the factory was renamed")
+        #expect(migration.contains("title:String=\"\""), "the factory's default is not the empty string")
 
         // The fallbacks stay in `displayTitle` — the word is allowed there, and only there, in this
         // file. Exactly one occurrence, so a fourth kind quietly gaining it is a failure.

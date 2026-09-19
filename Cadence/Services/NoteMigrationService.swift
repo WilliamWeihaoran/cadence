@@ -418,27 +418,50 @@ nonisolated enum NoteMigrationService {
         }
     }
 
+    /// Today's daily note, creating it if the store has none.
+    ///
+    /// **The commit un-inserts the note when the store refuses it, and takes `commit:` so the
+    /// caller can own the unit of work (T-1181).** All three core-note accessors here used to end
+    /// a fresh insert with a bare `try context.save()`, which has two costs this repository has
+    /// already paid for elsewhere. It commits *everything* pending in the app's single
+    /// `ModelContext`, from a call site that only asked which note today's is; and it leaves the
+    /// row in the store even when the caller's own later commit is refused, which is why
+    /// `CadenceWriteService.appendCoreNote` could not promise a clean failure. `commit: { _ in }`
+    /// is what lets a caller defer the commit and carry the note in its own `inserted:` list.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
-    static func dailyNote(for dateKey: String, in context: ModelContext) throws -> Note {
+    static func dailyNote(
+        for dateKey: String,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> Note {
         let existing = try context.fetch(FetchDescriptor<Note>())
             .first { $0.kind == .daily && $0.dateKey == dateKey }
         if let existing { return existing }
 
         let note = Note(kind: .daily, title: dateKey, dateKey: dateKey)
         context.insert(note)
-        try context.save()
+        try CadencePendingChangePersistence.commitInsert(of: note, in: context, commit: commit)
         return note
     }
 
+    /// This week's weekly note, creating it if the store has none.
+    ///
+    /// - Parameter commit: See `dailyNote(for:in:commit:)`.
     @discardableResult
-    static func weeklyNote(for weekKey: String, in context: ModelContext) throws -> Note {
+    static func weeklyNote(
+        for weekKey: String,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> Note {
         let existing = try context.fetch(FetchDescriptor<Note>())
             .first { $0.kind == .weekly && $0.weekKey == weekKey }
         if let existing { return existing }
 
         let note = Note(kind: .weekly, title: weekKey, weekKey: weekKey)
         context.insert(note)
-        try context.save()
+        try CadencePendingChangePersistence.commitInsert(of: note, in: context, commit: commit)
         return note
     }
 
@@ -453,13 +476,17 @@ nonisolated enum NoteMigrationService {
     /// nothing they were looking at moves.
     ///
     /// Use `permanentNotes(in:)` where a list is wanted and `createPermanentNote(in:)` to add one.
+    /// - Parameter commit: See `dailyNote(for:in:commit:)`.
     @discardableResult
-    static func permanentNote(in context: ModelContext) throws -> Note {
+    static func permanentNote(
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> Note {
         if let existing = try permanentNotes(in: context).first { return existing }
 
         let note = Note(kind: .permanent, title: "Notepad")
         context.insert(note)
-        try context.save()
+        try CadencePendingChangePersistence.commitInsert(of: note, in: context, commit: commit)
         return note
     }
 
@@ -494,23 +521,24 @@ nonisolated enum NoteMigrationService {
     /// `CadencePendingChangePersistence.commitInsert(of:in:)` is for, and
     /// `CadenceListNoteFiling.createNote` uses it for the list-note `+` (T-497).
     ///
-    /// **It is spelled out here rather than called, and the reason is a target boundary.** This
-    /// file is in `CadenceMCPServer`'s explicit Sources phase and
-    /// `Cadence/Shared/CadencePendingChangePersistence.swift` is not, so naming the helper breaks
-    /// a target no scheme in this repository builds — the `aaa0064` shape that
-    /// `CadenceTargetSourceMembershipTests` exists to catch, and which it did catch here. Three
-    /// lines of duplication is the cheaper of the two prices; the alternative is adding a shared
-    /// type to a command-line tool's source list to serve one call.
+    /// **It calls the shared helper now (T-1181).** T-1071 spelled the do/catch out here because
+    /// this file is in `CadenceMCPServer`'s explicit Sources phase and
+    /// `Cadence/Shared/CadencePendingChangePersistence.swift` was not — the `aaa0064` shape
+    /// `CadenceTargetSourceMembershipTests` exists to catch. That is no longer the layout: the
+    /// helper is a member of both that phase and `CadenceWidgets`', so the duplicate three lines
+    /// were a copy of a sentence this repository keeps in one place. Check the Sources phase, not
+    /// this comment, before believing either answer.
+    ///
+    /// - Parameter commit: See `dailyNote(for:in:commit:)`.
     @discardableResult
-    static func createPermanentNote(in context: ModelContext, title: String = "") throws -> Note {
+    static func createPermanentNote(
+        in context: ModelContext,
+        title: String = "",
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> Note {
         let note = Note(kind: .permanent, title: title, content: "# \(title)\n\n")
         context.insert(note)
-        do {
-            try context.save()
-        } catch {
-            context.delete(note)
-            throw error
-        }
+        try CadencePendingChangePersistence.commitInsert(of: note, in: context, commit: commit)
         return note
     }
 

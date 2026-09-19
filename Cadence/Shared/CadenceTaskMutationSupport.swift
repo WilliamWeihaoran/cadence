@@ -555,13 +555,14 @@ enum CadenceTaskMutationSupport {
         duplicate.tags = task.tags
 
         modelContext.insert(duplicate)
-        do {
-            try modelContext.save()
-            return duplicate
-        } catch {
-            modelContext.delete(duplicate)
-            throw error
-        }
+        // Through the shared helper rather than a hand-rolled `do`/`catch` (T-1299). The two are
+        // the same three lines — commit, un-insert, rethrow — and spelling it out here made this
+        // declaration indistinguishable, to any reader and to the sweep, from one that commits an
+        // insert and leaves it pending. `commitInsert` *is* the undo contract; a caller's `try?`
+        // over it is safe because of what it calls, not because of what its own catch happens to
+        // say.
+        try CadencePendingChangePersistence.commitInsert(of: duplicate, in: modelContext)
+        return duplicate
     }
 
     /// Shown when an ordinary task delete could not be committed (T-365).
@@ -1152,13 +1153,9 @@ enum CadenceTaskMutationSupport {
         )
 
         modelContext.insert(bundle)
-        do {
-            try modelContext.save()
-            return bundle
-        } catch {
-            modelContext.delete(bundle)
-            throw error
-        }
+        // See `duplicate(_:allTasks:modelContext:)` (T-1299): the same three lines, said once.
+        try CadencePendingChangePersistence.commitInsert(of: bundle, in: modelContext)
+        return bundle
     }
 
     /// **Throws when the commit is refused (T-566).** It used to end `try? modelContext.save()`,

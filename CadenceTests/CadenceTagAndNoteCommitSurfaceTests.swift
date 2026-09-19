@@ -232,12 +232,16 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         // `ModelContext`, for the next unrelated save to take — which would make the notice false
         // some seconds after it was shown.
         //
-        // Spelled out rather than routed through `CadencePendingChangePersistence.commitInsert`,
-        // and the asymmetry with `CadenceListNoteFiling.createNote` above is deliberate:
-        // `NoteMigrationService.swift` is in `CadenceMCPServer`'s explicit Sources phase and the
-        // shared helper is not, so naming it breaks a target no scheme here builds — the exact
-        // violation `CadenceTargetSourceMembershipTests` reported when this was first written that
-        // way.
+        // **It calls the shared helper now, and the asymmetry this assertion used to record is
+        // gone** ([[T-1181]]). T-1071 spelled the un-insert out by hand and this line asserted the
+        // literal `context.delete(note)`, because `NoteMigrationService.swift` is in
+        // `CadenceMCPServer`'s explicit Sources phase and
+        // `Cadence/Shared/CadencePendingChangePersistence.swift` was not — naming the helper there
+        // broke a target no scheme in this repository builds, which is what
+        // `CadenceTargetSourceMembershipTests` reported when it was first written that way. The
+        // helper is a member of that phase and of `CadenceWidgets`' now, so the reason has expired
+        // and the duplicate three lines with it. Check the Sources phase before believing either
+        // spelling; the constraint was real when it was written.
         let migration = try scanned("Cadence/Services/NoteMigrationService.swift")
         let permanent = try declarationBody(named: "createPermanentNote", in: migration)
         #expect(permanent.contains("context.insert(note)"))
@@ -246,7 +250,7 @@ struct CadenceTagAndNoteCommitSurfaceTests {
             "createPermanentNote swallows its own commit"
         )
         #expect(
-            permanent.contains("context.delete(note)"),
+            permanent.contains("CadencePendingChangePersistence.commitInsert(of: note, in: context, commit: commit)"),
             "a refused notepad note stays pending in the context the notice says was left alone"
         )
     }

@@ -57,10 +57,10 @@ compiles in a view is not evidence it compiles here.
   `reopenTask`, `cancelTask`, `bulkCancelTasks` and `appendCoreNote` — **thirteen arms** — write and
   save. *No undo stack* is no longer true of any of them (T-1121): every arm goes through
   `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts what the call added and restores what it
-  changed in place before the caller is told. The one residue is named rather than hidden: an
-  `append_core_note` onto a core note that did not exist yet leaves the empty note row behind
-  (`NoteMigrationService` commits it before the append) and answers
-  `CadenceWriteError.coreNoteCreatedButNotAppended` saying so. `mcp-audit.log` beside the store is
+  changed in place before the caller is told. **The one residue is gone too** (T-1181): the core-note
+  accessors take a `commit:`, `append_core_note` defers their insert into its own `inserted:` list,
+  and `CadenceWriteError.coreNoteCreatedButNotAppended` was deleted with the residue it named.
+  `mcp-audit.log` beside the store is
   the only record, and `CadenceMCPRefreshCoordinator` (macOS Services) watches a
   `.cadence-mcp-refresh` marker file so the app reloads after an external write. Treat a write-path
   change as a data-safety change.

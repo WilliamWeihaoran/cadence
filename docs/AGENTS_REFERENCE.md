@@ -566,3 +566,17 @@ baseline of zero, while a vacuous incremental run that recompiled nothing report
 The counter is now anchored (`\.swift:N:M: warning:`), tool notices are reported on their own line
 so a future real `ld:` or `actool: warning:` is not lost, and a run that compiled zero Swift files
 prints `!! VACUOUS-COUNT` rather than certifying a zero it cannot support.
+
+## Why the pre-commit hook ships inert (moved out of AGENTS.md, 2026-09-19)
+
+`.githooks/pre-commit` refuses a bare `git commit`, which is the point of it: this repository's
+index is shared between agents, so `scripts/agent-commit.sh` is the only safe way in (T-679). But
+`core.hooksPath` is *repository configuration*, not an agent's to set — arming the hook would also
+refuse the repository owner's own commits, and that is their call to make, not an agent's (T-780).
+
+So it ships inert, and arming it would not even change an agent's path: `agent-commit.sh` commits by
+plumbing (`git hash-object` / `write-tree` / `commit-tree`), and git runs no hooks for plumbing
+commands. The hook is a guard for a human typing `git commit`, not a mechanism any agent relies on.
+
+The rule that stays in the root guide is therefore just the prohibition: never run
+`git config core.hooksPath`, and never teach a script to.

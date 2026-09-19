@@ -19,10 +19,6 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case sectionNotFound(String, [String])
     case columnNotFound(String, [String])
     case tagsUnavailable
-    /// A core-note append whose commit was refused **after** the note row itself was already
-    /// committed. See `CadenceWriteService.appendCoreNote`: this is the one arm on this surface
-    /// with an effect it cannot take back, and it says so rather than reporting a plain failure.
-    case coreNoteCreatedButNotAppended(kind: String, key: String, underlying: String)
 
     var errorDescription: String? {
         switch self {
@@ -63,14 +59,6 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "No column named \(name) on this list. Expected one of: \(available.joined(separator: ", "))."
         case .tagsUnavailable:
             return "Tags could not be read, so nothing was written."
-        case .coreNoteCreatedButNotAppended(let kind, let key, let underlying):
-            return """
-                Couldn't append to the \(kind) core note for \(key): \(underlying). \
-                The text was not appended and the note's previous content is unchanged — but the \
-                note row itself was created and committed before the append, by \
-                NoteMigrationService, and this call cannot undo that. An empty \(kind) note for \
-                \(key) now exists.
-                """
         }
     }
 }
@@ -1295,16 +1283,23 @@ final class CadenceWriteService {
 
     /// Append to a daily, weekly or permanent core note.
     ///
-    /// **This is the one arm on this surface with a half it cannot undo, and it says so (T-1121).**
+    /// **This arm used to have a half it could not undo, and now it has none (T-1121, T-1181).**
     /// The *append* is an ordinary in-place edit and is restored exactly like every other one here.
-    /// The note **row** is not: `NoteMigrationService.dailyNote` / `weeklyNote` / `permanentNote`
-    /// create a missing core note and `try context.save()` it themselves, before this function sees
-    /// it — so by the time the append's commit is refused, that row is already in the store and no
-    /// undo available here can take it back. Rolling the context back would not either; it is
-    /// committed. What the caller gets instead of a plain failure is
-    /// `CadenceWriteError.coreNoteCreatedButNotAppended`, which names the empty note that now
-    /// exists. A refusal that under-reports its own effect is the failure mode this repository
-    /// keeps meeting; saying it in the arm's own response text is the honest version.
+    /// The note **row** was not: `NoteMigrationService.dailyNote` / `weeklyNote` / `permanentNote`
+    /// created a missing core note and `try context.save()`d it themselves before this function saw
+    /// it, so by the time the append's commit was refused that row was already in the store and no
+    /// undo here could take it back. The caller got `coreNoteCreatedButNotAppended` instead of a
+    /// plain failure — honest about the residue, but still a residue.
+    ///
+    /// **The fix is one commit for the whole unit, not a better sentence about two.** Those three
+    /// accessors take a `commit:` now, so this arm hands them `{ _ in }` — the note is *inserted*
+    /// and left pending — and then carries it in `saveNotifyAndAudit`'s own `inserted:` list. One
+    /// refusal, one undo: `commitInsert` un-inserts the note this call created and `commitEdit`
+    /// restores the text of one it did not. Nothing is left in the store and nothing is left
+    /// pending, so the error case that named the residue is gone rather than reworded.
+    ///
+    /// The note's own fields need no `undo` when this call created it — the row ceases to exist —
+    /// and restoring them would be writing through a reference `commitInsert` has just deleted.
     func appendCoreNote(kind: String, content: String, dateKey: String? = nil, separator: String? = nil) throws -> CadenceCoreNotesSnapshot {
         let normalizedKind = try normalizeNoteKind(kind)
         let text = try normalizedRequiredText(content, emptyError: CadenceWriteError.emptyContent)
@@ -1313,32 +1308,32 @@ final class CadenceWriteService {
         let now = Date()
         let auditEntry: PendingAuditEntry
         let note: Note
-        let noteKey: String
 
-        // A count either side of the accessor, rather than a second copy of its lookup predicate:
-        // the question is only "did that call create a row", and re-spelling how each kind of core
-        // note is found is how the two spellings drift apart.
-        let notesBefore = try context.fetchCount(FetchDescriptor<Note>())
+        // `{ _ in }` rather than this service's own `commit`: the accessor is only being asked
+        // which note today's is, and a commit it made on its own behalf would land the row before
+        // the append below has been written, which is the state T-1181 removed.
+        let deferCommit: (ModelContext) throws -> Void = { _ in }
 
         switch normalizedKind {
         case "daily":
-            note = try NoteMigrationService.dailyNote(for: resolvedDateKey, in: context)
-            noteKey = resolvedDateKey
+            note = try NoteMigrationService.dailyNote(for: resolvedDateKey, in: context, commit: deferCommit)
             auditEntry = .coreNote(id: note.id, summary: "Appended daily core note: \(resolvedDateKey)")
         case "weekly":
             let resolvedWeekKey = try weekKey(for: resolvedDateKey)
-            note = try NoteMigrationService.weeklyNote(for: resolvedWeekKey, in: context)
-            noteKey = resolvedWeekKey
+            note = try NoteMigrationService.weeklyNote(for: resolvedWeekKey, in: context, commit: deferCommit)
             auditEntry = .coreNote(id: note.id, summary: "Appended weekly core note: \(resolvedWeekKey)")
         case "permanent":
-            note = try NoteMigrationService.permanentNote(in: context)
-            noteKey = "Notepad"
+            note = try NoteMigrationService.permanentNote(in: context, commit: deferCommit)
             auditEntry = .coreNote(id: note.id, summary: "Appended permanent core note")
         default:
             throw CadenceWriteError.invalidNoteKind(kind)
         }
 
-        let createdTheNote = try context.fetchCount(FetchDescriptor<Note>()) > notesBefore
+        // Asked of the context's pending inserts rather than by counting rows either side of the
+        // accessor, and for the same reason `CadenceTaskFieldEditCommit.pendingInsertedTask` does:
+        // with the commit deferred, a row this call created is *only* a pending insert, and a
+        // count over the store could not see it at all.
+        let createdTheNote = context.insertedModelsArray.contains { ($0 as? Note)?.id == note.id }
 
         let previousContent = note.content
         let previousUpdatedAt = note.updatedAt
@@ -1347,19 +1342,14 @@ final class CadenceWriteService {
         note.content = content
         note.updatedAt = now
 
-        do {
-            try saveNotifyAndAudit([auditEntry]) {
+        try saveNotifyAndAudit(
+            [auditEntry],
+            inserted: createdTheNote ? [note] : [],
+            undo: createdTheNote ? {} : {
                 note.content = previousContent
                 note.updatedAt = previousUpdatedAt
             }
-        } catch {
-            guard createdTheNote else { throw error }
-            throw CadenceWriteError.coreNoteCreatedButNotAppended(
-                kind: normalizedKind,
-                key: noteKey,
-                underlying: error.localizedDescription
-            )
-        }
+        )
         return try readService.coreNotes(dateKey: resolvedDateKey)
     }
 
@@ -1384,8 +1374,10 @@ final class CadenceWriteService {
     /// Neither defaults to a `rollback()`, for the reason `commitEdit` gives: it would discard
     /// whatever else is pending in the same context.
     ///
-    /// The one effect no undo here reaches is the core note row `NoteMigrationService` commits
-    /// on its own; `appendCoreNote` names that in its response rather than implying otherwise.
+    /// **There is no longer an effect this misses** (T-1181). The one exception used to be the
+    /// core-note row `NoteMigrationService` committed on its own behalf; those accessors take a
+    /// `commit:` now, so `appendCoreNote` defers that insert into this call's own `inserted:` list
+    /// and every arm on this surface fails clean.
     private func saveNotifyAndAudit(
         _ entries: [PendingAuditEntry],
         inserted: [any PersistentModel] = [],

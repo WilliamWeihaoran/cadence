@@ -1438,13 +1438,20 @@ struct CadenceWriteServiceTests {
         #expect(tasks.allSatisfy { $0.status == .todo && $0.completedAt == nil })
     }
 
-    /// The one effect on this surface that cannot be undone, and the response text that says so.
+    /// The effect on this surface that used to be un-undoable, and now is not (T-1181).
     ///
-    /// `NoteMigrationService.dailyNote` commits the note row itself before any text is appended,
-    /// so a refused append leaves an empty note behind. The append *is* undone — the assertion
-    /// below reads the content back — and the error names what is left rather than reporting a
-    /// plain failure over an effect the caller cannot see.
-    @Test func aRefusedCoreNoteAppendUndoesTheTextAndNamesTheNoteItCannotRemove() throws {
+    /// `NoteMigrationService.dailyNote` committed the note row itself before any text was appended,
+    /// so a refused append left an empty note behind and the arm answered
+    /// `coreNoteCreatedButNotAppended` to name it. The accessor takes a `commit:` now, the arm
+    /// defers that insert into its own `inserted:` list, and the refusal leaves nothing: no text,
+    /// no row, and nothing pending for the next unrelated commit to take.
+    ///
+    /// **The `save()` afterwards is the assertion, not setup** ([[T-1296]]). Reading the live
+    /// reference straight after a refusal asks a question Xcode 26 and 27 answer differently; running
+    /// the *next* unrelated commit forwards and reading the store back asks the question the ticket
+    /// is actually about — was the insert left pending for somebody else's save — and depends on no
+    /// framework timing.
+    @Test func aRefusedCoreNoteAppendCreatesNoNoteAndLeavesNothingPending() throws {
         let fixture = try Fixture()
 
         let refusing = CadenceWriteService(
@@ -1452,37 +1459,27 @@ struct CadenceWriteServiceTests {
             preparesStore: false,
             commit: { _ in throw CommitRefused() }
         )
-        var thrown: Error?
-        do {
+        #expect(throws: CommitRefused.self) {
             _ = try refusing.appendCoreNote(kind: "daily", content: "Never landed", dateKey: "2026-04-28")
-        } catch {
-            thrown = error
         }
 
-        let error = try #require(thrown as? CadenceWriteError)
-        guard case .coreNoteCreatedButNotAppended(let kind, let key, _) = error else {
-            Issue.record("expected coreNoteCreatedButNotAppended, got \(error)")
-            return
-        }
-        #expect(kind == "daily")
-        #expect(key == "2026-04-28")
-        let message = try #require(error.errorDescription)
-        #expect(message.contains("2026-04-28"))
-        #expect(message.contains("now exists"))
+        try fixture.modelContext.save()
+        let orphans = try fixture.modelContext.fetch(FetchDescriptor<Note>())
+            .filter { $0.kind == .daily && $0.dateKey == "2026-04-28" }
+        #expect(orphans.isEmpty, "the refused append left \(orphans.count) empty daily note(s) behind")
 
-        // The note is there, and it is empty: the row landed, the text did not.
-        let snapshot = try fixture.readService.coreNotes(dateKey: "2026-04-28")
-        #expect(snapshot.dailyNote?.content == "")
-
-        // An append onto a note that already exists has no such half, so it fails plainly.
-        var second: Error?
-        do {
+        // And the half that was always clean stays clean: an append onto a note that already
+        // exists fails plainly, with the previous text restored.
+        _ = try fixture.writeService.appendCoreNote(
+            kind: "daily",
+            content: "Landed",
+            dateKey: "2026-04-28"
+        )
+        #expect(throws: CommitRefused.self) {
             _ = try refusing.appendCoreNote(kind: "daily", content: "Also never landed", dateKey: "2026-04-28")
-        } catch {
-            second = error
         }
-        #expect(second is CommitRefused)
-        #expect(try fixture.readService.coreNotes(dateKey: "2026-04-28").dailyNote?.content == "")
+        try fixture.modelContext.save()
+        #expect(try fixture.readService.coreNotes(dateKey: "2026-04-28").dailyNote?.content == "Landed")
     }
 
     @Test func renamingAndArchivingAreAudited() throws {

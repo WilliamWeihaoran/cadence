@@ -95,15 +95,14 @@ Long references, searchable only when needed:
   re-read `git show HEAD:<path>` and rerun. `agent-commit.sh check` must exit 0 before a batch
   closes (T-781).
 - **`.githooks/pre-commit` is not yours to arm** (T-780). Never run `git config core.hooksPath`, or
-  teach a script to: the hook refuses a bare `git commit`, so arming it refuses the repository
-  owner's own commits — their call, not an agent's. It ships inert, and an armed one still lets
-  `agent-commit.sh` through, because that commits by plumbing and git runs no hooks for plumbing.
+  teach a script to. Why, and why an armed hook still lets `agent-commit.sh` through:
+  `docs/AGENTS_REFERENCE.md`, "Why the pre-commit hook ships inert".
 
 ### The `try? save()` rule
 
 `try? modelContext.save()` is allowed **only** when the save commits nothing but in-place field
 edits to objects the store already holds, and nothing after it tells the user it worked. A site
-breaks the rule if any of three halves is true:
+breaks the rule if any of four halves is true:
 
 1. **Existence** — the function inserts or deletes, **in its own frame or one below**: a pending
    change travels up through every frame *handed* a `ModelContext` and stops at the first that was not.
@@ -118,9 +117,10 @@ breaks the rule if any of three halves is true:
    surface, not the method name — **one frame down included**.
 3. **Commit reach** — the function inserts **or deletes** and reaches no commit at all. A declaration
    **handed** a `ModelContext` is exempt by rule; one that reached for an ambient context must commit.
+4. **The callee's undo** (T-1299) — `try?` over **any** helper that changes existence and reaches a raw
+   `save()`; safe only if it changes no existence or commits through `CadencePendingChangePersistence`.
 
-All three are fixed the same way: commit through `CadencePendingChangePersistence` (`commitInsert` /
-`commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and name the failure on screen.
+All four are fixed the same way: commit through `CadencePendingChangePersistence` (`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and name the failure on screen.
 
 Why it matters: one `ModelContext` app-wide, so a swallowed failure leaves the change *pending*, for
 the next unrelated `save()` to take or `rollback()` to discard. Enforced by `CadenceSaveCommitDisciplineTests`.

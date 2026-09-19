@@ -224,6 +224,93 @@ struct CadenceSaveCommitDisciplineTests {
         )
     }
 
+    /// Half 4: nothing swallows a call to a helper that commits an existence change **and does
+    /// not undo it** ([[T-1299]]).
+    ///
+    /// **The hole the other four share, and why widening the needle was not the fix.**
+    /// `swallowedSave` keys on the commit *surface* — a `.save()` or a `Cadence*Persistence`
+    /// member — which is [[T-508]]'s correct widening and is still two literals. Every other half
+    /// is fed by it, so a helper that inserts, commits and throws is a swallowed commit at its call
+    /// site that none of them can see, purely because of what its type is called. Measured over
+    /// `Cadence/` at `454e778`: **ten** `try?` call sites reached such a helper.
+    ///
+    /// **"Any callee that commits" is the wrong widening**, which is what T-1299 was filed to say.
+    /// `CadenceTaskMutationSupport.moveBundle` and `addTask` are swallowed on purpose and are
+    /// correct: neither changes existence, so a refusal leaves nothing but field edits pending —
+    /// the case the rule has always allowed. A half that cried wolf on them would be suppressed,
+    /// and then it would guard nothing.
+    ///
+    /// **The distinction that separates them is decidable and this is it:** a `try?` over a callee
+    /// is safe when the callee either changes no existence at all, or makes every commit it
+    /// reaches through `CadencePendingChangePersistence`, whose whole contract is to undo before it
+    /// rethrows. A callee that changes existence and reaches a **raw** `save()` is the offence, no
+    /// matter what its own `catch` block happens to say — which is why the two hand-rolled
+    /// `do`/`catch` undos this ticket found (`CadenceTaskMutationSupport.duplicate` and
+    /// `insertBundle(title:…)`) were converted rather than exempted. "The callee undoes" is not a
+    /// property a needle can read out of arbitrary repair code; "the callee delegates the undo to
+    /// the one type that owns it" is, and it is the same claim with a spelling a reviewer can check.
+    ///
+    /// **Where it stops, said out loud.** The inheritance is by *call*, not by a second existence
+    /// analysis: a declaration is flagged when it changes existence and reaches a raw commit **in
+    /// its own body**, or when it calls something already flagged — which is what catches
+    /// `CadenceCoreNoteSupport.note`, the pass-through the old needle was blind to twice over. A
+    /// helper that inserts in one frame and commits rawly in another is *not* flagged, so this half
+    /// under-reports rather than over-reports. Half 3 is what covers the insert that reaches no
+    /// commit at all.
+    @Test func noSwallowedCallReachesACommitThatIsNotUndone() throws {
+        let repairing = try repairIndexOverTheApp()
+        // Non-vacuity in both directions, because the index fails two ways. An empty parse makes
+        // the half blind; an empty flagged set makes it permanently green over a tree that still
+        // has unrepaired committers in it.
+        #expect(repairing.namesRead >= 500, "the repair index read \(repairing.namesRead) declaration names")
+        #expect(
+            repairing.unrepairedNames >= 10,
+            "the repair index flagged \(repairing.unrepairedNames) unrepaired committers"
+        )
+
+        let offenders = try saveCommitSweep(
+            instrument: CadenceSaveCommitRule.unrepairedCommitInstrument(repairing: repairing),
+            allowed: CadenceSaveCommitRule.unrepairedCommitExemptions
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders) swallow a call to a helper that commits an insert or a delete with a raw \
+            save() and does not route the undo through CadencePendingChangePersistence. The `try?` \
+            is not the whole defect: the frame below it leaves the change pending in the app's one \
+            ModelContext. Commit the callee through CadencePendingChangePersistence.commitInsert / \
+            commitDelete, or give it a `commit:` and let the caller own the unit of work.
+            """
+        )
+    }
+
+    /// The separation the half above claims to draw, on the real sites [[T-1299]] measured it
+    /// against — the evidence that it is *declining* them rather than blind to the shape.
+    ///
+    /// Four files, each holding a `try?` over one of the helpers in question. A detector that had
+    /// stopped reading `try?` call sites at all would satisfy the emptiness assertion below
+    /// trivially, so each file also has to still contain the call it is listed for.
+    @Test func theUnrepairedCommitHalfDeclinesTheCleanSwallowsItWasMeasuredAgainst() throws {
+        let repairing = try repairIndexOverTheApp()
+        for (path, call) in [
+            // `moveBundle` and `addTask`: in-place moves between objects the store already holds.
+            ("Cadence/iOS/iOSCalendarBoardView.swift", "try? CadenceTaskMutationSupport.moveBundle("),
+            // `insertBundle` and `duplicate`: inserts, committed through `commitInsert` since
+            // T-1299 converted their hand-rolled undos.
+            ("Cadence/macOS/Services/SchedulingService.swift", "try? CadenceTaskMutationSupport.insertBundle("),
+            ("Cadence/iOS/iOSTaskRowActionViews.swift", "try? CadenceTaskMutationSupport.duplicate("),
+            // The three core-note accessors, routed through `commitInsert` by [[T-1181]].
+            ("Cadence/Shared/CadenceNotePlanningSupport.swift", "try? NoteMigrationService.dailyNote("),
+        ] {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains(call), "\(path) no longer holds `\(call)`; this row proves nothing")
+            #expect(
+                CadenceSaveCommitRule.unrepairedCommitOffenders(in: source, repairing: repairing).isEmpty,
+                "\(path) is reported by the unrepaired-commit half, which measured it clean"
+            )
+        }
+    }
+
     // MARK: - Non-vacuity of the walk
 
     /// `sweep` refuses an empty or short file list, but it cannot know the tree it walked is the
@@ -976,6 +1063,12 @@ struct CadenceSaveCommitDisciplineTests {
         }
     }
 
+    private func repairIndexOverTheApp() throws -> CadenceSaveCommitRule.RepairIndex {
+        try CadenceSaveCommitRule.repairIndex(over: try saveCommitSwiftFiles()) {
+            CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0))
+        }
+    }
+
     private func existenceIndexOverTheApp() throws -> CadenceSaveCommitRule.ExistenceIndex {
         try CadenceSaveCommitRule.existenceIndex(over: try saveCommitSwiftFiles()) {
             CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0))
@@ -1472,6 +1565,7 @@ struct CadenceSaveCommitDisciplineTests {
         // as stale.
         let swallowing = try swallowingIndexOverTheApp()
         let existence = try existenceIndexOverTheApp()
+        let repairing = try repairIndexOverTheApp()
         for (rule, exemptions, offenders) in [
             (
                 "existence",
@@ -1493,6 +1587,11 @@ struct CadenceSaveCommitDisciplineTests {
                 "rearrangement",
                 CadenceSaveCommitRule.rearrangementExemptions,
                 { CadenceSaveCommitRule.rearrangementOffenders(in: $0, changing: existence) }
+            ),
+            (
+                "unrepaired commit one frame down",
+                CadenceSaveCommitRule.unrepairedCommitExemptions,
+                { CadenceSaveCommitRule.unrepairedCommitOffenders(in: $0, repairing: repairing) }
             ),
         ] as [(String, [String: [String]], (String) -> [String])] {
             for (path, expected) in exemptions {
@@ -2344,6 +2443,180 @@ enum CadenceSaveCommitRule {
             }
         }
         return names.uniqued()
+    }
+
+    // MARK: - Half 4: a commit the needle cannot name ([[T-1299]])
+
+    /// The callees a caller's `try?` may **not** swallow: they change existence and reach a raw
+    /// `save()`, rather than delegating the undo to `CadencePendingChangePersistence`.
+    ///
+    /// Keyed by name **and enclosing type**, for the reason `SwallowingIndex` records: `save`,
+    /// `create` and `note` are each declared in several files here, and resolving a qualified call
+    /// by bare name reports sites the pairing does not.
+    ///
+    /// **Published when *any* overload is unrepaired**, the opposite of `ExistenceIndex`'s
+    /// unanimity rule and for the same reason it gives — the safe direction. The index cannot see
+    /// an argument list, so it cannot tell which `CadenceTaskMutationSupport.insertBundle` a call
+    /// site meant; a missing report costs the finding, a spurious one costs a sentence in an
+    /// exemption list.
+    ///
+    /// **`CadencePendingChangePersistence` itself is not in here.** Its members insert nothing and
+    /// commit through the closure they were handed; more to the point, it *is* the undo contract
+    /// this half is written in terms of, so a reading that flagged it would flag everything that
+    /// has been fixed.
+    struct RepairIndex {
+        fileprivate var typesByName: [String: Set<String>] = [:]
+        fileprivate var declarationNames = 0
+
+        /// How many distinct declaration names the parse read; the handle on a builder that
+        /// silently read nothing, the same one `SwallowingIndex.namesRead` gives.
+        var namesRead: Int { declarationNames }
+
+        /// How many distinct names it flagged. Separate from `namesRead` because the two fail in
+        /// opposite directions: an empty parse makes the half blind, an empty flagged set makes it
+        /// permanently green, and a sweep should be able to say which.
+        var unrepairedNames: Int { typesByName.count }
+
+        fileprivate func holds(_ callee: String, on qualifier: String) -> Bool {
+            typesByName[callee]?.contains(qualifier) ?? false
+        }
+    }
+
+    static func repairIndex(
+        over files: [String],
+        read: (String) throws -> String
+    ) rethrows -> RepairIndex {
+        let parsed = try files.map { parsedDeclarations(in: try read($0)) }
+        var index = RepairIndex()
+        index.declarationNames = Set(parsed.flatMap { $0.map(\.name) }).count
+
+        // One fixed point over the whole tree rather than per file, because the inheritance
+        // crosses files by design: `CadenceCoreNoteSupport.note` is a pass-through in `Shared/`
+        // over accessors in `Services/`, and a same-file reading would never have seen it.
+        var changed = true
+        while changed {
+            let before = index.typesByName
+            for declarations in parsed {
+                index = unrepairedCommitIndex(in: declarations, merging: index)
+            }
+            changed = index.typesByName != before
+        }
+        return index
+    }
+
+    /// The flagged names in one file, folded into whatever the index already holds.
+    ///
+    /// Used twice with one body: by `repairIndex` as the round of its fixed point, and by
+    /// `unrepairedCommitOffenders` to fold a single source's own declarations in before reading its
+    /// call sites — which is what lets an instrument fixture declare both halves of the shape and
+    /// be judged on them.
+    fileprivate static func unrepairedCommitIndex(
+        in declarations: [ParsedDeclaration],
+        merging index: RepairIndex
+    ) -> RepairIndex {
+        var merged = index
+        var changed = true
+        while changed {
+            changed = false
+            for declaration in declarations
+            where declaration.name != "body"
+                && !declaration.isNested
+                && declaration.type != "CadencePendingChangePersistence"
+                && !merged.holds(declaration.name, on: declaration.type) {
+                let itself = declaration.changesExistenceDirectly
+                    && CadenceSourceScan.matchCount(rawCommit, in: declaration.text) > 0
+                let inherited = declaration.calls.contains { call in
+                    guard !isRecursive(call, in: declaration) else { return false }
+                    return merged.holds(call.callee, on: call.qualifier ?? declaration.type)
+                }
+                guard itself || inherited else { continue }
+                merged.typesByName[declaration.name, default: []].insert(declaration.type)
+                changed = true
+            }
+        }
+        return merged
+    }
+
+    /// The declarations in `source` that swallow a call to an unrepaired committer.
+    ///
+    /// Reported by the **caller's** name, not the callee's: the callee may be in another file and
+    /// may be perfectly reasonable code that simply owes its caller a thrown error, and the site
+    /// that has to change is usually the one holding the `try?`.
+    static func unrepairedCommitOffenders(in source: String, repairing index: RepairIndex) -> [String] {
+        let parsed = parsedDeclarations(in: source)
+        let merged = unrepairedCommitIndex(in: parsed, merging: index)
+        var names: [String] = []
+        for declaration in parsed {
+            let qualifiers = CadenceSourceScan.captures(swallowedCall, in: declaration.text, group: 1)
+            let callees = CadenceSourceScan.captures(swallowedCall, in: declaration.text, group: 2)
+            for (qualifier, callee) in zip(qualifiers, callees)
+            where merged.holds(callee.text, on: qualifier.text) {
+                names.append(declaration.name)
+                break
+            }
+        }
+        return names.uniqued()
+    }
+
+    /// A commit that is **not** `CadencePendingChangePersistence`'s. Unqualified as well as
+    /// qualified: `try? save()` inside a `ModelContext` extension is the same commit as
+    /// `try? modelContext.save()` and the lookbehind is what lets one needle read both.
+    private static let rawCommit = "(?<![\\w])save\\(\\)"
+
+    /// A `try?` over a **qualified** call: the shape `swallowedSave` cannot see, because it names
+    /// two commit surfaces and this one is neither.
+    private static let swallowedCall = "try\\?\\s+(?:await\\s+)?(\\w+)\\s*\\.\\s*(\\w+)\\s*\\("
+
+    /// The exemption list for half 4, and it is **empty on purpose** — the ten sites T-1299
+    /// measured were all either fixed by [[T-1181]] or converted to `commitInsert` by T-1299
+    /// itself, so there is nothing here to schedule.
+    ///
+    /// Before adding an entry, check that the site is not simply the *other* shape: a callee that
+    /// changes no existence is not this defect and the half already declines it, and a callee that
+    /// reaches no commit at all is half 3's.
+    static let unrepairedCommitExemptions: [String: [String]] = [:]
+
+    static func unrepairedCommitInstrument(repairing index: RepairIndex) throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "swallowed call to a committing helper that does not undo",
+            fires: """
+            enum LegacyCoreNoteStore {
+                static func todayNote(in context: ModelContext) throws -> Note {
+                    let note = Note()
+                    context.insert(note)
+                    try context.save()
+                    return note
+                }
+            }
+
+            struct NotesPage {
+                func open() {
+                    presented = try? LegacyCoreNoteStore.todayNote(in: modelContext)
+                }
+            }
+            """,
+            // The nearest negative, and it is nearest in the one dimension that matters: the same
+            // insert, the same swallow at the same call site, with the callee's commit delegated to
+            // the type that owns the undo. A detector that read "the callee commits" would fire on
+            // this, and firing on it is what T-1299 says would get the half suppressed.
+            andNotOn: """
+            enum LegacyCoreNoteStore {
+                static func todayNote(in context: ModelContext) throws -> Note {
+                    let note = Note()
+                    context.insert(note)
+                    try CadencePendingChangePersistence.commitInsert(of: note, in: context)
+                    return note
+                }
+            }
+
+            struct NotesPage {
+                func open() {
+                    presented = try? LegacyCoreNoteStore.todayNote(in: modelContext)
+                }
+            }
+            """,
+            by: { !unrepairedCommitOffenders(in: $0, repairing: index).isEmpty }
+        )
     }
 
     // MARK: - Half 2, one frame down (T-566)

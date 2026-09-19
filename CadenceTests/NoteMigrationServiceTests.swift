@@ -119,6 +119,76 @@ struct NoteMigrationServiceTests {
         #expect(try context.fetch(FetchDescriptor<Note>()).count == 3)
     }
 
+    /// **A refused core-note commit leaves no note behind, and nothing pending** ([[T-1181]]).
+    ///
+    /// All four accessors used to end a fresh insert with a bare `try context.save()`. The error
+    /// reached the caller, but the `Note` stayed pending in the app's single `ModelContext` — for
+    /// the next unrelated `save()` from any other screen to commit, or the next `rollback()` to
+    /// discard. They route through `CadencePendingChangePersistence.commitInsert` now, which
+    /// un-inserts before it rethrows.
+    ///
+    /// **The `commit:` seam is the fix, not scaffolding** (the T-1295 argument): an in-memory
+    /// `save()` cannot be made to throw, so without it there is no way to provoke the refusal and
+    /// the undo path is one no test can reach.
+    ///
+    /// **Toolchain-neutral by construction** ([[T-1296]]): nothing here reads a relationship
+    /// between the undo and the assertion. Each case runs the *next* unrelated `save()` forwards
+    /// and asks the store, which is the defect the ticket is about and depends on no framework
+    /// timing.
+    @Test func arefusedCoreNoteInsertUninsertsTheNoteRatherThanLeavingItPending() throws {
+        struct CommitRefused: Error {}
+
+        for (label, create) in coreNoteAccessorsUnderTest {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let context = ModelContext(container)
+
+            #expect(throws: CommitRefused.self) {
+                try create(context) { _ in throw CommitRefused() }
+            }
+
+            // The assertion: the next unrelated commit takes nothing with it.
+            try context.save()
+            let notes = try context.fetch(FetchDescriptor<Note>())
+            #expect(notes.isEmpty, "\(label) left \(notes.count) note(s) pending after a refused commit")
+        }
+    }
+
+    /// The other half of the seam: the **default** commit is a real `save()`, not the test's
+    /// closure — so the tests above prove something about the code that ships.
+    @Test func theDefaultCoreNoteCommitIsARealSaveAndNotTheTestSeam() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        try NoteMigrationService.dailyNote(for: "2026-04-30", in: context)
+        try NoteMigrationService.weeklyNote(for: "2026-W19", in: context)
+        try NoteMigrationService.permanentNote(in: context)
+        try NoteMigrationService.createPermanentNote(in: context, title: "Reading list")
+
+        // Committed by the accessors themselves: a second context over the same store sees them
+        // without anything here having saved.
+        let reader = ModelContext(container)
+        #expect(try reader.fetch(FetchDescriptor<Note>()).count == 4)
+    }
+
+    /// The four accessors, each closed over so the refusal test can run one body against all of
+    /// them — the alternative is four near-copies of the same six lines.
+    private var coreNoteAccessorsUnderTest: [(String, (ModelContext, @escaping (ModelContext) throws -> Void) throws -> Void)] {
+        [
+            ("dailyNote", { context, commit in
+                try NoteMigrationService.dailyNote(for: "2026-04-29", in: context, commit: commit)
+            }),
+            ("weeklyNote", { context, commit in
+                try NoteMigrationService.weeklyNote(for: "2026-W18", in: context, commit: commit)
+            }),
+            ("permanentNote", { context, commit in
+                try NoteMigrationService.permanentNote(in: context, commit: commit)
+            }),
+            ("createPermanentNote", { context, commit in
+                try NoteMigrationService.createPermanentNote(in: context, title: "Reading list", commit: commit)
+            }),
+        ]
+    }
+
     /// Notepad holds many notes now, but the single-note surfaces (the Today panel's Notepad tab,
     /// iOS, the MCP write service) still go through `permanentNote(in:)` and must keep landing on
     /// the *same* note every time. An unordered `first` would hand them a different one run to run
