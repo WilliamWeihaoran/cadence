@@ -109,6 +109,31 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # T-1298, and the twin of docs.yml's job of the same name -- the same script,
+  # on the complementary half of the pushes. This workflow's `paths-ignore` is
+  # exactly docs.yml's `paths`, so between them the check runs on every push;
+  # this half is the one that matters most, because the failure it guards is a
+  # commit that lands CODE under a ticket id and never closes the entry. Two of
+  # the three that motivated it -- `e4719e3` and `44eced5` -- touched no docs at
+  # all, so docs.yml alone would not have fired on either.
+  #
+  # Ubuntu, seconds, 1x minutes: it costs nothing against the macOS jobs below
+  # and it is deliberately not a step inside one of them, so a compile failure
+  # and a stale ledger stay separately legible. `fetch-depth: 0` is load-bearing;
+  # see the note on the twin.
+  # ---------------------------------------------------------------------------
+  ledger-lag:
+    name: A landed commit's ticket id is closed in the ledger
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the ledger against the commits that landed
+        run: ./scripts/ledger-lag-check.sh
+
+  # ---------------------------------------------------------------------------
   # The gate the local loop structurally cannot provide. Cheapest job here; if
   # only one job is ever enabled, make it this one.
   # ---------------------------------------------------------------------------

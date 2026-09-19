@@ -64,3 +64,32 @@ jobs:
             echo "Put the detail in docs/SUBAGENT_RUNBOOK.md or another linked reference."
           fi
           exit $rc
+
+  # ---------------------------------------------------------------------------
+  # T-1298. The ledger's other direction. `agent-commit.sh`'s `LEDGER-ID-UNFILED`
+  # means a commit message cannot name an id the ledger has never heard of, so the
+  # ledger cannot LOSE an id; nothing asked whether an id a landed commit named is
+  # still sitting in the open sections. Three were on 2026-09-19, one of them
+  # telling its next reader not to do work that had already shipped.
+  #
+  # This job and its twin in ci.yml run the same script. The two workflows' path
+  # filters are exact complements -- ci.yml `paths-ignore`s what docs.yml `paths`
+  # -- so exactly one of them runs per push and the check runs on every push. The
+  # docs-only half matters because a ledger edit is the other way this goes wrong:
+  # a correction that reopens an entry whose code has landed is red here.
+  #
+  # `fetch-depth: 0` is load-bearing, not tidy. The default is a depth-1 checkout,
+  # over which this check examines zero commits and exits 0 -- so the script also
+  # carries its own floors and refuses that run (LEDGER-LAG-VACUOUS) rather than
+  # letting a shallow fetch read as a pass.
+  # ---------------------------------------------------------------------------
+  ledger-lag:
+    name: A landed commit's ticket id is closed in the ledger
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the ledger against the commits that landed
+        run: ./scripts/ledger-lag-check.sh

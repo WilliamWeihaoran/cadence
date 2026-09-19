@@ -186,6 +186,28 @@ struct CadenceGuardScriptSelftestTests {
         "NOT-REPO-ROOT",
     ]
 
+    /// Every refusal `scripts/ledger-lag-check.sh` makes (T-1298), and the pair is one finding read
+    /// from both ends. `LEDGER-CLOSURE-LAGGED` is the direction `agent-commit.sh` never ran: that
+    /// script's `LEDGER-ID-UNFILED` means a commit message cannot name an id the ledger has never
+    /// heard of, so an id cannot be LOST — and nothing asked whether an id a landed commit named is
+    /// still sitting in the open sections. Three were on 2026-09-19, one and two days after their
+    /// code shipped, and T-626's entry was still telling its next reader *"BLOCKED ON iOS
+    /// DISTRIBUTION — do not implement until that changes"* about work that had already landed.
+    ///
+    /// `LEDGER-LAG-VACUOUS` is the half that keeps the first one from becoming decoration, and it
+    /// is this session's recurring shape rather than a precaution: T-1282 found an iOS gate that
+    /// passed having compiled nothing and T-1291 a canary that had silently stopped guarding. A
+    /// GitHub Actions checkout defaults to `fetch-depth: 1`; over one commit this check examines
+    /// zero commits, finds nothing and exits 0. So it counts what it read — commits, ledger
+    /// entries, and commits actually EXAMINED — and refuses a run below any of the three floors.
+    /// The third is the one a renamed ledger or a rotted path predicate trips while the other two
+    /// still look healthy. Naming both here means deleting either mode goes red rather than
+    /// quietly halving what the guard proves.
+    static let ledgerLagRefusals = [
+        "LEDGER-CLOSURE-LAGGED",
+        "LEDGER-LAG-VACUOUS",
+    ]
+
     /// Every refusal `scripts/worktree-drift.sh` makes (T-975). Two, because the script's job is
     /// almost entirely to NOT refuse: it exists because `git status` prints ` M <path>` for a
     /// stale checkout copy and for real in-flight work in the same three characters, and telling
@@ -413,6 +435,26 @@ struct CadenceGuardScriptSelftestTests {
         #expect(complaints.isEmpty, "./scripts/agent-scratch.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
+    /// T-1298. Runs entirely inside a throwaway git repository under `$TMPDIR`: it writes fixture
+    /// ledgers, commits against them and runs the check over its own history, so it says nothing
+    /// about — and does nothing to — this checkout, and is safe alongside siblings committing in
+    /// it. Under a second.
+    ///
+    /// The two checks worth knowing about are the controls rather than the refusal. Mode 2 is the
+    /// whole design problem in six lines: an id can be named by a commit that FILED it rather than
+    /// closed it, and this repository files residue tickets out of the very commit that closed
+    /// their parent (`bc91b2c` closed T-1135 and filed T-1163, which is open to this day). So the
+    /// rule is per-COMMIT — a commit that lands code must close at least one of the ids it names —
+    /// and mode 2 proves each way an id is legitimately still open: a docs-only commit, a pair
+    /// where the other half closed, a `## Done` entry with no marker at all, an entry archived to
+    /// `TODO_DONE.md`, and an id no ledger has ever heard of. Mode 4's last check is the other one:
+    /// a real `git clone --depth 1`, which is what Actions does unless a workflow says otherwise.
+    @Test func theLedgerLagGuardsOwnGuardsStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/ledger-lag-check.sh")
+        let complaints = run.complaints(requiring: Self.ledgerLagRefusals)
+        #expect(complaints.isEmpty, "./scripts/ledger-lag-check.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
     /// T-780. Runs entirely inside a throwaway git repository under `$TMPDIR`, like the drift
     /// guard's: it arms `core.hooksPath` **there**, never here, so it says nothing about — and does
     /// nothing to — whether the real checkout has the hook installed. About a second.
@@ -571,6 +613,7 @@ struct CadenceGuardScriptSelftestTests {
             ("scripts/agent-commit.sh", Self.commitHelperRefusals),
             ("scripts/agent-scratch.sh", Self.scratchGuardRefusals),
             ("scripts/worktree-drift.sh", Self.worktreeDriftRefusals),
+            ("scripts/ledger-lag-check.sh", Self.ledgerLagRefusals),
             ("scripts/xcb.sh", Self.buildRunnerRefusals),
             (".githooks/pre-commit", Self.preCommitHookRefusals),
         ] {
@@ -591,7 +634,7 @@ struct CadenceGuardScriptSelftestTests {
         }
     }
 
-    /// And all seven guards have to be there to be run. A renamed script would otherwise make the
+    /// And all eight guards have to be there to be run. A renamed script would otherwise make the
     /// tests above fail for a reason that reads nothing like "the guard is gone".
     ///
     /// The executable bit is not a formality for `.githooks/pre-commit` (T-780): git **silently
@@ -606,6 +649,7 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/test-host-lock.sh",
             "scripts/simulator-claim.sh",
             "scripts/worktree-drift.sh",
+            "scripts/ledger-lag-check.sh",
             "scripts/xcb.sh",
             ".githooks/pre-commit",
         ] {
