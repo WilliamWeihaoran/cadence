@@ -125,15 +125,16 @@ run_check() {  # $1 = rev
         -v min_entries="$SELF_MIN_ENTRIES" \
         -v min_examined="$SELF_MIN_EXAMINED" \
         -v todo="$TODO_PATH" \
-        -f "$AWK_PROG" "$tmp/todo.md" "$tmp/done.md" "$tmp/log.txt"
+        "$AWK_PROG" "$tmp/todo.md" "$tmp/done.md" "$tmp/log.txt"
 }
 
 # ---------------------------------------------------------------------------
 # The reading itself, as one awk pass over: TODO.md, TODO_DONE.md, the log.
+# Held in a variable rather than written to a temp file: the first draft wrote one and removed it
+# only on the success path, so every exit 3 and every exit 4 leaked one -- and a guard whose
+# refusal path is the one that litters is a guard that gets noticed for the wrong reason.
 # ---------------------------------------------------------------------------
-write_awk() {
-    AWK_PROG="$1"
-    cat > "$AWK_PROG" <<'AWK'
+AWK_PROG=$(cat <<'AWK'
 function entry_id(line,   id) {
     id = line; sub(/^- \[/, "", id); sub(/\].*$/, "", id); return id
 }
@@ -232,7 +233,7 @@ END {
     exit 0
 }
 AWK
-}
+)
 
 # --- selftest ----------------------------------------------------------------
 # A throwaway repository under $TMPDIR, so this says nothing about -- and does nothing to -- the
@@ -409,12 +410,8 @@ esac
 
 case "${1:-}" in
     selftest)
-        AWK_TMP=$(mktemp "${TMPDIR:-/tmp}/cadence-ledger-lag-awk-XXXXXX") || exit 3
-        write_awk "$AWK_TMP"
         cmd_selftest
-        rc=$?
-        rm -f "$AWK_TMP"
-        exit $rc
+        exit $?
         ;;
     -h|--help)
         sed -n '2,8p' "$0"
@@ -422,9 +419,4 @@ case "${1:-}" in
         ;;
 esac
 
-AWK_TMP=$(mktemp "${TMPDIR:-/tmp}/cadence-ledger-lag-awk-XXXXXX") || exit 3
-write_awk "$AWK_TMP"
 run_check "${1:-HEAD}"
-rc=$?
-rm -f "$AWK_TMP"
-exit $rc
