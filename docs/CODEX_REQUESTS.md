@@ -2962,3 +2962,90 @@ Re-read your own answers to R41–R44 against the current tree before anyone act
 premises have been overtaken, and name the commit that overtook each. This repository has now had
 four tickets whose premise was false by the time an agent reached them, and two audits that agreed
 with each other and were both wrong.
+
+## R46 — Which guards in this repository currently guard nothing?
+
+Three were found dead in one day, each by accident while doing something else. The iOS gate
+(`T-1282`): `-destination 'platform=iOS Simulator,name=iPhone 15'` returned `XCODEBUILD_EXIT=70`
+with `compile errors: 0` and `warnings: 0` over **zero** compiled files, and the shell pipeline
+exited 0 — a passing-looking gate that had compiled nothing, on a platform the macOS test target
+never compiles. The comment stripper's canary (`T-1291`): the header named
+`LinksView.addLink()` as the thing that would catch a lost `(?<!:)` lookbehind, and that claim had
+gone stale unnoticed — the only `https://` left in that file sits inside a comment, and the real
+literal had moved to a file no brace-matching scan reads. The whole 4,800-test suite was green under
+*either* spelling. The radius sweep (`T-1297`): its exemption was anchored by **line number**, and
+seven inserted comment lines silently moved the site it excused.
+
+A green suite is consistent with every one of those. Sweep every guard — the `scripts/*.sh`
+refusals, the sweep tests, the canaries, the exemption lists — and say which ones would still fire
+if the thing they protect were broken **today**. For each dead one, name the commit that killed it
+and say whether anything would ever have noticed. `scripts/mutate.sh` now baselines every distinct
+suite in a plan (`T-1245`), so a `KILLED` means something again; use it where a fixture allows.
+
+## R47 — What else differs between Xcode 26 and 27 that this repository pins?
+
+CI runs **Xcode 26.0.1**; the owner's Mac runs **27.0**; the runner image ships no 27, so they
+cannot be made to match. `ModelContext.rollback()` disagrees between them about whether an
+already-materialised reference is restored before anything refetches, and two tests pinned the
+answer — first 26's, which was red locally; then 27's, which turned CI red (`T-1279`, then `T-1296`).
+Each flip looked like a fix and was a swap of which environment was broken.
+
+The fix asserts the invariant and bounds the observation. The question is how many more of these are
+waiting. Sweep the suite for assertions that pin a **framework** behaviour rather than this
+repository's own, and say which would flip between 26 and 27. SwiftData relationship and
+delete-rule timing, SwiftUI layout rounding, `FormatStyle` output, `Calendar`/`DateComponents` edge
+cases and `NSRegularExpression` are the places to look first. Name the ones you cannot decide
+without running both toolchains — that list is as useful as the answer.
+
+## R48 — Which load-bearing claims in comments are false against the current tree?
+
+Four surfaced in one day, and each had been steering decisions. `T-1071` asserted
+`CadencePendingChangePersistence.swift` was not in `CadenceMCPServer`'s Sources phase — it is in
+that one *and* `CadenceWidgets`', and that false claim was being used to justify a hand-spelled
+`context.delete(note)`. `T-626`'s ledger entry still read *"BLOCKED ON iOS DISTRIBUTION — do not
+implement"* two days after the fix shipped, a park the owner had already lifted. `read_path_state`'s
+own header said two cases were distinguishable and then fell through as if they were not. And an
+agent wrote DTO documentation for a capability it died before building — *"`update_container` can
+now write it"*, where `update_container` accepts no such field.
+
+That last one is the interesting class: **born false**, not aged into it. Sweep for claims in
+comments and guides that assert something checkable about the current tree — a file is in a target,
+a symbol has one caller, a literal appears N times, a behaviour is unconditional — and report the
+false ones. Then say which class each belongs to: born false, aged false, or true-but-for-a-reason
+that has changed. The repository already refuses an unfiled ticket id in a commit message, so the
+*naming* direction is guarded; this is the other one.
+
+## R49 — Does an undeployed Production record type stall one type's mirroring or the whole store's?
+
+`T-1274` added `SidebarLayoutPreference`, a new `@Model`. SwiftData auto-creates record types in the
+**Development** database as a debug build runs; **Production** gets them only when a human presses
+*Deploy Schema Changes*. The owner is about to install a TestFlight build on a Mac, an iPhone and an
+iPad specifically to test whether iCloud sync works.
+
+The local half is established and pinned (`T-1290`): the entity exists on device whatever CloudKit
+knows, every read is a local fetch, and an absent record type arrives as zero rows — the same shape
+as "nothing has synced yet". What no unit test here can reach is the mirroring layer:
+`NSPersistentCloudKitContainer` exporting a `CD_SidebarLayoutPreference` into a Production schema
+with no such type gets a `CKError` for that operation, and whether the delegate confines the failure
+to that record type or backs the store's export queue off more broadly is **not established** —
+SwiftData exposes no status for it.
+
+This decides how the owner should read a failed sync test: sidebar-only means a missing deploy;
+everything means something else. If it is global, the mitigation worth costing is holding a new
+`@Model` out of `CadenceSchema` until the deploy lands, which is a release-sequencing rule rather
+than code. Answer from documented CloudKit behaviour and say what you are inferring versus what you
+know.
+
+## R50 — Standing: what did today's twelve landed tickets break that their own tests cannot see?
+
+Between `674181e` and `e78be39` this repository landed roughly two dozen commits in one sitting,
+several of them changing the machinery that other agents commit and gate with — `agent-commit.sh`
+gained two refusals and a warning, `xcb.sh` gained one, `mutate.sh`'s baseline changed shape, and a
+new `ledger-lag-check.sh` runs in both CI workflows. Every one of those was gated by the suite it
+also changed.
+
+Read that range as a whole rather than ticket by ticket, and say what it broke that no test in it
+would notice. Two specific asymmetries to check: a refusal added to `agent-commit.sh` is proved by
+its own selftest, which the same commit writes — so a refusal that is *too broad* passes its proof
+and only shows up as agents routing around it later; and `ledger-lag-check.sh` now runs on every
+push, so a false positive there emails the owner rather than failing quietly.
