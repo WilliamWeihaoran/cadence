@@ -3637,3 +3637,48 @@ re-propose them.
 Note the app currently ships as **Cadence**. If the owner keeps that name the letter is `C`, which
 is an open bowl and harder than `D` — worth one concept showing whether it can be made to work,
 since "keep the name" is the cheapest option available and nobody has tested whether it is viable.
+
+## R56 — Screen these eight names, and say which survive a real search rather than an exact-match one
+
+The owner has chosen **concept A, the folded D** (see `design/icon-concepts-2026-09-20-dwell-d/`),
+and asked for more names. They also accepted that **Dwell is out**: `dwell.com` is a prominent
+architecture and interiors magazine, the same class of conflict that removed Daysplice over Splice.
+
+The geometry is settled and **name-independent for any `D` word**, so the only question left is the
+name. That makes screening the whole job, and it is the part of your round-4 answer that had the
+most value.
+
+**Already rejected, do not re-propose:** Dayweft, Sequora, Tessora, Daylume, Daysplice, Dwell.
+**Round-4 shortlist still standing:** Dayflet, Notchday.
+
+Eight candidates, with the coordinator's reasoning and its own suspicions flagged — treat the
+suspicions as hypotheses to test, not findings:
+
+| name | why | coordinator's suspicion |
+|---|---|---|
+| **Dayfold** | the icon *is* the name — concept A is literally a fold | none known |
+| **Daymark** | a fixed marker you navigate by (nautical) | none known |
+| **Dayleaf** | keeps Dayflet's leaflet idea, a page in your day | none known |
+| **Daylet** | a small piece of a day | none known |
+| **Denote** | to mark, to note — contains *note* | generic English, may be unregistrable |
+| **Diem** | *carpe diem*; the day itself, short and calm | Meta's Diem currency, discontinued 2022 — historically loaded even if clear |
+| **Docket** | the most literal to-do word in English: matters to be dealt with | heavily used in legal software |
+| **Dovetail** | two pieces fitting exactly — tasks into time | `dovetail.com` is a live UX-research product; probably out |
+
+For each: say whether it is clear, conflicted or unknown, name the conflicting product with a URL
+where one exists, and **rank the survivors**. Where a name is conflicted only in an unrelated
+category, say so rather than rejecting it outright — a magazine and a task app are not the same
+market, and the owner should be told the shape of the risk rather than handed a verdict.
+
+Carry round 4's disclaimer forward unchanged: not exhaustive, not phonetic, no trademarks, domains
+or logo imagery, no claim of legal clearance.
+
+Two extra questions worth more than the list:
+
+- **Is the `Day` prefix itself a problem?** Six of the eight and both shortlisted names use it. If
+  the App Store is saturated with `Day*` productivity apps, that is a discoverability finding that
+  no individual name check would surface, and it would push the answer toward `Docket`, `Diem` or
+  `Denote`.
+- **Does any survivor collide with an existing app icon that is a letterform on a dark squircle?**
+  That is the visual-similarity screen round 4 explicitly did not do, and concept A is now committed
+  to exactly that composition.
