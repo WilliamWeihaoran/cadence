@@ -2914,6 +2914,33 @@ base, or only when the path is behind HEAD — and what it would have missed.
 
 Do not assume the flag should be ungated. Say what the evidence supports.
 
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot
+Later concurrent work is recorded under R43, not included in this baseline.
+```
+
+**MEASURED: 950 of 1,137 evaluated non-merge commits (83.55%) would require the current
+removal acknowledgement; 82 of the most recent 100.** Twelve merges and three commits with binary
+replacements/deletions are excluded from 1,152 total, bounding the all-history proportion at
+82.47%-83.77%. New paths cannot remove a HEAD line and are skipped, including binary additions.
+Reproducer, methodology and exclusions:
+[R41 history evidence](audits/2026-09-20/request-queue/README.md#r41-actual-removal-guard-cost).
+
+**The premise needs narrowing:** `scripts/agent-commit.sh:1847` counts old nonempty line text
+absent anywhere in the new file, not every diff deletion. Duplicate and blank-line removals can
+escape it. This replay measures that actual rule, not how often earlier refusals would stop a
+commit first.
+
+**The true-positive rate is not recoverable from these commits.** They do not record the agent's
+trusted base/read state or deletion intent. A fraction based on authors or all rewritten lines
+would invent the requested numerator. The evidence supports calling the guard broad, not ungating
+it. A trusted-base three-way check can narrow concurrency refusals while preserving ledger
+invariants; merely testing the checkout's staleness misses independently stale reconstructions.
+The handoff names what each narrower rule would still miss.
+
 ## R42 — Three checks were green over violations of themselves. Is there a fourth?
 
 Measured in one day: (1) a source-scan regex pinned `columnFailureNotice` against `saveFailureNotice`
@@ -2930,6 +2957,33 @@ whether the blind spot is reachable by ordinary code rather than contrived code.
 this family was to delete `@discardableResult` so the **compiler** enforces the rule instead of a
 regex — say where else that substitution is available.
 
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot
+Status: confirmed gaps and candidate inventory; exhaustive per-guard review remains open
+```
+
+**Yes, two matcher gaps are MEASURED:** the defaults-routing detector misses wrapped
+`UserDefaults\n.standard` and `UserDefaults =\n.standard`; the radius scan misses both a wrapped
+`cornerRadius:\n10` and `let cornerRadius: CGFloat = 10`. Current source, controls, introduction
+commits, suggested fixes and ordinary-versus-contrived ranking are in
+[R42/R46 guard findings](audits/2026-09-20/request-queue/README.md#r42r46-demonstrated-scan-gaps).
+These are guard defects, **not measurements of a production violation or whole-suite survivors**.
+
+**MEASURED inventory:** a SwiftSyntax pass over 323 test files located 5,625 candidate assertions
+in 1,702 test functions, using file-level source-reader markers and assertion shapes. The
+[TSV](audits/2026-09-20/request-queue/source-candidates.tsv) names every selected assertion and its
+line. This intentionally includes data assertions from mixed files and can miss indirect readers;
+it is not the requested fully classified census. Do not close that part of R42 from this count.
+
+**REASONED:** highest-value next checks are the separate rollback census's implicit-receiver gap,
+multiline raw text writes, and lexical report/catch ordering. Compiler-enforced result use,
+access boundaries and typed draft/commit APIs can replace parts of the text rules. They cannot
+prove restoration or visible feedback; injected commit-failure tests are the existing correct
+pattern for those. T-1308 already files the renumber-undo false positive and is not re-filed.
+
 ## R43 — What else is in the working tree and not in HEAD?
 
 `scripts/run-macos-app.sh` has exactly one commit, from 2026-08-22. A fix for its store-leak bug
@@ -2942,6 +2996,56 @@ Sweep the current working tree against HEAD and classify every difference: in fl
 finished-but-never-landed. Name anything in the third class. Then say what signal would have
 distinguished them at the time — the repository already has `worktree-drift.sh` for the opposite
 direction (a checkout *behind* HEAD), so the asymmetry is the question.
+
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 initially
+Later observation before writing answers: 16 status entries / 19 individual paths
+Our production/test edits: 0
+```
+
+**MEASURED: the original premise is overtaken.** The checkout was completely clean when this
+request was opened. `scripts/run-macos-app.sh` now has three commits, not one: `50429a6`,
+`7584c5f` (2026-09-06, landing the T-1064/T-1066 cleanup), and `6d56b91` (2026-09-12). No finished-but-unlanded
+fix could be identified in a clean tree.
+
+Other work appeared during this audit. `git status --porcelain=v1 --untracked-files=all` identified
+every path below. **REASONED classification: observed in-flight work**, because these changes
+appeared after the clean snapshot; author intent/completion cannot be certified from status.
+
+```text
+Sync/schema work:
+  Cadence.xcodeproj/project.pbxproj
+  Cadence/CadenceApp.swift
+  Cadence/Services/CadenceArchiveImportService.swift
+  Cadence/Services/CadenceDataExportService.swift
+  Cadence/Services/CadencePrivacyDataResetService.swift
+  Cadence/Services/CadenceSchema.swift
+  Cadence/Models/LookPreference.swift
+  Cadence/Shared/CadenceLookPreferenceStore.swift
+  Cadence/Shared/CadenceLookPreferenceSync.swift
+Associated tests:
+  CadenceTests/CadenceArchiveImportSurfaceTests.swift
+  CadenceTests/CadenceDataExportSurfaceTests.swift
+  CadenceTests/CadenceFirstLaunchEmptyStoreTests.swift
+  CadenceTests/CadenceMarkdownSourceInventoryTests.swift
+  CadenceTests/CadencePrivacyDataResetSurfaceTests.swift
+Guard work:
+  scripts/agent-commit.sh
+Design work:
+  design/icon-concepts-2026-09-20-round-4/README.md
+  design/icon-concepts-2026-09-20-round-4/dayflet.png
+  design/icon-concepts-2026-09-20-round-4/daysplice.png
+  design/icon-concepts-2026-09-20-round-4/notchday.png
+```
+
+None is asserted abandoned or finished-but-never-landed. No edits to these paths were made by
+this audit. **Suggested signal:** an owner/base-SHA/path record with last activity, verification
+result and explicit ready-to-land state. Modification time is not enough; neither is a passing
+test detached from the content hash. Existing scratch ownership plus an explicit handoff record
+is a smaller change than making `git status` guess intent.
 
 ## R44 — Does the app still start, and does the main window still compose?
 
@@ -2956,12 +3060,90 @@ empty catch, a default that stands in for an error. The image-overlap bug was ex
 the editor styled itself at a content width of about 1 point because SwiftUI had not yet given the
 view a frame, and nothing anywhere said so.
 
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot
+Mode: source-only launch trace, no build, test host, app or simulator
+```
+
+**REASONED: the source has a complete path to an empty usable Today; this is not proof the app
+launches or composes correctly at runtime.** The necessary steps and their failure behavior are:
+
+1. `Cadence/CadenceApp.swift:21` initializes notifications without requesting authorization and
+   obtains `PersistenceController.shared.container`. Store preflight (`PersistenceController.swift:55`)
+   handles migration, pending restore and backup before creating the primary container. Primary
+   failure selects an explicitly labeled recovery store, then memory, then terminal recovery;
+   it no longer builds a normal shell around a missing container (`CadenceApp.swift:56,102`).
+2. `PersistenceController.swift:198` configures private CloudKit. Container creation succeeding
+   does **not** establish mirroring health; missing Production schema is covered by R49. Local
+   Today must work without waiting for a cloud import. Remote-notification delegates are wired on
+   both platforms (`CadenceApp.swift:12,18`).
+3. `performStartupMaintenance` at `PersistenceController.swift:116` performs migrations/repair,
+   not default-tag seeding. The real empty-store test calls this function. The notes panel later
+   creates daily/weekly/notepad rows on demand (`NotePanel.swift:206` and
+   `CadenceNotePlanningSupport.swift:137`); empty tasks/lists are legitimate, not missing seed data.
+4. `macOSRootView.swift:21,61,100` starts at Today and supplies the active model context;
+   `CadenceApp.swift:57` supplies its managers. `TodayView.swift:12` chooses panes from the actual
+   geometry proposal. A missing notes column at a narrow width is an intentional layout branch,
+   not a load failure. Permission refresh is non-prompting root setup (`macOSRootLifecycleSupport.swift:40`).
+5. The old initial-width image defect is repaired in source: `MarkdownEditorView.swift:661,712`
+   re-derives width-dependent layout on the scroll view's own layout pass. Initial width can still
+   be 1pt (`:534`); the repair is the later invalidation, not pretending the initial size is real.
+
+**Silent/degraded branches, source measured:**
+
+- `PersistenceController.swift:88` discards the primary open error's details with `try?`, although
+  the recovery-state banner is visible. Improve diagnostics by retaining the underlying error;
+  do not describe recovery itself as silent.
+- `TagSupport.swift:258` and `AppTask.swift:770` return `false` after failed fetches, indistinguishable
+  from no maintenance needed. Focus reconciliation explicitly documents startup retry as acceptable
+  (`AppTask.swift:778`, T-1114). These are deferred maintenance, not proof of an empty-store launch failure.
+- `NoteMigrationService.swift:167` and `DataIntegrityRepairService.swift:239` return recorded reports
+  after failure. Their lower frames log errors, so they are not empty/no-log catches. Startup uses
+  their changed flags; it does not promote every report error into the launch banner.
+- The three `try?` core-note loads are **not silent UI failure now**: missing results populate
+  `failedTabs`; `NotePanel.swift:148` names the failure and offers retry. T-1181 also repairs failed
+  inserts. A maintenance commit failure has its own banner (`PersistenceController.swift:175`).
+
+**Next verification, not performed:** one isolated empty-store full-screen launch, then image-note
+layout before typing, under the existing app/test-host ownership tools. No new runtime regression
+is claimed from this source trace. Concurrent T-1307 app/schema wiring was not part of this baseline.
+
 ## R45 — Standing: which of R41–R44 has gone stale?
 
 Re-read your own answers to R41–R44 against the current tree before anyone acts on them. Say which
 premises have been overtaken, and name the commit that overtook each. This repository has now had
 four tickets whose premise was false by the time an agent reached them, and two audits that agreed
 with each other and were both wrong.
+
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot; later concurrent paths listed under R43
+```
+
+**MEASURED re-verification:**
+
+- **R41:** the nine-commit backlog is historical, not a current observation; the initial checkout
+  was clean. `9a9a4cf` additionally narrows a stale-reconstruction false refusal for rewritten newest
+  ledger entries. The current removal rule remains broad; its fresh replay is above. No evidence
+  identifies one commit that cleared all nine historical drafts, so no such SHA is invented.
+- **R42:** do not repeat fixed instruments as live defects. `924fab8` expanded the defaults detector;
+  `5985bb9` replaced the rotted URL canary with fixtures; `6f2bca5` anchored radius exemptions by
+  declaration; `c0919b9` added implicit ModelContext receivers to the save rule. The new whitespace
+  gaps above survive these fixes. `231a7a8` already files the renumber-undo false positive as T-1308.
+- **R43:** the launcher has landed work in `7584c5f` and `6d56b91`; the one-commit premise is false.
+  Newly observed changes are active concurrent work, not a fortnight-old unexplained residue.
+- **R44:** `dcb0a15` repaired the image-height invalidation; `ce5ab6a` added width-sensitive style
+  tracking. The old image symptom is evidence for the historical defect, not proof it remains.
+  Current source calls the actual startup maintenance sequence and shows failed core-note loads.
+
+**Do not act on a moving-tree assumption:** later uncommitted `LookPreference` and app wiring
+change the launch/schema surface, and uncommitted T-1305 work changes the commit helper. Re-read
+those paths after they land. The answers here remain tied to `231a7a8`, not those in-flight edits.
 
 ## R46 — Which guards in this repository currently guard nothing?
 
@@ -2982,6 +3164,31 @@ if the thing they protect were broken **today**. For each dead one, name the com
 and say whether anything would ever have noticed. `scripts/mutate.sh` now baselines every distinct
 suite in a plan (`T-1245`), so a `KILLED` means something again; use it where a fixture allows.
 
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot
+Status: targeted verification complete; exhaustive guard/mutation matrix remains open
+```
+
+**MEASURED:** ledger selftest **20/20** and xcb selftest **45/45**, including the missing-simulator,
+suite-name, warning and vacuous-count controls. No app build or Swift test suite ran. The defaults
+and radius text probes demonstrate specific ordinary-code blind spots; neither guard is wholly
+dead. Both gaps were present at introduction (`924fab8` and `b0b2eef`), not newly killed by a moved
+production canary. R50 adds a message-ownership ambiguity and optional-archive parser defect.
+
+[Evidence, exact commands and limits](audits/2026-09-20/request-queue/README.md#guard-verification-limits).
+The three examples in the request have landed fixes; their old failures are not re-filed.
+An attempted commit-helper selftest encountered a concurrently edited T-1305 implementation and
+was interrupted, so it is explicitly excluded from baseline verification.
+
+**Remaining:** all 14 shell scripts' refusals, all source sweeps, canaries and exemption lists have
+not each received an independent disabled-guard mutation in this pass. The 5,625-assertion
+candidate inventory is a triage tool, not that proof. No "all guards live" or "suite kills these
+mutations" claim is warranted. Use the matrix format in the linked handoff to finish the census
+without substituting a green suite or named-refusal count for measured discrimination.
+
 ## R47 — What else differs between Xcode 26 and 27 that this repository pins?
 
 CI runs **Xcode 26.0.1**; the owner's Mac runs **27.0**; the runner image ships no 27, so they
@@ -2996,6 +3203,31 @@ repository's own, and say which would flip between 26 and 27. SwiftData relation
 delete-rule timing, SwiftUI layout rounding, `FormatStyle` output, `Calendar`/`DateComponents` edge
 cases and `NSRegularExpression` are the places to look first. Name the ones you cannot decide
 without running both toolchains — that list is as useful as the answer.
+
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot
+Two-toolchain executions: 0
+```
+
+**First correction, MEASURED:** CI requires Xcode **26.x**, not specifically 26.0.1
+(`.github/scripts/assert-toolchain.sh:20,57,82`, `macos-latest` workflows). Local Xcode's plist
+reports 27.0. The exact current CI minor and runtime were not queried.
+
+**No new flip is established.** The
+[framework comparison matrix](audits/2026-09-20/request-queue/README.md#r47-framework-boundary-tests-to-compare)
+names the highest-value retained-reference/inverse/deletion tests, parser permissiveness, native
+image/font geometry, DST arithmetic and regex assumptions, with assertion lines and why each
+needs both environments. Immediate inverse back-population and exact pre/post-delete lifecycle
+signals are first in the queue. Pure Cadence layout arithmetic is not a SwiftUI rounding test.
+
+**REASONED:** keep strict app invariants (stored rows, inspector closes, image stays inside its
+fragment, unrelated pending work survives); isolate observational framework sentinels. The existing
+bounded rollback test is the correct pattern, not permission to accept arbitrary outcomes. Record
+OS/SDK/build/locale alongside Xcode so a framework difference is not misattributed to the compiler.
+The handoff explicitly marks all unexecuted candidates as unresolved, not predicted failures.
 
 ## R48 — Which load-bearing claims in comments are false against the current tree?
 
@@ -3014,6 +3246,32 @@ a symbol has one caller, a literal appears N times, a behaviour is unconditional
 false ones. Then say which class each belongs to: born false, aged false, or true-but-for-a-reason
 that has changed. The repository already refuses an unfiled ticket id in a commit message, so the
 *naming* direction is guarded; this is the other one.
+
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot
+Scope: targeted checkable-claim survey, not every comment in the repository
+```
+
+**Four discrepancies verified, plus an existing ticket:**
+
+- `CadenceTaskDateEditing.swift:15` calls the mutation helper pure; it schedules notification
+  cancellation at `CadenceTaskMutationSupport.swift:804`. **Born false:** that call already existed
+  when `b2a0f53` introduced the header.
+- The next paragraph says NotificationManager reads `.standard`; it now uses `CadenceDefaults.store`.
+  **Aged false in `924fab8`.**
+- The radius sweep promises typed constants and misses one in an executed fixture. **Born false
+  in `b0b2eef`**, not caused by the recent exemption fix.
+- The ledger CI comment promises exactly one job per push, but mixed code/docs changes satisfy
+  both workflows. **Born false in `64adece`**; source/configuration verified, live Actions not run.
+- The renumber sweep's "sound" claim is already **T-1308**, not another new filing.
+
+The [claim table](audits/2026-09-20/request-queue/README.md#r48-checkable-comment-claims) includes
+confirming source/history, suggested wording/fixes, and the true-but-changed-rationale case:
+snapshot undo is still necessary because of unrelated pending work, regardless of retained-object
+refresh timing. Target membership was checked directly; old T-1071 prose is not accepted as evidence.
 
 ## R49 — Does an undeployed Production record type stall one type's mirroring or the whole store's?
 
@@ -3036,6 +3294,31 @@ everything means something else. If it is global, the mitigation worth costing i
 than code. Answer from documented CloudKit behaviour and say what you are inferring versus what you
 know.
 
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot
+CloudKit account/Production schema/runtime experiments: none
+```
+
+**The proposed diagnostic split is false: an undeployed schema can stop store synchronization,
+not merely that record type.** Apple's TN3164 documents missing Production schema fields causing
+mirroring initialization failure and aborted exports. Therefore "all content fails to sync" does
+**not** rule out the missing deployment. This is documented framework behavior, not a measured
+failure on the owner's devices. [Apple TN3164](https://developer.apple.com/documentation/technotes/tn3164-debugging-the-synchronization-of-nspersistentcloudkitcontainer).
+
+**REASONED:** Cadence includes `SidebarLayoutPreference` in the same schema/container as ordinary
+content, so store-wide impact is credible. Its exact retry, import and recovery behavior remains
+unmeasured. The [full answer](audits/2026-09-20/request-queue/README.md#r49-production-schema-failure-is-not-type-isolated)
+separates the documented store failure from the lower-level atomic-zone rule and gives the
+deployment/diagnostic sequence.
+
+**Recommendation:** deploy and verify the schema before distributing the dependent build; holding
+an unreleased build is reasonable. Do not remove an already-used model from the runtime schema as
+a quick feature flag. The later uncommitted `LookPreference` addition must join that inventory if
+shipped. No deployment or account modification was performed here.
+
 ## R50 — Standing: what did today's twelve landed tickets break that their own tests cannot see?
 
 Between `674181e` and `e78be39` this repository landed roughly two dozen commits in one sitting,
@@ -3049,6 +3332,34 @@ would notice. Two specific asymmetries to check: a refusal added to `agent-commi
 its own selftest, which the same commit writes — so a refusal that is *too broad* passes its proof
 and only shows up as agents routing around it later; and `ledger-lag-check.sh` now runs on every
 push, so a false positive there emails the owner rather than failing quietly.
+
+ANSWER 2026-09-20:
+
+```text
+Tree read: 231a7a8
+Dirty files: 0 at source snapshot
+Range: 674181e^..e78be39, inclusive of both named endpoints
+Measured size: 37 commits, 161 changed files
+Scope: integration/guard review, not exhaustive review of every product change in the range
+```
+
+**MEASURED findings:** the new message-file guard accepts `msg-async.txt` for both `async` and
+`sync` because it uses substring membership (`9a9a4cf`); the new ledger reader skips history when
+its optional archive is empty (`64adece`), producing a false vacuity refusal. Both have small
+reproducing probes and suggested fixes in the
+[range handoff](audits/2026-09-20/request-queue/README.md#r50-range-level-machinery-findings).
+The latter is latent: the current archive is nonempty and the real HEAD gate exits 0.
+
+**Policy, not a new parser bug:** reopening a legitimate ticket can make an unchanged historical
+code commit fail every later push. The commit helper's "nothing needs doing" warning is not a
+CI exemption. Decide between separate follow-up tickets and explicit reviewed exceptions; do not
+quiet the gate by adding an unrelated closed id. The already-filed duplicate-entry case is T-1303.
+The two workflows also overlap on mixed code/docs pushes, contrary to their new comment (R48).
+
+**Looks solid within scope:** full-history CI checkout, a nonvacuous ledger gate at current HEAD,
+45 build-wrapper fixture checks, per-suite mutation baselines, and pending-insert undo for core
+notes. T-1305 is already filed and being edited concurrently. No passing app build, full mutation
+matrix, or all-161-files regression clearance is claimed.
 
 ## R51 — Does the privacy manifest match what the binary actually does, and would Apple agree?
 
