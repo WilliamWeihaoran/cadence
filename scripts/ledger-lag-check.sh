@@ -185,19 +185,30 @@ function verdict(   id, known, openn, list) {
 
 FNR == 1 { part++ }
 
+# An id is open only while NO entry of it is closed -- `ledger_closed_ids`' reading, which collects
+# a SET of ids over every entry and is why the commit-path note T-1300 added never had this defect
+# (T-1303). Reading "open" off whichever entry happened to be last made a DOUBLE-ALLOCATED id flag
+# its own closing commit: at `dcb0a15`, `docs/TODO.md` held two formal `- [T-1043]` entries, one
+# closed and one open (T-1072's concurrent-allocation residue), and that commit closed T-1043 on the
+# entry's own first line -- the exact discipline this check exists to enforce -- and was flagged
+# anyway, in both entry orders. It reads zero at HEAD only because the duplicate was renumbered by
+# hand; LEDGER-ID-DUPLICATE makes new duplicates rare rather than impossible, and two ids were
+# double-allocated by concurrent agents on 2026-09-20 alone. Two OPEN entries for one id are still
+# open: this narrows nothing but the duplicate.
 part == 1 {
     if ($0 ~ /^## /) sec = $0
     if ($0 ~ /^- \[T-[0-9]+\]/) {
         id = entry_id($0); filed[id] = 1; entries++
-        if (sec ~ /^## (Done|Cancelled)/) next
-        if ($0 ~ /CLOSED/) next          # ledger_closed_ids: the entry's OWN first line
-        openi[id] = 1
+        if (sec ~ /^## (Done|Cancelled)/ || $0 ~ /CLOSED/) {   # the entry's OWN first line
+            closedi[id] = 1; delete openi[id]; next
+        }
+        if (!(id in closedi)) openi[id] = 1
     }
     next
 }
 
 part == 2 {
-    if ($0 ~ /^- \[T-[0-9]+\]/) { id = entry_id($0); filed[id] = 1; entries++; delete openi[id] }
+    if ($0 ~ /^- \[T-[0-9]+\]/) { id = entry_id($0); filed[id] = 1; entries++; closedi[id] = 1; delete openi[id] }
     next
 }
 
@@ -336,6 +347,57 @@ cmd_selftest() {
     land "Tidy: a subject with no id at all" Cadence/F.swift "let f = 6"
     out=$(run); rc=$?
     check "$rc" 0 "$out" "a subject naming no id is skipped"
+
+    # --- mode 2b: the double-allocated id (T-1303) --------------------------
+    # The shape nothing else in this suite builds: ONE id with TWO formal entries. Measured on
+    # `dcb0a15`, which closed T-1043 on the entry's own first line in the commit that landed the
+    # fix and was flagged regardless, because a second open entry for the same id existed.
+    echo; echo " mode 2b (double allocation) -- an id with a closed entry is closed, whichever twin is last"
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-20] **A second entry two concurrent agents allocated for the same id.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "T-20: the fix, closed on the entry's own first line in the commit that landed it" \
+        Cadence/H.swift "let h = 8"
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "a closed entry followed by an open twin is not a finding" 0 findings
+
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **A second entry two concurrent agents allocated for the same id.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "docs: the same two entries, written the other way round" docs/DUP.md dup
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "and not a finding in the other entry order either" 0 findings
+
+    # The control, without which the line above would pass an id that is never open.
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **One open entry for the double-allocated id.**' \
+        '- [T-20] **And a second open one; neither carries a closure.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "docs: both twins open, so the id really is open" docs/DUP.md dup2
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "two OPEN entries for one id are still open" LEDGER-CLOSURE-LAGGED T-20
+
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-20] **A second entry two concurrent agents allocated for the same id.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "docs: restore the closure so the modes below start from a clean history" docs/DUP.md dup3
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "writing the closure back clears the finding again" 0 findings
 
     # --- mode 3: the subject shapes this repository actually writes ---------
     echo; echo " mode 3 (subject shapes) -- ranges and separators are read, not just the bare prefix"

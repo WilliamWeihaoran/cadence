@@ -706,10 +706,39 @@ struct CadenceGuardScriptSelftestTests {
         }
         let body = String(source[source.startIndex..<split.lowerBound])
         let selftest = String(source[split.lowerBound...])
-        for reading in ["LEDGER-CLOSURE-LAGGED", "ledger_rewrites_only_new_entries"] {
+        for reading in ["LEDGER-CLOSURE-LAGGED", "ledger_rewrites_only_new_entries", "T-1305"] {
             #expect(body.contains(reading), "scripts/agent-commit.sh no longer makes the reading \(reading)")
             #expect(selftest.contains(reading), "scripts/agent-commit.sh's selftest no longer induces \(reading)")
         }
+    }
+
+    /// The same question of `scripts/ledger-lag-check.sh`, whose T-1303 reading is likewise a
+    /// refusal WITHDRAWN rather than made and so leaves no name in `ledgerLagRefusals`.
+    ///
+    /// An id is open only while NO entry of it is closed. Reading "open" off whichever entry came
+    /// last made a DOUBLE-ALLOCATED id flag its own closing commit: at `dcb0a15`, `docs/TODO.md`
+    /// held two formal `- [T-1043]` entries, one closed and one open — T-1072's concurrent-
+    /// allocation residue — and that commit closed T-1043 on the entry's own first line, in the
+    /// commit that landed the fix, which is the exact discipline this check exists to enforce.
+    /// It was flagged anyway, in both entry orders. This check runs in both CI workflows on every
+    /// push, so a false positive is an email to the owner about work that was done correctly.
+    /// Naming the ticket here means deleting the rule, or mode 2b that induces it — the only
+    /// fixture in that suite holding one id twice — goes red rather than quietly restoring it.
+    @Test func theLagChecksReadingThatIsNotARefusalIsStillInducedByItsSelftest() throws {
+        let source = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/ledger-lag-check.sh"),
+            encoding: .utf8
+        )
+        guard let split = source.range(of: "\n# --- selftest") else {
+            Issue.record("scripts/ledger-lag-check.sh has no `# --- selftest` section to read")
+            return
+        }
+        let body = String(source[source.startIndex..<split.lowerBound])
+        let selftest = String(source[split.lowerBound...])
+        for reading in ["T-1303", "closedi"] {
+            #expect(body.contains(reading), "scripts/ledger-lag-check.sh no longer makes the reading \(reading)")
+        }
+        #expect(selftest.contains("T-1303"), "scripts/ledger-lag-check.sh's selftest no longer induces T-1303")
     }
 
     /// And all eight guards have to be there to be run. A renamed script would otherwise make the

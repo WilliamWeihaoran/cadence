@@ -283,12 +283,107 @@ ledger_key() { print -r -- "${1//\//__}" }
 # `docs/TODO.md` ledger move recorded 179 lines, most of them the three tickets the commit was
 # closing. Only a line the previous commit did not have can be a sibling's in-flight work.
 # Trivial lines (blank, or nothing but punctuation and braces) carry no meaning on their own.
-declined_lines() {  # $1 = staged content, $2 = worktree content, $3 = content being replaced
-    grep -F -x -v -f "$1" -- "$2" 2>/dev/null \
-        | { [[ -s "$3" ]] && grep -F -x -v -f "$3" || cat } \
+#
+# THE WORKTREE SIDE IS SNAPSHOTTED AND EVERY CANDIDATE IS RE-READ (T-1305)
+#
+# This comparison has three inputs and two of them are blobs read through `git cat-file`. The third
+# used to be the worktree PATH, handed straight to `grep -F -x -v -f`, so the file was read LIVE for
+# the whole scan -- and the scan is not short: measured on HEAD's `docs/TODO.md` (11,757 lines,
+# 1.3 MB, ~11k patterns) one `grep -F -x -v -f` pass takes **1.69 s**, while the sibling write that
+# tears it is a `cp` taking **3.5 ms**. A file rewritten in place under a reader that far behind
+# does not yield a wrong line, it yields a line NOBODY EVER WROTE: the reader's offset survives the
+# rewrite, so the bytes before it come from the old content and the bytes after it from the new one,
+# spliced mid-word.
+#
+# MEASURED FOUR TIMES in one evening on consecutive `=` reconstruction commits of `docs/TODO.md`
+# (`1a4157b`, `be0957f`, `f56d856`, `daf65e7`), with the two spliced lines 98, 17, 5 and 30 lines
+# apart -- no fixed stride, no block boundary. And REPRODUCED here: A.md = HEAD's `docs/TODO.md`,
+# B.md = the same with 30 lines inserted at line 200, a `cp A B`-style writer alternating between
+# them, and a pattern file holding every line of BOTH -- so a consistent read must print nothing.
+# The FIRST read printed **13** lines, four of them spliced mid-word.
+#
+# Why it matters rather than being a curiosity: the phantom is in no commit and can never be folded
+# into one, so `check` fails over it and DECLINED-HUNK-STALE then refuses EVERY agent's commit in
+# this checkout until a human clears it by hand. The backstop that exists to stop work being lost
+# spends its authority on a read artefact -- and a reader who learns to dismiss it dismisses the
+# real one next.
+#
+# A SIBLING WRITER IS REQUIRED, and the commonest one is this script. The only in-process write of
+# the worktree copy is the T-1209 re-sync in step 5b, which runs strictly AFTER this read in the
+# same process; so the writer is another agent's step 5b `cp`, or the `git show HEAD:<path> > <path>`
+# cure this script itself prints, or any agent's in-place edit of the ledger. Every measured phantom
+# was on `docs/TODO.md`, the repository's longest file -- which is read duration, not sibling
+# density, and means the ledger's growth makes this worse on its own.
+#
+# So, two changes, and each answers one direction, because a torn read can HIDE a genuine declined
+# line exactly as easily as it can invent one and only one of these two would notice:
+#
+#   1. SNAPSHOT, and take the UNION. The worktree side is copied into the commit's scratch directory
+#      up to three times and the comparison reads the copies, not the path. Two consecutive copies
+#      that are byte-identical settle it -- the ordinary case, two ~5 ms `cat`s, and the union is
+#      then exactly the file. When they never agree, a sibling is rewriting the file continuously,
+#      and the union of the three reads is the reading that cannot LOSE a line: a tear that swallows
+#      one has to swallow it in all three.
+#   2. VERIFY against reads NOT used to build the candidates. A candidate survives only if it is a
+#      whole line of at least one of up to five FRESH reads, and the loop stops the moment nothing
+#      is left unverified -- so the ordinary case is one `cat`. A line somebody wrote is on disk and
+#      shows up in the first one; a splice of two other lines survives only if the identical tear
+#      lands at the identical offset again. "At least one of five" rather than "the next one",
+#      because a verification read can be torn too, and dropping a real hunk is the failure T-679
+#      exists to prevent. It is not free of that risk: a writer that never pauses can truncate the
+#      file under every read there is, and then a real line near the end is in none of them. The
+#      note the caller prints says how many were dropped, so it is visible rather than silent.
+#
+# Verification rather than the "prefix of one real line, suffix of another" test the ticket offered:
+# on the 13 reproduced phantoms above that test names only **8**. The other five are longer than any
+# real line or end mid-line, because a 1.3 MB scan can be torn more than once. Set membership in a
+# re-read is exact, cheap (the candidate list is short), and needs no revision walk.
+#
+# Dropping a candidate that is in none of three fresh reads is the safe direction and is deliberate:
+# a hunk that is on disk in no reading of the file is not in-flight work sitting in the worktree.
+# It is never silent -- the caller says how many were dropped, and why.
+#
+# The counts go into FILES rather than into globals. Every caller reads this function through
+# `$(...)`, which is a subshell, so a global assigned here would be discarded -- silently, or, under
+# `set -u`, as a `parameter not set` on the line that read it. Measured while writing this.
+declined_lines() {  # $1 = staged content, $2 = worktree PATH, $3 = content being replaced, $4 = scratch dir
+    local staged="$1" wtpath="$2" previous="$3" sc="$4"
+    local key; key=$(ledger_key "$wtpath")
+    local union="$sc/$key.wtunion" one="$sc/$key.wtread" prev="$sc/$key.wtread.prev"
+    print -r -- 0 > "$sc/$key.wtdropped"
+    print -r -- 0 > "$sc/$key.wtunstable"
+    local -i attempt stable=0
+    : > "$union"; : > "$prev"
+    for attempt in 1 2 3; do
+        cat -- "$wtpath" > "$one" 2>/dev/null || return 0
+        cat -- "$one" >> "$union"
+        if (( attempt > 1 )) && cmp -s -- "$one" "$prev"; then stable=1; break; fi
+        cp -- "$one" "$prev"
+    done
+    (( stable )) || print -r -- 1 > "$sc/$key.wtunstable"
+    awk '!seen[$0]++' "$union" > "$sc/$key.wtworktree"
+    local candidates
+    candidates=$(grep -F -x -v -f "$staged" -- "$sc/$key.wtworktree" 2>/dev/null \
+        | { [[ -s "$previous" ]] && grep -F -x -v -f "$previous" || cat } \
         | awk '
         { t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t)
-          if (length(t) >= 4 && t !~ /^[][(){}.,;:+*&|<>=!?-]+$/) print }'
+          if (length(t) >= 4 && t !~ /^[][(){}.,;:+*&|<>=!?-]+$/) print }')
+    [[ -n "$candidates" ]] || return 0
+    local pending="$sc/$key.wtpending" survivors="$sc/$key.wtsurvivors"
+    print -r -- "$candidates" > "$pending"; : > "$survivors"
+    for attempt in 1 2 3 4 5; do
+        [[ -s "$pending" ]] || break
+        cat -- "$wtpath" > "$one" 2>/dev/null || break
+        grep -F -x -f "$one" -- "$pending" >> "$survivors" 2>/dev/null
+        grep -F -x -v -f "$one" -- "$pending" > "$pending.next" 2>/dev/null
+        mv -- "$pending.next" "$pending"
+    done
+    print -r -- "$(grep -c . -- "$pending")" > "$sc/$key.wtdropped"
+    # In candidate order, not verification-round order: the record is read by a human comparing it
+    # against the file.
+    [[ -s "$survivors" ]] || return 0
+    grep -F -x -f "$survivors" -- "$sc/$key.wtworktree" 2>/dev/null | awk '!seen[$0]++'
+    return 0
 }
 
 # NOTE (T-787): `local path` would be a live grenade here. In zsh `path` is tied to `$PATH` even
@@ -1903,7 +1998,18 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         [[ -n "${staged_content[$name]+x}" ]] || continue
         local previous="$scratch/$(ledger_key "$name").previous"
         git cat-file -p "$headsha:$name" > "$previous" 2>/dev/null || : > "$previous"
-        declined=$(declined_lines "${staged_content[$name]}" "$name" "$previous")
+        declined=$(declined_lines "${staged_content[$name]}" "$name" "$previous" "$scratch")
+        local dropped=0 unstable=0
+        [[ -s "$scratch/$(ledger_key "$name").wtdropped" ]] && dropped=$(<"$scratch/$(ledger_key "$name").wtdropped")
+        [[ -s "$scratch/$(ledger_key "$name").wtunstable" ]] && unstable=$(<"$scratch/$(ledger_key "$name").wtunstable")
+        if (( unstable )); then
+            say "note: $name changed under every read while this commit recorded what it declined."
+            say "      A sibling is rewriting it right now; the union of three reads was taken instead (T-1305)."
+        fi
+        if (( dropped > 0 )); then
+            say "note: dropped $dropped candidate declined line(s) for $name that were a whole line of NO read"
+            say "      of the file -- a torn read, not a hunk anybody wrote (T-1305)."
+        fi
         [[ -n "$declined" ]] || continue
         mkdir -p "$LEDGER"
         record="$LEDGER/$(ledger_key "$name").declined"
@@ -2103,6 +2209,57 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "the deletion commits" $(( rc == 0 )) "exit $rc: $out"
     check "and nothing was recorded as declined" \
         $( [[ "$out" != *"were declined"* && -z $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) "$out"
+
+    say ""
+    say " mode 3d (T-1305) -- a sibling rewriting the file mid-scan must not manufacture a hunk"
+    # The reproduction, shrunk: a long file, a writer alternating between two versions of it with a
+    # `cp` -- which is precisely this script's own T-1209 re-sync in step 5b -- and a reconstruction
+    # committed across the top of it. Pre-fix the live `grep -F -x -v -f` read splices two real
+    # lines mid-word and records a line nobody wrote, which `check` then fails over forever.
+    # Both directions in one run, because either alone would pass a gutted implementation: the
+    # GENUINE in-flight line must still be recorded, and every recorded line must be a real line of
+    # one of the two versions.
+    #
+    # Two things about the fixture are deliberate, and both were measured getting them wrong. The
+    # writer pauses 20 ms between rewrites rather than spinning: `cp` truncates to zero and rebuilds,
+    # so a reader that starts inside one sees a file with no tail at all, and a writer that never
+    # stops can hide a real line from EVERY read -- which is a fixture nobody can pass, not a bug.
+    # The ratio is the one that matters and it is the real one: the scan is orders of magnitude
+    # longer than the `cat`s. And the in-flight line sits in the MIDDLE of the file, not at the end,
+    # for the same reason: a truncated read loses the tail first.
+    torn_inflight="B's torn-read in-flight line, which is a real edit and must survive"
+    ( cd "$ws"
+      : > torn.txt
+      for i in {1..3000}; do
+        print -r -- "- [T-$i] a ledger-shaped line, number $i, long enough that a torn read splices two of them into something with a real prefix and a real suffix and no author at all."
+      done >> torn.txt
+      git add torn.txt && git commit -q -m "seed torn.txt" -- torn.txt
+      awk -v L="$torn_inflight" 'NR==1500{print L} {print}' torn.txt > tornA.txt
+      awk 'NR==200{for(j=1;j<=30;j++) print "- [T-9" j "] a sibling entry inserted while the scan was in flight, which shifts every byte offset after it."} {print}' tornA.txt > tornB.txt
+      cp tornA.txt torn.txt
+      git show HEAD:torn.txt > tornrecon.txt
+      print -r -- "A's own torn-read line" >> tornrecon.txt ) >/dev/null 2>&1
+    rm -f "$ws/torn.stop"
+    ( cd "$ws"; while [[ ! -f torn.stop ]]; do cp tornA.txt torn.txt; sleep 0.02; cp tornB.txt torn.txt; sleep 0.02; done ) &
+    torn_writer=$!
+    out=$( cd "$ws" && zsh "$here" a6 -m "$M" torn.txt=tornrecon.txt 2>&1 ); rc=$?
+    touch "$ws/torn.stop"; wait $torn_writer 2>/dev/null
+    check "the reconstruction commits with a writer churning the file" $(( rc == 0 )) "exit $rc: $out"
+    torn_record="$CADENCE_DECLINED_LEDGER/torn.txt.declined"
+    check "the genuine in-flight line is still recorded" \
+        $( [[ -f "$torn_record" ]] && grep -qxF -- "$torn_inflight" "$torn_record" && print 1 || print 0 ) \
+        "$out $( [[ -f $torn_record ]] && cat "$torn_record" )"
+    # The negative direction. Every recorded line must be a whole line of a version that existed.
+    if [[ -f "$torn_record" ]]; then grep -v '^# ' -- "$torn_record" > "$ws/torn.recorded"
+    else : > "$ws/torn.recorded"; fi
+    grep -F -x -v -f "$ws/tornA.txt" -- "$ws/torn.recorded" > "$ws/torn.notA" 2>/dev/null
+    grep -F -x -v -f "$ws/tornB.txt" -- "$ws/torn.notA" > "$ws/torn.phantoms" 2>/dev/null
+    torn_phantoms=$(grep -c . -- "$ws/torn.phantoms")
+    check "and nothing was recorded that is in neither version of the file" \
+        $(( torn_phantoms == 0 )) "$torn_phantoms phantom line(s): $(head -2 -- "$ws/torn.phantoms")"
+    out=$( cd "$ws" && zsh "$here" accept torn.txt 2>&1 )
+    check "the record clears again, so the modes below start clean" \
+        $( [[ -z $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) "$out"
 
     say ""
     say " mode 3b -- --accept-declined clears a record deliberately, and only then"
