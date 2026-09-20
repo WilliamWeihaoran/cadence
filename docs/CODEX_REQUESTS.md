@@ -3392,6 +3392,33 @@ Answer from Apple's published requirements, cite them, and mark clearly what you
 versus what is documented. Say which items you could not settle without a real App Store Connect
 submission.
 
+ANSWER 2026-09-20:
+
+```text
+Tree read: 1857938
+Dirty files: 0 at source snapshot
+Method: source/package-graph inspection and official Apple documentation
+Signed binary, App Store Connect submission, provider retention: not verified
+```
+
+**MEASURED-SOURCE: the manifests do not cover the shared UserDefaults use.** The app declares
+only `CA92.1`; the widget declares no UserDefaults category. Both use the app-group suite through
+`Theme.swift:180` and `CadenceWidgetRefreshCenter.swift:120`. Apple's `1C8F.1` is the shared-group
+reason. Worse, `AppStoreReviewReadinessTests.swift:16,25` pins the incomplete declarations.
+[Apple approved reasons](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitypereasons?language=objc).
+
+**REASONED release checks:** verify the iOS signed entitlement contains `aps-environment`; the
+shared source plist contains only the macOS-prefixed key. Reassess blanket identity-collection
+claims: the profile is stored locally, while AI really sends note title, container name and body
+to a third party. Neither local storage nor private CloudKit alone proves developer collection.
+Do not remove Other User Content without settling the AI data flow/retention.
+
+The [full R51 report](audits/2026-09-20/release-data-scale/privacy.md) covers all five API categories,
+framework/SDK scope, entitlement consumers, label definitions, confirming commands and suggested
+fixes. MCP/NIO is a separate target, not a package dependency of the submitted app/widget in the
+checked project; final archive membership remains a required check. No binary-complete privacy
+certification or prediction of App Review acceptance is claimed.
+
 ## R52 — What in this repository can irrecoverably lose the owner's data?
 
 The owner has one real store with 264 records across a Mac, an iPhone and an iPad, syncing through
@@ -3413,6 +3440,39 @@ imported by an older one, which is the direction nobody tests.
 
 For each, say what evidence exists that it is safe, and distinguish "a test asserts this" from "a
 human reasoned about it once".
+
+ANSWER 2026-09-20:
+
+```text
+Tree read: 1857938
+Dirty files: 0 at source snapshot
+App tests/destructive operations/user-store access: none
+Evidence: source-verified paths; runtime consequences marked REASONED
+```
+
+**Two stale premises:** there are zero explicit SwiftData `.cascade` rules now; the cascades are
+manual. A higher archive format version already has a rejection test at
+`CadenceArchiveImportSurfaceTests.swift:628`. A newer build writing the same format version is
+a different, partly compatible case: unknown tables are explicitly warned about in the preview.
+
+**Highest-value reachable hazard, REASONED from measured wiring:** deleting a context also
+deletes tasks attached to its goals, even if their project/context belongs elsewhere
+(`CadenceListDeleteHelpers.swift:56`). The iOS milestone picker allows that relationship
+(`iOSTaskRowActionViews.swift:442,481`). The confirmation counts that same broad set, so this is
+an ownership-boundary issue, not an undercount. Add a cross-context fixture and settle the rule;
+the existing direct-goal delete preserves tasks and provides the safer pattern.
+
+**Remaining partial-failure defect:** reset's database rollback is fixed, but throwing backup
+cleanup after the deletion commit still produces the generic “Could not delete” message. Extend
+the existing typed warning to all post-commit artifacts. This continues the earlier reset
+audit's advice; it does not reopen T-1102 or the fixed Keychain swallow.
+
+The [full R52 report](audits/2026-09-20/release-data-scale/data-loss.md) ranks nine destructive/loss
+exposures, identifies existing behavioral assertions, covers merge/overwrite and newer-to-older
+archives, and separates physical loss from T-623's parked orphan-visibility limit. Ordinary
+offline edits to one note body remain a significant preservation risk; local snapshots are not
+a guaranteed copy of those edits. This is not a claim that the owner's current data is lost or
+that every destructive path in the entire repository was exhaustively proved safe.
 
 ## R53 — What is the correct release sequence for adding a `@Model` to a shipped CloudKit app?
 
@@ -3438,6 +3498,36 @@ build**, and answer the parts that decide what this repository does next:
   additive optional property on a model already deployed — or does that carry the same risk one
   level down?
 
+ANSWER 2026-09-20:
+
+```text
+Tree read: 1857938
+Dirty files: 0 at source snapshot
+Production schema inspection and mixed-client testing: not performed
+```
+
+**MEASURED-SOURCE correction:** LookPreference has now landed (`58c75ef`); both new types are in
+`CadenceSchema.swift:26`. The repository says deployment is owed, but I did not inspect the console.
+“Pre/post deploy client” conflates server schema with binary version: deployment does not update
+an old app's local model.
+
+**DOCUMENTED sequence:** test the final additive model in Development, deploy its types/fields/
+indexes to Production, test there, then publish the dependent build. Deployment copies schema,
+not records; a schema-first/no-new-writer window is the appropriate sequence.
+[Apple deployment guide](https://developer.apple.com/documentation/CloudKit/deploying-an-icloud-container-s-schema).
+
+**REASONED limits:** an old app cannot expose a model it does not know. Apple's reviewed material
+does not certify the precise unknown-entity import behavior for Cadence's SwiftData/OS versions;
+do not replace that missing evidence with “all older sync definitely keeps working.” Test old and
+new binaries together on separate local stores. An optional field avoids a new entity but still
+needs deployment and compatibility testing.
+
+The [full R53 report](audits/2026-09-20/release-data-scale/model-release.md) supplies the release
+matrix, owner checklist and proposed contributor rule. It also narrows my earlier removal warning:
+removing an already-used type risks local migration failure or discarded/inaccessible local rows;
+it is **not** proof that every such removal necessarily deletes its CloudKit records. Keep schema
+membership while gating UI/writes. No model guide, schema or cloud state was changed.
+
 ## R54 — What breaks when this store has ten thousand records instead of two hundred?
 
 Measured at `231a7a8`: **259 `@Query` sites**, 76 `FetchDescriptor` constructions, and **8 uses of
@@ -3456,6 +3546,35 @@ timeline that times out, a CloudKit import that starves the UI). Name the specif
 categories. Then say which of them CloudKit makes worse rather than better — an initial sync on a
 new device pulls the whole store at once, which is the one moment this app is guaranteed to hit its
 own worst case, on a device the owner has just set up and is watching.
+
+ANSWER 2026-09-20:
+
+```text
+Tree read: 1857938
+Dirty files: 0 at source snapshot
+Measured inventory: 214 @Query occurrences, 75 FetchDescriptor construction-shaped occurrences,
+4 fetchLimit assignments after excluding full-line // comments
+Benchmarks, widget timeouts and actual 10,000-record behavior: not measured
+```
+
+**MEASURED correction:** 259/76 are raw text counts, not executable-site counts. The four actual
+limits are existence/detail probes, not capped list queries. “Initial sync imports everything at
+once” is also not an established atomic-import guarantee; local fetches see the currently imported
+replica, and relationships can arrive out of order.
+
+**First concrete optimization target:** startup loops over notes, and each tagged note fetches
+and reindexes the whole tag table (`TagSupport.swift:204,255`, called by
+`PersistenceController.swift:148`). **REASONED:** K tagged notes and T tags pay K fetch calls plus
+O(K*T) index work on startup. A pass-local resolver is the focused fix, with fetch-count and
+semantic-equivalence tests. This is not a claim that every fetch performs disk I/O.
+
+Next targets are synchronous archive generation/import on UI paths, overlapping goal traversals
+inside widgets, search recomputation, and repeated MCP candidate sorting. The
+[full R54 report](audits/2026-09-20/release-data-scale/scale.md) gives exact sites, cost models,
+suggested fixes, current protections and a small disposable-fixture measurement plan. No measured
+row threshold supports “fails at N”; record shape and payload bytes matter. No new silent
+SwiftData truncation or observed widget deadline failure was established. X-09's comparator
+constraint remains a contract, not permission to apply a blind fetch limit.
 
 ## R55 — Round 5: the same style, but the mark must be the name's initial
 
