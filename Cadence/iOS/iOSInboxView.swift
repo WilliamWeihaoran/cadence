@@ -19,8 +19,8 @@ struct iOSInboxView: View {
     /// `iOSTodayView.showsCompactHeader`. Still on when Inbox is reached as a pushed screen.
     var showsCompactHeader = true
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @AppStorage("ios.inbox.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
-    @AppStorage("ios.inbox.showCompleted") private var showCompleted = false
+    @AppStorage(CadencePreferenceKeys.iosInboxSortMode) private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
+    @AppStorage(CadencePreferenceKeys.iosInboxShowCompleted) private var showCompleted = false
 
     private var sortMode: CadenceTaskSortMode {
         CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder

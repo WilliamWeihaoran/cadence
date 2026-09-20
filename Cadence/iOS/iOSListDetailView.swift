@@ -113,8 +113,8 @@ struct iOSListDetailView: View {
         return false
     }
 
-    @AppStorage("ios.listDetail.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
-    @AppStorage("ios.listDetail.showCompleted") private var showCompleted = false
+    @AppStorage(CadencePreferenceKeys.iosListDetailSortMode) private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
+    @AppStorage(CadencePreferenceKeys.iosListDetailShowCompleted) private var showCompleted = false
 
     /// Read-only: the picker writes `sortModeRaw` through its own `Binding(get:set:)` below. The
     /// setter this used to carry was uncallable — a `View`'s `body` cannot mutate `self`.

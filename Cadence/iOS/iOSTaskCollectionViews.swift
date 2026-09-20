@@ -13,8 +13,8 @@ struct iOSAllTasksView: View {
     /// for the reasoning. Still on when All Tasks is reached as a pushed screen.
     var showsCompactHeader = true
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @AppStorage("ios.allTasks.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
-    @AppStorage("ios.allTasks.showCompleted") private var showCompleted = false
+    @AppStorage(CadencePreferenceKeys.iosAllTasksSortMode) private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
+    @AppStorage(CadencePreferenceKeys.iosAllTasksShowCompleted) private var showCompleted = false
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
 
     private var sortMode: CadenceTaskSortMode {

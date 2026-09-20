@@ -136,7 +136,8 @@ nonisolated enum CadenceDataExportService {
             legacyPermNotes: try records(PermNote.self, in: modelContext, CadenceArchivePermNote.init),
             legacyEventNotes: try records(EventNote.self, in: modelContext, CadenceArchiveEventNote.init),
             legacyDocuments: try records(Document.self, in: modelContext, CadenceArchiveLegacyDocument.init),
-            sidebarLayoutPreferences: try records(SidebarLayoutPreference.self, in: modelContext, CadenceArchiveSidebarLayoutPreference.init)
+            sidebarLayoutPreferences: try records(SidebarLayoutPreference.self, in: modelContext, CadenceArchiveSidebarLayoutPreference.init),
+            lookPreferences: try records(LookPreference.self, in: modelContext, CadenceArchiveLookPreference.init)
         )
     }
 
@@ -270,6 +271,25 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
         sidebarLayoutPreferences ?? []
     }
 
+    /// The synced look (T-1307): the accent palette, the sidebar tints and every task surface's
+    /// sort, grouping and show-completed setting.
+    ///
+    /// **Optional for the same measured reason `sidebarLayoutPreferences` is**, and it is not
+    /// about the data: an archive written before this table existed has no such key, and Swift's
+    /// synthesized `init(from:)` throws `keyNotFound` rather than falling back to a property's
+    /// default. A non-optional `= []` here makes every older backup unreadable.
+    /// `anArchiveWrittenBeforeTheLookTableStillDecodes` pins it, and `formatVersion` is
+    /// deliberately not bumped: a reader that merely gains a table can still read everything it
+    /// could before.
+    ///
+    /// Read it through `lookPreferenceRecords`; nothing should branch on the `nil`.
+    var lookPreferences: [CadenceArchiveLookPreference]?
+
+    /// The look rows this archive carries — none, for one written before the table existed.
+    var lookPreferenceRecords: [CadenceArchiveLookPreference] {
+        lookPreferences ?? []
+    }
+
     /// Which table holds each `CadenceSchema` entity.
     ///
     /// Keyed by the entity name SwiftData reports, so a test can compare this table to
@@ -299,6 +319,7 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
         "EventNote": \.legacyEventNotes.count,
         "Document": \.legacyDocuments.count,
         "SidebarLayoutPreference": \.sidebarLayoutPreferenceRecords.count,
+        "LookPreference": \.lookPreferenceRecords.count,
     ]
 
     nonisolated func recordCount(forEntityNamed name: String) -> Int? {
@@ -660,6 +681,28 @@ nonisolated struct CadenceArchiveSidebarLayoutPreference: Codable, Equatable, Id
         id = model.id
         orderRaw = model.orderRaw
         hiddenRaw = model.hiddenRaw
+        createdAt = CadenceArchiveTimestamp.normalized(model.createdAt)
+        updatedAt = CadenceArchiveTimestamp.normalized(model.updatedAt)
+    }
+}
+
+/// The synced look, as stored: an accent palette id, the sidebar tint string, and the task
+/// surfaces' `key=value` pair map. Deliberately not expanded into typed fields — an archive is a
+/// copy of what the store holds, and an importer that re-encoded the map would be deciding what a
+/// pair this build has no reader for means.
+nonisolated struct CadenceArchiveLookPreference: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var accentPaletteID: String
+    var sidebarTabColorsRaw: String
+    var taskPresentationRaw: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(_ model: LookPreference) {
+        id = model.id
+        accentPaletteID = model.accentPaletteID
+        sidebarTabColorsRaw = model.sidebarTabColorsRaw
+        taskPresentationRaw = model.taskPresentationRaw
         createdAt = CadenceArchiveTimestamp.normalized(model.createdAt)
         updatedAt = CadenceArchiveTimestamp.normalized(model.updatedAt)
     }

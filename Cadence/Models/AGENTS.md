@@ -73,6 +73,9 @@ row has synced yet", which is also every new device for the first seconds of eve
   alone rather than deleted), the device-local fallback, and the one-visible-row floor. A
   destination the stored strings never name keeps its declared slot and stays visible, so a future
   enum case needs no migration; an unrecognised token is dropped on read.
+- `LookPreference` - the **synced** accent palette, sidebar tints and each surface's sort, grouping
+  and show-completed (T-1307, [[T-1288]]). Read only via `CadenceLookPreferenceStore`: the record is
+  truth across devices, the local defaults its **mirrors** — how the widget reads the accent.
 
 Non-`@Model` types that live in this folder: `TaskSectionConfig` / `TaskSectionDefaults`
 (in `AppTask.swift`) and `GoalContributionSummary`. Two more *files* here declare no type at all —

@@ -72,7 +72,11 @@ struct TasksPanel: View {
     /// different vocabulary: `todaySortField` holds `TaskSortField` raw values (`"Date"`), this
     /// holds `CadenceTaskSortMode` raw values (`"doDate"`), and one key holding both would make
     /// every read ambiguous.
-    static let sortModeDefaultsKey = udPrefix + "SortMode"
+    /// Spelled in `CadencePreferenceKeys` rather than built from `udPrefix` since T-1307 gave it a
+    /// second reader — `CadenceLookPreferenceStore`'s mirror table, which carries Today's sort to
+    /// the owner's other devices and cannot see a `#if os(macOS)` constant. The two legacy keys
+    /// below have one reader each and stay built.
+    static let sortModeDefaultsKey = CadencePreferenceKeys.todaySortMode
 
     /// The pre-T-606 keys. Still read once, by `storedSortMode(in:fallback:)`, and deliberately
     /// **not** deleted: nothing is gained by destroying the only record of what the user chose,

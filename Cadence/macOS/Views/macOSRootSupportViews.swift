@@ -749,12 +749,12 @@ struct TasksPageView: View {
     // `.custom` and drag-to-reorder are the point, and All Tasks is date-first — so folding them
     // onto one key would have picked a winner *and* discarded whichever preference the user had
     // stored on the other page.
-    @AppStorage("allTasksSortField") private var allSortField: TaskSortField = .date
-    @AppStorage("allTasksSortDirection") private var allSortDirection: TaskSortDirection = .ascending
-    @AppStorage("allTasksGroupingMode") private var allGroupingMode: TaskGroupingMode = .byDate
-    @AppStorage("inboxSortField") private var inboxSortField: TaskSortField = .custom
-    @AppStorage("inboxSortDirection") private var inboxSortDirection: TaskSortDirection = .ascending
-    @AppStorage("inboxGroupingMode") private var inboxGroupingMode: TaskGroupingMode = .none
+    @AppStorage(CadencePreferenceKeys.allTasksSortField) private var allSortField: TaskSortField = .date
+    @AppStorage(CadencePreferenceKeys.allTasksSortDirection) private var allSortDirection: TaskSortDirection = .ascending
+    @AppStorage(CadencePreferenceKeys.allTasksGroupingMode) private var allGroupingMode: TaskGroupingMode = .byDate
+    @AppStorage(CadencePreferenceKeys.inboxSortField) private var inboxSortField: TaskSortField = .custom
+    @AppStorage(CadencePreferenceKeys.inboxSortDirection) private var inboxSortDirection: TaskSortDirection = .ascending
+    @AppStorage(CadencePreferenceKeys.inboxGroupingMode) private var inboxGroupingMode: TaskGroupingMode = .none
 
     @Environment(TaskCreationManager.self) private var taskCreationManager
     @Environment(RemindersManager.self) private var remindersManager

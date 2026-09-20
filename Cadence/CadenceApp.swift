@@ -84,6 +84,10 @@ struct CadenceApp: App {
                     // compress or truncate. Below that the window was reachable but visibly broken,
                     // so the floor is set just past it rather than left to the user to discover.
                     .frame(minWidth: 960, minHeight: 600)
+                    // Inside the container, not outside it: the host holds a `@Query`.
+                    // T-1307 — the accent, the sidebar tints and every task surface's sort
+                    // setting follow the owner between their three devices from here.
+                    .cadenceSyncedLook()
                     .modelContainer(sharedModelContainer)
 #else
                 iOSRootView()
@@ -96,6 +100,10 @@ struct CadenceApp: App {
                     .environment(iOSCalendarManager.shared)
                     .environment(NotificationManager.shared)
                     .environment(RemindersManager.shared)
+                    // Inside the container, not outside it: the host holds a `@Query`.
+                    // T-1307 — the accent, the sidebar tints and every task surface's sort
+                    // setting follow the owner between their three devices from here.
+                    .cadenceSyncedLook()
                     .modelContainer(sharedModelContainer)
 #endif
             } else {

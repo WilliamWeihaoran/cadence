@@ -19,8 +19,8 @@ struct iOSTodayView: View {
     /// For the *order* of Today's list groups only — `CadenceTaskQuerySupport.listGroupOrder`
     /// presents them in sidebar order, which is a context-by-context walk (T-305).
     @Query(sort: \Context.order) private var contexts: [Context]
-    @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
-    @AppStorage("ios.today.showCompleted") private var showCompleted = false
+    @AppStorage(CadencePreferenceKeys.iosTodaySortMode) private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
+    @AppStorage(CadencePreferenceKeys.iosTodayShowCompleted) private var showCompleted = false
     @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iOSTodaySidePanel.notes.rawValue
     /// The **same** `UserDefaults` key macOS's Today reads — see
     /// `CadenceTodayRolloverSupport.dismissedDateStorageKey` for why one key rather than two.

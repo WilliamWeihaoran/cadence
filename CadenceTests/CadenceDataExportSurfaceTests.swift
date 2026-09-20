@@ -621,6 +621,7 @@ struct CadenceDataExportSurfaceTests {
             exportProbe { Habit(title: "Stretch") },
             exportProbe { HabitCompletion(date: "2026-08-20") },
             exportProbe { SidebarLayoutPreference(orderRaw: "today,calendar", hiddenRaw: "habits") },
+            exportProbe { LookPreference(accentPaletteID: "ember", taskPresentationRaw: "today.mode=doDate") },
         ]
         return Dictionary(uniqueKeysWithValues: probes.map { ($0.name, $0) })
     }

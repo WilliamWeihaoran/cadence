@@ -391,6 +391,7 @@ struct CadenceMarkdownSourceInventoryTests {
         "Project",
         "Pursuit",
         "SavedLink",
+        "LookPreference",
         "SidebarLayoutPreference",
         "Subtask",
         "Tag",
@@ -439,6 +440,10 @@ struct CadenceMarkdownSourceInventoryTests {
         // markdown: nothing binds them to an editor, and the only reader parses them into enum
         // cases.
         "SidebarLayoutPreference": ["orderRaw", "hiddenRaw"],
+        // An accent palette id, the sidebar tint string and a `key=value` pair map (T-1307).
+        // None of the three is markdown: no editor binds to them, and each reader parses the
+        // string into an enum case, a hex map or a pair map.
+        "LookPreference": ["accentPaletteID", "sidebarTabColorsRaw", "taskPresentationRaw"],
         "Subtask": ["title"],
         "Tag": ["slug", "name", "desc", "colorHex"],
         "TaskBundle": ["title", "dateKey"],

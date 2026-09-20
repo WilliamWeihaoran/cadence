@@ -695,6 +695,37 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(outcome.insertedRecordCount == 1)
     }
 
+    /// The same hazard, for T-1307's look table — and it is a separate test rather than two more
+    /// lines in the one above because the two tables were added by different tickets and a reader
+    /// deleting one should not silently lose the other's coverage.
+    @Test func anArchiveWrittenBeforeTheLookTableStillDecodes() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(AppTask(title: "Buy milk"))
+        source.insert(LookPreference(accentPaletteID: "glacier"))
+        try source.save()
+
+        let data = try CadenceDataExportService.encode(
+            try CadenceDataExportService.makeArchive(in: source)
+        )
+        var json = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        // Non-vacuity: the key is there to remove, so its absence below is this test's doing.
+        #expect(json["lookPreferences"] != nil)
+        json.removeValue(forKey: "lookPreferences")
+
+        let older = try CadenceDataExportService.decode(
+            try JSONSerialization.data(withJSONObject: json)
+        )
+        #expect(older.lookPreferenceRecords.isEmpty)
+        #expect(older.recordCount(forEntityNamed: "LookPreference") == 0)
+        #expect(older.tasks.count == 1, "the rest of the document came back")
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        let outcome = try CadenceArchiveImportService.apply(older, in: destination)
+        #expect(outcome.insertedRecordCount == 1)
+    }
+
     /// The failure a user reads names the row. "The import failed" over a four-thousand-row
     /// document is not something anyone can act on.
     @Test func everyRefusalNamesTheRowItRefused() {
@@ -1275,8 +1306,14 @@ struct CadenceArchiveImportSurfaceTests {
         // T-1274's synced sidebar layout. References nothing, which is why it is only here and not
         // in the relationship sweep below — but the archive carries it, so the fixture must.
         let sidebarLayout = SidebarLayoutPreference(orderRaw: "today,goals", hiddenRaw: "habits")
+        // T-1307's synced look, here for the same reason.
+        let look = LookPreference(
+            accentPaletteID: "ember",
+            sidebarTabColorsRaw: "today:#ff0000",
+            taskPresentationRaw: "allTasks.mode=dueDate;today.mode=doDate"
+        )
 
-        for model in [context, area, project, pursuit, tag, goal, bundle, sidebarLayout] as [any PersistentModel] {
+        for model in [context, area, project, pursuit, tag, goal, bundle, sidebarLayout, look] as [any PersistentModel] {
             modelContext.insert(model)
         }
         for model in [task, subtask, session, note, saved, asset, listLink, habit, completion] as [any PersistentModel] {
