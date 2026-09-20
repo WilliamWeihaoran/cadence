@@ -3049,3 +3049,99 @@ would notice. Two specific asymmetries to check: a refusal added to `agent-commi
 its own selftest, which the same commit writes — so a refusal that is *too broad* passes its proof
 and only shows up as agents routing around it later; and `ledger-lag-check.sh` now runs on every
 push, so a false positive there emails the owner rather than failing quietly.
+
+## R51 — Does the privacy manifest match what the binary actually does, and would Apple agree?
+
+`Cadence/PrivacyInfo.xcprivacy` and `CadenceWidgets/PrivacyInfo.xcprivacy` both exist, and
+`docs/apple-release-readiness.md` carries a "Privacy Label Source Of Truth" section and an
+"Entitlement Justifications" section. **All of it was written by agents from reading this
+repository, and none of it has been checked against Apple's actual requirements by anything that
+reads Apple's documentation.** This repository has a demonstrated failure mode of documents that
+agree with each other and are both wrong, and R48 has just found four checkable claims that were
+false, one of them born false in a comment written the same day.
+
+The app is being shipped to the App Store by a solo developer. A rejection costs a review cycle;
+a *wrong privacy label* is a different and worse category.
+
+Three questions, in order of how much they cost if wrong:
+
+1. **Required-reason APIs.** Sweep the tree for every API in Apple's required-reason categories
+   (file timestamp, system boot time, disk space, active keyboard, user defaults) and say which are
+   reached — including through SwiftUI, SwiftData, EventKit, WidgetKit and the NIO packages the MCP
+   server pulls in. For each, say whether the declared reason code in the manifest covers that use.
+   `UserDefaults` alone is used through `@AppStorage` in 37 places plus an app-group suite.
+2. **Privacy label accuracy.** The app stores notes, tasks, calendar links and Sign in with Apple
+   identity fields, syncs through CloudKit's private database, and has an MCP server that reads the
+   store. Say what Apple's data-collection definitions require to be declared here, and where the
+   readiness doc's claims disagree with the code.
+3. **Entitlements.** Name any entitlement present that the code does not use, and any use that the
+   entitlements do not cover. An unused entitlement is a review question.
+
+Answer from Apple's published requirements, cite them, and mark clearly what you are inferring
+versus what is documented. Say which items you could not settle without a real App Store Connect
+submission.
+
+## R52 — What in this repository can irrecoverably lose the owner's data?
+
+The owner has one real store with 264 records across a Mac, an iPhone and an iPad, syncing through
+CloudKit's private database, with **no server-side backup they control**. There is a
+`CadencePrivacyDataResetService`, a `CadenceArchiveImportService`, a `CadenceDataExportService`, two
+migration services, and cascade deletes across nine model types.
+
+One near-miss is already on record: adding a table to `CadenceArchive` would have made **every
+backup ever written unreadable**, because Swift's synthesized `init(from:)` throws `keyNotFound`
+and does not fall back to a property default. That was caught by an agent writing a test, not by
+review, and only because it happened to construct an old archive.
+
+Enumerate every path that can destroy user data without a recoverable copy, and rank them by how
+plausible the triggering mistake is. Specifically address: cascade delete rules and whether any
+deletes more than its own subtree; the reset service versus a partial failure part-way through; an
+import that merges into a non-empty store; CloudKit conflict resolution when two devices edit the
+same record while one is offline; and whether an archive written by a **newer** build can be
+imported by an older one, which is the direction nobody tests.
+
+For each, say what evidence exists that it is safe, and distinguish "a test asserts this" from "a
+human reasoned about it once".
+
+## R53 — What is the correct release sequence for adding a `@Model` to a shipped CloudKit app?
+
+Your R49 answer established that a missing Production schema can stop mirroring for the **whole
+store**, not only the undeployed type, and that "everything fails to sync" therefore does not rule
+out a missing deployment. That reframes a decision this repository is about to make twice:
+`SidebarLayoutPreference` is already in `CadenceSchema` and undeployed, and a second model
+(`LookPreference`) is being added now for a feature the owner asked for.
+
+The owner is the only person who can press *Deploy Schema Changes*, and they are between builds.
+
+Give the documented sequence for shipping a new record type to an app with **live users on an older
+build**, and answer the parts that decide what this repository does next:
+
+- What does a **pre-deploy** client do when it receives records of a type its schema does not
+  declare, and what does a **post-deploy** client do with records written by a pre-deploy one?
+- Is there a safe window in which the schema is deployed but no shipped build writes the type, and
+  is that the sequence Apple actually recommends?
+- You wrote *"do not remove an already-used model from the runtime schema as a quick feature flag."*
+  Say what the failure is, concretely, so it can be written into `Cadence/Models/AGENTS.md` as a
+  rule rather than as advice.
+- Is there any way to add this feature **without** a new record type that is genuinely safer — an
+  additive optional property on a model already deployed — or does that carry the same risk one
+  level down?
+
+## R54 — What breaks when this store has ten thousand records instead of two hundred?
+
+Measured at `231a7a8`: **259 `@Query` sites**, 76 `FetchDescriptor` constructions, and **8 uses of
+`fetchLimit` in the entire application**. The owner's real store currently holds **264 records**, so
+every performance property of this app is untested in the only direction it can move.
+
+`X-09` already established something that makes this worse and is not a guess: the MCP page slice
+**cannot** be pushed into the fetch, because both comparators lead on *computed* properties
+(`AppTask.isDone` off `statusRaw`, `Note.displayTitle`) that a `SortDescriptor` key path cannot
+reach, and the title leg uses `localizedCaseInsensitiveCompare` where `SortDescriptor` offers only
+`.localizedStandard`. So sorting and paging happen **in memory, after fetching everything**.
+
+Say what fails first, and at roughly what scale. Distinguish three kinds of failure: it gets slow;
+it blocks the main thread visibly; and it is wrong (a `@Query` that silently truncates, a widget
+timeline that times out, a CloudKit import that starves the UI). Name the specific call sites, not
+categories. Then say which of them CloudKit makes worse rather than better — an initial sync on a
+new device pulls the whole store at once, which is the one moment this app is guaranteed to hit its
+own worst case, on a device the owner has just set up and is watching.
