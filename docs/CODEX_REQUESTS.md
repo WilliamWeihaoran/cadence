@@ -3456,3 +3456,65 @@ timeline that times out, a CloudKit import that starves the UI). Name the specif
 categories. Then say which of them CloudKit makes worse rather than better — an initial sync on a
 new device pulls the whole store at once, which is the one moment this app is guaranteed to hit its
 own worst case, on a device the owner has just set up and is watching.
+
+## R55 — Round 5: the same style, but the mark must be the name's initial
+
+The owner has seen round 4 and given a direction: **they like the style of `dayflet.png` and
+`daysplice.png`, and they want the initial letter to be prominent, because it is the first letter
+of the name.** If a *different* name is proposed, the mark must use **that** name's first letter.
+
+### The style they are approving, described from the renders rather than from your README
+
+Both share a visual language and it is the thing to keep:
+
+- An iOS squircle in **one deep, saturated, matte colour** — charcoal for Dayflet, burgundy for
+  Daysplice — with no gradient on the background itself.
+- A primary form in **warm cream/off-white**, with soft dimensional shading and generously rounded
+  corners on its own edges.
+- **Exactly one accent plane** in a second colour, reading as the underside or the shadowed half of
+  a fold: a mid-blue in Dayflet, a dusty pink in Daysplice.
+- Matte, soft shadows. No gloss, no bevel, no outline. Generous padding; the form sits centred and
+  does not touch the squircle's edge.
+
+Keep that. The brief is not a restyle.
+
+### The actual problem, stated precisely
+
+**Dayflet's mark reads as an `L`, not a `D`** — your own round-4 review said so, and the owner has
+now confirmed it from the render. The reason is structural rather than a matter of degree: the
+folded page turns from vertical to horizontal and *ends* there, so the silhouette is an L by
+construction. No amount of weighting it will make an L read as a D.
+
+A `D` needs a **closed or nearly-closed bowl** against a vertical stem. The fold metaphor can still
+produce one — a page curling from the stem round to meet itself is a D, and the fold's underside is
+exactly where the accent plane belongs. **Daysplice has no letterform at all**, so if its
+two-offset-blocks composition is carried forward it has to be rebuilt around a letter.
+
+### What to produce
+
+Concepts in that style where the letterform is unambiguous, plus, for each, the thing that decides
+it: **a render at actual icon sizes — 1024, 180, 120, 80 and 40 points.** An app icon is seen at
+40pt on a Home Screen and in Settings, and a letterform that only resolves at 1024 has failed. Say
+which of your own concepts survive that test and which do not; a concept you reject at 40pt with
+the render to show it is worth more than one you keep on faith.
+
+Also check each against a **dark and a light** background, since macOS and iOS both place icons on
+both.
+
+### Names
+
+The owner will take a different name if the letter works better, so propose candidates **and screen
+them the way you screened round 4** — that screening is the part of your last round that had the
+most value, and it correctly rejected Daysplice itself on Splice's prominence in audio and video
+software. Carry the same disclaimer forward: not exhaustive, not phonetic, no trademarks, domains
+or logo imagery, no claim of legal clearance.
+
+Two constraints on names. The initial should be a letter with **a strong, closed, unmistakable
+silhouette** — `D`, `B`, `O`, `Q`, `G` are forgiving at 40pt; `I`, `J`, `L`, `T` are not, which is
+how this round's problem arose. And the shortlist from round 4 is **Dayflet and Notchday** —
+Dayweft, Sequora, Tessora, Daylume and Daysplice are all rejected on real conflicts, so do not
+re-propose them.
+
+Note the app currently ships as **Cadence**. If the owner keeps that name the letter is `C`, which
+is an open bowl and harder than `D` — worth one concept showing whether it can be made to work,
+since "keep the name" is the cheapest option available and nobody has tested whether it is viable.
