@@ -217,7 +217,8 @@ struct CadenceMCPToolRouter {
                 name: arguments.string("name"),
                 colorHex: arguments.string("colorHex"),
                 icon: arguments.string("icon"),
-                isArchived: arguments.bool("isArchived")
+                isArchived: arguments.bool("isArchived"),
+                order: try arguments.strictInt("order")
             )))
 
         case "update_container":
@@ -235,7 +236,10 @@ struct CadenceMCPToolRouter {
                 clearArea: arguments.bool("clearArea") ?? false,
                 dueDate: try arguments.dateKey("dueDate"),
                 clearDueDate: arguments.bool("clearDueDate") ?? false,
-                status: arguments.string("status")
+                status: arguments.string("status"),
+                order: try arguments.strictInt("order"),
+                hideDueDateIfEmpty: arguments.bool("hideDueDateIfEmpty"),
+                hideSectionDueDateIfEmpty: arguments.bool("hideSectionDueDateIfEmpty")
             )))
 
         case "update_container_columns":
@@ -315,6 +319,15 @@ struct CadenceMCPToolRouter {
             return try encode(writeService.bulkCancelTasks(options: CadenceBulkCancelTaskOptions(
                 taskIds: try arguments.flexibleStringArray("taskIds"),
                 titlePrefix: arguments.string("titlePrefix")
+            )))
+
+        case "create_link":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.createSavedLink(options: CadenceCreateSavedLinkOptions(
+                containerKind: try arguments.requiredString("containerKind"),
+                containerId: try arguments.requiredString("containerId"),
+                url: try arguments.requiredString("url"),
+                title: arguments.string("title")
             )))
 
         case "append_core_note":

@@ -31,6 +31,7 @@ WRITE_TOOLS = {
     "cancel_task",
     "bulk_cancel_tasks",
     "append_core_note",
+    "create_link",
 }
 EXPECTED_TOOLS = {
     "mcp_diagnostics",
@@ -98,12 +99,19 @@ CONTEXT_SUMMARY_KEYS = {
     "context", "inboxTaskCount", "activeTaskCount", "completedTaskCount", "scheduledTaskCount",
     "overdueTaskCount", "activeGoalCount", "documentCount", "linkCount", "areas", "projects",
 }
-CONTAINER_REF_KEYS = {"kind", "id", "name", "contextId", "contextName", "status", "colorHex", "icon"}
+CONTAINER_REF_KEYS = {
+    "kind", "id", "name", "contextId", "contextName", "status", "colorHex", "icon", "order",
+}
 CONTAINER_REF_OPTIONAL = {"contextId", "contextName"}
 CONTAINER_SUMMARY_KEYS = {
-    "container", "activeTaskCount", "completedTaskCount", "overdueTaskCount", "sections",
-    "documents", "links",
+    "container", "activeTaskCount", "completedTaskCount", "overdueTaskCount",
+    "hideDueDateIfEmpty", "hideSectionDueDateIfEmpty", "sections", "documents", "links",
 }
+# T-1122. `create_link` is the first constructor on this surface for a model outside the
+# context/list/task triangle, which is what finally gives `list_links` a row: until it existed the
+# fixture store could hold no saved link, so this DTO was dispatched and asserted empty (T-269).
+SAVED_LINK_SUMMARY_KEYS = {"id", "title", "url", "container", "order", "createdAt"}
+SAVED_LINK_SUMMARY_OPTIONAL = {"container"}
 SECTION_SUMMARY_KEYS = {
     "name", "colorHex", "dueDate", "isCompleted", "isArchived", "taskCount", "activeTaskCount",
     "completedTaskCount",
@@ -1068,6 +1076,112 @@ def main() -> int:
         # Put the board back under its created name so the audit and container assertions further
         # down keep reading what they were written against.
         call_ok(117, "update_container", board_target | {"name": "MCP smoke board", "status": "active"})
+
+        # --- Saying where a list goes (T-1182) --------------------------------------------
+        # `update_container` could re-file a list and left `order` exactly as it found it, so a
+        # list moved into a context where a sibling already held its number interleaved
+        # alphabetically — `CadenceMCPOrdering.precedes` breaks an `order` tie on the name. The
+        # position argument is the exit, and the assertion that matters is the *displaced* sibling:
+        # nothing in the response of the call that moved the board reports the second board's new
+        # number, so it is read back off `list_containers`.
+        second_board = call_ok(118, "create_container", {
+            "containerKind": "project",
+            "name": "MCP smoke second board",
+            "contextId": context_id,
+        })
+        second_id = second_board["container"]["id"]
+        if second_board["container"]["order"] <= board["container"]["order"]:
+            raise AssertionError(f"expected max-plus-one for the second board, got {second_board['container']}")
+
+        placed = call_ok(119, "update_container", board_target | {"order": 1})
+        if placed["container"]["order"] != 1:
+            raise AssertionError(f"expected the board at position 1, got {placed['container']}")
+        filed = page_items(
+            call_ok(120, "list_containers", {"contextId": context_id, "limit": 50}),
+            "list_containers after placing",
+        )
+        placed_orders = {container["id"]: container["order"] for container in filed}
+        if placed_orders.get(second_id) != 0 or placed_orders.get(board_id) != 1:
+            raise AssertionError(f"expected a densely renumbered bucket, got {placed_orders}")
+        # Back to the front, which is the half a one-way move cannot tell apart from a no-op.
+        call_ok(121, "update_container", board_target | {"order": 0})
+        filed = page_items(
+            call_ok(122, "list_containers", {"contextId": context_id, "limit": 50}),
+            "list_containers after replacing",
+        )
+        replaced_orders = {container["id"]: container["order"] for container in filed}
+        if replaced_orders.get(board_id) != 0 or replaced_orders.get(second_id) != 1:
+            raise AssertionError(f"expected the board back at the front, got {replaced_orders}")
+        call_error(
+            123,
+            "update_container",
+            board_target | {"order": 9},
+            "a position past the end of the bucket",
+            "Invalid order: 9. Expected 0...1",
+        )
+
+        # The two display preferences that were writable in both app editors and readable nowhere.
+        flagged = call_ok(124, "update_container", board_target | {
+            "hideDueDateIfEmpty": False,
+            "hideSectionDueDateIfEmpty": False,
+        })
+        if flagged["hideDueDateIfEmpty"] or flagged["hideSectionDueDateIfEmpty"]:
+            raise AssertionError(f"expected both display flags cleared, got {flagged}")
+
+        # A context is one flat sequence, so its position is measured against every context there
+        # is. This store has exactly one, which makes 0 the only legal position and 1 the refusal.
+        replaced_context = call_ok(125, "update_context", {"contextId": context_id, "order": 0})
+        if replaced_context["context"]["order"] != 0:
+            raise AssertionError(f"expected the context at position 0, got {replaced_context['context']}")
+        # The upper bound is left out of the expected text on purpose: it is however many contexts
+        # the fixture store holds, which a later seeding step could legitimately change, and the
+        # assertion this refusal is here for is that the range is *named* rather than clamped to.
+        call_error(
+            126,
+            "update_context",
+            {"contextId": context_id, "order": 9999},
+            "a context position past the end",
+            "Invalid order: 9999. Expected 0...",
+        )
+
+        # --- The first saved link this surface can make (T-1122) ---------------------------
+        # `list_links` was dispatched against an empty table above, because nothing on the write
+        # half could put a row in it. It can now, and the response is the same summary the list
+        # tool answers with rather than an echo of the request — which is how the allocated
+        # `order` and the resolved `container` get checked at all.
+        link = call_ok(127, "create_link", board_target | {
+            "url": "HTTPS://example.com/cadence",
+            "title": "MCP smoke link",
+        })
+        check_keys(link, SAVED_LINK_SUMMARY_KEYS, SAVED_LINK_SUMMARY_OPTIONAL, "create_link summary")
+        # T-509's rule, reached rather than re-spelled: a recognised scheme is kept as typed,
+        # case-insensitively, instead of being prefixed a second time.
+        if link["url"] != "HTTPS://example.com/cadence":
+            raise AssertionError(f"expected the typed scheme kept, got {link}")
+        if link["container"]["id"] != board_id:
+            raise AssertionError(f"expected the link on the board, got {link}")
+        untitled = call_ok(128, "create_link", board_target | {"url": "example.com/untitled"})
+        if untitled["url"] != "https://example.com/untitled":
+            raise AssertionError(f"expected a scheme-less url prefixed, got {untitled}")
+        if untitled["title"] != untitled["url"]:
+            raise AssertionError(f"expected an untitled link to display as its url, got {untitled}")
+        if untitled["order"] <= link["order"]:
+            raise AssertionError(f"expected max-plus-one among the list's links, got {untitled}")
+        call_error(
+            129,
+            "create_link",
+            board_target | {"url": "   "},
+            "a blank url",
+            "Missing required argument: url",
+        )
+        listed_links = page_items(
+            call_ok(130, "list_links", board_target | {"limit": 10}),
+            "list_links after create_link",
+        )
+        if {row["id"] for row in listed_links} != {link["id"], untitled["id"]}:
+            raise AssertionError(f"expected both new links on the board, got {listed_links}")
+        for row in listed_links:
+            check_keys(row, SAVED_LINK_SUMMARY_KEYS, SAVED_LINK_SUMMARY_OPTIONAL, "list_links row")
 
         # --- The five write tools that ran nowhere at all (T-259) ------------------------
         # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are

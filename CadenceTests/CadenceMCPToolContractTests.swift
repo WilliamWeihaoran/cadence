@@ -463,8 +463,16 @@ private extension CadenceMCPToolContractTests {
             "id", "name", "colorHex", "icon", "order", "isArchived", "areaCount", "projectCount",
             "activeTaskCount", "goalCount", "habitCount",
         ]),
+        // `order` joined this ref in T-1182, and the spec moved with it deliberately rather than
+        // to make a red run green: `CadenceContextRef` has carried `order` since T-382, so a
+        // caller could see where a *context* sat and not where a *list* sat while
+        // `CadenceMCPOrdering.precedes` sorted both on it. It is readable here because
+        // `update_container` writes it — the pairing `CadenceUpdateContainerColumnsOptions`
+        // refuses to break one size down, where a column has no uuid in any response and is
+        // therefore addressed by name.
         DTOFieldSpec(structName: "CadenceContainerRef", expectedFields: [
             "kind", "id", "name", "contextId", "contextName", "status", "colorHex", "icon",
+            "order",
         ]),
     ]
 

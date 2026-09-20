@@ -18,6 +18,8 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case invalidContainerStatus(String, [String])
     case sectionNotFound(String, [String])
     case columnNotFound(String, [String])
+    case invalidPosition(Int, Int, String)
+    case emptyURL
     case tagsUnavailable
 
     var errorDescription: String? {
@@ -57,6 +59,10 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "Invalid sectionName: \(name). Expected one of: \(available.joined(separator: ", "))."
         case .columnNotFound(let name, let available):
             return "No column named \(name) on this list. Expected one of: \(available.joined(separator: ", "))."
+        case .invalidPosition(let value, let upperBound, let noun):
+            return "Invalid order: \(value). Expected 0...\(upperBound) — the zero-based position among the \(upperBound + 1) \(noun) this call leaves it beside."
+        case .emptyURL:
+            return "Link url must not be empty."
         case .tagsUnavailable:
             return "Tags could not be read, so nothing was written."
         }
@@ -185,12 +191,17 @@ nonisolated struct CadenceUpdateContainerColumnsOptions: Sendable {
 /// So: `isArchived` hides a context everywhere `includeArchived` is not asked for, is reversible
 /// from this same tool, and destroys nothing. `update_container_columns` refuses column removal on
 /// the same argument one size down.
+///
+/// **`order` is a position, not the stored number** (T-1182) — see
+/// `CadenceUpdateContainerOptions`, which spells the rule for the bucket that actually needed it.
+/// Contexts are one flat sequence, so the bucket here is every context in the store.
 nonisolated struct CadenceUpdateContextOptions: Sendable {
     var contextId: String
     var name: String? = nil
     var colorHex: String? = nil
     var icon: String? = nil
     var isArchived: Bool? = nil
+    var order: Int? = nil
 }
 
 /// A change to the fields of an `Area` or a `Project` that already exists (T-1120).
@@ -202,12 +213,38 @@ nonisolated struct CadenceUpdateContextOptions: Sendable {
 /// **Archiving is `status: "archived"`, and there is no delete**, for the reasons written out on
 /// `CadenceUpdateContextOptions` above.
 ///
-/// **`order` is deliberately not recomputed when `contextId` moves the list.** `createContainer`
-/// numbers a new row `max + 1` among its siblings because the model default of 0 would otherwise
-/// interleave it alphabetically; an existing list already carries a number the user's own ordering
-/// produced. Both app editors agree — `EditListSheet` and `iOSListEditorViews` assign
-/// `context` on a move and renumber only on create — and inventing a third behaviour at this
-/// boundary would move a list the caller only asked to re-file.
+/// **`order` is still not recomputed when `contextId` moves the list, and it is now sayable**
+/// (T-1182). `createContainer` numbers a new row `max + 1` among its siblings because the model
+/// default of 0 would otherwise interleave it alphabetically; an existing list already carries a
+/// number the user's own ordering produced. Both app editors agree — `EditListSheet` and
+/// `iOSListEditorViews` assign `context` on a move and renumber only on create — and inventing a
+/// third behaviour for a caller who only asked to re-file would be worse than the gap. What T-1182
+/// measured is that the gap had no exit: `CadenceMCPOrdering.precedes` breaks an `order` tie on the
+/// *name*, so a list moved into a context where a sibling already holds its number interleaves
+/// alphabetically, and this surface could not say where it should have gone.
+///
+/// `order` is that exit, and it is **a zero-based position among the lists the call leaves in the
+/// destination context, not the stored number**. The stored numbers are max-plus-one allocations
+/// with a gap wherever something was deleted, so a caller handed `[0, 2, 5]` cannot name "third"
+/// by arithmetic; and writing a raw number is how the tie gets created rather than resolved. The
+/// arm therefore renumbers the **whole destination bucket** densely from zero, which is the only
+/// state in which `precedes` never reaches its name leg — after one such call, `CadenceContainerRef
+/// .order` reads back exactly the position that was asked for. A position outside `0...count` is
+/// refused naming the range rather than clamped, `columnOrder`'s rule for a partial order.
+///
+/// **The bucket the list left is not renumbered**, deliberately: the gap it leaves changes no
+/// sibling's relative position, and touching rows the caller did not name is the behaviour the
+/// paragraph above refuses. Areas and projects share one bucket per context and unfiled lists share
+/// their own — `nil == nil`, the rule `nextListOrder` spells.
+///
+/// **`linkedCalendarID` is refused, and that is the decision T-1182 asked for rather than an
+/// omission.** `Cadence/Models/AGENTS.md` records T-390: the field holds a bare
+/// `EKCalendar.calendarIdentifier`, treated as opaque and permanent precisely so a dead link reads
+/// as unlinked instead of being re-matched by name. Nothing on this surface can enumerate the
+/// user's calendars — `EventKit` is in no MCP target — so a caller could only echo back an
+/// identifier it read from somewhere else, and a wrong one binds a list to a stranger's calendar
+/// with no picker, no title in the response, and `mcp-audit.log` for a record. That is a write
+/// whose result is invisible on this surface, which is the one shape this boundary refuses.
 nonisolated struct CadenceUpdateContainerOptions: Sendable {
     var containerKind: String
     var containerId: String
@@ -222,6 +259,33 @@ nonisolated struct CadenceUpdateContainerOptions: Sendable {
     var dueDate: String? = nil
     var clearDueDate: Bool = false
     var status: String? = nil
+    /// The zero-based position among the lists this call leaves in the destination context.
+    var order: Int? = nil
+    var hideDueDateIfEmpty: Bool? = nil
+    var hideSectionDueDateIfEmpty: Bool? = nil
+}
+
+/// A saved link on an `Area` or a `Project` (T-1122, leg (b), the first of six).
+///
+/// **The container is required.** `SavedLink` declares `area` and `project` and no third home, and
+/// `CadenceSavedLinkSummary.container` is the only place a caller can see which one a link is on;
+/// a link attached to neither is a row `list_links` returns with `container: null` and nothing in
+/// the app shows at all.
+///
+/// **`url` goes through `CadenceSavedLinkURL.normalized`, which is why that file joined this
+/// target's Sources phase.** The rule it holds is T-509: `hasPrefix` is case-sensitive and a URI
+/// scheme is not, so two hand-rolled copies of trim-and-prepend both turned
+/// `HTTPS://example.com` into `https://HTTPS://example.com`. A third copy here — inside a process
+/// with no address bar and no user to notice — is exactly the shape that ticket exists to stop.
+/// The file's other half, `CadenceSavedLinkPersistence`, is deliberately **not** used: its
+/// insert-and-commit is `saveNotifyAndAudit`'s job on this surface, which additionally audits and
+/// wakes the app.
+nonisolated struct CadenceCreateSavedLinkOptions: Sendable {
+    var containerKind: String
+    var containerId: String
+    var url: String
+    /// Optional; a link with no title displays as its url, which is what both app editors do.
+    var title: String? = nil
 }
 
 /// Every field `updateContainer` writes to an `Area` or a `Project`, captured before the write so
@@ -250,6 +314,8 @@ private struct CadenceMCPContainerFieldSnapshot {
     private let icon: String
     private let statusRaw: String
     private let dueDate: String
+    private let hideDueDateIfEmpty: Bool
+    private let hideSectionDueDateIfEmpty: Bool
     private let parentContext: Context?
     private let parentArea: Area?
 
@@ -261,6 +327,8 @@ private struct CadenceMCPContainerFieldSnapshot {
         colorHex = area.colorHex
         icon = area.icon
         statusRaw = area.statusRaw
+        hideDueDateIfEmpty = area.hideDueDateIfEmpty
+        hideSectionDueDateIfEmpty = area.hideSectionDueDateIfEmpty
         // An area has no due date of its own; the field is here for the project case and is put
         // back only on a project.
         dueDate = ""
@@ -277,6 +345,8 @@ private struct CadenceMCPContainerFieldSnapshot {
         icon = project.icon
         statusRaw = project.statusRaw
         dueDate = project.dueDate
+        hideDueDateIfEmpty = project.hideDueDateIfEmpty
+        hideSectionDueDateIfEmpty = project.hideSectionDueDateIfEmpty
         parentContext = project.context
         parentArea = project.area
     }
@@ -288,6 +358,8 @@ private struct CadenceMCPContainerFieldSnapshot {
             area.colorHex = colorHex
             area.icon = icon
             area.statusRaw = statusRaw
+            area.hideDueDateIfEmpty = hideDueDateIfEmpty
+            area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             area.context = parentContext
         }
         if let project {
@@ -297,6 +369,8 @@ private struct CadenceMCPContainerFieldSnapshot {
             project.icon = icon
             project.statusRaw = statusRaw
             project.dueDate = dueDate
+            project.hideDueDateIfEmpty = hideDueDateIfEmpty
+            project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             project.context = parentContext
             project.area = parentArea
         }
@@ -403,6 +477,10 @@ private struct PendingAuditEntry {
     /// "container", so the audit log distinguishes the two the way every other MCP surface does.
     static func container(kind: String, id: UUID, summary: String) -> PendingAuditEntry {
         PendingAuditEntry(tool: "create_container", entityType: kind, entityId: id.uuidString, summary: summary)
+    }
+
+    static func savedLink(id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "create_link", entityType: "link", entityId: id.uuidString, summary: summary)
     }
 
     static func contextFields(id: UUID, summary: String) -> PendingAuditEntry {
@@ -524,9 +602,21 @@ final class CadenceWriteService {
         let colorHex = try normalizedOptionalColorHex(options.colorHex)
         let icon = CadenceMCPServiceSupport.normalizedOptionalText(options.icon)
 
-        guard name != nil || colorHex != nil || icon != nil || options.isArchived != nil else {
+        guard name != nil || colorHex != nil || icon != nil || options.isArchived != nil
+            || options.order != nil
+        else {
             throw CadenceWriteError.noChanges
         }
+
+        // Validated, and the whole new numbering computed, before anything is written — the shape
+        // every editing arm here shares, so a refused position cannot leave a rename applied.
+        let placement = try options.order.map { try plannedContextOrders(moving: target, to: $0) }
+        // Captured here and put back by this call's own `undo`, rather than by a snapshot type of
+        // its own. A renumber and the restore that answers for it belong to the frame that owns the
+        // unit of work — the frame `CadenceSaveCommitDisciplineTests`' half 2b judges — and that is
+        // this one: it is what reaches the commit, so it is what has to un-do the rearrangement
+        // when the commit is refused.
+        let previousOrders = (placement ?? []).map { (row: $0.row, order: $0.row.order) }
 
         let previousName = target.name
         let previousColorHex = target.colorHex
@@ -537,8 +627,12 @@ final class CadenceWriteService {
         if let colorHex { target.colorHex = colorHex }
         if let icon { target.icon = icon }
         if let isArchived = options.isArchived { target.isArchived = isArchived }
+        if let placement {
+            for entry in placement { entry.row.order = entry.order }
+        }
 
         try saveNotifyAndAudit([.contextFields(id: target.id, summary: "Updated context: \(target.name)")]) {
+            for entry in previousOrders { entry.row.order = entry.order }
             target.name = previousName
             target.colorHex = previousColorHex
             target.icon = previousIcon
@@ -630,8 +724,9 @@ final class CadenceWriteService {
     /// Rename, recolour, re-icon, re-file, redate or archive an `Area` or a `Project` that already
     /// exists (T-1120).
     ///
-    /// The project-only refusals, the archive-instead-of-delete decision and the reason `order` is
-    /// left alone on a move are written out on `CadenceUpdateContainerOptions`.
+    /// The project-only refusals, the archive-instead-of-delete decision, the position `order`
+    /// takes (rather than the stored number) and the refusal of `linkedCalendarID` are written out
+    /// on `CadenceUpdateContainerOptions`.
     ///
     /// **Everything is validated before the model is touched**, `updateContainerColumns`' shape:
     /// a refusal in the status leg cannot leave a rename half-applied in the context.
@@ -678,10 +773,33 @@ final class CadenceWriteService {
             || newContext != nil || options.clearContext
             || newArea != nil || options.clearArea
             || dueDate != nil || options.clearDueDate
-            || statusRaw != nil
+            || statusRaw != nil || options.order != nil
+            || options.hideDueDateIfEmpty != nil || options.hideSectionDueDateIfEmpty != nil
         else {
             throw CadenceWriteError.noChanges
         }
+
+        // The bucket a position is measured in is the one this call *leaves* the list in, so the
+        // move is resolved here — before anything is written — rather than read back off the model
+        // afterwards. `nil` is the unfiled bucket, not the absence of one.
+        let destinationContextID: UUID?
+        if options.clearContext {
+            destinationContextID = nil
+        } else if let newContext {
+            destinationContextID = newContext.id
+        } else {
+            destinationContextID = contextID(of: resolved)
+        }
+        let placement = try options.order.map {
+            try plannedListOrders(moving: resolved, into: destinationContextID, to: $0)
+        }
+        // The whole bucket, not the one list the caller named: a placement renumbers the siblings
+        // it displaced, and no response of this call reports their new numbers. Restoring only the
+        // named list would leave the bucket half-renumbered — the *visible* half, on every surface
+        // that sorts on `order`. It is captured and restored here rather than in a snapshot type
+        // for `updateContext`'s reason: the frame that reaches the commit is the frame that has to
+        // answer for the rearrangement.
+        let previousOrders = (placement ?? []).map { (row: $0.row, order: currentOrder(of: $0.row)) }
 
         let containerID: UUID
         let snapshot: CadenceMCPContainerFieldSnapshot
@@ -700,6 +818,8 @@ final class CadenceWriteService {
                 area.context = newContext
             }
             if let statusRaw { area.statusRaw = statusRaw }
+            if let hide = options.hideDueDateIfEmpty { area.hideDueDateIfEmpty = hide }
+            if let hide = options.hideSectionDueDateIfEmpty { area.hideSectionDueDateIfEmpty = hide }
             finalName = area.name
         case .project(let project):
             containerID = project.id
@@ -724,10 +844,27 @@ final class CadenceWriteService {
                 project.dueDate = dueDate
             }
             if let statusRaw { project.statusRaw = statusRaw }
+            if let hide = options.hideDueDateIfEmpty { project.hideDueDateIfEmpty = hide }
+            if let hide = options.hideSectionDueDateIfEmpty { project.hideSectionDueDateIfEmpty = hide }
             finalName = project.name
         }
 
+        if let placement {
+            for entry in placement {
+                switch entry.row {
+                case .area(let area): area.order = entry.order
+                case .project(let project): project.order = entry.order
+                }
+            }
+        }
+
         try saveNotifyAndAudit([.containerFields(kind: kind, id: containerID, summary: "Updated \(kind): \(finalName)")]) {
+            for entry in previousOrders {
+                switch entry.row {
+                case .area(let area): area.order = entry.order
+                case .project(let project): project.order = entry.order
+                }
+            }
             snapshot.restore()
         }
         return try readService.containerSummary(kind: kind, id: containerID.uuidString)
@@ -971,6 +1108,53 @@ final class CadenceWriteService {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw CadenceWriteError.emptySectionName }
         return trimmed
+    }
+
+    /// Attach a saved link to an `Area` or a `Project` (T-1122).
+    ///
+    /// **Why this one of the six, and not the other five.** T-1122 names six model types the write
+    /// surface cannot mint — goal, habit, tag, saved link, list note and task bundle — and says
+    /// doing even one turns a list tool from a source scan into an execution, which is the argument
+    /// for starting with the cheapest. `SavedLink` is the cheapest by a distance: five stored
+    /// fields, one of which is the owning list, no lifecycle, no completion history, no cascade and
+    /// no helper it has to go through. The other five each carry an invariant this boundary would
+    /// have to express before it could honestly offer a constructor, and the decisions are recorded
+    /// in `docs/TODO.md` rather than half-built here.
+    ///
+    /// The URL rule, the required container and the unused persistence half are on
+    /// `CadenceCreateSavedLinkOptions`.
+    func createSavedLink(options: CadenceCreateSavedLinkOptions) throws -> CadenceSavedLinkSummary {
+        let kind = try normalizedContainerKind(options.containerKind)
+        guard let resolved = try resolveContainer(kind: kind, id: options.containerId) else {
+            throw CadenceWriteError.invalidCombination("containerId is required.")
+        }
+        guard let url = CadenceSavedLinkURL.normalized(options.url) else {
+            throw CadenceWriteError.emptyURL
+        }
+        let title = CadenceTitleNormalization.display(options.title ?? "", fallback: url)
+
+        // **The order is read before the relationship is assigned, and the order of these two
+        // lines is load-bearing.** SwiftData back-populates the inverse synchronously inside the
+        // owning context — the measurement `Cadence/Models/AGENTS.md` records for `Subtask`
+        // (T-387) — so `project.links` already contains this link if it is assigned first, and
+        // max-plus-one over a list that includes the row being numbered allocates 1, then 2, and
+        // never 0. Measured here, not assumed: the first spelling of this arm did exactly that.
+        let link = SavedLink(title: title, url: url)
+        switch resolved {
+        case .area(let area):
+            link.order = nextLinkOrder(among: area.links)
+            link.area = area
+        case .project(let project):
+            link.order = nextLinkOrder(among: project.links)
+            link.project = project
+        }
+        context.insert(link)
+
+        try saveNotifyAndAudit(
+            .savedLink(id: link.id, summary: "Created link on \(kind): \(title)"),
+            inserted: [link]
+        )
+        return try readService.savedLinkSummary(linkID: link.id.uuidString)
     }
 
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {
@@ -1449,6 +1633,82 @@ final class CadenceWriteService {
         var orders = try fetchAreas().filter { $0.context?.id == id }.map(\.order)
         orders += try fetchProjects().filter { $0.context?.id == id }.map(\.order)
         return (orders.max() ?? -1) + 1
+    }
+
+    /// One past the highest `order` among the links already on this list, max-plus-one for
+    /// `nextListOrder`'s reason: `count` re-uses a number as soon as anything has been deleted.
+    private func nextLinkOrder(among links: [SavedLink]?) -> Int {
+        ((links ?? []).map(\.order).max() ?? -1) + 1
+    }
+
+    /// The whole destination bucket, renumbered densely from zero with `target` at `position`.
+    ///
+    /// Computed and returned rather than applied, so the caller can refuse before it writes and can
+    /// snapshot exactly the rows it is about to change. The siblings are put in
+    /// `CadenceMCPOrdering.precedes` order first — the same total order every read of this surface
+    /// answers in — so "position 2" means the third row the caller last saw, and the result is
+    /// independent of the order the store handed the rows over in.
+    ///
+    /// `target` is excluded from the sibling scan and re-inserted, which is what makes a move and a
+    /// re-position one operation: a list already in this bucket is not counted twice, and one
+    /// arriving from elsewhere is counted once.
+    private func plannedListOrders(
+        moving target: CadenceResolvedContainer,
+        into contextID: UUID?,
+        to position: Int
+    ) throws -> [(row: CadenceResolvedContainer, order: Int)] {
+        let targetID = identifier(of: target)
+        var siblings: [(row: CadenceResolvedContainer, key: CadenceMCPOrdering.SortKey)] = []
+        for area in try fetchAreas() where area.context?.id == contextID && area.id != targetID {
+            siblings.append((.area(area), CadenceMCPOrdering.sortKey(area)))
+        }
+        for project in try fetchProjects() where project.context?.id == contextID && project.id != targetID {
+            siblings.append((.project(project), CadenceMCPOrdering.sortKey(project)))
+        }
+        siblings.sort { CadenceMCPOrdering.precedes($0.key, $1.key) }
+
+        guard position >= 0, position <= siblings.count else {
+            throw CadenceWriteError.invalidPosition(position, siblings.count, "lists filed there")
+        }
+        var rows = siblings.map(\.row)
+        rows.insert(target, at: position)
+        return rows.enumerated().map { (row: $0.element, order: $0.offset) }
+    }
+
+    /// `plannedListOrders` over the one flat sequence every context shares.
+    private func plannedContextOrders(
+        moving target: Context,
+        to position: Int
+    ) throws -> [(row: Context, order: Int)] {
+        var siblings = try fetchContexts().filter { $0.id != target.id }
+        siblings.sort(by: CadenceMCPOrdering.precedes)
+
+        guard position >= 0, position <= siblings.count else {
+            throw CadenceWriteError.invalidPosition(position, siblings.count, "contexts")
+        }
+        siblings.insert(target, at: position)
+        return siblings.enumerated().map { (row: $0.element, order: $0.offset) }
+    }
+
+    private func identifier(of container: CadenceResolvedContainer) -> UUID {
+        switch container {
+        case .area(let area): return area.id
+        case .project(let project): return project.id
+        }
+    }
+
+    private func currentOrder(of container: CadenceResolvedContainer) -> Int {
+        switch container {
+        case .area(let area): return area.order
+        case .project(let project): return project.order
+        }
+    }
+
+    private func contextID(of container: CadenceResolvedContainer) -> UUID? {
+        switch container {
+        case .area(let area): return area.context?.id
+        case .project(let project): return project.context?.id
+        }
     }
 
     private func resolveContext(_ id: String?) throws -> Context? {

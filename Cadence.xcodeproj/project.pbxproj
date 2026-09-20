@@ -56,6 +56,7 @@
 		A10000002FCE000000000235 /* Cadence/Shared/CadenceSectionConfigMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000232 /* Cadence/Shared/CadenceSectionConfigMerge.swift */; };
 		A10000002FCE000000000236 /* Cadence/Shared/CadenceSectionEditingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000233 /* Cadence/Shared/CadenceSectionEditingSupport.swift */; };
 		A10000002FCE000000000238 /* Cadence/Shared/CadenceDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000237 /* Cadence/Shared/CadenceDefaults.swift */; };
+		A10000002FCE00000000023A /* Cadence/Shared/CadenceSavedLinkPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000239 /* Cadence/Shared/CadenceSavedLinkPersistence.swift */; };
 		B10000002FCE000000000201 /* CadenceWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000101 /* CadenceWidgets.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B10000002FCE000000000202 /* Cadence/Services/CadenceStoreSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000102 /* Cadence/Services/CadenceStoreSupport.swift */; };
 		B10000002FCE000000000203 /* Cadence/Services/CadenceWidgetRefreshCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000103 /* Cadence/Services/CadenceWidgetRefreshCenter.swift */; };
@@ -189,6 +190,7 @@
 		A10000002FCE000000000232 /* Cadence/Shared/CadenceSectionConfigMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceSectionConfigMerge.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000233 /* Cadence/Shared/CadenceSectionEditingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceSectionEditingSupport.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000237 /* Cadence/Shared/CadenceDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceDefaults.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000239 /* Cadence/Shared/CadenceSavedLinkPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceSavedLinkPersistence.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000101 /* CadenceWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CadenceWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000002FCE000000000102 /* Cadence/Services/CadenceStoreSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceStoreSupport.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000103 /* Cadence/Services/CadenceWidgetRefreshCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceWidgetRefreshCenter.swift; sourceTree = "<group>"; };
@@ -355,6 +357,7 @@
 				A10000002FCE000000000232 /* Cadence/Shared/CadenceSectionConfigMerge.swift */,
 				A10000002FCE000000000233 /* Cadence/Shared/CadenceSectionEditingSupport.swift */,
 				A10000002FCE000000000237 /* Cadence/Shared/CadenceDefaults.swift */,
+				A10000002FCE000000000239 /* Cadence/Shared/CadenceSavedLinkPersistence.swift */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -665,6 +668,7 @@
 				A10000002FCE000000000235 /* Cadence/Shared/CadenceSectionConfigMerge.swift in Sources */,
 				A10000002FCE000000000236 /* Cadence/Shared/CadenceSectionEditingSupport.swift in Sources */,
 				A10000002FCE000000000238 /* Cadence/Shared/CadenceDefaults.swift in Sources */,
+				A10000002FCE00000000023A /* Cadence/Shared/CadenceSavedLinkPersistence.swift in Sources */,
 				A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */,
 				A10000002FCE00000000021B /* CadenceMCPToolDefinitions.swift in Sources */,
 				A10000002FCE00000000021C /* CadenceMCPArgumentParsing.swift in Sources */,

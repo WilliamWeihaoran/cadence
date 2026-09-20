@@ -17,6 +17,7 @@ nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
     case noteNotFound(String)
     case documentNotFound(String)
     case goalNotFound(String)
+    case linkNotFound(String)
 
     var errorDescription: String? {
         switch self {
@@ -50,6 +51,8 @@ nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
             return "No document found with id \(value)."
         case .goalNotFound(let value):
             return "No goal found with id \(value)."
+        case .linkNotFound(let value):
+            return "No saved link found with id \(value)."
         }
     }
 }
@@ -455,6 +458,8 @@ final class CadenceReadService {
             activeTaskCount: active.count,
             completedTaskCount: containerTasks.filter(\.isDone).count,
             overdueTaskCount: overdue.count,
+            hideDueDateIfEmpty: model.hideDueDateIfEmpty,
+            hideSectionDueDateIfEmpty: model.hideSectionDueDateIfEmpty,
             sections: sectionSummaries(for: model, tasks: containerTasks),
             documents: noteDocuments,
             links: links
@@ -792,6 +797,20 @@ final class CadenceReadService {
             limit: options.limit,
             transform: linkSummary
         )
+    }
+
+    /// One saved link, in the shape `list_links` returns it (T-1122).
+    ///
+    /// `create_link` answers with this for the reason every create arm on this surface answers with
+    /// the read shape: the caller gets the row as the next `list_links` will show it, including the
+    /// `order` the write allocated and the `container` it resolved, rather than an echo of what it
+    /// sent.
+    func savedLinkSummary(linkID: String) throws -> CadenceSavedLinkSummary {
+        let id = try uuid(from: linkID)
+        guard let link = try fetchFirst(SavedLink.self, where: #Predicate { $0.id == id }) else {
+            throw CadenceReadError.linkNotFound(linkID)
+        }
+        return linkSummary(link)
     }
 
     func search(query: String, scopes: [String]? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceSearchHit> {
@@ -1220,7 +1239,8 @@ final class CadenceReadService {
             contextName: area.context?.name,
             status: area.statusRaw,
             colorHex: area.colorHex,
-            icon: area.icon
+            icon: area.icon,
+            order: area.order
         )
     }
 
@@ -1233,7 +1253,8 @@ final class CadenceReadService {
             contextName: project.context?.name,
             status: project.statusRaw,
             colorHex: project.colorHex,
-            icon: project.icon
+            icon: project.icon,
+            order: project.order
         )
     }
 
@@ -1332,6 +1353,20 @@ final class CadenceReadService {
             switch self {
             case .area(let area): return area.sectionConfigs
             case .project(let project): return project.sectionConfigs
+            }
+        }
+
+        var hideDueDateIfEmpty: Bool {
+            switch self {
+            case .area(let area): return area.hideDueDateIfEmpty
+            case .project(let project): return project.hideDueDateIfEmpty
+            }
+        }
+
+        var hideSectionDueDateIfEmpty: Bool {
+            switch self {
+            case .area(let area): return area.hideSectionDueDateIfEmpty
+            case .project(let project): return project.hideSectionDueDateIfEmpty
             }
         }
 

@@ -49,7 +49,17 @@ enum CadenceMCPToolDefinitions {
     // a list without deleting it?" is a capability question, and the version is the only thing a
     // client can ask. It still cannot **delete** anything, deliberately; see
     // `CadenceUpdateContextOptions` for that decision and its two measured reasons.
-    private static let serverVersion = "0.9.0"
+    // 0.10.0 is the first bump here that changes a **response** as well as adding a tool, which is
+    // why it is a minor and not a patch: `CadenceContainerRef` gained `order` and
+    // `CadenceContainerSummary` gained `hideDueDateIfEmpty` / `hideSectionDueDateIfEmpty` (T-1182).
+    // Additive — no key moved and none was dropped — so a client that reads by name is unaffected,
+    // and one that round-trips a decoded ref now carries the number this surface sorts on. The tool
+    // half: `update_container` and `update_context` can place a list or a context at a position
+    // rather than only re-file it, and `create_link` is the first constructor for a model type
+    // outside the context/list/task triangle (T-1122). "Can this server put the list it just moved
+    // where I want it?" is a capability question, and the version is the only thing a client can
+    // ask.
+    private static let serverVersion = "0.10.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
@@ -64,6 +74,7 @@ enum CadenceMCPToolDefinitions {
         "cancel_task",
         "bulk_cancel_tasks",
         "append_core_note",
+        "create_link",
     ]
 
     static var tools: [Tool] {
@@ -220,6 +231,7 @@ enum CadenceMCPToolDefinitions {
                 "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
                 "icon": stringProperty("Optional SF Symbol name."),
                 "isArchived": booleanProperty("Optional archived flag. Archiving hides the context from list_contexts unless includeArchived is set; it deletes nothing and is reversible by sending false."),
+                "order": integerProperty("Optional zero-based position among all contexts, counting this one. The whole sequence is renumbered densely, so the order this context reads back with afterwards is the position that was asked for. A position past the end is rejected naming the valid range.", minimum: 0),
             ], required: ["contextId"])),
             Tool(name: "update_container", description: "Change the fields of a Cadence area or project that already exists: rename, describe, recolour, re-icon, re-file under a context or an owning area, redate, and set status including archived. Answers the same summary get_container_summary does. Columns are update_container_columns; there is no deletion on this surface — set status to archived instead.", inputSchema: schema([
                 "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
@@ -235,6 +247,9 @@ enum CadenceMCPToolDefinitions {
                 "dueDate": dateProperty("Optional due date, yyyy-MM-dd or natural day. Projects only — an area is ongoing and carries no due date, and sending this with containerKind area is rejected."),
                 "clearDueDate": booleanProperty("Set true to clear the project's due date. Projects only. Cannot be combined with dueDate."),
                 "status": stringProperty("Optional status. An area takes active, done or archived; a project also takes paused and cancelled. A value the kind does not have is rejected rather than stored, because the model reads an unrecognised status back as active. Archiving hides the list without deleting anything and is reversible.", enumValues: Array(Set(ProjectStatus.allCases.map(\.rawValue)).union(AreaStatus.allCases.map(\.rawValue))).sorted()),
+                "order": integerProperty("Optional zero-based position among the lists this call leaves in the destination context, counting this one. Areas and projects share one sequence per context and unfiled lists share their own. The whole destination sequence is renumbered densely, so the order this list reads back with afterwards is the position that was asked for; send it with contextId to move and place in one call. Omit it and re-filing changes no order at all. A position past the end is rejected naming the valid range.", minimum: 0),
+                "hideDueDateIfEmpty": booleanProperty("Optional display preference: hide this list's own due-date control while it has no due date. Read back on get_container_summary."),
+                "hideSectionDueDateIfEmpty": booleanProperty("Optional display preference: hide each column's due-date control while that column has no due date. Read back on get_container_summary."),
             ], required: ["containerKind", "containerId"])),
             Tool(name: "update_container_columns", description: "Change the kanban columns of a Cadence area or project that already exists: add, rename, recolour, redate, archive, complete and reorder. Answers the same summary get_container_summary does. Columns are addressed by name. There is no removal — archive a column instead.", inputSchema: schema([
                 "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
@@ -297,6 +312,12 @@ enum CadenceMCPToolDefinitions {
                 "taskIds": flexibleStringArrayProperty("Optional array of exact task UUIDs. Cannot be combined with titlePrefix."),
                 "titlePrefix": stringProperty("Optional title prefix, minimum 8 characters. Cannot be combined with taskIds.", minLength: 8),
             ])),
+            Tool(name: "create_link", description: "Attach a saved link to a Cadence area or project. Answers the same summary list_links returns. A url with no scheme is stored as https; a blank one is rejected. There is no deletion on this surface.", inputSchema: schema([
+                "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
+                "containerId": uuidProperty("Area/project UUID. A saved link lives on a list; there is no unattached link."),
+                "url": stringProperty("The link URL. http:// and https:// are kept as typed, case-insensitively; anything else is prefixed with https://.", minLength: 1),
+                "title": stringProperty("Optional display title. Omitted or blank, the link displays as its url."),
+            ], required: ["containerKind", "containerId", "url"])),
             Tool(name: "append_core_note", description: "Append text to a daily, weekly, or permanent Cadence note, creating it if needed.", inputSchema: schema([
                 "kind": stringProperty("daily, weekly, or permanent.", enumValues: ["daily", "weekly", "permanent"]),
                 "content": stringProperty("Text to append.", minLength: 1),

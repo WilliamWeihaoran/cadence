@@ -298,7 +298,12 @@ struct CadenceContextlessListSurfaceTests {
         // `nil == nil` is the unfiled bucket — a list created with no `contextId` is numbered
         // against the other unfiled ones rather than left at 0, where `CadenceMCPOrdering.precedes`
         // would break the tie on its name and interleave it with the user's own lists.
-        "Cadence/Services/MCPReadOnly/CadenceWriteService.swift": 2,
+        // Two more since T-1182, and they are the same comparison a third and fourth time:
+        // `plannedListOrders` collects the destination bucket `update_container`'s `order` is a
+        // position *into*, once over areas and once over projects. `nil == nil` is the unfiled
+        // bucket there too — placing a list at position 0 with no `contextId` means the front of
+        // the unfiled run, not the front of nothing.
+        "Cadence/Services/MCPReadOnly/CadenceWriteService.swift": 4,
         // A write path: the DEBUG sample-data seeder attaches lists to the contexts it just made.
         "Cadence/iOS/iOSSampleDataSupport.swift": 6,
         // **Guarded downstream, not here.** `listGroupOrder` is a bare context walk and does lose
@@ -359,7 +364,7 @@ struct CadenceContextlessListSurfaceTests {
 
         #expect(actual == Self.knownContextDerivedListSites, "measured: \(actual.sorted { $0.key < $1.key })")
         // The headline, so a report and the ledger cannot disagree.
-        #expect(actual.values.reduce(0, +) == 29)
+        #expect(actual.values.reduce(0, +) == 31)
         #expect(actual.count == 10)
         // And the two columns that used to be the worst of them are off the list entirely: neither
         // derives its rows by walking contexts any more (T-538).

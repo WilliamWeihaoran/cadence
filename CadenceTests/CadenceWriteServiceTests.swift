@@ -1264,6 +1264,285 @@ struct CadenceWriteServiceTests {
         #expect(!after.context.isArchived)
     }
 
+    // MARK: - T-1182: saying where a list goes
+
+    /// The defect T-1182 filed. `update_container` could re-file a list and left `order` alone, so
+    /// a list arriving in a context where a sibling already held its number fell back on
+    /// `CadenceMCPOrdering.precedes`' *name* leg. The fix is not "write the number the caller sent"
+    /// — that creates the same tie — it is a position plus a dense renumber of the destination
+    /// bucket, which is the state in which the name leg is never reached.
+    @Test func placingAListRenumbersTheWholeDestinationBucketDensely() throws {
+        let fixture = try Fixture()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let first = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area", name: "Alpha", contextId: home.context.id
+        ))
+        let second = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Beta", contextId: home.context.id
+        ))
+        let third = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Gamma", contextId: home.context.id
+        ))
+        let seeded: [Int] = [first.container.order, second.container.order, third.container.order]
+        #expect(seeded == [0, 1, 2])
+
+        let moved = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: third.container.id,
+            order: 0
+        ))
+
+        // The response reports the list the caller named…
+        #expect(moved.container.order == 0)
+        // …and the two it displaced, which no response of that call mentions, moved with it.
+        #expect(try fixture.readService.containerSummary(kind: "area", id: first.container.id).container.order == 1)
+        #expect(try fixture.readService.containerSummary(kind: "project", id: second.container.id).container.order == 2)
+    }
+
+    /// Areas and projects share one sequence per context, so an area is a legal neighbour for a
+    /// project and the bucket is addressed by context rather than by kind. `nil == nil` is the
+    /// unfiled bucket, which is a bucket and not an absence.
+    @Test func aListMovedAndPlacedInOneCallIsMeasuredAgainstWhereItIsGoing() throws {
+        let fixture = try Fixture()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let resident = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area", name: "Resident", contextId: home.context.id
+        ))
+        let unfiled = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Arriving"
+        ))
+
+        let moved = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: unfiled.container.id,
+            contextId: home.context.id,
+            order: 0
+        ))
+
+        #expect(moved.container.contextId == home.context.id)
+        #expect(moved.container.order == 0)
+        #expect(try fixture.readService.containerSummary(kind: "area", id: resident.container.id).container.order == 1)
+        // And measured against the bucket the list is in *now*: two rows, so 1 is the last legal
+        // position and 2 is refused rather than clamped.
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContainer(options: .init(
+                containerKind: "project",
+                containerId: unfiled.container.id,
+                order: 2
+            ))
+        }
+    }
+
+    /// The range is named rather than clamped to, `update_container_columns`' rule for a partial
+    /// `columnOrder`, and the refusal happens before anything is written — so a rename riding
+    /// along in the same call does not half-apply.
+    @Test func aPositionPastTheEndIsRefusedNamingTheRangeAndWritesNothing() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+        // A second unfiled list, so the bucket the board sits in has two rows and the named range
+        // is something other than the degenerate `0...0`.
+        _ = try fixture.writeService.createContainer(options: .init(containerKind: "area", name: "Also unfiled"))
+
+        var message = ""
+        do {
+            _ = try fixture.writeService.updateContainer(options: .init(
+                containerKind: "project",
+                containerId: board.container.id,
+                name: "Renamed by a refused call",
+                order: 7
+            ))
+            Issue.record("expected a refusal")
+        } catch {
+            message = (error as? LocalizedError)?.errorDescription ?? ""
+        }
+
+        #expect(message.contains("Invalid order: 7"))
+        #expect(message.contains("0...1"))
+        #expect(try fixture.readService.containerSummary(kind: "project", id: board.container.id).container.name == "Launch board")
+    }
+
+    /// The half of T-1182 that is *not* a change: `update_container` still renumbers nothing when
+    /// the caller only asks to re-file, which is what `EditListSheet` and `iOSListEditorViews` both
+    /// do. Inventing a placement for a caller who did not ask for one is the behaviour the ticket
+    /// agrees should not exist.
+    @Test func refilingWithoutAPositionStillChangesNoOrderAtAll() throws {
+        let fixture = try Fixture()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        _ = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Resident", contextId: home.context.id
+        ))
+        let arriving = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Arriving"
+        ))
+        let before = arriving.container.order
+
+        let moved = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: arriving.container.id,
+            contextId: home.context.id
+        ))
+
+        #expect(moved.container.contextId == home.context.id)
+        #expect(moved.container.order == before)
+    }
+
+    /// A placement writes rows the response never mentions, so the undo has to cover the bucket
+    /// rather than the named list. Restoring only the list the caller named would leave every
+    /// sibling holding a number from a change that was refused — the visible half.
+    @Test func aRefusedPlacementPutsEverySiblingsNumberBack() throws {
+        let fixture = try Fixture()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let first = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Alpha", contextId: home.context.id
+        ))
+        let second = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Beta", contextId: home.context.id
+        ))
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainer(options: .init(
+                containerKind: "project",
+                containerId: second.container.id,
+                order: 0
+            ))
+        }
+
+        #expect(try fixture.readService.containerSummary(kind: "project", id: first.container.id).container.order == 0)
+        #expect(try fixture.readService.containerSummary(kind: "project", id: second.container.id).container.order == 1)
+    }
+
+    /// Contexts are one flat sequence rather than one per parent, so the bucket is every context
+    /// there is — and the same dense renumber applies.
+    @Test func placingAContextRenumbersTheOneFlatSequence() throws {
+        let fixture = try Fixture()
+        let second = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let third = try fixture.writeService.createContext(options: .init(name: "Side"))
+
+        let moved = try fixture.writeService.updateContext(options: .init(
+            contextId: third.context.id,
+            order: 0
+        ))
+
+        #expect(moved.context.order == 0)
+        #expect(try fixture.readService.contextSummary(contextID: second.context.id).context.order == 2)
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContext(options: .init(contextId: third.context.id, order: 3))
+        }
+    }
+
+    /// The two display preferences both app list editors offer and this surface could not read or
+    /// write. They ride the same field snapshot as the rest of `update_container`, so a refused
+    /// commit puts them back with everything else.
+    @Test func theTwoDisplayFlagsRoundTripAndComeBackOnARefusedCommit() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+        #expect(board.hideDueDateIfEmpty)
+        #expect(board.hideSectionDueDateIfEmpty)
+
+        let cleared = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            hideDueDateIfEmpty: false,
+            hideSectionDueDateIfEmpty: false
+        ))
+        #expect(!cleared.hideDueDateIfEmpty)
+        #expect(!cleared.hideSectionDueDateIfEmpty)
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainer(options: .init(
+                containerKind: "project",
+                containerId: board.container.id,
+                hideDueDateIfEmpty: true,
+                hideSectionDueDateIfEmpty: true
+            ))
+        }
+        let after = try fixture.readService.containerSummary(kind: "project", id: board.container.id)
+        #expect(!after.hideDueDateIfEmpty)
+        #expect(!after.hideSectionDueDateIfEmpty)
+    }
+
+    // MARK: - T-1122: the first constructor outside context/list/task
+
+    /// `CadenceSavedLinkURL.normalized` is *reached*, not re-spelled — T-509's whole point, and the
+    /// reason that file joined `CadenceMCPServer`'s Sources phase. A recognised scheme is kept as
+    /// typed whatever its case; anything else is prefixed rather than replaced.
+    @Test func createLinkNormalisesTheUrlTheWayBothAppEditorsDo() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+        let target = (kind: "project", id: board.container.id)
+
+        let typed = try fixture.writeService.createSavedLink(options: .init(
+            containerKind: target.kind, containerId: target.id,
+            url: "  HTTPS://example.com/cadence  ", title: "  Docs  "
+        ))
+        #expect(typed.url == "HTTPS://example.com/cadence")
+        #expect(typed.title == "Docs")
+        #expect(typed.container?.id == board.container.id)
+
+        let schemeless = try fixture.writeService.createSavedLink(options: .init(
+            containerKind: target.kind, containerId: target.id, url: "example.com/plain"
+        ))
+        #expect(schemeless.url == "https://example.com/plain")
+        // No title: the link displays as its url, which is what `LinksView` and
+        // `iOSListSupportViews` both do.
+        #expect(schemeless.title == "https://example.com/plain")
+        // Max-plus-one among the links already on this list, never `count`.
+        let allocated: [Int] = [typed.order, schemeless.order]
+        #expect(allocated == [0, 1])
+    }
+
+    @Test func createLinkRefusesABlankUrlAndAContainerThatIsNotThere() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createSavedLink(options: .init(
+                containerKind: "project", containerId: board.container.id, url: "   "
+            ))
+        }
+        #expect(throws: CadenceReadError.self) {
+            try fixture.writeService.createSavedLink(options: .init(
+                containerKind: "project",
+                containerId: UUID().uuidString,
+                url: "https://example.com"
+            ))
+        }
+        #expect(try fixture.modelContext.fetchCount(FetchDescriptor<SavedLink>()) == 0)
+    }
+
+    /// The T-1121 discipline, applied to the new arm: a refused insert must not sit pending on the
+    /// long-lived context waiting for the next unrelated call's `save()` to take it.
+    @Test func aRefusedLinkCreateLeavesNoRowForTheNextCallsSave() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.createSavedLink(options: .init(
+                containerKind: "project",
+                containerId: board.container.id,
+                url: "https://example.com/ghost"
+            ))
+        }
+
+        try fixture.modelContext.save()
+        #expect(try fixture.modelContext.fetchCount(FetchDescriptor<SavedLink>()) == 0)
+    }
+
     // MARK: - T-1121: a refused commit leaves nothing pending
 
     /// The failure this whole sweep is about. A refused *insert* used to stay pending on a

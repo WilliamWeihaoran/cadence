@@ -79,3 +79,24 @@ migration. The live copy of this list is written out on `CadencePage.paging`.
 two reasons that are also on the local types: the shared candidates share a file with types reaching
 `CadenceWindDownReconciler`, which this target does not compile; and `CadenceTaskFieldSnapshot`'s
 documented boundary excludes `notes` and `tags`, which `updateTask` writes.
+
+## Why Deletion Is Refused
+
+Displaced from `CadenceMCPServer/AGENTS.md` when T-1182 and T-1122 pushed it past its 200-line cap.
+The claim stays there; the argument is here, and it is also written out on
+`CadenceUpdateContextOptions`. Two measured reasons, either one sufficient:
+
+- **The cascade is not reachable from this target.**
+  `Cadence/Services/CadenceListDeleteHelpers.swift` is not in the explicit Sources phase and cannot
+  cheaply be put there: its task sweep reaches `CadenceTaskMutationSupport.deleteTasks`, which calls
+  `NotificationManager.shared`, which lazily touches `UNUserNotificationCenter.current()` behind a
+  guard that covers an XCTest host and an Xcode Preview host and **not** a bundle-less command-line
+  tool. It is the same boundary that makes `createTask` insert its subtasks by hand.
+- **`deleteContext` reads this device's local relationship arrays** — `context.areas ?? []`,
+  `context.tasks ?? []`, and so on down. A CloudKit record that has not arrived in this replica is
+  in none of them, so a delete arm could not honestly report what it removed: it would answer
+  "deleted" over rows it never saw, which then arrive afterwards with their container gone.
+
+The framing T-1120 expected — no confirmation, no undo, `mcp-audit.log` for a record — is true and
+is *not* the binding constraint: `CadencePendingChangePersistence.commitCascade` is an undo for a
+delete, and the cascades already return `false` for the caller to roll back.

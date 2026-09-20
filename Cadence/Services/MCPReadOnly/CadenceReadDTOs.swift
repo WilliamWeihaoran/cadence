@@ -109,6 +109,27 @@ nonisolated struct CadenceContainerRef: Codable, Sendable {
     let status: String
     let colorHex: String
     let icon: String
+    /// Where this list sits among the lists filed under the same context (T-1182).
+    ///
+    /// **It is here because `update_container` writes it, and a surface that accepts a value it
+    /// never returns is the mistake `CadenceUpdateContainerColumnsOptions` already refuses one
+    /// size down** — columns are addressed by name precisely because their stored uuid is not in
+    /// any response. `order` was in exactly that position from the other side: `CadenceContextRef`
+    /// has carried it since T-382 and this struct never has, so a caller could see where a
+    /// *context* sat and not where a *list* sat, while `CadenceMCPOrdering.precedes` sorted both
+    /// on it.
+    ///
+    /// Areas and projects share one sequence per context, and unfiled lists (`contextId == nil`)
+    /// share a sequence of their own — `nil == nil` is a bucket, not an absence, which is the rule
+    /// `CadenceWriteService.nextListOrder` and `CreateListSheet.nextListOrder` both spell.
+    /// Comparing this number across two different contexts therefore says nothing.
+    ///
+    /// **This is the stored number; `CadenceUpdateContainerOptions.order` is a zero-based
+    /// position**, and the two agree only inside a bucket that arm has already renumbered.
+    /// `createContainer` allocates max-plus-one and nothing closes the gap a delete leaves, so an
+    /// untouched bucket legitimately reads `[0, 2, 5]`. The write arm renumbers the whole
+    /// destination bucket densely, so after one repositioning call this number *is* the position.
+    let order: Int
 }
 
 nonisolated struct CadenceGoalRef: Codable, Sendable {
@@ -292,6 +313,16 @@ nonisolated struct CadenceContainerSummary: Codable, Sendable {
     let activeTaskCount: Int
     let completedTaskCount: Int
     let overdueTaskCount: Int
+    /// Whether this list hides its own due-date affordance while the date is empty, and whether it
+    /// hides each column's (T-1182). Two display preferences `EditListSheet` and
+    /// `iOSListEditorViews` both offer and nothing on this surface could read or write.
+    ///
+    /// They are on the *summary* rather than on `CadenceContainerRef` deliberately: a ref is the
+    /// compact row that rides along on every task, link and note, and two booleans nothing outside
+    /// a list editor reads do not belong on all of them. `update_container` writes them and this
+    /// is the response it answers with, so the pair stays readable exactly where it is writable.
+    let hideDueDateIfEmpty: Bool
+    let hideSectionDueDateIfEmpty: Bool
     let sections: [CadenceSectionSummary]
     let documents: [CadenceDocumentSummary]
     let links: [CadenceSavedLinkSummary]

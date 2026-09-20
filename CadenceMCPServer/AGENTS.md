@@ -30,7 +30,8 @@ compiles a hand-picked subset of app source directly, not a framework. Currently
 `TagSupport`, `NoteReferenceSupport`, `MarkdownMetadataSupport`, `CadenceHabitCompletionStore`,
 `CadenceSearchMatcher`, `Shared/CadenceTaskRecurrenceWorkflowSupport`, `Shared/DateFormatters`,
 `Shared/CadencePendingChangePersistence`, `Shared/CadenceSectionConfigMerge`,
-`Shared/CadenceSectionEditingSupport`, `Shared/CadenceDefaults` — plus this folder's four files.
+`Shared/CadenceSectionEditingSupport`, `Shared/CadenceDefaults`,
+`Shared/CadenceSavedLinkPersistence` — plus this folder's four files.
 **Adding a file to `Models/` does not add it here.** A new type that an existing compiled file
 references is a link error in this target and nothing at all in the app.
 
@@ -54,8 +55,8 @@ compiles in a view is not evidence it compiles here.
   `CADENCE_MCP_ENABLE_WRITES` environment flag and defaults to read-only, but when enabled there is
   no confirmation step: `createContext`, `updateContext`, `createContainer`, `updateContainer`,
   `updateContainerColumns`, `createTask`, `updateTask`, `scheduleTask`, `completeTask`,
-  `reopenTask`, `cancelTask`, `bulkCancelTasks` and `appendCoreNote` — **thirteen arms** — write and
-  save. *No undo stack* is no longer true of any of them (T-1121): every arm goes through
+  `reopenTask`, `cancelTask`, `bulkCancelTasks`, `appendCoreNote` and `createSavedLink` —
+  **fourteen arms** — write and save. *No undo stack* is no longer true of any of them (T-1121): every arm goes through
   `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts what the call added and restores what it
   changed in place before the caller is told. **The one residue is gone too** (T-1181): the core-note
   accessors take a `commit:`, `append_core_note` defers their insert into its own `inserted:` list,
@@ -76,19 +77,19 @@ compiles in a view is not evidence it compiles here.
   contract below, the write gate, that every non-private helper in `CadenceMCPArgumentParsing` has
   a router call site, and that the smoke test still checks its own dispatch coverage. Do not read
   it as behavioural coverage of the router.
-- **The smoke test dispatches all 35 arms and asserts that it does.** It drives a full create →
+- **The smoke test dispatches all 36 arms and asserts that it does.** It drives a full create →
   update → schedule → complete → reopen → cancel lifecycle against the fixture store, asserts the
   resulting DTO key sets, and records every `tools/call` so an unexercised arm fails the run. Its
   error-path checks assert the error *text*: a deleted arm answers "Unknown tool" and a renamed
   argument key answers "Missing required argument", and a bare `isError` check is green for both.
   What it missed before T-259, and why, is in the reference.
-- **The 35 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
-  (the advertised schema), `CadenceMCPToolRouter.swift` (35 `case` arms), and the smoke test's
+- **The 36 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
+  (the advertised schema), `CadenceMCPToolRouter.swift` (36 `case` arms), and the smoke test's
   expectations. Renaming or adding one means all three, and the definitions/router pair will
   compile perfectly while disagreeing. `CadenceTests/CadenceMCPToolContractTests.swift` is the
   guard: it fails when those three sets diverge, and separately when
   `CadenceMCPToolDefinitions.writeToolNames`, the router arms that call `requireWriteService`, and
-  the smoke test's `WRITE_TOOLS` stop naming the same thirteen tools. That second assertion is the
+  the smoke test's `WRITE_TOOLS` stop naming the same fourteen tools. That second assertion is the
   data-safety one — a mutating arm missing from `writeToolNames` is **advertised and executable in
   the default read-only mode**, which is not a typo-class failure.
 
@@ -161,25 +162,28 @@ as `timed out waiting for response 100` rather than naming a build.
   `containerId` the surface could not produce and a `sectionName` it refused unless the column
   already existed, so a kanban board could not be seeded at all. `update_context` and
   `update_container` are the editors for everything that is not a task or a column: name,
-  description, colour, icon, filing, due date, and **status/`isArchived`**.
-  **Nothing creates a goal, habit, tag, saved link, list note or bundle ([[T-1122]]).**
+  description, colour, icon, filing, due date, **status/`isArchived`**, and — since [[T-1182]] — a
+  **position** plus the two `hide*IfEmpty` flags. A position is a zero-based index into the
+  destination bucket, not the stored number, and the arm renumbers that whole bucket densely;
+  re-filing alone still renumbers nothing. `linkedCalendarID` stays refused, on T-390's opacity and
+  the absence of any picker here; the reasoning is on `CadenceUpdateContainerOptions`.
+  **`create_link` is the only constructor outside the context/list/task triangle, and nothing
+  creates a goal, habit, tag, list note or bundle ([[T-1122]]).**
   **Nothing deletes anything, and that is settled, not deferred.** Two measured reasons, either
-  sufficient, both written out on `CadenceUpdateContextOptions`:
-  `Cadence/Services/CadenceListDeleteHelpers.swift` is not in this target's Sources phase and
-  cannot cheaply be — its task sweep reaches `CadenceTaskMutationSupport.deleteTasks`, which calls
-  `NotificationManager.shared`, which lazily touches `UNUserNotificationCenter.current()` under a
-  guard that covers test and Preview hosts and not a bundle-less command-line tool; and
-  `deleteContext` walks this device's **local** relationship arrays (`context.areas ?? []`), so a
-  delete arm could not honestly report what it removed when a CloudKit record has not arrived.
-  Archiving is what is offered instead: reversible from the same tool, destroys nothing, and it is
+  sufficient — the cascade is unreachable from this target, and `deleteContext` walks *local*
+  relationship arrays so it could not honestly report what it removed — written out on
+  `CadenceUpdateContextOptions` and in `../docs/MCP_AGENTS_REFERENCE.md`, "Why deletion is refused".
+  Archiving is offered instead: reversible from the same tool, destroys nothing, and it is
   `update_container_columns`' own argument about column removal one size up.
-- **Three `Cadence/Shared/` files joined the Sources phase for `update_container_columns`, and not
-  for the reason T-1095 predicted** — the merge's `base`/`edited`/`current` is *not* what earns
-  them. What does: `CadenceSectionEditingSupport.applySectionNameChanges` (without it a rename
-  strands every card on a name no column has, and `sectionSummaries` answers the orphan back as a
-  phantom column), `mutateSectionConfigs`' T-915 guard, and `CadencePendingChangePersistence`. Full
-  reasoning in T-1095's ledger entry. Adding a file here is still not casual: it is another path by
-  which an app-side edit breaks a target no scheme builds.
+- **Four `Cadence/Shared/` files have joined the Sources phase, and never for the obvious reason.**
+  Three came with `update_container_columns` and not for the one T-1095 predicted — the merge's
+  `base`/`edited`/`current` is *not* what earns them; `applySectionNameChanges` is (without it a
+  rename strands every card on a name no column has), plus `mutateSectionConfigs`' T-915 guard and
+  `CadencePendingChangePersistence`. The fourth came with `create_link`, and not for the
+  persistence half it is named after — `saveNotifyAndAudit` owns the commit here — but for
+  `CadenceSavedLinkURL.normalized`, T-509's case-insensitive scheme rule, which a third hand-rolled
+  copy would re-break. Full reasoning in T-1095's and T-1122's ledger entries. Adding a file here is
+  still not casual: it is another path by which an app-side edit breaks a target no scheme builds.
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
   renders as `isError`, plus an undo.** The first half it always had; the second it did not.
   `CadenceWriteService` holds one long-lived `ModelContext`, so a refused `save()` left the
