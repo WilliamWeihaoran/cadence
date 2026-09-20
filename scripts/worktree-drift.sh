@@ -278,7 +278,15 @@ read_path_state() {
     #
     # The residue -- an agent on HEAD who deletes EVERY line HEAD introduced -- is byte-identical to
     # R plus edits, which is T-984's construction one level up: no function of the content and the
-    # history separates them, so it goes to `cannot-tell` and is not refused. Safe direction.
+    # history separates them. This comment used to end *"so it goes to `cannot-tell` and is not
+    # refused"*, and that was never true of the code below it: with nothing corroborating, the
+    # residue falls straight through to `behind`, and `agent-commit.sh` refuses it as
+    # REBUILD-BEHIND-HEAD. T-1246 is the bill for the gap -- closing the newest ledger entry has
+    # exactly this shape, and the refusal offered `--commits-stale`, which every brief forbids.
+    # Nothing here changed: the reading has no fact that could separate the two. What changed is one
+    # level up, where the LEDGER has one -- `agent-commit.sh`'s `ledger_rewrites_only_new_entries`
+    # withdraws this reading for a `=` reconstruction that carries a formal, CLOSED entry for every
+    # id HEAD filed since the base and drops no line outside those entries.
     #
     # This narrows the bare-path reading (T-982) as well, and it should: the same false refusal was
     # latent there. It does not weaken it on any measured T-975 instance -- a stale copy is R's

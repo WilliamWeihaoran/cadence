@@ -89,7 +89,36 @@ struct CadenceGuardScriptSelftestTests {
     /// type it. Measured 2026-09-05 in a throwaway repository, and again over this repository's own
     /// history: content built two commits back is caught 13 times out of 13, while the reading
     /// false-refuses none of the last 80 real `docs/TODO.md` commits replayed through it.
+    /// It did false-refuse one shape, and it is the commonest legitimate commit there is (T-1246):
+    /// closing the NEWEST ledger entry rewrites every line HEAD introduced, so what is left
+    /// contains the previous revision whole and reads `stale base` — with `--commits-stale`, the
+    /// flag every brief forbids, as the only escape offered. Reproduced on this repository's own
+    /// history: the real T-1216 closure with its five quoted lines removed reads
+    /// `behind / stale base` against `cea1746`. The two causes are byte-identical, so the
+    /// separation is the ledger's own: an agent that never saw the ticket cannot be carrying its
+    /// entry, and cannot have written its closure.
+    ///
+    /// `MESSAGE-FILE-SHARED` is T-1222, and it is the one refusal here about a file that is not in
+    /// the repository at all. Every agent in a session writes into ONE scratchpad directory, so
+    /// `-F msg.txt` names a file with several writers and no lock: `938cdb7` (rewritten as
+    /// `0fb5504`) carried `ledgerguard`'s whole diff — this script, the runbook, this suite, the
+    /// ledger — under `reorderfeel`'s subject line about T-1174/T-1175, because both had written
+    /// `…/scratchpad/msg.txt` and `-F` read whichever landed last. The repair every brief carried
+    /// afterwards was *"name it `msg-<agent>-<ticket>.txt`"*, which is a rule about remembering;
+    /// the basename must now contain the agent id, so the name that collided names nobody and is
+    /// refused for both of them.
+    ///
+    /// `MESSAGE-FILE-SHARED` is T-1222, and it is the one refusal here about a file that is not in
+    /// the repository at all. Every agent in a session writes into ONE scratchpad directory, so
+    /// `-F msg.txt` names a file with several writers and no lock: `938cdb7` (rewritten as
+    /// `0fb5504`) carried `ledgerguard`'s whole diff — this script, the runbook, this suite, the
+    /// ledger — under `reorderfeel`'s subject line about T-1174/T-1175, because both had written
+    /// `…/scratchpad/msg.txt` and `-F` read whichever landed last. The repair every brief carried
+    /// afterwards was *"name it `msg-<agent>-<ticket>.txt`"*, which is a rule about remembering;
+    /// the basename must now contain the agent id, so the name that collided names nobody and is
+    /// refused for both of them.
     static let commitHelperRefusals = [
+        "MESSAGE-FILE-SHARED",
         "FOREIGN-STAGED",
         "HEAD-MOVED",
         "WORKTREE-BEHIND-HEAD",
@@ -642,6 +671,44 @@ struct CadenceGuardScriptSelftestTests {
                 #expect(body.contains(refusal), "\(script) no longer makes the refusal \(refusal)")
                 #expect(selftest.contains(refusal), "\(script)'s selftest no longer induces \(refusal)")
             }
+        }
+    }
+
+    /// The two readings `scripts/agent-commit.sh` makes that are deliberately NOT refusals, and are
+    /// therefore invisible to the sweep above — a refusal at least leaves its name in a list.
+    ///
+    /// `LEDGER-CLOSURE-LAGGED` is T-1300: `ledger-lag-check.sh` asks in CI whether an id named by a
+    /// commit that landed code is still open, and by then the commit is pushed, the run is red and
+    /// the owner has an email — the noise they have complained about before. Everything that
+    /// reading needs is in the commit path one step earlier. It warns rather than refuses because
+    /// of the replay the ticket demanded first: over 1139 commits, the same rule as a refusal would
+    /// have stopped 191 of the 274 that land code and name a filed id, and 22 of the last 128 —
+    /// four of them with the closure landing in the very next commit, which is this repository's
+    /// own practice. A refusal that fires on ordinary work gets routed around, and then it guards
+    /// nothing; the CI check stays the gate, and this names the ticket before anything is pushed.
+    ///
+    /// `ledger_rewrites_only_new_entries` is T-1246, and it is a refusal being WITHDRAWN rather
+    /// than made: closing the newest ledger entry rewrites every line HEAD introduced, which reads
+    /// as `stale base` and was refused as `REBUILD-BEHIND-HEAD` with `--commits-stale` — the flag
+    /// every brief forbids — as its only escape. The two causes are byte-identical to any function
+    /// of the content and the history, so the separation is the ledger's own: an entry for an id
+    /// that exists nowhere but HEAD, carrying that ticket's closure, cannot have been written by an
+    /// agent that never saw it. Naming the function here means deleting the rule, or the mode that
+    /// induces it, goes red rather than quietly restoring the false refusal.
+    @Test func theCommitHelpersReadingsThatAreNotRefusalsAreStillInducedByItsSelftest() throws {
+        let source = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/agent-commit.sh"),
+            encoding: .utf8
+        )
+        guard let split = source.range(of: "\n# --- selftest") else {
+            Issue.record("scripts/agent-commit.sh has no `# --- selftest` section to read")
+            return
+        }
+        let body = String(source[source.startIndex..<split.lowerBound])
+        let selftest = String(source[split.lowerBound...])
+        for reading in ["LEDGER-CLOSURE-LAGGED", "ledger_rewrites_only_new_entries"] {
+            #expect(body.contains(reading), "scripts/agent-commit.sh no longer makes the reading \(reading)")
+            #expect(selftest.contains(reading), "scripts/agent-commit.sh's selftest no longer induces \(reading)")
         }
     }
 

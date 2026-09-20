@@ -43,6 +43,11 @@
 #   FOREIGN-STAGED       the shared index holds staged changes for a path you did not name
 #   NOTHING-TO-COMMIT    the tree you assembled equals HEAD -- an empty commit, not a commit
 #   NO-COAUTHOR-TRAILER  the message does not end in the required Co-Authored-By line
+#   MESSAGE-FILE-SHARED  a `-F <message-file>` whose basename does not name the agent committing.
+#                        Every agent in a session writes into ONE shared scratchpad, so `msg.txt`
+#                        is a file with several writers and no lock -- and one commit went out
+#                        under a different agent's subject line because of it (T-1222). Name it
+#                        `msg-<id>-<ticket>.txt`, or pass the message inline with `-m`.
 #   DECLINED-HUNK-LOST   a hunk a previous agent declined for this path is in neither HEAD nor the
 #                        content you are staging, so this commit strands it. Clear it deliberately
 #                        with --accept-declined <path> if it was abandoned on purpose.
@@ -169,6 +174,32 @@
 # own message documented. Fixed at all six sites rather than the new one; the five older ones are
 # unchanged in behaviour, since a sorted input sorts to itself. Mode 4g pins a MULTI-id declaration.
 
+# THE MESSAGE FILE IS NAMED FOR ITS AGENT (T-1222)
+#
+# Every agent in a session shares ONE scratchpad directory, so `-F msg.txt` names a file with
+# several writers and no lock. MEASURED: `938cdb7` (rewritten as `0fb5504`) carried `ledgerguard`'s
+# diff -- this script, docs/SUBAGENT_RUNBOOK.md, CadenceGuardScriptSelftestTests.swift,
+# docs/TODO.md -- under `reorderfeel`'s subject line about T-1174/T-1175. Both agents had written
+# `.../scratchpad/msg.txt`; the sibling's write at 11:34:31 replaced the file minutes before `-F`
+# read it, and nothing in the commit path could tell that the bytes had changed underneath. The
+# same directory held `msg2.txt` ... `msg5.txt`, `t1177.txt` and `all.txt` from three different
+# agents, so the generic name is the norm rather than one agent's slip.
+#
+# The repair every brief has carried since is *"name it msg-<agent>-<ticket>.txt"* -- a rule about
+# remembering, which is the shape this script exists to replace with a refusal. So the basename of
+# a `-F` file must contain the id this run was invoked with. `msg.txt` is then refused for BOTH
+# agents rather than silently handed to whichever wrote last, and a file named for you is not a
+# file a sibling was told to write. The commit that motivated this could not have happened: the
+# name that collided names nobody.
+#
+# There is deliberately no flag escape. The cure is `mv`, and `-m` reads no file at all -- an
+# escape here would be a way to keep the shared name, which is the whole defect.
+#
+# It reads the BASENAME and not the whole path. `mktemp -d` puts six random characters in every
+# scratch directory this script's own selftest creates, and a short id matches one of those by
+# chance often enough to make the guard's own proof flaky -- a guard whose evidence is random is
+# the hollow instrument again, one layer further in.
+
 # THE DELIBERATE OVERRIDE LEAVES A TRACE (T-991)
 #
 # `--commits-stale <path>` says "the older content really is what I mean". It used to say it to
@@ -233,6 +264,7 @@ usage() {
     say "              --duplicated-entries <ids>"
     say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
+    say "              the -F file's basename must contain <id> -- the scratchpad is shared (T-1222)"
     say "       ./scripts/agent-commit.sh status         # report outstanding declined hunks"
     say "       ./scripts/agent-commit.sh check          # exit 3 while any is outstanding"
     say "       ./scripts/agent-commit.sh accept <path>  # clear one deliberately"
@@ -407,6 +439,117 @@ message_ids() {  # $1 = message
 }
 is_any_ledger_path() { [[ "${1:t}" == "TODO.md" || "${1:t}" == "TODO_DONE.md" ]] }
 
+# T-1246, and it is the one refusal in this file that fires on the commonest legitimate commit
+# there is: closing the newest ticket.
+#
+# THE SHAPE, MEASURED at `cea1746`. `9566408` added T-1216's 32-line entry to `docs/TODO.md` and
+# changed nothing else, so a closure that REWRITES that entry deletes every line HEAD introduced --
+# and what is left contains `72ccf7e`'s blob whole. `worktree-drift.sh` walks back, finds that
+# revision wholly contained, finds no post-`72ccf7e` line surviving to corroborate a rewrite, and
+# says `behind / stale base`. `REBUILD-BEHIND-HEAD` then offers `--commits-stale`, which every
+# brief in this repository forbids and which would record a claim that is false: the content is not
+# older, it is HEAD with its newest entry rewritten.
+#
+# AND THE TWO CAUSES ARE BYTE-IDENTICAL. `read_path_state`'s own header says so -- "an agent on
+# HEAD who deletes EVERY line HEAD introduced is byte-identical to R plus edits" -- and then falls
+# through to `behind` anyway, which is the whole bug. No function of the content and the history
+# separates them, so separating them needs a fact neither of those carries.
+#
+# THE LEDGER HAS ONE: THE ID. An agent that really was working from the older revision never saw
+# the entry HEAD's newest commit filed, so it cannot be carrying that id -- and if it drops it,
+# `LEDGER-IDS-LOST` already refuses the commit by name. An agent rewriting that entry carries the
+# id by construction. So for a `<path>=<content-file>` reconstruction of a LEDGER, the `behind`
+# reading is withdrawn when BOTH hold:
+#
+#   1. every id HEAD has and the base revision does not has a formal entry in the content -- the
+#      content demonstrably knows about entries that exist nowhere but HEAD; and
+#   2. every line HEAD has that the content drops belongs to one of exactly those entries, and to
+#      no other entry -- so the rewrite reverts nothing outside the entries it is rewriting; and
+#   3. every such entry the content actually REWRITES carries that ticket's closure on its own
+#      first line. An agent that never saw the ticket cannot write its closure.
+#
+# The second half is what keeps this from being a hole. A reconstruction built on a genuinely older
+# revision is missing lines from entries that were edited in between as well, and those lines are
+# owned by ids that are not new -- so it still reads `behind` and is still refused. The third keeps
+# the one shape that would otherwise slip through with the id intact: two agents both drawing this
+# number as "next free" (T-1072), the second overwriting the first's just-filed entry with its own
+# OPEN one. Both halves were induced against a throwaway repository before this shipped, and both
+# are still refused; selftest mode 4b5 is the same pair.
+#
+# What is still refused and is not a defect: a closure that MOVES the newest entry to the archive
+# rather than closing it in place. The content then carries no entry for the id at all, half one
+# fails, and `LEDGER-IDS-LOST` has something to say about it anyway. 158 of the 193 entries in
+# `## Open` close in place, so this is the rare shape, not the daily one.
+#
+# Withdrawal is a NOTE, never silence: the count still has to be declared, and the note says which
+# entries the licence was granted for.
+#
+# Lines of a ledger that belong to one of $2's entries and to no other -- `worktree-drift.sh`'s own
+# "significant line" reading, so the two files agree about what a line is. Keyed on the whole line
+# including its indentation, exactly as `significant()` compares them.
+ledger_lines_only_in_entries() {  # $1 = ledger file, $2 = file of ids, one per line
+    awk -v idfile="$2" '
+        BEGIN { while ((getline l < idfile) > 0) if (l != "") want[l] = 1 }
+        {
+            if ($0 ~ /^- \[T-[0-9]+\]/) { cur = $0; sub(/^- \[/, "", cur); sub(/\].*$/, "", cur) }
+            else if ($0 ~ /^[^ \t]/) { cur = "" }
+            t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t)
+            if (length(t) < 4 || t ~ /^[][(){}.,;:+*&|<>=!?-]+$/) next
+            if (!($0 in owner)) owner[$0] = cur
+            else if (owner[$0] != cur) owner[$0] = "\001shared"
+        }
+        END { for (l in owner) if (owner[l] != "\001shared" && (owner[l] in want)) print l }
+    ' "$1" | sort -u
+}
+
+# The same reading `worktree-drift.sh` does its comparisons in. Duplicated rather than shared for
+# the reason that file gives for duplicating the git probe: a guard that needs another file loaded
+# before it can answer is a guard with a new way to stop answering.
+significant_lines() {  # $1 = file
+    awk '{ t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t)
+           if (length(t) >= 4 && t !~ /^[][(){}.,;:+*&|<>=!?-]+$/) print }' "$1" | sort -u
+}
+
+# Exit 0 when the content is a rewrite of entries that exist only in HEAD, i.e. when both halves
+# above hold. Prints the ids it is granting the licence for.
+ledger_rewrites_only_new_entries() {  # $1 = head blob, $2 = base blob, $3 = content, $4 = scratch
+    local sc=$4
+    ledger_ids "$1" > "$sc/rw.head.ids"
+    ledger_ids "$2" > "$sc/rw.base.ids"
+    ledger_ids "$3" > "$sc/rw.content.ids"
+    comm -23 "$sc/rw.head.ids" "$sc/rw.base.ids" > "$sc/rw.new.ids"
+    [[ -s "$sc/rw.new.ids" ]] || return 1                       # HEAD filed nothing new: not this shape
+    [[ -z "$(comm -23 "$sc/rw.new.ids" "$sc/rw.content.ids")" ]] || return 1
+    significant_lines "$1" > "$sc/rw.head.lines"
+    significant_lines "$3" > "$sc/rw.content.lines"
+    comm -23 "$sc/rw.head.lines" "$sc/rw.content.lines" > "$sc/rw.missing"
+    [[ -s "$sc/rw.missing" ]] || return 1
+    ledger_lines_only_in_entries "$1" "$sc/rw.new.ids" > "$sc/rw.forgivable"
+    [[ -z "$(comm -23 "$sc/rw.missing" "$sc/rw.forgivable")" ]] || return 1
+    # AND THE ENTRY THAT REPLACES IT IS THAT TICKET'S CLOSURE. Without this the licence also covers
+    # the one shape that is a genuine revert with the id intact: two agents both drew this id as
+    # "next free" (T-1072's concurrent shape), so the sibling's just-filed entry is overwritten by
+    # the other agent's own entry for the same number. A closure cannot be written by an agent that
+    # never saw the ticket, and rewriting an entry you are NOT closing is the case that keeps a line
+    # -- which withdraws the reading one step earlier, in `read_path_state`, with no ledger reading
+    # at all. Only ids whose lines this content actually DROPS have to be closed: HEAD's newest
+    # commit may have filed a residue ticket alongside, and leaving that one alone is not a rewrite.
+    ledger_closed_ids "$3" > "$sc/rw.content.closed"
+    local rwid
+    : > "$sc/rw.rewritten.ids"
+    for rwid in ${(f)"$(<"$sc/rw.new.ids")"}; do
+        [[ -n "$rwid" ]] || continue
+        print -r -- "$rwid" > "$sc/rw.one.id"
+        ledger_lines_only_in_entries "$1" "$sc/rw.one.id" > "$sc/rw.one.lines"
+        [[ -n "$(comm -12 "$sc/rw.missing" "$sc/rw.one.lines")" ]] || continue
+        print -r -- "$rwid" >> "$sc/rw.rewritten.ids"
+        grep -qx -- "$rwid" "$sc/rw.content.closed" || return 1
+    done
+    [[ -s "$sc/rw.rewritten.ids" ]] || return 1
+    print -r -- "${(j:, :)${(f)"$(<"$sc/rw.rewritten.ids")"}}"
+    return 0
+}
+
 # T-1206, and it is the half the header above spent a paragraph claiming and did not implement. The
 # sentence is *"an id that exists only in a commit message, OR ONLY IN ANOTHER ENTRY'S PROSE, is
 # invisible to the next agent computing 'next free'"*, and only the first clause was read. Both
@@ -441,6 +584,64 @@ is_any_ledger_path() { [[ "${1:t}" == "TODO.md" || "${1:t}" == "TODO_DONE.md" ]]
 # The 35 older refusals are all pre-T-462 and unreachable now: they are in HEAD's standing set.
 ledger_link_ids() {  # $1 = file; the `[[T-n]]` references in its prose
     grep -oE '\[\[T-[0-9]+\]\]' -- "$1" 2>/dev/null | tr -d '[]' | sort -u
+}
+
+# T-1300, and it is `LEDGER-ID-UNFILED` read in the other direction. That guard makes an id named
+# by a commit message impossible to leave UNFILED; nothing asked whether an id named by a commit
+# that LANDS CODE is still open when the commit is finished. `scripts/ledger-lag-check.sh` (T-1298)
+# asks exactly that in CI, and by then the commit is pushed and the run is red -- which is an email
+# to the repository owner, who has complained about that noise before. Everything the CI reading
+# needs is already here, one step earlier: the message, the staged paths, and both ledgers as this
+# commit leaves them.
+#
+# IT IS A NOTE AND NOT A REFUSAL, AND THAT IS THE MEASUREMENT TALKING. Replayed over every commit
+# reachable from HEAD on 2026-09-19 (1139 commits; 752 land code; 281 of those name a ticket id in
+# their subject; 274 name one the ledger has filed), the per-commit rule -- *a commit that lands
+# code and names filed ids must leave at least one of them closed* -- would have REFUSED 191 of
+# those 274, and 22 of the last 128 commits. Narrowed to commits that also stage a ledger it is 14
+# of 86 candidates over the last 400. Of the 16 it names across all of history, FOUR had the
+# closure land in the very next commit -- `2a6bf7b`, `8e1ace1`, `e337f0d`, `dcb0a15` -- which is
+# this repository's live practice: land the code, then write the closure. Refusing those is
+# refusing ordinary work, at roughly 1 in 21 candidate commits against the 1-in-60 that
+# `LEDGER-ID-UNFILED` shipped on, and a refusal that fires wrongly on ordinary work gets routed
+# around, after which it guards nothing. So it warns, by the CI refusal's own name, and the CI
+# check stays the gate. The agent who can still fix it cheaply is the one holding the file.
+#
+# (`dcb0a15` is worth its own line: it DID close T-1043 in that commit. It reads as open because
+# T-1043 had two formal entries at the time -- the T-1072 double allocation -- and any open entry
+# for an id makes it open. `ledger-lag-check.sh` shares that reading and would have flagged it too;
+# filed as [[T-1302]]. This note uses `ledger_closed_ids`, which sees the closed one, so a
+# duplicated id does not produce a note here.)
+#
+# The ids come from the SUBJECT, not the whole message, and both range spellings are expanded --
+# the same reading, and the same scope limit, `ledger-lag-check.sh` documents: over the last 128
+# commits only 6 land code without naming an id in the subject, and none of those six has a ticket
+# to close.
+subject_ids() {  # $1 = message; the ids its FIRST LINE names, `T-996..T-999` ranges expanded
+    print -r -- "$1" | head -1 | awk '
+        {
+            rest = $0; prev = -1
+            while (match(rest, /T-[0-9]+/)) {
+                tok = substr(rest, RSTART, RLENGTH); sep = substr(rest, 1, RSTART - 1)
+                b = substr(tok, 3) + 0
+                if (prev >= 0 && sep ~ /^ *\.\.+ *$/ && b > prev && b - prev <= 64)
+                    for (i = prev + 1; i < b; i++) print "T-" i
+                print tok; prev = b
+                rest = substr(rest, RSTART + RLENGTH)
+            }
+        }' | sort -u
+}
+
+# Not-open, which is three things and not just the closure marker: `ledger_closed_ids`' reading on
+# the entry's own first line, an entry under `## Done` or `## Cancelled` (112-plus of those carry
+# no marker at all), and any entry in the archive, which is where closed work goes. `## In progress`
+# counts as open, the stricter of the two readings, exactly as the CI check has it.
+ledger_not_open_ids() {  # $1 = file, $2 = its basename
+    if [[ "$2" == "TODO_DONE.md" ]]; then ledger_ids "$1"; return 0; fi
+    { ledger_closed_ids "$1"
+      awk '/^## /{ sec = $0 }
+           /^- \[T-[0-9]+\]/ { if (sec ~ /^## (Done|Cancelled)/) { id = $0; sub(/^- \[/, "", id); sub(/\].*$/, "", id); print id } }' "$1"
+    } | sort -u
 }
 
 # Inserting a trailer immediately ABOVE the last non-blank line of the message, which has to stay
@@ -671,6 +872,17 @@ cmd_commit() {
             -m) [[ $# -ge 2 ]] || refuse BAD-OPTION "-m needs a message"; message="$2"; have_message=1; shift 2 ;;
             -F) [[ $# -ge 2 ]] || refuse BAD-OPTION "-F needs a file"
                 [[ -f "$2" ]] || refuse BAD-OPTION "no such message file: $2"
+                # T-1222. The scratchpad is shared by every agent in the session, so a message file
+                # whose name does not say whose it is has several writers -- and `938cdb7` went out
+                # under a sibling's subject line for exactly that reason. Basename only; see the
+                # header for why the whole path is the wrong thing to read.
+                [[ "${2:t}" == *"$id"* ]] || refuse MESSAGE-FILE-SHARED "the message file ${2:t} does not name you ($id).
+  Every agent in this session writes into the same scratchpad directory, so a generic name is one
+  file with several writers: 938cdb7 carried one agent's whole diff under another agent's subject
+  line, because both had written msg.txt and -F read whichever landed last (T-1222).
+  Rename it so the name says whose it is -- msg-$id-<ticket>.txt -- and pass that:
+      mv ${2} ${2:h}/msg-$id-<ticket>.txt
+  Or pass the message inline with -m, which reads no file at all."
                 message="$(<"$2")"; have_message=1; shift 2 ;;
             --accept-declined) [[ $# -ge 2 ]] || refuse BAD-OPTION "--accept-declined needs a path"
                 accepted+=("$2"); shift 2 ;;
@@ -803,6 +1015,11 @@ cmd_commit() {
     # second bare `local subject` in the same scope makes zsh PRINT the parameter rather than
     # redeclare it -- `subject='worktree-drift.sh base-content ...'` on stdout, mid-commit.
     local reading drc drift_call kind
+    # Hoisted out of the loop below, like `drift_call`: a bare `local x` whose parameter is already
+    # local PRINTS it rather than redeclaring it (T-1074), and two ledger paths in one commit --
+    # docs/TODO.md and docs/TODO_DONE.md together, which is what archiving looks like -- reaches
+    # these twice.
+    local rewrite_scratch="" rewrite_base="" rewrite_ids=""
     for name in "${names[@]}"; do
         git cat-file -e "$headsha:$name" 2>/dev/null || continue   # not in HEAD: nothing to be behind
         src="${source_of[$name]}"
@@ -816,8 +1033,9 @@ cmd_commit() {
         fi
         # 0 and 3 are readings. Anything else is the check failing to run, and a guard that reads
         # a crash as "fine" is the hollow instrument this whole file exists to avoid.
-        (( drc == 0 || drc == 3 )) || refuse DRIFT-CHECK-FAILED "\`$drift_call\` exited $drc and said: ${reading:-(nothing)}
-  Nothing was committed, because the question of whether $name is behind HEAD went unanswered."
+        (( drc == 0 || drc == 3 )) || { [[ -n "$rewrite_scratch" ]] && rm -rf "$rewrite_scratch"
+            refuse DRIFT-CHECK-FAILED "\`$drift_call\` exited $drc and said: ${reading:-(nothing)}
+  Nothing was committed, because the question of whether $name is behind HEAD went unanswered." }
         [[ "$(print -r -- "$reading" | cut -f1)" == behind ]] || continue
         kind=$(print -r -- "$reading" | cut -f2)
         # WHICH KIND THE `=` FORM IS REFUSED FOR, AND WHY ONLY ONE (T-992).
@@ -839,12 +1057,31 @@ cmd_commit() {
             say "      Not refused: nothing of yours is on top of it, so this reads as a deliberate revert."
             continue
         fi
+        # T-1246. The `stale base` reading over a LEDGER cannot tell a reconstruction built on an
+        # older revision from a rewrite of the entry HEAD's newest commit filed -- the two are
+        # byte-identical, which `read_path_state`'s own header says and then does not act on. The id
+        # is the fact neither the content nor the history carries: see ledger_rewrites_only_new_entries.
+        if [[ -n "$src" ]] && is_any_ledger_path "$name"; then
+            [[ -n "$rewrite_scratch" ]] || rewrite_scratch=$(mktemp -d "${TMP_BASE}cadence-rewrite-${id}-XXXXXX")
+            rewrite_base=$(print -r -- "$reading" | cut -f3)
+            git cat-file -p "$headsha:$name" > "$rewrite_scratch/head.blob" 2>/dev/null
+            git cat-file -p "$rewrite_base:$name" > "$rewrite_scratch/base.blob" 2>/dev/null
+            if rewrite_ids=$(ledger_rewrites_only_new_entries \
+                    "$rewrite_scratch/head.blob" "$rewrite_scratch/base.blob" "$src" "$rewrite_scratch"); then
+                say "note: $name=$src reads [stale base] against ${rewrite_base[1,8]} and is NOT refused (T-1246):"
+                say "      it carries a formal entry for $rewrite_ids, which exist nowhere but ${headsha[1,8]}, and every"
+                say "      line of ${headsha[1,8]} it drops belongs to those entries alone. That is a rewrite of the"
+                say "      newest entry, not a reconstruction built before it. The count is still yours to declare."
+                continue
+            fi
+        fi
         stale_found+=("$name")
         stale_report+=("$name  [$kind]  $(print -r -- "$reading" | cut -f4)")
         # The base sha, for T-991's trailer. Field 3 of the machine-readable reading.
         stale_audit+=("$name built-on $(print -r -- "$reading" | cut -f3)")
         [[ -n "$src" ]] && stale_recon+=("$name")
     done
+    [[ -n "$rewrite_scratch" ]] && rm -rf "$rewrite_scratch"
     if (( ${#stale_found} )); then
         local -a undeclared undeclared_recon
         undeclared=(); undeclared_recon=()
@@ -870,6 +1107,13 @@ $(print -rl -- "${stale_report[@]}" | sed 's/^/    /')
   HEAD is missing lines HEAD has by construction, so REMOVES-HEAD-LINES fires on this shape too,
   names a number, and invites you to type it. The number is the symptom.
   Rebuild the content file on \`git show ${headsha[1,8]}:<path>\` plus only your own edits.
+  IF YOU ARE REWRITING THE NEWEST LINES rather than committing older ones -- closing the ticket
+  whose entry HEAD's last commit added is the common case -- then the content is not older, and
+  --commits-stale would record a claim that is false. Keep ONE line of what you are rewriting and
+  this reading withdraws itself: a line ${headsha[1,8]} has that the revision above does not is
+  proof the content was built on HEAD. A closure normally quotes the finding it closes anyway.
+  On a ledger it withdraws itself further (T-1246): a rewrite that keeps a formal entry for every
+  id HEAD filed since, and drops no line outside those entries, is not refused at all.
   If the older content really is what you mean to commit: --commits-stale <path>"
         fi
         if (( ${#undeclared} )); then
@@ -1367,8 +1611,9 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     local -a unfiled_ids
     unfiled_ids=()
     local filed_ids="$scratch/filed.ids" ledger_text="$scratch/ledger.text" link_ids="$scratch/link.ids"
+    local notopen_ids="$scratch/notopen.ids"
     local lpath lblob lcontent
-    : > "$filed_ids"; : > "$ledger_text"; : > "$link_ids"
+    : > "$filed_ids"; : > "$ledger_text"; : > "$link_ids"; : > "$notopen_ids"
     for lpath in ${(f)"$(git ls-tree -r --name-only "$headsha" 2>/dev/null | grep -E '(^|/)TODO(_DONE)?\.md$')"} "${names[@]}"; do
         [[ -n "$lpath" ]] || continue
         is_any_ledger_path "$lpath" || continue
@@ -1385,6 +1630,7 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         # ids its prose LINKS to (3a4b), and whether an id is named in it at all (3a4c).
         ledger_ids "$lcontent" >> "$filed_ids"
         ledger_link_ids "$lcontent" >> "$link_ids"
+        ledger_not_open_ids "$lcontent" "${lpath:t}" >> "$notopen_ids"   # T-1300
         cat -- "$lcontent" >> "$ledger_text"
     done
     # Only ask the question at all where there is a ledger to ask it of. A checkout with neither
@@ -1558,6 +1804,37 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   Renumber YOUR entry to an id that is free in $duplicate_in as this commit leaves it, and fix the
   references in your own hunk. If this really is one ticket written twice on purpose, say so:
   --duplicate-ids $duplicate_sorted"
+        fi
+    fi
+
+    # 3a6. T-1300, and it is `LEDGER-ID-UNFILED` asked in the other direction: that guard refuses a
+    #      message that names an id the ledger does not have, and nothing asked whether an id named
+    #      by a commit that LANDS CODE is still open when the commit is finished. `ledger-lag-check.sh`
+    #      asks it in CI (T-1298), where the answer arrives after the push, as a red run and an email.
+    #      The rule, the id reading and the "lands code" predicate are all borrowed from that script
+    #      rather than invented here; `subject_ids()` above carries the replay that decided this is a
+    #      NOTE and not a refusal -- 191 of 274 historical commits, 22 of the last 128, and four
+    #      whose closure landed in the very next commit.
+    local -a lagging_ids
+    lagging_ids=()
+    local lands_code=0 cname lagid closed_any=0
+    for cname in "${names[@]}"; do
+        [[ "$cname" == docs/* ]] && continue
+        [[ "${cname:t}" == "AGENTS.md" ]] && continue
+        [[ "$cname" == "CLAUDE.md" || "$cname" == "README.md" ]] && continue
+        lands_code=1; break
+    done
+    if (( lands_code )) && [[ -s "$filed_ids" ]]; then
+        for lagid in ${(f)"$(subject_ids "$message")"}; do
+            [[ -n "$lagid" ]] || continue
+            grep -qx -- "$lagid" "$filed_ids" || continue       # unfiled: out of reach, as in CI
+            if grep -qx -- "$lagid" "$notopen_ids"; then closed_any=1; else lagging_ids+=("$lagid"); fi
+        done
+        if (( ${#lagging_ids} )) && (( closed_any == 0 )); then
+            say "note: LEDGER-CLOSURE-LAGGED (a warning, not a refusal) -- this commit lands code, its subject names ${(j:, :)lagging_ids}, and every one of them is still OPEN in the ledger as this commit leaves it."
+            say "      \`scripts/ledger-lag-check.sh\` refuses exactly this in CI, on every push, and that refusal arrives as a red run and an email rather than as this line."
+            say "      Write the closure on the entry's own first line -- \`- [$lagging_ids[1]] **CLOSED <date> (<sha>) -- ...**\` -- in this commit, or in the ledger commit that follows it BEFORE anything is pushed."
+            say "      If the ticket is legitimately still open, nothing here is wrong and nothing needs doing: this is a note, and the id it names is the one to check."
         fi
     fi
 
@@ -2050,6 +2327,83 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "an ordinary commit carries no Commits-Stale trailer" \
         $( [[ $rc == 0 && "$( cd "$ws" && git log -1 --format=%B )" != *Commits-Stale* ]] && print 1 || print 0 ) "exit $rc: $out"
     ( cd "$ws" && git reset -q ) >/dev/null 2>&1
+
+    say ""
+    say " mode 4b5 (T-1246) -- closing the NEWEST ledger entry must not read as a stale rebuild"
+    # The refusal above fires on the commonest legitimate commit there is. MEASURED at `cea1746`:
+    # `9566408` filed T-1216's 32-line entry and changed nothing else, so a closure that REWRITES
+    # that entry deletes every line HEAD introduced and what is left contains the previous revision
+    # whole -- `behind / stale base`, and a hint offering `--commits-stale`, which every brief
+    # forbids and which would record a claim that is false. The id is the fact that separates the
+    # two byte-identical causes: an agent that never saw the ticket cannot be carrying its entry,
+    # and cannot have written its closure -- which is `ledger_rewrites_only_new_entries` in the body.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && mkdir -p t1246
+      print -rl -- "# Ledger" "" "## Open" "" \
+          "- [T-2461] **The first finding, which is long enough to be significant.**" \
+          "  Body text of the first entry, long enough to be read as a line." \
+          "- [T-2462] **The second finding, which is also long enough to matter.**" \
+          "  Body text of the second entry, long enough to be read as a line." > t1246/TODO.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" n0 -m "$M" t1246/TODO.md 2>&1 ); rc=$?
+    check "the fixture ledger commits" $(( rc == 0 )) "exit $rc: $out"
+    # The newest commit files ONE entry and changes nothing else -- T-1246's measured shape, and the
+    # only shape in which the reading can go wrong at all: a commit that also touched another entry
+    # leaves a surviving post-base line, and `read_path_state`'s corroboration withdraws it there.
+    ( cd "$ws" && git show HEAD:t1246/TODO.md > newest.md
+      print -rl -- "- [T-2463] **The newest finding, filed by the commit that is now HEAD.**" \
+                   "  A first body line of the newest entry that nothing else has." \
+                   "  A second body line of the newest entry that nothing else has." >> newest.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" n1 -m "$M" t1246/TODO.md=newest.md 2>&1 ); rc=$?
+    check "the newest entry is filed by a commit that changes nothing else" $(( rc == 0 )) "exit $rc: $out"
+    # (a) the legitimate closure: every line the filing commit wrote is replaced.
+    ( cd "$ws" && git show HEAD:t1246/TODO.md | sed '/^- \[T-2463\]/,$d' > close.md
+      print -rl -- "- [T-2463] **CLOSED 2026-09-19 (\`deadbeef\`) -- the newest finding, closed by rewriting its entry.**" \
+                   "  The closure text, which replaces every line the filing commit wrote." >> close.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" n2 -m "$M" t1246/TODO.md=close.md 2>&1 ); rc=$?
+    check "a closure that rewrites the newest entry is NOT refused as a stale rebuild" \
+        $( [[ "$out" != *REBUILD-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the forbidden flag is not what gets it through" \
+        $( [[ "$out" != *"--commits-stale"* ]] && print 1 || print 0 ) "$out"
+    check "it reaches the removed-line count instead, which is the number it should declare" \
+        $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the note names the entry the licence was granted for" \
+        $( [[ "$out" == *"T-1246"* && "$out" == *"T-2463"* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" n3 -m "$M" --removes 3 t1246/TODO.md=close.md 2>&1 ); rc=$?
+    check "declaring the count commits it, with no --commits-stale anywhere" $(( rc == 0 )) "exit $rc: $out"
+    check "and HEAD carries the closure" \
+        $( [[ $( cd "$ws" && git show HEAD:t1246/TODO.md ) == *"CLOSED 2026-09-19"* ]] && print 1 || print 0 )
+    # (b) THE CONTROL THAT MAKES THE LICENCE NARROW. The same bytes, the same id, and the entry that
+    # replaces it is OPEN -- which is what two agents both drawing this number as "next free" leaves
+    # behind (T-1072). A closure cannot be written by an agent that never saw the ticket; an open
+    # entry can. Still refused.
+    ( cd "$ws" && git show HEAD:t1246/TODO.md | sed '/^- \[T-2463\]/,$d' > reopen.md
+      print -rl -- "- [T-2463] **A different ticket this agent allocated as T-2463, still open.**" \
+                   "  Body text this agent wrote, which HEAD's own entry does not contain." >> reopen.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" n4 -m "$M" t1246/TODO.md=reopen.md 2>&1 ); rc=$?
+    check "the same rewrite that does NOT close the entry is still refused" \
+        $( [[ $rc == 3 && "$out" == *REBUILD-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # (c) and the shape the refusal exists for, unchanged: a reconstruction built on the older
+    # revision, missing a line HEAD added to an entry it is not rewriting.
+    ( cd "$ws" && mkdir -p t1246b
+      print -rl -- "# Ledger" "" "## Open" "" \
+          "- [T-2471] **A first finding, which is long enough to be significant.**" \
+          "  Body text of that first entry, long enough to be read as a line." > t1246b/TODO.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" n5 -m "$M" t1246b/TODO.md 2>&1 )
+    ( cd "$ws" && git show HEAD:t1246b/TODO.md > b-base.md
+      git show HEAD:t1246b/TODO.md > b-newest.md
+      print -rl -- "  A sibling's landed line inside that first entry, added by the newest commit." \
+                   "- [T-2473] **The newest finding, filed by the commit that is now HEAD.**" \
+                   "  A first body line of the newest entry that nothing else has." >> b-newest.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" n6 -m "$M" t1246b/TODO.md=b-newest.md 2>&1 ); rc=$?
+    check "the two-edit fixture lands" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && cp b-base.md b-stale.md
+      print -rl -- "- [T-2473] **The id this agent drew as next free, from the older revision.**" \
+                   "  Body text written without ever seeing what the newest commit landed." >> b-stale.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" n7 -m "$M" t1246b/TODO.md=b-stale.md 2>&1 ); rc=$?
+    check "a rebuild on the older revision is still refused, id or no id" \
+        $( [[ $rc == 3 && "$out" == *REBUILD-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "nothing of the sibling's line left HEAD" \
+        $( [[ $( cd "$ws" && git show HEAD:t1246b/TODO.md ) == *"sibling's landed line"* ]] && print 1 || print 0 )
 
     say ""
     say " mode 4c (LEDGER-IDS-LOST) -- a ledger entry HEAD has cannot vanish inside a line count"
@@ -2712,6 +3066,71 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "and the agent is told to read HEAD rather than the file on disk" \
         $( [[ "$out" == *"git show HEAD:<path> > <path>"* ]] && print 1 || print 0 ) "$out"
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    say ""
+    say " mode 4k (MESSAGE-FILE-SHARED) -- T-1222: a -F message file must name the agent using it"
+    # Every agent in a session writes into ONE scratchpad directory, so `msg.txt` is a file with
+    # several writers and no lock: `938cdb7` (rewritten as `0fb5504`) carried one agent's whole diff
+    # -- this script, the runbook, this suite, the ledger -- under a sibling's subject line, because
+    # both had written msg.txt and `-F` read whichever landed last.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && print -r -- "a line for the message-file mode" >> mine.txt
+      print -r -- "$M" > msg.txt
+      print -r -- "$M" > msg-k2-T-1222.txt
+      print -r -- "$M" > msg-k1-T-1222.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" k1 -F msg.txt mine.txt 2>&1 ); rc=$?
+    check "a generic message file is refused" \
+        $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the refusal spells the name it should have had" \
+        $( [[ "$out" == *"msg-k1-"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git show HEAD:mine.txt ) != *"message-file mode"* ]] && print 1 || print 0 )
+    # The measured incident exactly: a file named for the OTHER agent. A name that says whose it is
+    # cannot be read by the wrong agent even when the bytes are perfectly good.
+    out=$( cd "$ws" && zsh "$here" k1 -F msg-k2-T-1222.txt mine.txt 2>&1 ); rc=$?
+    check "a file named for a SIBLING is refused too, which is the incident that happened" \
+        $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" k1 -F msg-k1-T-1222.txt mine.txt 2>&1 ); rc=$?
+    check "a file named for this agent commits" $(( rc == 0 )) "exit $rc: $out"
+    check "and the message that landed is the one in that file" \
+        $( [[ $( cd "$ws" && git log -1 --format=%s ) == "msg" ]] && print 1 || print 0 ) "$( cd "$ws" && git log -1 --format=%s )"
+    check "-m is untouched by any of this" \
+        $( [[ "$( cd "$ws" && print -r -- "x" >> mine.txt; zsh "$here" k1 -m "$M" mine.txt 2>&1 )" == *committed* ]] && print 1 || print 0 )
+
+    say ""
+    say " mode 4l (LEDGER-CLOSURE-LAGGED) -- T-1300: landing code under an id the ledger still calls open"
+    # The warning `scripts/ledger-lag-check.sh` makes in CI, made here instead -- before the push,
+    # the red run and the email. A NOTE and not a refusal, and the replay is why: the same rule as a
+    # refusal would have stopped 191 of 274 historical commits and 22 of the last 128, four of which
+    # had their closure land in the very next commit. See subject_ids() in the body.
+    ( cd "$ws" && mkdir -p docs
+      print -rl -- "# Ledger" "" "## Open" "" \
+          "- [T-3001] **An open finding, filed and not closed anywhere yet.**" \
+          "- [T-3002] **CLOSED 2026-09-19 (\`abc1234\`) -- a finding that is already closed.**" > docs/TODO.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" l0 -m "$M" docs/TODO.md 2>&1 ); rc=$?
+    check "the lag fixture ledger commits" $(( rc == 0 )) "exit $rc: $out"
+    local LAGOPEN=$'T-3001: land the code for it\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    local LAGSHUT=$'T-3002: land more code under the closed one\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    local LAGDOCS=$'T-3001: a docs-only commit that names it\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    ( cd "$ws" && print -r -- "code landing under an open ticket" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" l1 -m "$LAGOPEN" mine.txt 2>&1 ); rc=$?
+    check "a commit that lands code under an open id says so" \
+        $( [[ $rc == 0 && "$out" == *LEDGER-CLOSURE-LAGGED* && "$out" == *T-3001* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it is a note, not a refusal -- the commit landed" \
+        $( [[ $( cd "$ws" && git log -1 --format=%s ) == "T-3001: land the code for it" ]] && print 1 || print 0 )
+    check "it names the CI check that would otherwise say it, in a red run" \
+        $( [[ "$out" == *"ledger-lag-check.sh"* ]] && print 1 || print 0 ) "$out"
+    ( cd "$ws" && print -r -- "code landing under a closed ticket" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" l2 -m "$LAGSHUT" mine.txt 2>&1 ); rc=$?
+    check "naming an id the ledger has closed says nothing" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LAGGED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The other exemption, and it is `ci.yml`'s own paths-ignore: a ledger-only or guide-only commit
+    # lands no code, so a ticket it names has nothing to be lagging behind.
+    ( cd "$ws" && git show HEAD:docs/TODO.md > docs-only.md
+      print -r -- "- [T-3003] **A finding filed by a commit that lands no code at all.**" >> docs-only.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" l3 -m "$LAGDOCS" docs/TODO.md=docs-only.md 2>&1 ); rc=$?
+    check "a docs-only commit naming an open id says nothing" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LAGGED* ]] && print 1 || print 0 ) "exit $rc: $out"
+
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"
     say "         -- the shapes that commit nothing must not read as a commit"

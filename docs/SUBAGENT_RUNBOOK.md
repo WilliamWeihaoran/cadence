@@ -514,7 +514,9 @@ Which path form to use:
   anyone edited can be lost, and says it did. When it is not — somebody's hunks are in it — it names
   the path on stderr and leaves it alone: **read `git show HEAD:<path>`, not the file on disk**, and
   re-sync with `git show HEAD:<path> > <path>` once those hunks are accounted for.
-- **Name your `-F` message file after yourself, never `msg.txt`** (T-1222). The session scratchpad is
+- **Name your `-F` message file after yourself, never `msg.txt`** — `agent-commit.sh` now refuses
+  a `-F` file whose basename does not contain your `<id>` (`MESSAGE-FILE-SHARED`, T-1222); the cure
+  is `mv`, and `-m` reads no file at all. The session scratchpad is
   ONE directory shared by every agent in the session, and `-F` reads the file at commit time: a
   sibling writing its own `msg.txt` there replaces yours with nothing to say the bytes changed under
   you. Measured 2026-09-13 — `938cdb7` (rewritten as `0fb5504`) carried one agent's diff under another's subject line,
