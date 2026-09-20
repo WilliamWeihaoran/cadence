@@ -32,6 +32,24 @@ struct CreateGoalSheet: View {
     /// footer beside the button that appeared to work.
     @State private var saveError: String?
 
+    /// The goal this sheet created and is **still holding**, because the list the composer seeded
+    /// could not be attached to it ([[T-1302]]).
+    ///
+    /// **This is what stops a second press of the button making a second goal.** `editingGoal` is
+    /// a `let` and is `nil` on the create path, so a sheet that stayed open over a refused attach
+    /// and re-ran `saveGoal(editingGoal, …)` would insert a *second* goal for the same gesture —
+    /// the hole the obvious fix opens, and the reason [[T-1301]] filed this rather than folding it
+    /// in. `save()` writes this the moment the store takes the goal, before anything else in that
+    /// function can fail, so every later press is an **edit** of the goal that already exists.
+    ///
+    /// **It deliberately does not feed `isEditing`.** That flag governs the Delete button, the
+    /// Status section and the Initial Linked List field, and none of the three may change under the
+    /// user because an attach was refused: the field the sentence is about is the one that has to
+    /// stay on screen, and a Delete button for a goal created a second ago is a different feature.
+    /// The only other place the held goal is read is `parentGoalChoices`, which has to stop
+    /// offering the new goal as its own parent now that it is in `allGoals`.
+    @State private var createdGoal: Goal?
+
     /// `parentGoal` is optional — a goal with no parent is a top-level direction (what used to be
     /// a Pursuit), and a goal with a parent reads as one of that goal's milestones.
     init(goal: Goal? = nil, parentGoal: Goal? = nil) {
@@ -58,23 +76,36 @@ struct CreateGoalSheet: View {
         _selectedStatus = State(initialValue: goal?.status ?? .active)
     }
 
+    /// Whether this sheet was *opened* on an existing goal — which is not the same question as
+    /// whether a goal exists now. See `createdGoal` for why the two stay apart.
     private var isEditing: Bool {
         editingGoal != nil
     }
 
+    /// The goal `save()` writes to: the one this sheet was opened on, or the one it created and is
+    /// still holding ([[T-1302]]).
+    private var targetGoal: Goal? {
+        createdGoal ?? editingGoal
+    }
+
     /// Only top-level goals can be picked as a parent, which keeps the hierarchy two deep
     /// (direction → milestone) and stops a goal from being nested under its own descendant.
+    ///
+    /// Keyed on `targetGoal` rather than `editingGoal` ([[T-1302]]): once this sheet has created a
+    /// goal and is holding it, that goal is in `allGoals` and would otherwise be offered here as
+    /// its own parent. `saveGoal` would drop the selection on the floor — it guards the cycle — so
+    /// the picker would have offered a choice that silently did nothing.
     private var parentGoalChoices: [Goal] {
         var choices = GoalAssignmentRules
             .topLevelGoals(from: allGoals)
-            .filter { $0.id != editingGoal?.id && $0.status != .done }
-        if let current = editingGoal?.parentGoal,
-           current.id != editingGoal?.id,
+            .filter { $0.id != targetGoal?.id && $0.status != .done }
+        if let current = targetGoal?.parentGoal,
+           current.id != targetGoal?.id,
            !choices.contains(where: { $0.id == current.id }) {
             choices.insert(current, at: 0)
         }
         if let initialParentGoal,
-           initialParentGoal.id != editingGoal?.id,
+           initialParentGoal.id != targetGoal?.id,
            !choices.contains(where: { $0.id == initialParentGoal.id }) {
             choices.insert(initialParentGoal, at: 0)
         }
@@ -200,7 +231,7 @@ struct CreateGoalSheet: View {
                 }
                 Spacer()
                 CadenceActionButton(
-                    title: "Cancel",
+                    title: createdGoal == nil ? "Cancel" : "Close",
                     role: .ghost,
                     size: .compact
                 ) {
@@ -208,7 +239,7 @@ struct CreateGoalSheet: View {
                 }
 
                 CadenceActionButton(
-                    title: isEditing ? "Save" : "Create",
+                    title: primaryActionTitle,
                     role: .primary,
                     size: .compact,
                     isDisabled: !canSave
@@ -230,6 +261,17 @@ struct CreateGoalSheet: View {
                 endDate = startDate
             }
         }
+    }
+
+    /// "Create" until the goal exists, "Retry" once it does ([[T-1302]]).
+    ///
+    /// A *visible* sheet holding a `createdGoal` is only ever the refused-attach state — the
+    /// success path dismisses inside the same call that sets it — so what is left for the button to
+    /// do is retry the attach rather than create anything, and "Cancel" beside it would be a lie
+    /// about a goal the store already holds.
+    private var primaryActionTitle: String {
+        if createdGoal != nil { return "Retry" }
+        return isEditing ? "Save" : "Create"
     }
 
     /// A section label and the block it names, at the one gap the app has for that relation.
@@ -331,23 +373,32 @@ struct CreateGoalSheet: View {
     /// T-322. `dismiss()` is reachable only through the `try` succeeding; a refused commit names
     /// itself in `saveError` and leaves the sheet open over the user's own typed values.
     ///
-    /// `attachInitialList` stays *after* the commit and outside the `do`. It is a second, separate
+    /// `attachInitialList` stays *after* the commit and outside that `do`. It is a second, separate
     /// change — the list a brand-new goal starts attached to — and it has never been part of what
     /// the Save button promises; running it against a goal the store refused would be attaching a
     /// list to nothing.
+    ///
+    /// **What [[T-1302]] changed is that its refusal is no longer silent.** The goal *was*
+    /// committed a few lines up, so neither sentence the repo already had would have been true
+    /// here: `goalSaveFailureNotice` denies a goal the store holds, and `changeFailureNotice`'s
+    /// "Nothing was changed." denies it the other way round. `GoalLinkPresentation`
+    /// `.initialAttachFailureNotice` says both halves, and the sheet stays open on the **Initial
+    /// Linked List** field the sentence is about. `createdGoal` is written *before* the attach is
+    /// tried, so the press that retries edits that goal rather than creating a second one — the
+    /// hazard that kept this ticket filed for a day.
     private func save() {
         guard GoalAssignmentRules.canSaveGoal(title: title) else { return }
 
         let saved: Goal?
         do {
             saved = try CadenceTrackingMutationSupport.saveGoal(
-                editingGoal,
+                targetGoal,
                 title: title,
                 desc: desc,
                 startDate: DateFormatters.dateKey(from: startDate),
                 endDate: DateFormatters.dateKey(from: max(endDate, startDate)),
-                progressType: editingGoal?.progressType ?? .subtasks,
-                targetHours: editingGoal?.targetHours ?? 0,
+                progressType: targetGoal?.progressType ?? .subtasks,
+                targetHours: targetGoal?.targetHours ?? 0,
                 icon: selectedIcon,
                 colorHex: selectedColor,
                 kind: selectedKind,
@@ -363,7 +414,13 @@ struct CreateGoalSheet: View {
         }
 
         if editingGoal == nil, let saved {
-            attachInitialList(to: saved)
+            createdGoal = saved
+            do {
+                try attachInitialList(to: saved)
+            } catch {
+                saveError = GoalLinkPresentation.initialAttachFailureNotice
+                return
+            }
         }
 
         saveError = nil
@@ -375,19 +432,20 @@ struct CreateGoalSheet: View {
     /// malformed id and `resolvedContainer` answers `nil` for a list that is not in the store —
     /// which together are exactly the two ways the hand-rolled branch used to fall through to
     /// attaching nothing.
-    private func attachInitialList(to goal: Goal) {
+    ///
+    /// **Throws rather than swallowing ([[T-1302]]).** The swallow this replaces was inside
+    /// [[T-1299]]'s rule and the store was never at risk: `attachList` commits through
+    /// `CadencePendingChangePersistence` and puts the captured `goal.listLinks` back before it
+    /// rethrows, so a refusal leaves no row, no pending change, and no checkmark to correct. What
+    /// was missing was the sentence, and this frame is the wrong one to write it — `save()` is the
+    /// only frame that knows the goal itself survived.
+    private func attachInitialList(to goal: Goal) throws {
         guard let target = CadenceTaskComposerSupport.resolvedContainer(
             for: CadenceTaskComposerSupport.selection(fromToken: initialListTag),
             areas: areas,
             projects: projects
         ) else { return }
-        // **`try?` is the swallow [[T-1299]]'s rule allows, and it is the only one here.**
-        // `attachList` commits through `CadencePendingChangePersistence` and puts `goal.listLinks`
-        // back before it rethrows, so a refusal leaves nothing pending and nothing on screen to
-        // correct — the goal itself was committed by `save()` one line up, and this sheet has
-        // already dismissed. What it does not do is *say* the seeded list did not attach; that is
-        // [[T-1302]], and it is the behaviour this line has always had rather than a new one.
-        _ = try? modelContext.attachList(target, to: goal)
+        try modelContext.attachList(target, to: goal)
     }
 }
 

@@ -191,6 +191,22 @@ enum GoalLinkPresentation {
     /// `CadenceTaskMutationSupport.deleteFailureAlertTitle` gives.
     static let changeFailureAlertTitle = "Couldn't Change Lists"
 
+    /// What a refused **initial** attach says, on the macOS new-goal sheet ([[T-1302]]).
+    ///
+    /// A different sentence from `changeFailureNotice` because it is a different event, and both
+    /// of the sentences this repo already had would have been false here. "Nothing was changed."
+    /// denies the goal, which `CreateGoalSheet.save()` committed a few lines earlier and which the
+    /// store holds; `CadenceTrackingMutationSupport.goalSaveFailureNotice` denies it the other way
+    /// round and would send the user back to press Create for a goal that already exists — the
+    /// second-goal hazard, arriving as a sentence rather than as code. So this states both halves
+    /// in the order they happened and then the two ways out: the button beside it, which reads
+    /// **Retry** once a goal is held, and the goal's own Attach List.
+    ///
+    /// It is a *list* sentence and lives here rather than beside the goal notices, because the half
+    /// that failed is the link: the one refusal it reports comes out of `attachList` above.
+    static let initialAttachFailureNotice =
+        "Goal saved, but couldn't attach the list. Try again, or attach it from the goal."
+
     /// What an empty Linked Lists section says. One string, both platforms — it has to state the
     /// *other* way work reaches a goal, or the section reads as the only one.
     static let emptyExplanation =
