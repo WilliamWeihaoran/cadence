@@ -11,6 +11,9 @@ struct AttachWorkSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    /// Set when `toggleGoalListLink` was refused ([[T-1301]]); see
+    /// `GoalLinkPresentation.changeFailureAlertTitle` for why it is an alert.
+    @State private var linkChangeFailed = false
 
     /// Grouping, ordering and search all come from `GoalLinkPresentation.candidateGroups`, which
     /// is outside every platform conditional so iOS's `iOSGoalAttachListsSheet` offers the same
@@ -72,6 +75,21 @@ struct AttachWorkSheet: View {
         }
         .frame(width: 620, height: 700)
         .background(Theme.surface)
+        .alert(GoalLinkPresentation.changeFailureAlertTitle, isPresented: $linkChangeFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(GoalLinkPresentation.changeFailureNotice)
+        }
+    }
+
+    /// The toggle throws now ([[T-1301]]): its `Bool` answer is what the row's checkmark is drawn
+    /// from, so answering it over a swallowed commit was the report half's "the answer itself".
+    private func toggle(_ target: GoalLinkTarget) {
+        do {
+            try modelContext.toggleGoalListLink(target, on: goal)
+        } catch {
+            linkChangeFailed = true
+        }
     }
 
     private var attachListsSection: some View {
@@ -95,7 +113,7 @@ struct AttachWorkSheet: View {
                                 subtitle: target.openTaskLabel,
                                 color: Color(hex: target.colorHex),
                                 isAttached: GoalLinkPresentation.isAttached(target, to: goal),
-                                onToggle: { modelContext.toggleGoalListLink(target, on: goal) }
+                                onToggle: { toggle(target) }
                             )
                         }
                     }

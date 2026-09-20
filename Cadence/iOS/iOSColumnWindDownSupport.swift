@@ -95,6 +95,11 @@ extension ModelContext {
     /// the count this action promised and the settle it performed disagree. A confirmation that can
     /// over-promise is worse than none, so the settle here is unconditional and always walks the
     /// array `summary` counted.
+    ///
+    /// **The unqualified `try? save()` is the swallow the rule allows** — see
+    /// `ModelContext.windDownList` for the three sentences, which hold here with one addition:
+    /// `updateColumn` below is a read-modify-write of `sectionConfigs`, a JSON string on a row the
+    /// store already holds, so it changes no existence either ([[T-1301]]).
     func windDownColumn(_ target: iOSColumnWindDownTarget) {
         updateColumn(uuid: target.config.uuid, area: target.area, project: target.project) { config in
             switch target.action {
@@ -126,6 +131,9 @@ extension ModelContext {
     /// nothing. Clearing `isCompleted` alongside `isArchived` matches macOS's unarchive — a column
     /// that comes back to the board comes back open — and is a no-op for a column that was only
     /// completed.
+    ///
+    /// Two flag writes through `updateColumn` and nothing else, so its unqualified `try? save()` is
+    /// the allowed swallow for the reason `windDownColumn` above gives ([[T-1301]]).
     func reopenColumn(_ config: TaskSectionConfig, area: Area?, project: Project?) {
         updateColumn(uuid: config.uuid, area: area, project: project) { config in
             config.isArchived = false

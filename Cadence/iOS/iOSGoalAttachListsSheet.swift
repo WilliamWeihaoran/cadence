@@ -25,6 +25,9 @@ struct iOSGoalAttachListsSheet: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @State private var query = ""
+    /// Set when `toggleGoalListLink` was refused ([[T-1301]]); see
+    /// `GoalLinkPresentation.changeFailureAlertTitle` for why it is an alert.
+    @State private var linkChangeFailed = false
 
     /// Whether the sheet came up empty **because the search field is narrowing it** (T-523).
     ///
@@ -77,6 +80,11 @@ struct iOSGoalAttachListsSheet: View {
                 }
             }
             .tint(Color(hex: goal.colorHex))
+            .alert(GoalLinkPresentation.changeFailureAlertTitle, isPresented: $linkChangeFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(GoalLinkPresentation.changeFailureNotice)
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -97,7 +105,7 @@ struct iOSGoalAttachListsSheet: View {
                             iOSGoalLinkCandidateRow(
                                 target: target,
                                 isAttached: GoalLinkPresentation.isAttached(target, to: goal),
-                                onToggle: { modelContext.toggleGoalListLink(target, on: goal) }
+                                onToggle: { toggle(target) }
                             )
                         }
                     }
@@ -107,6 +115,16 @@ struct iOSGoalAttachListsSheet: View {
             .padding(.vertical, 10)
         }
         .scrollIndicators(.hidden)
+    }
+
+    /// The toggle throws now ([[T-1301]]): its `Bool` answer is what the row's checkmark is drawn
+    /// from, so answering it over a swallowed commit was the report half's "the answer itself".
+    private func toggle(_ target: GoalLinkTarget) {
+        do {
+            try modelContext.toggleGoalListLink(target, on: goal)
+        } catch {
+            linkChangeFailed = true
+        }
     }
 }
 

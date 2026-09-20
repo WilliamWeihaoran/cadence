@@ -38,7 +38,7 @@ struct TrackingDeleteHelpersTests {
         }
         try modelContext.save()
 
-        modelContext.deleteGoal(direction)
+        try modelContext.deleteGoal(direction)
 
         #expect(try modelContext.fetch(FetchDescriptor<Goal>()).isEmpty)
         #expect(try modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
@@ -68,7 +68,7 @@ struct TrackingDeleteHelpersTests {
         modelContext.insert(milestone)
         try modelContext.save()
 
-        modelContext.deleteGoal(milestone)
+        try modelContext.deleteGoal(milestone)
 
         let remaining = try modelContext.fetch(FetchDescriptor<Goal>())
         #expect(remaining.map(\.title) == ["Get healthy"])
@@ -99,7 +99,7 @@ struct TrackingDeleteHelpersTests {
         #expect(announced == 2)
 
         let before = try modelContext.fetch(FetchDescriptor<Goal>()).count
-        modelContext.deleteGoal(direction)
+        try modelContext.deleteGoal(direction)
         let after = try modelContext.fetch(FetchDescriptor<Goal>()).count
 
         // The goal itself, plus everything the alert promised.
@@ -133,7 +133,7 @@ struct TrackingDeleteHelpersTests {
         first.parentGoal = second
         try modelContext.save()
 
-        modelContext.deleteGoal(first)
+        try modelContext.deleteGoal(first)
 
         #expect(try modelContext.fetch(FetchDescriptor<Goal>()).isEmpty)
     }
@@ -150,7 +150,7 @@ struct TrackingDeleteHelpersTests {
         modelContext.insert(HabitCompletion(date: "2026-08-11", habit: other))
         try modelContext.save()
 
-        modelContext.deleteHabit(habit)
+        try modelContext.deleteHabit(habit)
 
         #expect(try modelContext.fetch(FetchDescriptor<Habit>()).map(\.title) == ["Read"])
 
@@ -172,7 +172,7 @@ struct TrackingDeleteHelpersTests {
         modelContext.insert(orphan)
         try modelContext.save()
 
-        modelContext.deleteHabit(orphan)
+        try modelContext.deleteHabit(orphan)
 
         #expect(try modelContext.fetch(FetchDescriptor<Habit>()).isEmpty)
     }
@@ -187,7 +187,7 @@ struct TrackingDeleteHelpersTests {
         modelContext.insert(habit)
         try modelContext.save()
 
-        modelContext.deleteHabit(habit)
+        try modelContext.deleteHabit(habit)
 
         #expect(try modelContext.fetch(FetchDescriptor<Goal>()).map(\.title) == ["Get healthy"])
     }

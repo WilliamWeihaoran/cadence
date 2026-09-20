@@ -223,13 +223,19 @@ struct EditHabitSheet: View {
         let completionCount = (habit.completions ?? []).count
         let title = habit.title
         dismiss()
-        DeleteConfirmationManager.shared.present(
+        // `presentRefusable` for the reason `CreateGoalSheet.requestDelete` gives ([[T-1301]]).
+        DeleteConfirmationManager.shared.presentRefusable(
             title: "Delete Habit",
             message: completionCount > 0
                 ? "\"\(title)\" and its \(completionCount) recorded check-in\(completionCount == 1 ? "" : "s") will be deleted. This cannot be undone."
                 : "\"\(title)\" will be deleted. This cannot be undone."
         ) {
-            modelContext.deleteHabit(habit)
+            do {
+                try modelContext.deleteHabit(habit)
+                return .deleted
+            } catch {
+                return .refused(notice: CadenceTrackingMutationSupport.habitDeleteFailureNotice)
+            }
         }
     }
 

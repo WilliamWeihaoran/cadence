@@ -20,7 +20,21 @@ extension ModelContext {
     /// any goal that organised them — the relationships are severed, the objects survive. This
     /// mirrors `Goal.subGoals`' `.nullify` rule, and it is the same reasoning that keeps
     /// `TaskBundle.tasks` on nullify.
-    func deleteGoal(_ goal: Goal) {
+    ///
+    /// **Throws when the store refuses the commit ([[T-1301]]).** This ended `try? save()`, and
+    /// because the receiver is the store the commit was written with no qualifier at all — which is
+    /// the one spelling `CadenceSaveCommitDisciplineTests`' needle could not read, so the existence
+    /// half never saw a cascade delete of a whole goal subtree being swallowed here. A refused
+    /// commit left every row in that subtree marked deleted in the app's single `ModelContext`,
+    /// waiting for the next unrelated `save()` from any other screen to commit it — a delete the
+    /// user was never told had failed, arriving later from somewhere that never mentioned goals.
+    ///
+    /// `commitDelete`'s undo is `rollback()`, which is the only undo available to a delete: the
+    /// rows are already marked and there is no object to hand back. That is what earns
+    /// `CadenceTrackingMutationSupport.goalDeleteFailureNotice`'s "Nothing was removed."
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    func deleteGoal(_ goal: Goal, commit: (ModelContext) throws -> Void = { try $0.save() }) throws {
         // Depth-first, so a milestone's own milestones go before it. The walk lives in
         // `GoalAssignmentRules` because the delete confirmation counts the same list — an alert
         // that counted direct children while this collected the subtree promised "1 milestone" and
@@ -49,7 +63,7 @@ extension ModelContext {
         }
 
         processPendingChanges()
-        try? save()
+        try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)
     }
 
     /// Deletes a habit and its completion history, and cancels its pending reminder.
@@ -58,7 +72,16 @@ extension ModelContext {
     /// time-of-day, so a pending request outliving its habit would fire a banner carrying the
     /// deleted habit's title every day until the next `scenePhase` reconcile. `ListDeleteHelpers`
     /// already does this for the context cascade; this is the same rule for a single habit.
-    func deleteHabit(_ habit: Habit) {
+    ///
+    /// **Throws, and the reminder is cancelled only below the commit ([[T-1301]]).** `deleteGoal`
+    /// records why the swallow was invisible; this one had a second cost the goal side does not.
+    /// The `Task { … cancel(habitIDs:) }` ran unconditionally after the swallowed save, so a
+    /// refused commit cancelled the reminder for a habit that is still in the store and still on
+    /// screen — silently, and not repaired until the next `scenePhase` reconcile. Moving it below
+    /// the `try` makes the cancellation reachable only once the store has taken the delete.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    func deleteHabit(_ habit: Habit, commit: (ModelContext) throws -> Void = { try $0.save() }) throws {
         let habitID = habit.id
 
         for completion in habit.completions ?? [] {
@@ -71,7 +94,7 @@ extension ModelContext {
         delete(habit)
 
         processPendingChanges()
-        try? save()
+        try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)
 
         Task { await NotificationManager.shared.cancel(habitIDs: [habitID]) }
     }

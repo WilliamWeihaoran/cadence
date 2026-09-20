@@ -169,6 +169,28 @@ enum GoalLinkPresentation {
         taskCount == 1 ? "1 task" : "\(taskCount) tasks"
     }
 
+    /// What a refused attach or detach says, on both platforms ([[T-1301]]).
+    ///
+    /// **One sentence for both directions**, for the reason
+    /// `CadenceTrackingMutationSupport.goalSaveFailureNotice` gives about create-versus-edit: the
+    /// control is one toggle and nobody experiences attaching and detaching as two operations. The
+    /// "Nothing was changed." is earned either way — `attachList` un-inserts the row *and* puts
+    /// `goal.listLinks` back, `detachGoalListLink` rolls the delete back — so the checkmark the
+    /// user is still looking at already agrees with the store by the time this is drawn.
+    static let changeFailureNotice = "Couldn't change this goal's lists. Nothing was changed."
+
+    /// The alert title over `changeFailureNotice`, on both platforms ([[T-1301]]).
+    ///
+    /// An alert rather than a `CadenceInlineFailureNotice` on all four surfaces, which is the
+    /// minority choice in this repo and is the one the control's shape forces: attaching and
+    /// detaching are both a *row* in a list rebuilt from `goal.listLinks`, so the row a sentence
+    /// would be written under is the row that disappears — or, on the attach sheet, the row whose
+    /// checkmark is the thing being corrected. The argument
+    /// `CalendarPageMonthSupportViews` records for its two refusals is the same one: nothing stable
+    /// is left on screen to write under. Beside the sentence, for the reason
+    /// `CadenceTaskMutationSupport.deleteFailureAlertTitle` gives.
+    static let changeFailureAlertTitle = "Couldn't Change Lists"
+
     /// What an empty Linked Lists section says. One string, both platforms — it has to state the
     /// *other* way work reaches a goal, or the section reads as the only one.
     static let emptyExplanation =
@@ -288,8 +310,25 @@ enum GoalLinkPresentation {
 /// `ModelContext`, next to `TrackingDeleteHelpers`' `deleteGoal` / `deleteHabit` and for the same
 /// reason: the sites that need them are on both platforms, and nothing in them is AppKit-shaped.
 extension ModelContext {
+    /// **Throws when the store refuses the commit ([[T-1301]]).**
+    ///
+    /// The commit used to be a private `saveGoalLinkChange` helper ending `try? save()` — with
+    /// no qualifier, because on `ModelContext` the store is `self`, which is the spelling the
+    /// discipline sweep's needle could not read. An insert whose commit is refused stays pending in
+    /// the app's single `ModelContext`, and the row is already drawn: `processPendingChanges()`
+    /// below puts it in `goal.listLinks` for the very next render, so the attach sheet ticked the
+    /// list whatever the store said.
+    ///
+    /// `nil` still means only what it meant: the link already existed. That answer is not a report
+    /// — it is the idempotence below, and it commits nothing.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
-    func attachList(_ target: GoalLinkTarget, to goal: Goal) -> GoalListLink? {
+    func attachList(
+        _ target: GoalLinkTarget,
+        to goal: Goal,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> GoalListLink? {
         // Idempotent, but **not** because a duplicate would double the percentage — it cannot.
         // `GoalContributionResolver.contributingTasks` ends in `dedupe(...)`, which filters by task
         // `id`, so the same task reached through two links is counted once. That claim was written
@@ -304,8 +343,20 @@ extension ModelContext {
             return existing
         }
         let link = target.makeLink(for: goal)
+        // Captured before the insert and re-applied on a refusal, for the reason [[T-1280]]'s
+        // survey gives and `CadenceHabitCompletionStore.toggle` already needed: `commitInsert`
+        // undoes with `delete(model)`, which never reaches the *parent's* array — and
+        // `processPendingChanges()` below has by then put the link into `goal.listLinks`, which is
+        // exactly what both attach sheets draw their checkmark from.
+        let restored = goal.listLinks ?? []
         insert(link)
-        saveGoalLinkChange()
+        processPendingChanges()
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: link, in: self, commit: commit)
+        } catch {
+            goal.listLinks = restored
+            throw error
+        }
         return link
     }
 
@@ -317,31 +368,44 @@ extension ModelContext {
     /// this codebase does not trust inverse back-population to have happened by the time anything
     /// reads it, and the inverse arrays (`Goal.listLinks`, `Area.goalLinks`, `Project.goalLinks`)
     /// are read by `GoalContributionResolver` on the very next render.
-    func detachGoalListLink(_ link: GoalListLink) {
+    ///
+    /// **Throws for the reason `attachList` gives**, undoing with `commitDelete`'s `rollback()`:
+    /// the row is already marked deleted and there is no object to hand back, which is the same
+    /// undo `deleteGoal`'s cascade takes ([[T-1301]]).
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    func detachGoalListLink(
+        _ link: GoalListLink,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         link.goal = nil
         link.area = nil
         link.project = nil
         delete(link)
-        saveGoalLinkChange()
+        processPendingChanges()
+        try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)
     }
 
     /// Attach if absent, detach if present. Returns whether the list is attached afterwards.
+    ///
+    /// **The answer is the report, which is why this throws rather than answering over a refusal**
+    /// ([[T-1301]]). Both goal attach sheets draw the row's checkmark from
+    /// `GoalLinkPresentation.isAttached`, and this `Bool` is what the tap promises that checkmark
+    /// will say — `AGENTS.md`'s report half, in its "the answer itself" clause. Neither branch
+    /// could keep that promise while its commit was swallowed one frame down.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
-    func toggleGoalListLink(_ target: GoalLinkTarget, on goal: Goal) -> Bool {
+    func toggleGoalListLink(
+        _ target: GoalLinkTarget,
+        on goal: Goal,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> Bool {
         if let existing = GoalLinkPresentation.existingLink(for: target, on: goal) {
-            detachGoalListLink(existing)
+            try detachGoalListLink(existing, commit: commit)
             return false
         }
-        attachList(target, to: goal)
+        try attachList(target, to: goal, commit: commit)
         return true
-    }
-
-    /// `processPendingChanges` before the save, so `goal.listLinks` reflects the insert or delete
-    /// by the time the view that triggered it re-renders. Without it a detach leaves the row on
-    /// screen until something else invalidates the query — the same reason `deleteGoal` and
-    /// `deleteHabit` end this way.
-    private func saveGoalLinkChange() {
-        processPendingChanges()
-        try? save()
     }
 }

@@ -68,7 +68,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(project)
         modelContext.insert(task)
         try modelContext.save()
-        let link = try #require(modelContext.attachList(.project(project), to: goal))
+        let link = try #require(try modelContext.attachList(.project(project), to: goal))
         try modelContext.save()
 
         let sweep = RecordingSweep()
@@ -108,7 +108,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(areaTask)
         modelContext.insert(projectTask)
         try modelContext.save()
-        let areaLink = try #require(modelContext.attachList(.area(area), to: goal))
+        let areaLink = try #require(try modelContext.attachList(.area(area), to: goal))
         try modelContext.save()
 
         let sweep = RecordingSweep(refusing: [projectTask.id])
@@ -142,7 +142,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(project)
         modelContext.insert(task)
         try modelContext.save()
-        _ = modelContext.attachList(.project(project), to: goal)
+        _ = try modelContext.attachList(.project(project), to: goal)
         try modelContext.save()
         #expect(try modelContext.fetch(FetchDescriptor<GoalListLink>()).count == 1)
 
@@ -182,7 +182,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(projectTask)
         modelContext.insert(note)
         try modelContext.save()
-        _ = modelContext.attachList(.area(area), to: goal)
+        _ = try modelContext.attachList(.area(area), to: goal)
         try modelContext.save()
 
         let sweep = RecordingSweep(refusing: [projectTask.id])
@@ -218,7 +218,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(area)
         modelContext.insert(task)
         try modelContext.save()
-        _ = modelContext.attachList(.area(area), to: goal)
+        _ = try modelContext.attachList(.area(area), to: goal)
         try modelContext.save()
 
         #expect(throws: CommitRefused.self) {

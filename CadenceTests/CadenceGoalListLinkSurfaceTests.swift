@@ -96,7 +96,7 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(before.totalTasks == 0)
         #expect(before.progress == 0)
 
-        store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
 
         let after = GoalContributionResolver.summary(for: store.goal)
         #expect(after.totalTasks == 2)
@@ -111,8 +111,8 @@ struct CadenceGoalListLinkSurfaceTests {
     @Test func attachingInsertsOneLinkAndIsIdempotent() throws {
         let store = try makeStore()
 
-        store.modelContext.attachList(.area(store.area), to: store.goal)
-        store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
 
         let links = try store.modelContext.fetch(FetchDescriptor<GoalListLink>())
         #expect(links.count == 1)
@@ -137,8 +137,8 @@ struct CadenceGoalListLinkSurfaceTests {
         task.area = store.area
         store.modelContext.insert(task)
 
-        store.modelContext.attachList(.area(store.area), to: store.goal)
-        store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
 
         let summary = GoalContributionResolver.summary(for: store.goal)
 
@@ -156,10 +156,10 @@ struct CadenceGoalListLinkSurfaceTests {
     @Test func togglingAttachesThenDetaches() throws {
         let store = try makeStore()
 
-        #expect(store.modelContext.toggleGoalListLink(.project(store.project), on: store.goal))
+        #expect(try store.modelContext.toggleGoalListLink(.project(store.project), on: store.goal))
         #expect(GoalLinkPresentation.links(of: store.goal).count == 1)
 
-        #expect(!store.modelContext.toggleGoalListLink(.project(store.project), on: store.goal))
+        #expect(try store.modelContext.toggleGoalListLink(.project(store.project), on: store.goal) == false)
         #expect(GoalLinkPresentation.links(of: store.goal).isEmpty)
         #expect(try store.modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
     }
@@ -174,10 +174,10 @@ struct CadenceGoalListLinkSurfaceTests {
         task.area = store.area
         store.modelContext.insert(task)
 
-        store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
         let link = try #require(GoalLinkPresentation.links(of: store.goal).first)
 
-        store.modelContext.detachGoalListLink(link)
+        try store.modelContext.detachGoalListLink(link)
 
         #expect(try store.modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
         #expect(GoalLinkPresentation.links(of: store.goal).isEmpty)
@@ -196,9 +196,9 @@ struct CadenceGoalListLinkSurfaceTests {
     /// end, because a surviving link is a row whose `goal` is gone and whose `tasks` still resolve.
     @Test func deletingAGoalTakesItsLinksWithIt() throws {
         let store = try makeStore()
-        store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
 
-        store.modelContext.deleteGoal(store.goal)
+        try store.modelContext.deleteGoal(store.goal)
 
         #expect(try store.modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
         #expect(try store.modelContext.fetch(FetchDescriptor<Area>()).count == 1)
@@ -214,7 +214,7 @@ struct CadenceGoalListLinkSurfaceTests {
 
         let broken = GoalListLink(goal: store.goal)
         store.modelContext.insert(broken)
-        store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
 
         #expect(GoalLinkPresentation.links(of: store.goal).count == 1)
         #expect(GoalContributionResolver.summary(for: store.goal).linkedListCount == 1)
@@ -230,9 +230,9 @@ struct CadenceGoalListLinkSurfaceTests {
         store.modelContext.insert(second)
         store.modelContext.insert(third)
 
-        store.modelContext.attachList(.area(store.area), to: store.goal)
-        store.modelContext.attachList(.area(second), to: store.goal)
-        store.modelContext.attachList(.area(third), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(second), to: store.goal)
+        try store.modelContext.attachList(.area(third), to: store.goal)
 
         let titles = GoalLinkPresentation.links(of: store.goal).map(\.title)
         #expect(titles.first == "Admin")
@@ -257,7 +257,7 @@ struct CadenceGoalListLinkSurfaceTests {
         store.modelContext.insert(open)
         store.modelContext.insert(cancelled)
 
-        store.modelContext.attachList(.area(store.area), to: store.goal)
+        try store.modelContext.attachList(.area(store.area), to: store.goal)
         let link = try #require(GoalLinkPresentation.links(of: store.goal).first)
 
         #expect(GoalLinkPresentation.contributingTaskCount(for: link) == 1)
@@ -322,7 +322,7 @@ struct CadenceGoalListLinkSurfaceTests {
         milestone.parentGoal = store.goal
         store.modelContext.insert(milestone)
 
-        store.modelContext.attachList(.area(store.area), to: milestone)
+        try store.modelContext.attachList(.area(store.area), to: milestone)
 
         let summary = GoalContributionResolver.summary(for: store.goal)
         #expect(summary.linkedListCount == 1)

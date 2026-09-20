@@ -18,6 +18,9 @@ struct GoalsView: View {
     /// The narrow-width route to the inspector. See `GoalInspectorSheet`.
     @State private var showGoalDetail = false
     @State private var searchText = ""
+    /// Set when `detachGoalListLink` was refused ([[T-1301]]). `GoalLinkPresentation`'s own doc
+    /// records why this family reports in an alert rather than under the row.
+    @State private var linkChangeFailed = false
     @State private var statusFilter: GoalStatusFilter = .active
 
     private var trimmedQuery: String {
@@ -152,6 +155,11 @@ struct GoalsView: View {
             }
             .onChange(of: allGoals.map(\.id)) {
                 normalizeSelection(visible: visibleGoals)
+            }
+            .alert(GoalLinkPresentation.changeFailureAlertTitle, isPresented: $linkChangeFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(GoalLinkPresentation.changeFailureNotice)
             }
     }
 
@@ -323,9 +331,18 @@ struct GoalsView: View {
     }
 
     /// `ModelContext.detachGoalListLink` rather than a bare `delete`: the shared helper severs the
-    /// link's own references first and saves, and it is the same call iOS's goal detail makes.
+    /// link's own references first and commits, and it is the same call iOS's goal detail makes.
+    ///
+    /// **It throws now ([[T-1301]]).** The commit it used to swallow was `try? save()` inside a
+    /// `ModelContext` extension, which the discipline sweep's needle could not read at all, so a
+    /// refused unlink left the row marked deleted in the app's one context and the inspector
+    /// redrawn without it.
     private func detachList(_ link: GoalListLink) {
-        modelContext.detachGoalListLink(link)
+        do {
+            try modelContext.detachGoalListLink(link)
+        } catch {
+            linkChangeFailed = true
+        }
     }
 
     private var goalsViewMode: GoalsViewMode {

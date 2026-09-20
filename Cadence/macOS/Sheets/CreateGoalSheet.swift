@@ -310,13 +310,21 @@ struct CreateGoalSheet: View {
         let title = goal.title
         let milestoneCount = (goal.subGoals ?? []).count
         dismiss()
-        DeleteConfirmationManager.shared.present(
+        // `presentRefusable` rather than `present` ([[T-1301]]): `deleteGoal` throws now, and the
+        // overlay is the only surface left once this sheet has dismissed itself. The refusal keeps
+        // it open carrying the sentence the rollback earns.
+        DeleteConfirmationManager.shared.presentRefusable(
             title: "Delete Goal",
             message: milestoneCount > 0
                 ? "\"\(title)\" and its \(milestoneCount) milestone\(milestoneCount == 1 ? "" : "s") will be deleted. Linked lists, habits and tasks are kept. This cannot be undone."
                 : "\"\(title)\" will be deleted. Linked lists, habits and tasks are kept. This cannot be undone."
         ) {
-            modelContext.deleteGoal(goal)
+            do {
+                try modelContext.deleteGoal(goal)
+                return .deleted
+            } catch {
+                return .refused(notice: CadenceTrackingMutationSupport.goalDeleteFailureNotice)
+            }
         }
     }
 
@@ -373,7 +381,13 @@ struct CreateGoalSheet: View {
             areas: areas,
             projects: projects
         ) else { return }
-        modelContext.attachList(target, to: goal)
+        // **`try?` is the swallow [[T-1299]]'s rule allows, and it is the only one here.**
+        // `attachList` commits through `CadencePendingChangePersistence` and puts `goal.listLinks`
+        // back before it rethrows, so a refusal leaves nothing pending and nothing on screen to
+        // correct — the goal itself was committed by `save()` one line up, and this sheet has
+        // already dismissed. What it does not do is *say* the seeded list did not attach; that is
+        // [[T-1302]], and it is the behaviour this line has always had rather than a new one.
+        _ = try? modelContext.attachList(target, to: goal)
     }
 }
 

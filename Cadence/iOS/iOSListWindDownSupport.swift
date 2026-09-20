@@ -170,6 +170,17 @@ extension ModelContext {
     /// fresh open work. `TaskContainerLifecycleService` settles through
     /// `settleWithoutAdvancingSeries` instead — that is the invariant T-212 and T-213 record and the
     /// one thing a new wind-down surface is most likely to get wrong.
+    ///
+    /// **The `try? save()` below is the swallow the rule allows, and the sweep can see it now**
+    /// ([[T-1301]]). It is written with no qualifier because the receiver is the store, which is
+    /// the spelling `CadenceSaveCommitDisciplineTests` was blind to until T-1301 widened the
+    /// needle; the answer is that this declaration is *inside* the rule rather than exempt from it.
+    /// Every write it reaches is an in-place field edit on an object the store already holds — a
+    /// `status`, and `CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries`'s
+    /// `status`/`completedAt` pair, which is exactly what "without advancing the series" buys: no
+    /// successor is spawned, so nothing is inserted and nothing is deleted. Nothing after the
+    /// commit reports success either; the sheet that raised this closes on the tap. `reopenColumn`
+    /// and `windDownColumn` in `iOSColumnWindDownSupport` are the same three sentences.
     func windDownList(_ target: iOSListWindDownTarget) {
         switch (target.list, target.action) {
         case (.area(let area), .archive):

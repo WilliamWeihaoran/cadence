@@ -27,6 +27,9 @@ struct iOSGoalDetail: View {
     var showsBackControl = false
 
     @State private var showAttachLists = false
+    /// Set when `detachGoalListLink` was refused ([[T-1301]]); see
+    /// `GoalLinkPresentation.changeFailureAlertTitle` for why it is an alert.
+    @State private var linkChangeFailed = false
 
     private var summary: GoalContributionSummary {
         GoalContributionResolver.summary(for: goal)
@@ -118,6 +121,22 @@ struct iOSGoalDetail: View {
         .sheet(isPresented: $showAttachLists) {
             iOSGoalAttachListsSheet(goal: goal)
         }
+        .alert(GoalLinkPresentation.changeFailureAlertTitle, isPresented: $linkChangeFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(GoalLinkPresentation.changeFailureNotice)
+        }
+    }
+
+    /// The unlink throws now ([[T-1301]]): it used to end in a `try? save()` written with no
+    /// qualifier, which the discipline sweep could not read, so a refused unlink left the row
+    /// marked deleted in the app's one context and this section redrawn without it.
+    private func detach(_ link: GoalListLink) {
+        do {
+            try modelContext.detachGoalListLink(link)
+        } catch {
+            linkChangeFailed = true
+        }
     }
 
     /// The section T-191 is about: the areas and projects whose tasks `GoalContributionResolver`
@@ -151,7 +170,7 @@ struct iOSGoalDetail: View {
                                 plateSize: 30,
                                 iconSize: 11
                             ) {
-                                modelContext.detachGoalListLink(link)
+                                detach(link)
                             }
                         }
                     }

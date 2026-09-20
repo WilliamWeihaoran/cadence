@@ -21,6 +21,31 @@ enum CadenceTrackingMutationSupport {
     /// `CadenceTaskMutationSupport.deleteFailureNotice`.
     static let habitSaveFailureNotice = "Couldn't save this habit."
 
+    /// Shown when `ModelContext.deleteGoal` could not be committed ([[T-1301]]).
+    ///
+    /// It carries the delete family's second sentence, and the sentence is **earned**: the cascade
+    /// commits through `CadencePendingChangePersistence.commitDelete`, whose undo is `rollback()`,
+    /// so the goal and every milestone under it are back where the user can see them by the time
+    /// this appears. Before T-1301 the commit was a swallowed `try? save()` and the whole subtree
+    /// sat marked-deleted in the shared context — the state this sentence denies, which is the
+    /// same argument `CadenceTaskMutationSupport.deleteFailureNotice` records.
+    static let goalDeleteFailureNotice = "Couldn't delete this goal. Nothing was removed."
+
+    /// `goalDeleteFailureNotice` for `ModelContext.deleteHabit`, naming its own object for the
+    /// reason the two save notices above give.
+    static let habitDeleteFailureNotice = "Couldn't delete this habit. Nothing was removed."
+
+    /// The iOS alert title over `goalDeleteFailureNotice`.
+    ///
+    /// Beside the sentence rather than in the view, for the reason
+    /// `CadenceTaskMutationSupport.deleteFailureAlertTitle` gives. macOS does not use these two:
+    /// there the refusal lands inside the still-open `DeleteConfirmationManager` overlay, which has
+    /// a title already.
+    static let goalDeleteFailureAlertTitle = "Couldn't Delete Goal"
+
+    /// `goalDeleteFailureAlertTitle`'s sibling for a habit.
+    static let habitDeleteFailureAlertTitle = "Couldn't Delete Habit"
+
     /// The fields `saveGoal` writes, captured before it writes them.
     ///
     /// Every field below is one `saveGoal` assigns; `order` is not here because only the *create*

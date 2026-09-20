@@ -13,6 +13,10 @@ struct iOSGoalsView: View {
     @State private var editorMode: iOSGoalEditorMode?
     @State private var habitEditorMode: iOSHabitEditorMode?
     @State private var pendingDeleteID: UUID?
+    /// Set when `deleteGoal` was refused ([[T-1301]]). The confirmation alert has already closed
+    /// itself by then — a `role: .destructive` button dismisses on tap — so the refusal needs its
+    /// own alert rather than a sentence inside the one the user was reading.
+    @State private var deleteFailed = false
 
     private var pendingDelete: Goal? {
         guard let pendingDeleteID else { return nil }
@@ -71,6 +75,11 @@ struct iOSGoalsView: View {
         } message: {
             Text(deleteMessage)
         }
+        .alert(CadenceTrackingMutationSupport.goalDeleteFailureAlertTitle, isPresented: $deleteFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadenceTrackingMutationSupport.goalDeleteFailureNotice)
+        }
     }
 
     /// Names what actually goes, because the cascade is asymmetric: milestones die with their
@@ -86,13 +95,27 @@ struct iOSGoalsView: View {
         return "\(scope) Linked tasks, habits and lists are kept."
     }
 
+    /// **The selection is cleared only once the store has taken the delete ([[T-1301]]).**
+    /// `deleteGoal` swallowed its commit before this, and clearing `selectedID` is the report half
+    /// in its plain spelling — the detail pane empties, which says the goal is gone. Both writes
+    /// now sit below the `try`, so a refusal leaves the row selected and the goal on screen, which
+    /// is what `goalDeleteFailureNotice`'s "Nothing was removed." promises.
     private func deletePendingGoal() {
         guard let goal = pendingDelete else { return }
+        // The confirmation closes because the button was tapped, not because the store agreed, and
+        // it has to close before the refusal alert can present — two `.alert`s contending for one
+        // view show one of them. The *outcome* is reported below, in the second alert or by the
+        // selection clearing.
+        pendingDeleteID = nil
+        do {
+            try modelContext.deleteGoal(goal)
+        } catch {
+            deleteFailed = true
+            return
+        }
         if selectedID == goal.id || goal.subGoals?.contains(where: { $0.id == selectedID }) == true {
             selectedID = nil
         }
-        pendingDeleteID = nil
-        modelContext.deleteGoal(goal)
     }
 
     /// `narrow` is the phone's own list, in its own `NavigationStack` — the rows push, so they need
@@ -262,6 +285,9 @@ struct iOSHabitsView: View {
     @State private var selectedID: UUID?
     @State private var editorMode: iOSHabitEditorMode?
     @State private var pendingDeleteID: UUID?
+    /// Set when `deleteHabit` was refused ([[T-1301]]); see `iOSGoalsView` for why it is a second
+    /// alert rather than a notice inside the confirmation.
+    @State private var deleteFailed = false
 
     private var pendingDelete: Habit? {
         guard let pendingDeleteID else { return nil }
@@ -310,6 +336,11 @@ struct iOSHabitsView: View {
         } message: {
             Text(deleteMessage)
         }
+        .alert(CadenceTrackingMutationSupport.habitDeleteFailureAlertTitle, isPresented: $deleteFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadenceTrackingMutationSupport.habitDeleteFailureNotice)
+        }
     }
 
     /// A habit's completion history has nowhere else to live, so it goes with the habit — unlike a
@@ -323,13 +354,20 @@ struct iOSHabitsView: View {
         return "This deletes the habit and \(history)."
     }
 
+    /// The habit twin of `iOSGoalsView.deletePendingGoal`, ordered the same way and for the same
+    /// reason ([[T-1301]]).
     private func deletePendingHabit() {
         guard let habit = pendingDelete else { return }
+        pendingDeleteID = nil
+        do {
+            try modelContext.deleteHabit(habit)
+        } catch {
+            deleteFailed = true
+            return
+        }
         if selectedID == habit.id {
             selectedID = nil
         }
-        pendingDeleteID = nil
-        modelContext.deleteHabit(habit)
     }
 
     /// `narrow` is the phone's own list, in its own `NavigationStack` — the rows push, so they need

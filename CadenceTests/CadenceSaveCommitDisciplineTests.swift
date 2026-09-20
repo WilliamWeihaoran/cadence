@@ -311,6 +311,126 @@ struct CadenceSaveCommitDisciplineTests {
         }
     }
 
+    // MARK: - The receiver left off ([[T-1301]])
+
+    /// **Inside `extension ModelContext` the commit, the insert and the delete are all written with
+    /// no receiver, and for nine tickets none of the four halves could read any of them.**
+    ///
+    /// `swallowedSave` required `[\w.?]+\.` ahead of `save`, so `try? save()` — `self.save()` with
+    /// the `self` left off — matched nothing; `existenceCall` named `modelContext|context|ctx` as
+    /// the receiver, so `delete(doomed)` was not a delete. **Both halves failed on the same
+    /// population**, which is why neither ever reported the other's half of a site: six live
+    /// declarations in four files, two of them cascade deletes on a shipped iOS surface.
+    ///
+    /// The fixture is one declaration in each spelling. The negative is the *same* code with the
+    /// receiver written out, which the old needles did read — so this fails if the widening was
+    /// spelled as a replacement rather than an alternation, and it fails if the widening was never
+    /// made.
+    @Test func aModelContextExtensionWritesItsCommitAndItsDeleteWithNoReceiver() throws {
+        let bare = """
+        extension ModelContext {
+            func deleteGoal(_ goal: Goal) {
+                delete(goal)
+                try? save()
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.existenceOffenders(in: bare, changing: .init()) == ["deleteGoal"])
+
+        let qualified = """
+        extension ModelContext {
+            func deleteGoal(_ goal: Goal) {
+                modelContext.delete(goal)
+                try? modelContext.save()
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.existenceOffenders(in: qualified, changing: .init()) == ["deleteGoal"])
+
+        // And the bare reading is scoped to the type. `insert(` in a markdown accessory view puts
+        // text in an editor and touches no store; three such calls are live under `Cadence/`, and a
+        // needle that read them as inserts would report a keyboard toolbar as a store defect.
+        let notAContext = """
+        struct iOSMarkdownAccessoryViews: View {
+            private func addReference(_ note: Note) {
+                insert(NoteReferenceParser.noteReferenceMarkdown(for: note))
+                try? modelContext.save()
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.existenceOffenders(in: notAContext, changing: .init()).isEmpty)
+    }
+
+    /// The other half of the same widening: an `extension ModelContext` declaration is **handed**
+    /// its context, because the receiver *is* the context its caller owns.
+    ///
+    /// Without this, seeing the bare `delete(` turns `ModelContext.deleteNote(_:)` — which says in
+    /// its own doc that it deliberately does not save, because its three callers commit — into a
+    /// half-3 offender by arithmetic. Measured while widening: `CadenceListDeleteHelpers` and
+    /// `CadenceNoteActionSupport` were reported by half 3 on the first pass, and both are that
+    /// shape. The negative is the same body on a type that is not `ModelContext`, which reached for
+    /// an ambient context and therefore does owe a commit.
+    @Test func aModelContextExtensionIsHandedItsContextAndDoesNotOweTheCommit() throws {
+        let onTheContext = """
+        extension ModelContext {
+            func deleteNote(_ note: Note) {
+                delete(note)
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: onTheContext, changing: .init()).isEmpty)
+
+        let reachedForOne = """
+        struct NotesPage: View {
+            private func deleteNote(_ note: Note) {
+                modelContext.delete(note)
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: reachedForOne, changing: .init()) == ["deleteNote"])
+    }
+
+    /// The three sites the widened needle now sees and **declines**, walked in the tree.
+    ///
+    /// [[T-1301]] measured six live `try? save()` declarations inside `ModelContext` extensions and
+    /// could not say from the scan whether the three wind-down settles were inside the rule. They
+    /// are: each writes a `status` or a `TaskSectionConfig` flag on a row the store already holds,
+    /// and `CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries` is what keeps the
+    /// settle from spawning a successor — so there is no insert, no delete, and nothing after the
+    /// commit that claims it worked. This is the positive witness for that reading: the `try?` is
+    /// still there to be read, and no half names the file.
+    ///
+    /// Without it, deleting the three swallows would leave every sweep green and this ticket's
+    /// widening claiming to cover a population of zero.
+    @Test func theWindDownSettlesAreTheInPlaceSwallowTheWidenedNeedleDeclines() throws {
+        let existence = try existenceIndexOverTheApp()
+        let swallowing = try swallowingIndexOverTheApp()
+        for path in [
+            "Cadence/iOS/iOSListWindDownSupport.swift",
+            "Cadence/iOS/iOSColumnWindDownSupport.swift",
+        ] {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains("try? save()"), "\(path) no longer holds the swallow it is listed for")
+            #expect(source.contains("extension ModelContext"), "\(path) is no longer a ModelContext extension")
+            #expect(
+                CadenceSaveCommitRule.existenceOffenders(in: source, changing: existence).isEmpty,
+                "\(path) is reported by the existence half, which measured it as an in-place settle"
+            )
+            #expect(
+                CadenceSaveCommitRule.reportOffenders(in: source).isEmpty,
+                "\(path) is reported by the report half"
+            )
+            #expect(
+                CadenceSaveCommitRule.commitReachOffenders(in: source, changing: existence).isEmpty,
+                "\(path) is reported by the commit-reach half"
+            )
+            #expect(
+                CadenceSaveCommitRule.indirectReportOffenders(in: source, swallowing: swallowing).isEmpty,
+                "\(path) is reported by the one-frame-down report half"
+            )
+        }
+    }
+
     // MARK: - Non-vacuity of the walk
 
     /// `sweep` refuses an empty or short file list, but it cannot know the tree it walked is the
@@ -2039,12 +2159,53 @@ enum CadenceSaveCommitRule {
     /// "delete and never commit at all" was covered by nothing at all: half 1 sees the delete but
     /// needs a `try?` that is not there, half 3 sees the missing commit but only for inserts.
     /// `SchedulingService.completeBundle` sat in exactly that hole ([[T-628]]).
+    ///
+    /// **It names the receiver, so `self` — spelled by leaving it off — is not one of them**
+    /// ([[T-1301]]). Inside `extension ModelContext` the store *is* `self`, and this app writes
+    /// four such extensions: `TrackingDeleteHelpers`, `GoalListLinkHelpers`,
+    /// `iOSListWindDownSupport` and `iOSColumnWindDownSupport`. `delete(doomed)` there is
+    /// `self.delete(doomed)` with the `self` left off, and this needle could not read it — the
+    /// mirror of the same defect `swallowedSave` had on `try? save()`, on the same population,
+    /// which is why neither half ever reported the other's half of the site. `bareExistenceCall`
+    /// below is the other reading; see `parsedDeclarations` for why it is scoped by enclosing type
+    /// rather than spelled into this alternation.
     private static let existenceCall = "(modelContext|context|ctx)\\??\\.(insert|delete)\\("
+    /// `existenceCall` with the receiver left off — **read only inside `extension ModelContext`**
+    /// ([[T-1301]]).
+    ///
+    /// Scoped by enclosing type rather than widened into `existenceCall`, because an unqualified
+    /// `insert(`/`delete(` is genuinely ambiguous everywhere else and measured to be so: over
+    /// `Cadence/` it also matches `iOSMarkdownAccessoryViews`' three `insert(<markdown>)` calls,
+    /// which put text in an editor and touch no store, and `iOSListSupportViews`' own
+    /// `delete(_ link:)`. Inside a `ModelContext` extension there is no such ambiguity — the
+    /// receiver is the store — so the type is what makes the reading sound rather than a longer
+    /// alternation of names to exclude.
+    private static let bareExistenceCall = "(?<![\\w.?])(insert|delete)\\("
     /// "My caller owns the unit of work", spelled as a signature. `:\s*ModelContext\b` and not
     /// merely `ModelContext`, so that `commit: (ModelContext) throws -> Void` — which is a
     /// *commit* being handed in, the opposite claim — does not exempt anything.
+    ///
+    /// **An `extension ModelContext` method is handed its context too — as `self`** ([[T-1301]]),
+    /// and `parsedDeclarations` reads it that way. The claim half 3 makes is about *who owns the
+    /// unit of work*, and it is the same claim whether the store arrives as a parameter or as the
+    /// receiver: `ModelContext.deleteNote(_:)` is the shape `static func deleteNote(_:in:)` would
+    /// have been, and its own doc says in as many words that it deliberately does not save because
+    /// its three callers commit. Without this reading, widening `existenceCall` to see the bare
+    /// `delete(` inside those extensions reported `CadenceListDeleteHelpers` and
+    /// `CadenceNoteActionSupport` as half-3 offenders — measured, and both are the deliberate
+    /// caller-commits shape rather than a defect, so the answer was the ownership rule rather than
+    /// two exemption entries.
     private static let handedAModelContext = ":\\s*ModelContext\\b"
     private static let commitCall = "\\.save\\(\\)|CadencePendingChangePersistence\\.commit\\w*"
+    /// `commitCall` with the receiver left off — **read only inside `extension ModelContext`**, for
+    /// the reason `bareExistenceCall` gives, and needed for the same sites ([[T-1301]]).
+    ///
+    /// Without it, widening the two needles above turns every `ModelContext` extension helper into
+    /// a half-3 offender by arithmetic rather than by defect: half 3 asks "changes existence and
+    /// reaches **no** commit", and a bare `save()` is a commit that `\.save\(\)` cannot see. The
+    /// bare form is deliberately **not** read outside the extension, where it would run the unsafe
+    /// way — silencing half 3 for any frame that happens to call a local `save()` of its own.
+    private static let bareCommitCall = "(?<![\\w.?])save\\(\\)"
 
     /// Half 1: declarations holding both a swallowed save and an existence change — **theirs, or
     /// one frame down** (gap 1 of T-627).
@@ -2884,15 +3045,23 @@ enum CadenceSaveCommitRule {
         let types = enclosingTypeNames(in: source, for: extents.map(\.start))
         return zip(zip(found, types), nested).map { pair, isNested in
             let (declaration, type) = pair
+            // [[T-1301]]: inside `extension ModelContext` the store is `self`, so the receiver is
+            // routinely left off — `delete(doomed)`, `save()`. Both readings are taken there and
+            // neither is taken anywhere else; `bareExistenceCall` and `bareCommitCall` say why the
+            // scope is the enclosing type rather than a wider alternation.
+            let onTheContext = type == "ModelContext"
+            let existence = existenceCall + (onTheContext ? "|" + bareExistenceCall : "")
+            let commit = commitCall + (onTheContext ? "|" + bareCommitCall : "")
             return ParsedDeclaration(
                 name: declaration.name,
                 type: type,
                 signature: declaration.signature,
                 throwsItsAnswer: declaration.signature.contains("throws"),
                 swallowsDirectly: CadenceSourceScan.matchCount(swallowedSave, in: declaration.body) > 0,
-                changesExistenceDirectly: CadenceSourceScan.matchCount(existenceCall, in: declaration.body) > 0,
-                reachesACommitDirectly: CadenceSourceScan.matchCount(commitCall, in: declaration.body) > 0,
-                disclaimsOwnership: CadenceSourceScan.matchCount(handedAModelContext, in: declaration.signature) > 0,
+                changesExistenceDirectly: CadenceSourceScan.matchCount(existence, in: declaration.body) > 0,
+                reachesACommitDirectly: CadenceSourceScan.matchCount(commit, in: declaration.body) > 0,
+                disclaimsOwnership: onTheContext
+                    || CadenceSourceScan.matchCount(handedAModelContext, in: declaration.signature) > 0,
                 isNested: isNested,
                 text: declaration.body,
                 body: Array(declaration.body),
@@ -3044,7 +3213,17 @@ enum CadenceSaveCommitRule {
     /// in. Do not widen this needle for it; that site was fixed as T-506 and the shape is now swept
     /// by `NoteExportSurfaceTests.noExportSwallowsTheWriteThatProducesTheFile`, which is a separate
     /// guard precisely because this rule cannot see it.
-    private static let swallowedSave = "try\\?\\s+([\\w.?]+\\.save\\(\\)|Cadence\\w*Persistence\\.\\w+\\()"
+    ///
+    /// **The qualifier is optional, and making it so was [[T-1301]]** — for its first nine tickets
+    /// this read `[\w.?]+\.save\(\)`, which requires at least one word character and a dot ahead of
+    /// `save`. Inside `extension ModelContext` the commit is spelled `try? save()`, `self.save()`
+    /// with the `self` left off, and every one of the six such sites under `Cadence/` was invisible
+    /// to **all four halves** — each of which reads `swallowsDirectly` off this needle. Unqualified
+    /// here rather than scoped to the enclosing type the way `bareExistenceCall` is, because
+    /// `save()` is not an ambiguous name: `try?` already says the callee throws, and a throwing
+    /// `save()` is a commit wherever it is written. Half 4's `rawCommit` has read both spellings
+    /// through one lookbehind since it was written; this is the same reading, arrived at late.
+    private static let swallowedSave = "try\\?\\s+((?:[\\w.?]+\\.)?save\\(\\)|Cadence\\w*Persistence\\.\\w+\\()"
     /// The vocabulary, and it is deliberately a closed list rather than a notion of "reports
     /// success". Four spellings, each of which means the screen moved on:
     ///
