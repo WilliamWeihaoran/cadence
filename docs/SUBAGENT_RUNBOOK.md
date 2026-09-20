@@ -719,8 +719,12 @@ with your uncommitted tests in it); baselines are taken from the tree as the run
 
 It takes the test-host lock **once** for the whole batch and uses `xcb.sh <id> raw test` per
 mutation, which is the arrangement that stopped ten separate `xcb.sh test` calls starving for 21
-minutes. It runs the **unmutated** suite first and refuses the whole batch if that is not green over
-a non-zero test count — nothing downstream of a red baseline is evidence about anything. It calls
+minutes. It runs **every distinct `suite:` the plan names** unmutated first — one baseline per
+suite, in plan order, and five mutations sharing one suite still pay one — and refuses the whole
+batch (`BASELINE-NOT-GREEN`) at the first that is not green over a non-zero test count. Nothing
+downstream of a red baseline is evidence about anything, and until T-1245 that was asked of the
+*first* mutation's suite alone: a plan's second suite, already red, goes red under the mutation too
+and prints **KILLED** — the reassuring answer, over a run that measured nothing. It calls
 the **tree's own** `scripts/xcb.sh`, because xcb derives `-project` from its own location and the
 repository copy would build the repository, mutating one tree and testing another.
 

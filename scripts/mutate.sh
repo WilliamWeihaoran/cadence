@@ -46,13 +46,26 @@
 #      older bytes to compare against -- says so instead of claiming the tree is clean.
 #      A surviving mutant and a stranded mutation look identical in a report, which is how a
 #      mutation run stops being evidence.
+#   7. A SUITE NOBODY BASELINED (T-1245, added 2026-09-19). The baseline exists because "in a tree
+#      whose suite is already red, or which does not build, KILLED means nothing at all" -- and it
+#      used to be asked about `mutations[0].suite` and no other. A plan naming two suites had its
+#      second one never measured unmutated, so for every mutation scoped to it a KILLED meant
+#      nothing at all and nothing said so. The direction of that error is what makes it worth a
+#      guard: a suite that is ALREADY red goes red under the mutation too, `classify_run` finds
+#      failing test lines and a suite that ran, and the verdict printed is KILLED -- the
+#      reassuring answer, reached by a run that measured nothing. The runner now baselines every
+#      DISTINCT `suite:` in the plan, in plan order, and refuses the whole batch
+#      (BASELINE-NOT-GREEN) at the first one that is not green. Cost is one extra scoped run per
+#      additional suite over a tree nothing has edited yet -- no recompile, only the suite itself
+#      -- and exactly nothing for the single-suite plans that are the norm.
 #
 # So a verdict of SURVIVED is issued only when all of these are true, each measured rather than
 # assumed: the needle occurred exactly as many times as the plan said; the file's bytes differ
 # from the backup afterwards and equal the expected replacement; the file's bytes matched the
 # baseline BEFORE the edit (so no earlier mutation is stranded in it); the build produced zero
 # compile errors and no toolchain crash; a non-zero number of test results was actually printed;
-# the suite named in the plan appears in the log as something that ran; and the run exited 0.
+# the suite named in the plan appears in the log as something that ran; EVERY distinct suite the
+# plan names was green unmutated, not just the first; and the run exited 0.
 # Anything else is INVALID -- reported by name, never rounded to "survived".
 #
 # A verdict of KILLED additionally requires at least one failing test line, and reports the failing
@@ -704,6 +717,87 @@ def settle_weakenings(results):
     return results
 
 
+# --- the baseline ------------------------------------------------------------
+#
+# Failure mode 7 (T-1245). A plan is a list of mutations, each scoped to a suite, and the scopes
+# are per mutation -- so "the unmutated tree is green" is not one question, it is one question per
+# distinct scope the plan will be judged in.
+
+
+class BaselineProbe:
+    """One scope the plan will be judged in, to be measured before anything is edited.
+
+    It duck-types a `Mutation` on purpose: `run_suite` asks a mutation for nothing but its
+    `.suite`, and `classify_run` for nothing but `.suite` and `.tests`. Passing a probe where a
+    mutation used to go keeps ONE code path between the baseline runs and the mutation runs --
+    a baseline that ran through a second, parallel invocation could drift from the thing it
+    claims to be the control for, which is the whole class of bug this file is about.
+    """
+
+    def __init__(self, suite):
+        self.suite = suite
+        self.tests = []      # every test the plan names against this suite, deduplicated
+        self.idents = []     # the mutations this baseline is the control for
+
+    @property
+    def label(self):
+        return self.suite or "<the whole CadenceTests target>"
+
+
+def baseline_probes(mutations):
+    """Every DISTINCT `suite:` in the plan, in plan order, each carrying the tests named against it.
+
+    Distinct, not one per mutation: the tree is identical for all of them, so a second run of the
+    same scope would re-measure a thing already measured. Five mutations sharing one suite still
+    cost one baseline, which is why the single-suite plans that are the norm pay nothing for this.
+
+    A mutation with no `suite:` scopes its run to the whole target, and gets a probe with
+    `suite = None` -- which `run_suite` turns into an unscoped run exactly as it does for the
+    mutation itself. That unscoped run would in fact cover every other suite in the plan, and this
+    deliberately does NOT use it to skip theirs: a per-suite baseline also catches a MISSPELLED
+    suite (SUITE-ABSENT) before an hour of mutation runs, and mixing scoped and unscoped mutations
+    in one plan is not a case worth trading that for.
+
+    The tests are unioned rather than taken from the first mutation, and that is a real
+    strengthening: a `tests:` line naming a test that does not run in its own `suite:` is a plan
+    error in every case, because `run_suite` scopes the run to that suite and nothing else can
+    run -- so it now stops the batch at the baseline instead of arriving an hour later as one
+    mutation's TEST-ABSENT.
+    """
+    probes = []
+    by_suite = {}
+    for mutation in mutations:
+        probe = by_suite.get(mutation.suite)
+        if probe is None:
+            probe = BaselineProbe(mutation.suite)
+            by_suite[mutation.suite] = probe
+            probes.append(probe)
+        probe.idents.append(mutation.ident)
+        for test in mutation.tests:
+            if test not in probe.tests:
+                probe.tests.append(test)
+    return probes
+
+
+def baseline_phase(mutations, measure):
+    """Measure every probe unmutated. `measure(probe)` returns a RunVerdict and does the reporting.
+
+    Returns `None` when every scope in the plan is green, or the `(probe, verdict)` of the FIRST
+    one that is not -- first, because nothing downstream of a red scope is evidence about
+    anything, and a batch that keeps going is an hour spent producing verdicts nobody may quote.
+
+    Separated from `main` so that both directions of this are provable without a build: that a
+    plan's SECOND suite is measured at all, and that a red one refuses. `selftest` drives it with
+    a `measure` that greens the first scope and reds the second -- the exact shape T-1245 was
+    filed for -- and asserts the refusal names the second suite.
+    """
+    for probe in baseline_probes(mutations):
+        verdict = measure(probe)
+        if verdict.verdict != SURVIVED:
+            return probe, verdict
+    return None
+
+
 # --- the tree ----------------------------------------------------------------
 
 def prepare_tree(scratch, ident):
@@ -1035,23 +1129,52 @@ def main():
                 return 1
 
         if options["build"]:
-            # The baseline run. Every mutation verdict is relative to it: in a tree whose suite is
-            # already red, or which does not build, KILLED means nothing at all.
+            # The baseline runs. Every mutation verdict is relative to one of these: in a tree
+            # whose suite is already red, or which does not build, KILLED means nothing at all.
+            # T-1245: that sentence is true of EVERY suite the plan names, and this used to ask it
+            # of `mutations[0].suite` alone -- so a plan's second suite was judged against a
+            # control nobody had taken, and a KILLED from an already-red suite was indistinguishable
+            # from an earned one.
+            probes = baseline_probes(mutations)
             say("")
-            say("-- baseline (unmutated) --")
-            probe = mutations[0]
-            code, log, seconds = run_suite(tree, ident, probe, options["scheme"],
-                                           options["destination"], log_dir, "baseline")
-            base = classify_run(code, log, probe.suite, probe.tests, labels, suite_labels)
-            say("   exit=%d  test result lines=%d  swift warnings=%d  %.0fs"
-                % (code, base.tests_ran, base.warnings, seconds))
-            if base.verdict != SURVIVED:
+            say("-- baseline (unmutated): %d distinct scope(s) in this plan --" % len(probes))
+            counter = [0]
+
+            def measure(probe):
+                counter[0] += 1
+                say("   [%d/%d] %s   (the control for %s)"
+                    % (counter[0], len(probes), probe.label, ", ".join(probe.idents)))
+                code, log, seconds = run_suite(tree, ident, probe, options["scheme"],
+                                               options["destination"], log_dir,
+                                               "baseline-%s" % (probe.suite or "whole-target"))
+                base = classify_run(code, log, probe.suite, probe.tests, labels, suite_labels)
+                say("   exit=%d  test result lines=%d  swift warnings=%d  %.0fs"
+                    % (code, base.tests_ran, base.warnings, seconds))
+                if base.verdict == SURVIVED:
+                    say("   baseline green over %d tests." % base.tests_ran)
+                return base
+
+            refused = baseline_phase(mutations, measure)
+            if refused is not None:
+                probe, base = refused
+                # A baseline that comes back KILLED carries no `reason`/`detail` at all -- KILLED
+                # is a verdict, not a refusal -- so name the tests that are failing with nothing
+                # mutated. "KILLED:" followed by an empty string is exactly the uninformative
+                # diagnostic the rest of this file exists to avoid, and it is the likeliest shape
+                # here, because an already-red suite is what this guard is for.
+                detail = base.detail
+                if not detail and base.failed:
+                    detail = ("nothing was mutated and these already fail: %s"
+                              % ", ".join(sorted(set(base.failed))))
                 say("")
-                say("!! REFUSING: the unmutated tree is not green over a non-zero test count.")
-                say("   %s: %s" % (base.reason or base.verdict, base.detail))
-                say("   Nothing downstream of this is evidence about anything.")
+                say("!! REFUSING: BASELINE-NOT-GREEN -- the unmutated tree is not green over a")
+                say("   non-zero test count in %s." % probe.label)
+                say("   %s: %s" % (base.reason or base.verdict, detail))
+                say("   Nothing downstream of this is evidence about anything: %s would be judged"
+                    % ", ".join(probe.idents))
+                say("   against a control that was never taken, and an already-red suite prints")
+                say("   KILLED for a mutation nothing in it can see.")
                 return 1
-            say("   baseline green over %d tests." % base.tests_ran)
 
         for index, mutation in enumerate(mutations, start=1):
             paths = [os.path.join(tree, name) for name in mutation.files]
@@ -1490,6 +1613,83 @@ def selftest():
         check("and `weakens: no` overrides the inference", not inferred.weakening)
 
         say("")
+        say(" mode 7 (BASELINE-NOT-GREEN, T-1245) -- one baseline per DISTINCT suite in the plan,")
+        say("     and a plan whose SECOND suite is red unmutated is refused before any mutation")
+        # Real log shapes, not hand-built verdicts: the point of the ticket is that an already-red
+        # suite classifies as KILLED, so the fixture below is fed through the same `classify_run`
+        # a mutation run uses and really does come back KILLED. That is the verdict every mutation
+        # scoped to SuiteB used to inherit, for free, from a control nobody had taken.
+        GREEN_A = ("\u25c7 Suite SuiteA started.\n"
+                   "\u2714 Test theFirstOne() passed after 0.001 seconds.\n"
+                   "\u2714 Test theSecondOne() passed after 0.001 seconds.\n"
+                   "** TEST SUCCEEDED **\n")
+        RED_B = ("\u25c7 Suite SuiteB started.\n"
+                 "\u2718 Test theThirdOne() recorded an issue\n"
+                 "\u2718 Test theThirdOne() failed after 0.001 seconds.\n"
+                 "** TEST FAILED **\n")
+        two_suites = parse_plan(
+            "mutation: M1\nfile: Cadence/A.swift\nsuite: SuiteA\ntests: theFirstOne\n"
+            "--- old\na\n--- new\nb\n--- end\n"
+            "mutation: M2\nfile: Cadence/A.swift\nsuite: SuiteA\ntests: theSecondOne\n"
+            "--- old\nc\n--- new\nd\n--- end\n"
+            "mutation: M3\nfile: Cadence/B.swift\nsuite: SuiteB\ntests: theThirdOne\n"
+            "--- old\ne\n--- new\nf\n--- end\n")
+        probes = baseline_probes(two_suites)
+        check("three mutations over two suites give two baselines, in plan order",
+              [p.suite for p in probes] == ["SuiteA", "SuiteB"], str([p.suite for p in probes]))
+        check("two mutations sharing one suite cost ONE baseline, not two",
+              probes[0].idents == ["M1", "M2"], str(probes[0].idents))
+        check("and that baseline carries every test either of them names",
+              probes[0].tests == ["theFirstOne", "theSecondOne"], str(probes[0].tests))
+
+        measured = []
+
+        def measure_one(probe):
+            measured.append(probe.suite)
+            if probe.suite == "SuiteB":
+                return classify_run(65, RED_B, probe.suite, probe.tests)
+            return classify_run(0, GREEN_A, probe.suite, probe.tests)
+
+        check("an already-red suite really does classify as KILLED -- the reassuring answer a "
+              "mutation scoped to it used to inherit",
+              classify_run(65, RED_B, "SuiteB", ["theThirdOne"]).verdict == KILLED)
+        refused = baseline_phase(two_suites, measure_one)
+        check("the plan's SECOND suite is measured at all", measured == ["SuiteA", "SuiteB"],
+              str(measured))
+        check("a red second suite refuses the batch (BASELINE-NOT-GREEN)",
+              refused is not None and refused[0].suite == "SuiteB",
+              "nothing was refused" if refused is None else refused[0].suite)
+        check("and the refusal knows which mutations it just voided",
+              refused[1].verdict != SURVIVED and refused[0].idents == ["M3"],
+              str(refused[0].idents))
+        # The failing-first. Baselining `mutations[0].suite` alone -- what this did until T-1245 --
+        # measures SuiteA, finds it green, and refuses nothing at all over the very same tree.
+        del measured[:]
+        blind = baseline_phase(two_suites[:1], measure_one)
+        check("the one-probe baseline this replaces would have refused nothing over the same tree",
+              blind is None and measured == ["SuiteA"], str(measured))
+
+        del measured[:]
+        all_green = parse_plan(
+            "mutation: M1\nfile: Cadence/A.swift\nsuite: SuiteA\ntests: theFirstOne\n"
+            "--- old\na\n--- new\nb\n--- end\n"
+            "mutation: M2\nfile: Cadence/A.swift\nsuite: SuiteA\n--- old\nc\n--- new\nd\n--- end\n")
+        check("a plan whose every suite is green runs -- and pays exactly one baseline for its "
+              "one suite, which is the single-suite shape this must not make more expensive",
+              baseline_phase(all_green, measure_one) is None and measured == ["SuiteA"],
+              str(measured))
+
+        unscoped = parse_plan(
+            "mutation: M1\nfile: Cadence/A.swift\n--- old\na\n--- new\nb\n--- end\n"
+            "mutation: M2\nfile: Cadence/A.swift\nsuite: SuiteA\n--- old\nc\n--- new\nd\n--- end\n")
+        unscoped_probes = baseline_probes(unscoped)
+        check("a mutation with no suite: is its own scope, not folded into a named one",
+              [p.suite for p in unscoped_probes] == [None, "SuiteA"],
+              str([p.suite for p in unscoped_probes]))
+        check("and it says what it is scoped to rather than printing None",
+              "whole CadenceTests target" in unscoped_probes[0].label, unscoped_probes[0].label)
+
+        say("")
         say(" the plan parser")
         parsed = parse_plan('mutation: M1\nfile: A.swift\nsuite: S\nexpect: killed\n'
                             '--- old\nalpha\nbeta\n--- new\ngamma\n--- end\n')
@@ -1524,7 +1724,7 @@ def selftest():
         shutil.rmtree(workspace, ignore_errors=True)
 
     say("")
-    say(" mode 6 (T-955) -- a SIGTERM landing between the lock's own `mkdir` and this runner")
+    say(" the lock race (T-955) -- a SIGTERM landing between the lock's own `mkdir` and this runner")
     say("     noticing the subprocess returned must not strand a lock it genuinely holds")
     # `test-host-lock.sh acquire` runs as a CHILD process, and the instant its `mkdir` succeeds the
     # lock is real and on disk. The bug this guards: this runner used to set `self.lock_held = True`
@@ -1643,7 +1843,7 @@ def selftest():
         shutil.rmtree(signal_workspace, ignore_errors=True)
 
     say("")
-    say(" mode 7 (T-1044) -- a tree check whose only reference is its own baseline cannot tell")
+    say(" mode 6 (T-1044) -- a tree check whose only reference is its own baseline cannot tell")
     say("     a clean tree from one a dead runner left a mutation in")
     stranded_workspace = tempfile.mkdtemp(prefix="cadence-mutate-selftest-stranded-")
     try:

@@ -35,6 +35,16 @@ struct CadenceGuardScriptSelftestTests {
     /// reads exactly those bytes as its baseline, so `OK` was printed over a file that still held
     /// the dead runner's edit. Reproduced 2026-09-06. A surviving mutant and a stranded mutation
     /// look identical in a report, so losing this verdict turns the whole runner into theatre.
+    ///
+    /// `BASELINE-NOT-GREEN` is T-1245, and it is the same hollowness one level up from a verdict:
+    /// the baseline exists because *"in a tree whose suite is already red, or which does not
+    /// build, KILLED means nothing at all"* — and that was asked of `mutations[0].suite` alone,
+    /// so a plan naming two suites never established that the second one was green unmutated.
+    /// An already-red suite goes red under the mutation too, which `classify_run` reads as
+    /// **KILLED**: the reassuring answer, over a run that measured nothing. The runner now
+    /// baselines every distinct `suite:` in the plan and refuses at the first that is not green;
+    /// its selftest drives the baseline phase with a control that greens the first suite and reds
+    /// the second, and pins that the one-probe form it replaces refuses nothing over that tree.
     static let mutationRunnerRefusals = [
         "NEEDLE-ABSENT",
         "NOT-PRISTINE",
@@ -45,6 +55,7 @@ struct CadenceGuardScriptSelftestTests {
         "RED-WITHOUT-A-FAILING-TEST",
         "INCONCLUSIVE",
         "STRANDED",
+        "BASELINE-NOT-GREEN",
     ]
 
     /// Every refusal `scripts/agent-commit.sh` makes. `SHARED-INDEX-DIRTY` is the post-commit repair
