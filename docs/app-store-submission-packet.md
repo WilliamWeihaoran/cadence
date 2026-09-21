@@ -91,13 +91,14 @@ Required notes:
 
 Use `docs/apple-release-readiness.md` as the privacy-label source of truth. The current App Store Connect privacy answers should include:
 
-- Data linked to the user for app functionality: name, email address, user ID, and other user content.
+- **Other user content, linked to the user, app functionality.** This is the only collected row, and it is earned by the optional AI action transmitting a note's title, body and list name to OpenAI — not by storage (T-1311).
+- **Name, email address and user ID are `Not Collected`.** Sign in with Apple writes them to local `UserDefaults` and nothing transmits them; the readiness doc names the evidence and the two things only the owner can confirm. The app's privacy manifest still lists all three and is knowingly out of step (T-1323).
 - No data used to track the user.
 - No tracking domains.
-- Calendar access described as permission-gated app functionality.
-- Optional OpenAI processing disclosed in the privacy policy and review notes.
+- Calendar access described as permission-gated app functionality: EventKit reads and writes stay on the device and in the user's own Apple Calendar.
+- Optional OpenAI processing disclosed in the privacy policy and review notes, including that `/v1/responses` retains the request by default.
 
-Do not answer "Data Not Collected" for the app target because Cadence stores and may sync user-created productivity content.
+Do not answer "Data Not Collected" for the app target — not because Cadence stores productivity content (storing is not collecting, and the user's private CloudKit database is not developer-accessible), but because the optional AI action really does transmit note content to a third party.
 
 ## Screenshot And Metadata Checklist
 
