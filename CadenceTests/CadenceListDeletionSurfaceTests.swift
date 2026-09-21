@@ -120,7 +120,13 @@ struct CadenceListDeletionSurfaceTests {
         contextTask.context = context
         let areaTask = AppTask(title: "Area task")
         areaTask.area = area
+        // **Filed under the context, and carrying a milestone (T-1312).** It used to carry the
+        // milestone and nothing else, which made it the very task the cascade had no business
+        // deleting; the summary counted it through `goals.flatMap(\.tasks)` and so agreed with a
+        // cascade that was wrong. A goal's tasks are counted here when they are the context's own,
+        // and `aContextSummaryLeavesOutATaskOnlyAGoalTiesToIt` pins the other half.
         let goalTask = AppTask(title: "Goal task")
+        goalTask.context = context
         goalTask.goal = goal
 
         modelContext.insert(context)
@@ -140,6 +146,46 @@ struct CadenceListDeletionSurfaceTests {
         #expect(summary.goals == 1)
         #expect(summary.habits == 1)
         #expect(summary.tasks == 3)
+    }
+
+    /// **T-1312.** The confirmation may not promise a loss the cascade no longer takes.
+    ///
+    /// `forContext` mirrored the cascade's fourth leg, `goals.flatMap(\.tasks)`, so before the fix
+    /// the count and the delete agreed — on the wrong number. Now that the cascade severs a foreign
+    /// task's milestone instead of deleting the task, the summary has to stop counting it, or a
+    /// sheet reading "3 tasks" would authorise the deletion of two.
+    @Test func aContextSummaryLeavesOutATaskOnlyAGoalTiesToIt() throws {
+        let modelContext = ModelContext(try container())
+        let doomed = Context(name: "Work")
+        let survivor = Context(name: "Life")
+        let survivingArea = Area(name: "Life area", context: survivor)
+        let goal = Goal(title: "Goal", context: doomed)
+
+        let ownTask = AppTask(title: "Work task")
+        ownTask.context = doomed
+        ownTask.goal = goal
+        let foreignTask = AppTask(title: "Life task")
+        foreignTask.area = survivingArea
+        foreignTask.context = survivor
+        foreignTask.goal = goal
+        let inboxTask = AppTask(title: "Inbox task")
+        inboxTask.goal = goal
+
+        modelContext.insert(doomed)
+        modelContext.insert(survivor)
+        modelContext.insert(survivingArea)
+        modelContext.insert(goal)
+        modelContext.insert(ownTask)
+        modelContext.insert(foreignTask)
+        modelContext.insert(inboxTask)
+        try modelContext.save()
+
+        let summary = CadenceListDeletionSummary.forContext(doomed, in: modelContext)
+        #expect(summary.goals == 1, "non-vacuity: the doomed goal is not on this context")
+        #expect(
+            summary.tasks == 1,
+            "the context confirmation still counts tasks filed elsewhere (T-1312): \(summary.tasks)"
+        )
     }
 
     @Test func lostItemLinesOmitZeroesPluralizeAndKeepCascadeOrder() {

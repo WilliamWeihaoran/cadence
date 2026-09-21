@@ -262,6 +262,90 @@ struct ListDeleteHelpersTests {
         #expect(remainingNotes.map(\.id) == [survivingNote.id])
     }
 
+    /// **T-1312: a context cascade may not take another context's tasks.**
+    ///
+    /// `AppTask.goal` and `AppTask.context` are independent relationships and the goal pickers on
+    /// both platforms offer every unfinished goal in the store, so a task filed under *Life* can be
+    /// given a milestone that belongs to *Work* in two taps. `deleteContext` used to build its task
+    /// sweep as `areas.flatMap(\.tasks) + projects.flatMap(\.tasks) + contextTasks +
+    /// goals.flatMap(\.tasks)`, and the fourth leg is the only one that is not the context's own
+    /// subtree: deleting *Work* destroyed a task living in *Life*, and an Inbox task filed nowhere
+    /// at all.
+    ///
+    /// The rule the repository already had is `ModelContext.deleteGoal`'s — *"the tasks assigned to
+    /// it … are the user's real work and outlive any goal that organised them"* — and a cascade
+    /// that reaches a goal through its context cannot mean something stronger by it than the
+    /// cascade that deletes the goal directly.
+    @Test func deleteContextSeversAForeignTasksMilestoneRatherThanDeletingTheTask() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let doomed = Context(name: "Work")
+        let survivor = Context(name: "Life")
+        let doomedArea = Area(name: "Work area", context: doomed)
+        let survivingArea = Area(name: "Life area", context: survivor)
+        let goal = Goal(title: "Run a marathon", context: doomed)
+        // A habit filed under the surviving context that names the doomed goal. It is not in
+        // `doomed.habits`, so it was never deleted — but nothing severed its reference either.
+        let foreignHabit = Habit(title: "Stretch", context: survivor, goal: goal)
+
+        // The task this ticket is about: its own list and its own context are the survivor's, and
+        // its only tie to the doomed context is the milestone.
+        let foreignTask = AppTask(title: "Life task with a Work milestone")
+        foreignTask.area = survivingArea
+        foreignTask.context = survivor
+        foreignTask.goal = goal
+        // Filed nowhere at all — an Inbox task. Not the doomed context's either.
+        let inboxTask = AppTask(title: "Inbox task with a Work milestone")
+        inboxTask.goal = goal
+        // The context's own task, which also carries the milestone. This one really does go.
+        let ownTask = AppTask(title: "Work task")
+        ownTask.area = doomedArea
+        ownTask.context = doomed
+        ownTask.goal = goal
+
+        for model in [doomed, survivor] { modelContext.insert(model) }
+        modelContext.insert(doomedArea)
+        modelContext.insert(survivingArea)
+        modelContext.insert(goal)
+        modelContext.insert(foreignHabit)
+        modelContext.insert(foreignTask)
+        modelContext.insert(inboxTask)
+        modelContext.insert(ownTask)
+        try modelContext.save()
+
+        #expect(modelContext.deleteContext(doomed))
+        try modelContext.save()
+
+        let remainingTasks = try modelContext.fetch(FetchDescriptor<AppTask>())
+        #expect(
+            Set(remainingTasks.map(\.title)) == [
+                "Life task with a Work milestone",
+                "Inbox task with a Work milestone"
+            ],
+            "the context cascade took a task that was not filed under it (T-1312): \(remainingTasks.map(\.title))"
+        )
+
+        let survivingForeign = try #require(remainingTasks.first { $0.id == foreignTask.id })
+        #expect(survivingForeign.goal == nil, "the doomed goal is still attached to a surviving task")
+        #expect(survivingForeign.area?.id == survivingArea.id, "the survivor lost its own list")
+        #expect(survivingForeign.context?.id == survivor.id, "the survivor lost its own context")
+
+        let survivingInbox = try #require(remainingTasks.first { $0.id == inboxTask.id })
+        #expect(survivingInbox.goal == nil)
+
+        // The habit filed under the surviving context is untouched apart from the severed goal.
+        let remainingHabits = try modelContext.fetch(FetchDescriptor<Habit>())
+        #expect(remainingHabits.map(\.id) == [foreignHabit.id])
+        #expect(remainingHabits.first?.goal == nil)
+        #expect(remainingHabits.first?.context?.id == survivor.id)
+
+        // And the cascade still did its own job.
+        #expect(try modelContext.fetch(FetchDescriptor<Goal>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<Area>()).map(\.id) == [survivingArea.id])
+        #expect(try modelContext.fetch(FetchDescriptor<Context>()).map(\.id) == [survivor.id])
+    }
+
     @Test func deleteTaskRemovesScheduledCompletedTaskAndSubtasksCleanly() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

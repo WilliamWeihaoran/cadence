@@ -52,6 +52,13 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
   sites (`EditListSheet` x2, `SettingsView` x3) *and* iOS, so that copy cannot drift; the
   `CadenceListDeletionSummary` counts ("1 project", "7 tasks") are read by iOS alone, because
   macOS's dialog reports scope categorically and cannot state a number.
+  **A cascade reaching an object through its container may not take more than the cascade aimed at
+  that object directly** (T-1312). `deleteContext` swept `goals.flatMap(\.tasks)` while
+  `ModelContext.deleteGoal` nullifies the same link — so deleting a context destroyed tasks filed
+  under *other* contexts, which deleting the goal itself preserves. `AppTask.goal` is independent of
+  `AppTask.context`; a task that really is a context's own is already reached through its area, its
+  project or its own `context`, so a leg through a free relationship can only add somebody else's
+  rows. `CadenceListDeletionSummary` mirrors these legs and moves with them.
 - **Container wind-down** - `CadenceTaskContainerLifecycleService.swift` (prefixed file, unprefixed
   `TaskContainerLifecycleService` type). Completing or archiving an area, a project or a kanban
   column settles the work still open inside it. It lived in `macOS/Services/TaskWorkflowService.swift`

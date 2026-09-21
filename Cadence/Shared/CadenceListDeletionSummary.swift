@@ -124,7 +124,10 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
 /// - notes are filtered to `.list` kind, because the cascade only deletes list notes; a daily or
 ///   permanent note attached to the list survives it.
 /// - tasks are deduped by id, because an area's task set and its projects' task sets can name the
-///   same row (and under a context, so can a goal's).
+///   same row (and under a context, so can its own `tasks` array).
+/// - a goal's tasks are **not** a source (T-1312). `AppTask.goal` is independent of
+///   `AppTask.context`, so a goal's task set routinely names rows filed under other contexts; the
+///   context cascade severs those rather than deleting them, and this count follows it.
 ///
 /// **Every count but `images` is exact; `images` is the one that can be wrong, and only upward**
 /// (T-433). It used to say "mirror … exactly" and have no `images` field at all, while all three
@@ -250,11 +253,16 @@ struct CadenceListDeletionSummary: Equatable, Sendable {
         // both an `area` and a `context` — so this is one deduped set, exactly as the cascade
         // builds it.
         let projects = dedupe(areas.flatMap { $0.projects ?? [] } + (context.projects ?? []), by: \.id)
+        // **A goal's tasks are not a leg here (T-1312).** They were, mirroring a fourth leg the
+        // cascade had, and the two agreed on a number that was wrong in the direction this file
+        // forbids: the cascade deleted tasks filed under *other* contexts and the sheet counted
+        // them, so the user authorised a loss that was not theirs to authorise. The cascade now
+        // severs `task.goal` instead, and a task that really is this context's own is already in
+        // one of the three legs below.
         let tasks = dedupe(
             areas.flatMap { $0.tasks ?? [] }
                 + projects.flatMap { $0.tasks ?? [] }
-                + (context.tasks ?? [])
-                + goals.flatMap { $0.tasks ?? [] },
+                + (context.tasks ?? []),
             by: \.id
         )
         let notes = listNotes(areas.flatMap { $0.notes ?? [] } + projects.flatMap { $0.notes ?? [] })

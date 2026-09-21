@@ -51,11 +51,23 @@ extension ModelContext {
             projects.flatMap { Array($0.goalLinks ?? []) }
         )
 
+        // **Three legs, not four (T-1312).** `goals.flatMap { Array($0.tasks ?? []) }` used to be a
+        // fourth, and it is the only one that is not this context's own subtree: `AppTask.goal`
+        // and `AppTask.context` are independent relationships and every goal picker in the app
+        // offers every unfinished goal in the store, so a task filed under *Life* can carry a
+        // milestone that belongs to *Work*, and deleting *Work* destroyed it. A task that really is
+        // this context's own is already in one of the three legs below — through its area, its
+        // project, or its own `context` — so the fourth leg could only ever add somebody else's.
+        //
+        // Those tasks are severed instead, below the guard. `ModelContext.deleteGoal` already
+        // decided what owning a goal's tasks means (*"the tasks assigned to it … are the user's
+        // real work and outlive any goal that organised them"*), and a cascade that reaches a goal
+        // through its context cannot mean something stronger by it than the one that deletes the
+        // goal directly. `CadenceListDeletionSummary.forContext` counts these same three legs.
         let tasks = uniqueTasks(from:
             areas.flatMap { Array($0.tasks ?? []) } +
             projects.flatMap { Array($0.tasks ?? []) } +
-            contextTasks +
-            goals.flatMap { Array($0.tasks ?? []) }
+            contextTasks
         )
         let notes = uniqueNotes(from:
             areas.flatMap { Array($0.notes ?? []) } +
@@ -88,6 +100,17 @@ extension ModelContext {
         delete(links)
         delete(completions)
         delete(goalLinks)
+        // Sever what the doomed goals still hold, exactly as `deleteGoal` does, and only after the
+        // sweep above — by then `detachRelationships` has already taken this context's own tasks
+        // out of `goal.tasks`, so what is left in these arrays is precisely the rows that survive
+        // (T-1312). The habit half is the same hazard one model over: a habit filed under another
+        // context can name a goal in this one, and it outlives the goal rather than going with it.
+        for goal in goals {
+            for task in goal.tasks ?? [] { task.goal = nil }
+            for habit in goal.habits ?? [] { habit.goal = nil }
+            goal.tasks = []
+            goal.habits = []
+        }
         delete(goals)
         delete(habits)
         delete(pursuits)
