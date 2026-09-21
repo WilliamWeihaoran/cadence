@@ -36,15 +36,28 @@ area.tasks = (area.tasks ?? []) + [task]
 
 SwiftData auto-creates a record type in the **Development** database as a debug build runs; the
 **Production** database gets it only when a human presses *Deploy Schema Changes* in the CloudKit
-Console. That is owner-only, Production has been live since 2026-09-05, and between the commit and
-that press a TestFlight or App Store build talks to a schema with no `CD_<NewModel>` — that one
-type silently does not sync while every older type syncs normally. Add the type, then record that a
-deploy is owed in `docs/apple-release-readiness.md`, which is where the owner reads it.
+Console. That is owner-only, and Production has been live since 2026-09-05.
+
+**The blast radius is the whole store, not the new type.** This section used to say the type
+"silently does not sync while every older type syncs normally"; Apple's TN3164 falsifies that — a
+missing Production schema, a record **type** *or a* **field**, can fail mirroring *initialisation*
+and abort exports for every type at once (T-1294 / R49). So an additive optional property on an
+already-deployed model is **not** the safer route: a new field is the same mismatch one level down.
+
+**Schema first, then the writer.** Test the final additive model in Development → deploy its types,
+fields and indexes to Production → test there → *then* publish the build that writes it. Deployment
+copies schema, not records, so a deployed schema with no shipped writer is the state to pass through
+rather than a compromise. `CD_SidebarLayoutPreference` and `CD_LookPreference` are undeployed today.
+Record an owed deploy in `docs/apple-release-readiness.md`, which is where the owner reads it.
+
+**Never take a model back out of `CadenceSchema` to quieten a red sync test** (T-1294 rejected that
+by name). For a type in use it risks local migration failure and rows the app can no longer reach;
+that it *also* deletes the CloudKit records is **not** established — do not repeat "destroys data".
 
 **Degrade to a device-local fallback and add no notice.** Nothing can tell "not deployed" from "no
-row has synced yet", which is also every new device for the first seconds of every CloudKit launch
-— the two-readings problem the tag seed records (T-528). `CadenceSidebarLayoutPreferenceStore`
-(T-1274) is the worked example and `CadenceSidebarLayoutPreferenceTests` pins it; T-1290 is why.
+row has synced yet" — also every new device for the first seconds of every CloudKit launch (T-528's
+two readings). `CadenceSidebarLayoutPreferenceStore` (T-1274) is the worked example, its tests pin
+it, and T-1290 is why.
 
 ## Important Models
 
@@ -121,28 +134,15 @@ rebinding is the other branch. It is a stored-property change on two `@Model` ty
 
 ## Persisted Fields With No Readers
 
-There is no `SchemaMigrationPlan` in this project, so removing a stored property **drops the
-column's data** for every existing store — it does not clean anything up. Two fields currently
-look like dead code and are not safe to delete:
-
-- `AppTask.calendarEventID` — has readers but no writer that sets it non-empty. There are exactly
-  three, and **all three only ever assign `""`**: `SchedulingService` (7 assignments, no reads),
-  `CalendarLinkedTaskSupport` (reads the identifier, looks the event up, clears it when EventKit no
-  longer has it), and `CadenceTaskMutationSupport.detachRelationships(for:)` on delete. They exist
-  for values an earlier build left on disk and in CloudKit.
-  This bullet used to credit the readers with *deleting the linked event* when a task is deleted
-  and with *repairing relationships*, and both were wrong — `1d81864` corrected the same two claims
-  in the long Claude reference and did not reach this file. Nothing anywhere deletes an event on
-  task delete, and `DataIntegrityRepairService`'s one `calendarEventID` line is on **`Note`**, inside note merging,
-  where the field is live and in use. Re-grep before repeating either claim, and read the hits:
-  `grep -rn calendarEventID --include='*.swift' Cadence` also returns `Note`'s uses of the same
-  field name — the event-linked-note path, which is live — so the three files above are the
-  `AppTask` ones specifically, not the whole grep.
-- `Goal.dependsOnGoalIDsJSON` — finish-to-start dependency IDs as a JSON array of UUID strings.
-  Zero readers, zero writers; its JSON accessor was already removed, leaving a tombstone comment
-  in `macOS/Views/GoalsSupportViews.swift`.
-
-A dead-code pass will find no references, no UI and no tests for either. That is not evidence.
+There is no `SchemaMigrationPlan` in this project, so removing a stored property **drops that
+column's data** in every existing store — it cleans nothing up. Two fields look like dead code and
+must not be deleted: `AppTask.calendarEventID`, which exactly three files touch and **all three
+only ever assign `""`**, for values an earlier build left on disk and in CloudKit; and
+`Goal.dependsOnGoalIDsJSON`, zero readers and zero writers, accessor already removed, tombstone
+comment in `macOS/Views/GoalsSupportViews.swift`. A dead-code pass finds no references, no UI and
+no tests for either, and that is not evidence. **Re-grep before describing the first** — the same
+field name on **`Note`** is live and in use — and read the three files, and the two claims
+`1d81864` corrected about them, in `docs/CLAUDE_REFERENCE.md`, "Calendar / Events".
 
 ## Sections Are Not A Model
 
