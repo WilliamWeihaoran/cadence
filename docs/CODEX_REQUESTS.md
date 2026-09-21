@@ -3682,3 +3682,98 @@ Two extra questions worth more than the list:
 - **Does any survivor collide with an existing app icon that is a letterform on a dark squircle?**
   That is the visual-similarity screen round 4 explicitly did not do, and concept A is now committed
   to exactly that composition.
+
+## R57 — This app has 1,159 hardcoded font sizes and zero Dynamic Type
+
+Measured at `e52ae96` over `Cadence/`:
+
+```
+.system(size: N)   1159
+ScaledMetric        0
+dynamicTypeSize     0
+accessibilityLabel  253
+```
+
+VoiceOver *naming* has clearly been worked on — 253 labels, and several sweeps in `CadenceTests`
+pin them by value. **Text sizing has not been touched at all.** Every size in the app is a fixed
+point value, so a user who raises text size in Settings sees no change anywhere.
+
+This is a productivity app its owner uses daily on a phone, an iPad and a Mac. Answer four things:
+
+1. **What is actually required versus recommended?** Dynamic Type is a HIG expectation; say where it
+   crosses into something App Review enforces, and whether any of it is an accessibility
+   *requirement* rather than a quality bar. Cite Apple rather than summarising received wisdom.
+2. **What is the migration shape for 1,159 sites?** `.system(size:)` → `.font(.body)` is not
+   mechanical: this app has a deliberate type scale, and a token layer (`Theme.swift`). Say whether
+   the right move is a scaled token layer, `ScaledMetric`, relative text styles, or a mix — and what
+   each costs in layout breakage on the three target devices (iPhone 15 at 393×852, iPad Pro 11",
+   and a Mac window).
+3. **What breaks first?** This repository has fixed-height rows, a calendar timeline that converts
+   points to minutes, and sweep tests that pin literal sizes and radii. Name the specific surfaces
+   where scaled text will overflow or misalign, and which existing tests will go red.
+4. **Is there a cheap partial that is honestly better than nothing**, or is partial Dynamic Type
+   worse than none — a layout that half-responds being more broken than one that does not respond
+   at all? That is the decision the owner actually faces, and I do not know the answer.
+
+Also worth saying if true: whether the 253 labels are load-bearing for VoiceOver *navigation* or
+only for naming, and what else VoiceOver needs that a label sweep cannot see.
+
+## R58 — The MCP boundary can write to the owner's real store. What stops it?
+
+`Cadence/Services/MCPReadOnly/` — the directory name is now a lie — exposes nine write tools:
+`create_container`, `create_context`, `create_link`, `create_task`, `update_container`,
+`update_container_columns`, `update_context`, `update_task`, `append_core_note`. They operate on the
+**owner's live SwiftData store**, the same one their Mac, iPhone and iPad sync through.
+
+The MCP server runs as a separate target and speaks stdio to whatever client launches it.
+
+- **What is the trust boundary, and where is it enforced?** Trace what an MCP client can actually
+  reach. Is there authentication, capability scoping, or a confirmation step for destructive
+  operations — or is the boundary "whoever can run the binary"?
+- **What is the worst thing a malicious or confused client can do**, given those nine tools plus the
+  read surface? Rank by damage, and say which are recoverable from the owner's own data.
+- **Prompt injection is the live version of this.** The read surface returns note *bodies* — the
+  owner's own text — to an LLM client that also holds the write tools. A note containing
+  instructions is a note. Say what that makes possible and whether anything in the design prevents
+  it.
+- **What does Apple's sandbox actually permit here?** The app is sandboxed with an app group; the
+  MCP server is a separate process. Say what the sandbox does and does not constrain, and whether
+  shipping an MCP server alongside a sandboxed App Store app raises a review question.
+
+This is the one part of the product with no adversary model written down anywhere.
+
+## R59 — WidgetKit: what does this app's widget do when the rules bite?
+
+`CadenceWidgets` reads the app-group `UserDefaults` suite and the shared store. It has its own
+`PrivacyInfo.xcprivacy`, its own entitlements, and it picks up the accent palette on its next
+timeline reload.
+
+WidgetKit imposes limits the app does not have: a memory ceiling per widget process, a wall-clock
+budget for timeline generation, a refresh budget per day, and a rule that a timeline provider must
+not block. This repository has **no capped list query anywhere** (R54 established that four of eight
+`fetchLimit` mentions are comments and the rest are existence probes), and a first CloudKit sync
+pulls the whole store.
+
+Say what happens when the owner's store is large, on a cold device, while the widget is asked for a
+timeline. Name the budget that binds first, what the user sees when it is exceeded, and whether
+anything in the current code would notice or report it. Then say which of those failures is
+*silent* — a blank or stale widget is the classic one, and the owner would read it as the app being
+broken rather than as a budget.
+
+## R60 — What is documented to differ between the Xcode 26 and 27 SDKs?
+
+T-1318 lists nine assertions in this suite that pin **framework** behaviour rather than this
+repository's own, and they cannot be settled here: CI runs Xcode 26, the owner's Mac runs 27, and
+the runner image ships no 27 to select. Running both is not available to anyone working in this
+checkout.
+
+But some of it is documented rather than empirical. Read Apple's release notes, SDK diffs and
+deprecation lists for the 26 → 27 transition and say **which of these nine are known to have
+changed, which are known to be stable, and which are genuinely only answerable by running both**.
+That last list is the useful one — it tells the owner what they would be buying with a second
+toolchain install, and whether it is worth the disk.
+
+Two are already known to differ and are the calibration for your answer: `ModelContext.rollback()`'s
+treatment of an already-materialised reference (T-1279, T-1296), and SwiftData's synchronous inverse
+back-population, which an agent measured while writing `create_link` and which changed the order in
+which an `order` value had to be allocated.
