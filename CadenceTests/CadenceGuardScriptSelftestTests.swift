@@ -105,18 +105,26 @@ struct CadenceGuardScriptSelftestTests {
     /// ledger — under `reorderfeel`'s subject line about T-1174/T-1175, because both had written
     /// `…/scratchpad/msg.txt` and `-F` read whichever landed last. The repair every brief carried
     /// afterwards was *"name it `msg-<agent>-<ticket>.txt`"*, which is a rule about remembering;
-    /// the basename must now contain the agent id, so the name that collided names nobody and is
+    /// the basename must now name the agent id, so the name that collided names nobody and is
     /// refused for both of them.
     ///
-    /// `MESSAGE-FILE-SHARED` is T-1222, and it is the one refusal here about a file that is not in
-    /// the repository at all. Every agent in a session writes into ONE scratchpad directory, so
-    /// `-F msg.txt` names a file with several writers and no lock: `938cdb7` (rewritten as
-    /// `0fb5504`) carried `ledgerguard`'s whole diff — this script, the runbook, this suite, the
-    /// ledger — under `reorderfeel`'s subject line about T-1174/T-1175, because both had written
-    /// `…/scratchpad/msg.txt` and `-F` read whichever landed last. The repair every brief carried
-    /// afterwards was *"name it `msg-<agent>-<ticket>.txt`"*, which is a rule about remembering;
-    /// the basename must now contain the agent id, so the name that collided names nobody and is
-    /// refused for both of them.
+    /// **It asked the wrong question ([[T-1317]]).** The first reading was
+    /// `[[ "${2:t}" == *"$id"* ]]` — membership anywhere in the string — and agent ids here are
+    /// short words that sit inside other short words: `sync` was accepted for `msg-async-T-1.txt`
+    /// and `order` for `msg-reorder-T-1.txt`, which is the cross-agent mix-up the refusal exists to
+    /// stop, written in the shape its own advice produces. The id must be a whole **component** of
+    /// the basename now, bounded by a non-alphanumeric character or by an end of the name. Mode 4k
+    /// carries both directions: those two names refused, and `msg-<id>-<ticket>.txt` and `<id>.txt`
+    /// still committing. The asymmetry worth remembering is that a refusal is proved by the
+    /// selftest written in the same commit, so one that is too LOOSE passes its own proof.
+    ///
+    /// **`REMOVES-HEAD-LINES` counts diff arithmetic, not set membership ([[T-1316]]).** It was
+    /// `grep -F -x -v -f <new> <old> | grep -c .`, which counts old line TEXTS absent from the new
+    /// file — so deleting one of two identical lines counted 0, and deleting a blank line counted 0
+    /// because `grep -c .` drops empty lines. Both are deletions and both committed in silence.
+    /// That is not a contrived shape in a ledger built of repeated `  body` continuations and blank
+    /// separators: mode 4d2's own archive fixture declared `--removes 1` for a three-line deletion
+    /// until this was repaired. Mode 4b1 is the pair of fixtures, read in both directions.
     static let commitHelperRefusals = [
         "MESSAGE-FILE-SHARED",
         "FOREIGN-STAGED",
@@ -243,6 +251,15 @@ struct CadenceGuardScriptSelftestTests {
     /// The third is the one a renamed ledger or a rotted path predicate trips while the other two
     /// still look healthy. Naming both here means deleting either mode goes red rather than
     /// quietly halving what the guard proves.
+    ///
+    /// **And the floor caught the script's own parser, which is what a floor is for ([[T-1317]]).**
+    /// The three inputs were told apart positionally with `FNR == 1 { part++ }`, and an empty file
+    /// never yields `FNR == 1`: with the optional archive missing — it is written as a zero-byte
+    /// file when `git show` cannot find it — the commit log was parsed as the archive and no line
+    /// was read as a commit at all. Measured at HEAD,
+    /// `CADENCE_LEDGER_LAG_DONE=docs/NO_SUCH_ARCHIVE.md` reported "0 commits, 0 examined" and
+    /// refused `LEDGER-LAG-VACUOUS`. The parts are keyed on `FILENAME` now, and mode 6 holds both
+    /// directions plus the same defect written the other way round, a zero-byte `docs/TODO.md`.
     static let ledgerLagRefusals = [
         "LEDGER-CLOSURE-LAGGED",
         "LEDGER-LAG-VACUOUS",

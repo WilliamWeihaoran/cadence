@@ -42,19 +42,27 @@ struct CadenceRadiusControlCompactSweepTests {
         let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
             + CadenceSourceScan.swiftFiles(under: "CadenceWidgets")
             + CadenceSourceScan.swiftFiles(under: "CadenceMCPServer")
-        // Anchored so an unrelated `*Radius` name cannot false-positive: `CadenceWidgets
-        // /WidgetChrome.swift` scales a *shadow blur* radius (`elevationRadius`) through
-        // 5/6/7/8 across four widget sizes — real scatter, a deliberate per-tier value, not
-        // "one origin copied N times" — and a bare `[Rr]adius\w*` pattern matched its `7` tier
-        // as if it were a corner radius. Matching only `cornerRadius` (bare or as any
-        // `*CornerRadius` name), bare `radius`, and `xRadius`/`yRadius` keeps the sweep scoped
-        // to what T-616 is actually about.
-        let pattern = "\\b(?:\\w*[Cc]ornerRadius|[xy][Rr]adius|[Rr]adius)\\s*[:=]\\s*7\\b"
+        // The needle is `CadenceSourceScan.radiusLiteralPattern(7)`, which is the one the `10`
+        // sweep runs too — one spelling, not two near-copies of it. Its anchoring is documented
+        // there: `CadenceWidgets/WidgetChrome.swift` scales a *shadow blur* radius
+        // (`elevationRadius`) through 5/6/7/8 across four widget sizes, deliberate per-tier scatter
+        // that a bare `[Rr]adius\w*` pattern read as a corner radius.
+        //
+        // **Matched over whole-file text, not line by line ([[T-1316]]).** The line-wise loop this
+        // replaced could not see a `cornerRadius:` whose `7` a formatter had wrapped onto the next
+        // line, and the needle it ran could not see `let cornerRadius: CGFloat = 7` at all — the
+        // typed-declaration shape this sweep's own doc comment above claims to count, and the shape
+        // three of the constants T-616 converted were originally written in.
+        let pattern = CadenceSourceScan.radiusLiteralPattern(7)
         for path in paths where path != themeDefinitionFile {
             let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
-            for (index, line) in source.components(separatedBy: "\n").enumerated() {
-                guard CadenceSourceScan.matchCount(pattern, in: line) > 0 else { continue }
-                hits.append((path, index + 1, line.trimmingCharacters(in: .whitespaces)))
+            var seen: Set<Int> = []
+            for hit in CadenceSourceScan.matchLines(pattern, in: source)
+            where seen.insert(hit.line).inserted {   // one site per line, as the `10` sweep reads it
+                hits.append((path, hit.line + 1, hit.matched
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .joined(separator: " ")))
             }
         }
         return hits
@@ -82,7 +90,8 @@ struct CadenceRadiusControlCompactSweepTests {
         fires: "RoundedRectangle(cornerRadius: 7)",
         andNotOn: "RoundedRectangle(cornerRadius: Theme.radiusControlCompact)"
     ) { text in
-        CadenceSourceScan.matchCount("cornerRadius: *7\\b", in: text) > 0
+        // The needle the sweep runs, not a third spelling of it ([[T-1316]]).
+        CadenceSourceScan.matchCount(CadenceSourceScan.radiusLiteralPattern(7), in: text) > 0
     }
 
     @Test

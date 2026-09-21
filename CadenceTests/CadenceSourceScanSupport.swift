@@ -322,6 +322,62 @@ enum CadenceSourceScan {
         return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
     }
 
+    /// Every match of `pattern` in `text`, with the 0-based index of the line the match **starts**
+    /// on and the matched text itself. Empty when the pattern does not compile.
+    ///
+    /// **Why a whole-text match and not a loop over lines (T-1316).** A scan that runs its regex
+    /// line by line cannot see any shape a formatter wraps, and `\s` in the needle then means
+    /// "spaces on this one line" rather than "whitespace". `cornerRadius:` with its `10` on the
+    /// next line, and `defaults: UserDefaults =` with its `.standard` on the next, are both what
+    /// `swift-format` produces on a long signature, and both were invisible to every line-wise
+    /// sweep here while reading exactly like a passing run. Matching the whole text and mapping
+    /// the offset back to a line keeps the line number a failure message needs — and the line the
+    /// match STARTS on is the right one for `enclosingDeclarationPath`, which walks upwards.
+    static func matchLines(_ pattern: String, in text: String) -> [(line: Int, matched: String)] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let text = text as NSString
+        var newlines: [Int] = []
+        for offset in 0..<text.length where text.character(at: offset) == 10 { newlines.append(offset) }
+        func line(containing offset: Int) -> Int {
+            var low = 0
+            var high = newlines.count
+            while low < high {
+                let middle = (low + high) / 2
+                if newlines[middle] < offset { low = middle + 1 } else { high = middle }
+            }
+            return low
+        }
+        return regex
+            .matches(in: text as String, range: NSRange(location: 0, length: text.length))
+            .map { (line: line(containing: $0.range.location), matched: text.substring(with: $0.range)) }
+    }
+
+    /// Every spelling of a corner radius written as the bare literal `value`, as one needle shared
+    /// by the `10` and the `7` sweeps rather than as two near-copies of it.
+    ///
+    /// Three shapes, and the third is the one [[T-1316]] added:
+    ///
+    /// - a call site or member value — `cornerRadius: 10`, `xRadius: 7`;
+    /// - an assignment — `cornerRadius = 10`;
+    /// - a **typed declaration** — `let cornerRadius: CGFloat = 10`, `func f(radius: CGFloat = 7)`.
+    ///   `CadenceRadiusControlSweepTests` promised in prose that it counted "every
+    ///   `someRadius(: CGFloat)? = 10` **declaration** of a named constant" and could not: the type
+    ///   annotation sits between the colon and the value, so `\s*[:=]\s*10` never reached the
+    ///   literal ([[T-1315]]). The shape is house style at other values — `CadenceHoverStyles`,
+    ///   `MarkdownTableLayoutSupport`, `EstimatePickerControl` all write it — so the needle was
+    ///   blind to the ordinary way this repository declares a constant, not to a contrivance.
+    ///
+    /// Whitespace is `\s*` throughout and the needle is run over whole-file text by `matchLines`,
+    /// so a wrapped `cornerRadius:` / `10` pair is one match rather than nothing.
+    ///
+    /// The name is still anchored: `\w*[Cc]ornerRadius`, `[xy][Rr]adius` and a bare `[Rr]adius`,
+    /// and nothing else. `CadenceWidgets/WidgetChrome.swift` scales a shadow-blur `elevationRadius`
+    /// through 5/6/7/8 across four widget sizes — deliberate per-tier scatter — and a bare
+    /// `[Rr]adius\w*` read its `7` tier as a corner radius.
+    static func radiusLiteralPattern(_ value: Int) -> String {
+        "\\b(?:\\w*[Cc]ornerRadius|[xy][Rr]adius|[Rr]adius)\\s*(?::\\s*[A-Za-z_][\\w.]*\\??\\s*)?[:=]\\s*\(value)\\b"
+    }
+
     /// The chain of declarations enclosing line `index` of `lines`, outermost first, joined with
     /// `.` — `"TimelineBlockStyle.schedule"`, `"CadenceTextView.drawMarkdownImages"`. `""` for a
     /// line at file scope.

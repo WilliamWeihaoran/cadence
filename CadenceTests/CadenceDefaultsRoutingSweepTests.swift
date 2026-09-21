@@ -108,14 +108,33 @@ struct CadenceDefaultsRoutingSweepTests {
     ///
     /// `UserDefaults = .standard` rather than `= .standard`: the latter is a legal default for any
     /// type with a `standard` member and would read a `CadenceAccentPalette` as a defaults store.
+    ///
+    /// **Patterns, not literal substrings ([[T-1316]]).** These were six fixed strings matched with
+    /// `code.contains(_:)`, which spells one exact run of spaces and cannot cross a line break — so
+    /// `UserDefaults\n    .standard` and `defaults: UserDefaults =\n    .standard` were both
+    /// invisible, and both are what a formatter produces on a signature that runs long. This is the
+    /// guard whose two independent audits each reported 19 sites where there were 31, so "the
+    /// needle reads one spelling" is this detector's measured failure mode rather than a worry.
+    ///
+    /// Each pattern is a strict **widening** of the string it replaces: every `\s*` sits where the
+    /// literal had exactly one space or none, so nothing the old list caught is dropped, and the
+    /// only text newly matched is the same needle with different whitespace in it.
+    /// `theRoutingDetectorSeparatesARoutedReadFromAnUnroutedOne` holds both directions.
     static let unroutedNeedles = [
-        "UserDefaults.standard",
-        "UserDefaults(suiteName:",
-        "UserDefaults = .standard",
-        "defaults: .standard",
-        "userDefaults: .standard",
-        "in: .standard"
+        #"UserDefaults\s*\.\s*standard"#,
+        suiteNameNeedle,
+        #"UserDefaults\s*=\s*\.\s*standard"#,
+        #"defaults\s*:\s*\.\s*standard"#,
+        #"userDefaults\s*:\s*\.\s*standard"#,
+        #"in\s*:\s*\.\s*standard"#
     ]
+
+    /// Spelled once and referred to by name, because the test-target list below is defined by
+    /// *removing* it and a second copy of the text is a second thing to keep in step. It was two
+    /// copies for a day: [[T-1316]] rewrote the needles as patterns, the filter still compared
+    /// against the old literal `"UserDefaults(suiteName:"`, and so it removed nothing — which made
+    /// every `withTemporaryDefaults` helper in `CadenceTests/` an offender at once.
+    static let suiteNameNeedle = #"UserDefaults\s*\(\s*suiteName\s*:"#
 
     // MARK: - The sweep
 
@@ -217,6 +236,31 @@ struct CadenceDefaultsRoutingSweepTests {
                 "the detector counted a comment as code")
         #expect(!instrument.fires(on: "let note = \"UserDefaults.standard\""),
                 "the detector counted a string literal as code")
+
+        // **T-1316, direction one: the shapes a formatter writes.** Neither exists in the tree
+        // today — which is why they are fixtures. A line-wrapped receiver and a wrapped default
+        // value are what `swift-format` produces on a signature that runs long, and the six fixed
+        // strings this list used to hold could not cross the line break in either.
+        #expect(instrument.fires(on: "let raw = UserDefaults\n    .standard\n    .string(forKey: key)"),
+                "a line-wrapped UserDefaults.standard is still invisible to the sweep")
+        #expect(instrument.fires(on: "static func purge(\n    in defaults: UserDefaults =\n        .standard\n) {}"),
+                "a wrapped `UserDefaults = .standard` default is still invisible to the sweep")
+        #expect(instrument.fires(on: "UserDefaults(\n    suiteName: CadenceStoreSupport.appGroupIdentifier\n)"),
+                "a wrapped UserDefaults(suiteName:) call is still invisible to the sweep")
+
+        // **Direction two: the widening added no new false positive.** A widened needle that fires
+        // on correct code gets suppressed, and a suppressed guard guards nothing — which is the
+        // reasoning that stopped [[T-1299]] widening a different one. The nearest misses are a
+        // wrapped accent palette (`.standard` is one of its cases) and a routed read broken over
+        // two lines, both of which the same `\s*` would swallow if it were written any looser.
+        #expect(!instrument.fires(on: "palette = CadenceAccentPalette\n    .standard"),
+                "a wrapped accent-palette case was read as a defaults store")
+        #expect(!instrument.fires(on: "let raw = CadenceDefaults\n    .store\n    .string(forKey: key)"),
+                "a wrapped routed read was counted as unrouted")
+        #expect(!instrument.fires(on: "static func purge(\n    in defaults: UserDefaults =\n        CadenceDefaults.store\n) {}"),
+                "a wrapped routed default was counted as unrouted")
+        #expect(!instrument.fires(on: "// UserDefaults\n// .standard is not read here any more"),
+                "the detector crossed a comment boundary its old literals could not")
     }
 
     // MARK: - The test target's own reach (T-1170)
@@ -228,7 +272,7 @@ struct CadenceDefaultsRoutingSweepTests {
     /// is built on it and `TemporaryDefaultsSuiteRule` already governs how the name is minted. What
     /// is never legitimate is the *device-wide domain*, which inside this container is the
     /// signed-in person's `com.haoranwei.Cadence.plist`.
-    static let sharedDomainNeedles = unroutedNeedles.filter { $0 != "UserDefaults(suiteName:" }
+    static let sharedDomainNeedles = unroutedNeedles.filter { $0 != suiteNameNeedle }
 
     /// How many shared-domain spellings each test file is allowed, and why.
     ///
@@ -365,7 +409,7 @@ struct CadenceDefaultsRoutingSweepTests {
     static func sharedDomainCount(in source: String) -> Int {
         let code = CadenceSourceScan.codeOnly(source)
         return sharedDomainNeedles.reduce(0) { total, needle in
-            total + code.components(separatedBy: needle).count - 1
+            total + max(CadenceSourceScan.matchCount(needle, in: code), 0)
         }
     }
 
@@ -387,7 +431,7 @@ struct CadenceDefaultsRoutingSweepTests {
             andNotOn: "let enabled = CadenceDefaults.store.bool(forKey: key)",
             by: { source in
                 let code = CadenceSourceScan.codeOnly(source)
-                return Self.unroutedNeedles.contains { code.contains($0) }
+                return Self.unroutedNeedles.contains { CadenceSourceScan.matchCount($0, in: code) > 0 }
             }
         )
     }

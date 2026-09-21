@@ -47,7 +47,9 @@
 #                        Every agent in a session writes into ONE shared scratchpad, so `msg.txt`
 #                        is a file with several writers and no lock -- and one commit went out
 #                        under a different agent's subject line because of it (T-1222). Name it
-#                        `msg-<id>-<ticket>.txt`, or pass the message inline with `-m`.
+#                        `msg-<id>-<ticket>.txt`, or pass the message inline with `-m`. The id must
+#                        be a whole COMPONENT of the basename, not a fragment of a longer word:
+#                        `*sync*` accepts `msg-async-T-1.txt` (T-1317).
 #   DECLINED-HUNK-LOST   a hunk a previous agent declined for this path is in neither HEAD nor the
 #                        content you are staging, so this commit strands it. Clear it deliberately
 #                        with --accept-declined <path> if it was abandoned on purpose.
@@ -101,7 +103,9 @@
 #                        Swift scan have drifted apart -- which is itself worth a ticket (T-1092).
 #   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
 #                        `--removes <exact count>` acknowledges them. A reconstruction built on a
-#                        stale HEAD reverts a sibling's landed work in exactly this shape.
+#                        stale HEAD reverts a sibling's landed work in exactly this shape. The
+#                        count is `git diff --numstat`'s deletions -- diff arithmetic, so one of
+#                        two identical lines and a blank line both count (T-1316).
 #   HEAD-MOVED           a sibling commit landed between the validation and the commit. Every check
 #                        above answers a question about ONE HEAD; committing onto a later one asks
 #                        nothing about the difference. Re-read HEAD and run it again.
@@ -200,6 +204,22 @@
 # chance often enough to make the guard's own proof flaky -- a guard whose evidence is random is
 # the hollow instrument again, one layer further in.
 
+# AND IT IS A COMPONENT OF THE NAME, NOT A SUBSTRING OF IT (T-1317)
+#
+# The first version asked `[[ "${2:t}" == *"$id"* ]]`, which is membership anywhere in the string.
+# Agent ids here are short words, and short words sit inside other short words: agent `sync` was
+# accepted for `msg-async-T-1.txt` and agent `order` for `msg-reorder-T-1.txt` -- both of them the
+# exact cross-agent mix-up this refusal exists to stop, written in the exact shape the refusal's own
+# advice produces. There was no live instance; a substring test that accepts a sibling's file is a
+# refusal that has already stopped meaning what it says, and the asymmetry is that a refusal is
+# proved by the selftest written in the same commit, so one that is too LOOSE passes its own proof.
+#
+# The rule is: the id appears in the basename delimited by a non-alphanumeric character or by an end
+# of the name -- `(|*[^[:alnum:]])"$id"(|[^[:alnum:]]*)`. `msg-guards-T-1316.txt`, `guards.txt` and
+# `msg_guards_T1.txt` all still commit; `msg-aguardsx.txt` does not. The boundary form rather than a
+# split on `-` because an id may itself contain one, and the id is quoted so it is matched literally.
+# There is still no flag escape, for the same reason as above: the cure is `mv`.
+
 # THE DELIBERATE OVERRIDE LEAVES A TRACE (T-991)
 #
 # `--commits-stale <path>` says "the older content really is what I mean". It used to say it to
@@ -272,6 +292,43 @@ usage() {
 }
 
 ledger_key() { print -r -- "${1//\//__}" }
+
+# How many of $1's lines a change to $2 DELETES -- the number `git diff HEAD -- <path>` prints, and
+# the number every brief tells an agent to read before declaring `--removes` (T-1316).
+#
+# It used to be `grep -F -x -v -f <new> <old> | grep -c .`, which is SET MEMBERSHIP: it counts old
+# line TEXTS that appear nowhere in the new file. Two shapes ordinary code writes are invisible to
+# that reading, and both are deletions:
+#
+#   * a duplicate. Delete one of two identical lines and the text is still "in" the new file, so
+#     the count is 0 and the guard says nothing. `docs/TODO.md` is full of repeated blank-prefixed
+#     continuation lines and `- [T-n]` stubs; a reconstruction that drops one of a pair reverts a
+#     sibling exactly as thoroughly as one that drops a unique line.
+#   * a blank line. `grep -c .` drops empty lines by construction, so deleting them counts 0 --
+#     including deleting ALL of them, which is what a reflow of a markdown entry does.
+#
+# The count is now read off `git diff --numstat`, which is multiset arithmetic over the same two
+# texts and therefore never smaller than the old reading: a line absent from the new file entirely
+# is still a deletion. So this is strictly more that gets refused, never less.
+#
+# The fallback is deliberate rather than tidy. `--numstat` prints `-` for a binary blob, and a
+# `deleted` field that is not a number must not silently become 0 -- a guard that answers "nothing
+# was removed" because it could not read the file is the hollow instrument this repository keeps
+# finding. It drops back to the old membership reading, which is a weaker answer but not a blind one.
+deleted_line_count() {   # $1 = the HEAD blob, $2 = the staged content (/dev/null = path deleted)
+    local old=$1 new=$2 deleted
+    deleted=$(git diff --numstat --no-textconv --no-index -- "$old" "$new" 2>/dev/null \
+        | awk -F'\t' 'NR == 1 { print $2 }')
+    if [[ "$deleted" == <-> ]]; then
+        print -r -- "$deleted"
+    elif [[ -z "$deleted" ]]; then
+        print -r -- 0                       # the two texts are identical
+    elif [[ "$new" == /dev/null ]]; then
+        grep -c . "$old"
+    else
+        grep -F -x -v -f "$new" -- "$old" 2>/dev/null | grep -c .
+    fi
+}
 
 # Lines present in the worktree file, in no line of the staged blob, AND in no line of the version
 # this commit is replacing. Whole-line set membership, not diff hunks: `-U3` merges two agents'
@@ -971,10 +1028,14 @@ cmd_commit() {
                 # whose name does not say whose it is has several writers -- and `938cdb7` went out
                 # under a sibling's subject line for exactly that reason. Basename only; see the
                 # header for why the whole path is the wrong thing to read.
-                [[ "${2:t}" == *"$id"* ]] || refuse MESSAGE-FILE-SHARED "the message file ${2:t} does not name you ($id).
+                # T-1317. A COMPONENT of the basename, not a substring of it: `*sync*` accepts
+                # `msg-async-T-1.txt`, which is the cross-agent mix-up this refusal exists to stop.
+                [[ "${2:t}" == (|*[^[:alnum:]])"$id"(|[^[:alnum:]]*) ]] || refuse MESSAGE-FILE-SHARED "the message file ${2:t} does not name you ($id).
   Every agent in this session writes into the same scratchpad directory, so a generic name is one
   file with several writers: 938cdb7 carried one agent's whole diff under another agent's subject
   line, because both had written msg.txt and -F read whichever landed last (T-1222).
+  The id has to be a whole COMPONENT of the name, not a fragment inside a longer word: agent `sync`
+  passing `msg-async-T-1.txt` is exactly the mix-up above, spelled so a substring test accepts it.
   Rename it so the name says whose it is -- msg-$id-<ticket>.txt -- and pass that:
       mv ${2} ${2:h}/msg-$id-<ticket>.txt
   Or pass the message inline with -m, which reads no file at all."
@@ -1938,6 +1999,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #     twice on 2026-09-03 within an hour, both on `docs/TODO.md`, both reverting a ledger edit
     #     that had already landed. So the count has to be said out loud, the way `count:` does in
     #     scripts/mutate.sh -- the point is not the number, it is looking at what is going.
+    #
+    #     The count is DIFF ARITHMETIC, not set membership (T-1316); see the header section.
     local -a removed_report
     removed_report=()
     local total_removed=0 removed
@@ -1946,9 +2009,9 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         local head_blob="$scratch/$(ledger_key "$name").head"
         git cat-file -p "$headsha:$name" > "$head_blob"
         if [[ -n "${staged_content[$name]+x}" ]]; then
-            removed=$(grep -F -x -v -f "${staged_content[$name]}" -- "$head_blob" 2>/dev/null | grep -c .)
+            removed=$(deleted_line_count "$head_blob" "${staged_content[$name]}")
         else
-            removed=$(grep -c . "$head_blob")      # the whole file is being deleted
+            removed=$(deleted_line_count "$head_blob" /dev/null)   # the whole file is being deleted
         fi
         (( removed > 0 )) || continue
         total_removed=$(( total_removed + removed ))
@@ -2293,6 +2356,45 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "exit $rc: $out"
     out=$( cd "$ws" && zsh "$here" c1 -m "$M" --removes 1 shared.txt=cut.txt 2>&1 ); rc=$?
     check "the exact count lets it through" $(( rc == 0 )) "exit $rc: $out"
+
+    say ""
+    say " mode 4b1 (REMOVES-HEAD-LINES) -- T-1316: a duplicate line and a blank line are deletions too"
+    # The count above used to be SET MEMBERSHIP -- `grep -F -x -v -f <new> <old> | grep -c .`, which
+    # counts old line TEXTS that appear nowhere in the new file. Two shapes ordinary text writes are
+    # invisible to that reading and both are real deletions, so both committed in silence:
+    #   * one of two identical lines -- the text is still "in" the new file, so the count is 0;
+    #   * a blank line -- `grep -c .` drops empty lines by construction.
+    # `docs/TODO.md` and `docs/TODO_DONE.md` are made of repeated `  body` continuations and blank
+    # separators, which is why mode 4d2's own fixture declared 1 for a three-line deletion until now.
+    # No live violation was needed to find this and none is needed to keep it: the fixture is the
+    # proof, in both directions.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && print -rl -- "alpha" "  body" "beta" "" "  body" "gamma" > dup.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x1 -m "$M" dup.txt 2>&1 ); rc=$?
+    check "the duplicate-and-blank fixture lands" $(( rc == 0 )) "exit $rc: $out"
+
+    ( cd "$ws" && print -rl -- "alpha" "beta" "" "  body" "gamma" > dup_one.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x1 -m "$M" dup.txt=dup_one.txt 2>&1 ); rc=$?
+    check "deleting ONE of two identical lines is refused" \
+        $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* && "$out" == *"removes 1 line(s)"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    ( cd "$ws" && print -rl -- "alpha" "  body" "beta" "  body" "gamma" > dup_blank.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x1 -m "$M" dup.txt=dup_blank.txt 2>&1 ); rc=$?
+    check "deleting a BLANK line is refused" \
+        $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* && "$out" == *"removes 1 line(s)"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    # The other direction, and it is the half that decides whether this guard survives: a widened
+    # count that fires on a commit deleting nothing would be suppressed, and then it guards nothing.
+    ( cd "$ws" && git show HEAD:dup.txt > dup_grown.txt && print -r -- "delta" >> dup_grown.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x1 -m "$M" dup.txt=dup_grown.txt 2>&1 ); rc=$?
+    check "a pure addition still needs no --removes at all" $(( rc == 0 )) "exit $rc: $out"
+    check "and it said nothing about removing anything" \
+        $( [[ "$out" != *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "$out"
+
+    ( cd "$ws" && print -rl -- "alpha" "beta" "" "  body" "gamma" "delta" > dup_one2.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x1 -m "$M" --removes 1 dup.txt=dup_one2.txt 2>&1 ); rc=$?
+    check "and the exact count lets the duplicate deletion through" $(( rc == 0 )) "exit $rc: $out"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
 
     say ""
     say " mode 4b2 (WORKTREE-BEHIND-HEAD) -- a bare <path> must not commit a copy behind HEAD"
@@ -2715,7 +2817,15 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" f2 -m "$M" TODO_DONE.md=arch_short.md 2>&1 ); rc=$?
     check "an id dropped from the ARCHIVE is refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-IDS-LOST*T-201* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # THREE lines go, not one, and until T-1316 this fixture said one. Dropping `- [T-201] retired`
+    # also drops the blank line above T-202 and one of the two identical `  body` lines -- and the
+    # old set-membership count could see neither of those: `  body` is still "in" the new file, and
+    # `grep -c .` never counted a blank line at all. The declaration is diff arithmetic now, so it
+    # is the number `git diff HEAD -- <path>` prints, which is what every brief tells you to read.
     out=$( cd "$ws" && zsh "$here" f2 -m "$M" --drops-ids T-201 --removes 1 TODO_DONE.md=arch_short.md 2>&1 ); rc=$?
+    check "the old set-membership count -- 1 -- is refused, because three lines actually go" \
+        $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* && "$out" == *"removes 3 line(s)"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" f2 -m "$M" --drops-ids T-201 --removes 3 TODO_DONE.md=arch_short.md 2>&1 ); rc=$?
     check "and retiring it from the archive deliberately is allowed" $(( rc == 0 )) "exit $rc: $out"
     # The closure half. Same id, same line count, T-202's first line back to an open ticket: 4c's
     # reading has nothing to say about it, which is the whole reason 3a2 exists one level down.
@@ -3246,12 +3356,37 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" k1 -F msg-k2-T-1222.txt mine.txt 2>&1 ); rc=$?
     check "a file named for a SIBLING is refused too, which is the incident that happened" \
         $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # T-1317: the substring reading accepted a name that is not the agent's at all. Agent `sync`
+    # passing `msg-async-T-1.txt` and agent `order` passing `msg-reorder-T-1.txt` are the exact
+    # cross-agent mix-up the refusal exists to stop, and `*"$id"*` took both. The id has to be a
+    # whole COMPONENT of the basename -- bounded by a non-alphanumeric or by an end of the name.
+    ( cd "$ws" && print -r -- "$M" > msg-async-T-1.txt
+      print -r -- "$M" > msg-reorder-T-1.txt
+      print -r -- "$M" > msg-sync-T-1.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" sync -F msg-async-T-1.txt mine.txt 2>&1 ); rc=$?
+    check "a name that merely CONTAINS the id -- async for sync -- is refused" \
+        $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" order -F msg-reorder-T-1.txt mine.txt 2>&1 ); rc=$?
+    check "and reorder for order is refused too" \
+        $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "nothing was committed by either" \
+        $( [[ $( cd "$ws" && git show HEAD:mine.txt ) != *"message-file mode"* ]] && print 1 || print 0 )
     out=$( cd "$ws" && zsh "$here" k1 -F msg-k1-T-1222.txt mine.txt 2>&1 ); rc=$?
     check "a file named for this agent commits" $(( rc == 0 )) "exit $rc: $out"
     check "and the message that landed is the one in that file" \
         $( [[ $( cd "$ws" && git log -1 --format=%s ) == "msg" ]] && print 1 || print 0 ) "$( cd "$ws" && git log -1 --format=%s )"
     check "-m is untouched by any of this" \
         $( [[ "$( cd "$ws" && print -r -- "x" >> mine.txt; zsh "$here" k1 -m "$M" mine.txt 2>&1 )" == *committed* ]] && print 1 || print 0 )
+    # The other direction, which is what stops a tightened rule from becoming a rule agents route
+    # around: the names the convention actually prescribes still commit. `msg-sync-T-1.txt` is the
+    # id as an interior component, `sync.txt` is the id at the start of the name.
+    ( cd "$ws" && print -r -- "a line for the component-name check" >> mine.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" sync -F msg-sync-T-1.txt mine.txt 2>&1 ); rc=$?
+    check "the prescribed msg-<id>-<ticket>.txt name still commits" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && print -r -- "$M" > sync.txt
+      print -r -- "another line for the component-name check" >> mine.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" sync -F sync.txt mine.txt 2>&1 ); rc=$?
+    check "and the id standing at the start of the name commits too" $(( rc == 0 )) "exit $rc: $out"
 
     say ""
     say " mode 4l (LEDGER-CLOSURE-LAGGED) -- T-1300: landing code under an id the ledger still calls open"

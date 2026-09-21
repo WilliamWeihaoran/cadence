@@ -125,6 +125,7 @@ run_check() {  # $1 = rev
         -v min_entries="$SELF_MIN_ENTRIES" \
         -v min_examined="$SELF_MIN_EXAMINED" \
         -v todo="$TODO_PATH" \
+        -v f_todo="$tmp/todo.md" -v f_done="$tmp/done.md" -v f_log="$tmp/log.txt" \
         "$AWK_PROG" "$tmp/todo.md" "$tmp/done.md" "$tmp/log.txt"
 }
 
@@ -183,7 +184,24 @@ function verdict(   id, known, openn, list) {
     }
 }
 
-FNR == 1 { part++ }
+# Which of the three inputs this line came from, read from the FILENAME rather than counted (T-1317).
+#
+# It used to be `FNR == 1 { part++ }`, and **an empty file never yields FNR == 1**, so it never
+# counted. The archive is optional -- `git show "$rev:$DONE_PATH" ... || : > "$tmp/done.md"` writes
+# an empty file when the path is not there -- and with it empty the commit log arrived as part 2 and
+# was parsed as the archive: every `- [T-n]` in it read as an archived (closed) entry, and no line
+# was ever read as a commit at all. MEASURED at HEAD:
+# `CADENCE_LEDGER_LAG_DONE=docs/NO_SUCH_ARCHIVE.md ./scripts/ledger-lag-check.sh` reported
+# "0 commits (floor 200), 557 entries, 0 examined" and refused LEDGER-LAG-VACUOUS. The floors caught
+# it -- that is the design working -- but the parse was wrong, and a MISSING archive is only one way
+# to arrive here: a zero-byte `docs/TODO.md`, or a `<rev>` whose log is empty, shift the parse in
+# exactly the same way while the floors report a different symptom each time.
+#
+# Keyed on FILENAME, no input can move another one's reading, empty or not. `part` is never
+# incremented, so nothing depends on how many lines any input happens to hold.
+FILENAME == f_todo { part = 1 }
+FILENAME == f_done { part = 2 }
+FILENAME == f_log  { part = 3 }
 
 # An id is open only while NO entry of it is closed -- `ledger_closed_ids`' reading, which collects
 # a SET of ids over every entry and is why the commit-path note T-1300 added never had this defect
@@ -456,6 +474,45 @@ cmd_selftest() {
 
     out=$( cd "$repo" && sh "$SELF_PATH" no-such-rev 2>&1 ); rc=$?
     check "$rc" 4 "$out" "an unresolvable revision refuses rather than passing" LEDGER-LAG-VACUOUS
+
+    # --- mode 6: an EMPTY input must not shift the parse (T-1317) ------------
+    echo; echo " mode 6 (empty inputs) -- an optional archive that is empty must not become the log"
+    # `FNR == 1 { part++ }` never fires for a zero-byte file, so the file AFTER an empty one was read
+    # as the empty one's part: with no archive, the commit log was parsed as the archive and no line
+    # was ever read as a commit. The floors turned that into LEDGER-LAG-VACUOUS rather than a green
+    # run -- which is the floors working -- but the reading was wrong, and both halves are checked
+    # here: the finding must still arrive with the archive missing, and the silence must too.
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '- [T-15] **Open.**' '- [T-16] **Open.**' '- [T-17] **Open.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "T-11: code lands while its entry is still open" Cadence/I.swift "let i = 9"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "the control: with the archive present this is a finding" LEDGER-CLOSURE-LAGGED T-11
+
+    out=$( cd "$repo" && CADENCE_LEDGER_LAG_DONE=docs/NO_SUCH_ARCHIVE.md sh "$SELF_PATH" 2>&1 ); rc=$?
+    check "$rc" 3 "$out" "and with the archive MISSING the log is still read as the log" \
+        LEDGER-CLOSURE-LAGGED T-11
+
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-11] **CLOSED 2026-09-20 (`2222222`) — the closure the commit above owed.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '- [T-15] **Open.**' '- [T-16] **Open.**' '- [T-17] **Open.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    ( cd "$repo" && git add -A . && git commit -q -m "T-11: write the closure that commit owed" )
+    out=$( cd "$repo" && CADENCE_LEDGER_LAG_DONE=docs/NO_SUCH_ARCHIVE.md sh "$SELF_PATH" 2>&1 ); rc=$?
+    check "$rc" 0 "$out" "a missing archive goes silent when the ledger carries the closure" 0 findings
+
+    # The same defect written the other way round, which is why the repair is FILENAME and not a
+    # sentinel line in the archive alone: a zero-byte ledger shifts the parse identically. Exit 0
+    # here is the proof the log was read as the log -- the examined floor cannot be met otherwise.
+    : > "$repo/docs/TODO.md"
+    ( cd "$repo" && git add -A . && git commit -q -m "docs: empty the ledger file itself" )
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "an EMPTY docs/TODO.md shifts nothing either" ledger-lag:
 
     echo
     # The vocabulary `CadenceGuardScriptSelftestTests` reads. A tally is what a selftest gutted to

@@ -93,28 +93,54 @@ struct CadenceRadiusControlSweepTests {
 
     /// Every `cornerRadius: 10` / `xRadius: 10` / `yRadius: 10` **call-site** literal, and every
     /// `someRadius(: CGFloat)? = 10` **declaration** of a named constant — the same two shapes
-    /// `CadenceRadiusControlCompactSweepTests` swept for the `7` family. Word-bounded so `100`,
-    /// `210` etc. do not match.
-    static let literalRadiusTenPattern =
+    /// `CadenceRadiusControlCompactSweepTests` swept for the `7` family, spelled once in
+    /// `CadenceSourceScan.radiusLiteralPattern` and shared by both rather than typed twice.
+    /// Word-bounded so `100`, `210` etc. do not match.
+    ///
+    /// **It did not count the declaration shape until [[T-1316]]**, though this file said it did
+    /// ([[T-1315]]): the old needle was `…\s*[:=]\s*10\b`, and in
+    /// `let cornerRadius: CGFloat = 10` the type annotation sits between the colon and the value.
+    /// `theNeedleThatWasBlindIsPinnedBesideTheOneThatIsNot` holds both spellings side by side.
+    static let literalRadiusTenPattern = CadenceSourceScan.radiusLiteralPattern(10)
+
+    /// The needle as it stood before [[T-1316]], kept as a literal so the blindness is a measured
+    /// fact in this file rather than a claim about a deleted string.
+    static let supersededLiteralRadiusTenPattern =
         "\\b(?:\\w*[Cc]ornerRadius|[xy][Rr]adius|[Rr]adius)\\s*[:=]\\s*10\\b"
 
     /// The sweep over **text**, so the fixtures below can be swept exactly as a file is rather
     /// than by a second copy of the rule. Read from `codeOnly` text so a string literal or a
     /// comment cannot be counted as code, and so the declaration walk is not stopped by a doc
     /// comment standing at a declaration's own indent.
+    ///
+    /// Matched over the whole text rather than line by line ([[T-1316]]): a line-wise loop cannot
+    /// see a site a formatter wrapped — `cornerRadius:` with its `10` on the next line — and the
+    /// `\s*` in the needle silently means "spaces on this line" there. The line reported is the
+    /// one the match *starts* on, which is the one the declaration walk wants.
+    ///
+    /// **One site per line, which is what `LiteralSite` has always meant.** The excused
+    /// `NSBezierPath(… xRadius: 10, yRadius: 10)` is two matches on one line, and counting it as
+    /// two would make `eachExemptionStillHoldsExactlyTheOneLiteralItWasExcusedFor` — whose whole
+    /// job is to refuse a *second* literal riding in on an existing excuse — fail on the site it
+    /// already excused. Deduplicating by start line keeps that count meaning what it meant while
+    /// the needle underneath it widens.
     static func literalRadiusTenSites(in source: String, file: String) -> [LiteralSite] {
         let lines = CadenceSourceScan.codeOnly(source).components(separatedBy: "\n")
-        return lines.indices.compactMap { index in
-            guard CadenceSourceScan.matchCount(literalRadiusTenPattern, in: lines[index]) > 0 else {
-                return nil
+        var seen: Set<Int> = []
+        return CadenceSourceScan
+            .matchLines(literalRadiusTenPattern, in: lines.joined(separator: "\n"))
+            .filter { seen.insert($0.line).inserted }   // one site per line, as `LiteralSite` says
+            .map { hit in
+                LiteralSite(
+                    file: file,
+                    line: hit.line + 1,
+                    declaration: CadenceSourceScan.enclosingDeclarationPath(ofLine: hit.line, in: lines),
+                    text: hit.matched
+                        .components(separatedBy: .newlines)
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .joined(separator: " ")
+                )
             }
-            return LiteralSite(
-                file: file,
-                line: index + 1,
-                declaration: CadenceSourceScan.enclosingDeclarationPath(ofLine: index, in: lines),
-                text: lines[index].trimmingCharacters(in: .whitespaces)
-            )
-        }
     }
 
     /// The same sweep with the exemptions applied, which is the part a fixture has to exercise:
@@ -141,7 +167,10 @@ struct CadenceRadiusControlSweepTests {
         fires: "RoundedRectangle(cornerRadius: 10)",
         andNotOn: "RoundedRectangle(cornerRadius: Theme.radiusControl)"
     ) { text in
-        CadenceSourceScan.matchCount("cornerRadius: *10\\b", in: text) > 0
+        // The needle the sweep runs, not a third spelling of it: an instrument that self-checks a
+        // *different* pattern proves that other pattern discriminates and says nothing about the
+        // one doing the work.
+        CadenceSourceScan.matchCount(CadenceRadiusControlSweepTests.literalRadiusTenPattern, in: text) > 0
     }
 
     @Test
@@ -151,6 +180,89 @@ struct CadenceRadiusControlSweepTests {
         // A neighbouring longer number must not false-positive a word-bounded detector.
         #expect(!Self.literalRadiusTenInstrument.fires(on: "cornerRadius: 100"))
         #expect(!Self.literalRadiusTenInstrument.fires(on: "cornerRadius: 210"))
+    }
+
+    // MARK: - T-1316: the needle was blind to two shapes ordinary code writes
+
+    /// A `CadenceHoverStyles`-shaped declaration and a formatter-wrapped call site: the two shapes
+    /// the sweep's own doc comment promised to count and could not.
+    ///
+    /// Neither spelling exists at `10` anywhere in the tree today, which is the reason this is a
+    /// **fixture** and not a census: a guard is proved blind by writing the shape it cannot see,
+    /// not by waiting for someone to write it. The house style is real at other values —
+    /// `CadenceHoverStyles.swift:59`, `MarkdownTableLayoutSupport.swift:20` and
+    /// `EstimatePickerControl.swift:461` all declare a typed radius constant — so what was missing
+    /// was only the literal `10`.
+    static let declaredRadiusFixture = """
+    enum FixtureMetrics {
+        static let cardCornerRadius: CGFloat = 10
+        static let wrappedBadge = RoundedRectangle(
+            cornerRadius:
+                10
+        )
+        static let tunedSibling: CGFloat = 9
+        static let tokenised: CGFloat = Theme.radiusControl
+    }
+    """
+
+    /// **Direction one: the needle fires on what it used to miss.** Both spellings are read now,
+    /// and the superseded needle — pinned as a literal beside the live one — reads neither, so the
+    /// blindness is a measurement in this file rather than a claim about a string that was deleted.
+    @Test
+    func theNeedleThatWasBlindIsPinnedBesideTheOneThatIsNot() throws {
+        let file = "CadenceTests/fixture.swift"
+        let hits = Self.literalRadiusTenSites(in: Self.declaredRadiusFixture, file: file)
+        #expect(hits.count == 2, "expected the typed declaration and the wrapped call site: \(hits)")
+        #expect(hits.allSatisfy { $0.declaration.hasPrefix("FixtureMetrics") },
+                "the declaration anchor no longer resolves for either shape: \(hits)")
+
+        // The two defects are separable, and the four readings below separate them. The needle was
+        // blind to the typed declaration; the SWEEP, which ran that needle one line at a time, was
+        // blind to the wrapped call site as well — `\s*` cannot cross a line break it never sees.
+        // Repairing either alone would have left the other, which is why both moved.
+        let code = CadenceSourceScan.codeOnly(Self.declaredRadiusFixture)
+        func lineWise(_ pattern: String) -> Int {
+            code.components(separatedBy: "\n")
+                .filter { CadenceSourceScan.matchCount(pattern, in: $0) > 0 }
+                .count
+        }
+        #expect(
+            CadenceSourceScan.matchCount(Self.supersededLiteralRadiusTenPattern, in: code) == 1,
+            "the superseded needle reads the wrapped site over whole text and never the declaration"
+        )
+        #expect(lineWise(Self.supersededLiteralRadiusTenPattern) == 0,
+                "as the sweep actually ran it — line by line — the old needle saw neither site")
+        #expect(lineWise(Self.literalRadiusTenPattern) == 1,
+                "and the widened needle run line by line still reaches only the declaration")
+    }
+
+    /// **Direction two: it still does not fire on what it correctly ignored.** A widened needle
+    /// that cries wolf on correct code is suppressed, and then it guards nothing — which is the
+    /// reasoning that stopped [[T-1299]] widening a different one.
+    @Test
+    func theWidenedNeedleStillIgnoresEverythingItIgnoredBefore() throws {
+        let file = "CadenceTests/fixture.swift"
+        let quiet = """
+        enum FixtureMetrics {
+            static let tokenised: CGFloat = Theme.radiusControl
+            static let declaredElsewhere: CGFloat = 12
+            static let tuned: CGFloat = 9
+            static let hundred = RoundedRectangle(cornerRadius: 100)
+            static let twoTen = RoundedRectangle(cornerRadius: 210)
+            // A shadow blur, not a corner: WidgetChrome scales this through 5/6/7/8 on purpose.
+            static let elevationRadius: CGFloat = 10
+            static let note = "cornerRadius: 10 in a string literal"
+            // cornerRadius: 10 in a comment
+            static let annotationOnly: CGFloat
+        }
+        """
+        #expect(Self.literalRadiusTenSites(in: quiet, file: file).isEmpty)
+
+        // And the tree itself, which is the only negative witness with real coverage: every file
+        // under `Cadence/`, `CadenceWidgets/` and `CadenceMCPServer/` read with the widened needle.
+        // `noFileOutsideTheExemptionsSpellsALiteralCornerRadiusOfTen` asserts this too; the point
+        // of saying it here is that the widening is what is on trial.
+        #expect(try Self.remainingLiteralRadiusTenSites().isEmpty)
     }
 
     @Test
