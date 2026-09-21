@@ -80,12 +80,14 @@ struct PersistenceController {
             )
         } catch {
             container = Self.makeRecoveryContainer(
-                issue: "Cadence opened a recovery store because backup/restore preflight failed: \(error.localizedDescription)"
+                issue: "Cadence opened a recovery store because backup/restore preflight failed: \(Self.storeFailureReason(error))"
             )
             return
         }
 
-        if let c = try? PersistenceController.makeContainer() {
+        let primaryStoreFailure: Error
+        do {
+            let c = try PersistenceController.makeContainer()
             container = c
             if let failedRestore {
                 Self.startupIssue = CadenceStartupIssue(
@@ -96,10 +98,87 @@ struct PersistenceController {
             let startupContext = ModelContext(c)
             Self.performStartupMaintenance(in: startupContext)
             return
+        } catch {
+            // T-1319. This was `if let c = try? makeContainer()`, and the discarded error was the
+            // single most informative thing this launch knew. Everything below the `try?` is
+            // already correct — the fallback is deliberate, the recovery state is recorded, the
+            // banner says sync is off — but "the CloudKit store could not be created" is where the
+            // report stopped, and a rejected schema migration, a corrupt store file and a missing
+            // app-group container all produce that one sentence. The two recovery paths on either
+            // side of this one (the preflight failure above, the maintenance save below) already
+            // interpolate theirs; this is the one that did not.
+            primaryStoreFailure = error
         }
         container = Self.makeRecoveryContainer(
-            issue: "Cadence opened a recovery store because the CloudKit store could not be created."
+            issue: Self.primaryStoreFailureMessage(primaryStoreFailure)
         )
+    }
+
+    /// What a launch that fell back to the recovery store says about why.
+    ///
+    /// Separate and pure so the sentence can be tested without a failing `ModelContainer`: making
+    /// `makeContainer()` throw on demand means reaching the real app-group store, and the test
+    /// target must never touch that. The shape — the old sentence, then a colon, then the reason —
+    /// is deliberately the one `makeRecoveryContainer`'s in-memory fallback and the
+    /// maintenance-save failure already use, because all three can appear in the same banner.
+    static func primaryStoreFailureMessage(_ error: Error) -> String {
+        "Cadence opened a recovery store because the CloudKit store could not be created: \(storeFailureReason(error))"
+    }
+
+    /// The most specific sentence available about why a store operation failed.
+    ///
+    /// **Catching the error is only half of T-1319, and this is the half that was measured.** A
+    /// `ModelContainer` that fails to open throws `SwiftData.SwiftDataError`, whose
+    /// `localizedDescription` is *"The operation couldn’t be completed. (SwiftData.SwiftDataError
+    /// error 1.)"* — the same twelve words for every cause. Measured on this Mac against the real
+    /// framework on 2026-09-21: a store file holding non-database bytes, a store path that is a
+    /// directory, a read-only parent directory and an unwritable location all produce that one
+    /// string. Interpolating it would have replaced one uninformative sentence with a longer
+    /// uninformative sentence, which is the shape of fix this repository keeps finding in its own
+    /// history.
+    ///
+    /// The real cause is in the error's `_underlyingCocoaError` — *"The file “default.store”
+    /// couldn’t be opened because it isn’t in the correct format."*, *"The file couldn’t be saved
+    /// because you don’t have permission."* — and it is reachable **only** by reflection:
+    /// `SwiftDataError`'s `userInfo` is empty, so `NSUnderlyingErrorKey` finds nothing. Both
+    /// channels are tried here, standard one first, and the plain description is the floor rather
+    /// than a failure: an error that is already specific (a `FileManager` error from the
+    /// backup/restore preflight, say) has no nested error to find and needs none.
+    static func storeFailureReason(_ error: Error) -> String {
+        nestedFailureDescription(of: error) ?? error.localizedDescription
+    }
+
+    /// The deepest nested error description that says something the outer one does not.
+    ///
+    /// Depth-limited and total: this runs on the launch path of a launch that has already failed
+    /// once, so it answers `nil` rather than ever trapping or looping.
+    private static func nestedFailureDescription(of error: Error, depth: Int = 0) -> String? {
+        guard depth < 4 else { return nil }
+        let outer = error.localizedDescription
+
+        var candidates: [Error] = []
+        if let underlying = (error as NSError).userInfo[NSUnderlyingErrorKey] as? Error {
+            candidates.append(underlying)
+        }
+        candidates.append(contentsOf: Mirror(reflecting: error).children.compactMap { unwrappedError($0.value) })
+
+        for candidate in candidates {
+            let description = candidate.localizedDescription
+            guard !description.isEmpty, description != outer else { continue }
+            return nestedFailureDescription(of: candidate, depth: depth + 1) ?? description
+        }
+        return nil
+    }
+
+    /// An `Error` out of a reflected child, looking through the `Optional` that
+    /// `SwiftDataError._underlyingCocoaError` is stored in.
+    private static func unwrappedError(_ value: Any) -> Error? {
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            guard let wrapped = mirror.children.first?.value else { return nil }
+            return unwrappedError(wrapped)
+        }
+        return value as? Error
     }
 
     /// Every pass a launch runs against the store it just opened.
@@ -175,7 +254,7 @@ struct PersistenceController {
         } catch {
             startupIssue = CadenceStartupIssue(
                 kind: .maintenanceSaveFailed,
-                message: "Cadence could not save startup maintenance changes: \(error.localizedDescription)"
+                message: "Cadence could not save startup maintenance changes: \(storeFailureReason(error))"
             )
         }
     }
@@ -216,7 +295,7 @@ struct PersistenceController {
         } catch {
             startupIssue = CadenceStartupIssue(
                 kind: .inMemoryStore,
-                message: "\(issue) Recovery store creation also failed, so Cadence opened a temporary in-memory store: \(error.localizedDescription)"
+                message: "\(issue) Recovery store creation also failed, so Cadence opened a temporary in-memory store: \(storeFailureReason(error))"
             )
             do {
                 let fallbackConfig = ModelConfiguration(
@@ -232,7 +311,7 @@ struct PersistenceController {
                 // `CadenceTerminalRecoveryView` instead of building a window group around a store
                 // that does not exist.
                 terminalFailure = CadenceStartupTerminalFailure(
-                    message: "\(issue) In-memory store creation also failed: \(error.localizedDescription)"
+                    message: "\(issue) In-memory store creation also failed: \(storeFailureReason(error))"
                 )
                 return nil
             }

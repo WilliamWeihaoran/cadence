@@ -524,4 +524,251 @@ struct TagSupportTests {
             "the next unrelated save committed a seed the store had already refused: \(survivors.map(\.name))"
         )
     }
+
+    // MARK: - The startup sweep reads the tag table once (T-1314)
+
+    /// Builds a store of `notes` notes whose frontmatter cycles through `tags` tag names, on top of
+    /// `existingTags` tag rows already in the table. The shape the launch path actually meets: many
+    /// notes, a tag vocabulary much smaller than the note count, most tags already existing.
+    private func seedTaggedNotes(
+        in context: ModelContext,
+        notes noteCount: Int,
+        tagVocabulary: Int,
+        existingTags: Int,
+        tagsPerNote: Int = 3
+    ) {
+        for index in 0..<existingTags {
+            context.insert(Cadence.Tag(name: "tag-\(index)", slug: "tag-\(index)", order: index))
+        }
+        for index in 0..<noteCount {
+            let names = (0..<tagsPerNote).map { "tag-\((index * tagsPerNote + $0) % tagVocabulary)" }
+            // Built by concatenation, not by an interpolated closure: a string literal holding
+            // `\(names.map { "\"..." })` desynchronises every brace-counting source scanner in
+            // this repository, and `scripts/test-suite-index.sh` then reports the tests below it
+            // as `<file scope>` — which is a hygiene-test failure and an unscopeable suite.
+            let frontmatter = "---\ntags: [" + names.joined(separator: ", ") + "]\n---\n\nNote \(index)"
+            context.insert(Note(kind: .list, title: "Note \(index)", content: frontmatter))
+        }
+    }
+
+    /// **The fetch-count gate (T-1314).** One read of the `Tag` table for the whole sweep, whatever
+    /// the store holds — this is the assertion the fix exists to make true, and the one that fails
+    /// if the index construction moves back inside the loop, which is what the old code was.
+    ///
+    /// It counts by owning the seam: `makingTagIndex` is called once per index built, so 200 notes
+    /// answering 1 is the claim, and a per-note rebuild answers 200.
+    @Test func theStartupSweepReadsTheWholeTagTableExactlyOnce() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        seedTaggedNotes(in: context, notes: 200, tagVocabulary: 40, existingTags: 40)
+
+        var indexBuilds = 0
+        let changed = TagSupport.syncAllNoteTagsFromMarkdown(
+            in: context,
+            saveChanges: false,
+            makingTagIndex: { ctx in
+                indexBuilds += 1
+                return TagSupport.makeTagIndex(in: ctx)
+            }
+        )
+
+        #expect(changed, "non-vacuity: the sweep must have had work to do for the count to mean anything")
+        #expect(indexBuilds == 1, "the tag table was read \(indexBuilds) times for 200 notes")
+        // And the sweep really did the work the single read was for.
+        let notes = try context.fetch(FetchDescriptor<Note>())
+        #expect(notes.allSatisfy { ($0.tags ?? []).count == 3 })
+    }
+
+    /// **Every note in the pass, not just the first one.** The count above proves the sweep builds
+    /// one index; this proves the sweep *uses* it for every note, which is the other way the
+    /// quadratic comes back — a loop body that keeps calling the single-note path with no index
+    /// while the sweep's own index sits unused would still answer 1 to that counter.
+    ///
+    /// The lever is a snapshot the store disagrees with: an index of nothing, handed to a sweep
+    /// over a store that already holds both tags. Honoured, the first note mints duplicates and the
+    /// other two reuse them — four tags. Refetched anywhere underneath, the existing rows are found
+    /// and nothing is minted — two tags. The two outcomes are a whole tag apart, so there is no
+    /// reading of this that a per-note fetch also satisfies.
+    @Test func everyNoteInTheSweepResolvesThroughTheOneIndexItWasGiven() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        context.insert(Cadence.Tag(name: "alpha", slug: "alpha", order: 0))
+        context.insert(Cadence.Tag(name: "beta", slug: "beta", order: 1))
+        for index in 0..<3 {
+            context.insert(Note(kind: .list, title: "Note \(index)", content: "---\ntags: [alpha, beta]\n---\nBody"))
+        }
+        try context.save()
+
+        let changed = TagSupport.syncAllNoteTagsFromMarkdown(
+            in: context,
+            saveChanges: false,
+            makingTagIndex: { _ in TagSlugIndex(tags: []) }
+        )
+
+        #expect(changed)
+        let tags = try context.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(
+            tags.count == 4,
+            "expected the empty index to be honoured for all three notes; got \(tags.count) tags"
+        )
+        #expect(tags.filter { $0.slug == "alpha" }.count == 2)
+        // All three notes ended up on the same two rows: the index carried its own mints forward.
+        let noteTagIDs = try context.fetch(FetchDescriptor<Note>()).map { Set(($0.tags ?? []).map(\.id)) }
+        #expect(Set(noteTagIDs).count == 1)
+    }
+
+    /// The other half of the same claim, one frame down: a `resolution` handed an index reads
+    /// nothing at all.
+    ///
+    /// Proved by making the index deliberately stale — a tag inserted into the store *after* the
+    /// index was built. A call that refetches would find that row and reuse it; a call that honours
+    /// the handed index cannot see it and mints its own. The duplicate is the detector, not the
+    /// intended production outcome: nothing writes tags during the sweep, which is why the sweep is
+    /// allowed to hold one snapshot for its whole run.
+    @Test func aHandedIndexIsTheWholeTableForThatCallSoNothingRefetchesIt() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let index = try #require(TagSupport.makeTagIndex(in: context))
+
+        context.insert(Cadence.Tag(name: "Alpha", slug: "alpha", order: 7))
+        let resolved = try #require(TagSupport.resolution(named: ["alpha"], in: context, index: index))
+
+        #expect(resolved.inserted.count == 1, "the handed index was bypassed by a fresh fetch")
+        // Without an index the same call reads the table and finds both.
+        let refetched = try #require(TagSupport.resolution(named: ["alpha"], in: context))
+        #expect(refetched.inserted.isEmpty)
+        #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).count == 2)
+    }
+
+    /// **Semantic equivalence, by running both implementations.** The per-note path is still
+    /// production code — `resolution` with no index is what every picker calls — so the old
+    /// algorithm is replayed against an identically seeded store rather than imitated here.
+    ///
+    /// What is compared is what the sweep is *for*: which tags exist afterwards and which tags
+    /// each note carries. The `order` numbers the two runs mint are deliberately **not** compared
+    /// across legs, and that is a fact about the old code rather than a concession by the new one:
+    /// an unsorted `FetchDescriptor<Note>()` hands back two identically seeded stores in two
+    /// different sequences — measured repeatedly here, with random ids, with fixed ids, and with
+    /// the context saved first — and the numbers follow the sequence in both implementations
+    /// equally. The rule that assigns them is pinned exactly, in a deterministic setting, by
+    /// `aHandedIndexAssignsTheOrdersARepeatedFetchWouldHave` below.
+    @Test func theSweptStoreMatchesTheOldPerNoteResolution() throws {
+        func seededContext() throws -> ModelContext {
+            let context = ModelContext(try CadenceTestStore.container())
+            // Deliberately awkward: an existing tag with a high `order`, notes that introduce new
+            // names beside already-known ones, and a note whose names are all new.
+            context.insert(Cadence.Tag(name: "known", slug: "known", order: 12))
+            let contents = [
+                "---\ntags: [known, fresh-a]\n---\nOne",
+                "---\ntags: [fresh-b, known, fresh-c]\n---\nTwo",
+                "---\ntags: [fresh-d]\n---\nThree",
+                "---\ntags: [fresh-a, fresh-d]\n---\nFour",
+            ]
+            for (index, content) in contents.enumerated() {
+                context.insert(Note(kind: .list, title: "Note \(index)", content: content))
+            }
+            try context.save()
+            return context
+        }
+
+        func fingerprint(_ context: ModelContext) throws -> (Set<String>, [String], Set<Int>) {
+            let tags = try context.fetch(FetchDescriptor<Cadence.Tag>())
+            let notes = try context.fetch(FetchDescriptor<Note>())
+                .sorted { $0.title < $1.title }
+                .map { "\($0.title)=\(TagSupport.tagSlugs($0.tags ?? []).joined(separator: ","))" }
+            return (Set(tags.map(\.slug)), notes, Set(tags.map(\.order)))
+        }
+
+        let sweptContext = try seededContext()
+        #expect(TagSupport.syncAllNoteTagsFromMarkdown(in: sweptContext, saveChanges: false))
+
+        let perNoteContext = try seededContext()
+        for note in try perNoteContext.fetch(FetchDescriptor<Note>()) {
+            // The pre-T-1314 body, verbatim: one `resolution` per note, each one its own fetch.
+            TagSupport.syncNoteTagsFromMarkdown(note, in: perNoteContext)
+        }
+
+        let swept = try fingerprint(sweptContext)
+        let perNote = try fingerprint(perNoteContext)
+        #expect(swept.0 == perNote.0, "tag rows diverged: \(swept.0) vs \(perNote.0)")
+        #expect(swept.1 == perNote.1, "note tag sets diverged: \(swept.1) vs \(perNote.1)")
+        // Non-vacuity: four new tags beside the known one, and five distinct `order` values — a
+        // running counter that restarted, or an index that forgot what it minted, collides here.
+        #expect(swept.0.count == 5)
+        #expect(swept.2.count == 5)
+        #expect(swept.2.allSatisfy { $0 >= 12 })
+    }
+
+    /// The `order` rule itself, where it *is* deterministic: the same four resolutions, in the same
+    /// sequence, once through a shared index and once through a fresh fetch each time.
+    ///
+    /// This is the part a plausible rewrite gets wrong. `order` is the first key of
+    /// `TagSupport.precedes`, and an index holding a running counter rather than the highest
+    /// `order` it has seen assigns different numbers than `(max order) + 1 + offset within the
+    /// call` — which is a different tag order on screen, minted by the launch sweep, for a user who
+    /// arranged their tags by hand.
+    @Test func aHandedIndexAssignsTheOrdersARepeatedFetchWouldHave() throws {
+        let sequences = [
+            ["known", "fresh-a"],
+            ["fresh-b", "known", "fresh-c"],
+            ["fresh-d"],
+            ["fresh-a", "fresh-d"],
+        ]
+
+        func run(sharingIndex: Bool) throws -> [String] {
+            let context = ModelContext(try CadenceTestStore.container())
+            context.insert(Cadence.Tag(name: "known", slug: "known", order: 12))
+            let index = sharingIndex ? TagSupport.makeTagIndex(in: context) : nil
+            for names in sequences {
+                _ = TagSupport.resolution(named: names, in: context, index: index)
+            }
+            return try context.fetch(FetchDescriptor<Cadence.Tag>())
+                .sorted(by: TagSupport.precedes)
+                .map { "\($0.slug)#\($0.order)" }
+        }
+
+        let shared = try run(sharingIndex: true)
+        let refetched = try run(sharingIndex: false)
+        #expect(shared == refetched, "\(shared) vs \(refetched)")
+        #expect(shared.count == 5)
+    }
+
+    /// A tag table that cannot be read is still a refusal, not an empty index — the distinction
+    /// T-631's predecessor lost, which re-pointed every note in the store at fresh duplicates.
+    /// The sweep now asks once instead of once per note, so this is where that answer is checked.
+    @Test func aTagTableThatCannotBeReadStillWritesNothing() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        seedTaggedNotes(in: context, notes: 5, tagVocabulary: 3, existingTags: 3)
+
+        let changed = TagSupport.syncAllNoteTagsFromMarkdown(
+            in: context,
+            saveChanges: false,
+            makingTagIndex: { _ in nil }
+        )
+
+        #expect(!changed)
+        #expect(try context.fetch(FetchDescriptor<Note>()).allSatisfy { ($0.tags ?? []).isEmpty })
+        #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).count == 3, "a refused read minted tags")
+    }
+
+    /// An empty store still costs exactly one fetch on the launch path — the notes fetch — and
+    /// never reads the tag table at all, which is what it did before the index existed.
+    @Test func aStoreWithNoNotesNeverReadsTheTagTable() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+
+        var indexBuilds = 0
+        let changed = TagSupport.syncAllNoteTagsFromMarkdown(
+            in: context,
+            saveChanges: false,
+            makingTagIndex: { ctx in
+                indexBuilds += 1
+                return TagSupport.makeTagIndex(in: ctx)
+            }
+        )
+
+        #expect(!changed)
+        #expect(indexBuilds == 0)
+    }
 }

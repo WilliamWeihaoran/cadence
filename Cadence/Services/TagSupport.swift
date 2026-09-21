@@ -184,8 +184,8 @@ nonisolated enum TagSupport {
     /// the statement, and it is why half 3 of the `try? save()` rule exempts this declaration and
     /// charges its callers instead. T-631 is what happens when every caller takes that exemption
     /// and none of them commits.
-    static func resolveTags(named names: [String], in context: ModelContext) -> [Tag]? {
-        resolution(named: names, in: context)?.tags
+    static func resolveTags(named names: [String], in context: ModelContext, index: TagSlugIndex? = nil) -> [Tag]? {
+        resolution(named: names, in: context, index: index)?.tags
     }
 
     /// The resolved tags **and the subset this call inserted**, which is what an undo needs to know.
@@ -200,30 +200,47 @@ nonisolated enum TagSupport {
     /// `CadencePendingChangePersistence` does not — so the two committing spellings live in
     /// `Cadence/Shared/CadenceInlineTagCreation.swift`, which the widget never sees, and reach this
     /// through the module rather than through `private`.
+    /// **`index:` is the whole of T-1314.** Left `nil` — every picker, every inline "create tag",
+    /// every single-shot caller — this reads the tag table itself and behaves exactly as it always
+    /// did. Handed an index, it reads nothing: the caller has already read the table once for the
+    /// whole pass and this call resolves against that snapshot. `syncAllNoteTagsFromMarkdown` is
+    /// the pass that needed it, because it is on the launch path and calls this once per note.
     static func resolution(
         named names: [String],
-        in context: ModelContext
+        in context: ModelContext,
+        index: TagSlugIndex? = nil
     ) -> (tags: [Tag], inserted: [Tag])? {
         let normalizedNames = normalizedTagNames(names)
         guard !normalizedNames.isEmpty else { return ([], []) }
 
-        guard let existing = try? context.fetch(FetchDescriptor<Tag>()) else { return nil }
-        var bySlug = tagsBySlug(existing)
-        let nextOrderBase = (existing.map(\.order).max() ?? -1) + 1
+        guard let index = index ?? makeTagIndex(in: context) else { return nil }
+        let nextOrderBase = index.nextOrderBase
 
         var inserted: [Tag] = []
         let tags = normalizedNames.enumerated().map { offset, name -> Tag in
             let tagSlug = slug(for: name)
-            if let tag = bySlug[tagSlug] {
+            if let tag = index.tag(forSlug: tagSlug) {
                 return tag
             }
             let tag = Tag(name: name, slug: tagSlug, order: nextOrderBase + offset)
             context.insert(tag)
-            bySlug[tagSlug] = tag
+            index.register(tag)
             inserted.append(tag)
             return tag
         }
         return (tags, inserted)
+    }
+
+    /// The one read of the whole `Tag` table behind a resolution, and the only place in this file
+    /// that fetches it for one.
+    ///
+    /// `nil` — never an empty index — when the table could not be read, because that failure is
+    /// the distinction `resolution`'s optional return exists to keep: "no tag carries this slug"
+    /// and "the tags could not be read" mint a duplicate and refuse, respectively, and coercing
+    /// the second into the first is what T-631's predecessor did to every note in the store.
+    static func makeTagIndex(in context: ModelContext) -> TagSlugIndex? {
+        guard let existing = try? context.fetch(FetchDescriptor<Tag>()) else { return nil }
+        return TagSlugIndex(tags: existing)
     }
 
     static func setTags(named names: [String], on task: AppTask, in context: ModelContext) {
@@ -242,22 +259,50 @@ nonisolated enum TagSupport {
     }
 
     @discardableResult
-    static func syncNoteTagsFromMarkdown(_ note: Note, in context: ModelContext) -> Bool {
+    static func syncNoteTagsFromMarkdown(
+        _ note: Note,
+        in context: ModelContext,
+        index: TagSlugIndex? = nil
+    ) -> Bool {
         let tagNames = MarkdownMetadataParser.metadata(in: note.content).tags
-        guard let resolved = resolveTags(named: tagNames, in: context) else { return false }
+        guard let resolved = resolveTags(named: tagNames, in: context, index: index) else { return false }
         guard tagSlugs(note.tags ?? []) != tagSlugs(resolved) else { return false }
         note.tags = resolved
         note.updatedAt = Date()
         return true
     }
 
+    /// The launch-path sweep: every note's frontmatter tags reconciled against the tag table.
+    ///
+    /// **It reads that table once, not once per note (T-1314).** This is the first real work a
+    /// cold launch does, and it used to be quadratic in the owner's own data: `resolution` opened
+    /// with a fetch of the whole `Tag` table and re-sorted it into a slug index, and this loop
+    /// called `resolution` for every note. K tagged notes over T tags meant K full table reads
+    /// plus K · O(T log T) of index work, recomputed identically each time. Now the index is built
+    /// here, once, and handed down.
+    ///
+    /// `makingTagIndex` is a seam, not a convenience, and it has one job: a test counts the calls
+    /// and fails if the number is not 1 for a store of any size
+    /// (`TagSupportTests.theStartupSweepReadsTheWholeTagTableExactlyOnce`). The cheapest way to
+    /// undo this fix is to move the index construction back inside the loop, which would keep
+    /// every other assertion in that suite green.
     @discardableResult
-    static func syncAllNoteTagsFromMarkdown(in context: ModelContext, saveChanges: Bool = true) -> Bool {
+    static func syncAllNoteTagsFromMarkdown(
+        in context: ModelContext,
+        saveChanges: Bool = true,
+        makingTagIndex: (ModelContext) -> TagSlugIndex? = TagSupport.makeTagIndex(in:)
+    ) -> Bool {
         var changed = false
         // `?? []` reported "nothing needed syncing" when the notes simply could not be read.
         guard let notes = try? context.fetch(FetchDescriptor<Note>()) else { return false }
+        // No notes, no tag read — the empty store this runs against on a first launch keeps
+        // costing exactly one fetch, as it did when the tag fetch lived one frame down.
+        guard !notes.isEmpty else { return false }
+        // A tag table that cannot be read is the same refusal it was per note: resolution answered
+        // `nil` for every note and nothing was written. It is answered once now instead of K times.
+        guard let index = makingTagIndex(context) else { return false }
         for note in notes {
-            changed = syncNoteTagsFromMarkdown(note, in: context) || changed
+            changed = syncNoteTagsFromMarkdown(note, in: context, index: index) || changed
         }
         if saveChanges && context.hasChanges {
             try? context.save()
@@ -273,7 +318,7 @@ nonisolated enum TagSupport {
         Array(tagsBySlug(tags).values).sorted(by: precedes)
     }
 
-    private static func tagsBySlug(_ tags: [Tag]) -> [String: Tag] {
+    fileprivate static func tagsBySlug(_ tags: [Tag]) -> [String: Tag] {
         var result: [String: Tag] = [:]
         for tag in sorted(tags) where result[tag.slug] == nil {
             result[tag.slug] = tag
@@ -392,5 +437,54 @@ nonisolated enum TagSupport {
         }
 
         return sorted(result)
+    }
+}
+
+/// The `Tag` table read once, carried through a pass that resolves many names (T-1314).
+///
+/// One call to `TagSupport.resolution` is one read of the table plus one slug index built over it,
+/// and for a picker resolving the name someone just typed that is the right shape. It is the wrong
+/// shape for `syncAllNoteTagsFromMarkdown`, which calls `resolution` once per note on the launch
+/// path: the table was re-read and re-sorted for every note in the store, identically each time.
+/// This type is that read, made once and handed down.
+///
+/// **A class, because the pass mints rows.** A note introducing `#alpha` has to leave that tag
+/// visible to the next note, which the per-note version got for free — a SwiftData fetch sees the
+/// context's pending inserts. Reference semantics are how that survives the fetch going away.
+///
+/// **`maxOrder`, not a running counter**, so a minted tag receives the same `order` the per-note
+/// fetch would have given it: `(highest order in the table) + 1 + its offset within the call`,
+/// where the "table" includes the rows this pass has already minted. That equivalence is not
+/// decorative — `order` is the first key of `TagSupport.precedes`, so a different number here is a
+/// different tag order on screen. `TagSupportTests.theSweptStoreMatchesTheOldPerNoteResolution`
+/// holds the two paths to the same answer by running both.
+nonisolated final class TagSlugIndex {
+    private var bySlug: [String: Tag]
+    private var maxOrder: Int
+
+    /// **Internal rather than `fileprivate`, so a test can hand the sweep a snapshot the store
+    /// disagrees with.** That disagreement is the only way to observe, from outside, that every
+    /// note in a pass really went through the handed index: an index built from no tags at all,
+    /// over a store that has them, mints duplicates if it is honoured and mints nothing if
+    /// anything underneath refetched the table
+    /// (`TagSupportTests.everyNoteInTheSweepResolvesThroughTheOneIndexItWasGiven`).
+    init(tags: [Tag]) {
+        bySlug = TagSupport.tagsBySlug(tags)
+        maxOrder = tags.map(\.order).max() ?? -1
+    }
+
+    fileprivate var nextOrderBase: Int { maxOrder + 1 }
+
+    fileprivate func tag(forSlug slug: String) -> Tag? {
+        bySlug[slug]
+    }
+
+    /// Records a tag this pass just minted. First writer wins, matching `tagsBySlug`, which keeps
+    /// the first tag per slug in `TagSupport.precedes` order rather than the last.
+    fileprivate func register(_ tag: Tag) {
+        if bySlug[tag.slug] == nil {
+            bySlug[tag.slug] = tag
+        }
+        maxOrder = max(maxOrder, tag.order)
     }
 }
