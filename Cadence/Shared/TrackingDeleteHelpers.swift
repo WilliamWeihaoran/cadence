@@ -21,6 +21,34 @@ extension ModelContext {
     /// mirrors `Goal.subGoals`' `.nullify` rule, and it is the same reasoning that keeps
     /// `TaskBundle.tasks` on nullify.
     ///
+    /// **What it takes across contexts, and why `deleteContext` does not mirror it ([[T-1324]]).**
+    /// The walk has no container filter, so a milestone filed under *Life* goes with its *Work*
+    /// parent. `ModelContext.deleteContext` deletes `context.goals` and never walks `subGoals`, so
+    /// that same milestone outlives a delete of *Work*, promoted to a top-level direction by
+    /// `Goal.subGoals`' `.nullify` rule. The two readings differ on purpose, and [[T-1312]]'s
+    /// argument — which settled the same disagreement one relationship over, for a goal's *tasks* —
+    /// does not carry across to nesting for three reasons:
+    ///
+    /// * That leg was **redundant**: a task that was really the context's own already arrived
+    ///   through its area, its project or its own `context`, so dropping it subtracted nothing but
+    ///   somebody else's rows. `subGoals` is the only leg that reaches a milestone at all, so
+    ///   filtering it would redefine the delete rather than remove a double count.
+    /// * `AppTask.goal` is **free** of `AppTask.context`. `Goal.parentGoal` *derives* it:
+    ///   `CadenceTrackingMutationSupport.saveGoal` writes `context ?? parentGoal?.context`, so a
+    ///   milestone's context defaults to its parent's and a differing one is a deliberate override.
+    /// * A severed task is still the object it was, in a list it already had. A severed milestone
+    ///   is not: both Goals pages draw top-level goals with their milestones nested under them
+    ///   (`GoalMissionGrouping.groups` on macOS, `topLevelGoals` + `milestones(of:)` on iOS) and
+    ///   `GoalAssignmentRules.canOwnMilestones` keeps that two deep, so surviving means being
+    ///   **promoted to a direction the user never created**.
+    ///   Survival is not the conservative direction here.
+    ///
+    /// The repair T-1312's rule really does forbid is the other one — `context.goals` is already
+    /// exact, so walking `subGoals` from a context cascade could only ever add another context's
+    /// goals. Both halves are pinned, so the disagreement cannot go quiet again:
+    /// `TrackingDeleteHelpersTests.deletingAGoalTakesAMilestoneWhoseOwnContextIsElsewhere` and
+    /// `ListDeleteHelpersTests.deleteContextLeavesAMilestoneFiledElsewhereAliveAsATopLevelGoal`.
+    ///
     /// **Throws when the store refuses the commit ([[T-1301]]).** This ended `try? save()`, and
     /// because the receiver is the store the commit was written with no qualifier at all — which is
     /// the one spelling `CadenceSaveCommitDisciplineTests`' needle could not read, so the existence

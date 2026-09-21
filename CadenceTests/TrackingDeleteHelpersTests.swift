@@ -118,6 +118,82 @@ struct TrackingDeleteHelpersTests {
         #expect(GoalAssignmentRules.nestedGoalCount(under: goal) == 0)
     }
 
+    /// **The nesting half of the question [[T-1312]] settled for tasks, decided the other way and
+    /// deliberately so ([[T-1324]]).** `deleteGoal` walks `GoalAssignmentRules.deletionCascade`
+    /// with no container filter, so a milestone whose own `context` is *Life* goes with its *Work*
+    /// parent; `deleteContext(Work)` would have left that same milestone alive. The two readings
+    /// are not the same disagreement T-1312 fixed, and the argument that settled that one does not
+    /// transfer:
+    ///
+    /// * T-1312's fourth leg was **redundant** — a task that was really the context's own arrived
+    ///   through its area, its project or its own `context`, so dropping the leg subtracted
+    ///   nothing but somebody else's rows. `subGoals` is the only leg that reaches a milestone at
+    ///   all, so filtering it would not remove a double count, it would redefine the delete.
+    /// * `AppTask.goal` is **free** of `AppTask.context`; `Goal.parentGoal` *derives* it —
+    ///   `CadenceTrackingMutationSupport.saveGoal` writes `context ?? parentGoal?.context`, so a
+    ///   milestone's context defaults to its parent's and a differing one is an explicit override.
+    /// * A task severed from a goal stays the object it was, in a list it already had. A milestone
+    ///   severed from its parent is not: `GoalMissionGrouping.groups` builds the Goals page out of
+    ///   top-level goals and the milestones nested under them, and `canOwnMilestones` keeps the
+    ///   hierarchy two deep, so a surviving milestone is **promoted to a top-level direction** —
+    ///   a row the user never created, with equal billing to their real directions.
+    ///
+    /// What T-1312 protects is protected here too, and that is the second half of this test: the
+    /// foreign milestone's task and habit are the user's real work, and they survive with the
+    /// reference severed exactly as they survive `deleteContext`.
+    @Test func deletingAGoalTakesAMilestoneWhoseOwnContextIsElsewhere() throws {
+        let modelContext = try makeContext()
+
+        let work = Context(name: "Work")
+        let life = Context(name: "Life")
+        let direction = Goal(title: "Ship the thesis", context: work)
+        let ownMilestone = Goal(title: "Chapter 1", context: work)
+        ownMilestone.parentGoal = direction
+        // The row this ticket is about: parented under a Work direction, filed under Life. The
+        // editor offers both pickers, so it takes one deliberate change to build.
+        let foreignMilestone = Goal(title: "Chapter 2", context: life)
+        foreignMilestone.parentGoal = direction
+        let unrelated = Goal(title: "Learn to sail", context: life)
+
+        let lifeTask = AppTask(title: "Life task")
+        lifeTask.context = life
+        lifeTask.goal = foreignMilestone
+        let lifeHabit = Habit(title: "Read nightly", context: life, goal: foreignMilestone)
+
+        for model in [
+            work as any PersistentModel, life, direction, ownMilestone, foreignMilestone,
+            unrelated, lifeTask, lifeHabit
+        ] {
+            modelContext.insert(model)
+        }
+        try modelContext.save()
+
+        // The confirmation counts the same walk, so the milestone filed elsewhere is named to the
+        // user before it goes — `nestedGoalCount` is `deletionCascade`'s count.
+        #expect(GoalAssignmentRules.nestedGoalCount(under: direction) == 2)
+
+        try modelContext.deleteGoal(direction)
+        try modelContext.save()
+
+        #expect(
+            try modelContext.fetch(FetchDescriptor<Goal>()).map(\.title) == ["Learn to sail"],
+            "deleteGoal stopped taking the whole nested subtree (T-1324)"
+        )
+
+        // Neither context is touched, and neither is the work filed under the foreign milestone.
+        #expect(try modelContext.fetch(FetchDescriptor<Context>()).count == 2)
+
+        let tasks = try modelContext.fetch(FetchDescriptor<AppTask>())
+        #expect(tasks.map(\.title) == ["Life task"])
+        #expect(tasks.first?.goal == nil, "a surviving task still points at a deleted milestone")
+        #expect(tasks.first?.context?.id == life.id, "the survivor lost its own context")
+
+        let habits = try modelContext.fetch(FetchDescriptor<Habit>())
+        #expect(habits.map(\.title) == ["Read nightly"])
+        #expect(habits.first?.goal == nil, "a surviving habit still points at a deleted milestone")
+        #expect(habits.first?.context?.id == life.id)
+    }
+
     /// A corrupted `parentGoal` chain must not spin the collection walk forever.
     @Test func deletingAGoalTerminatesOnACycle() throws {
         let modelContext = try makeContext()

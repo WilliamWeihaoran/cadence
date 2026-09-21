@@ -59,6 +59,13 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
   `AppTask.context`; a task that really is a context's own is already reached through its area, its
   project or its own `context`, so a leg through a free relationship can only add somebody else's
   rows. `CadenceListDeletionSummary` mirrors these legs and moves with them.
+  Goal **nesting** is the one place the two disagree, and it is decided rather than drifted
+  (T-1324): `deleteGoal` walks `subGoals` with no container filter while `deleteContext` deletes
+  `context.goals` alone, so a milestone filed under another context goes with its parent but
+  survives a delete of its parent's context. The rule above still forbids the other repair —
+  `context.goals` is already exact, so a subtree walk from a context cascade could only add
+  somebody else's goals. Why a *redundant* leg (T-1312) and the *only* leg (this one) are not the
+  same question is argued on `ModelContext.deleteGoal`; both readings are pinned by tests.
 - **Container wind-down** - `CadenceTaskContainerLifecycleService.swift` (prefixed file, unprefixed
   `TaskContainerLifecycleService` type). Completing or archiving an area, a project or a kanban
   column settles the work still open inside it. It lived in `macOS/Services/TaskWorkflowService.swift`

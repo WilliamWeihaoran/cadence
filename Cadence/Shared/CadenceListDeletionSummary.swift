@@ -274,6 +274,10 @@ struct CadenceListDeletionSummary: Equatable, Sendable {
         var summary = Self()
         summary.areas = areas.count
         summary.projects = projects.count
+        // **And `goals.count` is exact including the nesting case (T-1324).** It is `context.goals`,
+        // the same set `delete(goals)` takes; a milestone parented here but filed under another
+        // context is in neither, so this neither over-promises the loss nor hides one. `deleteGoal`'s
+        // unfiltered subtree walk is a different question, decided in `ModelContext.deleteGoal`.
         summary.goals = goals.count
         summary.habits = habits.count
         summary.tasks = tasks.count

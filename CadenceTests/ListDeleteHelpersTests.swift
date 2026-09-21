@@ -346,6 +346,61 @@ struct ListDeleteHelpersTests {
         #expect(try modelContext.fetch(FetchDescriptor<Context>()).map(\.id) == [survivor.id])
     }
 
+    /// **T-1324: the other side of that asymmetry, and it stays.** `deleteContext` deletes
+    /// `context.goals` and does not walk `subGoals`, so a milestone filed under *Life* whose parent
+    /// direction is *Work* outlives the deletion of *Work* — with `parentGoal` gone, which promotes
+    /// it to a top-level direction on the Goals page. That is the visible oddity the ticket names,
+    /// and it is the price of T-1312's rule rather than a second defect: adding the subtree walk
+    /// here is the one repair that is ruled out, because `context.goals` is already **exact** —
+    /// every goal whose own context is this one is in it, and a goal whose context is not is
+    /// somebody else's row. `deleteGoal`'s unfiltered walk is decided the other way, and why the
+    /// two are not the same question is on
+    /// `TrackingDeleteHelpersTests.deletingAGoalTakesAMilestoneWhoseOwnContextIsElsewhere`.
+    ///
+    /// **The confirmation does not move, and this pins that it does not.**
+    /// `CadenceListDeletionSummary.forContext` counts `context.goals.count`, which is exactly the
+    /// set `delete(goals)` takes — so unlike T-1312, where the count mirrored a leg that had to go,
+    /// there is nothing here to correct. The foreign milestone is not counted and not deleted.
+    @Test func deleteContextLeavesAMilestoneFiledElsewhereAliveAsATopLevelGoal() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let doomed = Context(name: "Work")
+        let survivor = Context(name: "Life")
+        let direction = Goal(title: "Ship the thesis", context: doomed)
+        let ownMilestone = Goal(title: "Chapter 1", context: doomed)
+        ownMilestone.parentGoal = direction
+        let foreignMilestone = Goal(title: "Chapter 2", context: survivor)
+        foreignMilestone.parentGoal = direction
+
+        for model in [doomed as any PersistentModel, survivor, direction, ownMilestone, foreignMilestone] {
+            modelContext.insert(model)
+        }
+        try modelContext.save()
+
+        let summary = CadenceListDeletionSummary.forContext(doomed, in: modelContext)
+        #expect(
+            summary.goals == 2,
+            "the context confirmation counted a goal filed under another context (T-1324)"
+        )
+
+        #expect(modelContext.deleteContext(doomed))
+        try modelContext.save()
+
+        let remaining = try modelContext.fetch(FetchDescriptor<Goal>())
+        #expect(
+            remaining.map(\.title) == ["Chapter 2"],
+            "the context cascade disagreed with its own count (T-1324): \(remaining.map(\.title))"
+        )
+        let orphan = try #require(remaining.first)
+        #expect(orphan.context?.id == survivor.id, "the survivor lost its own context")
+        // Promoted, not orphaned mid-air: `Goal.subGoals` declares `.nullify`, so what is left is a
+        // top-level direction rather than a row pointing at a deleted parent.
+        #expect(orphan.parentGoal == nil)
+        #expect(orphan.isTopLevel)
+        #expect(try modelContext.fetch(FetchDescriptor<Context>()).map(\.id) == [survivor.id])
+    }
+
     @Test func deleteTaskRemovesScheduledCompletedTaskAndSubtasksCleanly() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

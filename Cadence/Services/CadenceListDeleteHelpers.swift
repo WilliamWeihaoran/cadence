@@ -41,6 +41,13 @@ extension ModelContext {
         let contextProjects = Array(context.projects ?? [])
         let pursuits = Array(context.pursuits ?? [])
         let contextTasks = Array(context.tasks ?? [])
+        // **`context.goals`, with no `subGoals` walk, deliberately (T-1324).** This set is exact:
+        // every goal whose own context is this one is in it, and a goal whose context is not is
+        // somebody else's row — so walking the subtree the way `ModelContext.deleteGoal` does could
+        // only ever add another context's goals, which is the leg T-1312 took out one model over.
+        // A milestone filed elsewhere therefore outlives its parent here, promoted to a top-level
+        // direction by `Goal.subGoals`' `.nullify` rule. That the two helpers read nesting
+        // differently is a decision rather than a drift; `deleteGoal` carries the argument.
         let goals = Array(context.goals ?? [])
         let habits = Array(context.habits ?? [])
         let areaProjects = areas.flatMap { Array($0.projects ?? []) }
