@@ -169,7 +169,10 @@ struct CadenceSaveCommitDisciplineTests {
             \(offenders) renumber `order` across a run of rows and either swallow the commit or \
             never make one. The rearrangement on screen is the success report, and a refused one \
             reverts at next launch with nothing for the user to retry. Commit through \
-            CadenceOrderCommit.commit and show CadenceOrderCommit.failureNotice on `false`.
+            CadenceOrderCommit.commit and show CadenceOrderCommit.failureNotice on `false`. \
+            If one of these is a snapshot's restore, this half cannot tell it from the defect \
+            (T-1308) and neither separation was measurable: move the capture and the restore into \
+            the declaration that reaches the commit, and do not add an exemption.
             """
         )
     }
@@ -196,6 +199,64 @@ struct CadenceSaveCommitDisciplineTests {
             // And it is not an offender, which is the claim T-614 fixed it to make.
             #expect(!CadenceSaveCommitRule.rearrangementOffenders(in: source, changing: existence).contains(name))
         }
+    }
+
+    /// [[T-1308]]: half 2b cannot tell an `order` renumber from the **undo** of one, and that is
+    /// pinned here rather than left as prose in `rearrangementOffenders`' doc — which used to call
+    /// the half *sound*, a word that is literally true of a restore and still misdescribes it as a
+    /// defect.
+    ///
+    /// Both polarities, because each on its own is worthless. The false positive is the shape
+    /// [[T-1182]] was first written in: a snapshot whose `restore()` renumbers and, correctly,
+    /// commits nothing. The negative is the shape the app actually ships — capture and restore in
+    /// the declaration that reaches the commit — which is the whole workaround, so a change that
+    /// broke *it* would push every reorder arm back out of the rule's reach silently.
+    @Test func theRearrangementHalfCannotTellARenumberFromTheUndoOfOne() throws {
+        // T-1182's first spelling. Nothing about this is a defect: it is what `commitEdit`'s undo
+        // runs when the commit is refused, and committing here is the one thing it must not do.
+        let restoreInAFrameOfItsOwn = """
+        struct CadenceMCPRowOrderSnapshot {
+            let entries: [(row: Area, order: Int)]
+
+            func restore() {
+                for entry in entries {
+                    entry.row.order = entry.order
+                }
+            }
+        }
+        """
+        #expect(
+            CadenceSaveCommitRule.rearrangementOffenders(in: restoreInAFrameOfItsOwn, changing: .init())
+                == ["restore"],
+            "the limitation T-1308 records is gone — re-read rearrangementOffenders' doc before celebrating"
+        )
+
+        // And the direction cannot be read off the assignment, which is why no separation was
+        // adopted: `CadenceWriteService.updateContext`'s renumber and its undo differ only in the
+        // name of the sequence they walk.
+        #expect(
+            CadenceSaveCommitRule.renumbersInALoopForTesting(named: "restore", in: restoreInAFrameOfItsOwn) == true
+        )
+
+        // The workaround, in the app's own shape: both halves in the frame that commits.
+        let bothHalvesInTheCommittingFrame = """
+        func updateContext(to newOrder: Int) throws {
+            let placement = try plannedContextOrders(moving: target, to: newOrder)
+            let previousOrders = placement.map { (row: $0.row, order: $0.row.order) }
+            for entry in placement {
+                entry.row.order = entry.order
+            }
+            try CadencePendingChangePersistence.commitEdit(in: context) {
+                for entry in previousOrders {
+                    entry.row.order = entry.order
+                }
+            }
+        }
+        """
+        #expect(
+            CadenceSaveCommitRule.rearrangementOffenders(in: bothHalvesInTheCommittingFrame, changing: .init()).isEmpty,
+            "the one workaround T-1308 leaves open stopped passing"
+        )
     }
 
     /// Half 3: no declaration inserts and reaches no commit at all (T-503).
@@ -2247,10 +2308,12 @@ enum CadenceSaveCommitRule {
     /// **What this fires on instead, and it is deliberately narrower than the clause.** The shape
     /// [[T-868]] and [[T-869]] were actually written in: a `for` loop assigning `\.order` on rows the
     /// frame did not just create, in a declaration that owns its unit of work and either swallows
-    /// its commit or reaches none. That is a proxy for the clause, not the clause. It is *sound* —
-    /// every site it names really does renumber and really does fail to commit — and it is
-    /// **incomplete in three measured ways**, all of which are stated here so that nobody reads a
-    /// green run as the clause being covered:
+    /// its commit or reaches none. That is a proxy for the clause, not the clause. It is sound
+    /// about the **text** and not about the **intent** ([[T-1308]]) — every site it names really
+    /// does assign `\.order` across a run of rows and really does reach no commit, and it cannot
+    /// read which *direction* the renumber goes, which is the difference between the defect and its
+    /// cure; see "The one false positive" below. It is also **incomplete in three measured ways**,
+    /// all of which are stated here so that nobody reads a green run as the clause being covered:
     ///
     /// 1. **An ordering that is not an `order` field is invisible.** [[T-870]] was the kanban
     ///    *column* order, a re-serialised `[TaskSectionConfig]` blob on the list.
@@ -2273,6 +2336,38 @@ enum CadenceSaveCommitRule {
     /// **compiler**, which keys on the answer rather than on the loop.
     /// `CadenceReorderCommitSurfaceTests` pins the absence of that annotation, and 3 is still
     /// open — a `move(fromOffsets:toOffset:)` returns nothing to ignore.
+    ///
+    /// **The one false positive, and it is the exact opposite of the defect** ([[T-1308]]). A
+    /// snapshot's `restore()` matches all three conditions — it assigns `\.order` in a loop, it owns
+    /// its unit of work, and it reaches no commit — precisely because it **must** not commit: it
+    /// exists so that a refused commit puts every displaced row's number back. [[T-1182]]'s first
+    /// spelling was one, a `CadenceMCPRowOrderSnapshot.restore()` in `CadenceWriteService.swift`,
+    /// and this half named the file.
+    /// `theRearrangementHalfCannotTellARenumberFromTheUndoOfOne` pins it rather than leaving it as
+    /// prose. **Two separations were measured against this app, and neither works:**
+    ///
+    /// - **Direction** — "a loop whose right-hand side is a captured previous value rather than an
+    ///   enumeration index is an undo" — dies on the two renumbers it would have to keep.
+    ///   `CadenceWriteService.updateContext` renumbers with
+    ///   `for entry in placement { entry.row.order = entry.order }` and undoes with
+    ///   `for entry in previousOrders { entry.row.order = entry.order }`: character-identical but
+    ///   for the *name* of the sequence, because a validated placement is a captured value too.
+    ///   `updateContainer`'s pair is the same one `switch` deeper. The reading separates only the
+    ///   `.enumerated()` spelling in this type's own `fires:` sample, which is calibration against
+    ///   the instrument rather than against the app.
+    /// - **Call site** — "a declaration reached only from a `commitEdit(undo:)` closure is an undo"
+    ///   — misses the site that filed this. Every undo on the MCP write surface is handed to
+    ///   `saveNotifyAndAudit(_:inserted:undo:)`, which forwards it to `commitEdit`, so the literal
+    ///   needle sees `saveNotifyAndAudit(` and nothing else; catching T-1182's own spelling would
+    ///   need a third propagation index chasing undo-closure-hood through arbitrary wrappers and
+    ///   then resolving the callee across files. It cannot resolve by bare name either:
+    ///   `iOSSettingsTagsSection.restore(_ tag:)` un-archives a tag over `try? modelContext.save()`
+    ///   and is a mutation, not an undo.
+    ///
+    /// So the rule stands and the **workaround is one frame of relocation**: put the capture and the
+    /// restore in the declaration that reaches the commit, which is what T-1182 did and what
+    /// `updateContainer` / `updateContext` now read as. `rearrangementExemptions` is not the answer
+    /// — see its own doc.
     ///
     /// **Why it is not `!disclaimsOwnership` by accident.** `TagSupport.seedDefaultTags(in:…)`
     /// writes `tag.order = index` in an `.enumerated()` loop and ends `try? context.save()`, and it

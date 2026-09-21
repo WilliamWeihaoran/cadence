@@ -119,9 +119,24 @@ enum GoalLinkPresentation {
     /// target-less row would be a "Missing List" the percentage does not know about. The sort is
     /// **total** — `listLinks` is a SwiftData to-many with no defined order, so title alone leaves
     /// two lists of the same name swapping places between renders.
+    /// **`isDeleted` is filtered for the same reason the target-less rows are, and it is the half
+    /// that does not depend on a toolchain** ([[T-1306]]). A refused `attachList` has already had
+    /// `commitInsert` call `delete(link)` by the time it rethrows, so between the refusal and the
+    /// next processed pending change `goal.listLinks` holds a row the store will never have.
+    /// Measured on this Mac (Xcode 27, 2026-09-20): `count == 1`, `isDeleted == true`, and both
+    /// inspectors drew it. `attachList` now processes its restore, which empties the array here —
+    /// but *that* is framework timing of exactly the kind [[T-1296]] says not to depend on, and
+    /// this filter is the reading that is right whether or not the array has caught up.
+    ///
+    /// **It is the second line of defence and not the fix**, because two readers never come through
+    /// here at all: `GoalContributionSummary` walks `goal.listLinks` raw, once for the counted
+    /// tasks and once for the "N lists" chip, so only the processed restore can keep a refused
+    /// attach out of the goal's progress bar. `aDeletedLinkIsNotAnAttachedListInEitherReading`
+    /// exercises this filter against a deleted-and-unprocessed link directly, so it is not a guard
+    /// no mutation can reach.
     static func links(of goal: Goal) -> [GoalListLink] {
         (goal.listLinks ?? [])
-            .filter { $0.area != nil || $0.project != nil }
+            .filter { !$0.isDeleted && ($0.area != nil || $0.project != nil) }
             .sorted { lhs, rhs in
                 let byTitle = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
                 if byTitle != .orderedSame { return byTitle == .orderedAscending }
@@ -131,8 +146,16 @@ enum GoalLinkPresentation {
     }
 
     /// The link on `goal` pointing at `target`, if it already exists.
+    ///
+    /// **A pending-*deleted* link is not an existing one, and that is not only cosmetic**
+    /// ([[T-1306]]). This is read twice: by `isAttached` below, which is the checkmark both attach
+    /// sheets draw, and by `attachList`'s idempotence guard. Measured on Xcode 27 before the fix,
+    /// a second `attachList` straight after a refused one returned the refused link — `isDeleted`
+    /// set — from that guard, committed nothing, and left the store with **no** row while
+    /// `toggleGoalListLink` answered `true`. So the guard has to ask whether the link is still
+    /// going to exist, not merely whether an object is still in the array.
     static func existingLink(for target: GoalLinkTarget, on goal: Goal) -> GoalListLink? {
-        (goal.listLinks ?? []).first { target.isPointedAt(by: $0) }
+        (goal.listLinks ?? []).first { !$0.isDeleted && target.isPointedAt(by: $0) }
     }
 
     static func isAttached(_ target: GoalLinkTarget, to goal: Goal) -> Bool {
@@ -177,6 +200,13 @@ enum GoalLinkPresentation {
     /// "Nothing was changed." is earned either way — `attachList` un-inserts the row *and* puts
     /// `goal.listLinks` back, `detachGoalListLink` rolls the delete back — so the checkmark the
     /// user is still looking at already agrees with the store by the time this is drawn.
+    ///
+    /// **That last clause was written before it was true, and [[T-1306]] is what made it true.**
+    /// Putting `goal.listLinks` back is a pending change like any other: until [[T-1306]] the
+    /// restore was assigned and never processed, so the array kept the pending-deleted row and both
+    /// sheets stayed ticked under this sentence. `attachList` processes it now, and
+    /// `existingLink(for:on:)` above skips a deleted link besides, so the claim holds on either of
+    /// the two toolchains this repository builds on ([[T-1296]]).
     static let changeFailureNotice = "Couldn't change this goal's lists. Nothing was changed."
 
     /// The alert title over `changeFailureNotice`, on both platforms ([[T-1301]]).
@@ -370,7 +400,13 @@ extension ModelContext {
         do {
             try CadencePendingChangePersistence.commitInsert(of: link, in: self, commit: commit)
         } catch {
+            // Processed, and not only assigned ([[T-1306]]). The assignment above is itself a
+            // pending change, so without this the array still answered with the pending-*deleted*
+            // link — count 1, `isDeleted` set — and both attach sheets kept the list ticked under
+            // an alert reading "Nothing was changed." This is the same call the insert above
+            // already needs, in the same place relative to the write it is making visible.
             goal.listLinks = restored
+            processPendingChanges()
             throw error
         }
         return link

@@ -164,6 +164,153 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(try store.modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
     }
 
+    // MARK: - A refused attach, and what the two sheets say about it ([[T-1306]])
+
+    /// A commit that refuses. `ModelContext.save()` cannot be made to throw out of an in-memory
+    /// container, which is why both mutations take their commit as a parameter at all.
+    private struct CommitRefused: Error {}
+
+    private static func refuse(_ modelContext: ModelContext) throws { throw CommitRefused() }
+
+    /// [[T-1306]]: the checkmark has to agree with the alert.
+    ///
+    /// Both attach sheets draw from `GoalLinkPresentation.isAttached` and both goal inspectors from
+    /// `links(of:)`, and until this ticket both kept the list ticked after a refusal while
+    /// `changeFailureNotice` said "Nothing was changed." Measured on this Mac (Xcode 27,
+    /// 2026-09-20) before the fix: `(goal.listLinks ?? []).count == 1` with that link's `isDeleted`
+    /// set, `links(of:).count == 1`, `isAttached == true`.
+    ///
+    /// **Nothing here pins a toolchain answer ([[T-1296]]).** The array's count between the refusal
+    /// and the next processed pending change is exactly the framework timing this repository's two
+    /// Xcode majors disagree about, so it is not asserted. What is asserted is the pair of readings
+    /// the user is looking at — which `existingLink`'s `isDeleted` skip makes right whether or not
+    /// the array has caught up — and then the store, read forwards through the next unrelated
+    /// `save()` from a second context, in [[T-1295]]'s shape.
+    @Test func arefusedAttachLeavesBothSheetsAgreeingWithTheAlert() throws {
+        let store = try makeStore()
+        let task = AppTask(title: "Area task")
+        task.area = store.area
+        store.modelContext.insert(task)
+        try store.modelContext.save()
+
+        #expect(throws: CommitRefused.self) {
+            try store.modelContext.attachList(.area(store.area), to: store.goal, commit: Self.refuse)
+        }
+
+        #expect(
+            GoalLinkPresentation.isAttached(.area(store.area), to: store.goal) == false,
+            "both attach sheets still tick a list the alert says was not attached"
+        )
+        #expect(
+            GoalLinkPresentation.links(of: store.goal).isEmpty,
+            "both goal inspectors still draw a row for a link the store does not hold"
+        )
+
+        // **And the progress bar, which does not go through `GoalLinkPresentation` at all.**
+        // `GoalContributionSummary` reads `goal.listLinks` raw — twice, for the counted tasks and
+        // for the "N lists" chip — so this is the half that the restore has to actually *process*
+        // rather than merely assign. Measured before the fix: 1 list and 1 counted task, from a
+        // refusal.
+        let summary = GoalContributionResolver.summary(for: store.goal)
+        #expect(summary.linkedListCount == 0, "the goal's \"N lists\" chip counts a refused attach")
+        #expect(summary.totalTasks == 0, "the goal's progress bar counts a refused attach's work")
+
+        try store.modelContext.save()
+        let reader = ModelContext(store.container)
+        #expect(try reader.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
+        #expect(try reader.fetch(FetchDescriptor<Goal>()).count == 1)
+    }
+
+    /// The `isDeleted` skip on its own, against the state it exists for — and **toolchain-free by
+    /// construction** ([[T-1306]], [[T-1296]]).
+    ///
+    /// The two readings above are made right twice over: `attachList` processes its restore, and
+    /// `links(of:)` / `existingLink(for:on:)` skip a deleted link besides. That is deliberate
+    /// belt-and-braces — the Xcode 26 reading of whether `processPendingChanges()` materialises the
+    /// restored array could not be taken, because this Mac has Xcode 27.0 and no second toolchain —
+    /// and it would otherwise be a guard no mutation can kill, which this repository has been
+    /// bitten by twice on this very file. So it is exercised here directly rather than through the
+    /// refusal: a link deleted and **not** processed is the state the skip answers for, and if a
+    /// toolchain clears the array at the delete instead, every assertion below still holds.
+    @Test func aDeletedLinkIsNotAnAttachedListInEitherReading() throws {
+        let store = try makeStore()
+        let link = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
+        try store.modelContext.save()
+        #expect(GoalLinkPresentation.isAttached(.area(store.area), to: store.goal))
+
+        store.modelContext.delete(link)
+
+        #expect(
+            GoalLinkPresentation.links(of: store.goal).isEmpty,
+            "a row the store is about to drop is still drawn as a linked list"
+        )
+        #expect(
+            GoalLinkPresentation.isAttached(.area(store.area), to: store.goal) == false,
+            "a row the store is about to drop still ticks the list on both attach sheets"
+        )
+        #expect(
+            GoalLinkPresentation.existingLink(for: .area(store.area), on: store.goal) == nil,
+            "attachList's idempotence guard would hand this link back and attach nothing"
+        )
+    }
+
+    /// The second reading of the same state, and the one that is not cosmetic ([[T-1306]]).
+    ///
+    /// `attachList`'s idempotence guard returns any link already pointing at the target. Measured
+    /// on Xcode 27 before the fix, straight after a refusal it returned the *refused* link — the
+    /// deleted one — so the retry committed nothing, `toggleGoalListLink` answered `true`, and the
+    /// store ended with no row at all. `CreateGoalSheet`'s own retry never saw this, because
+    /// `saveGoal` runs a real `save()` before the attach is tried again; every other retry path on
+    /// both platforms went straight back into the guard.
+    @Test func theAttachAfterARefusedOneAttachesRatherThanReturningTheRefusedLink() throws {
+        let store = try makeStore()
+        try store.modelContext.save()
+
+        #expect(throws: CommitRefused.self) {
+            try store.modelContext.attachList(.area(store.area), to: store.goal, commit: Self.refuse)
+        }
+
+        let retried = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
+        #expect(!retried.isDeleted, "the retry handed back the link the refusal deleted")
+        #expect(!store.modelContext.hasChanges, "the retry left its attach pending")
+
+        let reader = ModelContext(store.container)
+        #expect(
+            try reader.fetch(FetchDescriptor<GoalListLink>()).count == 1,
+            "the retry reported an attach the store does not hold"
+        )
+        #expect(GoalLinkPresentation.isAttached(.area(store.area), to: store.goal))
+    }
+
+    /// The mirror, `commitDelete` + `rollback()` rather than `commitInsert` + `delete` — and the
+    /// store half of it only.
+    ///
+    /// A refused detach must leave the link in the store and leave nothing pending, and both of
+    /// those hold on every toolchain. **The live reading is deliberately not asserted.**
+    /// `detachGoalListLink` nulls `goal` / `area` / `project` before deleting, so what `rollback()`
+    /// has to undo is an *edit*, which is the one thing [[T-1296]] measured the two Xcode majors
+    /// disagreeing about: on 27 the live reference is restored at once (measured 2026-09-20 —
+    /// `link.goal` and `link.area` both non-`nil`, `isAttached == true`), and through 26 an edit is
+    /// not visible on an already-materialised reference until something refetches. Pinning either
+    /// answer here is what T-1296 turned CI red for. See [[T-1321]].
+    @Test func arefusedDetachKeepsTheLinkInTheStoreAndLeavesNothingPending() throws {
+        let store = try makeStore()
+        let link = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
+        try store.modelContext.save()
+
+        #expect(throws: CommitRefused.self) {
+            try store.modelContext.detachGoalListLink(link, commit: Self.refuse)
+        }
+
+        #expect(!store.modelContext.hasChanges, "the refused detach left a change for the next save")
+
+        let reader = ModelContext(store.container)
+        #expect(
+            try reader.fetch(FetchDescriptor<GoalListLink>()).count == 1,
+            "the refusal said nothing was changed and the row is gone"
+        )
+    }
+
     /// The reverse of `ListDeleteHelpers` cascading `goalLinks` when a list is deleted: detaching
     /// removes the join row and **nothing else**. The list, its tasks and the goal are the user's
     /// real work and outlive the link, exactly as they outlive a deleted goal.
