@@ -3,8 +3,34 @@ import Testing
 @testable import Cadence
 
 struct AppStoreReviewReadinessTests {
+    /// **Every UserDefaults domain a binary reaches owes a reason, and this is the floor (T-1310).**
+    ///
+    /// Both binaries reach **two** domains, so both manifests owe **two** reasons:
+    ///
+    /// - the app-group suite — `UserDefaults(suiteName: CadenceStoreSupport.appGroupIdentifier)` in
+    ///   `Shared/Theme.swift` (the accent) and `Services/CadenceWidgetRefreshCenter.swift` (reload
+    ///   state). Both files are in the `CadenceWidgets` Sources phase, which
+    ///   `CadenceDefaultsRoutingSweepTests.sharedTargetSites` already names for that reason. Apple's
+    ///   approved reason for a domain shared inside an App Group is **`1C8F.1`**;
+    /// - each binary's own domain — the `.standard` fallback both of those helpers end in, plus
+    ///   `CadenceDefaults.store` and every `@AppStorage` in the app. Apple's reason is **`CA92.1`**.
+    ///
+    /// **The assertions used to pin the hole rather than the requirement**, which is [[T-1309]]'s
+    /// shape exactly: the app's read `== ["CA92.1"]`, so *adding* the correct second reason turned
+    /// this suite red, and the widget's read `.isEmpty`, so declaring anything at all did. A floor
+    /// plus a ceiling replaces both — backing either reason out of either manifest fails here.
+    static let requiredUserDefaultsReasons: Set<String> = ["CA92.1", "1C8F.1"]
+
+    /// Apple's published approved reasons for `NSPrivacyAccessedAPICategoryUserDefaults`, verbatim
+    /// and complete. The ceiling is Apple's vocabulary rather than Cadence's justification: an
+    /// unrecognised reason string is rejected on upload whatever it claims. The two Cadence does
+    /// not use are `C56D.1` (third-party SDKs only — this repo ships none inside the app or widget)
+    /// and `AC6B.1` (the MDM managed-configuration keys, which Cadence never reads).
+    static let approvedUserDefaultsReasons: Set<String> = ["CA92.1", "1C8F.1", "C56D.1", "AC6B.1"]
+
     @Test func appPrivacyManifestDeclaresExpectedDataAndAPIs() throws {
         let manifest = try plistDictionary(at: "Cadence/PrivacyInfo.xcprivacy")
+        let userDefaultsReasons = apiReasons(for: "NSPrivacyAccessedAPICategoryUserDefaults", in: manifest)
 
         #expect(manifest["NSPrivacyTracking"] as? Bool == false)
         #expect(collectedDataTypes(in: manifest).isSuperset(of: [
@@ -13,16 +39,19 @@ struct AppStoreReviewReadinessTests {
             "NSPrivacyCollectedDataTypeUserID",
             "NSPrivacyCollectedDataTypeOtherUserContent",
         ]))
-        #expect(apiReasons(for: "NSPrivacyAccessedAPICategoryUserDefaults", in: manifest) == ["CA92.1"])
+        #expect(userDefaultsReasons.isSuperset(of: Self.requiredUserDefaultsReasons))
+        #expect(userDefaultsReasons.isSubset(of: Self.approvedUserDefaultsReasons))
         #expect(apiReasons(for: "NSPrivacyAccessedAPICategoryFileTimestamp", in: manifest) == ["C617.1"])
     }
 
-    @Test func widgetPrivacyManifestAvoidsSharedContainerAPIsWithoutCollectedData() throws {
+    @Test func widgetPrivacyManifestDeclaresSharedGroupDefaultsAndCollectsNothing() throws {
         let manifest = try plistDictionary(at: "CadenceWidgets/PrivacyInfo.xcprivacy")
+        let userDefaultsReasons = apiReasons(for: "NSPrivacyAccessedAPICategoryUserDefaults", in: manifest)
 
         #expect(manifest["NSPrivacyTracking"] as? Bool == false)
         #expect(collectedDataTypes(in: manifest).isEmpty)
-        #expect(apiReasons(for: "NSPrivacyAccessedAPICategoryUserDefaults", in: manifest).isEmpty)
+        #expect(userDefaultsReasons.isSuperset(of: Self.requiredUserDefaultsReasons))
+        #expect(userDefaultsReasons.isSubset(of: Self.approvedUserDefaultsReasons))
         #expect(apiReasons(for: "NSPrivacyAccessedAPICategoryFileTimestamp", in: manifest) == ["C617.1"])
     }
 
