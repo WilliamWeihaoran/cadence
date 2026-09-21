@@ -818,15 +818,143 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
         // The remaining artifacts are still cleaned up after a refused key deletion: the store is
         // already gone, so stopping there would leave more behind, not less.
+        for step in ["clearWidgetState()", "removeStoredBackups()"] {
+            #expect(body.contains(step), "the reset stopped performing \(step)")
+        }
+        // The two backup steps moved behind `removeStoredBackups` (T-1313) rather than being
+        // dropped: they are still performed, as that function's default arguments.
+        let sweep = try #require(
+            CadenceSourceScan.functionBody(named: "removeStoredBackups", in: live),
+            "the backup sweep seam is gone"
+        )
         for step in [
-            "clearWidgetState()",
             "StoreBackupManager.deleteAllBackups()",
             // T-1100: the store files a failed rollback retained are store data, and a reset that
             // left them behind would leave a copy of the database inside the emptied container.
             "StoreBackupManager.deleteRetainedUnrestoredOriginals()",
         ] {
-            #expect(body.contains(step), "the reset stopped performing \(step)")
+            #expect(
+                live.contains(step),
+                "the reset stopped performing \(step)"
+            )
         }
+        #expect(!sweep.contains("throw"), "the backup sweep can fail the reset again (T-1313)")
+    }
+
+    // MARK: - The reset's second phase may not report a failure (T-1313)
+
+    /// **The one sentence that is certainly false.**
+    ///
+    /// `deleteCadenceDataAndLocalArtifacts` commits the store deletion first — [[T-1102]], and
+    /// correct — and then ran four artifact steps, two of which threw. A throw from either
+    /// propagated to `SettingsDataSafetySection.deleteCadenceData` and
+    /// `iOSDataResetSettingsSection`, whose single `catch` writes *"Could not delete Cadence
+    /// account and data"*. At that instant the data **is** deleted, so of every reading available
+    /// that is the only one guaranteed to be wrong — and it is the one that makes a user run the
+    /// destructive action a second time, or believe their store survived.
+    ///
+    /// Phase one is the only step that may throw, and this counts the `try`s to say so. It is a
+    /// text assertion for this file's usual reason: the function deletes the real backups
+    /// directory inside the app's container, so no test may call it.
+    @Test func nothingAfterTheStoreIsGoneCanReportTheResetAsFailed() throws {
+        let live = try strippingComments(sourceFile("Cadence/Services/CadencePrivacyDataResetService.swift"))
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "deleteCadenceDataAndLocalArtifacts", in: live),
+            "the whole-reset entry point is gone"
+        )
+
+        #expect(
+            body.contains("try await deleteCadenceData(in: modelContext)"),
+            "non-vacuity: phase one is not where it was"
+        )
+        let tries = body.components(separatedBy: "try ").count - 1
+        #expect(
+            tries == 1,
+            "a step after the store deletion can still throw the reset (T-1313): \(tries) `try`s in the body"
+        )
+        #expect(
+            !body.contains("try StoreBackupManager"),
+            "the backup sweep throws out of the reset again (T-1313)"
+        )
+    }
+
+    /// A refused backup sweep is *reported*, not thrown — and the reset's own count tells the
+    /// truth about what it took.
+    ///
+    /// The seam is the two steps as parameters, for the reason `commit:` is one everywhere else in
+    /// this repository: a real `FileManager` over a real directory cannot be made to refuse a
+    /// removal on demand, so without it this branch is unreachable from a test and a failure path
+    /// no test can reach is a failure path no test can prove.
+    @Test func aRefusedBackupSweepIsReportedRatherThanThrown() {
+        let refusal = CocoaError(.fileWriteNoPermission)
+
+        let bothRefused = PrivacyDataResetService.removeStoredBackups(
+            deletingBackups: { throw refusal },
+            deletingRetainedOriginals: { throw refusal }
+        )
+        #expect(bothRefused.removedBackupCount == 0)
+        let reason = bothRefused.retainedBackupReason
+        #expect(reason != nil, "a refused backup sweep is still silent (T-1313)")
+        // One refused container is the usual cause of both, and the same sentence twice reads as
+        // two separate problems.
+        #expect(reason == refusal.localizedDescription)
+
+        // The second step runs even when the first failed: stopping would leave more behind.
+        var retainedRan = false
+        let firstRefused = PrivacyDataResetService.removeStoredBackups(
+            deletingBackups: { throw refusal },
+            deletingRetainedOriginals: { retainedRan = true; return 1 }
+        )
+        #expect(retainedRan, "a refused backup delete skipped the retained originals (T-1100)")
+        #expect(firstRefused.removedBackupCount == 0)
+        #expect(firstRefused.retainedBackupReason != nil)
+
+        // And a sweep that worked says nothing at all, so the ordinary sentence is unchanged.
+        let clean = PrivacyDataResetService.removeStoredBackups(
+            deletingBackups: { 3 },
+            deletingRetainedOriginals: { 0 }
+        )
+        #expect(clean.removedBackupCount == 3)
+        #expect(clean.retainedBackupReason == nil)
+    }
+
+    /// The sentence each phase shows. Phase two's is a *success* sentence with an enumeration
+    /// after it, because the deletion the user asked for did happen.
+    @Test func theSentenceAfterARetainedBackupStillSaysTheDataWasDeleted() {
+        let outcome = PrivacyDataResetOutcome(
+            removedBackupCount: 0,
+            retainedBackupReason: "You don’t have permission to save the file."
+        )
+
+        #expect(outcome.accountAndDataStatusMessage.hasPrefix("Cadence account and data were deleted."))
+        #expect(outcome.dataOnlyStatusMessage.hasPrefix("Cadence data was deleted."))
+        for message in [outcome.accountAndDataStatusMessage, outcome.dataOnlyStatusMessage] {
+            #expect(message.contains("Local store backups were not removed and are still inside Cadence"))
+            #expect(message.contains("You don’t have permission to save the file"))
+            #expect(!message.lowercased().contains("could not delete"))
+        }
+        // The Finder route exists on macOS's pane and nowhere on iOS, so only one sentence names
+        // it — the same rule T-474 applied to the word "account".
+        #expect(outcome.accountAndDataStatusMessage.contains("Settings → Data Safety → Show Folder"))
+        #expect(!outcome.dataOnlyStatusMessage.contains("Settings → Data Safety"))
+        #expect(!outcome.dataOnlyStatusMessage.lowercased().contains("account"))
+
+        // Read from the presence of the reason, never from its text: an error with no description
+        // still left the files behind.
+        let blank = PrivacyDataResetOutcome(removedBackupCount: 0, retainedBackupReason: "   ")
+        #expect(blank.dataOnlyStatusMessage.contains("were not removed and are still inside Cadence"))
+        #expect(blank.dataOnlyStatusMessage.contains("the files could not be removed"))
+
+        // A reset that removed them says nothing about them, and both clauses can coexist.
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 2).dataOnlyStatusMessage
+            == "Cadence data and 2 backups were deleted.")
+        let both = PrivacyDataResetOutcome(
+            removedBackupCount: 0,
+            retainedAPIKeyReason: "Keychain returned status -34018.",
+            retainedBackupReason: "You don’t have permission to save the file."
+        )
+        #expect(both.dataOnlyStatusMessage.contains("still in the Keychain"))
+        #expect(both.dataOnlyStatusMessage.contains("still inside Cadence"))
     }
 
     // MARK: - Fixtures

@@ -31,9 +31,28 @@ struct PrivacyDataResetOutcome: Equatable, Sendable {
     /// promise the saved key is removed, so the one thing the sentence may not do is claim it.
     let retainedAPIKeyReason: String?
 
-    init(removedBackupCount: Int, retainedAPIKeyReason: String? = nil) {
+    /// Why local store backups are **still inside the container**, or `nil` when none were left
+    /// (T-1313).
+    ///
+    /// Same shape and same reason as `retainedAPIKeyReason` one line up, arrived at from the
+    /// opposite direction. The backup sweep is the *last* thing the reset does and it used to
+    /// `throw`: `try StoreBackupManager.deleteAllBackups()` and
+    /// `try StoreBackupManager.deleteRetainedUnrestoredOriginals()` propagated out of
+    /// `deleteCadenceDataAndLocalArtifacts`, past both panes' single `catch`, and the user read
+    /// **"Could not delete Cadence account and data"** — at a moment when the store had already
+    /// been committed as deleted. Of everything the app could have said, that is the one reading
+    /// guaranteed to be false, and it is the one that makes a user run the reset again or believe
+    /// their data survived.
+    let retainedBackupReason: String?
+
+    init(
+        removedBackupCount: Int,
+        retainedAPIKeyReason: String? = nil,
+        retainedBackupReason: String? = nil
+    ) {
         self.removedBackupCount = removedBackupCount
         self.retainedAPIKeyReason = retainedAPIKeyReason
+        self.retainedBackupReason = retainedBackupReason
     }
 
     /// macOS, where the reset also clears the local Sign in with Apple profile.
@@ -41,7 +60,14 @@ struct PrivacyDataResetOutcome: Equatable, Sendable {
         let deleted = removedBackupCount == 0
             ? "Cadence account and data were deleted."
             : "Cadence account, data, and \(backupPhrase) were deleted."
-        return appendingRetainedKeySentence(to: deleted)
+        // The Finder route is named only here. macOS's Data Safety pane has a **Show Folder**
+        // button over the backup directory, so the sentence can point at something real; iOS has
+        // no backup surface at all, and naming a control that does not exist there would be the
+        // same class of untrue sentence this ticket removed.
+        return appendingRetainedBackupSentence(
+            to: appendingRetainedKeySentence(to: deleted),
+            retry: " Open Settings → Data Safety → Show Folder to remove them."
+        )
     }
 
     /// iOS and iPadOS, where there is no account profile to clear.
@@ -52,7 +78,10 @@ struct PrivacyDataResetOutcome: Equatable, Sendable {
         let deleted = removedBackupCount == 0
             ? "Cadence data was deleted."
             : "Cadence data and \(backupPhrase) were deleted."
-        return appendingRetainedKeySentence(to: deleted)
+        return appendingRetainedBackupSentence(
+            to: appendingRetainedKeySentence(to: deleted),
+            retry: nil
+        )
     }
 
     private var backupPhrase: String {
@@ -77,6 +106,25 @@ struct PrivacyDataResetOutcome: Equatable, Sendable {
         return deleted
             + " The saved OpenAI key was not removed and is still in the Keychain (\(cause))."
             + " Delete it in Settings → AI."
+    }
+
+    /// The backup clause, written from the *presence* of a reason for the same purpose the key
+    /// clause is: an error with an empty description still left the files behind.
+    ///
+    /// It is appended **after** the key clause rather than woven into the first sentence, because
+    /// the first sentence is the one thing the user has to be able to trust — the data is gone —
+    /// and everything after it is an enumeration of what survived it.
+    private func appendingRetainedBackupSentence(to deleted: String, retry: String?) -> String {
+        guard let retainedBackupReason else { return deleted }
+
+        let trimmed = retainedBackupReason
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let cause = trimmed.isEmpty ? "the files could not be removed" : trimmed
+
+        return deleted
+            + " Local store backups were not removed and are still inside Cadence (\(cause))."
+            + (retry ?? "")
     }
 }
 
@@ -216,6 +264,24 @@ enum PrivacyDataResetService {
     /// things on two platforms. Sign in with Apple is entitlement-gated and macOS-only
     /// (`AppleAccountManager` is inside `#if os(macOS)`), so signing that profile out stays at the
     /// macOS call site rather than becoming an optional parameter nobody on iOS can pass.
+    ///
+    /// **Two phases, and only the first may throw (T-1313).**
+    ///
+    /// *Phase one* is the store deletion. It is the only step whose failure changes the outcome:
+    /// `deleteCadenceData` commits inside `CadencePendingChangePersistence.commitDelete`, so a
+    /// throw from it means the rows were rolled back and the store is exactly as the user left it.
+    /// That — and only that — is what both panes' `catch` describes, and there its sentence
+    /// ("Could not delete Cadence account and data") is true.
+    ///
+    /// *Phase two* is artifact cleanup, and it runs over a store that is **already gone**. Nothing
+    /// in it can make the deletion not have happened, so nothing in it may report one. Each step
+    /// that can fail returns its reason instead of throwing, and the reasons travel out in
+    /// `PrivacyDataResetOutcome`, where the success sentence names what survived. The two backup
+    /// steps were the last that still threw: the user was told the reset had failed while their
+    /// store was gone, which is both wrong and the reading that makes them run it again.
+    ///
+    /// The `try` below is therefore load-bearing as the *only* one in this function, and
+    /// `CadencePrivacyDataResetSurfaceTests` asserts that it stays the only one.
     @MainActor
     static func deleteCadenceDataAndLocalArtifacts(
         in modelContext: ModelContext,
@@ -229,15 +295,61 @@ enum PrivacyDataResetService {
         clearWidgetState()
         StoreBackupManager.clearPendingRestore()
         StoreBackupManager.clearFailedRestore()
-        let removedBackupCount = try StoreBackupManager.deleteAllBackups()
-        // The store bytes a failed restore rollback could not put back live in their own retained
-        // folder rather than in the backups directory (T-1100), and they are store data: a reset
-        // that left them would leave a copy of the database inside the container it just emptied.
-        try StoreBackupManager.deleteRetainedUnrestoredOriginals()
+        let backups = removeStoredBackups()
         return PrivacyDataResetOutcome(
-            removedBackupCount: removedBackupCount,
-            retainedAPIKeyReason: retainedAPIKeyReason
+            removedBackupCount: backups.removedBackupCount,
+            retainedAPIKeyReason: retainedAPIKeyReason,
+            retainedBackupReason: backups.retainedBackupReason
         )
+    }
+
+    /// The backup half of phase two, as its own function for the reason `removeStoredAPIKey` is
+    /// one: `deleteCadenceDataAndLocalArtifacts` deletes the real backups directory inside the
+    /// app's container, so no test may call it, and a failure path no test can reach is a failure
+    /// path no test can prove. The two steps are parameters because a `FileManager` over a real
+    /// directory cannot be made to refuse a removal on demand — the same seam `commit:` is.
+    ///
+    /// The closures are `@MainActor` for the reason `deleteCadenceData`'s `markDeleted` is: a
+    /// default argument is not inside its own function's isolation, and `StoreBackupManager`'s two
+    /// entry points are main-actor isolated.
+    ///
+    /// **Both steps run even when the first fails.** They are different artifact families —
+    /// `deleteAllBackups` takes the backups directory, `deleteRetainedUnrestoredOriginals` takes
+    /// the store files a failed restore rollback could not put back (T-1100), which are store data
+    /// and which a reset that left them would leave sitting inside the container it just emptied.
+    /// Stopping at the first failure would leave *more* behind, not less, exactly as stopping at a
+    /// refused Keychain deletion would.
+    ///
+    /// - Returns: how many backups were removed, and — when something was left behind — the
+    ///   sentence fragment naming why. `removedBackupCount` is what the sweep actually took, so a
+    ///   refused directory removal reports `0` and the outcome's sentence then claims no backups
+    ///   were deleted rather than claiming some were.
+    @MainActor
+    static func removeStoredBackups(
+        deletingBackups: @MainActor () throws -> Int = { try StoreBackupManager.deleteAllBackups() },
+        deletingRetainedOriginals: @MainActor () throws -> Int = {
+            try StoreBackupManager.deleteRetainedUnrestoredOriginals()
+        }
+    ) -> (removedBackupCount: Int, retainedBackupReason: String?) {
+        var removedBackupCount = 0
+        var reasons: [String] = []
+
+        do {
+            removedBackupCount = try deletingBackups()
+        } catch {
+            reasons.append(error.localizedDescription)
+        }
+        do {
+            _ = try deletingRetainedOriginals()
+        } catch {
+            reasons.append(error.localizedDescription)
+        }
+
+        // Deduped and joined rather than concatenated: one refused container is the usual cause of
+        // both failures, and the same sentence printed twice reads as two separate problems.
+        var seen = Set<String>()
+        let unique = reasons.filter { seen.insert($0).inserted }
+        return (removedBackupCount, unique.isEmpty ? nil : unique.joined(separator: "; "))
     }
 
     /// The credential half of the reset, as its own function for the reason `clearWidgetState` is
