@@ -220,9 +220,17 @@ struct CadenceSyncHealth: Equatable {
     let detail: String
     let iconName: String
 
+    /// `pushRegistration` is the third input and deliberately has no default (T-1309). It is the
+    /// answer the system gave when this launch asked to subscribe to CloudKit's change pushes,
+    /// and the whole reason it is a parameter is that for two years it was not an input to
+    /// anything at all: the failure callback wrote one line to the unified log and stopped, so a
+    /// device that had never subscribed rendered the same green "iCloud available" row as one
+    /// that had. A defaulted parameter is a call site that can forget, and forgetting is the
+    /// defect being fixed.
     static func resolve(
         startupIssue: CadenceStartupIssue?,
-        account: CadenceCloudAccountState
+        account: CadenceCloudAccountState,
+        pushRegistration: CadencePushRegistrationState
     ) -> CadenceSyncHealth {
         // The store wins. A CloudKit account that is perfectly healthy cannot sync a store that
         // was opened with no CloudKit database behind it.
@@ -238,6 +246,23 @@ struct CadenceSyncHealth: Equatable {
 
         switch account {
         case .available:
+            // Push is folded in **only** under an available account, and only after the store
+            // gate above. Both orderings are load-bearing. A device with no iCloud account will
+            // of course fail to subscribe, and reporting that as a push problem would name the
+            // symptom instead of the cause the user can actually act on; a store with no CloudKit
+            // database behind it is worse news than a missing push, and already says so.
+            if case .failed(let message) = pushRegistration {
+                return CadenceSyncHealth(
+                    level: .degraded,
+                    tone: .caution,
+                    // Not "not syncing": launch and foreground fetches still work, which is
+                    // exactly why this degrades so quietly — the owner's phone did pick up the
+                    // Mac's edits, just never while it was sitting open.
+                    title: "Live updates are off",
+                    detail: "This device could not subscribe to iCloud change notifications, so edits made on your other devices appear only when Cadence next launches. \(message)",
+                    iconName: "bolt.horizontal.icloud"
+                )
+            }
             return CadenceSyncHealth(
                 level: .syncing,
                 tone: .positive,

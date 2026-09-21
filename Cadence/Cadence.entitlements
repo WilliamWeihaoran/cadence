@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The macOS half of this target's entitlements, and the unconditional default (T-1309).
+	     Cadence-iOS.entitlements is the iOS/iPadOS half, reached through
+	     CODE_SIGN_ENTITLEMENTS[sdk=iphone*] in Cadence.xcodeproj.
+
+	     Two files rather than one because the push entitlement is the one key whose SPELLING is
+	     per-platform -- `com.apple.developer.aps-environment` here, bare `aps-environment`
+	     there -- so a single shared file can only ever be right for one platform. It was right
+	     for this one. Keep every other key identical across the pair; a test fails if they
+	     diverge. -->
 	<key>com.apple.developer.applesignin</key>
 	<array>
 		<string>Default</string>

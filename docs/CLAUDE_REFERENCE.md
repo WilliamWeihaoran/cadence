@@ -1182,8 +1182,13 @@ Not guaranteed to have full feature parity with macOS by design — check the ac
 Local notification scheduling (`Cadence/Services/NotificationScheduling.swift` + `NotificationManager.swift`) uses **stateless reconciliation**, not imperative schedule-on-mutation: a pure planner computes the desired notification set from current SwiftData state (tasks with a future scheduled-start/due date, habits with `reminderMinuteOfDay` set), and `NotificationManager.reconcile(tasks:habits:)` diffs that against what's actually pending and converges. This mirrors `CadenceWidgetRefreshCenter`'s existing pattern. Reconciliation runs from the `scenePhase` checkpoint in both root views (safety net) plus fast-path calls at task/habit create, complete/cancel/reopen, and delete for instant feedback. Authorization is requested from exactly one place — the Settings → Notifications section — never at cold launch. A single global `@AppStorage("notificationsEnabled")` toggle controls all reminders; there's no per-notification-type or per-item toggle beyond "task has a date" / "habit has a reminder time set."
 
 **Remote notifications are a second, unrelated mechanism, and the app does use them.** Cadence
-ships `com.apple.developer.aps-environment` (`$(APS_ENVIRONMENT)` → `development` in Debug,
-`production` in Release) and `CadenceRemoteNotificationRegistrar.registerIfNeeded()` calls
+ships the push entitlement (`$(APS_ENVIRONMENT)` → `development` in Debug, `production` in
+Release) **from two files, because the key's name is per-platform** (T-1309):
+`com.apple.developer.aps-environment` in `Cadence/Cadence.entitlements` for macOS and the bare
+`aps-environment` in `Cadence/Cadence-iOS.entitlements` for iOS/iPadOS, selected by
+`CODE_SIGN_ENTITLEMENTS[sdk=iphone*]`. One shared file held only macOS's spelling for as long as
+it was shared, so every signed iPhone build shipped with no push entitlement and CloudKit never
+pushed it anything. `CadenceRemoteNotificationRegistrar.registerIfNeeded()` calls
 `registerForRemoteNotifications()` once per platform — from
 `CadenceAppDelegate.applicationDidFinishLaunching` on macOS and from `CadenceIOSAppDelegate`'s
 `didFinishLaunchingWithOptions` on iOS — skipped under XCTest, UI-test mode, and
@@ -1194,6 +1199,16 @@ ships and ignores (T-626). This is **CloudKit's silent push** and nothing else: 
 the private database changed. There is no `didReceiveRemoteNotification` handler on either
 platform — SwiftData's mirroring takes delivery of its own pushes — no payload of Cadence's own,
 no server Cadence operates, and no user-visible alert, sound, or badge from it.
+
+**A registration the system refuses is not silent any more** (T-1309).
+`CadenceRemoteNotificationRegistrar.noteRegistrationFailure` used to be a bare `logger.error`, so
+an iPhone that had never subscribed to anything drew the same green "iCloud available" row as one
+that had. It now records the answer in `CadencePushRegistrationMonitor` — one `@Observable`
+launch-scoped singleton, three states (`notAttempted`/`registered`/`failed`) — and
+`CadenceSyncHealth.resolve` takes it as a third, undefaulted input. A refusal under an otherwise
+healthy account reads "Live updates are off" at `.degraded` on the Settings > iCloud Sync card on
+both platforms. Precedence is deliberate: a missing store or a missing account still wins, because
+a push failure under either is the symptom and not the cause.
 
 Do not collapse the two. `docs/app-review-notes.md` said "Cadence does not use push notifications"
 for a long time while `AppStoreReviewReadinessTests` asserted the entitlement in the same repo —

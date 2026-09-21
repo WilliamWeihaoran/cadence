@@ -424,6 +424,12 @@ struct AppStoreReviewReadinessTests {
     @Test func appEntitlementsIncludeCloudKitPushSandboxNetworkCalendarAndAppGroupAccess() throws {
         let entitlements = try plistDictionary(at: "Cadence/Cadence.entitlements")
 
+        // This file is the **macOS** half of the pair, so the bare iOS spelling does not belong
+        // in it. Read on its own this line looks like the assertion that should have caught
+        // T-1309 and did the opposite: for as long as one file served both platforms, it pinned
+        // the absence of the only key that would have made a signed iOS build work. It is kept
+        // because it is now true of a file that really is macOS-only, and
+        // `iOSBuildsAreSignedWithTheBarePushKeyThatMacOSCannotCarry` below is its other half.
         #expect(entitlements["aps-environment"] == nil)
         #expect(entitlements["com.apple.developer.aps-environment"] as? String == "$(APS_ENVIRONMENT)")
         #expect(entitlements["com.apple.security.application-groups"] as? [String] == ["group.com.haoranwei.Cadence"])
@@ -512,6 +518,68 @@ struct AppStoreReviewReadinessTests {
 
         #expect(entitlements["com.apple.security.app-sandbox"] as? Bool == true)
         #expect(entitlements["com.apple.security.application-groups"] as? [String] == ["group.com.haoranwei.Cadence"])
+
+        // The widget target is multiplatform too and also signs from a single shared entitlements
+        // file, so it has the same *shape* as the app target had — but not the same defect, and
+        // this pins which. Nothing in it is spelled per-platform: an app group and the sandbox
+        // flag have one spelling everywhere, and the extension never registers for remote
+        // notifications, so neither push key has any business here. If one ever appears, the
+        // shared file is suddenly right for one platform only, which is exactly T-1309.
+        #expect(entitlements["aps-environment"] == nil)
+        #expect(entitlements["com.apple.developer.aps-environment"] == nil)
+    }
+
+    /// **T-1309.** `Cadence.entitlements` was one file naming both platforms' build configurations
+    /// and it carried `com.apple.developer.aps-environment` — the macOS spelling. iOS spells the
+    /// same capability as a bare `aps-environment`, so every signed iPhone and iPad build shipped
+    /// with no push entitlement at all, `registerForRemoteNotifications()` failed on the device,
+    /// and CloudKit never told the phone its private database had changed. The symptom was the
+    /// owner's original report: lists that reached the phone at launch and never while it sat
+    /// open.
+    ///
+    /// The fix is a file per platform rather than one file carrying both keys, because a shared
+    /// file cannot hold a per-platform *spelling* — carrying both would put an entitlement macOS's
+    /// provisioning profile has never heard of into the macOS signature, which is an unmeasurable
+    /// risk to the one surface that currently ships. What a split costs is drift, so the last
+    /// block below spends that risk down: the two files must agree on every key but the push one.
+    @Test func iOSBuildsAreSignedWithTheBarePushKeyThatMacOSCannotCarry() throws {
+        let iOS = try plistDictionary(at: "Cadence/Cadence-iOS.entitlements")
+        let macOS = try plistDictionary(at: "Cadence/Cadence.entitlements")
+        let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
+
+        // The key, by name. This one assertion is the ticket.
+        #expect(
+            iOS["aps-environment"] as? String == "$(APS_ENVIRONMENT)",
+            "iOS builds ship no push entitlement, so CloudKit cannot push changes to a phone"
+        )
+
+        // And the wiring, because a correct entitlements file no build setting points at is a
+        // file. Both configurations, Debug and Release — a Release-only miss is the version that
+        // reaches TestFlight and nowhere else.
+        let conditional = "\"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]\" = \"Cadence/Cadence-iOS.entitlements\";"
+        #expect(
+            project.components(separatedBy: conditional).count - 1 == 2,
+            "the iOS entitlements file is not wired into both app configurations"
+        )
+
+        // Neither file carries the other platform's spelling: an unused key here is a key someone
+        // later reads as the one that matters.
+        #expect(iOS["com.apple.developer.aps-environment"] == nil)
+        #expect(macOS["aps-environment"] == nil)
+
+        // The drift guard. Everything except push must be identical, so adding an iCloud
+        // container or an app group to one file and not the other fails here rather than on a
+        // device.
+        let iOSRest = iOS.filter { !$0.key.hasSuffix("aps-environment") }
+        let macOSRest = macOS.filter { !$0.key.hasSuffix("aps-environment") }
+        #expect(
+            Set(iOSRest.keys) == Set(macOSRest.keys),
+            "the platform entitlements files have drifted: iOS has \(Set(iOSRest.keys).symmetricDifference(Set(macOSRest.keys)))"
+        )
+        #expect(
+            (iOSRest as NSDictionary) == (macOSRest as NSDictionary),
+            "the platform entitlements files share their keys but not their values"
+        )
     }
 
     @Test func appEntitlementsIncludeSharedAppGroup() throws {

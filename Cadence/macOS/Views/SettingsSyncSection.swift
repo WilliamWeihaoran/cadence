@@ -25,10 +25,16 @@ struct SettingsSyncSection: View {
     /// the same verdict this card draws without a second one. Two `resolve` calls on one screen
     /// would be two chances for the badge and the card to disagree about whether sync works, which
     /// is the disagreement this whole type exists to have ended.
+    ///
+    /// The third input is the push-registration answer (T-1309). It is read here, beside the
+    /// startup issue, because this is the layer that already reaches for per-launch globals —
+    /// `resolve` itself stays a pure function of its arguments, which is the only reason the
+    /// verdict is testable without a store or an APNs server.
     static func health(for account: CadenceCloudAccountState) -> CadenceSyncHealth {
         CadenceSyncHealth.resolve(
             startupIssue: PersistenceController.startupIssue,
-            account: account
+            account: account,
+            pushRegistration: CadencePushRegistrationMonitor.shared.state
         )
     }
 

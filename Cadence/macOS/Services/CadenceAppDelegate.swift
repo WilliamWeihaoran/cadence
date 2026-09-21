@@ -19,6 +19,7 @@ final class CadenceAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        CadenceRemoteNotificationRegistrar.noteRegistrationSucceeded()
     }
 
     func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {

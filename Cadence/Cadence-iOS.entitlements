@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The iOS/iPadOS half of this target's entitlements (T-1309). Reached only through
+	     CODE_SIGN_ENTITLEMENTS[sdk=iphone*]; Cadence.entitlements is the macOS half and the
+	     unconditional default.
+
+	     THE ONLY KEY THAT MAY DIFFER BETWEEN THE TWO FILES IS THE PUSH ONE. iOS spells it
+	     `aps-environment`; macOS spells it `com.apple.developer.aps-environment`. One shared
+	     file could therefore only ever carry one platform's spelling, and it carried macOS's --
+	     so every signed iOS build shipped with no push entitlement at all, CloudKit never
+	     subscribed the device to its change pushes, and the phone picked up the Mac's edits only
+	     when it happened to relaunch. AppStoreReviewReadinessTests pins both halves of that
+	     sentence: this key by name, and that the two files agree on everything else. -->
+	<key>aps-environment</key>
+	<string>$(APS_ENVIRONMENT)</string>
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.haoranwei.Cadence</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.haoranwei.Cadence</string>
+	</array>
+	<!-- The three `com.apple.security` keys below are macOS sandbox keys that iOS ignores, and
+	     they are kept rather than trimmed on purpose: they are already in every signed iOS build
+	     this project has ever shipped, including the TestFlight ones that installed. Dropping
+	     them would be an unmeasured change to a signing input in the same commit that fixes one,
+	     and this ticket's whole subject is a signing input nobody measured. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+</dict>
+</plist>

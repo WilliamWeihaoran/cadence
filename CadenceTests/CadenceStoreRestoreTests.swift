@@ -344,7 +344,7 @@ struct CadenceStoreRestoreTests {
             #expect(!issue.bannerDetail.contains("Your existing data is intact"))
             #expect(issue.bannerDetail.contains("Nothing was deleted"))
             // Still not a sync failure: the store that opened is CloudKit-backed either way.
-            #expect(CadenceSyncHealth.resolve(startupIssue: issue, account: .available).level == .syncing)
+            #expect(CadenceSyncHealth.resolve(startupIssue: issue, account: .available, pushRegistration: .registered).level == .syncing)
         }
     }
 
@@ -631,7 +631,7 @@ struct CadenceStoreRestoreTests {
         #expect(issue.bannerDetail.contains("intact"))
         #expect(!issue.bannerTitle.isEmpty)
 
-        let health = CadenceSyncHealth.resolve(startupIssue: issue, account: .available)
+        let health = CadenceSyncHealth.resolve(startupIssue: issue, account: .available, pushRegistration: .registered)
         #expect(health.level == .syncing)
     }
 }

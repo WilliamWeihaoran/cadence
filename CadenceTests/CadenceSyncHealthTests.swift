@@ -28,7 +28,7 @@ struct CadenceSyncHealthTests {
     // MARK: - The store wins over the account
 
     @Test func recoveryStoreOverridesAnAvailableAccount() {
-        let health = CadenceSyncHealth.resolve(startupIssue: recovery, account: .available)
+        let health = CadenceSyncHealth.resolve(startupIssue: recovery, account: .available, pushRegistration: .registered)
 
         #expect(health.level == .notSyncing)
         #expect(health.tone != .positive)
@@ -37,7 +37,7 @@ struct CadenceSyncHealthTests {
     }
 
     @Test func inMemoryStoreOverridesAnAvailableAccount() {
-        let health = CadenceSyncHealth.resolve(startupIssue: inMemory, account: .available)
+        let health = CadenceSyncHealth.resolve(startupIssue: inMemory, account: .available, pushRegistration: .registered)
 
         #expect(health.level == .notSyncing)
         #expect(health.tone == .critical)
@@ -50,7 +50,7 @@ struct CadenceSyncHealthTests {
         ]
         for issue in [recovery, inMemory] {
             for account in accounts {
-                let health = CadenceSyncHealth.resolve(startupIssue: issue, account: account)
+                let health = CadenceSyncHealth.resolve(startupIssue: issue, account: account, pushRegistration: .registered)
                 #expect(health.level == .notSyncing, "\(issue.kind) + \(account) reported \(health.level)")
             }
         }
@@ -61,11 +61,11 @@ struct CadenceSyncHealthTests {
     @Test func maintenanceSaveFailureLeavesSyncAlone() {
         #expect(CadenceStartupIssueKind.maintenanceSaveFailed.disablesCloudSync == false)
 
-        let health = CadenceSyncHealth.resolve(startupIssue: maintenance, account: .available)
+        let health = CadenceSyncHealth.resolve(startupIssue: maintenance, account: .available, pushRegistration: .registered)
         #expect(health.level == .syncing)
         #expect(health.tone == .positive)
 
-        let offline = CadenceSyncHealth.resolve(startupIssue: maintenance, account: .noAccount)
+        let offline = CadenceSyncHealth.resolve(startupIssue: maintenance, account: .noAccount, pushRegistration: .registered)
         #expect(offline.level == .degraded)
     }
 
@@ -78,7 +78,7 @@ struct CadenceSyncHealthTests {
     // MARK: - Account states
 
     @Test func healthyAccountWithNoIssueSyncs() {
-        let health = CadenceSyncHealth.resolve(startupIssue: nil, account: .available)
+        let health = CadenceSyncHealth.resolve(startupIssue: nil, account: .available, pushRegistration: .registered)
 
         #expect(health.level == .syncing)
         #expect(health.tone == .positive)
@@ -97,7 +97,7 @@ struct CadenceSyncHealthTests {
             (.failed("network down"), .degraded),
         ]
         for (account, level) in expected {
-            let health = CadenceSyncHealth.resolve(startupIssue: nil, account: account)
+            let health = CadenceSyncHealth.resolve(startupIssue: nil, account: account, pushRegistration: .registered)
             #expect(health.level == level, "\(account) reported \(health.level)")
             #expect(!health.title.isEmpty)
             #expect(!health.detail.isEmpty)
@@ -105,8 +105,93 @@ struct CadenceSyncHealthTests {
     }
 
     @Test func aFailedCheckSurfacesItsOwnMessage() {
-        let health = CadenceSyncHealth.resolve(startupIssue: nil, account: .failed("The Internet connection is offline."))
+        let health = CadenceSyncHealth.resolve(startupIssue: nil, account: .failed("The Internet connection is offline."), pushRegistration: .registered)
         #expect(health.detail == "The Internet connection is offline.")
+    }
+
+    // MARK: - Push registration (T-1309)
+
+    /// The state that had no surface at all. A device whose registration is refused still opens a
+    /// CloudKit store and still has a healthy account, so every input `resolve` used to take said
+    /// "iCloud available" in green — while the device was subscribed to nothing and learned about
+    /// the user's other devices only at launch.
+    @Test func aRefusedPushRegistrationDegradesAnOtherwiseHealthyVerdict() {
+        let health = CadenceSyncHealth.resolve(
+            startupIssue: nil,
+            account: .available,
+            pushRegistration: .failed("no valid aps-environment entitlement string found for application")
+        )
+
+        #expect(health.level == .degraded)
+        #expect(health.level.isHealthy == false)
+        #expect(health.tone == .caution)
+        #expect(health.iconName != "checkmark.icloud")
+        // The system's own words reach the card. This is the sentence that names the entitlement,
+        // and on the build that started T-1309 it was written only to the unified log.
+        #expect(health.detail.contains("aps-environment"))
+    }
+
+    /// The two answers that are not a refusal must not be read as one. `.notAttempted` is what
+    /// every test host, UI-test run and local-store-only launch reports, and treating it as a
+    /// failure would paint a permanent warning across a perfectly healthy app.
+    @Test func onlyAnOutrightRefusalDegradesTheVerdict() {
+        for pushRegistration in [CadencePushRegistrationState.notAttempted, .registered] {
+            let health = CadenceSyncHealth.resolve(
+                startupIssue: nil,
+                account: .available,
+                pushRegistration: pushRegistration
+            )
+            #expect(health.level == .syncing, "\(pushRegistration) reported \(health.level)")
+        }
+    }
+
+    /// Precedence, both directions. A push failure is a symptom when the account or the store is
+    /// the cause, and naming the symptom would send the user to fix the wrong thing.
+    @Test func aPushFailureNeverOutranksTheStoreOrTheAccount() {
+        let noStore = CadenceSyncHealth.resolve(
+            startupIssue: recovery,
+            account: .available,
+            pushRegistration: .failed("no valid aps-environment entitlement")
+        )
+        #expect(noStore.level == .notSyncing)
+        #expect(noStore.title == recovery.bannerTitle)
+
+        let noAccount = CadenceSyncHealth.resolve(
+            startupIssue: nil,
+            account: .noAccount,
+            pushRegistration: .failed("no valid aps-environment entitlement")
+        )
+        #expect(noAccount.level == .degraded)
+        #expect(noAccount.title == "No iCloud account")
+    }
+
+    /// The delegate callback's end of the wire, which used to be a `logger.error` and nothing
+    /// else. Driven through the registrar rather than the monitor so that deleting the one line
+    /// that records the failure fails a test instead of passing quietly.
+    @Test func theRegistrarsFailureCallbackRecordsSomethingAViewCanRead() {
+        let monitor = CadencePushRegistrationMonitor()
+        #expect(monitor.state == .notAttempted)
+
+        CadenceRemoteNotificationRegistrar.noteRegistrationFailure(
+            NSError(
+                domain: "NSCocoaErrorDomain",
+                code: 3000,
+                userInfo: [NSLocalizedDescriptionKey: "no valid aps-environment entitlement string found for application"]
+            ),
+            into: monitor
+        )
+
+        #expect(monitor.state == .failed("no valid aps-environment entitlement string found for application"))
+        #expect(
+            CadenceSyncHealth.resolve(
+                startupIssue: nil,
+                account: .available,
+                pushRegistration: monitor.state
+            ).level == .degraded
+        )
+
+        CadenceRemoteNotificationRegistrar.noteRegistrationSucceeded(into: monitor)
+        #expect(monitor.state == .registered)
     }
 
     // MARK: - CKAccountStatus bridging

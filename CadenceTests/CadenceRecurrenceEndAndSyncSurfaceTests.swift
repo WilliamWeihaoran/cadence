@@ -698,6 +698,41 @@ struct CadenceSyncSurfaceTests {
         #expect(signedOut.iconName != "checkmark.icloud")
     }
 
+    /// **T-1309: the failure that reached nothing.** `didFailToRegisterForRemoteNotificationsWithError`
+    /// called a function whose entire body was a `logger.error`, so an iPhone that had never
+    /// subscribed to a single CloudKit change notification drew the same green "iCloud available"
+    /// row as one that had. Three links, each pinned by count rather than by "contains", because a
+    /// mutation that reverts one of them is exactly the shape this file exists to catch:
+    /// each platform's delegate reports its failure, each platform's sync card reads the recorded
+    /// answer, and nothing else in the app has an opinion about push at all.
+    @Test func aRefusedPushRegistrationReachesBothSyncCards() throws {
+        try expectCallSites(
+            of: "CadenceRemoteNotificationRegistrar.noteRegistrationFailure",
+            at: [
+                "Cadence/macOS/Services/CadenceAppDelegate.swift": 1,
+                "Cadence/iOS/iOSAppDelegate.swift": 1,
+            ]
+        )
+
+        try expectConstantReads(
+            of: "CadencePushRegistrationMonitor",
+            at: [
+                "Cadence/macOS/Views/SettingsSyncSection.swift": 1,
+                "Cadence/iOS/iOSSettingsOverviewSections.swift": 1,
+            ]
+        )
+
+        let readers = try filesMentioning("CadencePushRegistrationMonitor")
+        #expect(
+            readers == [
+                "Cadence/Services/CadenceRemoteNotificationRegistrar.swift",
+                "Cadence/iOS/iOSSettingsOverviewSections.swift",
+                "Cadence/macOS/Views/SettingsSyncSection.swift",
+            ],
+            "the push registration answer is read in \(readers)"
+        )
+    }
+
     // MARK: - The probe
 
     @Test func aFreshProbeHasNotCheckedAndSaysSo() {

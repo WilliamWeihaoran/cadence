@@ -13,10 +13,16 @@ struct iOSSyncSettingsSection: View {
     /// to a local recovery container showed a green `checkmark.icloud` and "CloudKit should be able
     /// to sync Cadence data" while nothing was syncing at all. `CadenceSyncHealth` folds the store's
     /// own state in and lets it win — an available account is necessary for sync, not sufficient.
+    ///
+    /// The third input, the push-registration answer, matters more on this platform than on the
+    /// other one: until T-1309 a signed iOS build carried no push entitlement at all, so *every*
+    /// iPhone and iPad drew the green "iCloud available" row above a device that had never
+    /// subscribed to a single change notification.
     private var health: CadenceSyncHealth {
         CadenceSyncHealth.resolve(
             startupIssue: PersistenceController.startupIssue,
-            account: probe.state
+            account: probe.state,
+            pushRegistration: CadencePushRegistrationMonitor.shared.state
         )
     }
 
