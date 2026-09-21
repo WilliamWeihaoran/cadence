@@ -29,6 +29,7 @@ AI features:
 - AI features are optional.
 - AI requires the user to save their own OpenAI API key in Settings.
 - Cadence contacts OpenAI only after the user explicitly runs an AI action on a note, and then it sends that note in full: its title, its entire text, and the name of its list. No account, device or Apple identifier is attached; the only credential is the user's own API key. This is the app's only outbound data transfer.
+- Every AI request sets the Responses API's `store` parameter to `false`, so OpenAI does not retain the response object for later retrieval. That parameter defaults to `true` on `/v1/responses`; Cadence sets it explicitly rather than taking the default (T-1322). The Settings > AI card and the privacy policy both state this.
 - Users can remove the saved API key in Settings.
 
 Account and data deletion:

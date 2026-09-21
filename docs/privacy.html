@@ -45,7 +45,8 @@
     <section>
       <h2>AI Features</h2>
       <p>Cadence includes optional AI actions that use OpenAI. These features require you to provide your own OpenAI API key, which Cadence stores in Keychain. Cadence contacts OpenAI only when you run an AI action on a note, such as summarizing it or extracting task drafts. When you do, it sends that note in full &mdash; its title, its entire text, and the name of the list it belongs to &mdash; not only a highlighted passage. Nothing else in Cadence sends your data anywhere, and the request carries no name, email address, Apple user identifier or device identifier: the only credential attached is your own OpenAI API key.</p>
-      <p>OpenAI processes and retains those requests according to OpenAI's own policies and the account your API key belongs to, not according to this policy. You can remove the saved API key from Cadence Settings at any time, and Cadence makes no AI request without one.</p>
+      <p>Cadence asks OpenAI not to keep those requests. Every AI request sets the Responses API's <code>store</code> parameter to <code>false</code>. That is not the endpoint's default: left unset, OpenAI stores the response object &mdash; your note included &mdash; for at least 30 days so that it can be retrieved later. Cadence sets it on every request, so no such copy is made. One consequence is worth knowing rather than discovering: because the request is not stored, it also does not appear in the logs on your own OpenAI dashboard.</p>
+      <p>What is left is OpenAI's and not Cadence's. OpenAI may still keep abuse-monitoring logs for a limited period whatever this setting says, and OpenAI processes those requests according to OpenAI's own policies and the account your API key belongs to, not according to this policy. You can remove the saved API key from Cadence Settings at any time, and Cadence makes no AI request without one.</p>
     </section>
 
     <section>

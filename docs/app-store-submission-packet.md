@@ -83,7 +83,7 @@ Required notes:
 - Reminders access is optional and permission-gated, and is requested separately from Calendar access. Cadence reads incomplete reminders and can mark one complete; it never creates, edits, or deletes a reminder.
 - Sign in with Apple is optional.
 - Account/data deletion is available in Settings, Account and Settings, Data Safety.
-- AI is optional, requires the user's own OpenAI API key, and sends selected note content only when the user runs an AI command.
+- AI is optional, requires the user's own OpenAI API key, and sends the selected note — title, full text and list name — only when the user runs an AI command, with `store: false` so OpenAI does not retain it.
 - CloudKit sync may use the user's private iCloud database.
 - Cadence has no purchases, subscriptions, ads, tracking, or user-facing push notifications. The APS entitlement it ships is for CloudKit's silent sync pushes; task and habit reminders are local notifications, requested only from Settings, Notifications.
 
@@ -96,7 +96,7 @@ Use `docs/apple-release-readiness.md` as the privacy-label source of truth. The 
 - No data used to track the user.
 - No tracking domains.
 - Calendar access described as permission-gated app functionality: EventKit reads and writes stay on the device and in the user's own Apple Calendar.
-- Optional OpenAI processing disclosed in the privacy policy and review notes, including that `/v1/responses` retains the request by default.
+- Optional OpenAI processing disclosed in the privacy policy and review notes, including that `/v1/responses` retains the request by default and that Cadence opts out of that default with `store: false` on every request (T-1322).
 
 Do not answer "Data Not Collected" for the app target — not because Cadence stores productivity content (storing is not collecting, and the user's private CloudKit database is not developer-accessible), but because the optional AI action really does transmit note content to a third party.
 

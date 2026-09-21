@@ -107,8 +107,14 @@ final class OpenAIResponsesProvider: AIProvider {
         self.endpoint = endpoint
     }
 
-    func summarizeNote(_ context: AITextNoteContext) async throws -> String {
-        let request = OpenAIResponseRequest(
+    /// The body of the Summarize action, built but not sent.
+    ///
+    /// Split out of `summarizeNote` so a test can read what this app actually puts on the wire
+    /// without reaching the network (T-1322). The retention decision lives in
+    /// `OpenAIResponseRequest.store`'s default, which is why neither factory names it: an omission
+    /// here now lands on the privacy-preserving side rather than on OpenAI's.
+    func summarizeRequestBody(for context: AITextNoteContext) -> OpenAIResponseRequest {
+        OpenAIResponseRequest(
             model: model,
             instructions: """
             You are helping inside Cadence, a local personal planning app.
@@ -119,11 +125,11 @@ final class OpenAIResponsesProvider: AIProvider {
             text: nil,
             maxOutputTokens: 700
         )
-        return try await send(request).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func extractTasks(from context: AITextNoteContext) async throws -> [AITaskDraft] {
-        let request = OpenAIResponseRequest(
+    /// The body of the Extract Tasks action, built but not sent. See `summarizeRequestBody`.
+    func extractTasksRequestBody(for context: AITextNoteContext) -> OpenAIResponseRequest {
+        OpenAIResponseRequest(
             model: model,
             instructions: """
             Extract actionable Cadence task drafts from the selected note.
@@ -137,7 +143,14 @@ final class OpenAIResponsesProvider: AIProvider {
             text: .init(format: .taskDraftsSchema),
             maxOutputTokens: 1_600
         )
-        let output = try await send(request)
+    }
+
+    func summarizeNote(_ context: AITextNoteContext) async throws -> String {
+        try await send(summarizeRequestBody(for: context)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func extractTasks(from context: AITextNoteContext) async throws -> [AITaskDraft] {
+        let output = try await send(extractTasksRequestBody(for: context))
         guard let data = output.data(using: .utf8) else {
             throw AIProviderError.decodingFailed("The JSON output was not UTF-8.")
         }
@@ -187,12 +200,36 @@ final class OpenAIResponsesProvider: AIProvider {
     }
 }
 
+/// The `POST /v1/responses` body. **The omitted field was the decision (T-1322).**
+///
+/// `store` is declared last, non-optional and defaulting to `false`, and it is always encoded.
+/// Both halves matter. OpenAI's published OpenAPI schema for `CreateResponse` gives `store` a
+/// `default: true` and says the stored response — *the input included* — is kept "for at least 30
+/// days"; `/v1/chat/completions` defaults the other way, so the endpoint choice alone decided
+/// retention here. This DTO had no `store` key at all, so every note a user summarised was retained
+/// by a third party because nobody wrote a line, not because anybody chose it.
+///
+/// A default rather than an argument at each call site: the failure mode this fixes is *omission*,
+/// and a defaulted property is the only shape where the next request builder inherits the
+/// privacy-preserving answer without having to know the question exists. Encoding it explicitly
+/// rather than relying on the key's absence means the wire body states the choice, which is what
+/// makes it auditable from a capture.
+///
+/// **The trade, stated because it is real.** With `store: false` the request does not appear in the
+/// user's own OpenAI dashboard logs, which is the one place they could otherwise audit what Cadence
+/// sent. Cadence is a single-user app sending the owner's own notes under the owner's own key for
+/// an action they invoked; retention on a third party's servers is not part of what they asked for,
+/// and `docs/privacy.html` plus the Settings > AI card now say so in the app rather than leaving
+/// the reader to infer it. Nothing in this provider uses `previous_response_id`, background mode,
+/// or response retrieval by id, which are the features that need a stored response — so the
+/// privacy-preserving default costs this feature nothing.
 struct OpenAIResponseRequest: Codable, Equatable {
     var model: String
     var instructions: String
     var input: String
     var text: OpenAITextConfig?
     var maxOutputTokens: Int?
+    var store: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -200,6 +237,7 @@ struct OpenAIResponseRequest: Codable, Equatable {
         case input
         case text
         case maxOutputTokens = "max_output_tokens"
+        case store
     }
 }
 

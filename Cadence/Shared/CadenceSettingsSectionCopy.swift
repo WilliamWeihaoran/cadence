@@ -147,7 +147,14 @@ nonisolated enum CadenceAISettingsCopy {
     /// extracting task drafts."; iOS's stopped at "AI action". The examples are what make "an AI
     /// action" a thing the reader can recognise when they are about to take one, and the reader is
     /// being told what leaves their device. The longer sentence wins on both.
-    static let keyPrivacyDisclosure = "Stored in Keychain. Cadence sends selected note content to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts."
+    /// **T-1322 named the fields and the retention choice.** The sentence stopped at "selected
+    /// note content", which is the one clause in it a reader could not check: the request carries
+    /// the note's title, its **whole** trimmed body and the owning list's name, which is what
+    /// `docs/privacy.html` was corrected to say in T-1311 while this string was left behind. And
+    /// the request now sets `store: false`, so the card states the behaviour and its cost — the
+    /// request stays out of the reader's own OpenAI dashboard logs — rather than leaving either to
+    /// the provider's default and to source.
+    static let keyPrivacyDisclosure = "Stored in Keychain. Cadence sends the note to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts: its title, its full text, and the name of the list it belongs to. Every request asks OpenAI not to store it, which also keeps it out of your OpenAI account's logs."
 
     /// The three buttons under the key field. Verbosity was **inverted** between the surfaces —
     /// macOS said "Save API Key"/"Test Connection"/"Delete Key" and iOS said "Save Key"/"Test"/

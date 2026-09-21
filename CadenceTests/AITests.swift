@@ -70,6 +70,74 @@ struct OpenAIResponsesProviderTests {
     }
 }
 
+/// What Cadence asks OpenAI to keep, asserted on the bytes this app actually sends (T-1322).
+///
+/// **The defect was an absent key.** `OpenAIResponseRequest` encoded no `store`, so the request
+/// took the endpoint's default — and OpenAI's published `CreateResponse` schema gives `store` a
+/// `default: true` with the stored response, input included, kept "for at least 30 days". Nobody
+/// chose 30-day retention for the owner's own notes; a field was simply never written.
+///
+/// **These read the real call sites, not the DTO's default.** A test that only built an
+/// `OpenAIResponseRequest` itself would pass while `summarizeNote` passed `store: true` one line
+/// away — the shape this repository keeps finding, a guard that pins what is there rather than what
+/// must be. `summarizeRequestBody` / `extractTasksRequestBody` are the exact values
+/// `summarizeNote` and `extractTasks` hand to `send`, so these assert both shipping actions.
+struct OpenAIResponseRequestStorageTests {
+    private func encodedBody(_ body: OpenAIResponseRequest) throws -> [String: Any] {
+        let provider = OpenAIResponsesProvider(apiKey: "sk-test", model: "gpt-test")
+        let data = try #require(provider.makeURLRequest(for: body).httpBody)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    private let noteContext = AITextNoteContext(
+        title: "Specs",
+        content: "Ship the thing.",
+        containerName: "Launch"
+    )
+
+    @Test func bothAIActionsTellOpenAINotToStoreTheNote() throws {
+        let provider = OpenAIResponsesProvider(apiKey: "sk-test", model: "gpt-test")
+
+        for body in [
+            provider.summarizeRequestBody(for: noteContext),
+            provider.extractTasksRequestBody(for: noteContext),
+        ] {
+            let json = try encodedBody(body)
+            // Present *and* false. An absent key is the original defect and reads as `nil` here,
+            // so the optional cast is what distinguishes "we asked for no storage" from "we said
+            // nothing and took OpenAI's yes".
+            #expect(json["store"] as? Bool == false)
+        }
+    }
+
+    /// The omission itself is the thing under test: a request built without mentioning `store`
+    /// must still carry `store: false`, because the next feature to build one will not know to ask.
+    @Test func aRequestThatNeverMentionsStorageStillOptsOutOfIt() throws {
+        let json = try encodedBody(
+            OpenAIResponseRequest(
+                model: "gpt-test",
+                instructions: "Summarize",
+                input: "Note",
+                text: nil,
+                maxOutputTokens: 100
+            )
+        )
+
+        #expect(json["store"] as? Bool == false)
+    }
+
+    /// The note really is sent whole, which is the other half of what the Settings card now claims.
+    @Test func theRequestInputCarriesTheTitleTheContainerAndTheWholeBody() throws {
+        let provider = OpenAIResponsesProvider(apiKey: "sk-test", model: "gpt-test")
+        let json = try encodedBody(provider.summarizeRequestBody(for: noteContext))
+        let input = try #require(json["input"] as? String)
+
+        #expect(input.contains("Specs"))
+        #expect(input.contains("Launch"))
+        #expect(input.contains("Ship the thing."))
+    }
+}
+
 /// No platform guard. `AIActionService` carried an incidental `#if os(macOS)` around its whole
 /// body, so these three tests were fenced off with it; the service is cross-platform now and so are
 /// they.
