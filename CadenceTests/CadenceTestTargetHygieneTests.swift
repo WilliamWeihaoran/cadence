@@ -468,6 +468,114 @@ struct CadenceTestTargetHygieneTests {
         #expect(code.filter { $0 == "}" }.count == 1)
     }
 
+    /// **T-1328.** The same defect one nesting level further in, and the shape that produced it is
+    /// ordinary: a closure inside an interpolation, holding a literal with escaped quotes of its
+    /// own. `TagSupportTests` builds such a string by concatenation *because of this*, and the
+    /// comment there says so.
+    ///
+    /// A "next unescaped quote" reading of the outer literal ends it at the **inner** literal's
+    /// opening quote, which blanks the closure's `{` and leaves its `}` — one brace short for the
+    /// rest of the file. So the discriminating assertion is not that the literal was masked: it is
+    /// that both suites below still own their own tests. Before the fix both landed at
+    /// `<file scope>`, which is a hygiene failure, an `UNKNOWN-SUITE` refusal from `xcb.sh`, and a
+    /// `declarationBody` that closes early over every guard in the file — the third being the one
+    /// that says nothing.
+    ///
+    /// The interpolation is parsed and then blanked **whole**, which is the reading
+    /// `theTemporaryDefaultsSuiteRuleReadsLiteralsButNotItsOwnFixtures` depends on. Brace depth is
+    /// right anyway: a closure inside an interpolation gives up its `{` and `}` together.
+    @Test func theMaskerFindsTheEndOfALiteralHoldingAnInterpolatedClosure() throws {
+        let source = #"""
+        struct FirstSuite {
+            func seed(_ names: [String]) -> String {
+                "tags: [\(names.map { "\"\($0)\"" }.joined(separator: ", "))]"
+            }
+
+            @Test func theInsideOne() throws {}
+        }
+
+        struct SecondSuite {
+            @Test func theSecondOne() throws {}
+        }
+        """#
+        let code = CadenceSourceScan.codeOnly(source)
+
+        // Equal length, so every offset a scan computes still points where it did.
+        #expect(code.count == source.count)
+        #expect(code != source)
+        // The whole literal is blanked, interpolation included...
+        #expect(code.contains("tags:") == false)
+        #expect(code.contains("names.map") == false, "the interpolation survived as apparent code")
+        // ...and the code around it is not, which is what a blanket "run to end of line" would eat.
+        #expect(code.contains("func seed"), "non-vacuity: the masker blanked code either side of it")
+        #expect(code.contains("struct SecondSuite"))
+        #expect(
+            code.filter { $0 == "{" }.count == code.filter { $0 == "}" }.count,
+            "brace depth desynchronised, so every suite extent past this line is wrong"
+        )
+
+        let declarations = cadenceTestDeclarations(in: source, file: "fixture")
+        func suite(of name: String) -> String? { declarations.first { $0.name == name }?.suite }
+        #expect(suite(of: "theInsideOne") == "FirstSuite")
+        #expect(suite(of: "theSecondOne") == "SecondSuite")
+        #expect(
+            declarations.contains { $0.suite == CadenceTestDeclaration.fileScope } == false,
+            "\(cadenceFileScopeReason(in: source))"
+        )
+    }
+
+    /// **The boundary of the fix above, pinned as a fixture rather than left as a surprise.**
+    ///
+    /// A **bare regex literal** is not text this masker reads as a literal at all, so a `{` or `}`
+    /// in the pattern counts as a brace and the suite around it closes at the wrong place. Same for
+    /// an `#if` branch whose braces balance only against its `#else`. Neither shape exists in
+    /// `Cadence/` or `CadenceTests/` today, and a half-correct parser for either would be worse
+    /// than an honest boundary — so what this test pins is the *pair*: the misattribution is still
+    /// there, and it is no longer silent.
+    ///
+    /// The second half is the whole point of `cadenceFileScopeReason`. Six silent guard failures
+    /// in this repository (T-1282, T-1291, T-1297, T-1305, T-1316, T-1326) are all the same shape:
+    /// a scan reading text it was not asked to read and saying nothing. The reason string cannot
+    /// prevent the next one, but it says *which line* swallowed the brace instead of naming a test
+    /// that looks misplaced and is not.
+    @Test func theMaskerStillCannotSeeARegexLiteralAndSaysSoWhenAskedWhy() throws {
+        let source = #"""
+        struct OnlySuite {
+            let closer = /[a-z]+\}/
+
+            @Test func theSwallowedOne() throws {}
+        }
+        """#
+        let declarations = cadenceTestDeclarations(in: source, file: "fixture")
+
+        // The known edge: a regex literal's `}` closes the suite early, so its test reads as
+        // file-scope. If a later parser fixes this, THIS assertion is the one to delete.
+        #expect(
+            declarations.map(\.suite) == [CadenceTestDeclaration.fileScope],
+            "a regex literal is masked now, so the boundary documented on `codeOnly` moved"
+        )
+
+        let reason = cadenceFileScopeReason(in: source)
+        #expect(reason.contains("brace depth after masking ends at -1"), "reason was: \(reason)")
+        #expect(reason.contains("regex"), "reason was: \(reason)")
+        #expect(reason.contains("line 5"), "the closing `}` is on line 5; reason was: \(reason)")
+
+        // And the other verdict, over a stray test in a file whose braces are fine: the same
+        // function must be able to say "this really is outside every suite", or it says nothing.
+        let stray = """
+        struct OnlySuite {
+            @Test func theInsideOne() throws {}
+        }
+
+        @Test func theStrayOne() throws {}
+        """
+        #expect(
+            cadenceFileScopeReason(in: stray).contains("balances"),
+            "\(cadenceFileScopeReason(in: stray))"
+        )
+        #expect(cadenceFileScopeReason(in: stray).contains("brace depth after masking ends at") == false)
+    }
+
     /// **T-465, the arm of the wrong-`struct` family that *is* mechanical.**
     ///
     /// A `@Test` appended past the closing brace of the last suite in a file is a free function.
@@ -519,11 +627,25 @@ struct CadenceTestTargetHygieneTests {
             including: "CadenceTests/CadenceTestTargetHygieneTests.swift",
             read: cadenceTestSource
         )
+        // T-1328: the reading, not just the verdict. "This test is outside every suite" and "a
+        // literal ten lines up swallowed a brace" are the same failure here and want opposite
+        // fixes, and the message used to offer only the first — so an agent moved a test that was
+        // where it belonged, while the guard that shares the brace count stayed silently wrong.
+        let reasons = offenders.isEmpty
+            ? ""
+            : offenders.map { path -> String in
+                let source = (try? cadenceTestSource(path)) ?? ""
+                let stray = cadenceTestDeclarations(in: source, file: path)
+                    .filter { $0.suite == CadenceTestDeclaration.fileScope }
+                    .map(\.name)
+                return "\n\(path): \(stray.joined(separator: ", ")) — \(cadenceFileScopeReason(in: source))"
+            }
+            .joined()
         #expect(
             offenders.isEmpty,
             """
             these files declare a @Test outside every suite, so `-only-testing:` cannot reach it \
-            and a mutation against it reads as a survivor: \(offenders)
+            and a mutation against it reads as a survivor: \(offenders)\(reasons)
             """
         )
     }
@@ -1469,4 +1591,74 @@ func cadenceTestDeclarations(in source: String, file: String) -> [CadenceTestDec
                 file: file
             )
         }
+}
+
+/// **Why** a `@Test` in this source landed at `<file scope>` (T-1328).
+///
+/// There are two answers and they want opposite fixes, which is the reason this exists: the test
+/// really is declared outside every suite — move it — or the masking pass lost a brace somewhere
+/// above it and the enclosing suite's extent closed early, in which case the test is fine and a
+/// *line* is not. Every reader of the old failure message got the first answer for both, because
+/// the message named the tests and nothing else. That is the same silence as the six guard
+/// misreads this repository has found (T-1282, T-1291, T-1297, T-1305, T-1316, T-1326), and this
+/// is the cheap half of the fix: `codeOnly` handles the shape that produced it, and when the next
+/// unreadable shape lands, this says where.
+///
+/// A line whose masking blanked an unequal number of `{` and `}` is the direct evidence — the
+/// literal or comment there swallowed a brace. When no line shows that, the imbalance is in text
+/// the masker does not read as a literal at all, which is the boundary `codeOnly` documents.
+func cadenceFileScopeReason(in source: String) -> String {
+    let code = CadenceSourceScan.codeOnly(source)
+    let maskedLines = code.components(separatedBy: "\n")
+    let rawLines = source.components(separatedBy: "\n")
+
+    var depth = 0
+    var firstNegative: Int?
+    for (index, line) in maskedLines.enumerated() {
+        for character in line {
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth < 0, firstNegative == nil { firstNegative = index + 1 }
+            }
+        }
+    }
+
+    guard depth != 0 || firstNegative != nil else {
+        return """
+        brace depth after masking balances, so the declaration really is outside every suite — \
+        move it inside one, or (if it is in an `extension`, which the type regex does not read) \
+        widen the regex rather than allowlisting the file
+        """
+    }
+
+    var swallowers: [String] = []
+    for (index, masked) in maskedLines.enumerated() where index < rawLines.count {
+        let raw = rawLines[index]
+        func blanked(_ character: Character) -> Int {
+            raw.filter { $0 == character }.count - masked.filter { $0 == character }.count
+        }
+        guard blanked("{") != blanked("}") else { continue }
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        let shown = text.count > 90 ? String(text.prefix(90)) + "…" : text
+        swallowers.append("line \(index + 1): \(shown)")
+    }
+
+    let located = swallowers.isEmpty
+        ? """
+        no line shows asymmetric blanking, so the imbalance is in text the masker does not read as \
+        a literal at all — a bare regex literal (`/…}…/`) or an `#if` branch whose braces balance \
+        only against its `#else`, both of which `CadenceSourceScan.codeOnly` documents as unhandled
+        """
+        : """
+        masking blanked an unequal number of braces on \(swallowers.joined(separator: "; ")) — a \
+        literal or comment there swallowed a brace
+        """
+
+    let negative = firstNegative.map { ", first negative at line \($0)" } ?? ""
+    return """
+    brace depth after masking ends at \(depth)\(negative) rather than 0, so the suite extents in \
+    this file are wrong and the tests below the break are not misplaced: \(located)
+    """
 }

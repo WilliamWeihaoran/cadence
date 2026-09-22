@@ -769,6 +769,50 @@ struct CadenceGuardScriptSelftestTests {
         #expect(selftest.contains("T-1303"), "scripts/ledger-lag-check.sh's selftest no longer induces T-1303")
     }
 
+    /// **T-1328. One rule with two implementations, and a divergence between them is a new trap.**
+    ///
+    /// `CadenceSourceScan.codeOnly` and the `blank()` inside `scripts/test-suite-index.sh` blank
+    /// the same thing in two languages, and the script is what tells an agent which suite to scope
+    /// a run to. A fix landing on one side only leaves the shell reporting `<file scope>` — and
+    /// `xcb.sh` refusing the suite as `UNKNOWN-SUITE` — for a file the Swift guard calls clean,
+    /// which is a fresh version of the original finding rather than a fix for it.
+    ///
+    /// Source-level on the shell side, for the sandbox reason this suite gives above: this test
+    /// host cannot run the `/usr/bin/python3` shim (T-719), so the alternative to reading the
+    /// source is asserting nothing. Behavioural on the Swift side, in the same test, because the
+    /// two halves are only worth pinning together.
+    @Test func theTwoBlankingPassesOfOneRuleStillHandleInterpolatedCode() throws {
+        let script = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot()
+                .appendingPathComponent("scripts/test-suite-index.sh"),
+            encoding: .utf8
+        )
+        for marker in ["def scan_literal(", "def scan_code(", "stop_at_close_paren", "T-1328"] {
+            #expect(
+                script.contains(marker),
+                """
+                scripts/test-suite-index.sh's blanker no longer carries \(marker), so it has \
+                diverged from CadenceSourceScan.codeOnly
+                """
+            )
+        }
+
+        let source = #"""
+        struct Suite {
+            func seed(_ names: [String]) -> String {
+                "tags: [\(names.map { "\"\($0)\"" }.joined(separator: ", "))]"
+            }
+        }
+        """#
+        let code = CadenceSourceScan.codeOnly(source)
+        #expect(
+            code.filter { $0 == "{" }.count == code.filter { $0 == "}" }.count,
+            "the Swift half lost the interpolation rule, so brace depth desynchronises again"
+        )
+        #expect(code.contains("tags:") == false, "non-vacuity: the literal is blanked whole")
+        #expect(code.contains("struct Suite"), "non-vacuity: the code around it is not")
+    }
+
     /// And all eight guards have to be there to be run. A renamed script would otherwise make the
     /// tests above fail for a reason that reads nothing like "the guard is gone".
     ///

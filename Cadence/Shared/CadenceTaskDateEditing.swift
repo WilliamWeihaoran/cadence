@@ -12,12 +12,21 @@ import SwiftData
 /// practice given one owner instead of being re-typed at each surface. Same shape as
 /// [[T-343]] (status edits, still open) and the same latency class as [[T-306]] / [[T-312]].
 ///
-/// **Why the reconcile is not in `CadenceTaskMutationSupport`.** That enum is the pure mutation
-/// layer: it writes model fields and saves, and nothing in it reaches outside SwiftData.
-/// `NotificationManager` is a `@MainActor` singleton that reads `notificationsEnabled` out of
-/// `UserDefaults.standard` and talks to `UNUserNotificationCenter` — the two things
-/// `CadenceStoreSupport` and `CadenceWidgetIntents` document that an extension **must not** do,
-/// because the extension does not see the app's suite. Today the widget and MCP targets do not
+/// **Why the reconcile is not in `CadenceTaskMutationSupport`.** Its **date-edit primitives** are
+/// a pure mutation layer: they write model fields and save, and none of them reaches outside
+/// SwiftData. That is a claim about these primitives and not about the file, and the difference is
+/// [[T-1315]]: this paragraph used to say "nothing in it reaches outside SwiftData", which was
+/// false the day it was written — `deleteTasks` ends in
+/// `Task { await NotificationManager.shared.cancel(taskIDs:) }`, and that line predates this
+/// header. A *cancel* for tasks that no longer exist is not the same act as a *reconcile* that has
+/// to decide what should be pending, which is why the wrapper still exists; but the file is not
+/// notification-free and nothing should be written on the belief that it is.
+/// `NotificationManager` is a `@MainActor` singleton that reads `notificationsEnabled` through
+/// `CadenceDefaults.store` and talks to `UNUserNotificationCenter` — the two things
+/// `CadenceStoreSupport` and `CadenceWidgetIntents` document that an extension **must not** do.
+/// The router resolves to this process's own `UserDefaults.standard` unless a launch argument
+/// names a private suite, so it is still per-process: an extension reads its own empty defaults,
+/// not the app's. Today the widget and MCP targets do not
 /// compile `CadenceTaskMutationSupport.swift` at all (they list their `Cadence/` sources
 /// explicitly), and folding a notification dependency into it would be the thing that stops them
 /// ever being able to. Their own write paths already have their answer: T-306 reconciles MCP writes

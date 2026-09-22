@@ -16,8 +16,9 @@ import SwiftData
 /// app that its store had changed underneath it.
 ///
 /// **The reconcile is deliberately not here.** These intents run in the widget extension.
-/// `NotificationManager.reconcile` reads `notificationsEnabled` from `UserDefaults.standard`,
-/// which the extension does not share with the app, so reconciling in this process would decide
+/// `NotificationManager.reconcile` reads `notificationsEnabled` through `CadenceDefaults.store` —
+/// this process's own `UserDefaults.standard` unless a launch argument names a private suite
+/// ([[T-1315]]) — which the extension does not share with the app, so reconciling here would decide
 /// with the wrong setting and cancel every reminder the app had scheduled. Posting the app-group
 /// marker is the whole fix: the app is the only process that can see that setting, and it
 /// reconciles when it adopts the write. That is the same seam MCP writes already used

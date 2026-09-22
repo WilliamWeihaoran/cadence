@@ -577,12 +577,63 @@ extension CadenceSourceScan {
     /// a documented fix for `"https://example.com"`. This function needs no such rule, because by
     /// the time it could see that `//` the literal around it is already blank.
     ///
-    /// **Known limit: raw string literals.** `#"..."#` is read as an ordinary `"..."`, so a raw
-    /// literal containing a bare quote — `#"he said "hi""#` — is blanked to the wrong boundary and
-    /// a few characters of its content survive as apparent code. 67 files here use raw literals,
-    /// all of them markdown regex patterns, and none contains a needle any scan looks for. Measured
-    /// rather than assumed: no file in `Cadence/` or `CadenceTests/` holds an odd number of `"""`,
-    /// which is the other way this scanner could run away.
+    /// **An interpolation is parsed, not skipped to the next quote (T-1328).** `\(…)` holds a real
+    /// expression, which can hold literals of its own — so finding where the *outer* literal ends
+    /// means reading the inner ones. The scanner used to walk a literal with a single "next
+    /// unescaped quote" loop, which meant
+    /// `"tags: [\(names.map { "\"\($0)\"" }.joined(separator: ", "))]"` — a closure inside an
+    /// interpolation, holding a literal with escaped quotes of its own — ended the outer literal at
+    /// the *inner* literal's opening quote. That blanked the `{` of the closure and left its `}`,
+    /// so brace depth for the rest of the file came out one short: every `@Test` below it landed at
+    /// `<file scope>`, `-only-testing:` for that suite was refused as UNKNOWN-SUITE, and any
+    /// `declarationBody` read over the same file silently closed early.
+    ///
+    /// **T-1328 filed this as a trap. It was not one.** Measured 2026-09-22 by running the old
+    /// pass and this one over all 937 `.swift` files in `Cadence/`, `CadenceTests/`,
+    /// `CadenceWidgets/` and `CadenceMCPServer/`: the old pass desynchronised
+    /// `Cadence/Services/MarkdownMetadataSupport.swift` — the one file in the tree that writes
+    /// exactly that line — to a brace depth of **-1**. That is why
+    /// `CadenceSaveCommitDisciplineTests` carries an unbalanced-source fallback at all, and it is
+    /// the file that guard's own comment calls "one file in 587" while saying that widening this
+    /// pass "is somebody else's ticket". It was this one.
+    ///
+    /// The old pass also leaked the *content* of a nested literal as apparent code on **116 lines
+    /// in 60 files**, `"list-detail-\(… ?? "unknown")"` leaving a bare `unknown` behind being the
+    /// ordinary shape. The ticket read the suite index clean and concluded the tree was: the suite
+    /// index only walks `CadenceTests/`, and the desynchronised file is a product file. This pass
+    /// blanks a strict superset of what the old one blanked — zero sites where it now leaves
+    /// something the old pass removed — so no needle that used to fire stops firing.
+    ///
+    /// The interpolation is still **blanked whole**, braces included, and that is deliberate
+    /// rather than incidental: `TemporaryDefaultsSuiteRule` exists because `codeOnly` blanks
+    /// `"prefix.\(UUID().uuidString)"` down to nothing, and
+    /// `theTemporaryDefaultsSuiteRuleReadsLiteralsButNotItsOwnFixtures` pins it. Brace depth
+    /// survives anyway, because a closure inside an interpolation contributes its `{` and `}` as a
+    /// matched pair and both go; the same holds for the `\(` and the `)` that closes it.
+    ///
+    /// **Raw literals are read as raw** — `#"…"#` terminates on a quote run followed by the same
+    /// run of `#`, a bare `\` inside one is content, and `\#(…)` is its interpolation. This
+    /// paragraph used to claim the opposite ("`#"..."#` is read as an ordinary `"..."`", so
+    /// `#"he said "hi""#` blanks to the wrong boundary); measured 2026-09-22, that literal blanks
+    /// to its own boundary and the code sharing its line survives. The claim was already false when
+    /// the `#` branch below was written for T-465.
+    ///
+    /// **What is still not handled, stated precisely so the next reader inherits a known edge
+    /// rather than a surprise** — both are text this scanner does not recognise as a literal at
+    /// all, so it blanks nothing and the brace counter reads the source's own characters:
+    ///
+    /// - a **bare regex literal**, `/\{[a-z]+/`: the `{` in the pattern counts as a brace.
+    /// - a **`#if` branch whose braces do not balance on their own**, e.g. an `#if os(macOS)`
+    ///   opening a declaration that `#else` opens again.
+    ///
+    /// Measured 2026-09-22 rather than assumed: all **937** `.swift` files in `Cadence/`,
+    /// `CadenceTests/`, `CadenceWidgets/` and `CadenceMCPServer/` balance their braces after this
+    /// pass, so neither shape is desynchronising anything today. That is why they are documented
+    /// rather than parsed — a half-correct parser for either is worse than an honest boundary, and
+    /// `everyTestFileBalancesItsBracesAfterMaskingSoSuiteExtentsCanBeTrusted` is what notices when
+    /// one lands. Both are pinned as fixtures by
+    /// `theMaskerStillCannotSeeARegexLiteralAndSaysSoWhenAskedWhy`, and when either does land,
+    /// `cadenceFileScopeReason` is what turns the silent misread into a located one.
     static func codeOnly(_ source: String) -> String {
         var characters = Array(source)
         let count = characters.count
@@ -593,100 +644,133 @@ extension CadenceSourceScan {
             }
         }
 
-        var index = 0
-        while index < count {
-            let character = characters[index]
-
-            // A *raw* string literal, before the ordinary one: inside `#"..."#` a backslash is
-            // content, not an escape, and the terminator carries the same run of `#`.
-            //
-            // Reading that backslash as an escape is not a cosmetic miss. On `#"photo\"#` the
-            // ordinary branch below skipped the closing quote, ran to the end of the line, and
-            // blanked live code with it — including the `{` that opened the enclosing `for` body.
-            // Brace depth for that whole file then came out one short, which is invisible to a
-            // scan that only counts needles and fatal to one that asks *which suite encloses this
-            // test*. One file in `CadenceTests` did exactly that, and it turned
-            // `noTestInTheTargetIsDeclaredOutsideEverySuite` into eleven false accusations before
-            // this branch existed (T-465).
-            if character == "#" {
-                var hashEnd = index
-                while hashEnd < count, characters[hashEnd] == "#" { hashEnd += 1 }
-                let hashes = hashEnd - index
-                if hashEnd < count, characters[hashEnd] == "\"" {
-                    let multiline = hashEnd + 2 < count
-                        && characters[hashEnd + 1] == "\""
-                        && characters[hashEnd + 2] == "\""
-                    let quotes = multiline ? 3 : 1
-                    var end = hashEnd + quotes
-                    var close = count
-                    while end < count {
-                        if characters[end] == "\"",
-                           end + quotes + hashes <= count,
-                           (end..<(end + quotes)).allSatisfy({ characters[$0] == "\"" }),
-                           ((end + quotes)..<(end + quotes + hashes)).allSatisfy({ characters[$0] == "#" }) {
-                            close = end + quotes + hashes
-                            break
-                        }
-                        // A single-line raw string cannot span a newline; stopping here keeps an
-                        // unterminated literal from blanking the rest of the file.
-                        if !multiline, characters[end].isNewline {
-                            close = end
-                            break
-                        }
-                        end += 1
-                    }
-                    blank(index..<close)
-                    index = close
-                    continue
-                }
-            }
-
-            if character == "\"" {
-                if index + 2 < count, characters[index + 1] == "\"", characters[index + 2] == "\"" {
-                    var end = index + 3
-                    while end + 2 < count,
-                          !(characters[end] == "\"" && characters[end + 1] == "\"" && characters[end + 2] == "\"") {
-                        end += 1
-                    }
-                    let close = end + 2 < count ? end + 3 : count
-                    blank(index..<close)
-                    index = close
-                    continue
-                }
-                var end = index + 1
-                while end < count, characters[end] != "\"", !characters[end].isNewline {
-                    if characters[end] == "\\" { end += 1 }
-                    end += 1
-                }
-                let close = end < count && characters[end] == "\"" ? end + 1 : min(end, count)
-                blank(index..<close)
-                index = close
-                continue
-            }
-
-            if character == "/", index + 1 < count {
-                if characters[index + 1] == "/" {
-                    var end = index
-                    while end < count, !characters[end].isNewline { end += 1 }
-                    blank(index..<end)
-                    index = end
-                    continue
-                }
-                if characters[index + 1] == "*" {
-                    var end = index + 2
-                    while end + 1 < count, !(characters[end] == "*" && characters[end + 1] == "/") {
-                        end += 1
-                    }
-                    let close = end + 1 < count ? end + 2 : count
-                    blank(index..<close)
-                    index = close
-                    continue
-                }
-            }
-
-            index += 1
+        // The length of the `#` run that opens a *raw* literal here, or `nil` when the run is
+        // something else entirely (`#if`, `#expect(`, `#filePath`).
+        //
+        // Reading a raw literal's backslash as an escape is not a cosmetic miss. On `#"photo\"#`
+        // an ordinary-literal reading skips the closing quote, runs to the end of the line, and
+        // blanks live code with it — including the `{` that opened the enclosing `for` body.
+        // Brace depth for that whole file then came out one short, which is invisible to a scan
+        // that only counts needles and fatal to one that asks *which suite encloses this test*.
+        // One file in `CadenceTests` did exactly that, and it turned
+        // `noTestInTheTargetIsDeclaredOutsideEverySuite` into eleven false accusations before this
+        // branch existed (T-465).
+        func rawLiteralHashes(at position: Int) -> Int? {
+            var hashEnd = position
+            while hashEnd < count, characters[hashEnd] == "#" { hashEnd += 1 }
+            guard hashEnd < count, characters[hashEnd] == "\"" else { return nil }
+            return hashEnd - position
         }
 
+        /// Blanks the literal opening at `start` — whose `#` run is `hashes` long — and returns the
+        /// index just past it. Interpolated code inside it is handed back to `scanCode`.
+        func scanLiteral(from start: Int, hashes: Int) -> Int {
+            let quoteStart = start + hashes
+            let multiline = quoteStart + 2 < count
+                && characters[quoteStart + 1] == "\""
+                && characters[quoteStart + 2] == "\""
+            let quotes = multiline ? 3 : 1
+            var position = quoteStart + quotes
+            blank(start..<min(position, count))
+
+            while position < count {
+                // The terminator carries the literal's own run of `#`.
+                if characters[position] == "\"",
+                   position + quotes + hashes <= count,
+                   (position..<(position + quotes)).allSatisfy({ characters[$0] == "\"" }),
+                   ((position + quotes)..<(position + quotes + hashes)).allSatisfy({ characters[$0] == "#" }) {
+                    let close = position + quotes + hashes
+                    blank(position..<close)
+                    return close
+                }
+                // A single-line literal cannot span a newline; stopping here keeps an unterminated
+                // one from blanking the rest of the file.
+                if !multiline, characters[position].isNewline {
+                    return position
+                }
+                // An escape, which in a raw literal is `\` followed by that literal's run of `#`
+                // — so a lone `\` inside `#"…"#` falls through to the content case below.
+                if characters[position] == "\\",
+                   position + 1 + hashes < count,
+                   ((position + 1)..<(position + 1 + hashes)).allSatisfy({ characters[$0] == "#" }) {
+                    let escaped = position + 1 + hashes
+                    if characters[escaped] == "(" {
+                        // The interpolation is *parsed* — its own literals, comments and nested
+                        // parentheses are read properly, which is the only way to find where this
+                        // literal really ends — and then blanked whole, braces included. Blanking
+                        // it is what keeps `codeOnly`'s contract ("a literal is blanked, its
+                        // interpolation with it") that `TemporaryDefaultsSuiteRule` leans on; the
+                        // braces of a closure inside it go in a matched pair, so brace depth is
+                        // preserved either way.
+                        let terminator = scanCode(from: escaped + 1, stoppingAtUnmatchedCloseParen: true)
+                        let close = min(terminator + 1, count)
+                        blank(position..<close)
+                        position = close
+                        continue
+                    }
+                    blank(position..<(escaped + 1))
+                    position = escaped + 1
+                    continue
+                }
+                blank(position..<(position + 1))
+                position += 1
+            }
+            return count
+        }
+
+        /// Blanks literals and comments from `start` on. With `stoppingAtUnmatchedCloseParen` it
+        /// returns the index **of** the first `)` closing no `(` of its own — the end of the
+        /// interpolation that called it — for the caller to blank; otherwise it runs to the end.
+        func scanCode(from start: Int, stoppingAtUnmatchedCloseParen: Bool) -> Int {
+            var index = start
+            var parentheses = 0
+            while index < count {
+                let character = characters[index]
+
+                if character == "#", let hashes = rawLiteralHashes(at: index) {
+                    index = scanLiteral(from: index, hashes: hashes)
+                    continue
+                }
+                if character == "\"" {
+                    index = scanLiteral(from: index, hashes: 0)
+                    continue
+                }
+                if character == "/", index + 1 < count {
+                    if characters[index + 1] == "/" {
+                        var end = index
+                        while end < count, !characters[end].isNewline { end += 1 }
+                        blank(index..<end)
+                        index = end
+                        continue
+                    }
+                    if characters[index + 1] == "*" {
+                        var end = index + 2
+                        while end + 1 < count, !(characters[end] == "*" && characters[end + 1] == "/") {
+                            end += 1
+                        }
+                        let close = end + 1 < count ? end + 2 : count
+                        blank(index..<close)
+                        index = close
+                        continue
+                    }
+                }
+                // Counted after the literal and comment branches, so a parenthesis inside either
+                // is never seen: those branches consume their whole span before this reads it.
+                if stoppingAtUnmatchedCloseParen {
+                    if character == "(" {
+                        parentheses += 1
+                    } else if character == ")" {
+                        if parentheses == 0 { return index }
+                        parentheses -= 1
+                    }
+                }
+
+                index += 1
+            }
+            return count
+        }
+
+        _ = scanCode(from: 0, stoppingAtUnmatchedCloseParen: false)
         return String(characters)
     }
 }

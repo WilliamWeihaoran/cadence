@@ -74,55 +74,105 @@ import os, re, sys
 root, mode, needle = sys.argv[1], sys.argv[2], sys.argv[3]
 
 def blank(src):
+    # Comments and string-literal TEXT to spaces of equal length, newlines kept -- the same rule as
+    # `CadenceSourceScan.codeOnly` in `CadenceTests/CadenceSourceScanSupport.swift`. These are two
+    # implementations of one rule in two languages; a divergence between them is a new trap, and
+    # `CadenceGuardScriptSelftestTests.theTwoBlankingPassesOfOneRuleStillHandleInterpolatedCode`
+    # goes red if either side loses the interpolation half.
     out = list(src)
     n = len(out)
+
     def wipe(a, b):
         for k in range(a, min(b, n)):
             if out[k] != '\n':
                 out[k] = ' '
-    i = 0
-    while i < n:
-        if src[i] == '#':
-            h = i
-            while h < n and src[h] == '#':
-                h += 1
-            hashes = h - i
-            if h < n and src[h] == '"':
-                # A raw string: `\` is content, and the terminator carries the same run of `#`.
-                # Reading that backslash as an escape is what desynchronised brace depth for
-                # `#"photo\"#` -- the masker ran past the closing quote and blanked the rest of
-                # the line, the `{` on it included (T-465).
-                multiline = src[h:h+3] == '"""'
-                quotes = 3 if multiline else 1
-                term = '"' * quotes + '#' * hashes
-                j = src.find(term, h + quotes)
-                j = n if j < 0 else j + len(term)
-                if not multiline:
-                    nl = src.find('\n', h)
-                    if 0 <= nl < j:
-                        j = nl
+
+    def raw_hashes(i):
+        # The length of the `#` run opening a RAW literal here, or None when the run is something
+        # else (`#if`, `#expect(`, `#filePath`). Inside `#"..."#` a `\` is content and the
+        # terminator carries the same run of `#`; reading that backslash as an escape is what
+        # desynchronised brace depth for `#"photo\"#` -- the masker ran past the closing quote and
+        # blanked the rest of the line, the `{` on it included (T-465).
+        h = i
+        while h < n and src[h] == '#':
+            h += 1
+        return h - i if h < n and src[h] == '"' else None
+
+    def scan_literal(start, hashes):
+        quote_start = start + hashes
+        multiline = src[quote_start:quote_start + 3] == '"""'
+        quotes = 3 if multiline else 1
+        term = '"' * quotes + '#' * hashes
+        pos = quote_start + quotes
+        wipe(start, pos)
+        while pos < n:
+            if src.startswith(term, pos):
+                close = pos + len(term)
+                wipe(pos, close)
+                return close
+            # A single-line literal cannot span a newline; stopping here keeps an unterminated one
+            # from blanking the rest of the file.
+            if not multiline and src[pos] == '\n':
+                return pos
+            if src[pos] == '\\' and pos + 1 + hashes < n and src.startswith('#' * hashes, pos + 1):
+                escaped = pos + 1 + hashes
+                if src[escaped] == '(':
+                    # T-1328. An interpolation holds a real expression, which can hold literals of
+                    # its own -- so it is PARSED to find where this literal ends, then blanked
+                    # whole. Reading the whole literal with one "next unescaped quote" loop instead
+                    # ended `"tags: [\(names.map { "\"\($0)\"" }.joined(separator: ", "))]"` at the
+                    # INNER literal's opening quote, blanking the closure's `{` and keeping its `}`
+                    # -- one brace short for the rest of the file, so every `@Test` below it was
+                    # reported as `<file scope>` and `xcb.sh` refused its suite as UNKNOWN-SUITE.
+                    # Blanking the interpolation keeps brace depth right too: a closure inside one
+                    # contributes its `{` and `}` as a matched pair and both go.
+                    terminator = scan_code(escaped + 1, True)
+                    close = min(terminator + 1, n)
+                    wipe(pos, close)
+                    pos = close
+                    continue
+                wipe(pos, escaped + 1)
+                pos = escaped + 1
+                continue
+            wipe(pos, pos + 1)
+            pos += 1
+        return n
+
+    def scan_code(start, stop_at_close_paren):
+        # With stop_at_close_paren, returns the index OF the first `)` that closes no `(` of its
+        # own -- the end of the interpolation that called it -- for the caller to blank.
+        i = start
+        parens = 0
+        while i < n:
+            if src[i] == '#':
+                hashes = raw_hashes(i)
+                if hashes is not None:
+                    i = scan_literal(i, hashes)
+                    continue
+            if src[i] == '"':
+                i = scan_literal(i, 0)
+                continue
+            if src[i:i + 2] == '//':
+                j = src.find('\n', i)
+                j = n if j < 0 else j
                 wipe(i, j); i = j; continue
-        if src[i] == '"':
-            if src[i:i+3] == '"""':
-                j = src.find('"""', i + 3)
-                j = n if j < 0 else j + 3
-            else:
-                j = i + 1
-                while j < n and src[j] not in '"\n':
-                    if src[j] == '\\':
-                        j += 1
-                    j += 1
-                j = min(j + 1, n)
-            wipe(i, j); i = j; continue
-        if src[i:i+2] == '//':
-            j = src.find('\n', i)
-            j = n if j < 0 else j
-            wipe(i, j); i = j; continue
-        if src[i:i+2] == '/*':
-            j = src.find('*/', i + 2)
-            j = n if j < 0 else j + 2
-            wipe(i, j); i = j; continue
-        i += 1
+            if src[i:i + 2] == '/*':
+                j = src.find('*/', i + 2)
+                j = n if j < 0 else j + 2
+                wipe(i, j); i = j; continue
+            # Counted after those branches, so a parenthesis inside a literal or a comment is never
+            # seen: each branch consumes its whole span before this reads it.
+            if stop_at_close_paren:
+                if src[i] == '(':
+                    parens += 1
+                elif src[i] == ')':
+                    if parens == 0:
+                        return i
+                    parens -= 1
+            i += 1
+        return n
+
+    scan_code(0, False)
     return ''.join(out)
 
 TYPE = re.compile(r'\b(?:struct|final class|class|actor|enum)\s+([A-Za-z0-9_]+)')

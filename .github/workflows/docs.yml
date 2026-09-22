@@ -72,11 +72,29 @@ jobs:
   # still sitting in the open sections. Three were on 2026-09-19, one of them
   # telling its next reader not to do work that had already shipped.
   #
-  # This job and its twin in ci.yml run the same script. The two workflows' path
-  # filters are exact complements -- ci.yml `paths-ignore`s what docs.yml `paths`
-  # -- so exactly one of them runs per push and the check runs on every push. The
-  # docs-only half matters because a ledger edit is the other way this goes wrong:
-  # a correction that reopens an entry whose code has landed is red here.
+  # This job and its twin in ci.yml run the same script. The two path filters are
+  # set-complements as WRITTEN -- ci.yml `paths-ignore`s exactly what docs.yml
+  # `paths` -- so between them the check runs on every push, which is the property
+  # that matters. What does NOT follow, and what this comment claimed until
+  # [[T-1315]], is that exactly one of them runs: GitHub fires `paths` when ANY
+  # changed file matches and skips `paths-ignore` only when ALL of them do, so a
+  # push touching `docs/TODO.md` and a `.swift` file satisfies both filters. That
+  # is the shape of nearly every commit here (the ledger closure lands with the
+  # code), so the ordinary case is BOTH workflows running and `ledger-lag` running
+  # twice. The coverage overlaps; it does not partition.
+  #
+  # Left overlapping on purpose. The two runs read the same commit against the
+  # same ledger, so they cannot disagree; the duplicate costs one Ubuntu checkout
+  # and a check measured at 0.28 s over 1171 commits, against 1x minutes. Giving
+  # the check one owner instead needs either a third workflow with no path filter
+  # (a file whose only job is to exist) or a changed-file filter evaluated inside
+  # ci.yml so its macOS jobs can still be skipped -- more moving parts in the one
+  # place a mistake means the ledger check silently stops running. The only real
+  # cost of the overlap is two red emails instead of one.
+  #
+  # The docs-only half still earns its keep: a ledger edit is the other way this
+  # goes wrong, and a correction that reopens an entry whose code has landed is
+  # red here and nowhere else.
   #
   # `fetch-depth: 0` is load-bearing, not tidy. The default is a depth-1 checkout,
   # over which this check examines zero commits and exits 0 -- so the script also

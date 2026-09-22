@@ -194,9 +194,11 @@ nonisolated enum CadenceStoreSupport {
     /// **This lives here, in the one file every out-of-process target compiles, on purpose.** The
     /// app group has two writers that are not the app — the MCP server and the widget extension
     /// running an App Intent — and neither of them may reconcile OS notifications itself:
-    /// `NotificationManager.reconcile` reads `notificationsEnabled` out of `UserDefaults.standard`,
-    /// which is per-process, so the extension would read its own empty defaults, conclude
-    /// notifications are off, and cancel every reminder the app had scheduled. It is the same
+    /// `NotificationManager.reconcile` reads `notificationsEnabled` through `CadenceDefaults.store`
+    /// — this process's own `UserDefaults.standard` unless a launch argument names a private suite
+    /// ([[T-1315]]; the routing does not make the read shared) — which is per-process, so the
+    /// extension would read its own empty defaults, conclude notifications are off, and cancel
+    /// every reminder the app had scheduled. It is the same
     /// per-process-defaults problem `restorePendingMarkerName` above exists for, and it gets the
     /// same answer: a file in the app group. They post; the app, the one process that can see that
     /// setting, reconciles when it adopts the write. `docs/TODO.md` T-306 and T-312.

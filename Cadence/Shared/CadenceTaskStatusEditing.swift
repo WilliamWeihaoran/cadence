@@ -20,10 +20,13 @@ import SwiftData
 /// **Why the reconcile is not in `CadenceTaskMutationSupport`.** Same answer as
 /// `CadenceTaskDateEditing`, and T-343 states it as a constraint rather than a preference: widgets
 /// and MCP complete tasks through the very same shared helpers, and they **must not** schedule
-/// app-side notifications. `NotificationManager` reads `notificationsEnabled` from
-/// `UserDefaults.standard` and talks to `UNUserNotificationCenter`, neither of which an extension
-/// sees the app's version of. The out-of-process writers already have their own answer: T-306 and
-/// T-312 reconcile when the app adopts the external-write marker.
+/// app-side notifications. `NotificationManager` reads `notificationsEnabled` through
+/// `CadenceDefaults.store` — this process's own `UserDefaults.standard` unless a launch argument
+/// names a private suite ([[T-1315]]: this said `UserDefaults.standard` directly, which stopped
+/// being the spelling in `924fab8`, and the routing does not make the read shared) — and talks to
+/// `UNUserNotificationCenter`, neither of which an extension sees the app's version of. The
+/// out-of-process writers already have their own answer: T-306 and T-312 reconcile when the app
+/// adopts the external-write marker.
 ///
 /// So the split is the same one: **shared helper mutates, app-side wrapper reconciles.**
 ///

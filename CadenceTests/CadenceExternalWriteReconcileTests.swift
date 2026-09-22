@@ -12,7 +12,9 @@ import Testing
 /// had none, until some unrelated scene-phase checkpoint happened to sweep.
 ///
 /// **The naive fix is wrong in a specific way.** `NotificationManager.reconcile` reads
-/// `notificationsEnabled` out of `UserDefaults.standard`, which is per-process. The widget
+/// `notificationsEnabled` through `CadenceDefaults.store` — this process's own
+/// `UserDefaults.standard` unless a launch argument names a private suite, so per-process either
+/// way ([[T-1315]]; the direct `.standard` spelling went away in `924fab8`). The widget
 /// extension does not share the app's, so reconciling there would read empty defaults, conclude
 /// notifications are off, and cancel every reminder the app had scheduled. The writers therefore
 /// post an **app-group marker** and the app — the one process that can see the setting —

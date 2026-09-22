@@ -1543,18 +1543,20 @@ struct CadenceSaveCommitDisciplineTests {
     }
 
     /// Containment, not proximity, over the **app** — the six nested helper types the mis-filing
-    /// was measured on, and one file that proves the unbalanced-source fallback still works.
+    /// was measured on.
     ///
     /// A fixture cannot show this. The reading this replaced is wrong only where a file declares a
     /// nested type *before* a member of its enclosing one, which is a shape you have to go and
     /// find: 754 of 7,363 declarations across `Cadence/`, one nested helper per file. Named sites
     /// rather than that count, because the count moves whenever anybody adds a helper struct.
     ///
-    /// `MarkdownMetadataParser.parseFrontmatter` is the fallback's witness and the reason it is not
-    /// dead code: `MarkdownMetadataSupport.swift` is the one file in 587 whose braces do not
-    /// balance after `codeOnly`, so containment cannot be answered there and the old proximity
-    /// reading is used instead. Delete `bracesBalance(in:)` and this line files eight of that
-    /// parser's methods under nothing.
+    /// **`MarkdownMetadataParser.parseFrontmatter` used to be here for the opposite reason, and
+    /// [[T-1328]] took that reason away.** It was the *unbalanced*-source fallback's only witness:
+    /// `MarkdownMetadataSupport.swift:128` is the interpolated-closure shape, `codeOnly` lost a
+    /// brace on it, and this parser appeared to close 140 lines early. `codeOnly` parses
+    /// interpolation now, the file balances, and this entry is read by containment like the other
+    /// five — which is what it should always have been. The line stays because the answer is the
+    /// same and this is now the only place that records which file it was.
     @Test func theAppsNestedHelperTypesNoLongerSwallowTheDeclarationsBelowThem() throws {
         for (path, name, type) in [
             ("Cadence/Services/NoteMigrationService.swift", "migrateIfNeeded", "NoteMigrationService"),
@@ -3226,18 +3228,24 @@ enum CadenceSaveCommitRule {
 
     /// Whether every brace in the (already comment- and literal-blanked) source closes.
     ///
-    /// **Measured, and it is one file in 587.** `CadenceSourceScan.codeOnly` does not understand
-    /// string *interpolation*: on
-    /// `MarkdownMetadataParser.content(_:replacingFrontmatterTags:)` it blanks from the opening
-    /// quote of `"tags: [\(… .map { "` through the quote **inside** the interpolated closure,
-    /// which takes that closure's `{` with it and leaves its `}` behind. The file then reads one
-    /// `}` heavy, `MarkdownMetadataParser` appears to close 140 lines early, and eight of its own
-    /// methods look like file scope.
+    /// **It had one witness, and [[T-1328]] repaired it, so this now returns `true` everywhere in
+    /// the tree.** The witness was `MarkdownMetadataParser.content(_:replacingFrontmatterTags:)`:
+    /// `CadenceSourceScan.codeOnly` did not understand string *interpolation*, so on that line it
+    /// blanked from the opening quote of `"tags: [\(… .map { "` through the quote **inside** the
+    /// interpolated closure, taking that closure's `{` and leaving its `}`. The file read one `}`
+    /// heavy, `MarkdownMetadataParser` appeared to close 140 lines early, and eight of its own
+    /// methods looked like file scope — one file in 587, and the only one. `codeOnly` parses
+    /// interpolation now and all 937 `.swift` files in the tree balance after it.
     ///
-    /// Containment cannot be answered from text that does not balance, so this half admits it and
-    /// falls back to what the reading before [[T-1091]] did — the nearest type declared above —
-    /// rather than filing eight methods under nothing. Widening `codeOnly` to parse interpolation
-    /// is the real fix and is somebody else's ticket: every sweep in this target reads through it.
+    /// **Kept anyway, and not as dead code.** `codeOnly` still documents two shapes it does not
+    /// read as literals at all — a bare regex literal and an `#if` branch whose braces balance
+    /// only against its `#else` — and either one landing puts a file back in this state. Without
+    /// this arm that file's declarations are filed under `""` and silently stop being reachable by
+    /// a qualified call, which is the failure mode [[T-1091]] measured at 755 declarations. The
+    /// fallback is the reading before T-1091 — the nearest type declared above — which is a guess,
+    /// but a guess that names something is auditable and `""` is not. `codeOnly`'s own canary,
+    /// `everyTestFileBalancesItsBracesAfterMaskingSoSuiteExtentsCanBeTrusted`, is what makes the
+    /// next arrival loud instead of silent.
     private static func bracesBalance(in source: String) -> Bool {
         var depth = 0
         for character in source {

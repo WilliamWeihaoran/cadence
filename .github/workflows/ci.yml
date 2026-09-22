@@ -109,10 +109,14 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # T-1298, and the twin of docs.yml's job of the same name -- the same script,
-  # on the complementary half of the pushes. This workflow's `paths-ignore` is
-  # exactly docs.yml's `paths`, so between them the check runs on every push;
-  # this half is the one that matters most, because the failure it guards is a
+  # T-1298, and the twin of docs.yml's job of the same name -- the same script.
+  # This workflow's `paths-ignore` is exactly docs.yml's `paths`, so between them
+  # the check runs on every push. It is NOT one run per push ([[T-1315]]): a push
+  # touching a doc and a `.swift` file satisfies `paths` (any file matches) and
+  # survives `paths-ignore` (not all do), so both fire and this check runs twice.
+  # That overlap is accepted rather than fixed -- see the twin's comment in
+  # docs.yml for the cost either way. This half is the one that matters most,
+  # because the failure it guards is a
   # commit that lands CODE under a ticket id and never closes the entry. Two of
   # the three that motivated it -- `e4719e3` and `44eced5` -- touched no docs at
   # all, so docs.yml alone would not have fired on either.
