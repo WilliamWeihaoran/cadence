@@ -2551,7 +2551,7 @@ user-selected color corpus, build, tests, or visual Dynamic Type run. Ratios are
 pair reachability is source-derived where cited and cannot account for arbitrary SwiftUI compositing.
 
 <!-- FOLDED-THROUGH: R54 -->
-<!-- FOLDED-ALSO: R63 -->
+<!-- FOLDED-ALSO: R63 R64 R65 -->
 
 ## R31 — Standing: has any of R25–R30 gone stale yet?
 
@@ -3844,6 +3844,11 @@ read-only request. Coordinate overlap with R59 instead of scanning the same widg
 
 ANSWER 2026-09-22:
 
+Follow-up 2026-09-22: the integration warning below is historical now. T-1330 (`867b1ca`) replaced
+the single high-water mark with per-request acknowledgements; use `scripts/codex-inbox.sh fold`
+when the coordinator has acted on an answer, rather than hand-editing markers. T-1331/T-1332/T-1333
+track the active-ledger view and guide/runbook size recommendations. Do not refile those findings.
+
 **Coordinator integration note:** this answer arrives before R55-R62 are settled. Do not advance
 `FOLDED-THROUGH` to R63 merely because the inbox suggests it: `scripts/codex-inbox.sh:43` filters
 answers by `id > marker`, so later answers to those lower IDs would not appear as new. Keep the
@@ -3938,6 +3943,31 @@ What would settle it, in rough order of value:
 Evidence, not inference: cite file and line. Where you are reasoning rather than reading, say so.
 Do not propose a migration plan — additive-only is a hard constraint and the schema is deployed.
 
+ANSWER 2026-09-22:
+
+```text
+Tree read: d819a4c
+Dirty files: 1 at start; committed snapshot used, untracked startup probe excluded
+Status: source coverage research complete; live device/Production verification not performed
+```
+
+**All 23 model types are listed, including notes and images.** The complete field inventory covers
+256 stored declarations (194 attributes, 62 relationship endpoints); every stored declaration has
+a default, all 33 to-many endpoints are optional arrays, and no unique/deny/transient model option
+was found. One relationship pair relies on inference, which Apple permits; do not turn that into a
+missing-inverse bug without generated-schema evidence.
+
+**Not everything the user creates is in those models:** customized note templates remain local
+defaults. That is the principal coverage gap. Work hours and per-list sorts are also local, but
+their desired sharing policy must be distinguished from intentionally device-local layout,
+permissions, credentials, running timers and backups. Both roots have the preference sync bridge.
+
+[Report, exclusions, suggested fixes and new-device checklist](audits/2026-09-22/sync-rollback/coverage.md).
+[Every model/field and inverse](audits/2026-09-22/sync-rollback/model-fields.md).
+[Read-only reproducible inventory](audits/2026-09-22/sync-rollback/model_inventory.rb).
+The report also flags the difference between local preference-save retry and guaranteed durable
+retry. No claim that every row has actually reached the owner's devices; no migration proposed.
+
 ## R65 — What does SwiftData's `rollback()` restore, and on which toolchain?
 
 This repository builds on two Xcode majors that disagree, and the disagreement is load-bearing.
@@ -3968,3 +3998,32 @@ edits there are load-bearing for something else.
 
 Cite sources. If the honest answer is "undocumented, do not depend on it", say that plainly — that
 is a useful answer here and it settles the house rule without needing a second toolchain.
+
+ANSWER 2026-09-22:
+
+```text
+Tree read: d819a4c
+Dirty files: 1 at start; committed snapshot used
+Status: API/release-note research and source review complete; no cross-toolchain runtime probe
+```
+
+**Restoration is documented, not undefined.** Apple says rollback restores changed models to their
+last committed values and discards unsaved inserts/deletes. I found no rollback change in the six
+public major release-note documents for iOS/macOS/Xcode 26 and 27. That is a bounded negative
+research result, not proof of stability or of a bug fixed in 27. Runtime OS matters as well as SDK.
+
+**T-1321 removes explicit edits, but does not prove the row reappears.** Its test's `held == drawn`
+accepts `false == false`, where the live relationship and inspector both omit the link while a
+fresh context still finds it on disk. This is a confirmed test gap, not a reproduced device bug.
+T-1336 needs operation-level recovery: some array clearing is redundant, but survivor recurrence-ID
+rewiring is functional and cannot simply be removed or replaced by nullify.
+
+**A separate reachable defect does not depend on rollback timing:** deferred list/context cascades
+schedule task/habit notification cancellation before the outer commit. A refused commit cannot
+undo those scheduled side effects. Suggested fix: release them only after the owning commit succeeds,
+with refusal/success spies. Keep single-habit deletion's already-correct postcommit ordering.
+
+[Full report: Apple sources, exact risky sites, confirming commands, suggested implementation and
+test order](audits/2026-09-22/sync-rollback/rollback.md). Only documentation/audit artifacts changed.
+During this work `b358aa3` closed T-1329 with another agent's startup measurements and filed T-1341;
+R62 should consume that evidence rather than repeat it. R61's broader commit matrix remains queued.
