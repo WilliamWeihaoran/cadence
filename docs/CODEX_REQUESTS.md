@@ -3905,3 +3905,66 @@ inbox/test-suite lookup, scoped verification and one coordinator integration pas
 the right pattern. The opportunity is to use and extend those, not add another agent framework.
 **Suggested order:** targeted reads now; active-ticket lookup next; runbook/guide slimming with guard
 review after that; optional byte-budget reporting last. No production or tooling changes made here.
+
+## R64 — Does every kind of user data actually reach the other devices?
+
+This is the owner's own question, asked in plain words: *"can you make sure all types of data is
+synced across devices? for example, notes and stuff"*. It has never been answered exhaustively —
+[[T-1309]] found and fixed one cause (signed iOS builds carried no push entitlement, so the phone
+subscribed to nothing), but that was a *delivery* fault. This request is about *coverage*.
+
+Baseline: HEAD at the time you read this; record the sha. CloudKit container is
+`.private("iCloud.com.haoranwei.Cadence")`, Production schema deployed 2026-09-05 and again
+2026-09-22. There is **no `SchemaMigrationPlan`**, so schema changes are additive only.
+
+What would settle it, in rough order of value:
+
+1. **Enumerate every persisted type and field.** `Cadence/Models/` is the source of truth. For each
+   `@Model`, say whether it is in `CadenceSchema.schema`. A type absent from the schema is a type
+   that never syncs and never errors — the silent shape.
+2. **Check the CloudKit constraints hold for every one of them**, not just the ones recently
+   touched: to-many relationships must be optional arrays (`[Type]?`), every attribute must be
+   optional or carry a default, no `@Attribute(.unique)`, every relationship needs an inverse.
+   CloudKit mirroring rejects the whole store's export when a type is invalid, per Apple TN3164 —
+   so one bad type is not one bad type.
+3. **Find the writes that bypass the synced store.** `UserDefaults`, `CadenceDefaults.store`, app
+   group files, anything written outside the `ModelContext`. Two preference types were only just
+   added as record types (`CD_LookPreference`, `CD_SidebarLayoutPreference`); the owner has said
+   iPhone, iPad and Mac should look *different* per platform but feel unified, so some preferences
+   should sync and some deliberately should not. Say which is which, and flag any where the current
+   behaviour contradicts that intent.
+4. **Say what a new device actually receives on first launch**, and what it does not.
+
+Evidence, not inference: cite file and line. Where you are reasoning rather than reading, say so.
+Do not propose a migration plan — additive-only is a hard constraint and the schema is deployed.
+
+## R65 — What does SwiftData's `rollback()` restore, and on which toolchain?
+
+This repository builds on two Xcode majors that disagree, and the disagreement is load-bearing.
+CI runs **Xcode 26**; the owner's Mac runs **27.0**. [[T-1296]] records that they differ on whether
+`rollback()` restores an already-materialised reference before anything refetches. We cannot
+measure 26 here — there is no second toolchain on this machine — so every ticket that touches this
+gets written to *bound* the behaviour rather than pin it, and two tickets are now parked on it.
+
+The parked questions:
+
+- **[[T-1321]]** was closed by removing the dependency: `detachGoalListLink` no longer nulls
+  `goal`/`area`/`project` before `delete(link)`, so a refused detach leaves one pending change and
+  `rollback()` has no *edit* to undo. Correct by construction on both toolchains. Confirm that
+  reasoning is actually sound, or say where it is not.
+- **[[T-1336]]** is the same shape unsolved: `deleteGoal`, `deleteHabit` and the `ListDeleteHelpers`
+  cascades all make pre-commit **edits** before one `commitDelete`. `deleteGoal`'s is the largest
+  instance in the app. If 26 does not restore those edits on rollback, a *refused* goal delete would
+  leave the goal reading 0/0 progress with its milestones and habits severed, under an alert saying
+  "Nothing was removed." T-1321's answer does **not** transfer, because there the nulled object was
+  the one being deleted; here the nulled objects survive.
+
+What would help most, in order: (a) what Apple actually documents or has stated about
+`ModelContext.rollback()` and property restoration, with sources and the OS/toolchain each applies
+to; (b) whether the 26-vs-27 difference is a documented change, a bug fixed in 27, or an
+undocumented implementation detail nobody should depend on either way; (c) given the answer, whether
+the T-1321 shape (never edit before delete) is the right house rule for T-1336 too, or whether the
+edits there are load-bearing for something else.
+
+Cite sources. If the honest answer is "undocumented, do not depend on it", say that plainly — that
+is a useful answer here and it settles the house rule without needing a second toolchain.
