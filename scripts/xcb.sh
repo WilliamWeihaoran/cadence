@@ -6,6 +6,7 @@
 #   ./scripts/xcb.sh <id> raw   <every arg, including the action>
 #   ./scripts/xcb.sh audit                                     # report shared-DerivedData leaks
 #   ./scripts/xcb.sh check-test-log <log>                      # the zero-test guard, on its own
+#   ./scripts/xcb.sh check-suites-started <log> [args...]      # the per-suite guard, on its own
 #   ./scripts/xcb.sh check-warnings <log>                      # the diagnostic counters, on their own
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
 #   ./scripts/xcb.sh check-destination <-destination value>   # resolve a simulator, no build
@@ -134,17 +135,66 @@ TEST_RESULT_PATTERN='(✔|✘) Test ([A-Za-z0-9_]+\(\)|"[^"]*")|Test [Cc]ase .*(
 
 tests_seen() { grep -acE "$TEST_RESULT_PATTERN" "$1" 2>/dev/null | tr -d ' '; }
 
+# --- what this run ASKED FOR, read from its arguments (T-1326) ---------------
+# The arguments, never the log. A run's output is derived text that anything may write into: a
+# failing test's doc comment, a diagnostic suggesting a rerun command, a test that prints an
+# AGENTS.md excerpt. Measured 2026-09-21 on a real `-only-testing:CadenceTests` run -- one flag, no
+# per-suite scoping -- which reported two suites as "requested" and never started: both names came
+# out of `CadenceTestTargetHygieneTests`' own prose, which swift-testing echoes into the log when
+# the test fails, and both carried the trailing backtick of the sentence that quoted them. A real
+# flag never carries one. `raw` is covered by construction here, because `raw` is exactly "every
+# arg the caller passed" and these read the args they are handed.
+only_testing_values() {  # $@ = the run's own arguments; the raw filter values, one per line
+  local -a vals; vals=()
+  local -i i
+  for (( i = 1; i <= $#; i++ )); do
+    case "${argv[i]}" in
+      -only-testing:*) vals+=("${argv[i]#-only-testing:}") ;;
+      -only-testing)   vals+=("${argv[i+1]:-}") ;;
+    esac
+  done
+  (( ${#vals} )) && print -rl -- ${(u)vals}
+  return 0
+}
+
+# The CadenceTests SUITE names a run scopes to. `CadenceTests/Suite/testName` names one test of a
+# suite that still starts, so it resolves to `Suite` -- the same reading `resolve_only_testing`
+# makes of the same string, and the reason the old log-grep produced a second phantom shape: it
+# kept the `/testName` tail and then looked for a suite by that whole name.
+requested_suite_names() {  # $@ = the run's own arguments; one suite name per line
+  local -a suites; suites=()
+  local v rest
+  for v in ${(f)"$(only_testing_values "$@")"}; do
+    [[ "$v" == CadenceTests/* ]] || continue
+    rest="${v#CadenceTests/}"
+    [[ -n "$rest" ]] || continue
+    suites+=("${rest%%/*}")
+  done
+  (( ${#suites} )) && print -rl -- ${(u)suites}
+  return 0
+}
+
 # Everything the caller needs to fix an empty run, printed where the empty run happened.
 empty_run_diagnostic() {
-  local log="$1"
+  local log="$1"; shift
   say ""
   say "!! REFUSING: this test run executed 0 tests, and xcodebuild called that a success."
   say "   ** TEST SUCCEEDED ** over an empty filter is indistinguishable from a passing suite,"
   say "   and from a surviving mutation. It is being reported as a failure here instead (T-552)."
-  # The filter is read back off xcodebuild's own "Command line invocation" line, which quotes its
-  # arguments -- so the character class stops at a quote as well as at a space, or the identifier
-  # is reported with a stray `"` glued to it and reads like part of the suite name.
-  local requested=(${(f)"$(grep -oE -- '-only-testing:[^ "'"'"']*' "$log" 2>/dev/null | sort -u)"})
+  # The run's own arguments when the caller has them (T-1326), and only then the log -- where the
+  # filter is read back off xcodebuild's "Command line invocation" line, which quotes its
+  # arguments, so the character class stops at a quote as well as at a space. `check-test-log`
+  # holds a log and nothing else, which is the one caller that has to take the derived reading.
+  local -a requested
+  requested=()
+  local shown
+  if (( $# )); then
+    for shown in ${(f)"$(only_testing_values "$@")"}; do
+      [[ -n "$shown" ]] && requested+=("-only-testing:$shown")
+    done
+  else
+    requested=(${(f)"$(grep -oE -- '-only-testing:[^ "'"'"']*' "$log" 2>/dev/null | sort -u)"})
+  fi
   # Asked first, because it is the one cause that makes the suite-name advice below actively wrong.
   # The preflight guard catches a screen already locked; this catches one that locked mid-run, which
   # is not hypothetical -- a batch queued behind the test-host lock waits out whole minutes.
@@ -327,6 +377,72 @@ suite_files_source() {
   else
     "$ROOT_DIR/scripts/test-suite-index.sh" --suite-files 2>/dev/null
   fi
+}
+
+# `TypeName<TAB>label` for every suite in the target. CADENCE_SUITE_LABELS is the same testing seam
+# CADENCE_SUITE_FILES is, and for the same reason plus one more: `--labels` shells out to
+# `python3`, which the App-Sandboxed test host cannot run at all (T-719), so a selftest that needed
+# the live index for this would degrade to asserting nothing exactly where it matters.
+suite_labels_source() {
+  if [[ -n "${CADENCE_SUITE_LABELS:-}" ]]; then
+    cat -- "$CADENCE_SUITE_LABELS" 2>/dev/null
+  else
+    "$ROOT_DIR/scripts/test-suite-index.sh" --labels 2>/dev/null
+  fi
+}
+
+# --- the per-requested-suite guard (T-667) -----------------------------------
+# The zero-test guard answers "did this run execute anything at all", which cannot see one
+# REQUESTED suite, among several, that contributed nothing -- the T-667 shape exactly: a 52-suite
+# scoped run reported 593 tests and SUCCEEDED while 4 of the 52 executed zero, caught only by a
+# human diffing `✔ Suite` lines against the requested flags. This automates that diff.
+#
+# Its two inputs are asymmetric on purpose (T-1326). WHAT WAS REQUESTED comes from the run's own
+# ARGUMENTS, which are a fact about the invocation; WHETHER IT STARTED comes from the log, which is
+# the only place that answer exists. The first reading used to come from the log too, and a suite
+# name is then manufactured by any line that merely quotes the flag -- which sets `STATUS=6` on an
+# otherwise green run and reports a failure nobody caused. See `requested_suite_names`.
+#
+# A suite's own Swift type name does not appear in swift-testing's event stream once it or its
+# cases carry a display name (T-667) -- the log speaks only in display-name vocabulary then -- so
+# this asks `test-suite-index.sh --labels`, which reads the source this script cannot, for the
+# string the log will actually use rather than grepping for the type name itself.
+SUITE_GATE_EXIT=6
+suite_started_guard() {  # $1 = log, $2 = test result lines, $3... = the run's own arguments
+  local log="$1" ran="$2"; shift 2
+  # A wholly empty run is the zero-test guard's finding, and naming it twice buries both.
+  (( ran > 0 )) || return 0
+  local -a requested
+  requested=(${(f)"$(requested_suite_names "$@")"})
+  (( ${#requested} )) || return 0
+  # One process for every suite in the target, not one per requested suite: `--labels` walks
+  # `CadenceTests/` once and prints `TypeName<TAB>label` for each, so a 52-suite request costs one
+  # subprocess here instead of 52.
+  typeset -A suite_label_map
+  local type_name suite_label
+  while IFS=$'\t' read -r type_name suite_label; do
+    [[ -z "$type_name" ]] && continue
+    suite_label_map[$type_name]="$suite_label"
+  done < <(suite_labels_source)
+  local suite label marker
+  local -i verdict=0
+  for suite in $requested; do
+    [[ -z "$suite" ]] && continue
+    label="${suite_label_map[$suite]:-$suite}"
+    if [[ "$label" == "$suite" ]]; then
+      marker="Suite $suite started"
+    else
+      marker="Suite \"$label\" started"
+    fi
+    if ! grep -qF -- "$marker" "$log" 2>/dev/null; then
+      say ""
+      say "!! T-667: requested suite '$suite' never started (expected \"$marker\" somewhere in"
+      say "   the log) even though this run's total test result lines is $ran. It contributed 0"
+      say "   -- a typo'd suite name, or one folded into a larger passing run that hid it."
+      verdict=$SUITE_GATE_EXIT
+    fi
+  done
+  return $verdict
 }
 
 # Exit 8 on an unknown suite, 0 otherwise. Prints the partial-scope notice as a side effect.
@@ -872,6 +988,79 @@ selftest_only_testing() {
   run_destination "$ws/devices.txt" "platform=iOS Simulator,id=7B642065-86FC-4987-8674-22066D32878C"
   check "…and a live id= passes" $( (( srn == 0 )) && print 1 || print 0 ) "exit $srn: $sout"
 
+  say ""
+  say " 9. the per-requested-suite guard, and which of its two inputs it trusts (T-667 / T-1326)"
+  # ONE LOG, TWO ARGUMENT SETS, TWO VERDICTS. That is the whole of T-1326: the log below holds the
+  # literal string `-only-testing:CadenceTests/NotASuite` -- as a failing test's own prose, with the
+  # trailing backtick the real measurement had -- and whether that is a finding depends entirely on
+  # whether the RUN asked for that suite. Reading the log for both answers made the sentence into
+  # the request, which is a false RED on a green run and an `XCODEBUILD_EXIT=6` nobody caused.
+  print -rl -- \
+    "Suite AlphaTests started." \
+    "✔ Test somethingReal() passed after 0.001 seconds." \
+    "✘ Test noTestInTheTargetIsDeclaredOutsideEverySuite() recorded an issue: a suite-less test is" \
+    "  invisible to \`-only-testing:CadenceTests/NotASuite\`, so nothing scopes to it." \
+    "** TEST FAILED **" \
+    > "$ws/phantom.log"
+  # A label that is not the type name, for the half of this guard that predates T-1326: once a suite
+  # carries a display name the log speaks only in that vocabulary (T-667).
+  print -rl -- $'AlphaTests\tAlphaTests' \
+               $'AlphaHelperTests\tAlpha helpers' \
+               $'SoloTests\tSoloTests' > "$ws/labels.tsv"
+  : > "$ws/empty.log"
+  local pout prc
+  run_suites() {
+    pout=$(CADENCE_SUITE_LABELS="$ws/labels.tsv" zsh "$here" check-suites-started "$@" 2>&1); prc=$?
+  }
+
+  run_suites "$ws/phantom.log" -scheme Cadence -destination platform=macOS -only-testing:CadenceTests test
+  check "a log that merely QUOTES the flag invents no suite (T-1326)" \
+    $( (( prc == 0 )) && [[ "$pout" != *T-667* && "$pout" != *NotASuite* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  # The same log, and now the run really did ask for it. Without this the fix above would be
+  # indistinguishable from deleting the guard, which is the failure mode this section exists for.
+  run_suites "$ws/phantom.log" -only-testing:CadenceTests/NotASuite test
+  check "…but a suite the ARGUMENTS really requested and the log never started still exits $SUITE_GATE_EXIT" \
+    $( (( prc == SUITE_GATE_EXIT )) && [[ "$pout" == *T-667*NotASuite* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  run_suites "$ws/phantom.log" -only-testing:CadenceTests/AlphaTests test
+  check "a requested suite the log DID start is silent" \
+    $( (( prc == 0 )) && [[ "$pout" != *T-667* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  # T-1326's second phantom shape, and it was live: the log reading kept the `/testName` tail and
+  # then looked for a suite by that whole name, so scoping to ONE test failed its own run.
+  run_suites "$ws/phantom.log" -only-testing:CadenceTests/AlphaTests/somethingReal test
+  check "scoping to ONE test of a suite that started is silent" \
+    $( (( prc == 0 )) && [[ "$pout" != *T-667* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  # `raw` needs no special case: it is every arg the caller passed, so the same reading covers it.
+  run_suites "$ws/phantom.log" test-without-building -only-testing:CadenceTests/NotASuite
+  check "a raw test-without-building run is read the same way" \
+    $( (( prc == SUITE_GATE_EXIT )) && [[ "$pout" == *NotASuite* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  run_suites "$ws/phantom.log" -only-testing CadenceTests/NotASuite test
+  check "and so is the separate-argument spelling of the flag" \
+    $( (( prc == SUITE_GATE_EXIT )) && [[ "$pout" == *NotASuite* ]] && print 1 || print 0 ) "exit $prc: $pout"
+
+  # The label path, both directions, because a guard that looked for the type name would pass every
+  # check above: `AlphaHelperTests` prints as "Alpha helpers" and nothing else.
+  print -rl -- "Suite \"Alpha helpers\" started." \
+               "✔ Test aHelper() passed after 0.001 seconds." > "$ws/labelled.log"
+  run_suites "$ws/labelled.log" -only-testing:CadenceTests/AlphaHelperTests test
+  check "a display-named suite is looked for by its LABEL, not its type name" \
+    $( (( prc == 0 )) && [[ "$pout" != *T-667* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  print -rl -- "Suite AlphaHelperTests started." \
+               "✔ Test aHelper() passed after 0.001 seconds." > "$ws/typename.log"
+  run_suites "$ws/typename.log" -only-testing:CadenceTests/AlphaHelperTests test
+  check "…and the type name alone does NOT satisfy it (the control for the line above)" \
+    $( (( prc == SUITE_GATE_EXIT )) && print 1 || print 0 ) "exit $prc: $pout"
+
+  # The two carve-outs. A run with no per-suite scoping has nothing to diff, and a wholly empty run
+  # is the zero-test guard's finding -- naming it here as well would bury both.
+  run_suites "$ws/phantom.log" -scheme Cadence -destination platform=macOS build
+  check "a run that scopes no suite at all is silent" \
+    $( (( prc == 0 )) && [[ "$pout" != *T-667* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  run_suites "$ws/empty.log" -only-testing:CadenceTests/NotASuite test
+  check "a run with zero test result lines defers to the zero-test guard" \
+    $( (( prc == 0 )) && [[ "$pout" != *T-667* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  check "and the refusals above carry no stray zsh assignment line (T-1074)" \
+    $( print -r -- "$pout" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$pout"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -897,6 +1086,25 @@ if [[ "${1:-}" == "check-test-log" ]]; then
   fi
   say "$CHECK_RAN test result(s) in $CHECK_LOG"
   exit 0
+fi
+
+# The per-suite guard on its own (T-1326), the way `check-test-log` exposes the zero-test guard, and
+# for the reason that one is exposed: a guard reachable only through a 20-minute build is a guard
+# whose own selftest has to fake the build, and the thing this one gets wrong is which of its two
+# inputs it trusts. The arguments go on the command line exactly as they would to a real run, so
+# what the selftest drives is the production reading and not a copy of it.
+if [[ "${1:-}" == "check-suites-started" ]]; then
+  shift
+  CHECK_LOG="${1:-}"
+  if [[ ! -f "$CHECK_LOG" ]]; then
+    say "usage: ./scripts/xcb.sh check-suites-started <logfile> [the run's own args...]"; exit 2
+  fi
+  shift
+  CHECK_RAN=$(tests_seen "$CHECK_LOG")
+  say "== xcb per-suite guard ($CHECK_LOG) =="
+  say "  test result lines: $CHECK_RAN"
+  suite_started_guard "$CHECK_LOG" "$CHECK_RAN" "$@"
+  exit $?
 fi
 
 # The counters on their own, the way `check-test-log` exposes the zero-test guard. It is what
@@ -1200,47 +1408,12 @@ if (( IS_TEST_RUN )); then
   # one failure, 4 with two. Right for the zero-test guard below; wrong to quote as "N tests ran".
   say "  test result lines: $RAN"
   if (( RAN == 0 )); then
-    empty_run_diagnostic "$LOG"
+    empty_run_diagnostic "$LOG" "${run_args[@]}"
     (( STATUS == 0 )) && STATUS=4
   else
-    # --- the per-requested-suite guard (T-667) ---------------------------------
-    # The check above answers "did the run execute anything at all", which cannot see one
-    # REQUESTED suite, among several, that contributed nothing -- the T-667 shape exactly: a
-    # 52-suite scoped run reported 593 tests and SUCCEEDED while 4 of the 52 executed zero, caught
-    # only by a human diffing `✔ Suite` lines against the requested flags. This automates that
-    # diff. Only runs when RAN > 0: a wholly empty run is already the case above.
-    #
-    # A suite's own Swift type name does not appear in swift-testing's event stream once it or its
-    # cases carry a display name (T-667) -- the log speaks only in display-name vocabulary then --
-    # so this asks `test-suite-index.sh --label`, which reads the same source `xcb.sh` cannot, for
-    # the string the log will actually use, rather than grepping for the type name itself.
-    requested=(${(f)"$(grep -oE -- '-only-testing:CadenceTests/[^ "'"'"']*' "$LOG" 2>/dev/null | sed 's#^-only-testing:CadenceTests/##' | sort -u)"})
-    if (( ${#requested} )); then
-      # One process for every suite in the target, not one per requested suite: `--labels` walks
-      # `CadenceTests/` once and prints `TypeName<TAB>label` for each, so a 52-suite request costs
-      # one subprocess here instead of 52.
-      typeset -A suite_label_map
-      while IFS=$'\t' read -r type_name suite_label; do
-        [[ -z "$type_name" ]] && continue
-        suite_label_map[$type_name]="$suite_label"
-      done < <("$ROOT_DIR/scripts/test-suite-index.sh" --labels 2>/dev/null)
-      for suite in $requested; do
-        [[ -z "$suite" ]] && continue
-        label="${suite_label_map[$suite]:-$suite}"
-        if [[ "$label" == "$suite" ]]; then
-          marker="Suite $suite started"
-        else
-          marker="Suite \"$label\" started"
-        fi
-        if ! grep -qF -- "$marker" "$LOG" 2>/dev/null; then
-          say ""
-          say "!! T-667: requested suite '$suite' never started (expected \"$marker\" somewhere in"
-          say "   the log) even though this run's total test result lines is $RAN. It contributed 0"
-          say "   -- a typo'd suite name, or one folded into a larger passing run that hid it."
-          (( STATUS == 0 )) && STATUS=6
-        fi
-      done
-    fi
+    # The T-667 per-suite diff, whose inputs are the run's own ARGUMENTS and this run's log --
+    # see `suite_started_guard`. Only reached when RAN > 0: a wholly empty run is the case above.
+    suite_started_guard "$LOG" "$RAN" "${run_args[@]}" || { (( STATUS == 0 )) && STATUS=$SUITE_GATE_EXIT }
   fi
 fi
 if [[ "$(shared_cadence_entries)" != "$before_entries" ]]; then

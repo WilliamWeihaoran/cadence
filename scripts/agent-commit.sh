@@ -281,7 +281,7 @@ usage() {
     say "              --retires-ids <ids>"
     say "              --unfiled-ids <ids> --buried-closures <ids> --duplicate-ids <ids>"
     say "              --unfiled-links <ids> --not-an-id <T-n>"
-    say "              --duplicated-entries <ids>"
+    say "              --duplicated-entries <ids> --unclaimed-entries <ids>"
     say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
     say "              the -F file's basename must contain <id> -- the scratchpad is shared (T-1222)"
@@ -590,6 +590,49 @@ message_ids() {  # $1 = message
     print -r -- "$1" | grep -oE '\bT-[0-9]+\b' | sort -u
 }
 is_any_ledger_path() { [[ "${1:t}" == "TODO.md" || "${1:t}" == "TODO_DONE.md" ]] }
+
+# T-1304, and it is the unshipped half of [[T-1222]]. The name rule that closed that ticket stops
+# the COLLISION -- two agents can no longer write the same `-F` file -- and says nothing about the
+# failure one step on: a correctly-named file holding the wrong work. `938cdb7` committed
+# ledgerguard's T-1206 + T-1207 + T-1209 diff, ledger hunk and all, under reorderfeel's
+# `T-1174 + T-1175` subject line, and every guard in this file passed it: the ids in the message
+# were filed, the ids in the hunk were filed, no closure was lost and the line counts were
+# acknowledged. Nothing compared the two SETS.
+#
+# So: the ids whose formal ledger entries this commit's hunk changes, entry by entry. A line
+# belongs to the entry whose `- [T-n]` heading it follows, and the entry runs until the next line
+# that starts in column one and is not blank -- the same shape `ledger_buried_closure_ids` reads.
+#
+# `- [T-n]` entries only. A commit that edits a section heading, the preamble, or prose that is in
+# no entry has nothing here to disagree with its message about.
+ledger_entry_lines() {  # $1 = file; "<id>\t<line>" for every line inside a formal entry
+    awk '
+        {
+            if ($0 ~ /^- \[T-[0-9]+\]/) { id = $0; sub(/^- \[/, "", id); sub(/\].*$/, "", id) }
+            else if ($0 !~ /^[ \t]/ && $0 != "") { id = "" }
+            # BLANK lines are attributed to nothing. A blank inside an entry is ordinary
+            # paragraph spacing, and a blank at the END of one -- the line a commit adds when it
+            # appends a new SECTION after the last entry in the file -- would otherwise read as a
+            # rewrite of an entry that commit never touched. Measured on the mode 4i fixture.
+            # (No apostrophes in here: this whole program is one single-quoted zsh string, and
+            # the first one closes it -- which is a parse error, not a subtle bug, but only once
+            # somebody runs the file.)
+            if (id != "" && $0 != "") print id "\t" $0
+        }
+    ' "$1" 2>/dev/null | sort -u
+}
+
+# No `--` before the filename above, and it is not a style choice: BSD awk reads `--` as a FILE
+# NAME and exits 2 with "can't open file --", which with stderr discarded is an EMPTY reading
+# rather than an error -- i.e. a guard that finds nothing and says so confidently. Measured while
+# writing the replay script this rule's number came from.
+ledger_changed_entry_ids() {  # $1 = HEAD blob (/dev/null when the path is new), $2 = staged content, $3 = scratch prefix
+    ledger_entry_lines "$1" > "$3.old"
+    ledger_entry_lines "$2" > "$3.new"
+    # The `;` before `}` is required: without it zsh reads the group's last command and the
+    # pipeline after it as separate statements, and the result is empty (measured, same session).
+    { comm -23 "$3.old" "$3.new"; comm -13 "$3.old" "$3.new"; } | cut -f1 | sort -u
+}
 
 # T-1246, and it is the one refusal in this file that fires on the commonest legitimate commit
 # there is: closing the newest ticket.
@@ -1016,6 +1059,7 @@ cmd_commit() {
     local declared_retired_ids=""
     local declared_unfiled_ids="" declared_buried_ids="" declared_duplicate_ids=""
     local declared_duplicated_entries="" declared_unfiled_links=""
+    local declared_unclaimed_entries=""
     local -a paths accepted stale_declared not_sweeps not_ids
     paths=(); accepted=(); stale_declared=(); not_sweeps=(); not_ids=()
 
@@ -1062,6 +1106,8 @@ cmd_commit() {
                 declared_duplicate_ids="$2"; shift 2 ;;
             --duplicated-entries) [[ $# -ge 2 ]] || refuse BAD-OPTION "--duplicated-entries needs a comma-separated id list"
                 declared_duplicated_entries="$2"; shift 2 ;;
+            --unclaimed-entries) [[ $# -ge 2 ]] || refuse BAD-OPTION "--unclaimed-entries needs a comma-separated id list"
+                declared_unclaimed_entries="$2"; shift 2 ;;
             --commits-stale) [[ $# -ge 2 ]] || refuse BAD-OPTION "--commits-stale needs a path"
                 stale_declared+=("$2"); shift 2 ;;
             --not-a-sweep) [[ $# -ge 2 ]] || refuse BAD-OPTION "--not-a-sweep needs a @Test name"
@@ -1907,6 +1953,13 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         fi
     fi
 
+    # Captured BEFORE the escape trailers below are spliced in (T-1304). A trailer names the ids an
+    # agent waved PAST the allocator guard -- a historical reference it is only quoting, which is
+    # the opposite of "what this commit is about" -- so letting one into the message-side set both
+    # weakens 3a5b's reading and false-refuses the very commit that writes the record T-1207's
+    # escape demands. Measured: modes 4h and 4i of the selftest, which is what a fixture is for.
+    message_ids "$message" > "$scratch/message.preescape.ids"
+
     # The two deliberate overrides above go into the COMMIT MESSAGE, for T-991's reason: the
     # $TMPDIR ledger is per-checkout, per-boot and cleared, and the question -- *who waved an id
     # past the allocator guard, and which ids* -- is asked days later and from a clone.
@@ -1960,6 +2013,79 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   Renumber YOUR entry to an id that is free in $duplicate_in as this commit leaves it, and fix the
   references in your own hunk. If this really is one ticket written twice on purpose, say so:
   --duplicate-ids $duplicate_sorted"
+        fi
+    fi
+
+    # 3a5b. T-1304, and it is [[T-1222]]'s unshipped half: a commit whose MESSAGE names one set of
+    #       ids while its LEDGER HUNK rewrites a different set. `938cdb7` is the measured instance --
+    #       ledgerguard's T-1206 + T-1207 + T-1209 diff under reorderfeel's T-1174 + T-1175 subject,
+    #       because both agents wrote `.../scratchpad/msg.txt` and `-F` read whichever landed last.
+    #       MESSAGE-FILE-SHARED now stops two agents sharing one file name; nothing stopped a
+    #       correctly-named file holding the wrong work, and every guard above passed that commit.
+    #
+    #       A REFUSAL, AND THE REPLAY IS WHY -- `scripts/replay-message-vs-ledger.sh`, left in the
+    #       tree so the next agent can re-derive it rather than trust this line. At `22a4eb1`, over
+    #       the 511 commits reachable from HEAD that touch a ledger, this reading would have refused
+    #       FOUR: `cb3a9d8` (2026-09-03), `0dd7258`, `2c7b0f4` and `95a3ecb` (both 2026-08-18). None
+    #       in the last 150, one in the last 300. `938cdb7` is refused; `0fb5504`, the same diff
+    #       under its own message, is not. That is 1 in 128 candidate commits against the 1 in 60
+    #       `LEDGER-ID-UNFILED` shipped a refusal on, and unlike T-1300's 191 in 274 -- which is why
+    #       THAT reading is a note and this one is a gate. 0.8% against 70% is not a close call, and
+    #       it is the whole justification: a rule that refused most honest historical commits would
+    #       be worked around or switched off, and this one refuses four in eighteen months.
+    #
+    #       THE WHOLE MESSAGE, NOT THE SUBJECT, and the difference is the entire ticket. The subject
+    #       reading T-1304 sketched refuses 13 of the same 511, and all nine extra are ordinary
+    #       residue filings -- a commit that lands T-1181's code and files [[T-1301]] beside it. What
+    #       makes the whole-message reading quiet is this repository's own practice of naming, in the
+    #       message body, every entry the commit writes; `2a6bf7b` and `e337f0d` both do exactly
+    #       that, and both pass. `--entries rewritten` (only entries that already existed) is worse
+    #       again at 10, because closing one ticket while tidying a neighbour's entry is routine.
+    #       (An earlier draft of this comment and of the replay's header both quoted that last
+    #       figure as 18. Re-measured at `22a4eb1` it is 10, twice, and no combination of the
+    #       script's two switches yields 18 -- which is the argument for re-running it, not citing
+    #       it.)
+    #
+    #       Which is also why the repair is cheap and always available: name the ids in the message.
+    #       There is no conflict with `LEDGER-ID-UNFILED` -- an id whose entry this commit writes is
+    #       filed by construction -- so the fix can never be refused by the guard next door.
+    local -a unclaimed_entry_ids
+    unclaimed_entry_ids=(); local unclaimed_in="" changed_ids_file="$scratch/changed.entry.ids"
+    : > "$changed_ids_file"
+    for name in "${names[@]}"; do
+        is_any_ledger_path "$name" || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue
+        local changed_head="$scratch/$(ledger_key "$name").changedhead"
+        git cat-file -p "$headsha:$name" > "$changed_head" 2>/dev/null || : > "$changed_head"
+        ledger_changed_entry_ids "$changed_head" "${staged_content[$name]}" \
+            "$scratch/$(ledger_key "$name").changed" >> "$changed_ids_file"
+        unclaimed_in="$name"
+    done
+    if [[ -s "$changed_ids_file" ]]; then
+        sort -u "$changed_ids_file" > "$scratch/changed.entry.sorted"
+        cp -- "$scratch/message.preescape.ids" "$scratch/message.all.ids"
+        # Both sets non-empty and DISJOINT. A message naming no id at all is not this guard's
+        # question -- a `Tidy:` or a build-number bump legitimately names none, and 471 of 749
+        # code-landing commits in this repository name none in their subject.
+        if [[ -s "$scratch/message.all.ids" ]] \
+           && [[ -z "$(comm -12 "$scratch/message.all.ids" "$scratch/changed.entry.sorted")" ]]; then
+            unclaimed_entry_ids=(${(f)"$(cat "$scratch/changed.entry.sorted")"})
+        fi
+    fi
+    if (( ${#unclaimed_entry_ids} )); then
+        local declared_unclaimed_sorted="${(pj:,:)${(@o)${(@s:,:)declared_unclaimed_entries}}}"
+        local unclaimed_sorted="${(pj:,:)${(@o)unclaimed_entry_ids}}"
+        if [[ "$declared_unclaimed_sorted" != "$unclaimed_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-HUNK-UNCLAIMED "this commit's message names ticket ids, and NONE of them is an id whose ledger entry it rewrites: ${(j:, :)unclaimed_entry_ids}
+  The message and the hunk are about different tickets, which is what a \`-F\` file holding another
+  agent's work looks like from the outside -- \`938cdb7\` committed one agent's T-1206/T-1207/T-1209
+  ledger diff under another's T-1174/T-1175 subject, and every other guard here passed it (T-1304).
+  Read \`git log -1 --format=%s\` back, or \`git diff --cached\` for $unclaimed_in, before you retry.
+  If the message IS yours, name the entries it writes: the ids above belong in it -- one clause is
+  enough, and an id whose entry this commit files is filed by construction, so LEDGER-ID-UNFILED
+  cannot then refuse you. If you are deliberately editing entries this message says nothing about,
+  say so: --unclaimed-entries $unclaimed_sorted"
         fi
     fi
 
@@ -3270,9 +3396,14 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ $rc == 3 && "$out" == *LEDGER-UNFILED-UNTRACED* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "and both untraced ids are named" \
         $( [[ "$out" == *"T-970"* && "$out" == *"T-971"* ]] && print 1 || print 0 ) "$out"
+    # The trace goes under a heading of its own, not appended to the tail of the last entry: a body
+    # line following `- [T-941]` with nothing between them IS part of that entry, to this script's
+    # own entry reading and to anyone scrolling, so appending it there is a rewrite of T-941 that
+    # this message says nothing about -- LEDGER-HUNK-UNCLAIMED's finding (T-1304), and it was this
+    # fixture that first showed it. A retired-id note belongs in no ticket's entry anyway.
     ( cd "$ws"
       git show HEAD:TODO.md > half.md
-      print -rl -- "  T-970 was drawn by an agent that was killed, and is retired here." >> half.md ) >/dev/null 2>&1
+      print -rl -- "" "## Retired ids" "" "  T-970 was drawn by an agent that was killed, and is retired here." >> half.md ) >/dev/null 2>&1
     out=$( cd "$ws" && zsh "$here" i2 -m "$MR" --unfiled-ids "T-970,T-971" mine.txt TODO.md=half.md 2>&1 ); rc=$?
     check "tracing one of the two is not tracing both" \
         $( [[ $rc == 3 && "$out" == *LEDGER-UNFILED-UNTRACED* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3280,7 +3411,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ "$out" == *"T-971"* && "$out" != *"T-970"* ]] && print 1 || print 0 ) "$out"
     ( cd "$ws"
       git show HEAD:TODO.md > both.md
-      print -rl -- "  T-970 and T-971 were drawn by an agent that was killed, and are retired here." >> both.md ) >/dev/null 2>&1
+      print -rl -- "" "## Retired ids" "" "  T-970 and T-971 were drawn by an agent that was killed, and are retired here." >> both.md ) >/dev/null 2>&1
     out=$( cd "$ws" && zsh "$here" i3 -m "$MR" --unfiled-ids "T-970,T-971" mine.txt TODO.md=both.md 2>&1 ); rc=$?
     check "naming both in a ledger in the SAME commit is accepted" $(( rc == 0 )) "exit $rc: $out"
     check "and the escape is recorded in the commit message" \
@@ -3402,7 +3533,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "the lag fixture ledger commits" $(( rc == 0 )) "exit $rc: $out"
     local LAGOPEN=$'T-3001: land the code for it\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
     local LAGSHUT=$'T-3002: land more code under the closed one\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
-    local LAGDOCS=$'T-3001: a docs-only commit that names it\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    # It names T-3003 as well as T-3001 because that is the entry it FILES, and a message that
+    # named neither of the entries in its own hunk is LEDGER-HUNK-UNCLAIMED's finding (T-1304).
+    local LAGDOCS=$'T-3001: a docs-only commit that names it, filing T-3003 beside it\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
     ( cd "$ws" && print -r -- "code landing under an open ticket" >> mine.txt )
     out=$( cd "$ws" && zsh "$here" l1 -m "$LAGOPEN" mine.txt 2>&1 ); rc=$?
     check "a commit that lands code under an open id says so" \
@@ -3422,6 +3555,97 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" l3 -m "$LAGDOCS" docs/TODO.md=docs-only.md 2>&1 ); rc=$?
     check "a docs-only commit naming an open id says nothing" \
         $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LAGGED* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4m (LEDGER-HUNK-UNCLAIMED) -- T-1304: a message about one set of tickets over a"
+    say "         ledger hunk that rewrites a different set"
+    # `938cdb7`, shrunk to two entries: the refusal fires on the DISJOINTNESS of the two sets, so
+    # the fixture has to hold both a commit whose message and hunk disagree and one whose do not --
+    # and the controls below matter more than the refusal, because the replay
+    # (`scripts/replay-message-vs-ledger.sh`, 4 refusals in 511 ledger commits) is what earned this
+    # the right to be a gate rather than a note, and every one of those four is a shape it must not
+    # refuse twice.
+    # APPENDED to the lag fixture's ledger rather than replacing it: dropping T-3001..T-3003 is
+    # LEDGER-IDS-LOST, which is the guard one step up doing its job on this very fixture.
+    ( cd "$ws" && git show HEAD:docs/TODO.md > docs/TODO.md
+      print -rl -- "" \
+          "- [T-4001] **A finding that is open, with an entry of its own.**" \
+          "  the body of T-4001" "" \
+          "- [T-4002] **A second open finding.**" \
+          "  the body of T-4002" "" \
+          "- [T-4003] **A third open finding.**" \
+          "  the body of T-4003" >> docs/TODO.md ) >/dev/null 2>&1
+    local UCSETUP=$'T-4001 + T-4002 + T-4003: three fixture entries for the unclaimed-hunk reading\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    out=$( cd "$ws" && zsh "$here" u0 -m "$UCSETUP" docs/TODO.md 2>&1 ); rc=$?
+    check "the unclaimed-hunk fixture ledger commits" $(( rc == 0 )) "exit $rc: $out"
+    # THE DEFECT. The hunk closes T-4001; the message is about T-4002, which it does not touch.
+    ( cd "$ws" && git show HEAD:docs/TODO.md \
+        | sed 's/^- \[T-4001\] \*\*A finding that is open, with an entry of its own.\*\*/- [T-4001] **CLOSED 2026-09-22 (agent `u`) -- it shipped.**/' > uc1.md ) >/dev/null 2>&1
+    local UCWRONG=$'T-4002: the subject of a sibling agent, over this hunk\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    # The sha BEFORE the refused run, because "nothing was committed" is literally a claim about
+    # HEAD and this mode cannot make it with a content token. The first draft asked whether HEAD's
+    # ledger still lacked `CLOSED`, the way modes 4h/4j/4g ask for `T-110`/`T-120`/`T-940` -- but
+    # this fixture is APPENDED to mode 4l's, whose `- [T-3002] **CLOSED 2026-09-19 ...**` line is
+    # already in HEAD, so that predicate was false no matter what the guard did. It read as a
+    # refusal that committed anyway, which is the most alarming thing a selftest can say, and it
+    # was the assertion that was broken rather than the guard (measured: HEAD did not move).
+    local ucprehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" u1 -m "$UCWRONG" --removes 1 docs/TODO.md=uc1.md 2>&1 ); rc=$?
+    check "a message naming NO id whose entry the hunk rewrites is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-HUNK-UNCLAIMED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the refusal names the entry the hunk actually rewrote" \
+        $( [[ "$out" == *T-4001* ]] && print 1 || print 0 ) "$out"
+    # Both halves: HEAD is where it was, AND the entry the hunk would have closed is still open --
+    # the second is what would catch a commit that landed and was then reset by something else.
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$ucprehead" \
+              && $( cd "$ws" && git show HEAD:docs/TODO.md | grep -c '^- \[T-4001\] \*\*CLOSED' ) == 0 ]] \
+           && print 1 || print 0 ) "HEAD $ucprehead -> $( cd "$ws" && git rev-parse HEAD )"
+    # The escape has to name the set it is waving past, exactly, like every other flag here.
+    out=$( cd "$ws" && zsh "$here" u2 -m "$UCWRONG" --unclaimed-entries T-4002 --removes 1 docs/TODO.md=uc1.md 2>&1 ); rc=$?
+    check "declaring the WRONG id is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-HUNK-UNCLAIMED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" u3 -m "$UCWRONG" --unclaimed-entries T-4001 --removes 1 docs/TODO.md=uc1.md 2>&1 ); rc=$?
+    check "declaring it deliberately lands" $(( rc == 0 )) "exit $rc: $out"
+    # CONTROL ONE, and it is the one that stops this being "a ledger commit is refused": the same
+    # hunk shape under a message that names the entry it rewrites.
+    ( cd "$ws" && git show HEAD:docs/TODO.md \
+        | sed 's/^- \[T-4002\] \*\*A second open finding.\*\*/- [T-4002] **CLOSED 2026-09-22 (agent `u`) -- it shipped too.**/' > uc2.md ) >/dev/null 2>&1
+    local UCRIGHT=$'T-4002: the message and the hunk agree\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    out=$( cd "$ws" && zsh "$here" u4 -m "$UCRIGHT" --removes 1 docs/TODO.md=uc2.md 2>&1 ); rc=$?
+    check "a message that names one of them commits, with no flag" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-HUNK-UNCLAIMED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # CONTROL TWO: the ordinary batch shape -- close one ticket and file the residue beside it. This
+    # is the population the SUBJECT-only reading refuses (13 in 510 against this reading is 4), and
+    # it passes here because the message body names the id it files, which is what this repository
+    # already does.
+    ( cd "$ws" && git show HEAD:docs/TODO.md \
+        | sed 's/^- \[T-4003\] \*\*A third open finding.\*\*/- [T-4003] **CLOSED 2026-09-22 (agent `u`) -- done.**/' > uc3.md
+      print -rl -- "" "- [T-4004] **The residue this commit files beside its own closure.**" >> uc3.md ) >/dev/null 2>&1
+    local UCRESIDUE=$'T-4003: the closure, and T-4004 filed beside it\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    out=$( cd "$ws" && zsh "$here" u5 -m "$UCRESIDUE" --removes 1 docs/TODO.md=uc3.md 2>&1 ); rc=$?
+    check "closing one ticket while filing another it NAMES commits" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-HUNK-UNCLAIMED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # CONTROL THREE: a message that names no id at all is not this reading's question -- a `Tidy:`
+    # or a build-number bump legitimately names none.
+    ( cd "$ws" && git show HEAD:docs/TODO.md > uc4.md
+      print -rl -- "  one more line of body for T-4001" >> uc4.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" u6 -m "$M" docs/TODO.md=uc4.md 2>&1 ); rc=$?
+    check "a message naming no ticket id at all is silent" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-HUNK-UNCLAIMED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # CONTROL FOUR: prose that is in no entry is no entry rewritten. Both awk rules at once -- the
+    # `## ` heading closes the entry above it, and the blank line before it is attributed to nobody.
+    ( cd "$ws" && git show HEAD:docs/TODO.md > uc5.md
+      print -rl -- "" "## Retired ids" "" "  T-4009 was drawn and never used." >> uc5.md ) >/dev/null 2>&1
+    local UCPROSE=$'T-4001: appending a section that belongs to no entry\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    out=$( cd "$ws" && zsh "$here" u7 -m "$UCPROSE" docs/TODO.md=uc5.md 2>&1 ); rc=$?
+    check "appending a section outside every entry rewrites none of them" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-HUNK-UNCLAIMED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # CONTROL FIVE: no ledger in the commit, so there is nothing to compare the message against.
+    ( cd "$ws" && print -r -- "code under a ticket, no ledger staged" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" u8 -m "$UCWRONG" mine.txt 2>&1 ); rc=$?
+    check "a commit that stages no ledger is not asked the question" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-HUNK-UNCLAIMED* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"

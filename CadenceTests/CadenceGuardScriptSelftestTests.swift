@@ -201,6 +201,17 @@ struct CadenceGuardScriptSelftestTests {
         // is not decoration -- with one id on the floor, collecting only the LAST unarchived id
         // passed all 173 checks that existed before it.
         "LEDGER-ID-UNARCHIVED",
+        // T-1304, and it is [[T-1222]]'s unshipped half. That ticket's name rule stops two agents
+        // writing the same `-F` file; nothing stopped a correctly-named file holding the wrong
+        // work, which is what `938cdb7` committed -- one agent's T-1206/T-1207/T-1209 ledger diff
+        // under another's T-1174/T-1175 subject, past every guard above. The reading is that the
+        // message ids and the ids whose ledger entries the hunk rewrites are both non-empty and
+        // DISJOINT. It is a GATE rather than a note because the replay says it can afford to be:
+        // `scripts/replay-message-vs-ledger.sh`, left in the tree to be re-run rather than quoted,
+        // refuses 4 of the 511 ledger-touching commits reachable from HEAD -- none in the last 150
+        // -- against T-1300's 191 in 274, which is why that reading warns and this one refuses.
+        // Naming it here means deleting mode 4m goes red rather than quietly retiring the gate.
+        "LEDGER-HUNK-UNCLAIMED",
         "REMOVES-HEAD-LINES",
         "NO-PATHS",
         "UNKNOWN-PATH",
