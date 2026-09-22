@@ -22,6 +22,17 @@ was a read that could have happened here instead, once, before a brief was writt
   usually that the quote may be stale.
 - Answer under the request, prefixed `ANSWER <date>:`. Leave the request text intact.
 
+## Next-work map (2026-09-22)
+
+User asked to preserve the rough-scan recommendations with actionable detail. Research queue, not
+new production-bug claims. Priority: **R61 recent-fix verification**, **R58 MCP trust boundary**,
+**R57 text scaling**, **R59 widget reliability**, **R60 SDK compatibility**, **R62 startup cost**.
+R57-R60 already contain detailed requests; do not duplicate them. R61/R62 below supply the missing
+briefs. **R63 is the completed rough token-efficiency scan**, with follow-up recommendations, not
+implemented tooling. Find sections with `rg -n '^## R(57|58|59|60|61|62|63) ' docs/CODEX_REQUESTS.md`.
+R56 is separate naming work; its statement that the icon geometry is settled may supersede parts
+of R55. Confirm that scope before generating more icons. Do not silently close either request.
+
 ---
 
 ## R1 — Diagnose T-739: literal arithmetic disagrees with variable arithmetic in `CadenceTests`
@@ -2540,6 +2551,7 @@ user-selected color corpus, build, tests, or visual Dynamic Type run. Ratios are
 pair reachability is source-derived where cited and cannot account for arbitrary SwiftUI compositing.
 
 <!-- FOLDED-THROUGH: R54 -->
+<!-- FOLDED-ALSO: R63 -->
 
 ## R31 — Standing: has any of R25–R30 gone stale yet?
 
@@ -3777,3 +3789,119 @@ Two are already known to differ and are the calibration for your answer: `ModelC
 treatment of an already-materialised reference (T-1279, T-1296), and SwiftData's synchronous inverse
 back-population, which an agent measured while writing `create_link` and which changed the order in
 which an `order` value had to be allocated.
+
+## R61 — Verify the recent fixes against their claims and realistic failure cases
+
+Requested by the owner on 2026-09-22; concrete bounded follow-up to standing R11/R50, not a new
+whole-repo audit. **Status: queued, not audited.** Baseline `153159a`, clean tree. Refresh HEAD and
+check TODO/TODO_DONE before starting; later commits may already address the cases below.
+
+- Read `af329dc` and `f2acbff`: context deletion vs goal deletion, preservation of externally filed
+  tasks, foreign-context child goals, recursive goal deletion and confirmation counts. Follow both
+  platform callers and refusal paths. Start at `CadenceListDeleteHelpers`, `TrackingDeleteHelpers`,
+  `CadenceListDeletionSummary`, `ListDeleteHelpersTests`, and `TrackingDeleteHelpersTests`.
+- Read `76b90c6`: after the database deletion commits, do independent cleanup failures still attempt
+  the other cleanup operations and show a partial outcome accurately? Trace reset-service results
+  through both settings surfaces, including macOS sign-out. Distinguish precommit rollback from
+  postcommit warnings; do not reopen the already-fixed generic-failure claim without new evidence.
+- Read `475045e` and `69544c8` together: startup recovery must explain the actual failure, and
+  relaxed framework assertions must still catch broken app wiring. Read `PersistenceController`,
+  `CadenceStartupRecoveryReasonTests`, `TagSupport`, and `TagSupportTests`.
+- Read `ee2e4c6`, `b687056`, `e7d83bb`: platform-specific push entitlements, both defaults domains,
+  and actual AI retention request fields vs user-facing promises. Source/project configuration
+  is not proof of signed-archive contents or provider behavior. Separate artifact-only checks.
+
+Deliver one compact matrix: commit claim / source verdict / existing test witness / unpinned case /
+smallest suggested fix or test. Rank reachable data-loss and misleading-success cases first. Include
+file:line, a 30-second confirming command, MEASURED-SOURCE vs REASONED, and specific looks-solid
+counterevidence. Start with `git show --stat <sha>`, then only the relevant diff and callers. No
+builds, tests, app launches, or production edits for this pass. Test suggestions are not test results.
+
+## R62 — Bound the remaining startup maintenance cost (extends T-1329)
+
+Requested by the owner on 2026-09-22. **Status: queued; read-only design/research, not a benchmark.**
+R54's repeated tag-table fetch has a landed fix in `475045e`/T-1314. Do not report it as still live.
+Start at `PersistenceController.performStartupMaintenance`, then its migration, tag and integrity
+repair callees and their existing tests. Re-read T-1329 for measurements already available.
+
+1. Inventory each actual startup pass: entry condition, execution context, tables fetched, nested
+   traversal, writes/saves, repeat-on-every-launch vs once-only behavior, and error/recovery path.
+2. Separate store opening, backup work, migration, repair, and view composition. Name precisely
+   what can block first usable UI. Distinguish full local store from a newly syncing empty replica;
+   do not assume each CloudKit import reruns launch maintenance.
+3. Identify duplicated fetch/index work and the invariants preventing naive deferral: migration
+   ordering, idempotence, partial prior runs, foreign writes, and preservation of the original store.
+   Recommend a skip/cache/worker only when its invalidation and ownership are explicit.
+4. Supply a small instrumentation/fixture plan for 264, 1k, 5k and 10k total records, separately
+   varying tags, relationships, note bytes and images. Reuse T-1314's measurement harness where
+   appropriate. Report proposed timings as unmeasured, never predicted launch thresholds.
+
+Deliver pass table, ranked candidates, existing correct patterns, patch order, exact source/test
+locations, and a minimal future measurement plan. No builds, app launches, or benchmarks in this
+read-only request. Coordinate overlap with R59 instead of scanning the same widget helpers twice.
+
+## R63 — Rough scan: where can future repo work use fewer tokens?
+
+ANSWER 2026-09-22:
+
+**Coordinator integration note:** this answer arrives before R55-R62 are settled. Do not advance
+`FOLDED-THROUGH` to R63 merely because the inbox suggests it: `scripts/codex-inbox.sh:43` filters
+answers by `id > marker`, so later answers to those lower IDs would not appear as new. Keep the
+marker unchanged and record R63's disposition here until the gaps are explicitly resolved; a future
+per-request acknowledgement would avoid this ordering assumption. No marker changed in this pass.
+
+```text
+Tree read: 153159a
+Dirty files: 0 (before this documentation-only edit)
+Scope: request queue, ledger structure, routing/scoped guides, runbook, lookup scripts,
+       context-budget tests, and source file sizes. No builds, tests, or app launches.
+Evidence: sizes/counts below are MEASURED; savings and priorities are REASONED.
+These are bytes, not tokenizer measurements, billing, or measured session-token savings.
+```
+
+**Best opportunities, in order:**
+
+| Priority | Measured spot | Suggested change and completion check |
+|---|---|---|
+| 1 | `docs/TODO.md`: 1,422,784 bytes / 11,779 lines. Before `## Done`, 259 formal ticket blocks; 223 have `CLOSED` on their first line. | Provide a generated compact active-ticket view and exact-ID block lookup over both ledgers. Include status, one-line next action, source location, and reason an item is parked. Derive from authoritative text; do not create a second manually maintained ledger. Test reopened, partial, closed-in-open, duplicate IDs and multiline entries. These lexical counts are not a verified count of unfinished work. |
+| 2 | `docs/SUBAGENT_RUNBOOK.md`: 60,327 bytes / 774 lines; even the opening 226 lines are 20,723 bytes. Its opening says agents read it once. | Separate mandatory operating rules from incident narratives and task-specific procedures. Preserve lock, scratch, cleanup, commit and nonzero-test safety rules. Supply a short checklist plus exact section links for mutation/UI/commit work. Verify existing literal/link guards before moving prose. This is a candidate reorganization, not permission to skip today's required reading. |
+| 3 | `AGENTS.md` + `CLAUDE.md` + `Cadence/Services/AGENTS.md` alone total 35,940 bytes. Services is 17,958 bytes at only 138 lines. | Extend the existing compact-guide practice from T-434/T-1208: reduce duplicated history, keep actionable contracts, move rationale to linked references. `CadenceTests/AgentContextBudgetTests.swift:11,41,108` caps lines, not content volume. Add a reviewed byte/word budget or report alongside the line cap; do not rewrap dense prose to pass. No exact token-budget claim without the chosen tokenizer. |
+| 4 | `docs/CODEX_REQUESTS.md` before this addition: 266,032 bytes / 3,779 lines. `scripts/codex-inbox.sh` already reports arrivals and unanswered IDs. | Use the existing inbox first, then extract only the chosen request block. Add an optional exact-ID/show mode there if repeated manual extraction warrants it, rather than a competing queue system. It recognizes literal `ANSWER` lines, not completion quality: answers can be partial and old requests superseded. Preserve the folded marker and existing IDs; do not mass-close historical entries. |
+| 5 | `CadenceSaveCommitDisciplineTests.swift` is 202,650 bytes; MCP write/read services are 94,663 / 74,830 bytes. | Find declaration/test names before reading source windows. Reuse `scripts/test-suite-index.sh` (header lines 4-10) for actual suite identifiers and test labels. Prefer one bounded result packet per question: relevant code, caller, failure witness, counterexample. Splitting production files solely for token savings is not justified by file size. |
+| 6 | R51-R54 answers predate landed fixes; current commits address several original findings. Existing standing R11/R12/R45/R50 already ask for freshness checks. | Put baseline SHA, affected paths/symbols, exact evidence command, test witness, and unresolved question in each handoff. Check `git diff <baseline>..HEAD -- <paths>` before repeating an audit; also check changed callers/shared dependencies. An unchanged file alone is not proof a finding is still valid. Assign one owner per overlapping area and share the evidence rather than re-derive it. |
+
+**Cheap habits available now, without a repo refactor:**
+
+- Start with `scripts/codex-inbox.sh` and `docs/CONTEXT_INDEX.md` (2,270 bytes / 44 lines), then
+  required scoped guides and the relevant sections only. The inbox currently reports older IDs
+  as well as R55-R60; that is not evidence every historical item still needs doing.
+- Search ledger headings with `rg -n -o '^- \[T-[0-9]+\].{0,180}' docs/TODO.md` before opening
+  a specific block. Plain `rg -n` can print an entire multi-kilobyte ticket line. A fixed line
+  window alone is not a size bound; this scan itself hit truncated outputs on broad reads.
+- Keep full build logs out of agent context: retain them on disk, return tree/command/exit status,
+  compiler warnings, nonzero test counts and the relevant failures. Use existing `xcb.sh` and
+  mutation tooling; never save tokens by dropping verification or weakening safety checks.
+- For handoffs, send the actionable summary once and link evidence. Keep certainty, reachability,
+  suggested fix, existing pattern, and verification command; cut repeated incident storytelling.
+
+**30-second reproduction of the main size/count claims:**
+
+```sh
+wc -lc docs/TODO.md docs/CODEX_REQUESTS.md docs/SUBAGENT_RUNBOOK.md AGENTS.md CLAUDE.md Cadence/Services/AGENTS.md
+ruby -e 's=File.read("docs/TODO.md").split(/^## Done\s*$/).first; b=s.split(/(?=^- \[T-\d+\])/).select{|x| x.start_with?("- [T-")}; puts "pre-Done blocks=#{b.size}; first-line CLOSED=#{b.count{|x| x.lines.first.include?("CLOSED")}}"'
+rg -n 'expectLineCount|isAtMost' CadenceTests/AgentContextBudgetTests.swift
+scripts/codex-inbox.sh
+```
+
+Request-document sizes above are the pre-edit baseline; this answer necessarily increases them.
+Use `git show 153159a:docs/CODEX_REQUESTS.md | wc -lc` for the baseline rather than the live file.
+Deduplication: this extends the existing routing/cap work (T-434, T-1208), not a claim that no budget
+guard exists. `TODO_DONE` and references remain valuable evidence and must not be deleted to save
+reads. Targeted searches found no existing exact ticket for the proposed active-view/byte-budget
+changes; this was not an exhaustive semantic duplicate audit.
+
+**Looks solid:** small `CONTEXT_INDEX`, archived long references, mandatory scoped guides, existing
+inbox/test-suite lookup, scoped verification and one coordinator integration pass already follow
+the right pattern. The opportunity is to use and extend those, not add another agent framework.
+**Suggested order:** targeted reads now; active-ticket lookup next; runbook/guide slimming with guard
+review after that; optional byte-budget reporting last. No production or tooling changes made here.
