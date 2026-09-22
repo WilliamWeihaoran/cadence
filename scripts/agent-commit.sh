@@ -2297,7 +2297,7 @@ cmd_selftest() {
     local here="$SCRIPT_PATH"
     local ws; ws=$(mktemp -d "${TMP_BASE}cadence-agent-commit-selftest-XXXXXX")
     export CADENCE_DECLINED_LEDGER="$ws/ledger"
-    local out rc
+    local out rc prehead
 
     (
         cd "$ws" || exit 1
@@ -2327,10 +2327,18 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     say " mode 1 (FOREIGN-STAGED) -- a sibling's staged hunk must not be sweepable into your commit"
     ( cd "$ws" && print -r -- "sibling edit" >> theirs.txt && git add theirs.txt ) >/dev/null 2>&1
     ( cd "$ws" && print -r -- "line two" >> mine.txt )
+    # T-1339. Every "nothing was committed" below is a claim about HEAD, so it is asked of HEAD:
+    # the sha either side of the refused run. A content token is kept beside it wherever it says
+    # something the sha does not, but it is never the whole question -- mode 4m's was, and its
+    # fixture inherited that token from the mode it is appended to, so the check could not fail.
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" t1 -m "$M" mine.txt 2>&1 ); rc=$?
     check "a foreign staged path is refused" $(( rc == 3 )) "exit $rc"
     check "and it is named" $( [[ "$out" == *FOREIGN-STAGED*theirs.txt* ]] && print 1 || print 0 ) "$out"
-    check "nothing was committed" $( [[ $( cd "$ws" && git rev-list --count HEAD ) == 1 ]] && print 1 || print 0 )
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git rev-list --count HEAD ) == 1 ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     ( cd "$ws" && git reset -q -- theirs.txt && git checkout -q -- theirs.txt )
 
     say ""
@@ -2601,22 +2609,28 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     # "the check could not run, so everything is fine" is the hollow instrument in miniature.
     ( cd "$ws" && mkdir -p lonely && cp "$here" lonely/agent-commit.sh
       git show HEAD:code.txt > code.txt && print -r -- "a line committed with no drift check nearby" >> code.txt )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$ws/lonely/agent-commit.sh" f6 -m "$M" code.txt 2>&1 ); rc=$?
     check "a copy with no worktree-drift.sh beside it refuses rather than skipping the check" \
         $( [[ $rc == 3 && "$out" == *DRIFT-CHECK-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "and nothing was committed by it" \
-        $( [[ $( cd "$ws" && git show HEAD:code.txt ) != *"no drift check nearby"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:code.txt ) != *"no drift check nearby"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     # The same point one step along: a drift check that is THERE but fails to answer must not read
     # as "not behind". Exit 0 and exit 3 are readings; anything else is the question going
     # unanswered, and rounding that to a pass is how a guard becomes decoration without anyone
     # editing it. This one is a stub because the failure it stands for -- git unusable, the
     # sandboxed `xcrun` shim, a syntax error introduced upstream -- has no other reliable fixture.
     ( cd "$ws" && print -rl -- '#!/bin/zsh' 'print -r -- "something went wrong" >&2; exit 2' > lonely/worktree-drift.sh )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$ws/lonely/agent-commit.sh" f7 -m "$M" code.txt 2>&1 ); rc=$?
     check "a drift check that exits neither 0 nor 3 is refused, not read as a pass" \
         $( [[ $rc == 3 && "$out" == *DRIFT-CHECK-FAILED* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "and nothing was committed by that one either" \
-        $( [[ $( cd "$ws" && git show HEAD:code.txt ) != *"no drift check nearby"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:code.txt ) != *"no drift check nearby"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     ( cd "$ws" && rm -rf lonely && git checkout -q HEAD -- code.txt 2>/dev/null; git reset -q ) >/dev/null 2>&1
 
     say ""
@@ -2650,6 +2664,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         "$( cd "$ws" && git status --porcelain -- rebuild.txt )"
     ( cd "$ws" && git show HEAD~2:rebuild.txt > recon-stale.txt \
       && print -r -- "this agent's own rebuilt line" >> recon-stale.txt )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" g1 -m "$M" rebuild.txt=recon-stale.txt 2>&1 ); rc=$?
     check "a content file built on an older revision is refused" \
         $( [[ $rc == 3 && "$out" == *REBUILD-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -2660,7 +2675,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "the staleness is the complaint, not the removed-line count" \
         $( [[ "$out" != *"REFUSED (REMOVES-HEAD-LINES)"* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
-        $( [[ $( cd "$ws" && git show HEAD:rebuild.txt ) != *"own rebuilt line"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:rebuild.txt ) != *"own rebuilt line"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     # T-1074, and it regressed here twice while this mode was being written. A bare `local x` in a
     # zsh function whose parameter is already local PRINTS `x=<value>` rather than redeclaring it,
     # so the second path through any loop above emits a stray assignment line into the refusal --
@@ -2784,11 +2801,14 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     ( cd "$ws" && cp b-base.md b-stale.md
       print -rl -- "- [T-2473] **The id this agent drew as next free, from the older revision.**" \
                    "  Body text written without ever seeing what the newest commit landed." >> b-stale.md ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" n7 -m "$M" t1246b/TODO.md=b-stale.md 2>&1 ); rc=$?
     check "a rebuild on the older revision is still refused, id or no id" \
         $( [[ $rc == 3 && "$out" == *REBUILD-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "nothing of the sibling's line left HEAD" \
-        $( [[ $( cd "$ws" && git show HEAD:t1246b/TODO.md ) == *"sibling's landed line"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:t1246b/TODO.md ) == *"sibling's landed line"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
 
     say ""
     say " mode 4c (LEDGER-IDS-LOST) -- a ledger entry HEAD has cannot vanish inside a line count"
@@ -2847,13 +2867,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     ( cd "$ws"
       git show HEAD:TODO.md \
         | sed 's/^- \[T-105\] \*\*CLOSED.*/- [T-105] **the thing that is still not done** filed 2026-09-01/' > reopen.md ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" e2 -m "$M" TODO.md=reopen.md 2>&1 ); rc=$?
     check "reverting a closure back to open text is refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "the reopened id is named, and the still-closed one is not" \
         $( [[ "$out" == *"T-105"* && "$out" != *"T-106"* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
-        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) == *"T-105] **CLOSED"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:TODO.md ) == *"T-105] **CLOSED"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     # It is NOT REMOVES-HEAD-LINES wearing a different hat: that one fires here too, and firing
     # second is the whole point -- a count somebody acknowledges without reading is exactly how
     # this reverted 51 tickets' worth of text without anyone seeing a ticket in it.
@@ -3080,13 +3103,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
                       "  **CLOSED 2026-09-11 (\`deadd0c\`).** shipped, and nothing can tell." \
                       "" "- [T-111] **CLOSED 2026-09-11 (\`deadd0e\`).** closed where the anchor looks" \
                       "  body" >> buried.md ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" h1 -m "$M" TODO.md=buried.md 2>&1 ); rc=$?
     check "a closure written into an entry's body is refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-BURIED* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "the buried id is named, and the properly closed one is not" \
         $( [[ "$out" == *"T-110"* && "$out" != *"T-111"* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
-        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) != *"T-110"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:TODO.md ) != *"T-110"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     out=$( cd "$ws" && zsh "$here" h1 -m "$M" --buried-closures T-111 TODO.md=buried.md 2>&1 ); rc=$?
     check "naming the WRONG id is still refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-BURIED* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3175,12 +3201,15 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
       git show HEAD:TODO.md > collide.md
       print -rl -- "" "- [T-901] **the OTHER piece of work that read the same next-free value.**" \
                       "  Reserved by a second agent, minutes later, from the same ledger." >> collide.md ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" d1 -m "$M" TODO.md=collide.md 2>&1 ); rc=$?
     check "a second formal entry for an id HEAD already has is refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "the doubly-allocated id is named" $( [[ "$out" == *"T-901"* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
-        $( [[ $( cd "$ws" && git show HEAD:TODO.md | grep -c '^- \[T-901\]' ) == 1 ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:TODO.md | grep -c '^- \[T-901\]' ) == 1 ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     out=$( cd "$ws" && zsh "$here" d1 -m "$M" --duplicate-ids T-902 TODO.md=collide.md 2>&1 ); rc=$?
     check "naming the WRONG id is still refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3242,6 +3271,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
                       "  which runs to several lines so that the repeated run is unmistakably a paragraph." \
                       "  A second paragraph that differs from the first in every one of its own lines," \
                       "  so that a reader comparing the two entries sees length and not repetition." >> dup.md ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" j1 -m "$M" TODO.md=dup.md 2>&1 ); rc=$?
     check "an entry that contains its own body twice is refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-ENTRY-DUPLICATED* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3250,7 +3280,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "and it says how long the repeated run is, so the reading can be checked by hand" \
         $( [[ "$out" == *"repeated lines"* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
-        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) != *"T-120"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:TODO.md ) != *"T-120"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     out=$( cd "$ws" && zsh "$here" j2 -m "$M" --duplicated-entries T-121 TODO.md=dup.md 2>&1 ); rc=$?
     check "declaring the WRONG id is still refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-ENTRY-DUPLICATED* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3336,6 +3368,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
       git show HEAD:TODO.md > links.md
       print -rl -- "" "- [T-940] **an entry whose prose hands out ids nothing else has heard of.**" \
                       "  Sibling lesson to [[T-950]] and to [[T-951]]; the link to [[T-903]] resolves." >> links.md ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" g1 -m "$M" TODO.md=links.md 2>&1 ); rc=$?
     check "a [[link]] to an id with no formal entry is refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-LINK-UNFILED* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3344,7 +3377,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "and the hint is the sorted comma list the flag documents" \
         $( [[ "$out" == *"--unfiled-links T-950,T-951"* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
-        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) != *"T-940"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:TODO.md ) != *"T-940"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     out=$( cd "$ws" && zsh "$here" g1 -m "$M" --unfiled-links T-950 TODO.md=links.md 2>&1 ); rc=$?
     check "declaring only ONE of the two is still refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-LINK-UNFILED* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3475,13 +3510,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
       print -r -- "$M" > msg.txt
       print -r -- "$M" > msg-k2-T-1222.txt
       print -r -- "$M" > msg-k1-T-1222.txt ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" k1 -F msg.txt mine.txt 2>&1 ); rc=$?
     check "a generic message file is refused" \
         $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "and the refusal spells the name it should have had" \
         $( [[ "$out" == *"msg-k1-"* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
-        $( [[ $( cd "$ws" && git show HEAD:mine.txt ) != *"message-file mode"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:mine.txt ) != *"message-file mode"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     # The measured incident exactly: a file named for the OTHER agent. A name that says whose it is
     # cannot be read by the wrong agent even when the bytes are perfectly good.
     out=$( cd "$ws" && zsh "$here" k1 -F msg-k2-T-1222.txt mine.txt 2>&1 ); rc=$?
@@ -3494,6 +3532,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     ( cd "$ws" && print -r -- "$M" > msg-async-T-1.txt
       print -r -- "$M" > msg-reorder-T-1.txt
       print -r -- "$M" > msg-sync-T-1.txt ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" sync -F msg-async-T-1.txt mine.txt 2>&1 ); rc=$?
     check "a name that merely CONTAINS the id -- async for sync -- is refused" \
         $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3501,7 +3540,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "and reorder for order is refused too" \
         $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "nothing was committed by either" \
-        $( [[ $( cd "$ws" && git show HEAD:mine.txt ) != *"message-file mode"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:mine.txt ) != *"message-file mode"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     out=$( cd "$ws" && zsh "$here" k1 -F msg-k1-T-1222.txt mine.txt 2>&1 ); rc=$?
     check "a file named for this agent commits" $(( rc == 0 )) "exit $rc: $out"
     check "and the message that landed is the one in that file" \
@@ -3718,6 +3759,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "the sibling's ledger entry is still in HEAD" \
         $( [[ $( cd "$ws" && git show HEAD:TODO.md ) == *"T-935"* ]] && print 1 || print 0 ) \
         "$( cd "$ws" && git log --oneline )"
+    # T-1339 converted every other "nothing was committed" to a sha either side of the refused
+    # run. This is the one mode where that reading would be WRONG rather than merely weaker: HEAD
+    # moves here by design, to the sibling's commit, which is the whole fixture. The rot-proof
+    # question is therefore the one below it -- HEAD IS the sibling's sha, read from the file the
+    # interception wrote -- and it is already asked, so this line keeps the content token it needs.
     check "and nothing of the racing agent's own change landed" \
         $( [[ $( cd "$ws" && git show HEAD:mine.txt ) != *"racing agent"* ]] && print 1 || print 0 )
     # Not "HEAD's parent is where we started": a commit parented on the STALE head orphans the
@@ -3798,13 +3844,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     local aged; aged=$(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N) | head -1)
     touch -t $(date -v-90M +%Y%m%d%H%M) "$aged"
     ( cd "$ws" && print -r -- "unrelated two" >> mine.txt )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" s7 -m "$M" mine.txt 2>&1 ); rc=$?
     check "an AGED record refuses a commit of a path it has nothing to do with" \
         $( [[ $rc == 3 && "$out" == *DECLINED-HUNK-STALE* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "and it names the stuck path and the line" \
         $( [[ "$out" == *shared.txt* && "$out" == *"abandoned in-flight line"* ]] && print 1 || print 0 ) "$out"
     check "nothing of the refused commit landed" \
-        $( [[ $( cd "$ws" && git show HEAD:mine.txt ) != *"unrelated two"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:mine.txt ) != *"unrelated two"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     out=$( cd "$ws" && zsh "$here" check 2>&1 ); rc=$?
     check "check exits non-zero while a record is outstanding" \
         $( [[ $rc == 3 && "$out" == *DECLINED-HUNKS-OUTSTANDING* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3891,6 +3940,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" )
         '    }' \
         '}' > CadenceTests/SweepSelftest.swift
     )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" s8 -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
     check "an unlisted product-tree sweep is refused" \
         $( [[ $rc == 3 && "$out" == *SWEEP-MANIFEST-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
@@ -3899,7 +3949,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" )
     check "the sweep that IS listed is not dragged in with it" \
         $( [[ "$out" != *theSweepThatIsAlreadyListed* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
-        $( [[ $( cd "$ws" && git show HEAD:CadenceTests/SweepSelftest.swift ) != *theNewSweepNobodyListed* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:CadenceTests/SweepSelftest.swift ) != *theNewSweepNobodyListed* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     check "it says how to regenerate, and says not to hand-edit" \
         $( [[ "$out" == *"real-tree-sweep-manifest.sh"*"--write"* ]] && print 1 || print 0 ) "$out"
 
@@ -3967,11 +4019,14 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" )
     ( cd "$ws" && mkdir -p lonely8 && cp "$here" lonely8/agent-commit.sh
       cp "${here:h}/worktree-drift.sh" lonely8/worktree-drift.sh
       print -r -- "// a sweep committed with no precheck nearby" >> CadenceTests/SweepSelftest.swift )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$ws/lonely8/agent-commit.sh" s8d -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
     check "a copy with no real-tree-sweep-manifest.sh beside it refuses rather than skipping" \
         $( [[ $rc == 3 && "$out" == *SWEEP-CHECK-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "and nothing was committed by it" \
-        $( [[ $( cd "$ws" && git show HEAD:CadenceTests/SweepSelftest.swift ) != *"no precheck nearby"* ]] && print 1 || print 0 )
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && $( cd "$ws" && git show HEAD:CadenceTests/SweepSelftest.swift ) != *"no precheck nearby"* ]] \
+           && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     ( cd "$ws" && print -rl -- '#!/bin/zsh' 'print -r -- "something went wrong" >&2; exit 2' > lonely8/real-tree-sweep-manifest.sh )
     out=$( cd "$ws" && zsh "$ws/lonely8/agent-commit.sh" s8e -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
     check "a precheck that exits neither 0 nor 4 is refused, not read as a pass" \

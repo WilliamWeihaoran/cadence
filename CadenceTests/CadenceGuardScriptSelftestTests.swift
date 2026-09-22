@@ -276,6 +276,32 @@ struct CadenceGuardScriptSelftestTests {
         "LEDGER-LAG-VACUOUS",
     ]
 
+    /// Every check `scripts/codex-inbox.sh`'s selftest names (T-1334). This one is not a list of
+    /// refusals because the script makes none: `report` is a report and always exits 0, so what
+    /// there is to lose is a READING, and a reading that has quietly stopped discriminating looks
+    /// exactly like one that never had to.
+    ///
+    /// That is not hypothetical here — it is the ticket this script was fixed under. T-1330's
+    /// defect was a single high-water marker read as "everything below this is dealt with", and
+    /// Codex answers whichever request it picks up rather than the lowest, so folding R63 while
+    /// R55-R62 were open would have swallowed every later answer to those eight, permanently and
+    /// **invisibly**: `still unanswered` is computed separately and went on listing them exactly
+    /// as before. The selftest that came out of that fix was then run by nothing at all, which is
+    /// why it is here — a guard whose own guard is a habit is the shape this whole file exists
+    /// for, and this one had survived unnoticed until a reader happened to open the source.
+    ///
+    /// Check 2 is the one to keep if the list ever has to shrink: it is the non-vacuity half, and
+    /// without it check 1 also passes against a script that has stopped filtering anything at all.
+    static let codexInboxChecks = [
+        "an answer below an out-of-order fold is still reported",
+        "an already-folded answer is not reported",
+        "fold records only the id it was given",
+        "closing the gap advances the baseline",
+        "closing the gap empties the named set",
+        "folding does not change what is still unanswered",
+        "the unanswered list is non-vacuous",
+    ]
+
     /// Every refusal `scripts/worktree-drift.sh` makes (T-975). Two, because the script's job is
     /// almost entirely to NOT refuse: it exists because `git status` prints ` M <path>` for a
     /// stale checkout copy and for real in-flight work in the same three characters, and telling
@@ -521,6 +547,22 @@ struct CadenceGuardScriptSelftestTests {
         let run = try CadenceSelftestRun.of("scripts/ledger-lag-check.sh")
         let complaints = run.complaints(requiring: Self.ledgerLagRefusals)
         #expect(complaints.isEmpty, "./scripts/ledger-lag-check.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
+    /// T-1334. Runs entirely inside a throwaway directory under `$TMPDIR`: it writes fixture
+    /// queue documents, reports over them and folds them, so it says nothing about — and does
+    /// nothing to — the real `docs/CODEX_REQUESTS.md`, which a sibling may be editing. Well under
+    /// a second, and it needs neither `git` nor `python3`, so it is the one member of this family
+    /// that cannot be defeated by the App Sandbox.
+    ///
+    /// **Run under `/bin/bash`, not `/bin/zsh`.** This script's shebang is the odd one out, and
+    /// the difference is not cosmetic: `is_folded` and `cmd_fold` both iterate `$also` unquoted,
+    /// which zsh passes as a single word. Under the wrong shell the fold set collapses to one
+    /// element and the selftest goes red for a reason that has nothing to do with the script.
+    @Test func theCodexInboxGuardsOwnChecksStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/codex-inbox.sh", interpreter: "/bin/bash")
+        let complaints = run.complaints(requiring: Self.codexInboxChecks)
+        #expect(complaints.isEmpty, "./scripts/codex-inbox.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
     /// T-780. Runs entirely inside a throwaway git repository under `$TMPDIR`, like the drift
@@ -829,6 +871,7 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/simulator-claim.sh",
             "scripts/worktree-drift.sh",
             "scripts/ledger-lag-check.sh",
+            "scripts/codex-inbox.sh",
             "scripts/xcb.sh",
             ".githooks/pre-commit",
         ] {
@@ -1143,9 +1186,15 @@ struct CadenceSelftestRun {
             .deletingLastPathComponent()
     }
 
-    static func of(_ relativeScript: String) throws -> CadenceSelftestRun {
+    /// `interpreter` exists for T-1334 and is not a style choice: every other guard in this
+    /// family is `#!/bin/zsh`, and `scripts/codex-inbox.sh` is `#!/bin/bash`. Run under zsh it
+    /// does not merely warn — `for a in $also` iterates ONE word rather than the list, because
+    /// zsh does not word-split unquoted parameters, so the fold reading silently changes meaning.
+    /// The shebang is the contract; the caller names it rather than assuming one shell for all.
+    static func of(_ relativeScript: String, interpreter: String = "/bin/zsh") throws -> CadenceSelftestRun {
         let script = repositoryRoot().appendingPathComponent(relativeScript).path
-        return try run("/bin/zsh", ["-f", script, "selftest"])
+        let flags = interpreter.hasSuffix("zsh") ? ["-f"] : []
+        return try run(interpreter, flags + [script, "selftest"])
     }
 
     /// A control, quoted into any failure message: the cheapest possible child process, plus the

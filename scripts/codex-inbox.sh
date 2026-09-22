@@ -166,7 +166,7 @@ cmd_fold() {
 # selftest — the case the watermark got wrong, plus the two that keep the fix honest.
 # ---------------------------------------------------------------------------
 cmd_selftest() {
-  local dir rc=0
+  local dir rc=0 passed=0 failed=0
   dir=$(mktemp -d "${TMPDIR:-/tmp}/codex-inbox-selftest.XXXXXX") || return 1
   trap 'rm -rf "$dir"' RETURN
 
@@ -189,10 +189,12 @@ cmd_selftest() {
     local label=$1 expected=$2 got=$3
     if [ "$expected" = "$got" ]; then
       echo "  ok    $label"
+      passed=$((passed + 1))
     else
       echo "  FAIL  $label"
       echo "        expected: $expected"
       echo "        got:      $got"
+      failed=$((failed + 1))
       rc=1
     fi
   }
@@ -241,6 +243,10 @@ cmd_selftest() {
   # ...and that list is not empty, or the check above compares nothing to nothing.
   check "the unanswered list is non-vacuous" "R1 R2 R3 R4 R5 R7 R8" "$after"
 
+  # T-1334. The tally is the vocabulary `CadenceGuardScriptSelftestTests` reads, and it is the
+  # half that cannot be faked by a selftest gutted to `return 0`: "0 passed" is a complaint there,
+  # so a run that printed its headers and asserted nothing fails the test rather than pinning it.
+  echo "checks: $passed passed, $failed failed"
   [ "$rc" -eq 0 ] && echo "selftest: all checks passed" || echo "selftest: FAILURES above"
   return "$rc"
 }
