@@ -42,3 +42,17 @@ loading broad histories.
 - macOS build: use the private `-derivedDataPath` command in `AGENTS.md`.
 - Unit tests: scope to `CadenceTests`; for macOS tests, use `scripts/test-host-lock.sh`.
 - MCP changes: build the `CadenceMCPServer` scheme separately and grep the log for warnings.
+
+## The Ledger, Without Reading 1.4 MB
+
+`docs/TODO.md` is authoritative and enormous. Do not `rg` it for a ticket id — that prints whole
+multi-kilobyte entries. Ask `scripts/ledger-view.sh` instead (T-1331), which derives everything it
+prints from the two ledgers at the moment you ask:
+
+- `./scripts/ledger-view.sh` — every active entry with its status, source location, one-line next
+  action and, for a parked item, why it is parked (~90 lines).
+- `./scripts/ledger-view.sh show T-1325` — the exact entry block for one id, from both ledgers.
+- `./scripts/ledger-view.sh counts` — the census, beside the naive lexical count it corrects.
+
+Its closure reading is the narrow one `agent-commit.sh` already uses (a bold run opening the
+entry's own first line), so an entry that merely quotes the token stays open — the [[T-1335]] trap.

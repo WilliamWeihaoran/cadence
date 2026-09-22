@@ -92,6 +92,16 @@ batches lost something to that. See "Committing out of a shared checkout" below.
   199, not 200** — two agents in a row trimmed to 200 by `wc -l`, shipped 201 by the test, and turned
   a green batch into a rerun. The test's own failure message now names both counts if you land on it
   anyway.
+- **There is a second guide budget and it is in BYTES: 18,000, `wc -c`** (T-1332). The line cap
+  measured a proxy the text is free to walk away from — `Cadence/Services/AGENTS.md` was 44% more
+  text than the root guide while sitting 31% further under the line cap — so both
+  `AgentContextBudgetTests` and the `docs.yml` job now report lines *and* bytes on every guide. The
+  number is a ratchet at today's largest guide, not an allowance, and **rewrapping is not a repair**:
+  it changes the line count without changing what anyone has to read. Move rationale to a linked
+  long reference instead, the way T-434 and T-1208 already did.
+- **Do not `rg docs/TODO.md` for a ticket** — it prints whole multi-kilobyte entries out of a 1.4 MB
+  file. `./scripts/ledger-view.sh` lists every active entry with its status, location and next
+  action in ~90 lines; `./scripts/ledger-view.sh show T-1234` prints one exact block (T-1331).
 - **`pgrep -f 'foo/run-batch.sh'` does not match a script invoked as `./run-batch.sh`** — the process
   command line is `/bin/zsh ./run-batch.sh`. A liveness check written that way reports a healthy run as
   gone, which is how one agent came to launch a duplicate runner. Same family as the `pgrep -f

@@ -33,26 +33,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # T-1332. There are TWO budgets here and the job reports both on every guide, passing or failing.
+  #
+  # The line cap alone measured a proxy the governed thing is free to decouple from. Measured when
+  # this was written: `Cadence/Services/AGENTS.md` was 17,958 bytes in 138 lines (130 bytes/line)
+  # while root `AGENTS.md` was 12,459 bytes in 199 lines (63 bytes/line) -- 44% more text, 31%
+  # further under the cap, and this job called it the comfortable one. Worse, the cap points the
+  # wrong way: rewrapping a dense paragraph onto more lines makes a file FAIL a budget it did not
+  # get worse against. So do not rewrap to pass either number; move rationale to a linked long
+  # reference, which is what T-434 and T-1208 already do.
+  #
+  # 18,000 bytes is the largest guide in the tree rounded up to the nearest 500 -- a RATCHET, not an
+  # allowance. It costs nobody a trim today and stops the biggest file getting bigger. Bytes, not
+  # tokens: no tokenizer is chosen here, and `wc -c` is a number any reader can reproduce.
+  #
+  # `AgentContextBudgetTests` remains the authority and carries the same two numbers; this is the
+  # fast red, on Ubuntu minutes, for the docs-only pushes ci.yml excludes.
   budget:
-    name: Always-read guides stay under 200 lines
+    name: Always-read guides stay under 200 lines and 18000 bytes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Check line budgets
+      - name: Check line and byte budgets
         run: |
           set -uo pipefail
           rc=0
           count=0
+          max_bytes=0
           while IFS= read -r guide; do
             count=$((count + 1))
             lines=$(wc -l < "$guide" | tr -d ' ')
-            printf '  %-40s %4s lines\n' "$guide" "$lines"
+            bytes=$(wc -c < "$guide" | tr -d ' ')
+            [ "$bytes" -le "$max_bytes" ] || max_bytes=$bytes
+            printf '  %-40s %4s lines %7s bytes\n' "$guide" "$lines" "$bytes"
             if [ "$lines" -gt 200 ]; then
-              echo "::error file=$guide::$guide is $lines lines, over the 200-line cap."
+              echo "::error file=$guide::$guide is $lines lines, over the 200-line cap (and $bytes bytes of 18000)."
+              rc=1
+            fi
+            if [ "$bytes" -gt 18000 ]; then
+              echo "::error file=$guide::$guide is $bytes bytes, over the 18000-byte cap (and $lines lines of 200)."
               rc=1
             fi
           done < <(git ls-files '*AGENTS.md' 'CLAUDE.md' | sort)
+          echo "  checked $count guides; largest is $max_bytes bytes of the 18000-byte budget."
           # Non-vacuity: a glob that found nothing must not read as a pass. The tree had 13
           # capped guides when this was written; AgentContextBudgetTests asserts >= 12.
           if [ "$count" -lt 12 ]; then
@@ -62,6 +86,8 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             echo "A new always-read rule must remove or link out something else in the same change."
             echo "Put the detail in docs/SUBAGENT_RUNBOOK.md or another linked reference."
+            echo "Do NOT rewrap prose to pass either budget: it changes the line count without"
+            echo "changing what an agent has to read, which is the defect T-1332 was filed about."
           fi
           exit $rc
 
