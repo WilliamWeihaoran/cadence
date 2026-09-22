@@ -107,6 +107,109 @@ struct TrackingDeleteHelpersTests {
         #expect(try modelContext.fetch(FetchDescriptor<Goal>()).map(\.title) == ["Learn guitar"])
     }
 
+    /// **The macOS confirmation's own sentence, measured against what the delete removes
+    /// ([[T-1327]]).**
+    ///
+    /// `theNestedGoalCountMatchesWhatDeletingActuallyRemoves` above pins the shared *walk*, and
+    /// that was the whole of it: neither platform's confirmation **string** was measured against
+    /// it, and macOS's was built from `(goal.subGoals ?? []).count` inside a view body — direct
+    /// children — so a goal -> milestone -> sub-milestone tree was announced as "1 milestone" and
+    /// lost two. Under-promising a delete is the direction [[T-433]] forbids.
+    ///
+    /// The number is read back **out of the sentence** rather than recomputed, so the assertion is
+    /// the one the user experiences: what the alert says, plus the goal it names, is what the store
+    /// loses. A sentence that stopped interpolating the count fails here too.
+    @Test func theMacOSGoalDeleteConfirmationNamesTheWholeSubtreeItRemoves() throws {
+        let modelContext = try makeContext()
+
+        let direction = Goal(title: "Finish thesis")
+        let milestone = Goal(title: "Chapter 1")
+        milestone.parentGoal = direction
+        let subMilestone = Goal(title: "Section 1.1")
+        subMilestone.parentGoal = milestone
+        for goal in [direction, milestone, subMilestone] {
+            modelContext.insert(goal)
+        }
+        try modelContext.save()
+
+        let message = CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for: direction)
+        #expect(
+            message == "\"Finish thesis\" and its 2 milestones will be deleted. "
+                + "Linked lists, habits and tasks are kept. This cannot be undone.",
+            "the macOS confirmation reads: \(message)"
+        )
+
+        let announced = try #require(
+            message.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }.first,
+            "the sentence names no number at all"
+        )
+        let before = try modelContext.fetch(FetchDescriptor<Goal>()).count
+        try modelContext.deleteGoal(direction)
+        let after = try modelContext.fetch(FetchDescriptor<Goal>()).count
+
+        #expect(
+            before - after == announced + 1,
+            "the alert promised \(announced) milestones and the delete took \(before - after - 1)"
+        )
+    }
+
+    /// The count of one, and the goal that has none — the two cases the sentence branches on.
+    ///
+    /// "1 milestones" is the [[T-844]] defect this sentence was one interpolation away from, which
+    /// is why it goes through `CadencePluralization.phrase`; a leaf goal names no count at all
+    /// rather than promising "0 milestones".
+    @Test func theMacOSGoalDeleteConfirmationPluralisesAndSaysNothingAtZero() throws {
+        let modelContext = try makeContext()
+
+        let direction = Goal(title: "Finish thesis")
+        let milestone = Goal(title: "Chapter 1")
+        milestone.parentGoal = direction
+        let leaf = Goal(title: "Read more")
+        for goal in [direction, milestone, leaf] {
+            modelContext.insert(goal)
+        }
+        try modelContext.save()
+
+        let nested = CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for: direction)
+        #expect(nested.contains("and its 1 milestone will be deleted"))
+        #expect(!nested.contains("1 milestones"), "the count of one reads as a plural")
+
+        let none = CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for: leaf)
+        #expect(
+            none == "\"Read more\" will be deleted. "
+                + "Linked lists, habits and tasks are kept. This cannot be undone."
+        )
+        #expect(!none.contains("milestone"), "a leaf goal's sentence still names milestones")
+    }
+
+    /// **The sheet reads the shared sentence rather than counting its own.**
+    ///
+    /// The two tests above measure the function; this one measures the *site*, which is where the
+    /// defect was. `requestDelete` is inside a `View`, so the string it hands
+    /// `DeleteConfirmationManager` is unreachable from this target — and reverting it to
+    /// `(goal.subGoals ?? []).count` would leave both tests above green.
+    @Test func theMacOSGoalDeleteSheetReadsTheSharedSentenceRatherThanCountingItsOwn() throws {
+        let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Sheets/CreateGoalSheet.swift")
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "requestDelete", in: sheet),
+            "requestDelete is no longer a function in CreateGoalSheet"
+        )
+
+        #expect(body.contains("CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for: goal)"))
+        #expect(
+            !body.contains("subGoals"),
+            "the confirmation is counting goals for itself again"
+        )
+        #expect(
+            !body.contains("milestone"),
+            "the confirmation is building its own sentence again"
+        )
+        // Non-vacuity: the body really is the one that raises the confirmation, so a scan that
+        // returned the wrong declaration cannot pass the three assertions above by being empty.
+        #expect(body.contains("DeleteConfirmationManager.shared.presentRefusable("))
+        #expect(body.contains("try modelContext.deleteGoal(goal)"))
+    }
+
     /// A leaf goal announces nothing nested.
     @Test func aGoalWithNoMilestonesCountsNone() throws {
         let modelContext = try makeContext()

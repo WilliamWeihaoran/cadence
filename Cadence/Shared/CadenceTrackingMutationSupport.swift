@@ -46,6 +46,35 @@ enum CadenceTrackingMutationSupport {
     /// `goalDeleteFailureAlertTitle`'s sibling for a habit.
     static let habitDeleteFailureAlertTitle = "Couldn't Delete Habit"
 
+    /// What macOS's goal-delete confirmation announces, counting the **whole subtree the delete
+    /// takes** ([[T-1327]]).
+    ///
+    /// **It is here rather than in `CreateGoalSheet.requestDelete` because the number was the part
+    /// that was wrong, and a number built inside a view body is a number no test can read.** The
+    /// sheet counted `(goal.subGoals ?? []).count` — direct children — while
+    /// `ModelContext.deleteGoal` walks `GoalAssignmentRules.deletionCascade(from:)`, so a
+    /// goal -> milestone -> sub-milestone tree was announced as "1 milestone" and lost two.
+    /// `deletionCascade`'s own doc comment already claimed the confirmation counts that walk *"so
+    /// the alert cannot promise less than the delete performs"*, and names counting direct children
+    /// as the defect it replaced; iOS's `deleteMessage` counts it, macOS did not, so the doc was
+    /// true of one platform. Under-promising a delete is the direction [[T-433]] forbids.
+    ///
+    /// **iOS keeps its own sentence rather than calling this one.** The two differ by surface and
+    /// always did: iOS's alert says nothing about undo and names the goal in its title row, while
+    /// this one quotes the title and ends with "This cannot be undone." — the line macOS's overlay
+    /// earns because nothing in this app installs an `UndoManager` on the model context. Folding
+    /// them into one string would be a copy change wearing a refactor's clothes. What has to agree
+    /// is the *count*, and both now read `GoalAssignmentRules.nestedGoalCount(under:)`.
+    static func goalDeleteConfirmationMessage(for goal: Goal) -> String {
+        let nested = GoalAssignmentRules.nestedGoalCount(under: goal)
+        let kept = "Linked lists, habits and tasks are kept. This cannot be undone."
+        guard nested > 0 else {
+            return "\"\(goal.title)\" will be deleted. \(kept)"
+        }
+        let phrase = CadencePluralization.phrase(nested, singular: "milestone", plural: "milestones")
+        return "\"\(goal.title)\" and its \(phrase) will be deleted. \(kept)"
+    }
+
     /// The fields `saveGoal` writes, captured before it writes them.
     ///
     /// Every field below is one `saveGoal` assigns; `order` is not here because only the *create*

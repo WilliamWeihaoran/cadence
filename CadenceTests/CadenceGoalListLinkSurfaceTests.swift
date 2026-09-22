@@ -254,6 +254,45 @@ struct CadenceGoalListLinkSurfaceTests {
         )
     }
 
+    /// **The third reading, and the one no filter in `GoalLinkPresentation` could reach**
+    /// ([[T-1306]]'s open half, closed by [[T-1321]]).
+    ///
+    /// `GoalContributionResolver` walks `goal.listLinks` **raw** — once for the tasks the goal
+    /// counts and once for the "N lists" chip — so a link the store is about to drop moved the
+    /// goal's *progress bar*, which is the part of this no inspector-side filter can protect. It
+    /// is also what makes it safe for `detachGoalListLink` to stop severing the link's references
+    /// before deleting it: the reading that matters no longer depends on the inverse array having
+    /// caught up, only on the object's own `isDeleted`.
+    ///
+    /// Deleted and **not** processed, deliberately — that is the state a refusal leaves behind
+    /// between the throw and the next processed change, and the state a detach is in before its
+    /// flush.
+    @Test func aDeletedLinkIsNotCountedByTheProgressBarEither() throws {
+        let store = try makeStore()
+        let task = AppTask(title: "Area task")
+        task.area = store.area
+        store.modelContext.insert(task)
+        let link = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
+        try store.modelContext.save()
+
+        // The link is what the goal's progress is made of, so the assertions below are not
+        // measuring a goal that never counted anything.
+        #expect(GoalContributionResolver.summary(for: store.goal).totalTasks == 1)
+        #expect(GoalContributionResolver.summary(for: store.goal).linkedListCount == 1)
+
+        store.modelContext.delete(link)
+
+        let summary = GoalContributionResolver.summary(for: store.goal)
+        #expect(
+            summary.totalTasks == 0,
+            "a row the store is about to drop is still counted in the goal's progress bar"
+        )
+        #expect(
+            summary.linkedListCount == 0,
+            "a row the store is about to drop is still counted by the \"N lists\" chip"
+        )
+    }
+
     /// The second reading of the same state, and the one that is not cosmetic ([[T-1306]]).
     ///
     /// `attachList`'s idempotence guard returns any link already pointing at the target. Measured
@@ -282,17 +321,30 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(GoalLinkPresentation.isAttached(.area(store.area), to: store.goal))
     }
 
-    /// The mirror, `commitDelete` + `rollback()` rather than `commitInsert` + `delete` — and the
-    /// store half of it only.
+    /// The mirror, `commitDelete` + `rollback()` rather than `commitInsert` + `delete`.
     ///
     /// A refused detach must leave the link in the store and leave nothing pending, and both of
-    /// those hold on every toolchain. **The live reading is deliberately not asserted.**
-    /// `detachGoalListLink` nulls `goal` / `area` / `project` before deleting, so what `rollback()`
-    /// has to undo is an *edit*, which is the one thing [[T-1296]] measured the two Xcode majors
-    /// disagreeing about: on 27 the live reference is restored at once (measured 2026-09-20 —
-    /// `link.goal` and `link.area` both non-`nil`, `isAttached == true`), and through 26 an edit is
-    /// not visible on an already-materialised reference until something refetches. Pinning either
-    /// answer here is what T-1296 turned CI red for. See [[T-1321]].
+    /// those hold on every toolchain. **The three references are asserted now, and they are the
+    /// only reading added — because after [[T-1321]] nothing writes them.**
+    ///
+    /// Before that, `detachGoalListLink` nulled `goal` / `area` / `project` before deleting, so
+    /// what `rollback()` had to undo was an *edit* — the one thing [[T-1296]] measured the two
+    /// Xcode majors disagreeing about. On 27 the live reference came back at once (measured
+    /// 2026-09-20: `link.goal` and `link.area` both non-`nil`, `isAttached == true`); through 26 an
+    /// edit's undo waits for a refetch, and `links(of:)` drops a link with neither an area nor a
+    /// project, so the row would have vanished from both goal inspectors under "Nothing was
+    /// changed." **That reading could not be taken** — this Mac has one toolchain — so the fix was
+    /// chosen to be right by construction rather than by measurement: the detach makes no edit, so
+    /// these three hold the values the store holds on any toolchain, for the same reason a variable
+    /// nobody assigns keeps its value.
+    ///
+    /// **`isDeleted` and `isAttached` are still not asserted, and that is still deliberate.**
+    /// Whether `rollback()`'s un-delete has reached this materialised object, and whether
+    /// `goal.listLinks` has taken the row back after the `processPendingChanges()` that emptied it,
+    /// are both framework timing. What *is* asserted is that the two cannot disagree: a row the
+    /// array still holds may not be a row the inspector drops. That is the vanishing row itself,
+    /// and it is a bound rather than a pin —
+    /// `CadenceStartupRecoveryReasonTests` is the shape this follows.
     @Test func arefusedDetachKeepsTheLinkInTheStoreAndLeavesNothingPending() throws {
         let store = try makeStore()
         let link = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
@@ -304,11 +356,49 @@ struct CadenceGoalListLinkSurfaceTests {
 
         #expect(!store.modelContext.hasChanges, "the refused detach left a change for the next save")
 
+        // Construction, not timing: the detach writes none of these three.
+        #expect(link.goal != nil, "the refused detach left the link severed from its goal")
+        #expect(link.area != nil, "the refused detach left the link pointing at no list")
+        #expect(link.project == nil, "an area link acquired a project")
+
+        // The bound. Either reading of the array is allowed; a row present and invisible is not.
+        let held = (store.goal.listLinks ?? []).contains { $0.id == link.id }
+        let drawn = GoalLinkPresentation.links(of: store.goal).contains { $0.id == link.id }
+        #expect(
+            held == drawn,
+            "the row is in goal.listLinks and dropped by links(of:) — the vanishing row T-1321 is about"
+        )
+
         let reader = ModelContext(store.container)
         #expect(
             try reader.fetch(FetchDescriptor<GoalListLink>()).count == 1,
             "the refusal said nothing was changed and the row is gone"
         )
+    }
+
+    /// **The detach makes no edit for `rollback()` to undo, read from the source ([[T-1321]]).**
+    ///
+    /// This is the assertion the behavioural test above cannot make. The property that makes the
+    /// refusal correct on a toolchain nobody here can run is a property of the *construction* — the
+    /// three references are never written, so there is nothing for `rollback()` to be late about —
+    /// and the only way to pin a construction is to read it. Re-growing `link.goal = nil` fails
+    /// here, on 27, where the behavioural difference is invisible.
+    ///
+    /// Re-assigning them in a `catch` after the throw is the repair [[T-1321]] rejected by name:
+    /// it is a fresh pending edit in the app's one `ModelContext`, which is what the `hasChanges`
+    /// assertion above exists to forbid. So `nil` may not appear in the body at all.
+    @Test func theDetachWritesNothingForARollbackToPutBack() throws {
+        let helpers = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/GoalListLinkHelpers.swift")
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "detachGoalListLink", in: helpers),
+            "detachGoalListLink is no longer a function"
+        )
+
+        #expect(!body.contains("= nil"), "the detach assigns again: \(body)")
+        #expect(!body.contains("catch"), "the detach grew a catch, which can only hold a pending edit")
+        // Non-vacuity: this really is the detach's body, and it still deletes and still commits.
+        #expect(body.contains("delete(link)"))
+        #expect(body.contains("CadencePendingChangePersistence.commitDelete(in: self, commit: commit)"))
     }
 
     /// The reverse of `ListDeleteHelpers` cascading `goalLinks` when a list is deleted: detaching

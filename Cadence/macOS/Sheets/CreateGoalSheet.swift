@@ -95,7 +95,15 @@ struct CreateGoalSheet: View {
     /// goal and is holding it, that goal is in `allGoals` and would otherwise be offered here as
     /// its own parent. `saveGoal` would drop the selection on the floor — it guards the cycle — so
     /// the picker would have offered a choice that silently did nothing.
+    ///
+    /// **Empty when the held goal already owns milestones ([[T-1327]]).** iOS refused this from the
+    /// start and macOS did not, so this picker was the way a goal -> milestone -> sub-milestone
+    /// tree came to exist: `saveGoal` guards the self-parenting cycle and nothing else, and
+    /// `GoalAssignmentRules.canOwnMilestones` keeps the hierarchy two deep, so the third level is a
+    /// row on no screen. The rule is shared rather than copied — see
+    /// `GoalAssignmentRules.mustStayTopLevel(_:)` for why one platform enforcing it is not enough.
     private var parentGoalChoices: [Goal] {
+        guard !mustStayTopLevel else { return [] }
         var choices = GoalAssignmentRules
             .topLevelGoals(from: allGoals)
             .filter { $0.id != targetGoal?.id && $0.status != .done }
@@ -110,6 +118,12 @@ struct CreateGoalSheet: View {
             choices.insert(initialParentGoal, at: 0)
         }
         return choices
+    }
+
+    /// Keyed on `targetGoal` for `parentGoalChoices`' reason: a goal this sheet just created holds
+    /// no milestones yet, and the one it was opened on is the one whose milestones would move.
+    private var mustStayTopLevel: Bool {
+        GoalAssignmentRules.mustStayTopLevel(targetGoal)
     }
 
     private var selectedParentGoal: Goal? {
@@ -163,13 +177,22 @@ struct CreateGoalSheet: View {
                     }
 
                     fieldGroup("Parent Goal") {
-                        GoalLinkPickerButton(
-                            goals: parentGoalChoices,
-                            selectedID: $selectedParentGoalID,
-                            noneTitle: "No parent goal",
-                            noneSubtitle: "Keep as a top-level goal",
-                            searchPlaceholder: "Search goals"
-                        )
+                        if mustStayTopLevel {
+                            // The picker is replaced rather than disabled, for iOS's reason: a
+                            // disabled control reads as "not yet", and this is "not at all".
+                            Text(GoalAssignmentRules.mustStayTopLevelNotice)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.dim)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            GoalLinkPickerButton(
+                                goals: parentGoalChoices,
+                                selectedID: $selectedParentGoalID,
+                                noneTitle: "No parent goal",
+                                noneSubtitle: "Keep as a top-level goal",
+                                searchPlaceholder: "Search goals"
+                            )
+                        }
                     }
 
                     fieldGroup("Kind") {
@@ -346,20 +369,21 @@ struct CreateGoalSheet: View {
     /// so leaving it up would stack two modal layers. The message names the milestones that go
     /// with it, since deleting a direction takes its whole tree and that is not obvious from the
     /// button. Linked lists, habits and tasks survive; only the relationships are severed.
+    ///
+    /// **The sentence and its count live in `CadenceTrackingMutationSupport`** ([[T-1327]]): this
+    /// counted `(goal.subGoals ?? []).count` while `deleteGoal` walks the whole subtree, so a
+    /// three-deep tree was announced as "1 milestone" and lost two.
     private func requestDelete() {
         guard let goal = editingGoal else { return }
         let modelContext = modelContext
-        let title = goal.title
-        let milestoneCount = (goal.subGoals ?? []).count
+        let message = CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for: goal)
         dismiss()
         // `presentRefusable` rather than `present` ([[T-1301]]): `deleteGoal` throws now, and the
         // overlay is the only surface left once this sheet has dismissed itself. The refusal keeps
         // it open carrying the sentence the rollback earns.
         DeleteConfirmationManager.shared.presentRefusable(
             title: "Delete Goal",
-            message: milestoneCount > 0
-                ? "\"\(title)\" and its \(milestoneCount) milestone\(milestoneCount == 1 ? "" : "s") will be deleted. Linked lists, habits and tasks are kept. This cannot be undone."
-                : "\"\(title)\" will be deleted. Linked lists, habits and tasks are kept. This cannot be undone."
+            message: message
         ) {
             do {
                 try modelContext.deleteGoal(goal)

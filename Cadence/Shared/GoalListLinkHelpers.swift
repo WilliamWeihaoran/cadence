@@ -128,12 +128,15 @@ enum GoalLinkPresentation {
     /// but *that* is framework timing of exactly the kind [[T-1296]] says not to depend on, and
     /// this filter is the reading that is right whether or not the array has caught up.
     ///
-    /// **It is the second line of defence and not the fix**, because two readers never come through
-    /// here at all: `GoalContributionSummary` walks `goal.listLinks` raw, once for the counted
-    /// tasks and once for the "N lists" chip, so only the processed restore can keep a refused
-    /// attach out of the goal's progress bar. `aDeletedLinkIsNotAnAttachedListInEitherReading`
-    /// exercises this filter against a deleted-and-unprocessed link directly, so it is not a guard
-    /// no mutation can reach.
+    /// **The two readers that never come through here now ask the same question themselves**
+    /// ([[T-1321]]). `GoalContributionResolver` walks `goal.listLinks` raw, once for the counted
+    /// tasks and once for the "N lists" chip, so until it filtered `isDeleted` only the processed
+    /// restore could keep a refused attach out of the goal's *progress bar* — which is why this was
+    /// filed as a second line of defence rather than the fix. It is now the same reading in three
+    /// places, and `detachGoalListLink` relies on it: that is what let the detach stop nulling the
+    /// link's references before deleting it. `aDeletedLinkIsNotAnAttachedListInEitherReading` and
+    /// `aDeletedLinkIsNotCountedByTheProgressBarEither` exercise both filters against a
+    /// deleted-and-unprocessed link directly, so neither is a guard no mutation can reach.
     static func links(of goal: Goal) -> [GoalListLink] {
         (goal.listLinks ?? [])
             .filter { !$0.isDeleted && ($0.area != nil || $0.project != nil) }
@@ -412,28 +415,60 @@ extension ModelContext {
         return link
     }
 
-    /// Detaching severs the link's own references before deleting the row.
+    /// Detaching deletes the join row and **makes no other change** — which is the whole of the
+    /// fix for [[T-1321]].
     ///
-    /// Nothing on the other end of a link is orphaned by this — the goal, the list, and the list's
+    /// Nothing on the other end of a link is orphaned by this: the goal, the list, and the list's
     /// tasks are all the user's real work and outlive it, exactly as `deleteGoal` keeps them when
-    /// the goal goes. The manual nulling is the house style `TrackingDeleteHelpers` documents:
-    /// this codebase does not trust inverse back-population to have happened by the time anything
-    /// reads it, and the inverse arrays (`Goal.listLinks`, `Area.goalLinks`, `Project.goalLinks`)
-    /// are read by `GoalContributionResolver` on the very next render.
+    /// the goal goes.
     ///
     /// **Throws for the reason `attachList` gives**, undoing with `commitDelete`'s `rollback()`:
     /// the row is already marked deleted and there is no object to hand back, which is the same
     /// undo `deleteGoal`'s cascade takes ([[T-1301]]).
+    ///
+    /// **It used to null `goal`, `area` and `project` first, and that made the refusal
+    /// toolchain-dependent.** Every write made before the commit is a write `rollback()` has to
+    /// undo, and whether `rollback()` restores an already-materialised *reference* before something
+    /// refetches is the one question this repository's two Xcode majors answer differently
+    /// ([[T-1279]], [[T-1296]]): 27 restores it at once — measured, and correct — while through 26
+    /// an edit's undo waits for a refetch. `GoalLinkPresentation.links(of:)` drops a link with
+    /// neither an area nor a project by design, so on 26 a refused detach would have made the row
+    /// **vanish** from both goal inspectors under an alert reading "Nothing was changed." — the
+    /// exact inverse of [[T-1306]], and invisible to a green CI run, because the *store* is right
+    /// under either answer.
+    ///
+    /// **This shape cannot read either way, because there is no edit to restore.** A delete is all
+    /// that is pending; `rollback()` un-deletes unconditionally, which is what makes it the right
+    /// undo for `commitDelete` in the first place; and the three references still hold the values
+    /// the store holds, because nothing wrote them. That is a property of the *construction*, not a
+    /// measurement — which matters, since the 26 reading cannot be taken on the Mac this was
+    /// written on. **Re-assigning the three in a `catch` was rejected, not overlooked:** after
+    /// `rollback()` that is a *fresh* pending edit in the app's single `ModelContext` for the next
+    /// unrelated `save()` to take, and `hasChanges == false` after a refusal is the property the
+    /// whole `CadencePendingChangePersistence` family exists to keep.
+    ///
+    /// **What the nulling bought on the *success* path is bought by `isDeleted` instead, and bought
+    /// better.** `Models/AGENTS.md`'s delete-side rule is real — between `delete(row)` and the next
+    /// flush a parent's to-many still holds the row — and severing the link's own references was how
+    /// `goal.listLinks` came to drop it for the very next render. But that depended on SwiftData
+    /// having back-populated the inverse, which is the kind of timing [[T-1296]] says not to build
+    /// on. Every reader now asks the object instead: `GoalLinkPresentation.links(of:)` and
+    /// `existingLink(for:on:)` since [[T-1306]], and `GoalContributionResolver`'s two raw
+    /// `goal.listLinks` walks — the goal's progress bar and its "N lists" chip — since this ticket.
+    /// `deleteGoal` already takes a goal's links with a bare `delete(link)` and no nulling, so this
+    /// is `TrackingDeleteHelpers`' house style for *this* model rather than a departure from it;
+    /// what the house style nulls by hand is the reference on an object that **survives** the
+    /// delete (`habit.goal`, `task.goal`), and the link does not survive.
     ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     func detachGoalListLink(
         _ link: GoalListLink,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
-        link.goal = nil
-        link.area = nil
-        link.project = nil
         delete(link)
+        // Kept: this is the forward direction of a delete, which both toolchains agree about, and
+        // it is what empties `goal.listLinks` for the next render on the success path. Nothing
+        // below depends on it having worked.
         processPendingChanges()
         try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)
     }

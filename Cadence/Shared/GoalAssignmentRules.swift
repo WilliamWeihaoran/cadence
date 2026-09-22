@@ -82,6 +82,31 @@ enum GoalAssignmentRules {
         goal.parentGoal == nil
     }
 
+    /// Whether `goal` may **not** be given a parent, because it already owns milestones of its own.
+    ///
+    /// `canOwnMilestones` asked of a candidate *parent*; this is the same rule asked of the goal
+    /// being **edited**. Nesting a goal that owns milestones pushes those milestones to a third
+    /// level, and a third level renders on no screen — so the goal that would be nested is the one
+    /// that has to refuse, before the tree exists. `nil` is the create path, where there is no goal
+    /// yet and nothing to keep top-level.
+    ///
+    /// **Both editors ask this one function now ([[T-1327]]).** It was `iOSGoalEditorSheet`'s own
+    /// private computed property, so `CreateGoalSheet` offered a parent for a goal with milestones
+    /// under it and `CadenceTrackingMutationSupport.saveGoal` took the selection — that function
+    /// guards only the self-parenting *cycle*, never depth — which made the macOS editor the way a
+    /// goal -> milestone -> sub-milestone tree came to exist at all. A rule enforced on one of two
+    /// platforms is not a rule; it is a defect with a workaround.
+    static func mustStayTopLevel(_ goal: Goal?) -> Bool {
+        guard let goal else { return false }
+        return goal.parentGoal == nil && !(goal.subGoals ?? []).isEmpty
+    }
+
+    /// What the parent picker says in place of itself when `mustStayTopLevel(_:)` is true.
+    ///
+    /// Beside the rule rather than in either editor, because it is the same sentence on both and
+    /// was iOS's string before macOS needed it.
+    static let mustStayTopLevelNotice = "This goal has milestones of its own, so it stays top-level."
+
     /// Every goal that goes when `goal` is deleted: the whole nested subtree, depth-first so a
     /// milestone's own milestones are ordered before it, with `goal` itself last.
     ///

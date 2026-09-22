@@ -96,6 +96,83 @@ struct GoalPresentationTests {
         }
     }
 
+    /// **The same rule asked of the goal being edited, and asked by both editors ([[T-1327]]).**
+    ///
+    /// `canOwnMilestones` above answers for a candidate *parent*. `mustStayTopLevel` answers for
+    /// the goal that would be **nested**, and it is the half that keeps the third level from being
+    /// built: give a goal that owns milestones a parent and its milestones land on a level nothing
+    /// draws. `CadenceTrackingMutationSupport.saveGoal` will not stop it — it guards the
+    /// self-parenting cycle and says nothing about depth — so the picker is the only gate.
+    ///
+    /// The two answers are complements over a two-level tree and this asserts them as such: a goal
+    /// may be a parent, or may be given one, and the only goal that is neither is one that already
+    /// owns milestones.
+    @Test func aGoalThatOwnsMilestonesMayNotBeGivenAParent() {
+        let direction = Goal(title: "Get healthy")
+        let milestone = Goal(title: "Run a 10k")
+        milestone.parentGoal = direction
+        direction.subGoals = [milestone]
+        let leaf = Goal(title: "Learn to cook")
+
+        #expect(GoalAssignmentRules.mustStayTopLevel(direction) == true)
+        // A milestone keeps its picker, so an existing parent can still be changed or cleared.
+        #expect(GoalAssignmentRules.mustStayTopLevel(milestone) == false)
+        #expect(GoalAssignmentRules.mustStayTopLevel(leaf) == false)
+        // The create path, where there is no goal yet and nothing to keep top-level.
+        #expect(GoalAssignmentRules.mustStayTopLevel(nil) == false)
+
+        // Promoting the milestone out makes the direction offerable again, and the milestone —
+        // which now owns nothing — remains so.
+        milestone.parentGoal = nil
+        direction.subGoals = []
+        #expect(GoalAssignmentRules.mustStayTopLevel(direction) == false)
+    }
+
+    /// **Both parent pickers ask that one function, which is the whole of [[T-1327]]'s second
+    /// half.**
+    ///
+    /// The rule was `iOSGoalEditorSheet.mustStayTopLevel`, a private computed property, and
+    /// `CreateGoalSheet.parentGoalChoices` had no equivalent — so macOS offered a parent for a goal
+    /// with milestones under it and was the way a three-deep tree came to exist at all. Neither
+    /// picker is reachable from this target (iOS is entirely inside `#if os(iOS)`, and both are
+    /// view bodies), so the call sites are read from source, exactly as
+    /// `CadenceGoalListLinkSurfaceTests` reads iOS's link calls.
+    @Test func bothGoalEditorsRefuseToNestAGoalThatOwnsMilestones() throws {
+        let macSheet = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Sheets/CreateGoalSheet.swift")
+        let iosSheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTrackingEditorSheets.swift")
+
+        // One spelling of the rule per platform, and it is the shared one.
+        for (name, source) in [("macOS", macSheet), ("iOS", iosSheet)] {
+            #expect(
+                CadenceSourceScan.matchCount("GoalAssignmentRules\\.mustStayTopLevel\\(", in: source) == 1,
+                "\(name) does not ask the shared rule exactly once"
+            )
+            #expect(
+                source.contains("GoalAssignmentRules.mustStayTopLevelNotice"),
+                "\(name) writes the notice out by hand instead of reading the one beside the rule"
+            )
+            #expect(
+                !source.contains("parentGoal == nil && !("),
+                "\(name) kept a hand-written copy of the rule"
+            )
+        }
+
+        // And the guard is in the choices, not only in the label: a picker that draws the notice
+        // and still offers the parents underneath it is the same defect with a caption.
+        let choices = try #require(
+            CadenceSourceScan.declarationBody("private var parentGoalChoices: [Goal]", in: macSheet),
+            "parentGoalChoices is no longer declared that way"
+        )
+        #expect(choices.contains("guard !mustStayTopLevel else { return [] }"))
+        #expect(choices.contains("GoalAssignmentRules"), "the scan read something other than the picker")
+
+        let iosChoices = try #require(
+            CadenceSourceScan.declarationBody("private var parentChoices: [Goal]", in: iosSheet),
+            "iOS's parentChoices is no longer declared that way"
+        )
+        #expect(iosChoices.contains("guard !mustStayTopLevel else { return [] }"))
+    }
+
     // MARK: - T-541: the detail pane may not show what the list filtered away
 
     /// **Every goal completed empties both sides of the Goals screen.**

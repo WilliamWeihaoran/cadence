@@ -75,8 +75,8 @@ it, and T-1290 is why.
   double-counts that list's tasks in the goal's progress. It cannot: `contributingTasks` ends in
   `dedupe(...)`, which filters by task `id`. What a duplicate breaks is everything counting
   *links* — `linkedListCount`, the "N lists" chip, the attribution line, two MCP DTOs, and a second
-  identical row in both inspectors. Detach severs the link's own references before deleting
-  the row. Rationale and the substring-grep trap: `Cadence/Shared/AGENTS.md`.
+  identical row in both inspectors. **Detach deletes the row and edits nothing** — a pre-commit edit is what Xcode 26's
+  `rollback()` undoes late, so readers filter `isDeleted` ([[T-1321]]). Rationale and the substring-grep trap: `Cadence/Shared/AGENTS.md`.
 - `Note` - the single live note model (see below).
 - `SavedLink`, `MarkdownImageAsset` - list bookmarks and editor image assets.
 - `SidebarLayoutPreference` - the sidebar's visible rows and their order, **synced** (T-1274: the

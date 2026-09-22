@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 nonisolated struct GoalContributionSummary {
     let progressType: GoalProgressType
@@ -90,7 +91,14 @@ nonisolated enum GoalContributionResolver {
         // which surface asked. Directly-assigned work is the most explicit statement a user can
         // make about what a goal is made of; it counts.
         let directTasks = goal.tasks ?? []
-        let listTasks = (goal.listLinks ?? []).flatMap(\.tasks)
+        // **`isDeleted` is filtered here and in `linkedListCount` for the reason
+        // `GoalLinkPresentation.links(of:)` filters it, and these two are the readers that note
+        // said it could not protect** ([[T-1306]], [[T-1321]]). Both walk `goal.listLinks` raw, so
+        // a link the store is about to drop — a refused attach between the throw and the next
+        // processed change, or any detach before its flush — moved the goal's *progress bar*. The
+        // array catching up is framework timing; the object's own `isDeleted` is not, which is what
+        // let `detachGoalListLink` stop severing the link's references before deleting it.
+        let listTasks = (goal.listLinks ?? []).filter { !$0.isDeleted }.flatMap(\.tasks)
         let subGoalTasks = (goal.subGoals ?? []).flatMap {
             contributingTasks(for: $0, visitedGoalIDs: nextVisited)
         }
@@ -111,7 +119,12 @@ nonisolated enum GoalContributionResolver {
     private static func linkedListCount(for goal: Goal, visitedGoalIDs: Set<UUID> = []) -> Int {
         guard !visitedGoalIDs.contains(goal.id) else { return 0 }
         let nextVisited = visitedGoalIDs.union([goal.id])
-        let ownCount = (goal.listLinks ?? []).filter { $0.area != nil || $0.project != nil }.count
+        // `!isDeleted` for the reason `contributingTasks` above records. The target-less half of
+        // this filter is the one `links(of:)` matches, so the chip counts the rows the inspector
+        // draws.
+        let ownCount = (goal.listLinks ?? [])
+            .filter { !$0.isDeleted && ($0.area != nil || $0.project != nil) }
+            .count
         return (goal.subGoals ?? []).reduce(ownCount) {
             $0 + linkedListCount(for: $1, visitedGoalIDs: nextVisited)
         }

@@ -103,9 +103,12 @@ struct iOSGoalEditorSheet: View {
     /// A top-level goal that already owns milestones stays top-level — nesting it would push
     /// its own milestones to a third level the Goals list does not render. Goals that are
     /// already nested keep their picker so an existing parent can still be changed or cleared.
+    ///
+    /// The rule moved to `GoalAssignmentRules.mustStayTopLevel(_:)` so macOS's picker could ask it
+    /// too ([[T-1327]]); it was written here and nowhere else, which is why only macOS could build
+    /// the third level.
     private var mustStayTopLevel: Bool {
-        guard let editingGoal else { return false }
-        return editingGoal.parentGoal == nil && !(editingGoal.subGoals ?? []).isEmpty
+        GoalAssignmentRules.mustStayTopLevel(editingGoal)
     }
 
     private var parentChoices: [Goal] {
@@ -145,7 +148,7 @@ struct iOSGoalEditorSheet: View {
 
             iOSTrackingPickerSection(title: "Parent Goal") {
                 if mustStayTopLevel {
-                    Text("This goal has milestones of its own, so it stays top-level.")
+                    Text(GoalAssignmentRules.mustStayTopLevelNotice)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.dim)
                         .frame(maxWidth: .infinity, alignment: .leading)

@@ -113,9 +113,15 @@ struct CadenceGlobalUndoSurfaceTests {
     /// The copy the removal was measured against. If someone puts model undo back, these two
     /// sentences become false again — so the sentences are pinned next to the rule that makes them
     /// true, rather than in a suite that has never heard of it.
+    ///
+    /// **The goal sentence moved out of `CreateGoalSheet` and into
+    /// `CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for:)`** ([[T-1327]]): the
+    /// milestone *count* in it was wrong, and a number built inside a view body is a number no test
+    /// can read. The path moved with the sentence and the claim did not — the second assertion is
+    /// what keeps it a claim about the alert rather than about a string nothing shows.
     @Test func theDestructiveSheetsStillPromiseTheDeleteIsFinal() throws {
         for path in [
-            "Cadence/macOS/Sheets/CreateGoalSheet.swift",
+            "Cadence/Shared/CadenceTrackingMutationSupport.swift",
             "Cadence/macOS/Views/HabitsFormSheets.swift"
         ] {
             let source = try cadenceTestSource(path)
@@ -124,6 +130,14 @@ struct CadenceGlobalUndoSurfaceTests {
                 "\(path) no longer tells the user the delete is final"
             )
         }
+
+        // And the goal sheet still puts it on screen: the promise is only made if it reaches the
+        // confirmation the user reads.
+        #expect(
+            try cadenceTestSource("Cadence/macOS/Sheets/CreateGoalSheet.swift")
+                .contains("CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for: goal)"),
+            "the goal delete confirmation no longer reads the sentence that promises finality"
+        )
     }
 }
 
