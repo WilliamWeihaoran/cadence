@@ -98,8 +98,11 @@ extension ModelContext {
     ///
     /// The reminder cancellation is not optional housekeeping: habit reminders repeat on
     /// time-of-day, so a pending request outliving its habit would fire a banner carrying the
-    /// deleted habit's title every day until the next `scenePhase` reconcile. `ListDeleteHelpers`
-    /// already does this for the context cascade; this is the same rule for a single habit.
+    /// deleted habit's title every day until the next `scenePhase` reconcile. The context cascade
+    /// in `ListDeleteHelpers` owes the same cancellation and **cannot spell it this way**: it
+    /// commits nothing, so it has no `try` to sit below and it defers instead ([[T-1348]]). This
+    /// comment used to name that cascade as the model for the line below, which was the reverse of
+    /// the truth — it was the one site the rule below had never reached.
     ///
     /// **Throws, and the reminder is cancelled only below the commit ([[T-1301]]).** `deleteGoal`
     /// records why the swallow was invisible; this one had a second cost the goal side does not.
@@ -124,6 +127,6 @@ extension ModelContext {
         processPendingChanges()
         try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)
 
-        Task { await NotificationManager.shared.cancel(habitIDs: [habitID]) }
+        NotificationManager.cancelReminders(habitIDs: [habitID])
     }
 }

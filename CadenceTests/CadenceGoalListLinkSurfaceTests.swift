@@ -345,6 +345,33 @@ struct CadenceGoalListLinkSurfaceTests {
     /// array still holds may not be a row the inspector drops. That is the vanishing row itself,
     /// and it is a bound rather than a pin —
     /// `CadenceStartupRecoveryReasonTests` is the shape this follows.
+    ///
+    /// **[[T-1349]]: the live bound is not the whole of what the user sees, and the construction
+    /// argument above is not a proof.** R65 corrects two things [[T-1321]] leaned on. `rollback()`'s
+    /// restoration is *documented* — Apple says it cancels unsaved insertions and deletions and
+    /// returns modified models to their last committed values — so this is a contract question, not
+    /// an undocumented one. And the 26-vs-27 difference is **not** an established Apple change:
+    /// zero rollback mentions across the inspected iOS/macOS 26 and 27 release notes, so T-1296's
+    /// readings stand as observations of a compatibility difference to contain, not as evidence
+    /// either toolchain restores every graph. What that costs T-1321 is the word *proof*: removing
+    /// the explicit `nil` writes removes the **application's** edits, but `delete` followed by
+    /// `processPendingChanges()` still asks SwiftData to alter relationship state, and a
+    /// SwiftData-backed property is not an ordinary variable that changes only where this method
+    /// assigns it. "Nothing writes them, so they hold" is a good reason and not a demonstration.
+    ///
+    /// So the reading below is added, and it is the one that answers *what the user sees* on both
+    /// toolchains: the app's own presentation reader, run over a goal fetched afresh. Every render
+    /// after any refetch — reopening the inspector, a `@Query` invalidation, the next launch — is
+    /// this reading, and it converges under either answer to the live-array question. It is also
+    /// strictly more than the row count it sits beside: a count of 1 is satisfied by a link
+    /// restored with a `nil` area, which `links(of:)` drops and the inspector therefore does not
+    /// draw. **A partial restoration fails here.** The derived "N lists" chip is asserted for the
+    /// same reason — it is the second thing the refusal must not have silently changed.
+    ///
+    /// What is still *not* asserted is `drawn == true` on the live reference. That is exactly the
+    /// measurement this Mac cannot take, and pinning one toolchain's answer to it is what turned CI
+    /// red in [[T-1279]] and again in [[T-1319]]. It stays in [[T-1336]] with the question narrowed
+    /// rather than guessed.
     @Test func arefusedDetachKeepsTheLinkInTheStoreAndLeavesNothingPending() throws {
         let store = try makeStore()
         let link = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
@@ -373,6 +400,26 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(
             try reader.fetch(FetchDescriptor<GoalListLink>()).count == 1,
             "the refusal said nothing was changed and the row is gone"
+        )
+
+        // What the user sees, on either toolchain: the app's own reader over a goal read afresh.
+        // A row count cannot distinguish a whole link from one restored without its area, and the
+        // second is drawn by nothing.
+        let refetchedGoal = try #require(
+            try reader.fetch(FetchDescriptor<Goal>()).first { $0.id == store.goal.id },
+            "the goal itself is gone from a store the refusal did not touch"
+        )
+        #expect(
+            GoalLinkPresentation.links(of: refetchedGoal).map(\.id) == [link.id],
+            "the inspector draws no link for a goal the refusal left attached to one"
+        )
+        #expect(
+            GoalLinkPresentation.isAttached(.area(store.area), to: refetchedGoal),
+            "the attach sheet's checkmark reads unattached after a refusal that changed nothing"
+        )
+        #expect(
+            GoalContributionResolver.summary(for: refetchedGoal).linkedListCount == 1,
+            "the goal's \"N lists\" chip dropped a list the refusal put back"
         )
     }
 

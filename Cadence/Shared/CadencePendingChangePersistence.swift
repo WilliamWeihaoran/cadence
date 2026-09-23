@@ -188,17 +188,34 @@ nonisolated enum CadencePendingChangePersistence {
     /// because from the user's side the two are the same event: the delete did not happen, and
     /// nothing was removed.
     ///
+    /// **It is also the scope a deferred delete's side effects are released from ([[T-1348]]).**
+    /// A cascade commits nothing — that is the whole of T-291 — so any *success-only* effect it
+    /// earns along the way has nothing to sit below. `CadenceDeferredReminderCancellations` is
+    /// where those effects wait, this is the only place the scope is opened, and `release()` below
+    /// is reachable on exactly one path: the cascade finished **and** the commit landed. Every
+    /// other exit throws past it, which is what makes "nothing was removed" also mean "nothing was
+    /// cancelled".
+    ///
     /// - Parameter cascade: Runs the delete. Returns `false` if it could not finish.
+    /// - Parameter cancellations: The queue the cascade's reminder cancellations wait in. It is a
+    ///   parameter for the reason `commit` is: a released cancellation is otherwise unobservable
+    ///   from a test, because `NotificationManager.cancel` is inert under
+    ///   `NotificationManager.isTestEnvironment`, and a side effect no test can see is a side
+    ///   effect that cannot be proved absent on the refusal path.
     static func commitCascade(
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() },
+        cancellations: CadenceDeferredReminderCancellations = CadenceDeferredReminderCancellations(),
         cascade: () -> Bool
     ) throws {
-        guard cascade() else {
-            modelContext.rollback()
-            throw CascadeIncomplete()
+        try CadenceDeferredReminderCancellations.$current.withValue(cancellations) {
+            guard cascade() else {
+                modelContext.rollback()
+                throw CascadeIncomplete()
+            }
+            try commitDelete(in: modelContext, commit: commit)
         }
-        try commitDelete(in: modelContext, commit: commit)
+        cancellations.release()
     }
 
     /// Thrown by `commitCascade(in:commit:cascade:)` when the cascade itself could not finish.
@@ -207,4 +224,84 @@ nonisolated enum CadencePendingChangePersistence {
     /// could not be read, the delete was rolled back, and the sentence the user reads is the same
     /// one a refused commit produces.
     struct CascadeIncomplete: Error {}
+}
+
+/// The reminder cancellations a **deferred** delete has earned and may not perform yet.
+///
+/// **Why this exists ([[T-1348]]).** A reminder cancellation is a success-only side effect: it is
+/// right below a commit that landed, and wrong anywhere else, because a cancelled reminder for a
+/// row that is still in the store is silent until the next `scenePhase` reconcile. [[T-1301]]
+/// settled that for every delete that commits *itself* — `deleteHabit` cancels below its `try`,
+/// `CadenceTaskMutationSupport.deleteTasks` cancels below its gate and returns before it on a
+/// refusal. The list cascades are the case that rule could not reach: they commit **nothing**
+/// (T-291 — the whole cascade is one pending change and the surface that asked for the delete
+/// commits it), so there was no commit to put the cancellation below and both legs ran it
+/// unconditionally, above a commit that can still be refused.
+///
+/// **Why the cascade does not simply take a `commit:` instead.** That is the other candidate fix,
+/// and it inverts T-291: `deleteArea` recurses into `deleteProject`, so a cascade that committed
+/// itself would commit a nested list while the enclosing one could still abort — the exact
+/// half-applied state `commitsImmediately: false` was introduced to remove — and
+/// `commitCascade` would then be committing on top of a commit. Deferring keeps the property that
+/// nothing inside a cascade writes to the store, and moves only the effect.
+///
+/// **Why the scope is ambient rather than a parameter.** The cascades answer `Bool`, which is what
+/// `SettingsView.report(_:cascade:)` and both `EditListSheet` deletes are typed against, and what
+/// `commitCascade` consumes. Threading an accumulator down through `deleteContext` /
+/// `deleteArea` / `deleteProject` / `deleteTasks` would make correctness depend on every present
+/// and future caller remembering to pass one — a delete that forgets is silently back to the
+/// T-1348 behaviour. Binding it to the one function that owns the commit means the deferral
+/// arrives with the commit or not at all. `@TaskLocal` rather than a `static var` because the
+/// binding is then scoped and concurrency-safe by construction.
+///
+/// **A deferred cancellation with no scope around it is dropped, deliberately.** That is a delete
+/// that does not commit and has no owner waiting to, which the source scan in
+/// `CadenceListCascadeRollbackTests.noListDeleteSurfaceSavesOverTheCascadesAnswer` already
+/// forbids. Dropping costs a reminder that stays armed until the next reconcile converges;
+/// firing costs a reminder cancelled for a row the user can still see, which nothing converges.
+/// The two errors are not symmetric, so this one errs toward the recoverable side.
+///
+/// `@unchecked Sendable` with a lock rather than an actor: every touch is synchronous and inside
+/// one `commitCascade` frame, and a `@TaskLocal` value must be `Sendable`.
+nonisolated final class CadenceDeferredReminderCancellations: @unchecked Sendable {
+    /// The queue in scope, set only by `CadencePendingChangePersistence.commitCascade`.
+    @TaskLocal static var current: CadenceDeferredReminderCancellations?
+
+    private struct Held {
+        let taskIDs: [UUID]
+        let habitIDs: [UUID]
+        let cancel: @Sendable () -> Void
+    }
+
+    private let lock = NSLock()
+    private var held: [Held] = []
+    private var releasedEffects: [Held] = []
+
+    /// The ids waiting on a commit that has not landed. Empty after `release()`.
+    var pendingTaskIDs: [UUID] { lock.withLock { held.flatMap(\.taskIDs) } }
+    /// See `pendingTaskIDs`.
+    var pendingHabitIDs: [UUID] { lock.withLock { held.flatMap(\.habitIDs) } }
+    /// The ids whose cancellation actually ran. Empty unless a commit landed.
+    var releasedTaskIDs: [UUID] { lock.withLock { releasedEffects.flatMap(\.taskIDs) } }
+    /// See `releasedTaskIDs`.
+    var releasedHabitIDs: [UUID] { lock.withLock { releasedEffects.flatMap(\.habitIDs) } }
+
+    /// - Parameter cancel: What to run once the enclosing commit has landed. The ids beside it are
+    ///   the same ids it will cancel, recorded so the queue can be read without a second spy.
+    func hold(taskIDs: [UUID], habitIDs: [UUID], cancel: @escaping @Sendable () -> Void) {
+        lock.withLock { held.append(Held(taskIDs: taskIDs, habitIDs: habitIDs, cancel: cancel)) }
+    }
+
+    /// Runs everything held, once. Called only from the one path where the commit succeeded.
+    func release() {
+        let due = lock.withLock { () -> [Held] in
+            let due = held
+            held = []
+            releasedEffects.append(contentsOf: due)
+            return due
+        }
+        for effect in due {
+            effect.cancel()
+        }
+    }
 }

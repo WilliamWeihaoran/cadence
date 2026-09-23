@@ -471,4 +471,177 @@ struct TrackingDeleteHelpersTests {
         // Ascending is the same ordering read backwards, not a different ordering.
         #expect(TaskOrdering.precedes(unset, low, field: .priority, direction: .ascending))
     }
+
+    // MARK: - The refusal path
+
+    private struct CommitRefused: Error {}
+
+    /// [[T-1336]] / [[T-1349]]: the house rule, as far as it can be asserted without a second
+    /// toolchain.
+    ///
+    /// **The rule, corrected by R65.** Not "never edit before delete" as a blanket — R65 is
+    /// explicit that some of `deleteGoal`'s manual clearing is redundant while recurrence rewiring
+    /// is load-bearing, so a blanket rule deletes working code. The rule is a property of the
+    /// *operation*: **a refused deletion must preserve the persisted graph and restore the app's
+    /// visible state, leaving no pending mutations and running no success-only side effects.**
+    ///
+    /// Four clauses, and three of them are toolchain-free. *No pending mutations* is
+    /// `hasChanges`, below. *Preserves the persisted graph* is the fresh-context read, and it is
+    /// asserted through the app's own readers rather than through row counts, because a count of
+    /// three goals is satisfied by a tree whose `parentGoal` links did not come back. *No
+    /// success-only side effects* is [[T-1348]], measured separately —
+    /// `deleteGoal` has none and `deleteHabit`'s cancellation is below its commit, which
+    /// `theHabitDeleteCancelsOnlyBelowItsCommit` holds.
+    ///
+    /// The fourth — *restores the visible state* on an **already-materialised** reference — is the
+    /// one this Mac cannot measure, because it is the only question Xcode 26 and 27 are observed
+    /// to answer differently ([[T-1279]], [[T-1296]]) and there is no second toolchain here.
+    /// Pinning 27's answer to it is what turned CI red twice. It stays open in T-1336 with the
+    /// question narrowed, and deliberately is not guessed at here.
+    @Test func arefusedGoalDeleteLeavesThePersistedTreeAndItsProgressIntact() throws {
+        let modelContext = try makeContext()
+
+        let context = Context(name: "Work")
+        let area = Area(name: "Thesis", context: context)
+        let direction = Goal(title: "Finish thesis", context: context)
+        let milestone = Goal(title: "Chapter 1", context: context)
+        milestone.parentGoal = direction
+        let task = AppTask(title: "Draft")
+        task.area = area
+        task.goal = milestone
+        let habit = Habit(title: "Write daily", goal: direction)
+        let link = GoalListLink(goal: direction, area: area)
+
+        for model in [context as any PersistentModel, area, direction, milestone, task, habit, link] {
+            modelContext.insert(model)
+        }
+        try modelContext.save()
+        let before = GoalContributionResolver.summary(for: direction)
+
+        #expect(throws: CommitRefused.self) {
+            try modelContext.deleteGoal(direction, commit: { _ in throw CommitRefused() })
+        }
+
+        #expect(
+            !modelContext.hasChanges,
+            "the refused goal delete left the whole subtree pending for the next unrelated save"
+        )
+
+        // The persisted graph, read through the app's readers rather than counted.
+        let reader = ModelContext(modelContext.container)
+        let storedGoals = try reader.fetch(FetchDescriptor<Goal>())
+        #expect(storedGoals.map(\.title).sorted() == ["Chapter 1", "Finish thesis"])
+        let storedDirection = try #require(storedGoals.first { $0.id == direction.id })
+        let storedMilestone = try #require(storedGoals.first { $0.id == milestone.id })
+
+        #expect(
+            storedMilestone.parentGoal?.id == storedDirection.id,
+            "the milestone came back promoted to a direction the user never created"
+        )
+        #expect(
+            GoalLinkPresentation.links(of: storedDirection).map(\.id) == [link.id],
+            "the goal came back with no list feeding its percentage"
+        )
+        #expect(
+            (storedDirection.habits ?? []).map(\.id) == [habit.id],
+            "the habit came back unlinked from the goal it tracks"
+        )
+        #expect(
+            try reader.fetch(FetchDescriptor<AppTask>()).first?.goal?.id == milestone.id,
+            "the task came back severed from the milestone it contributes to"
+        )
+
+        // The derived reading, which is what the goal's own row shows. `deleteGoal` empties
+        // `tasks`, `habits`, `listLinks` and `subGoals` on every doomed goal before committing, so
+        // a restoration that missed any of them reads as a direction at 0/0 with no milestones.
+        let after = GoalContributionResolver.summary(for: storedDirection)
+        #expect(before.totalTasks == 1, "the fixture never gave the direction a contributing task")
+        #expect(before.linkedListCount == 1, "the fixture never gave the direction a linked list")
+        #expect(after.totalTasks == before.totalTasks)
+        #expect(after.linkedListCount == before.linkedListCount)
+        #expect(after.progress == before.progress)
+    }
+
+    /// The habit half of the same rule. Its edits are the smaller set — `completion.habit = nil`,
+    /// `completions = []`, `goal = nil`, `context = nil` — and R65 names it the closest candidate
+    /// for a T-1321-style simplification. This asserts what a refusal owes **before** any such
+    /// simplification is attempted, so the removal has something to be measured against.
+    @Test func arefusedHabitDeleteLeavesItsHistoryAndItsOwnersIntact() throws {
+        let modelContext = try makeContext()
+
+        let context = Context(name: "Health")
+        let goal = Goal(title: "Get healthy", context: context)
+        let habit = Habit(title: "Run", context: context, goal: goal)
+        let first = HabitCompletion(date: "2026-08-10", habit: habit)
+        let second = HabitCompletion(date: "2026-08-11", habit: habit)
+
+        for model in [context as any PersistentModel, goal, habit, first, second] {
+            modelContext.insert(model)
+        }
+        try modelContext.save()
+
+        #expect(throws: CommitRefused.self) {
+            try modelContext.deleteHabit(habit, commit: { _ in throw CommitRefused() })
+        }
+
+        #expect(!modelContext.hasChanges, "the refused habit delete left a pending change")
+
+        let reader = ModelContext(modelContext.container)
+        let storedHabit = try #require(
+            try reader.fetch(FetchDescriptor<Habit>()).first { $0.id == habit.id },
+            "the refusal said nothing was removed and the habit is gone"
+        )
+        #expect(
+            storedHabit.goal?.id == goal.id,
+            "the habit came back unlinked from the goal it tracks"
+        )
+        #expect(
+            storedHabit.context?.id == context.id,
+            "the habit came back with no context, which is the one place no list can reach it"
+        )
+        #expect(
+            (storedHabit.completions ?? []).map(\.date).sorted() == ["2026-08-10", "2026-08-11"],
+            "the habit came back with its streak history detached"
+        )
+        #expect(
+            try reader.fetch(FetchDescriptor<HabitCompletion>()).allSatisfy { $0.habit != nil },
+            "a completion came back orphaned, invisible and syncing forever"
+        )
+    }
+
+    /// The success-only-side-effect clause, where behaviour cannot reach it.
+    ///
+    /// `NotificationManager.cancel` is inert under `isTestEnvironment`, so a cancellation that
+    /// runs on the refusal path is invisible to this target — which is exactly how [[T-1348]]'s
+    /// defect survived one model over. [[T-1301]] put this one below the `try`; the scan is what
+    /// keeps it there, and it also pins the single spelling, so the raw
+    /// `Task { await NotificationManager.shared.cancel(…) }` cannot grow back above the commit.
+    @Test func theHabitDeleteCancelsOnlyBelowItsCommit() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/TrackingDeleteHelpers.swift")
+        #expect(raw.count > 400, "the tracking delete helpers read as \(raw.count) characters")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "the comment stripper removed nothing")
+
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "deleteHabit", in: stripped),
+            "deleteHabit is no longer a function"
+        )
+        let commitThenCancel = #"commitDelete\(in: self, commit: commit\)\s*NotificationManager\.cancelReminders\(habitIDs: \[habitID\]\)"#
+        #expect(
+            CadenceSourceScan.matchCount(commitThenCancel, in: body) == 1,
+            "the habit delete no longer cancels its reminder below the commit that earns it"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"NotificationManager\.shared\.cancel\("#, in: stripped) == 0,
+            "a tracking delete reaches the notification centre outside the one gated spelling"
+        )
+        // Non-vacuity for the needle, against the ordering it must reject.
+        #expect(
+            CadenceSourceScan.matchCount(
+                commitThenCancel,
+                in: "NotificationManager.cancelReminders(habitIDs: [habitID])\n        try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)"
+            ) == 0,
+            "the ordering needle passes on a delete that cancels above its commit"
+        )
+    }
 }

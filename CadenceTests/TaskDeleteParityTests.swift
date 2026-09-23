@@ -278,9 +278,15 @@ struct TaskDeleteParityTests {
     /// Two things this target cannot reach behaviourally. The commit is one line inside a function
     /// whose other twenty `try? modelContext.save()` neighbours are not this ticket's, so the
     /// needle is scoped by the gate it sits in rather than counted file-wide. The notification
-    /// cancellation is a `Task` against a real `UNUserNotificationCenter`, so its *position* is
-    /// what can be pinned: it follows the commit, and the failure branch returns before reaching
-    /// it — a delete that promises it removed nothing must not have cancelled the reminder either.
+    /// cancellation reaches a real `UNUserNotificationCenter`, so its *position* is what can be
+    /// pinned: it follows the commit, and the failure branch returns before reaching it — a delete
+    /// that promises it removed nothing must not have cancelled the reminder either.
+    ///
+    /// **[[T-1348]] split it in two, and the needle now reads both halves.** The committing half
+    /// is unchanged. The deferring half used to run the *same* unconditional cancellation, above a
+    /// commit this function does not make and its caller may still be refused, so the needle below
+    /// rejects any spelling that cancels outright on the deferred path. The behaviour that pins is
+    /// in `CadenceDeferredReminderCancellationTests`; this is the ordering it cannot see.
     @Test func theSharedDeleteCommitsThroughThePendingChangeSpineAndCancelsOnlyOnSuccess() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
         #expect(raw.count > 400, "the delete core read as \(raw.count) characters")
@@ -295,14 +301,18 @@ struct TaskDeleteParityTests {
             "the ordinary delete no longer commits through the spine that rolls back"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)\s*\}\s*Task \{ await NotificationManager"#, in: core) == 0,
+            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)\s*\}\s*NotificationManager"#, in: core) == 0,
             "the swallowed save T-365 removed is back"
         )
 
-        let cancelsAfterTheCommit = #"catch \{\s*return false\s*\}\s*\}\s*Task \{ await NotificationManager\.shared\.cancel\(taskIDs: Array\(taskIDs\)\) \}\s*return true"#
+        let cancelsAfterTheCommit = #"catch \{\s*return false\s*\}\s*\}\s*if commitsImmediately \{\s*NotificationManager\.cancelReminders\(taskIDs: Array\(taskIDs\)\)\s*\} else \{\s*NotificationManager\.deferReminderCancellation\(taskIDs: Array\(taskIDs\)\)\s*\}\s*return true"#
         #expect(
             CadenceSourceScan.matchCount(cancelsAfterTheCommit, in: core) == 1,
-            "a refused delete now cancels the reminder for a task it just put back"
+            "a refused or uncommitted delete now cancels the reminder for a task it just put back"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"Task \{ await NotificationManager\.shared\.cancel\("#, in: core) == 0,
+            "the delete core cancels a reminder directly again, outside the two gated spellings"
         )
 
         // Both needles against the spellings they must and must not accept.
@@ -323,16 +333,23 @@ struct TaskDeleteParityTests {
         #expect(
             CadenceSourceScan.matchCount(
                 cancelsAfterTheCommit,
-                in: "catch {\n                return false\n            }\n        }\n\n        Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }\n        return true"
+                in: "catch {\n                return false\n            }\n        }\n\n        if commitsImmediately {\n            NotificationManager.cancelReminders(taskIDs: Array(taskIDs))\n        } else {\n            NotificationManager.deferReminderCancellation(taskIDs: Array(taskIDs))\n        }\n        return true"
             ) == 1,
             "the ordering needle does not match the spelling it is hunting"
         )
         #expect(
             CadenceSourceScan.matchCount(
                 cancelsAfterTheCommit,
-                in: "if commitsImmediately {\n            try? modelContext.save()\n        }\n\n        Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }\n        return true"
+                in: "catch {\n                return false\n            }\n        }\n\n        NotificationManager.cancelReminders(taskIDs: Array(taskIDs))\n        return true"
             ) == 0,
             "the ordering needle passes on a delete that cancels whatever happened"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                cancelsAfterTheCommit,
+                in: "catch {\n                return false\n            }\n        }\n\n        if commitsImmediately {\n            NotificationManager.cancelReminders(taskIDs: Array(taskIDs))\n        } else {\n            NotificationManager.cancelReminders(taskIDs: Array(taskIDs))\n        }\n        return true"
+            ) == 0,
+            "the ordering needle passes on a deferred delete that cancels anyway"
         )
     }
 

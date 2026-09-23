@@ -145,6 +145,46 @@ final class NotificationManager: NSObject {
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
     }
 
+    /// Cancels these reminders **now**, from a delete that has already committed.
+    ///
+    /// The one spelling of `Task { await NotificationManager.shared.cancel(…) }` a delete path
+    /// should use, so the deferred spelling below is its visible opposite rather than a variant
+    /// nobody notices is missing.
+    nonisolated static func cancelReminders(taskIDs: [UUID] = [], habitIDs: [UUID] = []) {
+        guard let cancel = reminderCancellation(taskIDs: taskIDs, habitIDs: habitIDs) else { return }
+        cancel()
+    }
+
+    /// Hands these reminders to the enclosing `commitCascade`, which releases them if — and only
+    /// if — its commit lands ([[T-1348]]).
+    ///
+    /// For the delete that **does not commit itself**: a list cascade is one pending change owned
+    /// by the surface that asked for it, so cancelling here would be a change made by a delete
+    /// that may yet promise it made none. With no cascade in scope the cancellation is dropped;
+    /// `CadenceDeferredReminderCancellations` argues why that is the recoverable direction.
+    nonisolated static func deferReminderCancellation(taskIDs: [UUID] = [], habitIDs: [UUID] = []) {
+        guard let cancel = reminderCancellation(taskIDs: taskIDs, habitIDs: habitIDs) else { return }
+        CadenceDeferredReminderCancellations.current?.hold(
+            taskIDs: taskIDs,
+            habitIDs: habitIDs,
+            cancel: cancel
+        )
+    }
+
+    /// `nil` when there is nothing to cancel, so neither entry point above queues an empty effect.
+    private nonisolated static func reminderCancellation(
+        taskIDs: [UUID],
+        habitIDs: [UUID]
+    ) -> (@Sendable () -> Void)? {
+        guard !taskIDs.isEmpty || !habitIDs.isEmpty else { return nil }
+        return {
+            Task {
+                await NotificationManager.shared.cancel(taskIDs: taskIDs)
+                await NotificationManager.shared.cancel(habitIDs: habitIDs)
+            }
+        }
+    }
+
     func cancelAll() async {
         guard !Self.isTestEnvironment else { return }
         let pending = await center.pendingNotificationRequests()

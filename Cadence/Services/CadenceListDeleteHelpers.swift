@@ -125,12 +125,19 @@ extension ModelContext {
         delete(areas)
         delete(context)
 
-        // cascadeDeleteTasks(withIDs:) already cancels task notifications above; habits deleted via
-        // this context cascade need the same cheap direct cancellation for their reminders.
-        let habitIDs = habits.map(\.id)
-        if !habitIDs.isEmpty {
-            Task { await NotificationManager.shared.cancel(habitIDs: habitIDs) }
-        }
+        // **Deferred, not performed (T-1348).** This function makes no commit at all — see the
+        // block comment above — so a cancellation run here sits *above* a commit that can still be
+        // refused, and a refused one leaves every habit in this context still in the store and
+        // still on screen with its reminders gone, silently, until the next `scenePhase`
+        // reconcile. That is exactly the defect T-1301 fixed on `deleteHabit` by moving the line
+        // below the commit, and it could not be fixed the same way here because there is nothing
+        // to move it below. `CadencePendingChangePersistence.commitCascade` releases the queue
+        // once its commit lands; `CadenceDeferredReminderCancellations` carries the argument.
+        //
+        // `cascadeDeleteTasks(withIDs:)` above reaches the same queue for the same reason: it
+        // passes `commitsImmediately: false`, which is what puts its own cancellation in the
+        // deferred half of `CadenceTaskMutationSupport.deleteTasks`.
+        NotificationManager.deferReminderCancellation(habitIDs: habits.map(\.id))
         return true
     }
 

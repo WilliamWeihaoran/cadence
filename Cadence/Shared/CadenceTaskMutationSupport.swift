@@ -731,13 +731,17 @@ enum CadenceTaskMutationSupport {
     ///   subtasks, the emptied bundle and the repaired recurrence links, which are one pending
     ///   change by this point — and this function says so with `false`.
     ///
-    ///   The notification cancellation below is *not* gated on `commitsImmediately`, deliberately.
-    ///   It is not a store write, it was already unconditional before the flag existed, and a
-    ///   reminder cancelled for a task that comes back is re-scheduled by the next reconcile —
-    ///   whereas a reminder left armed for a task that really is gone fires at the user. A
-    ///   **refused** commit is the one case that skips it, because it returns first: the task is
-    ///   demonstrably still there, so cancelling its reminder would be a change made by a delete
-    ///   that promises it made none.
+    ///   **The notification cancellation below is gated on it too, and used not to be (T-1348).**
+    ///   The old reasoning held only for the committing half: a **refused** commit skips the
+    ///   cancellation because it returns first, so the task is demonstrably still there and
+    ///   cancelling its reminder would be a change made by a delete that promises it made none.
+    ///   Deferring, the commit has not been *attempted* yet when this line is reached — it is the
+    ///   caller's, it is the whole point of the flag, and it can be refused — so the same sentence
+    ///   condemns running it here. It is not enough that a reminder cancelled for a task that
+    ///   comes back is re-scheduled by the next reconcile: the window is a `scenePhase`
+    ///   transition wide, it is silent, and the user was told nothing was removed. So the deferred
+    ///   half hands the ids to `CadencePendingChangePersistence.commitCascade`, which owns the
+    ///   commit and releases them only once it lands.
     ///
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter for
     ///   the reason `CadencePendingChangePersistence` gives — a `save()` that throws cannot be
@@ -801,7 +805,19 @@ enum CadenceTaskMutationSupport {
         // Cheaper than a full reconcile since we already know exactly which tasks were removed.
         // Without it a scheduled-start reminder fires for a task that no longer exists, because
         // reconciliation only converges at the next `scenePhase` transition.
-        Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }
+        //
+        // **Which half depends on who owns the commit (T-1348).** Committing here, the
+        // cancellation is below a commit that landed and a refusal returned before reaching it —
+        // that is T-1301's rule and it is unchanged. Deferring, this line used to run anyway,
+        // *above* the caller's commit, so every list cascade cancelled its tasks' reminders and a
+        // refused outer commit put the tasks back with nothing scheduled for them. The deferred
+        // half now hands the ids to `CadencePendingChangePersistence.commitCascade`, which
+        // releases them only if its commit lands.
+        if commitsImmediately {
+            NotificationManager.cancelReminders(taskIDs: Array(taskIDs))
+        } else {
+            NotificationManager.deferReminderCancellation(taskIDs: Array(taskIDs))
+        }
         return true
     }
 
