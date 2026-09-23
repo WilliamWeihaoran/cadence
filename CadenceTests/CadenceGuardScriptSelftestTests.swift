@@ -287,7 +287,7 @@ struct CadenceGuardScriptSelftestTests {
     /// restructured for, and the reason is in `everyRefusalTheScriptsMakeIsStillInducedByTheirOwnSelftest`
     /// below rather than here: both were made inside the trailing `case "$mode"`, which in an `sh`
     /// script must sit BELOW the selftest it dispatches to, so the source-level reading counted
-    /// them as named-by-the-selftest-only. The dispatch is a `main()` defined above the marker now,
+    /// them as named-by-the-selftest-only. The dispatch is a shell `main` function defined above the marker now,
     /// called from the file's last line — the refusals did not move, the code that makes them did.
     static let ledgerViewRefusals = [
         "LEDGER-VIEW-VACUOUS",
@@ -774,7 +774,7 @@ struct CadenceGuardScriptSelftestTests {
     /// accident — their dispatches only route, and the refusals are made in functions defined
     /// above. `ledger-view.sh` refused `LEDGER-VIEW-BAD-ID` and `LEDGER-VIEW-UNKNOWN-MODE` inline
     /// in the dispatch, so this reading counted both as named-by-the-selftest-only and proved
-    /// nothing about them. The repair is on that script — the dispatch is a `main()` defined above
+    /// nothing about them. The repair is on that script — the dispatch is a shell `main` function defined above
     /// the marker and called from the file's last line — and deliberately not here: relaxing the
     /// split is the whole property, since a refusal that exists only below it is one the selftest
     /// can name without the script ever making it.
