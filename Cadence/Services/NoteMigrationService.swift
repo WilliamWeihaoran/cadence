@@ -8,6 +8,19 @@ nonisolated struct NoteMigrationReport: Codable, Equatable {
     var finishedAt: Date
     var success: Bool
     var errorMessage: String?
+    /// Whether this pass read the `Note` table at all, and therefore whether the two counts below
+    /// are measurements or placeholders ([[T-1341]]).
+    ///
+    /// `false` means the five `fetchLimit = 1` probes all answered empty, the migration had
+    /// provably nothing to do, and `existingNoteCount` / `canonicalDuplicateCount` were never
+    /// computed. They read `0` because they are `Int`, not because the store holds no notes and no
+    /// duplicates — **a reader that prints them without asking this first is reporting a number
+    /// nobody measured.** `NoteMigrationService.healthCheck(in:)` is where the two figures come
+    /// from on demand; it scans the store itself and is not on the launch path.
+    ///
+    /// Defaults to `true` and decodes as `true` when absent, because every report written before
+    /// this key existed came from a pass that did scan.
+    var noteTableScanned: Bool = true
     var existingNoteCount: Int = 0
     var canonicalDuplicateCount: Int = 0
     var legacyDailyScanned: Int = 0
@@ -76,6 +89,9 @@ nonisolated extension NoteMigrationReport {
         finishedAt = try container.decode(Date.self, forKey: .finishedAt)
         success = try container.decode(Bool.self, forKey: .success)
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        // `?? true` rather than `?? false`: a blob without this key was written by a pass that had
+        // no fast path to take, so its two counts below are real. See the property's own note.
+        noteTableScanned = try container.decodeIfPresent(Bool.self, forKey: .noteTableScanned) ?? true
         existingNoteCount = try container.decodeIfPresent(Int.self, forKey: .existingNoteCount) ?? 0
         canonicalDuplicateCount = try container.decodeIfPresent(Int.self, forKey: .canonicalDuplicateCount) ?? 0
         legacyDailyScanned = try container.decodeIfPresent(Int.self, forKey: .legacyDailyScanned) ?? 0
@@ -237,11 +253,65 @@ nonisolated enum NoteMigrationService {
         return report
     }
 
+    /// Whether any row of `type` is still in the store, asked as cheaply as the question can be
+    /// asked: one row is enough to decide, so this fetches one rather than the lot.
+    ///
+    /// The shape is `PursuitToGoalMigration.hasSurvivingPursuits`', and the difference is that a
+    /// throw propagates here instead of answering `false`. That migration's probe is a *fast path
+    /// past a latched flag* and a store it cannot read is not one to start deleting rows in; this
+    /// one is the migration's only guard, so a store it cannot read must fail the pass — which is
+    /// what the full fetch it replaces did — rather than report a clean skip.
+    private static func hasAnyRow<Model: PersistentModel>(
+        of type: Model.Type,
+        in context: ModelContext
+    ) throws -> Bool {
+        var descriptor = FetchDescriptor<Model>()
+        descriptor.fetchLimit = 1
+        return try !context.fetch(descriptor).isEmpty
+    }
+
+    /// Whether any of the five legacy tables still holds a row.
+    ///
+    /// **Live, every launch, latched nowhere ([[T-1341]], the [[T-528]] reading).** A store that is
+    /// half-synced when this runs answers "no legacy rows" correctly *for that moment*; the rows
+    /// that arrive from CloudKit afterwards are found by the next launch's probe, because there is
+    /// no flag to consult and nothing is written when the answer is no. That is strictly safer
+    /// than `PursuitToGoalMigration`'s guard, which does latch a flag and is sound only because it
+    /// re-checks it against a live probe.
+    ///
+    /// Short-circuits on the first table that answers, so the common store — legacy-free — costs
+    /// five one-row fetches and the store that still has work costs at most five before doing it.
+    private static func hasAnyLegacyRow(in context: ModelContext) throws -> Bool {
+        try hasAnyRow(of: DailyNote.self, in: context)
+            || hasAnyRow(of: WeeklyNote.self, in: context)
+            || hasAnyRow(of: PermNote.self, in: context)
+            || hasAnyRow(of: Document.self, in: context)
+            || hasAnyRow(of: EventNote.self, in: context)
+    }
+
     private static func migrate(
         in context: ModelContext,
         report: inout NoteMigrationReport,
         saveChanges: Bool
     ) throws -> NoteMigrationReport {
+        // **The whole pass is skipped, not just the five legacy fetches ([[T-1341]]).** With every
+        // legacy table empty the five loops below have nothing to iterate, so `inserted` stays
+        // false and nothing is saved — the pass is already a no-op except for the `Note` fetch it
+        // opens with, which is the expensive half: it materialises every note in the store and
+        // builds two `Set`s and a grouping dictionary from them, on every launch, forever, on a
+        // store that has held no legacy row since whichever launch first migrated them.
+        //
+        // What is lost is `existingNoteCount` and `canonicalDuplicateCount`, which are *report*
+        // fields rather than migration inputs. They are not reported as zero — `noteTableScanned`
+        // is what says nobody looked, and `healthCheck(in:)` is the on-demand scan that answers
+        // the same two questions properly when something actually wants them.
+        guard try hasAnyLegacyRow(in: context) else {
+            report.noteTableScanned = false
+            report.finishedAt = Date()
+            report.success = true
+            return report
+        }
+
         let notes = try context.fetch(FetchDescriptor<Note>())
         report.existingNoteCount = notes.count
         report.canonicalDuplicateCount = canonicalDuplicateCount(in: notes)
@@ -608,7 +678,14 @@ nonisolated enum NoteMigrationService {
         CadenceDefaults.store.set(data, forKey: lastReportKey)
     }
 
+    /// **The two store-wide figures are named only when they were measured ([[T-1341]]).** A pass
+    /// that took the legacy-row fast path never read the `Note` table, so `existingNotes=0,
+    /// canonicalDuplicates=0` in the log would be a sentence about a store nobody looked at. The
+    /// guard above already never fires on that pass — it takes `insertedTotal`, the two skip
+    /// counters and `canonicalDuplicateCount`, all of which are zero there — so this branch is
+    /// what keeps that true rather than the only thing that does.
     private static func log(_ report: NoteMigrationReport) {
+        guard report.noteTableScanned else { return }
         if report.insertedTotal > 0 || report.canonicalDuplicateCount > 0 || report.skippedCanonicalDuplicate > 0 {
             logger.info(
                 "Note migration completed from \(report.source, privacy: .public): inserted=\(report.insertedTotal), scanned=\(report.legacyScannedTotal), existingNotes=\(report.existingNoteCount), canonicalDuplicates=\(report.canonicalDuplicateCount), skippedCanonical=\(report.skippedCanonicalDuplicate)"

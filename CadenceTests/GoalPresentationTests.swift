@@ -265,6 +265,140 @@ struct GoalPresentationTests {
         #expect(GoalAssignmentRules.selectedGoal(id: second.id, from: all)?.id == second.id)
     }
 
+    // MARK: - The third level ([[T-1337]])
+    //
+    // A goal -> milestone -> sub-milestone tree cannot be created any more — `mustStayTopLevel`
+    // and `canOwnMilestones` above — but [[T-1327]] only closed the door. Stores written before
+    // it, and archive imports, hold such trees; they sync through CloudKit; and
+    // `GoalContributionResolver.contributingTasks` recurses `subGoals` with no depth limit, so a
+    // sub-milestone's tasks move its grandparent's percentage. The branch taken is **render it**:
+    // macOS already flattened descendants into the milestone tier (`GoalMissionGrouping`), so the
+    // rule moved to `GoalAssignmentRules` and the iOS list reads the same shape. Nothing is
+    // written, nothing is promoted, and no percentage changes — the rows the percentage is made of
+    // are simply drawn.
+
+    /// The whole subtree is drawn under the direction, and it is drawn **once**.
+    ///
+    /// The two halves have to be asserted together: flattening descendants into the milestone tier
+    /// without widening `activeTopLevelGoals` from "parent" to "ancestor" would draw a
+    /// sub-milestone under its direction *and* as a top-level row of its own.
+    @Test func aThirdLevelGoalIsDrawnUnderItsDirectionExactlyOnce() {
+        let direction = goal()
+        let milestone = goal()
+        let subMilestone = goal()
+        milestone.parentGoal = direction
+        subMilestone.parentGoal = milestone
+        direction.subGoals = [milestone]
+        milestone.subGoals = [subMilestone]
+        let all = [direction, milestone, subMilestone]
+
+        let topLevel = GoalAssignmentRules.activeTopLevelGoals(from: all)
+        #expect(topLevel.map(\.id) == [direction.id])
+
+        let nested = GoalAssignmentRules.activeNestedGoals(under: direction)
+        #expect(nested.map(\.id) == [milestone.id, subMilestone.id])
+
+        // The rows the iOS Goals list draws are exactly the goals in the store, each once.
+        let drawn = topLevel.flatMap { [$0] + GoalAssignmentRules.activeNestedGoals(under: $0) }
+        #expect(drawn.map(\.id) == all.map(\.id))
+        #expect(Set(drawn.map(\.id)).count == drawn.count)
+    }
+
+    /// **The row and the percentage are made of the same goals.** This is the ticket's actual
+    /// complaint: the sub-milestone's task moved the direction's progress bar from a row no screen
+    /// drew. The contribution walk is deliberately left alone — what changes is that every goal it
+    /// reaches now has somewhere to appear.
+    @Test func everyGoalMovingADirectionsPercentageHasARowUnderThatDirection() {
+        let direction = goal()
+        let milestone = goal()
+        let subMilestone = goal()
+        milestone.parentGoal = direction
+        subMilestone.parentGoal = milestone
+        direction.subGoals = [milestone]
+        milestone.subGoals = [subMilestone]
+
+        let buried = AppTask(title: "Buried work")
+        buried.goal = subMilestone
+        subMilestone.tasks = [buried]
+
+        let summary = GoalContributionResolver.summary(for: direction)
+        #expect(summary.totalTasks == 1, "the sub-milestone's task no longer reaches the direction")
+
+        let drawnUnderDirection = GoalAssignmentRules.activeNestedGoals(under: direction)
+        #expect(drawnUnderDirection.contains { $0.id == subMilestone.id })
+    }
+
+    /// A completed goal partway down the chain does not hide what is under it, and still does not
+    /// produce a duplicate row.
+    @Test func aCompletedMilestoneDoesNotHideItsOwnActiveMilestones() {
+        let direction = goal()
+        let milestone = goal(status: .done)
+        let subMilestone = goal()
+        milestone.parentGoal = direction
+        subMilestone.parentGoal = milestone
+        direction.subGoals = [milestone]
+        milestone.subGoals = [subMilestone]
+        let all = [direction, milestone, subMilestone]
+
+        #expect(GoalAssignmentRules.activeTopLevelGoals(from: all).map(\.id) == [direction.id])
+        #expect(GoalAssignmentRules.activeNestedGoals(under: direction).map(\.id) == [subMilestone.id])
+
+        // With the direction completed too, the sub-milestone has no drawn ancestor left and
+        // becomes the top-level row itself rather than dropping off the screen.
+        direction.status = .done
+        #expect(GoalAssignmentRules.activeTopLevelGoals(from: all).map(\.id) == [subMilestone.id])
+    }
+
+    /// **One definition of the walk, so the two platforms cannot disagree again.** macOS read the
+    /// third level and iOS did not, for the same reason `mustStayTopLevel` was iOS-only in
+    /// [[T-1327]] and macOS could therefore build the tree: the rule lived on one platform.
+    @Test func bothPlatformsFlattenTheSubtreeThroughOneRule() {
+        let direction = goal()
+        let milestone = goal()
+        let subMilestone = goal()
+        milestone.parentGoal = direction
+        subMilestone.parentGoal = milestone
+        direction.subGoals = [milestone]
+        milestone.subGoals = [subMilestone]
+
+        #expect(
+            GoalMissionGrouping.nestedGoals(under: direction).map(\.id)
+                == GoalAssignmentRules.nestedGoals(under: direction).map(\.id)
+        )
+        #expect(GoalAssignmentRules.nestedGoals(under: direction).count == 2)
+    }
+
+    /// A `parentGoal` cycle arriving over CloudKit terminates the walk rather than hanging the
+    /// Goals list, the same guard `deletionCascade` and `GoalContributionResolver` carry.
+    @Test func theSubtreeWalkTerminatesOnACorruptedParentChain() {
+        let first = goal()
+        let second = goal()
+        first.subGoals = [second]
+        second.subGoals = [first]
+        first.parentGoal = second
+        second.parentGoal = first
+
+        #expect(GoalAssignmentRules.nestedGoals(under: first).map(\.id) == [second.id])
+        #expect(GoalAssignmentRules.activeTopLevelGoals(from: [first, second]).isEmpty)
+    }
+
+    /// `CadenceTests` builds on macOS, so the iOS list is read rather than run. It has to ask for
+    /// the flattened subtree; `milestones(of:)` — direct children — is the spelling that left the
+    /// third level with no row.
+    @Test func theIOSGoalsListDrawsTheFlattenedSubtree() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureViews.swift")
+        let source = CadenceSourceScan.codeOnly(raw)
+        #expect(source != raw, "nothing was stripped, so this scan is reading prose as code")
+        #expect(source.count == raw.count)
+
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "milestones", in: source),
+            "the iOS Goals list no longer declares milestones(of:); re-point this scan"
+        )
+        #expect(body.contains("GoalAssignmentRules.activeNestedGoals(under: goal)"))
+        #expect(!body.contains("GoalAssignmentRules.milestones(of: goal)"))
+    }
+
     @Test func rangeLabelNeedsBothEndsBeforeItClaimsARange() {
         #expect(goal(start: "2026-08-01", end: "").rangeLabel == "No date range")
         #expect(goal(start: "", end: "2026-08-31").rangeLabel == "No date range")

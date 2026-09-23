@@ -27,14 +27,19 @@ struct iOSGoalsView: View {
         GoalAssignmentRules.activeGoals(from: goals)
     }
 
-    /// Genuine directions, plus any nested goal whose parent is completed — without the second
-    /// half those milestones would have no row to appear under and drop off the screen.
+    /// Genuine directions, plus any nested goal with no active ancestor — without the second half
+    /// those milestones would have no row to appear under and drop off the screen.
     private var topLevelGoals: [Goal] {
         GoalAssignmentRules.activeTopLevelGoals(from: goals)
     }
 
+    /// **The whole nested subtree, not the direct children ([[T-1337]]).** This asked
+    /// `milestones(of:)` — one level — so a goal → milestone → sub-milestone tree, which stores
+    /// written before [[T-1327]] hold and which syncs through CloudKit, had a row on no iOS screen
+    /// while its tasks still moved the direction's percentage. macOS has flattened descendants
+    /// into this same tier since `926a67b`; this is the iOS half of that reading.
     private func milestones(of goal: Goal) -> [Goal] {
-        GoalAssignmentRules.milestones(of: goal).filter { $0.status != .done }
+        GoalAssignmentRules.activeNestedGoals(under: goal)
     }
 
     /// The detail pane's subject, and the row that draws as selected. Every rung of the resolution

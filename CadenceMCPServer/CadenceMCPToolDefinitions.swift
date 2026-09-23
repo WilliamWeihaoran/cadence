@@ -366,8 +366,14 @@ enum CadenceMCPToolDefinitions {
             payload["noteMigrationSource"] = noteMigrationReport.source
             payload["noteMigrationInserted"] = "\(noteMigrationReport.insertedTotal)"
             payload["noteMigrationScanned"] = "\(noteMigrationReport.legacyScannedTotal)"
-            payload["noteMigrationExistingNotes"] = "\(noteMigrationReport.existingNoteCount)"
-            payload["noteMigrationCanonicalDuplicates"] = "\(noteMigrationReport.canonicalDuplicateCount)"
+            // Omitted rather than zeroed when the pass took [[T-1341]]'s legacy-row fast path and
+            // never read the `Note` table: a `0` here is the `Int`'s default, not a count of the
+            // store, and this payload is a diagnostic somebody reads as fact. The
+            // `noteMigrationHealth*` keys below come from `healthCheck`, which does scan.
+            if noteMigrationReport.noteTableScanned {
+                payload["noteMigrationExistingNotes"] = "\(noteMigrationReport.existingNoteCount)"
+                payload["noteMigrationCanonicalDuplicates"] = "\(noteMigrationReport.canonicalDuplicateCount)"
+            }
             payload["noteMigrationSkippedCanonical"] = "\(noteMigrationReport.skippedCanonicalDuplicate)"
             if let errorMessage = noteMigrationReport.errorMessage {
                 payload["noteMigrationError"] = errorMessage

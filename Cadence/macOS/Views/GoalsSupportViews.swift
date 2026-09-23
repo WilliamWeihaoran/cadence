@@ -102,20 +102,12 @@ enum GoalMissionGrouping {
             }
     }
 
+    /// **The walk lives in `GoalAssignmentRules` now ([[T-1337]]).** It was written here, on the
+    /// one platform whose editor could build a goal → milestone → sub-milestone tree, so macOS
+    /// drew the third level as a flat milestone card while the iOS list — direct children only —
+    /// drew nothing for it. Same shape, one definition; see `GoalAssignmentRules.nestedGoals`.
     static func nestedGoals(under goal: Goal) -> [Goal] {
-        var visited: Set<UUID> = [goal.id]
-        var result: [Goal] = []
-
-        func walk(_ parent: Goal) {
-            for child in GoalAssignmentRules.milestones(of: parent) where !visited.contains(child.id) {
-                visited.insert(child.id)
-                result.append(child)
-                walk(child)
-            }
-        }
-
-        walk(goal)
-        return result
+        GoalAssignmentRules.nestedGoals(under: goal)
     }
 }
 

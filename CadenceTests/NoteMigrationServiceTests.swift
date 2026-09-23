@@ -271,19 +271,173 @@ struct NoteMigrationServiceTests {
         #expect(report.skippedCanonicalDuplicate == 1)
     }
 
-    @Test func migrationReportDetectsExistingCanonicalNoteDuplicates() throws {
+    /// **The duplicate diagnostic is a measurement of the pass that took it ([[T-1341]]).**
+    ///
+    /// It used to be taken on every launch, from a full `Note` fetch this migration performed
+    /// whether or not it had anything to migrate — 0.0245s / 0.0481s / 0.0939s at 1k / 2k / 4k
+    /// notes, linear, forever, on a store that has held no legacy row since whichever launch first
+    /// migrated them. A pass that skips now says so through `noteTableScanned` rather than
+    /// reporting the `Int`'s default as a count, and `healthCheck` is the scan that answers the
+    /// same question on demand, off the launch path.
+    @Test func migrationReportDetectsExistingCanonicalNoteDuplicatesWhenItScansAtAll() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         context.insert(Note(kind: .meeting, title: "A", calendarEventID: "event-1"))
         context.insert(Note(kind: .meeting, title: "B", calendarEventID: "event-1"))
         try context.save()
 
+        // No legacy row: the pass has provably nothing to do, so it does not read the note table
+        // and does not pretend to have counted it.
+        let skipped = try NoteMigrationService.migrateIfNeeded(in: context, source: "duplicate-skip-test")
+        #expect(skipped.success)
+        #expect(skipped.noteTableScanned == false)
+        #expect(skipped.canonicalDuplicateCount == 0)
+        // The duplicate is still there, and the pass that does scan still finds it.
+        #expect(try NoteMigrationService.healthCheck(in: context).canonicalDuplicateCount == 1)
+
+        context.insert(EventNote(
+            calendarEventID: "event-2",
+            eventTitle: "Meeting",
+            calendarID: "calendar-1",
+            eventDateKey: "2026-04-29",
+            eventStartMin: 600,
+            eventEndMin: 630
+        ))
+        try context.save()
+
         let report = try NoteMigrationService.migrateIfNeeded(in: context, source: "duplicate-diagnostic-test")
 
-        #expect(report.insertedTotal == 0)
+        #expect(report.noteTableScanned)
+        #expect(report.insertedTotal == 1)
         #expect(report.canonicalDuplicateCount == 1)
         #expect(NoteMigrationService.lastReport()?.source == "duplicate-diagnostic-test")
         #expect(NoteMigrationService.lastReport()?.canonicalDuplicateCount == 1)
+        #expect(NoteMigrationService.lastReport()?.noteTableScanned == true)
+    }
+
+    // MARK: - The legacy-row probe ([[T-1341]])
+    //
+    // `migrate` opened with a fetch of every `Note` and then fetched all five legacy tables in
+    // full, on every launch, permanently. The five `fetchLimit = 1` probes decide first: with
+    // every legacy table empty the five loops below them have nothing to iterate, `inserted`
+    // stays false and nothing is saved, so the only thing the full pass could still produce is
+    // the two report fields — and `noteTableScanned` is what keeps those honest.
+
+    /// The common store — every legacy row migrated long ago, or never present — does no store-
+    /// wide read at all, and says which figures it therefore did not measure.
+    @Test func aStoreWithNoLegacyRowsIsNotReadEndToEndOnEveryLaunch() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        for index in 0..<8 {
+            context.insert(Note(kind: .list, title: "Note \(index)"))
+        }
+        try context.save()
+
+        let report = try NoteMigrationService.migrateIfNeeded(in: context, source: "probe-test")
+
+        #expect(report.success)
+        #expect(report.noteTableScanned == false)
+        #expect(report.insertedTotal == 0)
+        #expect(report.legacyScannedTotal == 0)
+        #expect(report.existingNoteCount == 0, "the note table was not read, so this is a placeholder")
+        #expect(report.canonicalDuplicateCount == 0)
+        // The skip changed nothing about the store it skipped.
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 8)
+    }
+
+    /// **All five tables are probed, and each one on its own is enough to bring the full pass
+    /// back.** A probe that dropped a table would leave that table's rows unmigrated forever on
+    /// any store where the other four are empty, which is every store that ever migrated.
+    @Test func everyLegacyTableOnItsOwnBringsTheFullPassBack() throws {
+        let seeds: [(String, (ModelContext) -> Void)] = [
+            ("DailyNote", { $0.insert(DailyNote(date: "2026-04-29")) }),
+            ("WeeklyNote", { $0.insert(WeeklyNote(weekKey: "2026-W18")) }),
+            ("PermNote", { $0.insert(PermNote()) }),
+            ("Document", { $0.insert(Document(title: "List note")) }),
+            ("EventNote", { $0.insert(EventNote(
+                calendarEventID: "event-1",
+                eventTitle: "Meeting",
+                calendarID: "calendar-1",
+                eventDateKey: "2026-04-29",
+                eventStartMin: 600,
+                eventEndMin: 630
+            )) })
+        ]
+        #expect(seeds.count == 5, "the legacy table list changed; this test covers whatever is in it")
+
+        for (name, seed) in seeds {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let context = ModelContext(container)
+            seed(context)
+            try context.save()
+
+            let report = try NoteMigrationService.migrateIfNeeded(in: context, source: "probe-\(name)")
+
+            #expect(report.noteTableScanned, "\(name) rows no longer wake the migration")
+            #expect(report.legacyScannedTotal == 1, "\(name) was not scanned")
+            #expect(report.insertedTotal == 1, "\(name) was not migrated")
+        }
+    }
+
+    /// **The late-arrival case, which is the whole reason nothing may be latched ([[T-528]]).**
+    ///
+    /// A half-synced store answers "no legacy rows" correctly for the moment it is asked. The rows
+    /// that arrive from CloudKit afterwards land in a store the next launch probes again from
+    /// scratch — there is no completion flag to consult, and a skipped pass writes nothing that
+    /// could make the next one skip. A "probe once, skip forever" guard would turn this migration
+    /// into a permanent no-op for exactly those rows.
+    @Test func legacyRowsArrivingAfterASkippedPassAreStillMigrated() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        context.insert(Note(kind: .list, title: "Made on this device"))
+        try context.save()
+
+        let skipped = try NoteMigrationService.migrateIfNeeded(in: context, source: "half-synced-launch")
+        #expect(skipped.noteTableScanned == false)
+        #expect(skipped.insertedTotal == 0)
+
+        // The rest of the sync arrives.
+        let arrived = DailyNote(date: "2026-04-29")
+        arrived.content = "Written on the Mac"
+        context.insert(arrived)
+        try context.save()
+
+        let next = try NoteMigrationService.migrateIfNeeded(in: context, source: "next-launch")
+        #expect(next.noteTableScanned)
+        #expect(next.insertedDaily == 1)
+        let migrated = try #require(
+            try context.fetch(FetchDescriptor<Note>()).first { $0.kind == .daily }
+        )
+        #expect(migrated.id == arrived.id)
+        #expect(migrated.content == "Written on the Mac")
+
+        // And a third launch, with the legacy row still present, skips it rather than copying it
+        // again — the probe is a fast path, never a substitute for the guard below it.
+        let third = try NoteMigrationService.migrateIfNeeded(in: context, source: "third-launch")
+        #expect(third.noteTableScanned)
+        #expect(third.insertedTotal == 0)
+        #expect(third.skippedAlreadyMigrated == 1)
+    }
+
+    /// A report written before `noteTableScanned` existed came from a pass that did scan, so it has
+    /// to decode as `true` — `false` would retroactively brand every stored report a placeholder.
+    @Test func aStoredReportWithoutTheScannedFlagReadsAsScanned() throws {
+        let legacy = """
+        {
+          "source": "app-startup",
+          "startedAt": 1000,
+          "finishedAt": 1001,
+          "success": true,
+          "existingNoteCount": 12,
+          "canonicalDuplicateCount": 3
+        }
+        """
+
+        let report = try JSONDecoder().decode(NoteMigrationReport.self, from: Data(legacy.utf8))
+
+        #expect(report.noteTableScanned)
+        #expect(report.existingNoteCount == 12)
+        #expect(report.canonicalDuplicateCount == 3)
     }
 
     @Test func healthCheckReportsLegacyGapsAndBadRelationships() throws {
