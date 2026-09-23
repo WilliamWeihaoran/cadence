@@ -62,6 +62,18 @@ set -u
 
 MIN_ENTRIES=${CADENCE_LEDGER_VIEW_MIN_ENTRIES:-300}
 
+# T-1343. This is a `#!/bin/sh` script and its selftest lays its fixtures down with here-documents,
+# which sh writes under $TMPDIR. A caller that hands the file to `zsh` instead -- which is what the
+# first registration of this selftest did -- gets a different temp file: zsh writes here-documents
+# to $TMPPREFIX, which zsh SETS ITSELF at startup to `/tmp/zsh`, never to $TMPDIR and never empty,
+# so no `[ -z ... ]` guard would fire. Where /tmp is unwritable (the App-Sandboxed macOS test host,
+# T-719) each document then becomes an EMPTY file and the run reports `LEDGER-VIEW-VACUOUS` against
+# a fixture that exists and is blank. Measured 2026-09-23 under `zsh -f`: 8 passed, 33 failed, and
+# the refusal quotes the fixture's real path, which is what made it read as a sandbox write failure
+# rather than as a here-document one. Harmless under sh; the shell that needs it is the wrong one.
+_tmp_base="${TMPDIR:-/tmp/}"; case "$_tmp_base" in */) ;; *) _tmp_base="$_tmp_base/" ;; esac
+export TMPPREFIX="${CADENCE_TMPPREFIX:-${_tmp_base}zsh}"
+
 case "$0" in
     /*) SELF_PATH=$0 ;;
     *)  SELF_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" ;;
@@ -278,6 +290,36 @@ run_view() {  # $1 = mode, $2 = wanted id (show only)
         "$AWK_PROG" "$TODO_PATH" "$DONE_PATH"
 }
 
+# ---------------------------------------------------------------------------
+# The dispatch, and it is a FUNCTION called from the last line of the file rather than a bare `case`
+# after the selftest, which is what it was until T-1343. Two refusals are made here and nowhere
+# else, and `CadenceGuardScriptSelftestTests.everyRefusalTheScriptsMakeIsStillInducedByTheirOwnSelftest`
+# splits a script at `# --- selftest` and requires every refusal to be named ABOVE the split -- that
+# is how it tells a refusal the script MAKES from one its selftest merely mentions. A bare dispatch
+# has to sit below the selftest, because sh cannot call `cmd_selftest` before it has read it, so the
+# two refusals read as selftest-only and the pin silently proved nothing about them. Wrapping the
+# dispatch is the repair that does not weaken the question: `main` is defined before the split, its
+# body is resolved when it is CALLED, and the only thing left below is the call itself.
+#
+# `${1:-open}` defaults the PATTERN only, never the parameter, so every arm below has to read the
+# defaulted copy. Reading `$1` there is unbound under `set -u` on a no-argument run -- which is the
+# invocation the usage line puts first.
+main() {
+    mode=${1:-open}
+    case "$mode" in
+        selftest) cmd_selftest; exit $? ;;
+        -h|--help) sed -n '2,9p' "$SELF_PATH"; exit 0 ;;
+        show)
+            case "${2:-}" in
+                T-[0-9]*) run_view show "$2" ;;
+                *) refuse LEDGER-VIEW-BAD-ID "show takes one exact ticket id, spelled T-<number>; got '${2:-}'." 2 ;;
+            esac
+            ;;
+        open|brief|all|counts) run_view "$mode" ;;
+        *) refuse LEDGER-VIEW-UNKNOWN-MODE "'$mode' is not a mode; use open, brief, all, counts, show <id> or selftest." 2 ;;
+    esac
+}
+
 # --- selftest ----------------------------------------------------------------
 # Two markdown fixtures under $TMPDIR and nothing else: no git, no build, no network. Under a
 # second. It says nothing about -- and does nothing to -- the checkout it runs from, so it is safe
@@ -285,8 +327,14 @@ run_view() {  # $1 = mode, $2 = wanted id (show only)
 pass=0; fail=0
 # Both halves are required. An exit code alone would pass a refusal that fired for the wrong reason;
 # a needle alone would pass a script that printed it and exited 0. Needles arrive as separate words
-# because this file is run by `/bin/sh` here and by `/bin/zsh -f` from the test target, and zsh does
-# not word-split an unquoted parameter.
+# because a caller may hand this file to a shell that does not word-split an unquoted parameter.
+#
+# EVERY REFUSAL IS ALSO NAMED IN ITS MODE BANNER, and that is not decoration (T-1343). `check` prints
+# its needles only when it FAILS, so on a green run the only trace of `LEDGER-VIEW-BAD-ID` was inside
+# an unprinted argument list -- and `CadenceGuardScriptSelftestTests.complaints(requiring:)` reads
+# this run's OUTPUT for each refusal it claims to exercise, precisely so that a mode deleted from the
+# selftest cannot pass as a mode that quietly succeeded. Three of the four were invisible to it. The
+# banners carry them the way `ledger-lag-check.sh`'s do, so a deleted mode takes its name with it.
 check() {
     _rc=$1; _exp=$2; _out=$3; _label=$4
     shift 4
@@ -414,7 +462,7 @@ FIXTURE
     check "$rc" 0 "$out" "the no-argument invocation is the default view, not an unbound-variable" "T-11     OPEN"
 
     # --- mode 3: the exact-id block lookup ----------------------------------
-    echo; echo " mode 3 (show) -- an EXACT id, over both ledgers"
+    echo; echo " mode 3 (show; LEDGER-VIEW-NO-SUCH-ID, LEDGER-VIEW-BAD-ID) -- an EXACT id, over both ledgers"
     out=$(run show T-11); rc=$?
     check "$rc" 0 "$out" "show prints the block and its location" "A plain open finding" "TODO.md:"
     checkno "$rc" 0 "$out" "and does not bleed into T-110" "longer id that must not be matched"
@@ -439,6 +487,8 @@ FIXTURE
     out=$(run show); rc=$?
     check "$rc" 2 "$out" "show with no id at all is refused the same way" LEDGER-VIEW-BAD-ID
 
+    # --- mode 3b: the mode nobody defined -----------------------------------
+    echo; echo " mode 3b (LEDGER-VIEW-UNKNOWN-MODE) -- a typo must be refused, never quietly defaulted"
     out=$(run wibble); rc=$?
     check "$rc" 2 "$out" "an unknown mode is refused rather than quietly defaulting" LEDGER-VIEW-UNKNOWN-MODE
 
@@ -482,20 +532,4 @@ FIXTURE
     [ "$fail" = 0 ] || exit 1
 }
 
-# ---------------------------------------------------------------------------
-# `${1:-open}` defaults the PATTERN only, never the parameter, so every arm below has to read the
-# defaulted copy. Reading `$1` there is unbound under `set -u` on a no-argument run -- which is the
-# invocation the usage line puts first.
-mode=${1:-open}
-case "$mode" in
-    selftest) cmd_selftest; exit $? ;;
-    -h|--help) sed -n '2,9p' "$SELF_PATH"; exit 0 ;;
-    show)
-        case "${2:-}" in
-            T-[0-9]*) run_view show "$2" ;;
-            *) refuse LEDGER-VIEW-BAD-ID "show takes one exact ticket id, spelled T-<number>; got '${2:-}'." 2 ;;
-        esac
-        ;;
-    open|brief|all|counts) run_view "$mode" ;;
-    *) refuse LEDGER-VIEW-UNKNOWN-MODE "'$mode' is not a mode; use open, brief, all, counts, show <id> or selftest." 2 ;;
-esac
+main "$@"

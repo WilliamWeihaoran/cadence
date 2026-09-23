@@ -333,6 +333,17 @@ main() {
             shift
             report_and_maybe_prune "$target" 1 "$@"
             ;;
+# --- selftest ----------------------------------------------------------------
+# T-1340. The marker every other guard script in `scripts/` carries, put here for the same reader:
+# everything above it is what runs in anger, everything below is the proof. It is one arm of a
+# `case` rather than a trailing section because this selftest drives the script's own subcommands
+# (`classify`, `prune-dd`) against a throwaway root, so it has to be reachable from the dispatch.
+#
+# `CadenceGuardScriptSelftestTests` CANNOT run this: the whole trial is a `$PYTHON_BIN` heredoc and
+# the App-Sandboxed macOS test host is refused by the `/usr/bin/python3` xcrun shim outright
+# (T-719). What it does instead is split this file here and read both halves — the `xcb.sh`
+# treatment — so a discriminator deleted from the body, or a check deleted from the trial, is
+# still visible from an environment that cannot execute either.
         selftest)
             "$PYTHON_BIN" - "$SCRIPT_PATH" "$ROOT_DIR" <<'PY'
 import hashlib

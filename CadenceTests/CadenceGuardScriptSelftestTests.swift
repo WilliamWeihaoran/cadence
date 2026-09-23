@@ -276,6 +276,26 @@ struct CadenceGuardScriptSelftestTests {
         "LEDGER-LAG-VACUOUS",
     ]
 
+    /// Every refusal `scripts/ledger-view.sh` makes (T-1331, registered under T-1343). The view is
+    /// derived rather than maintained, which is what makes `LEDGER-VIEW-VACUOUS` the load-bearing
+    /// one: a renamed ledger, an empty file or a `cd` into the wrong tree all produce a run that
+    /// read nothing and prints a tidy, empty backlog — the [[T-1282]] / [[T-1291]] shape, and the
+    /// most reassuring way for this particular tool to fail. `LEDGER-VIEW-NO-SUCH-ID` is the same
+    /// question asked of one lookup rather than of the whole file.
+    ///
+    /// `LEDGER-VIEW-BAD-ID` and `LEDGER-VIEW-UNKNOWN-MODE` are the two the script had to be
+    /// restructured for, and the reason is in `everyRefusalTheScriptsMakeIsStillInducedByTheirOwnSelftest`
+    /// below rather than here: both were made inside the trailing `case "$mode"`, which in an `sh`
+    /// script must sit BELOW the selftest it dispatches to, so the source-level reading counted
+    /// them as named-by-the-selftest-only. The dispatch is a `main()` defined above the marker now,
+    /// called from the file's last line — the refusals did not move, the code that makes them did.
+    static let ledgerViewRefusals = [
+        "LEDGER-VIEW-VACUOUS",
+        "LEDGER-VIEW-NO-SUCH-ID",
+        "LEDGER-VIEW-BAD-ID",
+        "LEDGER-VIEW-UNKNOWN-MODE",
+    ]
+
     /// Every check `scripts/codex-inbox.sh`'s selftest names (T-1334). This one is not a list of
     /// refusals because the script makes none: `report` is a report and always exits 0, so what
     /// there is to lose is a READING, and a reading that has quietly stopped discriminating looks
@@ -544,9 +564,36 @@ struct CadenceGuardScriptSelftestTests {
     /// `TODO_DONE.md`, and an id no ledger has ever heard of. Mode 4's last check is the other one:
     /// a real `git clone --depth 1`, which is what Actions does unless a workflow says otherwise.
     @Test func theLedgerLagGuardsOwnGuardsStillFire() throws {
-        let run = try CadenceSelftestRun.of("scripts/ledger-lag-check.sh")
+        // `#!/bin/sh`, so `/bin/sh` (T-1343). It had been run under zsh and passed, which is luck
+        // and not evidence: it writes its fixtures with `printf` rather than here-documents, and
+        // that is the only reason the zsh temp-file trap that hid `ledger-view.sh`'s selftest for a
+        // whole red run never touched this one. A landmine left armed because it has not gone off.
+        let run = try CadenceSelftestRun.of("scripts/ledger-lag-check.sh", interpreter: "/bin/sh")
         let complaints = run.complaints(requiring: Self.ledgerLagRefusals)
         #expect(complaints.isEmpty, "./scripts/ledger-lag-check.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
+    /// T-1331, registered under T-1343. Two markdown fixtures under `$TMPDIR` and nothing else: no
+    /// git, no build, no network, and it says nothing about — and does nothing to — the real
+    /// `docs/TODO.md` a sibling may be editing. Under a second.
+    ///
+    /// **Run under `/bin/sh`, not `/bin/zsh`, and this one is not a style point either.** The first
+    /// attempt at this registration used the default interpreter and went red with 33 of the 41
+    /// checks reporting `LEDGER-VIEW-VACUOUS` against fixture paths that existed — which reads
+    /// exactly like an App Sandbox write failure and is not one. The selftest lays its fixtures
+    /// down with here-documents; **zsh** writes those to `$TMPPREFIX`, which it sets itself at
+    /// startup to `/tmp/zsh` and never to `$TMPDIR`, and this host cannot write `/tmp`. Each
+    /// fixture was therefore created and left EMPTY, so the tool correctly refused a ledger of zero
+    /// entries. Reproduced outside the sandbox by pointing `TMPPREFIX` at a path that does not
+    /// exist: 8 passed / 33 failed under `zsh -f`, 41 / 0 under `sh`, byte-identical script.
+    /// `ledger-lag-check.sh` above is `#!/bin/sh` too and survives the wrong shell only because it
+    /// writes its fixtures with `printf` — luck, not design, which is why the shebang is the rule.
+    /// The script also pins `TMPPREFIX` into `$TMPDIR` itself now, so the next caller to hand it to
+    /// zsh gets fixtures rather than silence.
+    @Test func theLedgerViewsOwnGuardsStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/ledger-view.sh", interpreter: "/bin/sh")
+        let complaints = run.complaints(requiring: Self.ledgerViewRefusals)
+        #expect(complaints.isEmpty, "./scripts/ledger-view.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
     /// T-1334. Runs entirely inside a throwaway directory under `$TMPDIR`: it writes fixture
@@ -717,6 +764,20 @@ struct CadenceGuardScriptSelftestTests {
     /// `xcb.sh` form, and it is here because the two answer different questions and one of them
     /// survives a hostile environment. A refusal deleted from the script body, or a selftest that
     /// quietly stopped inducing one, is a source-level fact readable without spawning anything.
+    ///
+    /// **What "the body" is, and the trap it set for `ledger-view.sh` (T-1343).** The split is the
+    /// FIRST `# --- selftest`, so "body" means everything a reader would call production code — and
+    /// every guard here is a shell script, which cannot dispatch to a function it has not read yet.
+    /// The trailing `case "$mode"` therefore sits BELOW the marker in **all ten** of them: the
+    /// convention is that the selftest section comes last, *not* that the dispatch does, and the
+    /// two scripts checked before believing otherwise both confirm it. The others escape by
+    /// accident — their dispatches only route, and the refusals are made in functions defined
+    /// above. `ledger-view.sh` refused `LEDGER-VIEW-BAD-ID` and `LEDGER-VIEW-UNKNOWN-MODE` inline
+    /// in the dispatch, so this reading counted both as named-by-the-selftest-only and proved
+    /// nothing about them. The repair is on that script — the dispatch is a `main()` defined above
+    /// the marker and called from the file's last line — and deliberately not here: relaxing the
+    /// split is the whole property, since a refusal that exists only below it is one the selftest
+    /// can name without the script ever making it.
     @Test func everyRefusalTheScriptsMakeIsStillInducedByTheirOwnSelftest() throws {
         for (script, refusals) in [
             ("scripts/mutate.sh", Self.mutationRunnerRefusals),
@@ -724,6 +785,7 @@ struct CadenceGuardScriptSelftestTests {
             ("scripts/agent-scratch.sh", Self.scratchGuardRefusals),
             ("scripts/worktree-drift.sh", Self.worktreeDriftRefusals),
             ("scripts/ledger-lag-check.sh", Self.ledgerLagRefusals),
+            ("scripts/ledger-view.sh", Self.ledgerViewRefusals),
             ("scripts/xcb.sh", Self.buildRunnerRefusals),
             (".githooks/pre-commit", Self.preCommitHookRefusals),
         ] {
@@ -811,6 +873,115 @@ struct CadenceGuardScriptSelftestTests {
         #expect(selftest.contains("T-1303"), "scripts/ledger-lag-check.sh's selftest no longer induces T-1303")
     }
 
+    /// T-1340, first half. `scripts/prune-shared-derived-data.sh selftest` is the one guard in
+    /// `scripts/` that this test target structurally cannot run: the entire trial is a heredoc fed
+    /// to `$PYTHON_BIN`, and the App-Sandboxed host is refused by the `/usr/bin/python3` xcrun shim
+    /// with *"cannot be used within an App Sandbox"* (T-719). So this is the `xcb.sh` treatment —
+    /// the reading that survives an environment which cannot execute the thing being read.
+    ///
+    /// **It is weaker than a run and the difference is the point.** A shell-out proves the guard
+    /// still FIRES; this proves only that the discriminator is still written down and that the
+    /// trial still claims to exercise it. It catches deletion, not rot. That is worth having
+    /// anyway, because deletion is the failure this family actually suffers: a script whose
+    /// selftest nothing runs loses a check silently, and every ticket in this file's history —
+    /// T-719, T-1330, T-1334, T-1343 — is a variant of "the instrument was hollow and looked fine".
+    ///
+    /// The body half and the trial half are deliberately different lists rather than one list asked
+    /// twice, because they are not the same claim and pretending otherwise would force a false
+    /// symmetry. `UNREADABLE` is the proof: it is a real classification the script makes and the
+    /// trial does NOT induce it, so requiring it on both sides would fail today and the honest
+    /// response to that is [[T-1350]], not a needle quietly dropped from the body list.
+    @Test func thePruneScriptsDiscriminatorsAreStillInducedByItsOwnSelftest() throws {
+        let source = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot()
+                .appendingPathComponent("scripts/prune-shared-derived-data.sh"),
+            encoding: .utf8
+        )
+        guard let split = source.range(of: "\n# --- selftest") else {
+            Issue.record("scripts/prune-shared-derived-data.sh has no `# --- selftest` section to read")
+            return
+        }
+        let body = String(source[source.startIndex..<split.lowerBound])
+        let selftest = String(source[split.lowerBound...])
+
+        // The readings the script makes. `lsof` is THE HARD RULE — never delete an entry a live
+        // process holds open — and the known-live hash is the positive control both discriminators
+        // are checked against before either is trusted, which is what stops the whole tool being
+        // an elaborate way to delete somebody's Xcode.
+        for reading in [
+            "\"/usr/sbin/lsof\", \"+D\"",
+            "positive_control",
+            "WorkspacePath",
+            "ORPHAN",
+            "UNREADABLE",
+            "cfagpqwpaaoeixfvenakmzkidwtg",
+        ] {
+            #expect(body.contains(reading), "scripts/prune-shared-derived-data.sh no longer makes the reading \(reading)")
+        }
+
+        // Every check its trial names. Whole sentences rather than keywords: a label is what the
+        // run prints, so a check renamed out from under this is a check whose disappearance from
+        // the output nobody would notice either.
+        for check in [
+            "hash reproduces the known-live entry for this repository's own project path",
+            "info.plist pointing at a live workspace is ATTRIBUTED",
+            "info.plist pointing at a gone workspace is ORPHAN",
+            "no info.plist, hash matches a live project, is ATTRIBUTED",
+            "no info.plist, hash matches nothing, is ORPHAN",
+            "an entry a live process holds open is LIVE, never ORPHAN, regardless of attribution",
+            "prune-dd removes both orphans and leaves attributed/live entries untouched",
+        ] {
+            #expect(selftest.contains(check), "scripts/prune-shared-derived-data.sh's selftest no longer checks: \(check)")
+        }
+    }
+
+    /// T-1340, second half, and the answer turned out to be that there is nothing to build.
+    ///
+    /// `scripts/real-tree-sweep-manifest.sh <id> selftest` is the stale-manifest trial (T-873): it
+    /// removes an entry from the COMMITTED manifest in the checkout, runs a real
+    /// `xcb.sh <id> test`, and restores the file from a trap. Three reasons it does not belong in
+    /// this suite, and only the first is the one the ticket gave. It takes a build, in a suite whose
+    /// premise is about a second a member. It writes to the shared checkout siblings are editing.
+    /// And it would be a nested `xcodebuild test` spawned from inside a test host that already
+    /// holds the test-host lock — which cannot work and should not be made to.
+    ///
+    /// It is not unpinned, though, which is what a sweep of `scripts/` and `.githooks/` could not
+    /// see: `.github/workflows/ci.yml` has run it on every push since T-977, reusing the derived
+    /// data and signing overrides the test job above it already paid for. A hosted runner is not
+    /// sandboxed, so it is the one place that CAN lay the stale tree down. The ticket's own
+    /// preferred answer — "a CI job rather than a unit test" — was already in the tree.
+    ///
+    /// What was genuinely unpinned is this: delete that workflow step and nothing goes red. The
+    /// selftest goes back to having no caller anywhere, silently, which is the exact state T-977
+    /// found it in. So the one thing left to do is the cheapest possible: name the caller.
+    @Test func theRealTreeSweepManifestsBuildDrivenSelftestStillHasACaller() throws {
+        let workflow = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot()
+                .appendingPathComponent(".github/workflows/ci.yml"),
+            encoding: .utf8
+        )
+        #expect(
+            workflow.contains("real-tree-sweep-manifest.sh"),
+            """
+            .github/workflows/ci.yml no longer runs scripts/real-tree-sweep-manifest.sh, so its \
+            build-driven selftest (T-873/T-977) has no caller anywhere again — this test target \
+            cannot run it (it writes to the checkout and spawns a nested xcodebuild test), so CI \
+            is the only place it runs at all.
+            """
+        )
+        let invokesTheSelftest = workflow
+            .split(separator: "\n")
+            .contains { $0.contains("real-tree-sweep-manifest.sh") && $0.contains("selftest") && !$0.contains("#") }
+        #expect(
+            invokesTheSelftest,
+            """
+            .github/workflows/ci.yml still names scripts/real-tree-sweep-manifest.sh but no longer \
+            invokes its `selftest` mode, which is the half nothing else in the repository runs — \
+            `precheck-selftest` is chained by agent-commit.sh's mode 8 and is not this.
+            """
+        )
+    }
+
     /// **T-1328. One rule with two implementations, and a divergence between them is a new trap.**
     ///
     /// `CadenceSourceScan.codeOnly` and the `blank()` inside `scripts/test-suite-index.sh` blank
@@ -855,8 +1026,14 @@ struct CadenceGuardScriptSelftestTests {
         #expect(code.contains("struct Suite"), "non-vacuity: the code around it is not")
     }
 
-    /// And all eight guards have to be there to be run. A renamed script would otherwise make the
+    /// And every guard has to be there to be run. A renamed script would otherwise make the
     /// tests above fail for a reason that reads nothing like "the guard is gone".
+    ///
+    /// The last three are the ones nothing above SHELLS OUT to — `ledger-view.sh` is run under its
+    /// own shebang above, while `prune-shared-derived-data.sh` and `real-tree-sweep-manifest.sh`
+    /// are pinned by reading source (T-1340) — and they need this most, not least: a source-level
+    /// reading is completely blind to a lost mode, and a `chmod` that turned one of them off would
+    /// otherwise be discovered by whoever next typed `./scripts/...` and got "permission denied".
     ///
     /// The executable bit is not a formality for `.githooks/pre-commit` (T-780): git **silently
     /// skips** a hook it cannot execute — no warning, no non-zero exit, the commit simply goes
@@ -874,6 +1051,9 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/codex-inbox.sh",
             "scripts/xcb.sh",
             ".githooks/pre-commit",
+            "scripts/ledger-view.sh",
+            "scripts/prune-shared-derived-data.sh",
+            "scripts/real-tree-sweep-manifest.sh",
         ] {
             let path = CadenceSelftestRun.repositoryRoot().appendingPathComponent(script).path
             #expect(FileManager.default.isExecutableFile(atPath: path), "\(script) is missing or not executable")
