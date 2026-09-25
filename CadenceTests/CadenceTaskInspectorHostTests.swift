@@ -98,13 +98,23 @@ struct CadenceTaskInspectorHostTests {
 
     /// The extreme case, and **the measurement that decided the guard's shape.** A first draft read
     /// `isDeleted` alone and this test is what killed it: across a real delete, the two halves of the
-    /// lifecycle report through *different* properties —
+    /// lifecycle report through *different* properties. Measured on Xcode 27.0 (macOS 27.0,
+    /// arm64, `en_US_POSIX`/UTC as the test action pins them), 2026-09-25 —
     /// - after `delete(_:)` and before the save, `isDeleted` is the one that is true;
     /// - after the save, `modelContext` is the one that is nil.
     ///
-    /// Neither is asserted here as "the other one is false", because that would pin SwiftData's
-    /// internals rather than our rule. What is asserted is that each phase is caught, which is the
-    /// property the host needs, and that the combined predicate is what catches both.
+    /// **That split is bounded here, not pinned (T-1318).** Which signal fires in which half is
+    /// SwiftData's answer and not this app's, and this repository builds on two Xcode majors that
+    /// have already disagreed once about a neighbouring one — [[T-1279]] pinned 26's `rollback()`
+    /// and went red locally, [[T-1296]] pinned 27's and turned CI red. Each looked like a fix and
+    /// was a swap of which environment was broken. So each phase asserts the property the host
+    /// actually needs and that no toolchain may take away: **at least one** of the two signals
+    /// fires, and the combined predicate closes the inspector.
+    ///
+    /// Neither is asserted as "the other one is false", because that would pin SwiftData's
+    /// internals rather than our rule; and the `.stay` above the delete is the non-vacuity that
+    /// says neither signal fires while the task is alive, so "at least one" is not a disjunction
+    /// that was already true.
     @Test func deletingTheTaskUnderneathTheInspectorClosesItInBothPhasesOfTheDelete() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
@@ -120,7 +130,10 @@ struct CadenceTaskInspectorHostTests {
         )
 
         context.delete(subject)
-        #expect(subject.isDeleted, "a pending delete stopped reporting through isDeleted")
+        #expect(
+            subject.isDeleted || subject.modelContext == nil,
+            "a pending delete reported through neither of the two signals the guard reads"
+        )
         #expect(
             CadenceDetailPanelPresentation.resolveHeldSubject(
                 isDeleted: subject.isDeleted,
@@ -129,7 +142,11 @@ struct CadenceTaskInspectorHostTests {
         )
 
         try context.save()
-        #expect(subject.modelContext == nil, "a committed delete stopped detaching the model context")
+        #expect(
+            subject.isDeleted || subject.modelContext == nil,
+            "a committed delete reported through neither of the two signals the guard reads"
+        )
+        // The store's own half, which is not an observation of anything: the row is gone.
         #expect(try context.fetch(FetchDescriptor<AppTask>()).isEmpty)
         #expect(
             CadenceDetailPanelPresentation.resolveHeldSubject(

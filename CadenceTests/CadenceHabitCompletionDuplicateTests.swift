@@ -359,6 +359,12 @@ struct CadenceHabitCompletionDuplicateTests {
     ///
     /// The final `save()` is the invariant that needs no such argument: after a refused uncheck
     /// there must be nothing pending for it to commit.
+    ///
+    /// **T-1318 re-read this one and kept it strict.** It is on R47's list, and it is the entry on
+    /// that list whose observation is already bounded by construction rather than by tolerance:
+    /// the count is 1 on a runtime that restores the relationship and 1 on a runtime that does
+    /// not, so there is no toolchain answer left for it to pin. The fresh-context row count after
+    /// the final `save()` is the store's own half and is strict on both.
     @Test func arefusedUncheckLeavesTheRowInTheStoreAndTheDayStillChecked() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

@@ -73,19 +73,40 @@ import os, re, sys
 
 root, mode, needle = sys.argv[1], sys.argv[2], sys.argv[3]
 
+# T-1338. Swift's own grammar ends a line on any of these, and so does `Character.isNewline`; this
+# pass used to end one only on `\n`. That was the second of the two ways these two implementations
+# of one rule could disagree character-for-character: a lone `\r` ended a `//` comment on the Swift
+# side and did not here, so everything after it on that line read as comment here and as CODE
+# there. `\r\n` is one `Character` and two code points, and both of them are in this set, which is
+# what makes the two readings agree on it.
+NEWLINES = '\n\x0b\x0c\r\x85\u2028\u2029'
+
+
 def blank(src):
     # Comments and string-literal TEXT to spaces of equal length, newlines kept -- the same rule as
     # `CadenceSourceScan.codeOnly` in `CadenceTests/CadenceSourceScanSupport.swift`. These are two
     # implementations of one rule in two languages; a divergence between them is a new trap, and
     # `CadenceGuardScriptSelftestTests.theTwoBlankingPassesOfOneRuleStillHandleInterpolatedCode`
     # goes red if either side loses the interpolation half.
+    #
+    # T-1338: "equal length" is a **code point** count on this side and a grapheme-cluster count on
+    # the Swift one, so the Swift pass now spells a blanked cluster as one space per scalar rather
+    # than one per cluster. See `CadenceSourceScan.blankedSpansAsSpaces`, and
+    # `CadenceBlankingPassParityTests` for the fixtures that pin both halves.
     out = list(src)
     n = len(out)
 
     def wipe(a, b):
         for k in range(a, min(b, n)):
-            if out[k] != '\n':
+            if out[k] not in NEWLINES:
                 out[k] = ' '
+
+    def line_end(i):
+        # The index of the first line terminator at or after `i`, or `n`. Swift's `//` comment runs
+        # to the end of ITS line, which is not always the next `\n`.
+        while i < n and src[i] not in NEWLINES:
+            i += 1
+        return i
 
     def raw_hashes(i):
         # The length of the `#` run opening a RAW literal here, or None when the run is something
@@ -111,8 +132,9 @@ def blank(src):
                 wipe(pos, close)
                 return close
             # A single-line literal cannot span a newline; stopping here keeps an unterminated one
-            # from blanking the rest of the file.
-            if not multiline and src[pos] == '\n':
+            # from blanking the rest of the file. Any of Swift's line terminators, not only `\n`
+            # (T-1338).
+            if not multiline and src[pos] in NEWLINES:
                 return pos
             if src[pos] == '\\' and pos + 1 + hashes < n and src.startswith('#' * hashes, pos + 1):
                 escaped = pos + 1 + hashes
@@ -153,8 +175,7 @@ def blank(src):
                 i = scan_literal(i, 0)
                 continue
             if src[i:i + 2] == '//':
-                j = src.find('\n', i)
-                j = n if j < 0 else j
+                j = line_end(i)
                 wipe(i, j); i = j; continue
             if src[i:i + 2] == '/*':
                 j = src.find('*/', i + 2)

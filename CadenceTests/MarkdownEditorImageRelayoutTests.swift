@@ -203,6 +203,12 @@ struct MarkdownEditorImageRelayoutTests {
     /// The user-visible form of the same fact, measured against the rect the draw pass actually
     /// cached: the picture is inside its own line fragment, so no other line's glyphs can land on
     /// it.
+    ///
+    /// **T-1318 left this one alone.** It is on R47's list, and R47's own text says why it does not
+    /// need the treatment: it asserts *containment* with a 0.5pt tolerance rather than an absolute
+    /// glyph height, so a native text-layout change moves both rects together and the claim still
+    /// reads. The tolerance is the bound. `aWidthChangeIsNotReportedAsATextEdit`, further down, is
+    /// the assertion in this file that did pin an absolute number, and it no longer does.
     @Test func aDrawnImageStaysInsideItsLineFragmentAfterAResize() throws {
         let (scrollView, textView) = makeEditor(width: 320)
         resize(scrollView, to: 760)
@@ -312,13 +318,32 @@ struct MarkdownEditorImageRelayoutTests {
     /// CloudKit would get a write, for a change that alters no character.
     @Test func aWidthChangeIsNotReportedAsATextEdit() throws {
         let (scrollView, textView) = makeEditor(width: 320)
+        let before = try imageLineFragment(in: textView)
         let recorder = TextChangeRecorder()
         textView.delegate = recorder
 
         resize(scrollView, to: 760)
 
         #expect(recorder.changes == 0)
-        #expect(try imageLineFragment(in: textView).height > 300)
+
+        // Non-vacuity — the resize really did reflow, so "no edit was reported" is not a claim
+        // about a pass that did nothing. **Bounded rather than pinned (T-1318):** this read
+        // `height > 300`, which is one toolchain's absolute glyph height and nothing this app
+        // decides. A native text-layout or system-font metric change moves that number without
+        // breaking anything, and this repository builds on two Xcode majors that have already
+        // disagreed once about a framework answer ([[T-1279]]/[[T-1296]]). Both claims below are
+        // measured against this runtime's own layout instead: it grew, and it can hold the
+        // picture — which is the containment invariant the rest of this file asserts.
+        let fragment = try imageLineFragment(in: textView)
+        let drawn = drawnImageHeight(in: textView)
+        #expect(
+            fragment.height > before.height + 0.5,
+            "the resize left the fragment at \(fragment.height)pt, up from \(before.height)pt"
+        )
+        #expect(
+            fragment.height >= drawn + MarkdownDecorationGeometry.imageLinePadding - 0.5,
+            "fragment \(fragment.height)pt cannot hold a \(drawn)pt image"
+        )
         textView.delegate = nil
     }
 

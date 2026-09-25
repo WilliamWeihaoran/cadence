@@ -42,24 +42,78 @@ struct DateFormatterSupportTests {
     /// The rule under test is normalize-when-unambiguous, reject-when-the-century-is-a-guess:
     /// `"2026-8-20"` names one day and becomes `"2026-08-20"`, while `"26-8-2"` parses just as
     /// happily to the year 26 AD and is refused rather than stored as `"0026-08-02"`.
+    ///
+    /// **Two halves, and only one of them is ours (T-1318).** `normalizedDateKey` is `ymd.date(from:)`
+    /// plus a four-digit-year guard, so *which* sloppy spellings it can normalise at all is
+    /// **Foundation's parser policy**: slashes, overpadded components and an unpadded month are
+    /// accepted by this toolchain and may not be by another. This repository builds on two Xcode
+    /// majors that have already disagreed once about a neighbouring framework answer
+    /// ([[T-1279]]/[[T-1296]]), and pinning one side's answer is how the other environment goes red
+    /// for a change nobody made. So each lenient spelling is **bounded**: it normalises to the one
+    /// day it names, or it is refused — never a third answer, never a different day, and never a
+    /// string that is not a fixed-width key, because that last one is the only outcome that can
+    /// reach the store and mis-sort.
+    ///
+    /// **The canonical-output requirement is ours and stays strict**: canonical input survives
+    /// unchanged, every non-`nil` answer is ten characters of `yyyy-MM-dd` and is a fixed point of
+    /// a second pass, a two-digit year is refused whether or not Foundation parses it, and an
+    /// invalid date or a sentence is refused outright.
+    ///
+    /// Measured on **Xcode 27.0** (macOS 27.0, arm64, `en_US_POSIX` inside `ymd`, `TZ=UTC` from the
+    /// test action), 2026-09-25: all five lenient spellings below parse, and `"26-8-2"` parses.
     @Test func normalizedDateKeyCanonicalizesUnambiguousSpellingsAndRefusesAShortYear() {
+        // Ours, strict. Also the non-vacuity anchor for the bounded block: if `ymd` ever stopped
+        // parsing its own format string every answer below would be `nil` and every "or a refusal"
+        // would pass saying nothing.
         #expect(DateFormatters.normalizedDateKey("2026-08-20") == "2026-08-20")
-        #expect(DateFormatters.normalizedDateKey("2026-8-20") == "2026-08-20")
-        #expect(DateFormatters.normalizedDateKey("2026-8-2") == "2026-08-02")
-        #expect(DateFormatters.normalizedDateKey("  2026-8-20  ") == "2026-08-20")
-        #expect(DateFormatters.normalizedDateKey("2026-008-020") == "2026-08-20")
-        #expect(DateFormatters.normalizedDateKey("2026/08/20") == "2026-08-20")
-
-        // Refused, and the first two are the interesting ones: the parse succeeds, so nothing but
-        // this function stands between them and a stored key.
-        #expect(DateFormatters.date(from: "26-8-2") != nil)
-        #expect(DateFormatters.normalizedDateKey("26-8-2") == nil)
+        #expect(DateFormatters.normalizedDateKey("  2026-08-20  ") == "2026-08-20")
         #expect(DateFormatters.normalizedDateKey("0026-08-02") == "0026-08-02")
+
+        // Foundation's permissiveness, bounded: the one day the text names, or a refusal.
+        let lenient = [
+            ("2026-8-20", "2026-08-20"),
+            ("2026-8-2", "2026-08-02"),
+            ("  2026-8-20  ", "2026-08-20"),
+            ("2026-008-020", "2026-08-20"),
+            ("2026/08/20", "2026-08-20"),
+        ]
+        for (raw, day) in lenient {
+            if let key = DateFormatters.normalizedDateKey(raw) {
+                #expect(key == day, "\"\(raw)\" normalised to \(key) rather than \(day) or a refusal")
+            }
+        }
+
+        // Ours, strict: the refusals. The short year is the interesting one — the parse succeeds,
+        // so nothing but this function stands between it and a stored key two millennia out. The
+        // parse itself rides in the failure message rather than in an assertion of its own,
+        // because whether Foundation still accepts it is precisely the half that is not ours.
+        #expect(
+            DateFormatters.normalizedDateKey("26-8-2") == nil,
+            """
+            a two-digit year became a storage key; Foundation parsed "26-8-2": \
+            \(DateFormatters.date(from: "26-8-2") != nil)
+            """
+        )
         #expect(DateFormatters.normalizedDateKey("2026-13-01") == nil)
         #expect(DateFormatters.normalizedDateKey("2026-02-30") == nil)
         #expect(DateFormatters.normalizedDateKey("2026-08-20T10:00") == nil)
         #expect(DateFormatters.normalizedDateKey("next Tuesday") == nil)
         #expect(DateFormatters.normalizedDateKey("") == nil)
+
+        // Ours, strict, and the reason the function exists at all: whatever comes back is a
+        // fixed-width key that means the same day and survives a second pass unchanged. The raw
+        // text echoed back, or a ten-character string naming another day, is what mis-sorts in the
+        // store — and no parser policy can produce it from this code.
+        for raw in ["2026-08-20", "0026-08-02"] + lenient.map(\.0) {
+            guard let key = DateFormatters.normalizedDateKey(raw) else { continue }
+            #expect(key.count == 10, "\"\(raw)\" normalised to a \(key.count)-character key: \(key)")
+            #expect(DateFormatters.normalizedDateKey(key) == key, "\(key) is not a fixed point")
+            #expect(
+                DateFormatters.date(from: key)
+                    == DateFormatters.date(from: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+                "\"\(raw)\" normalised to \(key), which is a different day"
+            )
+        }
     }
 
     /// Why the padding is not pedantry: the app compares storage keys as strings, so a key that is
@@ -432,6 +486,14 @@ struct ClockFaceFollowsTheSystemTests {
     /// failure says by how much rather than merely that. The **24-hour face is the narrower one**
     /// on both rails, which is the claim that matters for [[T-1135]]: the user's clock setting
     /// cannot be what makes a rail overflow.
+    ///
+    /// **T-1318 left this strict, and `theTwentyFourHourHourRailLabelIsNoWiderThanTheTwelveHourOne`
+    /// with it.** Both are on R47's list as system-font widths measured against fixed rail budgets,
+    /// and a font metric change genuinely can cross `twelve < rail.box`. That is not an
+    /// observational sentinel to bound, though — it *is* the app invariant. A label that no longer
+    /// fits its fixed-width box is a real clipped rail on the owner's screen, and a red run is the
+    /// only way this repository would ever hear about it. The 24-against-12 comparison beside it
+    /// is already relative, so nothing there pins a toolchain's number either.
     @Test func theMacHourRailsFitTheWidestLabelOnEitherClockFace() {
         func widest(size: CGFloat, weight: NSFont.Weight, locale: Locale) -> CGFloat {
             let font = NSFont.systemFont(ofSize: size, weight: weight)

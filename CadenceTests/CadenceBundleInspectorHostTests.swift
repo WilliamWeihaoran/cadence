@@ -73,6 +73,13 @@ struct CadenceBundleInspectorHostTests {
     /// halves of a real delete report through *different* properties, which is why the rule reads two
     /// signals and why a draft guarding on `isDeleted` alone would pass the first half of this test
     /// and fail the second.
+    ///
+    /// **Which signal fires in which half is bounded, not pinned (T-1318)** — the same treatment,
+    /// and the same reasoning, as `CadenceTaskInspectorHostTests
+    /// .deletingTheTaskUnderneathTheInspectorClosesItInBothPhasesOfTheDelete`, whose doc comment
+    /// carries the measurement and the [[T-1279]]/[[T-1296]] history. Each phase asserts that at
+    /// least one of the two signals fires and that the combined predicate closes the panel; the
+    /// `.stay` above the delete is what keeps that disjunction from being vacuous.
     @Test func deletingTheBundleUnderneathThePanelClosesItInBothPhasesOfTheDelete() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
@@ -88,7 +95,10 @@ struct CadenceBundleInspectorHostTests {
         )
 
         context.delete(bundle)
-        #expect(bundle.isDeleted, "a pending delete stopped reporting through isDeleted")
+        #expect(
+            bundle.isDeleted || bundle.modelContext == nil,
+            "a pending delete reported through neither of the two signals the guard reads"
+        )
         #expect(
             CadenceDetailPanelPresentation.resolveHeldSubject(
                 isDeleted: bundle.isDeleted,
@@ -97,7 +107,11 @@ struct CadenceBundleInspectorHostTests {
         )
 
         try context.save()
-        #expect(bundle.modelContext == nil, "a committed delete stopped detaching the model context")
+        #expect(
+            bundle.isDeleted || bundle.modelContext == nil,
+            "a committed delete reported through neither of the two signals the guard reads"
+        )
+        // The store's own half, which is not an observation of anything: the row is gone.
         #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
         #expect(
             CadenceDetailPanelPresentation.resolveHeldSubject(

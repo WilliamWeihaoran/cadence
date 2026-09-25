@@ -134,6 +134,13 @@ struct CadencePendingChangePersistenceTests {
     /// The failure half. A delete has no object to hand back, so the undo is a rollback — and the
     /// point of it is that the row becomes **visible again**, rather than staying hidden in a
     /// context that never committed it.
+    ///
+    /// **T-1318 read this and left it strict.** R47 listed it with the `rollback()` observations
+    /// [[T-1279]] and [[T-1296]] flipped between Xcode 26 and 27, but those two are about an
+    /// **already-materialised relationship** after a rollback. Nothing here reads one: visibility
+    /// is asked with a `fetch`, in the editing context and again in a second one, and a fetch is
+    /// the refresh the 26 behaviour was waiting for. Both answers are the store's, so both hold on
+    /// either toolchain.
     @Test func afailedDeletePutsTheRowBackWhereItCanBeSeen() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

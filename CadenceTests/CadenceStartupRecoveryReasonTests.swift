@@ -75,6 +75,26 @@ struct CadenceStartupRecoveryReasonTests {
         }
     }
 
+    /// A Swift error whose cause is reachable **only by reflection** — no `userInfo`, an
+    /// `Optional<Error>` stored property — which is the shape `SwiftDataError` presents.
+    private struct ReflectedCauseError: LocalizedError {
+        var cause: Error?
+        /// Distinguishes one wrapper from another. The extractor skips a candidate whose words
+        /// match the error it came out of — a cause that says nothing new is not a cause — so two
+        /// wrappers with one description would test the skip rather than the recursion.
+        var level: Int = 1
+        var errorDescription: String? {
+            "The operation couldn\u{2019}t be completed. (Cadence.ReflectedCauseError error \(level).)"
+        }
+    }
+
+    /// A cause that says something the wrapper does not.
+    private struct SpecificCauseError: LocalizedError {
+        var errorDescription: String? {
+            "The file \u{201C}default.store\u{201D} couldn\u{2019}t be opened because it isn\u{2019}t in the correct format."
+        }
+    }
+
     // MARK: - The sentence
 
     @Test func theRecoveryMessageCarriesTheFailureItUsedToDiscard() throws {
@@ -130,28 +150,98 @@ struct CadenceStartupRecoveryReasonTests {
     /// The ticket's actual complaint, stated as a test: different causes used to produce one
     /// identical sentence, and the user could not tell a corrupt store from a permissions problem.
     ///
-    /// **All-or-nothing rather than all-distinct, because the framework decides which (T-1296).**
-    /// On Xcode 27 the three causes nest three different Cocoa errors and read distinctly — the
-    /// ticket's complaint, fixed. On Xcode 26 none of them nests, so all three fall back to the one
-    /// shared sentence and the complaint is simply not addressable through this channel. Both are
-    /// acceptable; a **partial** result is not, and that is what this pins: three distinct messages
-    /// or one shared message, never two — which is the shape a half-working extractor produces and
-    /// the shape neither toolchain should ever show.
-    @Test func storeFailuresEitherAllReadDistinctlyOrAllShareTheOneFallback() throws {
-        let corrupt = try #require(try realStoreOpenFailure(.corruptFile))
-        let directory = try #require(try realStoreOpenFailure(.directoryInTheWay))
-        let unwritable = try #require(try realStoreOpenFailure(.unwritableParent))
+    /// **The oracle here used to be the *cardinality* of the message set — three distinct or one
+    /// shared, never two — and that was a framework pin wearing a disguise (T-1318, audit R61-C).**
+    /// It read like the bounded form: [[T-1296]] moved the claim off the individual observation and
+    /// up to the aggregate, and stopped there. But a runtime that exposes a specific nested cause
+    /// for *one* of these three failures and not the other two makes a **correctly operating**
+    /// extractor produce exactly two distinct messages, and the old predicate called that "a
+    /// partially working extractor". Nothing in this app's contract requires three framework errors
+    /// to carry equally informative internals. No runtime has been observed producing two — this
+    /// was green, and latent — which is precisely the shape [[T-1279]] and [[T-1296]] sprang from
+    /// the other direction.
+    ///
+    /// What is asserted instead is **per error, and all of it ours**: the reason is non-empty, the
+    /// message keeps the recovery prefix, and it ends in *the reason the extractor actually
+    /// returned* for that error. A message that dropped its reason, truncated it, or carried
+    /// another error's is red whichever of the three the runtime decided to describe. The
+    /// extractor's own correctness stays strict where it can be deterministic:
+    /// `theReasonPrefersTheNestedErrorAndFallsBackToTheOuterOne` and
+    /// `theReasonReachesACauseThatOnlyReflectionCanSee` pin both channels on synthetic errors and
+    /// need no framework error at all.
+    @Test func everyStoreFailureIsReportedWithTheReasonTheExtractorFound() throws {
+        let failures: [(name: String, error: Error)] = [
+            ("a corrupt store file", try #require(try realStoreOpenFailure(.corruptFile))),
+            ("a directory in the way", try #require(try realStoreOpenFailure(.directoryInTheWay))),
+            ("an unwritable parent", try #require(try realStoreOpenFailure(.unwritableParent))),
+        ]
 
-        let messages = [corrupt, directory, unwritable].map(PersistenceController.primaryStoreFailureMessage)
-        #expect(messages.allSatisfy { !$0.isEmpty })
+        for failure in failures {
+            let reason = PersistenceController.storeFailureReason(failure.error)
+            let message = PersistenceController.primaryStoreFailureMessage(failure.error)
+
+            #expect(!reason.isEmpty, "\(failure.name) produced no reason at all")
+            #expect(
+                message.hasPrefix(
+                    "Cadence opened a recovery store because the CloudKit store could not be created"
+                ),
+                "\(failure.name) lost the recovery prefix: \(message)"
+            )
+            #expect(
+                message.hasSuffix(reason),
+                "\(failure.name) reported something other than the reason the extractor found: \(message)"
+            )
+            #expect(
+                message != "Cadence opened a recovery store because the CloudKit store could not be created.",
+                "\(failure.name) is back to the bare sentence T-1319 exists to replace"
+            )
+        }
+    }
+
+    /// **The reflected channel, on an error this repository built (audit R61-B).**
+    ///
+    /// `storeFailureReason` reaches a cause two ways: the standard `NSUnderlyingErrorKey`, and
+    /// **reflection** — `SwiftDataError` stores its `_underlyingCocoaError` in a property and
+    /// leaves `userInfo` empty, so the standard key finds nothing and only the `Mirror` walk does.
+    /// Until this test, that second mechanism was exercised only through live framework errors,
+    /// which is exactly the dependency T-1318 exists to remove: whether a given runtime supplies a
+    /// reflected cause at all is the runtime's business, so a mutation that deleted the `Mirror`
+    /// branch could fall back to the outer description without any test here going red.
+    ///
+    /// The fixture is a Swift error with a deliberately generic description and an `Optional<Error>`
+    /// child, which is the shape the reflection walks — and the first assertion is that the fixture
+    /// really is that shape, so this cannot quietly become a second test of the standard channel.
+    @Test func theReasonReachesACauseThatOnlyReflectionCanSee() {
+        let cause = SpecificCauseError()
+        let reflected = ReflectedCauseError(cause: cause)
+
+        // The fixture is what it claims to be: the standard channel finds nothing here.
         #expect(
-            Set(messages).count == messages.count || Set(messages).count == 1,
+            (reflected as NSError).userInfo[NSUnderlyingErrorKey] == nil,
+            "the fixture carries a standard underlying error, so it no longer tests the Mirror walk"
+        )
+        #expect(
+            reflected.localizedDescription != cause.localizedDescription,
+            "the fixture's own words already say the cause, so finding it would prove nothing"
+        )
+
+        #expect(
+            PersistenceController.storeFailureReason(reflected) == cause.localizedDescription,
             """
-            the three causes produced \(Set(messages).count) distinct messages, which is neither \
-            all-distinct nor all-shared — a partially working extractor, not a toolchain \
-            difference: \(messages)
+            the reflected cause was discarded in favour of the outer generic description — that is \
+            the T-1319 defect on the one channel SwiftData actually uses
             """
         )
+
+        // The floor, on the same shape: no child, and no child at all, keep the outer words rather
+        // than returning an empty string.
+        let childless = ReflectedCauseError(cause: nil)
+        #expect(PersistenceController.storeFailureReason(childless) == childless.localizedDescription)
+        #expect(PersistenceController.storeFailureReason(cause) == cause.localizedDescription)
+
+        // Two deep, because the walk recurses: the deepest cause that says something new wins.
+        let nested = ReflectedCauseError(cause: ReflectedCauseError(cause: cause, level: 2))
+        #expect(PersistenceController.storeFailureReason(nested) == cause.localizedDescription)
     }
 
     /// The extractor itself, without the framework: the standard `NSUnderlyingErrorKey` channel is

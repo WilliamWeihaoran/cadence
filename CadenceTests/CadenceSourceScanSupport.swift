@@ -635,12 +635,18 @@ extension CadenceSourceScan {
     /// `theMaskerStillCannotSeeARegexLiteralAndSaysSoWhenAskedWhy`, and when either does land,
     /// `cadenceFileScopeReason` is what turns the silent misread into a located one.
     static func codeOnly(_ source: String) -> String {
-        var characters = Array(source)
+        let characters = Array(source)
         let count = characters.count
+        // A mark rather than an in-place overwrite, so the blanking *decision* (which Character
+        // spans are literal or comment) stays separate from how those spans are spelled back out.
+        // Every write below is behind the scan cursor, so nothing reads a position it has already
+        // blanked and the two forms are equivalent — see `blankedSpansAsSpaces` for why the
+        // spelling had to move.
+        var blanked = [Bool](repeating: false, count: count)
 
         func blank(_ range: Range<Int>) {
-            for position in range where !characters[position].isNewline {
-                characters[position] = " "
+            for position in range where position < count {
+                blanked[position] = true
             }
         }
 
@@ -771,7 +777,61 @@ extension CadenceSourceScan {
         }
 
         _ = scanCode(from: 0, stoppingAtUnmatchedCloseParen: false)
-        return String(characters)
+        return blankedSpansAsSpaces(characters, blanked)
+    }
+
+    /// The scalars Swift's own grammar — and therefore `Character.isNewline` — counts as ending a
+    /// line: LF, VT, FF, CR, NEL, LS and PS. A `\r\n` is **one** `Character` and **two** scalars,
+    /// and both of them are in here, which is what makes the two readings agree on it.
+    private static let lineTerminators: Set<Unicode.Scalar> = [
+        "\u{0A}", "\u{0B}", "\u{0C}", "\u{0D}", "\u{85}", "\u{2028}", "\u{2029}",
+    ]
+
+    /// Spells a scan's blanking decisions back out: an unblanked `Character` unchanged, a blanked
+    /// one as **one space per unicode scalar**, with its line terminators kept.
+    ///
+    /// **T-1338: one space per *scalar*, not one per `Character`.** `codeOnly` walks
+    /// `[Character]` — grapheme clusters — and the `blank()` inside `scripts/test-suite-index.sh`
+    /// walks code points. These are two implementations of one rule, and the script is what tells
+    /// an agent which suite to scope a run to, so a divergence between them is a trap rather than a
+    /// cosmetic difference. Writing one space per `Character` is where they diverged: a literal
+    /// holding `"cafe\u{301}"`, a ZWJ sequence, an emoji with a variation selector or a flag blanks
+    /// to *fewer* characters on the Swift side than on the Python one, and **every column offset
+    /// after it on that line differs** — which is exactly what `declarationBody`,
+    /// `declarationExtents` and `typeExtents` carry.
+    ///
+    /// Measured 2026-09-25 against both implementations compiled out of this repository, on a
+    /// fixture whose literal holds a combining acute, a ZWJ pair, an emoji with U+FE0F and a
+    /// regional-indicator flag: the Swift pass emitted **26** spaces where the Python pass emitted
+    /// **31**. With this projection both emit 31.
+    ///
+    /// The cost is the contract `codeOnly` used to have by accident: the result is no longer the
+    /// same *`Character`* count as the input on such a file. It is the same **unicode scalar**
+    /// count, which is the stronger of the two and the one both passes can honour. Nothing in the
+    /// tree relied on the weaker form — measured at this commit, all 938 `.swift` files under
+    /// `Cadence/`, `CadenceTests/`, `CadenceWidgets/` and `CadenceMCPServer/` hold **zero**
+    /// combining marks, ZWJ joiners, variation selectors or regional indicators, so this changes
+    /// no existing reading. `strippingComments` is a different function and still preserves the
+    /// `Character` count, which is what `CadenceCommitSurfaceScan.scanned` asserts.
+    ///
+    /// **What is left, and it is narrow.** The two passes still index text differently, so a
+    /// combining mark written *directly onto* a syntactic character — a `"`, `#`, `/`, `\` or a
+    /// parenthesis — would still be one `Character` here and two code points there.
+    /// `CadenceBlankingPassParityTests` pins that class at zero across the tree, so the day such a
+    /// file arrives the next agent is told rather than surprised.
+    private static func blankedSpansAsSpaces(_ characters: [Character], _ blanked: [Bool]) -> String {
+        var result = String.UnicodeScalarView()
+        result.reserveCapacity(characters.count)
+        for position in characters.indices {
+            guard blanked[position] else {
+                result.append(contentsOf: characters[position].unicodeScalars)
+                continue
+            }
+            for scalar in characters[position].unicodeScalars {
+                result.append(lineTerminators.contains(scalar) ? scalar : Unicode.Scalar(" "))
+            }
+        }
+        return String(result)
     }
 }
 

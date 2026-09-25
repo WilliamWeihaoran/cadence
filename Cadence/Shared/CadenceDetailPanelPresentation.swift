@@ -59,8 +59,11 @@ nonisolated enum CadenceDetailPanelPresentation {
 
     /// **Whether a held model is still real, and it takes two signals — measured, not assumed.**
     ///
-    /// Against a real in-memory store (pinned by `CadenceTaskInspectorHostTests` for a task and
-    /// `CadenceBundleInspectorHostTests` for a bundle):
+    /// Against a real in-memory store, measured on Xcode 27.0 / macOS 27.0 (arm64) on 2026-09-25
+    /// by `CadenceTaskInspectorHostTests` for a task and `CadenceBundleInspectorHostTests` for a
+    /// bundle — which **bound** rather than pin it, since which signal fires in which half is
+    /// SwiftData's answer and this repository builds on two Xcode majors that have disagreed
+    /// about a neighbouring one ([[T-1279]]/[[T-1296]]/[[T-1318]]):
     /// - between `ModelContext.delete(_:)` and the save, `isDeleted` is `true` while `modelContext`
     ///   is still set;
     /// - **after** the save, `isDeleted` reads `false` again and `modelContext` becomes `nil` —
@@ -69,7 +72,9 @@ nonisolated enum CadenceDetailPanelPresentation {
     ///
     /// So a guard on `isDeleted` alone never fires for the committed delete, which is the only one
     /// that reaches a panel from outside it. That is not a hypothetical: it is what the first draft
-    /// of this type did, and the test that caught it is the reason both signals are here.
+    /// of this type did, and the test that caught it is the reason both signals are here — and it
+    /// still catches it, on either toolchain, because what those tests assert is that **at least
+    /// one** signal fires in each phase and that this predicate closes the panel.
     static func heldSubjectIsGone(isDeleted: Bool, hasNoModelContext: Bool) -> Bool {
         isDeleted || hasNoModelContext
     }

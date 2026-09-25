@@ -406,6 +406,21 @@ struct CadenceSubtaskInverseParityTests {
     /// Read in the owning context on purpose, unlike every other test in this file: "is this true
     /// of a second context after a save" is a different and easier question, and the window the
     /// three tickets predicted is here, before the commit.
+    ///
+    /// **Bounded, not pinned (T-1318).** *Whether* SwiftData back-populates before any commit is
+    /// the framework's answer, not this app's, and this repository builds on two Xcode majors that
+    /// have already disagreed once about a neighbouring one: [[T-1279]] pinned 26's `rollback()`
+    /// and went red locally, [[T-1296]] pinned 27's and turned CI red, and each flip looked like a
+    /// fix while only swapping which environment was broken. Measured on **Xcode 27.0** (macOS
+    /// 27.0, arm64, the test action's pinned `TZ=UTC`), 2026-09-25: both directions back-populate
+    /// immediately. No 26 observation was taken, so the 27 answer is not what is asserted.
+    ///
+    /// What is asserted is the shape the guide bullet rests on, which holds on any runtime that
+    /// has a consistent answer: the two directions answer **together** — both back-populated, or
+    /// neither. A **one-sided** answer is the one no toolchain may show, because then half of the
+    /// create-side to-many rule in `Cadence/Models/AGENTS.md` is a convention and half of it is a
+    /// repair, and no reader can tell which half they are looking at. Red here still does not mean
+    /// the app regressed; it means the bullet needs rewriting.
     @Test func swiftDataBackPopulatesEitherSideOfANewSubtaskInverse() throws {
         let container = try makeContainer()
         let modelContext = ModelContext(container)
@@ -418,15 +433,8 @@ struct CadenceSubtaskInverseParityTests {
         let fromChild = Subtask(title: "Only parentTask was assigned")
         fromChild.parentTask = arrayNeverWritten
         modelContext.insert(fromChild)
-
-        #expect(
-            (arrayNeverWritten.subtasks ?? []).map(\.title) == ["Only parentTask was assigned"],
-            """
-            SwiftData no longer back-populates the parent's array from the inverse. \
-            The create-side half of the to-many rule in Cadence/Models/AGENTS.md is now a repair; \
-            rewrite that bullet before relaxing anything.
-            """
-        )
+        let arrayFilledItselfFromTheInverse =
+            (arrayNeverWritten.subtasks ?? []).map(\.title) == ["Only parentTask was assigned"]
 
         // Half two: write only the parent's array and read the child's back-reference.
         let backReferenceNeverWritten = AppTask(title: "Attached from the parent")
@@ -438,20 +446,40 @@ struct CadenceSubtaskInverseParityTests {
 
         backReferenceNeverWritten.subtasks =
             (backReferenceNeverWritten.subtasks ?? []) + [fromParent]
+        let inverseFilledItselfFromTheArray =
+            fromParent.parentTask?.id == backReferenceNeverWritten.id
 
+        // The bound: together, or not at all. Never one of the two.
         #expect(
-            fromParent.parentTask?.id == backReferenceNeverWritten.id,
+            arrayFilledItselfFromTheInverse == inverseFilledItselfFromTheArray,
             """
-            SwiftData no longer back-populates the inverse from the parent's array. \
-            The create-side half of the to-many rule in Cadence/Models/AGENTS.md is now a repair; \
-            rewrite that bullet before relaxing anything.
+            SwiftData back-populated one side of a new subtask inverse and not the other \
+            (parent's array from the inverse: \(arrayFilledItselfFromTheInverse); inverse from \
+            the parent's array: \(inverseFilledItselfFromTheArray)). That is neither toolchain's \
+            answer, and it makes half of the create-side to-many rule in Cadence/Models/AGENTS.md \
+            a convention and half of it a repair; rewrite that bullet before relaxing anything.
             """
         )
 
         // Non-vacuity for "before any commit": nothing above has been saved, so a second context
-        // on the same container still sees an empty store. Last, because a fetch is exactly the
-        // kind of refresh that would make this measure something else.
+        // on the same container still sees an empty store. Before the save, because a fetch is
+        // exactly the kind of refresh that would make the two readings above measure something else.
         #expect(try fetchSubtasks(in: container).isEmpty)
+
+        // **The app's own half, strict on either answer.** Whatever the runtime does before the
+        // commit, a one-sided write must *commit* as a real attachment — that is the fact every
+        // call site depends on, and no framework difference may take it away.
+        try modelContext.save()
+        let stored = try fetchSubtasks(in: container)
+        #expect(stored.count == 2)
+        #expect(
+            Set(stored.compactMap { $0.parentTask?.title })
+                == ["Attached from the child", "Attached from the parent"],
+            """
+            a one-sided write did not survive the commit as an attachment: \
+            \(stored.map { ($0.title, $0.parentTask?.title) })
+            """
+        )
     }
 
     /// The insert helper's own contract: trimming, ordering, the blank-title guard, both sides

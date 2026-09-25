@@ -57,6 +57,15 @@ struct CadenceListCascadeRollbackTests {
     /// A rollback would restore it either way, which is exactly why this is measured here and not
     /// after `commitCascade`. The ordering is what makes the `false` return mean "changed
     /// nothing"; the rollback is the second line of defence, not the first.
+    ///
+    /// **T-1318 read this and left it strict, and the reason is worth recording.** R47 listed
+    /// `!link.isDeleted` as a possible framework pin, alongside the `rollback()` observations that
+    /// [[T-1279]] and [[T-1296]] flipped between Xcode 26 and 27. It is not one: `deleteProject`
+    /// refuses at its first `guard`, so on this path **nothing is deleted or rolled back at all**,
+    /// and `isDeleted` is `false` on any runtime by construction rather than by observation. The
+    /// retained-instance read is also not load-bearing on its own — `!modelContext.hasChanges` and
+    /// the fresh-context `GoalListLink` count below are the toolchain-independent half, and the
+    /// T-291 regression (severing the links above the guard) turns all three red together.
     @Test func aRefusedProjectSweepLeavesTheGoalLinkAttached() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
@@ -92,6 +101,11 @@ struct CadenceListCascadeRollbackTests {
     /// The area's own sweep succeeds and a **nested project** is what fails, which is the second
     /// abort `deleteArea` can take. Its goal links have to survive that one too, so they go after
     /// the project loop rather than merely after the area's own guard.
+    ///
+    /// **Left strict under T-1318 for the reason the test above gives**: the nested `deleteProject`
+    /// also refuses at its own first `guard`, so nothing on this path is ever deleted, and the
+    /// fresh-context count plus `!modelContext.hasChanges` carry the claim whatever a retained
+    /// instance reports.
     @Test func aRefusedNestedProjectLeavesTheAreasGoalLinkAttached() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
