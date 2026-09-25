@@ -457,6 +457,27 @@ declined_lines() {  # $1 = staged content, $2 = worktree PATH, $3 = content bein
 ledger_ids() {  # $1 = file
     grep -oE '^- \[T-[0-9]+\]' -- "$1" 2>/dev/null | sed 's/^- \[//; s/\]$//' | sort -u
 }
+# THE CLOSURE READING, written once and spelled identically in scripts/ledger-lag-check.sh and in
+# scripts/ledger-view.sh (T-1335). Three implementations of one rule is worse than two, so this is
+# the one rule; CadenceGuardScriptSelftestTests pins the three copies against each other.
+#
+# A closure is a BOLD RUN INTRODUCING the token -- **CLOSED, **FULLY CLOSED, **PARTIALLY CLOSED --
+# outside inline code. Never the word loose in prose, and never the marker QUOTED, which is what
+# writing about the ledger format looks like and is the whole of T-1335.
+LEDGER_CLOSURE_READING='
+function closure_visible(s,   bq) {
+    # A marker inside inline code is a QUOTATION, not a closure. The fence character is built with
+    # sprintf rather than written, because two of the three copies of this reading are carried
+    # inside a command substitution where an odd number of literal fences ends it early.
+    bq = sprintf("%c", 96)
+    while (match(s, bq "[^" bq "]*" bq)) s = substr(s, 1, RSTART - 1) " " substr(s, RSTART + RLENGTH)
+    return s
+}
+function first_line_closed(s) {
+    return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
+}
+'
+
 # There is deliberately no narrower `is_ledger_path` beside `is_any_ledger_path` (T-1145). One
 # existed, matching `TODO.md` alone, and its only two callers -- LEDGER-IDS-LOST and
 # LEDGER-CLOSURE-LOST -- were the two guards that consequently could not see the archive. A second
@@ -520,8 +541,53 @@ ledger_ids() {  # $1 = file
 # ticket allows, establishing a convention the ledger then follows, is a rewrite of 118 unmarked
 # Done entries and is not this script's to make. The narrowness is the finding. Mode 4d's last two
 # checks pin it: an OPEN entry whose own first line says VERIFIED must stay editable.
+#
+# AND THE TOKEN HAS TO BE WRITTEN AS A CLOSURE, NOT QUOTED AS ONE (T-1335). The reading above said
+# "the entry's OWN first line" and then looked for the bare word anywhere on it, which is not the
+# same claim: an entry that merely QUOTES the marker -- and writing about the ledger format is the
+# natural way to do that, this repository's tickets quote their own machinery constantly -- read as
+# closed. Two live consequences, both measured before anything here changed:
+#
+#   * `scripts/ledger-lag-check.sh` shares this reading, and the rule it enforces is that a commit
+#     landing code under ticket ids must leave one of them closed. So a commit could name the
+#     quoting id and pass the guard having closed nothing.
+#   * HERE, and this is the false refusal the eighty lines above are about: the quoting entry is in
+#     HEAD's closed set, so the next ordinary rewrite that drops the quotation takes the id OUT of
+#     that set and is refused as `LEDGER-CLOSURE-LOST` -- a reversion the agent never made.
+#
+# THE REPAIR IS THE READING THIS FILE ALREADY MAKES ONE FUNCTION BELOW, not a third opinion: a BOLD
+# RUN introducing the token, outside inline code. `ledger_buried_closure_ids` measured that
+# narrowness over 471 entries (T-1106) and `scripts/ledger-view.sh` ships it; all three now spell
+# it the same way, and `CadenceGuardScriptSelftestTests` pins the three copies as one rule.
+#
+# MEASURED, by replay, the way this family decides everything -- `scripts/replay-closure-reading.sh`,
+# left in the tree to be re-run rather than quoted. Over every distinct entry first line that has
+# ever existed in either ledger (1837 of them at `c8735e4`, 482 read closed by the loose reading):
+#
+#   reading    loses   in the lag check's own scope   of those, HONEST closures lost
+#   anchored   9/482   5/263                          1  (T-777, whose closure sits mid-line)
+#   boldrun    7/482   4/263                          0
+#   nocode     3/482   3/263                          0, but it still reads T-1303's OPEN first line
+#                                                     as closed -- it leaves the hole open
+#   dated      10/482  5/263                          7, and it does not even exclude T-1136
+#
+# So `boldrun` is the only candidate that closes the hole on every live instance and has never, in
+# the whole history of this ledger, failed to recognise an honest closure where it matters. The
+# four it stops calling closed are T-1136, T-1303, T-1339 and T-983 -- every one of them an OPEN
+# entry quoting the convention, which is the defect. `anchored` -- the reading `ledger-view.sh`
+# shipped -- costs exactly one honest closure (T-777's `**finding** (see below). **CLOSED ...`),
+# and `boldrun` is a strict superset of it, so adopting the superset converges the two readings
+# rather than adding a third. `dated` is strictly worse on both axes and is ruled out by the table.
+#
+# At HEAD the whole behaviour change is one entry: T-1136, an open, decided, not-started ticket
+# whose first line quotes the marker inside backticks, stops reading closed. Over `docs/TODO.md`
+# the two readings are otherwise identical, entry for entry.
 ledger_closed_ids() {  # $1 = file
-    sed -n 's/^- \[\(T-[0-9][0-9]*\)\].*CLOSED.*/\1/p' -- "$1" 2>/dev/null | sort -u
+    awk "$LEDGER_CLOSURE_READING"'
+        /^- \[T-[0-9]+\]/ && first_line_closed($0) {
+            id = $0; sub(/^- \[/, "", id); sub(/\].*$/, "", id); print id
+        }
+    ' "$1" 2>/dev/null | sort -u
 }
 
 # T-1106, and it is the OTHER side of the anchor ledger_closed_ids() just spent eighty lines
@@ -544,15 +610,23 @@ ledger_closed_ids() {  # $1 = file
 # about a different ticket, and it does not name T-992's own body sentence *"first line to
 # `**CLOSED <date>`"*, which quotes the convention mid-line rather than opening with it. Both are
 # false refusals in the commit path, which is the failure this family must not have.
+#
+# T-1335 moved the first-line half of this onto `first_line_closed`, which is the same reading one
+# clause wider -- it no longer insists the marker OPEN the line, so `**finding** ... **CLOSED ...`
+# (T-777's shape, the one honest closure the strictly-anchored form ever failed to recognise) is
+# read as already closed and is not reported buried. The body half keeps its anchor, because there
+# the question IS positional: a closure sentence that opens a later line of the block. Both halves
+# now read through `closure_visible`, so a body line that quotes the marker inside backticks is a
+# quotation here too. Neither change moves HEAD's buried set, which is empty and stays empty.
 ledger_buried_closure_ids() {  # $1 = file
-    awk '
+    awk "$LEDGER_CLOSURE_READING"'
         /^- \[T-[0-9]+\]/ {
             id = $0; sub(/^- \[/, "", id); sub(/\].*$/, "", id)
-            inopen = ($0 ~ /^- \[T-[0-9]+\] \*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/) ? 0 : 1
+            inopen = first_line_closed($0) ? 0 : 1
             next
         }
         /^[^ \t]/ { inopen = 0; next }
-        inopen && /^[ \t]+\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/ { print id; inopen = 0 }
+        inopen && closure_visible($0) ~ /^[ \t]+\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/ { print id; inopen = 0 }
     ' "$1" 2>/dev/null | sort -u
 }
 
@@ -2946,6 +3020,44 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" e8 -m "$M" TODO.md=unclose.md 2>&1 ); rc=$?
     check "while a genuinely CLOSED entry reverting to open text is still refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST*T-106* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # T-1335, and it is the SAME narrowness question one step further in. Until it, closure was
+    # the bare token anywhere on the entry's own first line, so an entry that merely QUOTES the
+    # marker read as closed -- and this repository's tickets quote their own ledger machinery
+    # constantly. That cost two live things: `scripts/ledger-lag-check.sh` would pass a commit that
+    # named the quoting id and closed nothing, and HERE the quoting entry sat in HEAD's closed set,
+    # so the next ordinary rewrite that dropped the quotation was refused as a reversion nobody
+    # made. [[T-1136]] is the witness -- an open, decided, not-started ticket whose first line
+    # quotes the marker inside backticks -- and `scripts/replay-closure-reading.sh` measured the
+    # candidate repairs over every entry first line that has ever existed.
+    ( cd "$ws"
+      git show HEAD:TODO.md > quoted.md
+      print -rl -- "" "- [T-5131] **An open finding whose first line quotes \`**CLOSED 2026-09-04**\` while writing about the ledger format.**" \
+                      "  Still open, still not started." \
+                      "" "- [T-5132] **A finding that was closed after the fact.** **CLOSED 2026-09-05 (\`deadd01\`) -- the closure written mid-line, after the original finding.**" \
+                      "  body" >> quoted.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e9 -m "$M" TODO.md=quoted.md 2>&1 ); rc=$?
+    check "filing an OPEN entry whose first line QUOTES the marker is accepted (T-1335)" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws"
+      git show HEAD:TODO.md \
+        | sed 's/^- \[T-5131\] .*/- [T-5131] **The same finding, now described without quoting the marker at all.**/' > unquote.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e10 -m "$M" --removes 1 TODO.md=unquote.md 2>&1 ); rc=$?
+    check "and rewriting the quotation away is NOT a lost closure (T-1335)" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The positive control for the other half of the same reading: a closure written MID-LINE after
+    # the original finding IS a closure, so reverting THAT to open text still refuses. Without this
+    # the check above would also pass a reading narrowed until it recognises nothing -- which is the
+    # failure `scripts/replay-closure-reading.sh` exists to price, and the strictly-anchored
+    # candidate is the one that fails it.
+    ( cd "$ws"
+      git show HEAD:TODO.md \
+        | sed 's/^- \[T-5132\] .*/- [T-5132] **not shipped after all** back to the open text/' > unclose132.md ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" e11 -m "$M" --removes 1 TODO.md=unclose132.md 2>&1 ); rc=$?
+    check "while reverting a MID-LINE closure to open text is still refused (T-777's shape)" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST*T-5132* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and nothing was committed by that refusal" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" ]] && print 1 || print 0 ) \
+        "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
 
     say ""
     say " mode 4d2 (T-1145) -- both guards above must read the ARCHIVE, not just docs/TODO.md"

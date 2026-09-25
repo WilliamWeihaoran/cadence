@@ -43,10 +43,25 @@
 # between them. Merge commits name no files under `--name-only` and are skipped for the same reason.
 #
 # WHAT "CLOSED" MEANS is `ledger_closed_ids`' reading from `agent-commit.sh`, deliberately not a
-# second opinion: `CLOSED` on the entry's OWN first line. Eighty lines of that script defend the
-# narrowness (a body-wide reading marks sixteen open tickets closed; widening to RESOLVED/VERIFIED
-# marks two open ones closed, because this ledger uses VERIFIED to mean "confirmed real"). Three
-# things are added on top of it, all of which mean "not open" here:
+# second opinion: a BOLD RUN INTRODUCING the token on the entry's OWN first line -- `**CLOSED`,
+# `**FULLY CLOSED`, `**PARTIALLY CLOSED` -- outside inline code. Eighty lines of that script defend
+# the narrowness (a body-wide reading marks sixteen open tickets closed; widening to
+# RESOLVED/VERIFIED marks two open ones closed, because this ledger uses VERIFIED to mean "confirmed
+# real"), and the `closure_visible` / `first_line_closed` pair below is that script's text, copied
+# character for character so the two cannot drift; `CadenceGuardScriptSelftestTests` pins the copies
+# against each other.
+#
+# IT USED TO BE THE BARE WORD ANYWHERE ON THAT LINE, and that was a hole in THIS guard (T-1335). An
+# entry that merely QUOTES the marker -- and this repository's tickets quote their own ledger
+# machinery constantly -- read as closed, so a commit could name that id, land code, close nothing,
+# and pass. The live victim was [[T-1136]], an open, decided, not-started ticket whose first line
+# quotes the marker inside backticks: `scripts/ledger-view.sh` reported it OPEN while this script
+# and `agent-commit.sh` read it closed. `scripts/replay-closure-reading.sh` measured the four
+# candidate repairs over every entry first line that has ever existed; the one adopted is the only
+# one that has never, in the whole history of this ledger, failed to recognise an honest closure in
+# the population this check reads. Its number is 0 of 263.
+#
+# Three things are added on top of it, all of which mean "not open" here:
 #
 #   * an entry under `## Done` or `## Cancelled` -- 112-plus Done entries carry no marker at all;
 #   * an entry that has moved to `docs/TODO_DONE.md`, which is where closed items are archived;
@@ -157,6 +172,19 @@ function subject_ids(s,   tok, sep, prevnum, a, b, i, rest) {
         rest = substr(rest, RSTART + RLENGTH)
     }
 }
+# The closure reading, character for character `agent-commit.sh`'s `$LEDGER_CLOSURE_READING` and
+# `scripts/ledger-view.sh`'s copy of it (T-1335). One rule, three files, pinned against each other.
+function closure_visible(s,   bq) {
+    # A marker inside inline code is a QUOTATION, not a closure. The fence character is built with
+    # sprintf rather than written, because two of the three copies of this reading are carried
+    # inside a command substitution where an odd number of literal fences ends it early.
+    bq = sprintf("%c", 96)
+    while (match(s, bq "[^" bq "]*" bq)) s = substr(s, 1, RSTART - 1) " " substr(s, RSTART + RLENGTH)
+    return s
+}
+function first_line_closed(s) {
+    return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
+}
 function is_code(p) {
     if (p == "") return 0
     if (p ~ /^docs\//) return 0
@@ -217,7 +245,7 @@ part == 1 {
     if ($0 ~ /^## /) sec = $0
     if ($0 ~ /^- \[T-[0-9]+\]/) {
         id = entry_id($0); filed[id] = 1; entries++
-        if (sec ~ /^## (Done|Cancelled)/ || $0 ~ /CLOSED/) {   # the entry's OWN first line
+        if (sec ~ /^## (Done|Cancelled)/ || first_line_closed($0)) {   # the entry's OWN first line
             closedi[id] = 1; delete openi[id]; next
         }
         if (!(id in closedi)) openi[id] = 1
@@ -416,6 +444,52 @@ cmd_selftest() {
     land "docs: restore the closure so the modes below start from a clean history" docs/DUP.md dup3
     out=$(run); rc=$?
     check "$rc" 0 "$out" "writing the closure back clears the finding again" 0 findings
+
+    # --- mode 2c: a QUOTED marker is not a closure (T-1335) -----------------
+    # The hole this check carried until T-1335. "Closed" was the bare token ANYWHERE on the entry's
+    # own first line, so an entry that merely QUOTES the marker -- which is what writing about the
+    # ledger format looks like, and is exactly [[T-1136]]'s first line -- read as closed, and a
+    # commit could name that id, land code and pass having closed nothing. Both directions are
+    # checked, because the stricter reading is only worth having if it still recognises the honest
+    # closures: `scripts/replay-closure-reading.sh` measured the candidates over every entry first
+    # line that has ever existed, and the one adopted here loses none of them in this check's scope.
+    echo; echo " mode 2c (T-1335) -- a QUOTED marker is not a closure, and a mid-line one still is"
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-30] **An open finding whose first line quotes `**CLOSED 2026-09-04**` while writing about the ledger format.**' \
+        '- [T-31] **A finding that was closed after the fact.** **CLOSED 2026-09-21 (`2222222`) — the closure written mid-line, after the original finding.**' \
+        '- [T-32] **An open finding whose own first line says the word CLOSED loose in its prose.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "T-31: the fix, whose closure is written mid-line after the original finding" \
+        Cadence/Q1.swift "let q1 = 1"
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "a closure written mid-line after the finding IS still a closure" 0 findings
+
+    land "T-30: code lands under an id whose entry only QUOTES the marker" Cadence/Q2.swift "let q2 = 2"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "an entry that QUOTES the marker in backticks is NOT closed ([[T-1335]])" \
+        LEDGER-CLOSURE-LAGGED T-30
+
+    land "T-32: code lands under an id whose entry has the word loose in prose" Cadence/Q3.swift "let q3 = 3"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "nor is the bare word loose in an entry's own first-line prose" \
+        LEDGER-CLOSURE-LAGGED T-32
+
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-30] **CLOSED 2026-09-21 (`3333333`) — the closure, written rather than quoted.**' \
+        '- [T-31] **A finding that was closed after the fact.** **CLOSED 2026-09-21 (`2222222`) — the closure written mid-line, after the original finding.**' \
+        '- [T-32] **CLOSED 2026-09-21 (`4444444`) — and this one too.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "docs: write both closures so the modes below start from a clean history" docs/DUP.md dup4
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "and the history goes quiet once both carry a written closure" 0 findings
 
     # --- mode 3: the subject shapes this repository actually writes ---------
     echo; echo " mode 3 (subject shapes) -- ranges and separators are read, not just the bare prefix"

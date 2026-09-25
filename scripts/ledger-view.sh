@@ -23,22 +23,34 @@
 # WHAT "CLOSED" MEANS HERE, and why it is NOT the naive first-line reading.
 #
 # The lexical reading everybody reaches for is "the entry's first line contains the closure token".
-# Measured at HEAD that reading finds 269 entries before `## Done`, 231 of them "closed", so 38
-# open -- and it is wrong in both directions:
+# `counts` prints it beside this one on every run rather than quoting a figure here that rots
+# (T-1146), and it is wrong in both directions:
 #
-#   * TOO CLOSED. An entry whose prose merely QUOTES the token reads as closed. This is [[T-1335]],
-#     it is live, and at HEAD it is exactly two entries: T-1136, whose first line quotes the token
-#     inside backticks while describing the duplicate-entry defect, and T-1339, whose first line
-#     quotes a fixture's ABSENCE of it. Both are open work that the naive count reads as done.
+#   * TOO CLOSED. An entry whose prose merely QUOTES the token reads as closed -- [[T-1335]], which
+#     was live in the two GUARDS until they adopted the reading below. T-1136 is the witness: an
+#     open, decided, not-started ticket whose first line quotes the marker inside backticks while
+#     describing the duplicate-entry defect, which this view reported OPEN while `agent-commit.sh`
+#     and `scripts/ledger-lag-check.sh` read it closed.
 #   * TOO OPEN. A `## Done` or `## Cancelled` entry carries no marker at all, and an entry archived
 #     into `docs/TODO_DONE.md` carries its closure there.
 #
-# So closure is a BOLD RUN OPENING the first line -- `**CLOSED`, `**FULLY CLOSED`,
-# `**PARTIALLY CLOSED` -- never the word loose in prose. That is deliberately the same narrowness
-# `agent-commit.sh`'s `ledger_buried_closure_ids` already measured over 471 entries (T-1106): it
-# names the real closures and nothing else, and in particular it does not name an entry that quotes
-# the convention mid-line. `**PARTIAL` is its own status, not a closure: [[T-1122]] has one of six
-# MCP create kinds built and five deliberately unbuilt, and calling that closed would lose the five.
+# So closure is a BOLD RUN INTRODUCING the token on the first line -- `**CLOSED`, `**FULLY CLOSED`,
+# `**PARTIALLY CLOSED` -- outside inline code, and never the word loose in prose. That is
+# deliberately the same narrowness `agent-commit.sh`'s `ledger_buried_closure_ids` already measured
+# over 471 entries (T-1106): it names the real closures and nothing else, and in particular it does
+# not name an entry that quotes the convention. `**PARTIAL` is its own status, not a closure:
+# [[T-1122]] has one of six MCP create kinds built and five deliberately unbuilt, and calling that
+# closed would lose the five.
+#
+# THE TWO GUARDS NOW READ IT THE SAME WAY (T-1335), which is why this comment says "introducing"
+# where it used to say "opening". This view shipped the strict form -- the marker had to open the
+# line, right after the id -- and `scripts/replay-closure-reading.sh` measured what that costs over
+# every entry first line that has ever existed: it fails to recognise T-777's honest closure,
+# written mid-line after the original finding, and three archived ones of the same shape. Widening
+# by one clause -- the bold run may be anywhere on the line, as long as it is outside inline code --
+# costs nothing anywhere and lets `ledger_closed_ids`, `ledger-lag-check.sh` and this file spell one
+# rule one way. Over `docs/TODO.md` at HEAD the two forms are identical entry for entry, so nothing
+# this tool prints about the live ledger changed.
 #
 # WHAT IT CANNOT TELL APART, AND SAYS SO. A closure run that opens a LATER line of the block is two
 # different things wearing the same text: a buried closure (the T-1106 defect, which
@@ -91,6 +103,23 @@ refuse() { printf 'REFUSED (%s): %s\n' "$1" "$2" >&2; exit "$3"; }
 # ---------------------------------------------------------------------------
 AWK_PROG=$(cat <<'AWK'
 BEGIN { BQ = sprintf("%c", 96) }
+# The closure reading, character for character `agent-commit.sh`'s `$LEDGER_CLOSURE_READING` and
+# `scripts/ledger-lag-check.sh`'s copy of it (T-1335). One rule, three files, pinned against each
+# other by `CadenceGuardScriptSelftestTests`. This file shipped the first half of it -- a bold run
+# OPENING the line -- and the convergence widened it by one clause, so a closure written mid-line
+# after the original finding (T-777's shape, the one honest closure the strictly-anchored form ever
+# failed to recognise) now reads closed here as well as in the two guards.
+function closure_visible(s,   bq) {
+    # A marker inside inline code is a QUOTATION, not a closure. The fence character is built with
+    # sprintf rather than written, because two of the three copies of this reading are carried
+    # inside a command substitution where an odd number of literal fences ends it early.
+    bq = sprintf("%c", 96)
+    while (match(s, bq "[^" bq "]*" bq)) s = substr(s, 1, RSTART - 1) " " substr(s, RSTART + RLENGTH)
+    return s
+}
+function first_line_closed(s) {
+    return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
+}
 function trim(s) { sub(/^[ \t\n]+/, "", s); sub(/[ \t\n]+$/, "", s); return s }
 function plain(s) { gsub(/\*\*/, "", s); gsub(/\[\[/, "", s); gsub(/\]\]/, "", s); return trim(s) }
 function trunc(s, n) { return (length(s) <= n) ? s : (substr(s, 1, n - 1) "\342\200\246") }
@@ -137,7 +166,7 @@ FILENAME != prevfile { finish(); sec = ""; prevfile = FILENAME }
     # while the first line is still open. Without this every closed entry that also records a
     # sub-closure -- 33 of them at HEAD -- would carry the flag, and a flag 33 entries wear is not
     # a flag.
-    cur_open_first = ($0 ~ /^- \[T-[0-9]+\] \*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/) ? 0 : 1
+    cur_open_first = first_line_closed($0) ? 0 : 1
     next
 }
 /^## / { finish(); sec = trim(substr($0, 4)); next }
@@ -147,7 +176,7 @@ cur == 1 {
     # The same narrow marker as the first-line reading, one indent in. `agent-commit.sh` measured
     # this exact shape over 471 entries (T-1106): it names the fourteen genuinely buried closures
     # and nothing else -- not the entry whose body says "deleted the CLOSED copy".
-    if (cur_open_first && $0 ~ /^[ \t]+\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/) cur_buried = 1
+    if (cur_open_first && closure_visible($0) ~ /^[ \t]+\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/) cur_buried = 1
     next
 }
 
@@ -158,7 +187,7 @@ function status_of(i,   first, sect) {
     if (e_file[i] == done_label) return "ARCHIVED"
     if (sect ~ /^Done/) return "DONE"
     if (sect ~ /^Cancelled/) return "CANCELLED"
-    if (first ~ /^- \[T-[0-9]+\] \*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/) return "CLOSED"
+    if (first_line_closed(first)) return "CLOSED"
     if (first ~ /^- \[T-[0-9]+\] \*\*PARTIAL([^A-Za-z]|$)/) return "PARTIAL"
     if (park_of(i) != "") return "PARKED"
     return "OPEN"
@@ -411,6 +440,12 @@ FIXTURE
 - [T-20] **CLOSED 2026-09-20 (`2222222`) — the twin that carries the closure.**
 - [T-21] **An open entry with an explicit repair.** The repair is to file the missing stub before
   anything else. Nothing is blocked on it.
+- [T-24] **A finding that was closed after the fact.** **CLOSED 2026-09-21 (`4444444`) — the
+  closure written mid-line, after the original finding. This is T-777's shape and it IS closed.**
+- [T-25] **An open finding whose BODY quotes the marker at the start of a line.**
+  `**CLOSED 2026-09-21**` is what a closure looks like, and writing that down must not bury one.
+- [T-26] **A finding whose buried closure sentence opens with an inline-code span.**
+  `2026-09-22` **CLOSED (`5555555`) — the closure an agent put in the wrong place, after a date.**
 - [T-110] **A longer id that must not be matched by a lookup for T-11.**
 
 ## Done
@@ -435,12 +470,34 @@ FIXTURE
     check "$rc" 0 "$out" "a multiline entry is one entry" "T-10     OPEN"
     checkno "$rc" 0 "$out" "an indented '- [T-99]' inside a block is not an entry of its own" "T-99"
     checkno "$rc" 0 "$out" "a closure marker OPENING the first line does close the entry" "T-12     "
+    # T-1335's two halves, and they pull in opposite directions -- which is why both are pinned.
+    # A marker QUOTED inside inline code is not a closure (T-14, above); a marker written mid-line,
+    # after the original finding, IS one, and the strictly-anchored reading this file shipped until
+    # T-1335 was the only candidate that failed to recognise it. `scripts/replay-closure-reading.sh`
+    # measured that cost over every entry first line that has ever existed.
+    checkno "$rc" 0 "$out" "a closure written MID-LINE after the finding closes the entry too ([[T-777]])" \
+        "T-24     "
     checkno "$rc" 0 "$out" "an entry under ## Done is closed with no marker at all" "T-30     "
     checkno "$rc" 0 "$out" "an entry under ## Cancelled is closed with no marker at all" "T-31     "
     checkno "$rc" 0 "$out" "an entry archived into TODO_DONE.md is closed" "T-40     "
     checkno "$rc" 0 "$out" "an id with a closed twin is not listed as active work ([[T-1303]])" "T-20     "
 
+    out=$(run brief | grep '^T-25 '); rc=$?
+    check "$rc" 0 "$out" "an entry whose BODY quotes the marker in backticks stays open" "T-25     OPEN"
+    checkno "$rc" 0 "$out" "and is not flagged as a buried closure for quoting one" BODY-CLOSURE
+
+    # The other side of the same stripping, and the half that WIDENS rather than narrows: a buried
+    # closure sentence whose bold run follows an inline-code span still opens its line once the span
+    # is read as the quotation it is. Without this, only the narrowing half of `closure_visible`
+    # would be provable, and a stripping pass nothing can distinguish from the identity is not a
+    # reading -- it is a line nobody can delete safely.
+    out=$(run brief | grep '^T-26 '); rc=$?
+    check "$rc" 0 "$out" "a buried closure whose bold run follows a code span is still buried" \
+        "T-26     OPEN" BODY-CLOSURE
+
     out=$(run all); rc=$?
+    check "$rc" 0 "$out" "'all' shows the mid-line closure as CLOSED, not merely absent from 'brief'" \
+        "T-24     CLOSED"
     check "$rc" 0 "$out" "'all' still shows the duplicated id's open twin, flagged, so it is visible" \
         "T-20     OPEN" DUP
     check "$rc" 0 "$out" "'all' shows closed entries too, which 'brief' deliberately does not" \

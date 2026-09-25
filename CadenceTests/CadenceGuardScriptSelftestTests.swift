@@ -1026,6 +1026,94 @@ struct CadenceGuardScriptSelftestTests {
         #expect(code.contains("struct Suite"), "non-vacuity: the code around it is not")
     }
 
+    /// **T-1335. One closure reading, three scripts, and a divergence between them is the defect.**
+    ///
+    /// `agent-commit.sh`'s `ledger_closed_ids`, `scripts/ledger-lag-check.sh`'s part-1 pass and
+    /// `scripts/ledger-view.sh`'s `status_of` all answer *is this ledger entry closed*, and until
+    /// T-1335 they answered it three different ways: the first two looked for the bare token
+    /// anywhere on the entry's own first line, so an entry that merely QUOTED the marker read as
+    /// closed, while the view already required a bold run. The measured victim was `T-1136` — an
+    /// open, decided, not-started ticket whose first line quotes the marker inside backticks, which
+    /// the view reported OPEN and the two guards read as done, so a commit could name it, land code
+    /// and pass `LEDGER-CLOSURE-LAGGED` having closed nothing.
+    ///
+    /// They now carry one text, and this is what stops a fourth reading being written or one of the
+    /// three being edited alone. Source-level for the sandbox reason this suite gives above, and
+    /// exact rather than fuzzy: the whole finding is that two readings one clause apart look
+    /// identical to a reader and are not.
+    ///
+    /// `scripts/replay-closure-reading.sh` is pinned beside them because the reading is only
+    /// defensible with its number — how many honest closures a stricter reading stops recognising —
+    /// and that number rots with the next commit. The script is left in the tree to be re-run rather
+    /// than quoted, exactly as `scripts/replay-message-vs-ledger.sh` is for T-1304.
+    @Test func theThreeLedgerScriptsStillReadClosureWithOneRule() throws {
+        let expected = #"""
+            bq = sprintf("%c", 96)
+            while (match(s, bq "[^" bq "]*" bq)) s = substr(s, 1, RSTART - 1) " " substr(s, RSTART + RLENGTH)
+            return s
+        }
+        function first_line_closed(s) {
+            return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
+        }
+        """#
+        // The closing delimiter sits at the `let`'s indent, so Swift hands back exactly the
+        // four-space-indented text the three scripts carry -- no re-indentation step to get wrong.
+
+        for script in ["scripts/agent-commit.sh", "scripts/ledger-lag-check.sh", "scripts/ledger-view.sh"] {
+            let text = try String(
+                contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent(script),
+                encoding: .utf8
+            )
+            #expect(
+                text.contains(expected),
+                """
+                \(script) no longer spells the T-1335 closure reading the way the other two do, \
+                so one rule has three implementations again
+                """
+            )
+            #expect(
+                text.contains("function closure_visible(s,   bq) {"),
+                "\(script) no longer defines closure_visible, so a QUOTED marker reads as a closure"
+            )
+        }
+
+        // The two shapes the reading replaced. Either one back in any of the three is the hole.
+        let commitHelper = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/agent-commit.sh"),
+            encoding: .utf8
+        )
+        #expect(
+            commitHelper.contains(#"s/^- \[\(T-[0-9][0-9]*\)\].*CLOSED.*/\1/p"#) == false,
+            "scripts/agent-commit.sh is back on the loose sed reading T-1335 replaced"
+        )
+        let lagCheck = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/ledger-lag-check.sh"),
+            encoding: .utf8
+        )
+        #expect(
+            lagCheck.contains("|| $0 ~ /CLOSED/)") == false,
+            "scripts/ledger-lag-check.sh is back on the loose first-line reading T-1335 replaced"
+        )
+
+        let replay = CadenceSelftestRun.repositoryRoot()
+            .appendingPathComponent("scripts/replay-closure-reading.sh")
+        #expect(
+            FileManager.default.isExecutableFile(atPath: replay.path),
+            "scripts/replay-closure-reading.sh is missing or not executable, so T-1335's number cannot be re-derived"
+        )
+        let replayText = try String(contentsOf: replay, encoding: .utf8)
+        for reading in ["anchored", "boldrun", "nocode", "dated"] {
+            #expect(
+                replayText.contains(reading),
+                "scripts/replay-closure-reading.sh no longer measures the \(reading) candidate"
+            )
+        }
+        #expect(
+            replayText.contains("REPLAY-CLOSURE-VACUOUS"),
+            "scripts/replay-closure-reading.sh lost its floor, so a replay that read nothing reports a clean sweep"
+        )
+    }
+
     /// And every guard has to be there to be run. A renamed script would otherwise make the
     /// tests above fail for a reason that reads nothing like "the guard is gone".
     ///
