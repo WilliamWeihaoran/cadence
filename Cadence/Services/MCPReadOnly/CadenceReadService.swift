@@ -17,6 +17,7 @@ nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
     case noteNotFound(String)
     case documentNotFound(String)
     case goalNotFound(String)
+    case habitNotFound(String)
     case linkNotFound(String)
 
     var errorDescription: String? {
@@ -51,6 +52,8 @@ nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
             return "No document found with id \(value)."
         case .goalNotFound(let value):
             return "No goal found with id \(value)."
+        case .habitNotFound(let value):
+            return "No habit found with id \(value)."
         case .linkNotFound(let value):
             return "No saved link found with id \(value)."
         }
@@ -797,6 +800,21 @@ final class CadenceReadService {
             limit: options.limit,
             transform: linkSummary
         )
+    }
+
+    /// One habit, in the shape `list_habits` returns it (T-1122).
+    ///
+    /// `create_habit` answers with this for `savedLinkSummary`'s reason: the caller gets the row as
+    /// the next `list_habits` will show it — the `order` the write allocated, the resolved context
+    /// and goal refs, and the streak/completion counters a brand-new habit starts at — rather than
+    /// an echo of what it sent. There is no `getHabit` tool on this surface to borrow, which is why
+    /// this is a summary rather than a detail: `list_habits` is the only shape a habit has here.
+    func habitSummary(habitID: String) throws -> CadenceHabitSummary {
+        let id = try uuid(from: habitID)
+        guard let habit = try fetchFirst(Habit.self, where: #Predicate { $0.id == id }) else {
+            throw CadenceReadError.habitNotFound(habitID)
+        }
+        return habitSummary(habit)
     }
 
     /// One saved link, in the shape `list_links` returns it (T-1122).

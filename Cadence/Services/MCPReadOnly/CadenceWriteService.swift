@@ -21,6 +21,17 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case invalidPosition(Int, Int, String)
     case emptyURL
     case tagsUnavailable
+    /// A goal or a habit with no title. Separate from `emptyTitle`, which says "Task title", so the
+    /// caller is told which of the three constructors refused rather than reading about a task it
+    /// never asked for.
+    case emptyTitleFor(String)
+    case invalidGoalKind(String)
+    case invalidGoalStatus(String)
+    case invalidGoalProgressType(String)
+    case invalidHabitFrequency(String)
+    /// `parentGoalId` named a goal that is itself a milestone — the third level
+    /// `GoalAssignmentRules.canOwnMilestones` refuses on both editors.
+    case goalCannotOwnMilestones(String)
 
     var errorDescription: String? {
         switch self {
@@ -65,6 +76,18 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "Link url must not be empty."
         case .tagsUnavailable:
             return "Tags could not be read, so nothing was written."
+        case .emptyTitleFor(let noun):
+            return "\(noun) title must not be empty."
+        case .invalidGoalKind(let value):
+            return "Invalid kind: \(value). Expected one of: \(GoalKind.allCases.map(\.rawValue).joined(separator: ", "))."
+        case .invalidGoalStatus(let value):
+            return "Invalid status: \(value). Expected one of: \(GoalStatus.allCases.map(\.rawValue).joined(separator: ", "))."
+        case .invalidGoalProgressType(let value):
+            return "Invalid progressType: \(value). Expected one of: \(GoalProgressType.allCases.map(\.rawValue).joined(separator: ", "))."
+        case .invalidHabitFrequency(let value):
+            return "Invalid frequencyType: \(value). Expected one of: \(HabitFrequency.allCases.map(\.rawValue).joined(separator: ", "))."
+        case .goalCannotOwnMilestones(let id):
+            return "Goal \(id) is already a milestone of another goal, so it cannot own milestones of its own. Goals nest exactly one level: a top-level goal is a direction and its sub-goals are its milestones."
         }
     }
 }
@@ -280,6 +303,59 @@ nonisolated struct CadenceUpdateContainerOptions: Sendable {
 /// The file's other half, `CadenceSavedLinkPersistence`, is deliberately **not** used: its
 /// insert-and-commit is `saveNotifyAndAudit`'s job on this surface, which additionally audits and
 /// wakes the app.
+/// Everything `create_goal` may set, and deliberately nothing else (T-1122).
+///
+/// **There is no `linkedContainerIds`, and that is a measured boundary rather than an omission.**
+/// A `GoalListLink` has exactly one write path — `ModelContext.attachList` in
+/// `Cadence/Shared/GoalListLinkHelpers.swift` (`Cadence/Models/AGENTS.md`) — and that file is not
+/// in `CadenceMCPServer`'s Sources phase. Hand-rolling `insert(GoalListLink(...))` here is the one
+/// thing that guide names as forbidden, and it would re-break the idempotence that stops a
+/// duplicate row double-counting every link-counting surface. So the arm creates a link-less goal
+/// and a client that wants lists attached uses the app; `update_goal` is not on this surface either.
+///
+/// **There is no `parentGoalId` that may name a milestone.** `GoalAssignmentRules.canOwnMilestones`
+/// keeps the hierarchy two deep, and since T-1327 both editors ask that one function rather than
+/// each keeping a copy. `createGoal` asks it too — a third surface that did not would be exactly
+/// the way the tree came to exist the last time.
+nonisolated struct CadenceCreateGoalOptions: Sendable {
+    var title: String
+    var description: String? = nil
+    var startDate: String? = nil
+    var endDate: String? = nil
+    var progressType: String? = nil
+    var targetHours: Double? = nil
+    var icon: String? = nil
+    var colorHex: String? = nil
+    var kind: String? = nil
+    var status: String? = nil
+    var contextId: String? = nil
+    var parentGoalId: String? = nil
+}
+
+/// Everything `create_habit` may set, and deliberately nothing else (T-1122).
+///
+/// **There is no `reminderMinuteOfDay`, and the reason is the same one that chose
+/// `CadenceSavedLinkURL.normalized` over a third hand-rolled URL rule.** The reminder field has no
+/// shared owner: `CadenceTrackingMutationSupport.saveHabit` — the one helper both editors go
+/// through — does not write it at all, and `HabitsFormSheets` on macOS and `iOSTrackingEditorSheets`
+/// on iOS each write it themselves, beside their own `hasReminder` toggle. A third copy here would
+/// be the first one in a process with no picker to bound it, writing a field the model validates
+/// nothing about (`Habit.reminderMinuteOfDay`'s own audit note) into a row that then schedules a
+/// standing daily alarm on the owner's device the next time the app reconciles on a `scenePhase`
+/// change. Neither `HabitNotificationPlanner` nor `NotificationManager` is in this target's Sources
+/// phase, so this process cannot even see the range it would have to respect. A habit created here
+/// has no reminder; setting one is an app action.
+nonisolated struct CadenceCreateHabitOptions: Sendable {
+    var title: String
+    var icon: String? = nil
+    var colorHex: String? = nil
+    var frequencyType: String? = nil
+    var frequencyDays: [Int]? = nil
+    var targetCount: Int? = nil
+    var contextId: String? = nil
+    var goalId: String? = nil
+}
+
 nonisolated struct CadenceCreateSavedLinkOptions: Sendable {
     var containerKind: String
     var containerId: String
@@ -481,6 +557,14 @@ private struct PendingAuditEntry {
 
     static func savedLink(id: UUID, summary: String) -> PendingAuditEntry {
         PendingAuditEntry(tool: "create_link", entityType: "link", entityId: id.uuidString, summary: summary)
+    }
+
+    static func goal(id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "create_goal", entityType: "goal", entityId: id.uuidString, summary: summary)
+    }
+
+    static func habit(id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "create_habit", entityType: "habit", entityId: id.uuidString, summary: summary)
     }
 
     static func contextFields(id: UUID, summary: String) -> PendingAuditEntry {
@@ -1117,9 +1201,14 @@ final class CadenceWriteService {
     /// doing even one turns a list tool from a source scan into an execution, which is the argument
     /// for starting with the cheapest. `SavedLink` is the cheapest by a distance: five stored
     /// fields, one of which is the owning list, no lifecycle, no completion history, no cascade and
-    /// no helper it has to go through. The other five each carry an invariant this boundary would
-    /// have to express before it could honestly offer a constructor, and the decisions are recorded
-    /// in `docs/TODO.md` rather than half-built here.
+    /// no helper it has to go through.
+    ///
+    /// **The ranking was applied again and two more of the six followed** — `createGoal` and
+    /// `createHabit`, below, which share one four-file dependency closure. The remaining three are
+    /// refused with a measurement each in `docs/TODO.md`, not left undecided: a tag, a list note
+    /// and a task bundle each need a helper whose *file* carries something a headless tool must not
+    /// compile, or a create rule that has no owner to go through. Read the entry before reopening
+    /// any of the three.
     ///
     /// The URL rule, the required container and the unused persistence half are on
     /// `CadenceCreateSavedLinkOptions`.
@@ -1155,6 +1244,130 @@ final class CadenceWriteService {
             inserted: [link]
         )
         return try readService.savedLinkSummary(linkID: link.id.uuidString)
+    }
+
+    /// Mint a goal — a top-level direction, or a milestone of one (T-1122).
+    ///
+    /// **Why goal and habit, and not the other three.** T-1122's method is to rank what is left by
+    /// cost and build outward from the cheapest, stopping at the first whose blocker can be
+    /// *measured*. These two share one helper file and one dependency closure, so the second is
+    /// nearly free once the first is paid for; the three that remain each have a blocker recorded
+    /// in `docs/TODO.md` with the measurement behind it, rather than an assertion that they are
+    /// hard.
+    ///
+    /// **The write goes through `CadenceTrackingMutationSupport.saveGoal`, not a second copy of
+    /// it.** That function owns four rules no reader of this file would guess: `endDate` is pulled
+    /// forward to `startDate` when it precedes it, `targetHours` floors at zero, an omitted context
+    /// is inherited from the parent goal, and a goal handed itself as a parent is silently
+    /// un-parented rather than left to make `GoalContributionResolver` walk a cycle. Re-spelling
+    /// any of those here is what T-1122 pulled `CadenceSavedLinkURL.normalized` in to stop.
+    ///
+    /// **`commit: { _ in }`, exactly as `appendCoreNote` defers `NoteMigrationService` (T-1181).**
+    /// The helper would otherwise commit on its own behalf, and `saveNotifyAndAudit` owns the
+    /// commit on this surface because it also audits, wakes the app, and un-inserts a refused row.
+    /// The goal therefore travels to `saveNotifyAndAudit` as a pending insert in this call's own
+    /// `inserted:` list; no `undo` is needed because a create has nothing to put back.
+    func createGoal(options: CadenceCreateGoalOptions) throws -> CadenceGoalDetail {
+        let title = try normalizedRequiredText(options.title, emptyError: CadenceWriteError.emptyTitleFor("Goal"))
+        let kind = try validateGoalKind(options.kind)
+        let status = try validateGoalStatus(options.status)
+        let progressType = try validateGoalProgressType(options.progressType)
+        let startDate = try validatedOptionalDate(options.startDate) ?? ""
+        let endDate = try validatedOptionalDate(options.endDate) ?? ""
+        let colorHex = try normalizedOptionalColorHex(options.colorHex)
+        let icon = CadenceMCPServiceSupport.normalizedOptionalText(options.icon)
+        let parentContext = try resolveContext(options.contextId)
+        let parentGoal = try resolveGoal(options.parentGoalId)
+
+        // Asked of `GoalAssignmentRules` rather than of `parentGoal.parentGoal == nil` here, because
+        // that is the one function both editors ask since T-1327 — and a third surface spelling the
+        // same test itself is precisely how the goal → milestone → sub-milestone trees that T-1337
+        // had to flatten came to exist. `saveGoal` guards only the self-parenting cycle, never depth.
+        if let parentGoal, !GoalAssignmentRules.canOwnMilestones(parentGoal) {
+            throw CadenceWriteError.goalCannotOwnMilestones(parentGoal.id.uuidString)
+        }
+
+        // `saveGoal` writes every field unconditionally, so an omitted `icon`/`colorHex` still needs
+        // a value to hand it. It is read off an uninserted `Goal` rather than restated: a hex
+        // literal here would be both a second copy of the model's declared default and a hardcoded
+        // colour outside `Theme.swift`, which the root `AGENTS.md` forbids outright.
+        let modelDefaults = Goal(title: "")
+
+        guard let goal = try CadenceTrackingMutationSupport.saveGoal(
+            nil,
+            title: title,
+            desc: options.description ?? "",
+            startDate: startDate,
+            endDate: endDate,
+            progressType: progressType,
+            targetHours: options.targetHours ?? 0,
+            icon: icon ?? modelDefaults.icon,
+            colorHex: colorHex ?? modelDefaults.colorHex,
+            kind: kind,
+            status: status,
+            context: parentContext,
+            parentGoal: parentGoal,
+            allGoals: try fetchGoals(),
+            modelContext: context,
+            commit: { _ in }
+        ) else {
+            // Unreachable while `normalizedRequiredText` runs first — `nil` is the helper's only
+            // other answer and it means the title trimmed to nothing. Said again rather than
+            // force-unwrapped, so the arm stays total if either half of that pairing moves.
+            throw CadenceWriteError.emptyTitleFor("Goal")
+        }
+
+        try saveNotifyAndAudit(
+            .goal(id: goal.id, summary: "Created goal: \(title)"),
+            inserted: [goal]
+        )
+        return try readService.getGoal(goalID: goal.id.uuidString)
+    }
+
+    /// Mint a habit (T-1122). `createGoal`'s sibling, and every sentence on it applies here:
+    /// `CadenceTrackingMutationSupport.saveHabit` owns the rules — `targetCount` floors at one, an
+    /// omitted context is inherited from the goal — and its commit is deferred so
+    /// `saveNotifyAndAudit` remains the only commit on this surface.
+    ///
+    /// **No notification is scheduled above the commit, or below it, because none is scheduled at
+    /// all.** T-1348 found reminder *cancellations* running before the commit that would justify
+    /// them; the mirrored hazard for a create is a reminder scheduled for a row the store then
+    /// refuses. This arm cannot hit it: a habit's reminder lives in `reminderMinuteOfDay`, which
+    /// `CadenceCreateHabitOptions` does not carry and `saveHabit` does not write, so a habit made
+    /// here is reminder-less and `HabitNotificationPlanner.reminder(for:now:)` returns `nil` for it
+    /// the next time the app reconciles. The reasoning for leaving that field off is on the options
+    /// type.
+    func createHabit(options: CadenceCreateHabitOptions) throws -> CadenceHabitSummary {
+        let title = try normalizedRequiredText(options.title, emptyError: CadenceWriteError.emptyTitleFor("Habit"))
+        let frequencyType = try validateHabitFrequency(options.frequencyType)
+        let colorHex = try normalizedOptionalColorHex(options.colorHex)
+        let icon = CadenceMCPServiceSupport.normalizedOptionalText(options.icon)
+        let parentContext = try resolveContext(options.contextId)
+        let goal = try resolveGoal(options.goalId)
+        let modelDefaults = Habit(title: "")
+
+        guard let habit = try CadenceTrackingMutationSupport.saveHabit(
+            nil,
+            title: title,
+            icon: icon ?? modelDefaults.icon,
+            colorHex: colorHex ?? modelDefaults.colorHex,
+            frequencyType: frequencyType,
+            frequencyDays: options.frequencyDays ?? modelDefaults.frequencyDays,
+            targetCount: options.targetCount ?? modelDefaults.targetCount,
+            context: parentContext,
+            goal: goal,
+            allHabits: try fetchHabits(),
+            modelContext: context,
+            commit: { _ in }
+        ) else {
+            throw CadenceWriteError.emptyTitleFor("Habit")
+        }
+
+        try saveNotifyAndAudit(
+            .habit(id: habit.id, summary: "Created habit: \(title)"),
+            inserted: [habit]
+        )
+        return try readService.habitSummary(habitID: habit.id.uuidString)
     }
 
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {
@@ -1617,6 +1830,54 @@ final class CadenceWriteService {
 
     private func fetchContexts() throws -> [Context] {
         try context.fetch(FetchDescriptor<Context>())
+    }
+
+    private func fetchGoals() throws -> [Goal] {
+        try context.fetch(FetchDescriptor<Goal>())
+    }
+
+    private func fetchHabits() throws -> [Habit] {
+        try context.fetch(FetchDescriptor<Habit>())
+    }
+
+    private func resolveGoal(_ id: String?) throws -> Goal? {
+        guard let requested = CadenceMCPServiceSupport.normalizedOptionalText(id) else { return nil }
+        let uuid = try uuid(from: requested)
+        guard let match = try fetchGoals().first(where: { $0.id == uuid }) else {
+            throw CadenceReadError.goalNotFound(requested)
+        }
+        return match
+    }
+
+    /// The four tracking enums, each refused by name rather than coerced.
+    ///
+    /// `Goal` and `Habit` store these as raw strings and their computed façades fall back to a
+    /// default on an unrecognised value — `GoalKind(rawValue:) ?? .completable` and the three like
+    /// it. That fallback exists so a row written by an older build still reads; applying it to a
+    /// *request* would turn a caller's typo into a silently different goal, which is the shape
+    /// `validatePriority` already refuses for tasks.
+    private func validateGoalKind(_ value: String?) throws -> GoalKind {
+        guard let raw = CadenceMCPServiceSupport.normalizedOptionalText(value) else { return .completable }
+        guard let kind = GoalKind(rawValue: raw) else { throw CadenceWriteError.invalidGoalKind(raw) }
+        return kind
+    }
+
+    private func validateGoalStatus(_ value: String?) throws -> GoalStatus {
+        guard let raw = CadenceMCPServiceSupport.normalizedOptionalText(value) else { return .active }
+        guard let status = GoalStatus(rawValue: raw) else { throw CadenceWriteError.invalidGoalStatus(raw) }
+        return status
+    }
+
+    private func validateGoalProgressType(_ value: String?) throws -> GoalProgressType {
+        guard let raw = CadenceMCPServiceSupport.normalizedOptionalText(value) else { return .subtasks }
+        guard let type = GoalProgressType(rawValue: raw) else { throw CadenceWriteError.invalidGoalProgressType(raw) }
+        return type
+    }
+
+    private func validateHabitFrequency(_ value: String?) throws -> HabitFrequency {
+        guard let raw = CadenceMCPServiceSupport.normalizedOptionalText(value) else { return .daily }
+        guard let frequency = HabitFrequency(rawValue: raw) else { throw CadenceWriteError.invalidHabitFrequency(raw) }
+        return frequency
     }
 
     private func nextContextOrder() throws -> Int {

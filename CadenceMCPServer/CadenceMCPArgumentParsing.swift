@@ -121,6 +121,52 @@ extension Dictionary where Key == String, Value == MCP.Value {
         throw ToolArgumentError.invalid("Invalid \(key): \(raw). Expected minutes from midnight or a time like 4 PM.")
     }
 
+    /// A habit's `frequencyDays` (T-1122): day-of-week indices, a times-per-week target, or a
+    /// day-of-month, depending on `frequencyType`.
+    ///
+    /// **It refuses a malformed element rather than dropping it**, which is the one thing that
+    /// separates it from `Habit.frequencyDays`' own JSON accessor. That accessor degrades a corrupt
+    /// `frequencyDaysRaw` to `[]` because the alternative for a row already on disk is a crash; a
+    /// *request* carrying `["mon", 3]` is a caller who has misread the schema, and silently storing
+    /// `[3]` would give them a habit that fires on a day they did not name. `strictInt`'s reason,
+    /// one level up.
+    func intArray(_ key: String) throws -> [Int]? {
+        guard let value = self[key] else { return nil }
+        guard case .array(let values) = value else {
+            throw ToolArgumentError.invalid("Invalid \(key): expected an array of integers.")
+        }
+        return try values.map { element in
+            if let intValue = element.intValue { return intValue }
+            if let doubleValue = element.doubleValue, doubleValue.rounded() == doubleValue {
+                return Int(doubleValue)
+            }
+            if let stringValue = element.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !stringValue.isEmpty,
+               let intValue = Self.parseIntegerString(stringValue) {
+                return intValue
+            }
+            throw ToolArgumentError.invalid("Invalid \(key): expected an array of integers.")
+        }
+    }
+
+    /// A goal's `targetHours` (T-1122) — the one fractional number on this surface.
+    ///
+    /// `strictInt` cannot stand in: half an hour is a real target and rounding it away is a write
+    /// the caller did not ask for. `CadenceTrackingMutationSupport.saveGoal` floors the value at
+    /// zero, so a negative arrives as `0` rather than being refused here; the refusal is reserved
+    /// for text that is not a number at all, which is the distinction `strictInt` draws.
+    func double(_ key: String) throws -> Double? {
+        guard let value = self[key] else { return nil }
+        if let doubleValue = value.doubleValue { return doubleValue }
+        if let intValue = value.intValue { return Double(intValue) }
+        if let stringValue = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !stringValue.isEmpty,
+           let doubleValue = Double(stringValue) {
+            return doubleValue
+        }
+        throw ToolArgumentError.invalid("Invalid \(key): expected a number.")
+    }
+
     func flexibleStringArray(_ key: String) throws -> [String]? {
         guard let value = self[key] else { return nil }
         if case .array(let values) = value {

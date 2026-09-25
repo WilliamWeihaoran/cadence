@@ -7,7 +7,7 @@ files as text and pins the tool-name and write-gating contracts, but executes no
 
 It dispatched **21 of the router's 30 arms** until T-259 — five of the eight write tools then on
 the surface (`update_task`, `schedule_task`, `complete_task`, `reopen_task`, `cancel_task`) were run
-by nothing at all. It now dispatches all 33, and, more to the point, **it checks that it does**: every
+by nothing at all. It now dispatches all 38, and, more to the point, **it checks that it does**: every
 `tools/call` it sends is recorded in `DISPATCHED`, and the run fails if that set does not cover the
 server's own `tools/list`. Adding a router arm and forgetting to exercise it is now a red smoke
 test rather than a number nobody was counting. Keep that guard — a Swift test pins its presence
@@ -19,10 +19,16 @@ missing-argument case, and a deleted router arm answers `Unknown tool` while a r
 answers a different `Missing required argument` — both of them errors. A bare `isError` check is
 green for all three, so `call_error` takes the expected text. Do not "simplify" it away.
 
-What is still not covered: `list_task_bundles`, `list_goals`, `list_habits` and `list_links` are
-dispatched but return `[]`, because MCP has no tool that creates a bundle, goal, habit or link, so a
-fresh fixture store cannot hold one. `list_tasks`, `list_tags` and `list_notes` run against real
-rows and have their DTO shapes checked. See T-269.
+What is still not covered: **`list_task_bundles` alone** is dispatched and returns `[]`, because
+MCP has no tool that creates a bundle and a fresh fixture store therefore cannot hold one. That is
+now a *refusal with a measurement* rather than a gap — see [[T-1122]] — so the empty assertion is
+the honest end state until something changes on the app side, not a placeholder. `list_links` left
+the list with `create_link`, and `list_goals`, `get_goal` and `list_habits` left it with
+`create_goal`/`create_habit` ([[T-1122]] again): all four now run against rows the smoke test made,
+with their key sets compared at runtime. `get_goal` is the one worth naming — its only executions
+before were a missing-argument and a not-found error, so `CadenceGoalDetail`, its contribution
+block and its habit-momentum block had never been encoded at runtime at all. `list_tasks`,
+`list_tags` and `list_notes` already ran against real rows. See T-269.
 
 `list_contexts` and `list_containers` left that list in T-799: `create_context` and
 `create_container` seed a context, a project with three named kanban columns and a card filed into
@@ -52,7 +58,7 @@ too. The boundary's rules live in `CadenceMCPServer/AGENTS.md`.
 - Keep scripts deterministic and safe to run repeatedly.
 - Do not assume the macOS app is open unless the script explicitly checks/launches it.
 - Preserve command-line output that other agents or smoke tests parse.
-- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 36 tool
+- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 38 tool
   names are a contract in three places — the definitions, the router's `case` arms, and this
   smoke test — and the first two can disagree while compiling.
 - A new tool means a new dispatch here, not only a new name in `EXPECTED_TOOLS`. The coverage

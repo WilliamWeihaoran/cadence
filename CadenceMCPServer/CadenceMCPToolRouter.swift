@@ -330,6 +330,36 @@ struct CadenceMCPToolRouter {
                 title: arguments.string("title")
             )))
 
+        case "create_goal":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.createGoal(options: CadenceCreateGoalOptions(
+                title: try arguments.requiredString("title"),
+                description: arguments.string("description"),
+                startDate: try arguments.dateKey("startDate"),
+                endDate: try arguments.dateKey("endDate"),
+                progressType: arguments.string("progressType"),
+                targetHours: try arguments.double("targetHours"),
+                icon: arguments.string("icon"),
+                colorHex: arguments.string("colorHex"),
+                kind: arguments.string("kind"),
+                status: arguments.string("status"),
+                contextId: arguments.string("contextId"),
+                parentGoalId: arguments.string("parentGoalId")
+            )))
+
+        case "create_habit":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.createHabit(options: CadenceCreateHabitOptions(
+                title: try arguments.requiredString("title"),
+                icon: arguments.string("icon"),
+                colorHex: arguments.string("colorHex"),
+                frequencyType: arguments.string("frequencyType"),
+                frequencyDays: try arguments.intArray("frequencyDays"),
+                targetCount: try arguments.strictInt("targetCount"),
+                contextId: arguments.string("contextId"),
+                goalId: arguments.string("goalId")
+            )))
+
         case "append_core_note":
             let writeService = try requireWriteService(for: name)
             return try encode(writeService.appendCoreNote(

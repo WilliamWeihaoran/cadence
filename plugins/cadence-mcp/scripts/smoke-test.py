@@ -32,6 +32,8 @@ WRITE_TOOLS = {
     "bulk_cancel_tasks",
     "append_core_note",
     "create_link",
+    "create_goal",
+    "create_habit",
 }
 EXPECTED_TOOLS = {
     "mcp_diagnostics",
@@ -112,6 +114,38 @@ CONTAINER_SUMMARY_KEYS = {
 # fixture store could hold no saved link, so this DTO was dispatched and asserted empty (T-269).
 SAVED_LINK_SUMMARY_KEYS = {"id", "title", "url", "container", "order", "createdAt"}
 SAVED_LINK_SUMMARY_OPTIONAL = {"container"}
+# T-1122 again. `create_goal` and `create_habit` are the second and third constructors outside the
+# context/list/task triangle, and they do for `list_goals`, `get_goal` and `list_habits` what
+# `create_link` did for `list_links`: all three were dispatched against an empty table and asserted
+# nothing but the page envelope, because a fresh fixture store could hold no goal and no habit.
+# `get_goal` had it worst — its only executions were a missing-argument and a not-found error, so
+# `CadenceGoalDetail` had never been encoded at runtime at all.
+GOAL_SUMMARY_KEYS = {
+    "id", "title", "description", "startDate", "endDate", "progressType", "targetHours",
+    "loggedHours", "colorHex", "icon", "kind", "status", "progress", "contextId", "contextName",
+    "parentGoalId", "parentGoalTitle", "isTopLevel", "ownLinkedListCount", "ownTaskCount",
+    "ownSubGoalCount", "ownHabitCount", "createdAt",
+}
+GOAL_SUMMARY_OPTIONAL = {"contextId", "contextName", "parentGoalId", "parentGoalTitle"}
+GOAL_DETAIL_KEYS = {
+    "summary", "contribution", "habitMomentum", "linkedContainers", "directTasks", "subGoals",
+    "habits",
+}
+GOAL_CONTRIBUTION_KEYS = {
+    "totalTasks", "completedTasks", "directTaskCount", "linkedListCount", "focusMinutes",
+    "overdueTaskCount", "recentCompletedCount", "nextActionTitle", "progress",
+}
+GOAL_CONTRIBUTION_OPTIONAL = {"nextActionTitle"}
+GOAL_MOMENTUM_KEYS = {
+    "linkedHabitCount", "dueTodayCount", "doneTodayCount", "thisWeekCount", "last7DayCount",
+}
+HABIT_SUMMARY_KEYS = {
+    "id", "title", "icon", "colorHex", "frequencyType", "frequencyDays", "targetCount", "order",
+    "contextId", "contextName", "goal", "currentStreak", "completionCount", "completedToday",
+    "createdAt",
+}
+HABIT_SUMMARY_OPTIONAL = {"contextId", "contextName", "goal"}
+GOAL_REF_KEYS = {"id", "title", "status", "progress"}
 SECTION_SUMMARY_KEYS = {
     "name", "colorHex", "dueDate", "isCompleted", "isArchived", "taskCount", "activeTaskCount",
     "completedTaskCount",
@@ -1182,6 +1216,133 @@ def main() -> int:
             raise AssertionError(f"expected both new links on the board, got {listed_links}")
         for row in listed_links:
             check_keys(row, SAVED_LINK_SUMMARY_KEYS, SAVED_LINK_SUMMARY_OPTIONAL, "list_links row")
+
+        # --- The first goal and the first habit this surface can make (T-1122) -------------
+        # `list_goals`, `get_goal` and `list_habits` were in the same position `list_links` was:
+        # dispatched, and asserting nothing an empty table could not satisfy. Every check below is
+        # run against rows these calls made, and the key sets are compared at runtime rather than
+        # by the source scan in `CadenceMCPToolContractTests`.
+        direction = call_ok(131, "create_goal", {
+            "title": "MCP smoke direction",
+            "description": "The direction the smoke test is heading in",
+            "kind": "ongoing",
+            "contextId": context_id,
+            "startDate": "2026-03-01",
+            # Deliberately before the start. `CadenceTrackingMutationSupport.saveGoal` pulls it
+            # forward, and this is the check that the arm reaches that helper instead of carrying
+            # its own copy of the rule — a hand-rolled create would store the date as sent.
+            "endDate": "2026-02-01",
+            "progressType": "hours",
+            "targetHours": 12.5,
+        })
+        check_keys(direction, GOAL_DETAIL_KEYS, set(), "create_goal detail")
+        check_keys(direction["summary"], GOAL_SUMMARY_KEYS, GOAL_SUMMARY_OPTIONAL, "create_goal summary")
+        check_keys(direction["contribution"], GOAL_CONTRIBUTION_KEYS, GOAL_CONTRIBUTION_OPTIONAL, "create_goal contribution")
+        check_keys(direction["habitMomentum"], GOAL_MOMENTUM_KEYS, set(), "create_goal habitMomentum")
+        direction_id = direction["summary"]["id"]
+        if direction["summary"]["endDate"] != "2026-03-01":
+            raise AssertionError(f"expected endDate pulled forward to startDate, got {direction['summary']}")
+        if direction["summary"]["targetHours"] != 12.5:
+            raise AssertionError(f"expected fractional targetHours kept, got {direction['summary']}")
+        if not direction["summary"]["isTopLevel"] or direction["summary"]["contextId"] != context_id:
+            raise AssertionError(f"expected a filed top-level direction, got {direction['summary']}")
+
+        milestone = call_ok(132, "create_goal", {
+            "title": "MCP smoke milestone",
+            "parentGoalId": direction_id,
+        })
+        milestone_id = milestone["summary"]["id"]
+        if milestone["summary"]["isTopLevel"] or milestone["summary"]["parentGoalId"] != direction_id:
+            raise AssertionError(f"expected a milestone of the direction, got {milestone['summary']}")
+        # `saveGoal` inherits the parent's context when none is named — reached, not re-spelled.
+        if milestone["summary"]["contextId"] != context_id:
+            raise AssertionError(f"expected the parent's context inherited, got {milestone['summary']}")
+
+        # The two-deep rule, at runtime. `GoalAssignmentRules.canOwnMilestones` is what both editors
+        # ask since T-1327; a third surface that did not ask it is how goal -> milestone ->
+        # sub-milestone trees came to exist, and `saveGoal` guards only the self-parenting cycle.
+        call_error(
+            133,
+            "create_goal",
+            {"title": "MCP smoke third level", "parentGoalId": milestone_id},
+            "a goal nested under a milestone",
+            "cannot own milestones of its own",
+        )
+        call_error(
+            134,
+            "create_goal",
+            {"title": "MCP smoke bad kind", "kind": "aspiration"},
+            "an unrecognised goal kind",
+            "Invalid kind: aspiration",
+        )
+        call_error(135, "create_goal", {}, "a goal with no title", "Missing required argument: title")
+
+        listed_goals = page_items(
+            call_ok(136, "list_goals", {"contextId": context_id, "limit": 10}),
+            "list_goals after create_goal",
+        )
+        if {row["id"] for row in listed_goals} != {direction_id, milestone_id}:
+            raise AssertionError(f"expected both new goals in the context, got {listed_goals}")
+        for row in listed_goals:
+            check_keys(row, GOAL_SUMMARY_KEYS, GOAL_SUMMARY_OPTIONAL, "list_goals row")
+
+        fetched_goal = call_ok(137, "get_goal", {"goalId": direction_id})
+        check_keys(fetched_goal, GOAL_DETAIL_KEYS, set(), "get_goal detail")
+        if [row["id"] for row in fetched_goal["subGoals"]] != [milestone_id]:
+            raise AssertionError(f"expected the milestone under the direction, got {fetched_goal['subGoals']}")
+        if fetched_goal["summary"]["ownSubGoalCount"] != 1:
+            raise AssertionError(f"expected ownSubGoalCount 1, got {fetched_goal['summary']}")
+
+        habit = call_ok(138, "create_habit", {
+            "title": "MCP smoke habit",
+            "goalId": direction_id,
+            "frequencyType": "daysOfWeek",
+            "frequencyDays": [1, 3, 5],
+            "targetCount": 2,
+        })
+        check_keys(habit, HABIT_SUMMARY_KEYS, HABIT_SUMMARY_OPTIONAL, "create_habit summary")
+        check_keys(habit["goal"], GOAL_REF_KEYS, set(), "create_habit goal ref")
+        habit_id = habit["id"]
+        if habit["frequencyDays"] != [1, 3, 5] or habit["frequencyType"] != "daysOfWeek":
+            raise AssertionError(f"expected the frequency round-tripped, got {habit}")
+        if habit["goal"]["id"] != direction_id or habit["contextId"] != context_id:
+            raise AssertionError(f"expected the goal's context inherited, got {habit}")
+        # A brand-new habit has no history and no reminder: the counters start at zero, and
+        # `reminderMinuteOfDay` is not a key this surface can set at all — see
+        # `CadenceCreateHabitOptions` for why. The check is here so the day someone adds the
+        # argument, this line is what asks whether the notification question was answered.
+        if habit["currentStreak"] != 0 or habit["completionCount"] != 0 or habit["completedToday"]:
+            raise AssertionError(f"expected a habit with no completion history, got {habit}")
+        if "reminderMinuteOfDay" in habit:
+            raise AssertionError(f"expected no reminder on an MCP-created habit, got {habit}")
+
+        call_error(
+            139,
+            "create_habit",
+            {"title": "MCP smoke bad frequency", "frequencyType": "fortnightly"},
+            "an unrecognised habit frequency",
+            "Invalid frequencyType: fortnightly",
+        )
+        # Refused rather than dropped: `Habit.frequencyDays`' own accessor degrades malformed JSON
+        # already on disk to `[]`, and applying that to a request would give the caller a habit
+        # firing on days they did not name.
+        call_error(
+            140,
+            "create_habit",
+            {"title": "MCP smoke bad days", "frequencyDays": ["monday"]},
+            "a non-integer frequencyDays element",
+            "Invalid frequencyDays: expected an array of integers",
+        )
+        call_error(141, "create_habit", {}, "a habit with no title", "Missing required argument: title")
+
+        listed_habits = page_items(
+            call_ok(142, "list_habits", {"goalId": direction_id, "limit": 10}),
+            "list_habits after create_habit",
+        )
+        if [row["id"] for row in listed_habits] != [habit_id]:
+            raise AssertionError(f"expected the new habit under the goal, got {listed_habits}")
+        for row in listed_habits:
+            check_keys(row, HABIT_SUMMARY_KEYS, HABIT_SUMMARY_OPTIONAL, "list_habits row")
 
         # --- The five write tools that ran nowhere at all (T-259) ------------------------
         # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are

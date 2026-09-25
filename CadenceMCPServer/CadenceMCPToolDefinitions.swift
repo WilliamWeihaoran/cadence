@@ -59,7 +59,15 @@ enum CadenceMCPToolDefinitions {
     // outside the context/list/task triangle (T-1122). "Can this server put the list it just moved
     // where I want it?" is a capability question, and the version is the only thing a client can
     // ask.
-    private static let serverVersion = "0.10.0"
+    // 0.11.0, on the same capability argument and adding no response key: `create_goal` and
+    // `create_habit` are the second and third constructors outside the context/list/task triangle
+    // (T-1122), which is what turns `list_goals` and `list_habits` from tools the smoke test
+    // dispatches against an empty store into tools it executes against rows it made. Additive —
+    // two tools, no field moved and none dropped. The three model types this surface still cannot
+    // mint are tag, list note and task bundle, each refused with a measurement in `docs/TODO.md`
+    // rather than left undecided; "can this server mint a goal?" is a capability question, and the
+    // version is the only thing a client can ask.
+    private static let serverVersion = "0.11.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
@@ -75,6 +83,8 @@ enum CadenceMCPToolDefinitions {
         "bulk_cancel_tasks",
         "append_core_note",
         "create_link",
+        "create_goal",
+        "create_habit",
     ]
 
     static var tools: [Tool] {
@@ -318,6 +328,30 @@ enum CadenceMCPToolDefinitions {
                 "url": stringProperty("The link URL. http:// and https:// are kept as typed, case-insensitively; anything else is prefixed with https://.", minLength: 1),
                 "title": stringProperty("Optional display title. Omitted or blank, the link displays as its url."),
             ], required: ["containerKind", "containerId", "url"])),
+            Tool(name: "create_goal", description: "Create a Cadence goal. With no parentGoalId it is a top-level direction; with one it is a milestone of that goal. Answers the same detail get_goal returns. Goals nest exactly one level, so a parentGoalId naming a goal that is itself a milestone is rejected. Lists cannot be linked from this surface and there is no deletion on it.", inputSchema: schema([
+                "title": stringProperty("Goal title.", minLength: 1),
+                "description": stringProperty("Optional definitive outcome."),
+                "startDate": dateProperty("Optional yyyy-MM-dd date or natural day."),
+                "endDate": dateProperty("Optional yyyy-MM-dd date or natural day. Pulled forward to startDate when it precedes it."),
+                "progressType": stringProperty("How progress is measured. Defaults to subtasks.", enumValues: GoalProgressType.allCases.map(\.rawValue)),
+                "targetHours": numberProperty("Optional hours target, used when progressType is hours. Fractional hours are kept; negative values floor at 0."),
+                "icon": stringProperty("Optional SF Symbol name. Omitted, the model default is kept."),
+                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. Omitted, the model default is kept."),
+                "kind": stringProperty("Goal kind. Defaults to completable; a top-level ongoing goal is what used to be a pursuit.", enumValues: GoalKind.allCases.map(\.rawValue)),
+                "status": stringProperty("Goal status. Defaults to active.", enumValues: GoalStatus.allCases.map(\.rawValue)),
+                "contextId": uuidProperty("Optional context UUID. Omitted, a milestone inherits its parent goal's context."),
+                "parentGoalId": uuidProperty("Optional parent goal UUID. The parent must be top-level."),
+            ], required: ["title"])),
+            Tool(name: "create_habit", description: "Create a Cadence habit. Answers the same summary list_habits returns. A habit created here has no reminder time: that field has no shared write path and scheduling a notification is an app action. There is no deletion on this surface.", inputSchema: schema([
+                "title": stringProperty("Habit title.", minLength: 1),
+                "icon": stringProperty("Optional SF Symbol name. Omitted, the model default is kept."),
+                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. Omitted, the model default is kept."),
+                "frequencyType": stringProperty("How often the habit is due. Defaults to daily.", enumValues: HabitFrequency.allCases.map(\.rawValue)),
+                "frequencyDays": integerArrayProperty("Optional integers read against frequencyType: daysOfWeek takes day indices 0-6, timesPerWeek takes a single target, monthly takes a single day of month, daily takes none."),
+                "targetCount": integerProperty("Optional check-ins per period. Floors at 1.", minimum: 1),
+                "contextId": uuidProperty("Optional context UUID. Omitted, the habit inherits its goal's context."),
+                "goalId": uuidProperty("Optional goal UUID this habit contributes to."),
+            ], required: ["title"])),
             Tool(name: "append_core_note", description: "Append text to a daily, weekly, or permanent Cadence note, creating it if needed.", inputSchema: schema([
                 "kind": stringProperty("daily, weekly, or permanent.", enumValues: ["daily", "weekly", "permanent"]),
                 "content": stringProperty("Text to append.", minLength: 1),
@@ -459,6 +493,28 @@ enum CadenceMCPToolDefinitions {
             "type": .string("array"),
             "description": .string(description),
             "items": .object(itemPayload),
+        ])
+    }
+
+    /// `integerProperty`'s fractional twin, and the only `number` on this surface. `targetHours`
+    /// is the one field where half a unit is a real answer, so advertising it as an integer would
+    /// have a validating client reject a request the arm accepts.
+    private static func numberProperty(_ description: String, minimum: Double? = nil) -> Value {
+        var payload: [String: Value] = [
+            "type": .string("number"),
+            "description": .string(description),
+        ]
+        if let minimum {
+            payload["minimum"] = .double(minimum)
+        }
+        return .object(payload)
+    }
+
+    private static func integerArrayProperty(_ description: String) -> Value {
+        .object([
+            "type": .string("array"),
+            "description": .string(description),
+            "items": .object(["type": .string("integer")]),
         ])
     }
 
