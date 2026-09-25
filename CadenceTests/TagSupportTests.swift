@@ -771,4 +771,122 @@ struct TagSupportTests {
         #expect(!changed)
         #expect(indexBuilds == 0)
     }
+    // MARK: - The create rule has one owner
+
+    /// The four clauses behind "may this name become a tag" were written twice — once in macOS's
+    /// `SettingsTagsSection` and once in `iOSSettingsTagsSection` — and `TagSupport` owned none of
+    /// them. [[T-1122]] refused a `create_tag` MCP arm partly for that reason: writing it would
+    /// have been the third copy.
+
+    private func makeTag(_ name: String, slug: String, order: Int = 0, archived: Bool = false) -> Cadence.Tag {
+        let tag = Cadence.Tag(name: name, slug: slug, colorHex: "#7b8492", order: order)
+        tag.isArchived = archived
+        return tag
+    }
+
+    @Test func aNameNothingCarriesIsCreatableAndHandsBackWhatTheRowNeeds() {
+        let decision = TagSupport.creationDecision(for: "  Deep Work ", in: [])
+        guard case let .creatable(displayName, slug) = decision else {
+            Issue.record("expected creatable, got \(decision)")
+            return
+        }
+        // The caller builds `Tag(name:slug:)` straight from these, rather than calling
+        // `displayName(for:)` and `slug(for:)` a second time on the raw draft.
+        #expect(displayName == "Deep Work")
+        #expect(slug == "deep-work")
+    }
+
+    @Test func anActiveTagOnTheSlugIsADuplicateAndIsHandedBackForTheNotice() {
+        let bug = makeTag("Bug", slug: "bug")
+        let decision = TagSupport.creationDecision(for: "#BUG!", in: [bug])
+
+        #expect(decision.activeDuplicate === bug)
+        #expect(decision.isCreatable == false)
+        #expect(decision.archivedMatch == nil)
+    }
+
+    @Test func anArchivedTagOnTheSlugIsOfferedForRestoreRatherThanCreatedBeside() {
+        let bug = makeTag("Bug", slug: "bug", archived: true)
+        let decision = TagSupport.creationDecision(for: "bug", in: [bug])
+
+        #expect(decision.archivedMatch === bug)
+        #expect(decision.isCreatable == false)
+        // Creating beside it is the shape `deduplicateTags` would later merge away, which is why
+        // both editors draw a restore row instead.
+        #expect(decision.activeDuplicate == nil)
+    }
+
+    /// Both editors draw `if let matchingArchived { … } else if hasDuplicate { … }`, so when one
+    /// slug carries both rows the restore row is the one the user sees. Ordering the cases the
+    /// other way round would silently swap that sentence.
+    @Test func anArchivedMatchWinsOverAnActiveDuplicateOnTheSameSlug() {
+        let active = makeTag("Bug", slug: "bug", order: 0)
+        let archived = makeTag("Bug", slug: "bug", order: 1, archived: true)
+
+        let decision = TagSupport.creationDecision(for: "Bug", in: [active, archived])
+        #expect(decision.archivedMatch === archived)
+        #expect(decision.activeDuplicate == nil)
+    }
+
+    @Test func aNameThatIsEmptyOrCarriesNoAlphanumericCannotCreate() {
+        #expect(TagSupport.creationDecision(for: "   ", in: []).isCreatable == false)
+        #expect(TagSupport.creationDecision(for: "###", in: []).isCreatable == false)
+        #expect(TagSupport.creationDecision(for: "--", in: []).isCreatable == false)
+        #expect(TagSupport.creationDecision(for: "a", in: []).isCreatable)
+    }
+
+    /// **Preserved, not tidied.** Both editors computed the archived and duplicate matches behind
+    /// an empty-name guard alone, while the create button additionally required an alphanumeric.
+    /// So `"--"` — non-empty, no alphanumeric, and slugging to the `"tag"` fallback — still offers
+    /// to restore an archived `tag` and still cannot create. Reordering the alphanumeric test above
+    /// the two lookups would change what that screen shows.
+    @Test func aPunctuationOnlyNameStillOffersAnArchivedMatchItSlugsOnto() {
+        let fallback = makeTag("Tag", slug: "tag", archived: true)
+        let decision = TagSupport.creationDecision(for: "--", in: [fallback])
+
+        #expect(decision.archivedMatch === fallback)
+        #expect(decision.isCreatable == false)
+    }
+
+    /// The two editors spelled the archived lookup differently — macOS filtered
+    /// `uniqueBySlug(archived)`, iOS filtered `sorted(archived)` — and agreed only because
+    /// `tagsBySlug` keeps the sorted-first row per slug. This pins the row itself, so the day that
+    /// tie-break changes this fails rather than the two screens quietly diverging.
+    @Test func theArchivedRowHandedBackIsTheOneTheTagOrderingPutsFirst() {
+        let later = makeTag("Bug", slug: "bug", order: 5, archived: true)
+        let first = makeTag("Bug", slug: "bug", order: 1, archived: true)
+
+        #expect(TagSupport.creationDecision(for: "Bug", in: [later, first]).archivedMatch === first)
+        #expect(TagSupport.creationDecision(for: "Bug", in: [first, later]).archivedMatch === first)
+    }
+
+    /// The assertion that survives a revert: the behavioural tests above stay green on a tree where
+    /// `TagSupport` is correct and either screen has gone back to spelling the clauses itself.
+    @Test func neitherSettingsScreenSpellsTheCreateRuleForItself() throws {
+        let instrument = try CadenceScanInstrument(
+            "tag create rule spelled at the call site",
+            fires: "let display = TagSupport.displayName(for: newName)\n"
+                + "return !display.isEmpty && display.rangeOfCharacter(from: .alphanumerics) != nil",
+            andNotOn: "TagSupport.creationDecision(for: newName, in: tags)"
+        ) { $0.contains("rangeOfCharacter(from: .alphanumerics)") }
+
+        let hits = try instrument.sweep(
+            [
+                "Cadence/macOS/Views/SettingsTagsSection.swift",
+                "Cadence/iOS/iOSSettingsTagsSection.swift",
+            ],
+            atLeast: 2,
+            including: "Cadence/iOS/iOSSettingsTagsSection.swift",
+            read: { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }
+        )
+
+        #expect(hits.isEmpty, "the create rule is spelled again in: \(hits.joined(separator: ", "))")
+
+        // Non-vacuity for the other half: both screens really do ask the shared rule.
+        for path in ["Cadence/macOS/Views/SettingsTagsSection.swift", "Cadence/iOS/iOSSettingsTagsSection.swift"] {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("TagSupport.creationDecision("), "\(path) no longer asks the shared rule")
+        }
+    }
+
 }

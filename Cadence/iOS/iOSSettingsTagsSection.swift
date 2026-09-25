@@ -24,27 +24,21 @@ struct iOSTagsSettingsSection: View {
         TagSupport.sorted(tags.filter(\.isArchived))
     }
 
-    private var newSlug: String {
-        TagSupport.slug(for: newName)
+    /// The create rule, asked rather than computed. `TagSupport.creationDecision(for:in:)` is the
+    /// one owner; the same four clauses used to be spelled here and again in macOS's
+    /// `SettingsTagsSection`, and neither copy was the rule.
+    ///
+    /// It takes `tags` — the whole table — not `activeTags`/`archivedTags`, which are this
+    /// screen's *display* views and would each answer half the question.
+    private var creationDecision: TagSupport.CreationDecision {
+        TagSupport.creationDecision(for: newName, in: tags)
     }
 
-    private var hasDuplicate: Bool {
-        guard !TagSupport.displayName(for: newName).isEmpty else { return false }
-        return activeTags.contains { $0.slug == newSlug }
-    }
+    private var hasDuplicate: Bool { creationDecision.activeDuplicate != nil }
 
-    private var matchingArchived: Tag? {
-        guard !TagSupport.displayName(for: newName).isEmpty else { return nil }
-        return archivedTags.first { $0.slug == newSlug }
-    }
+    private var matchingArchived: Tag? { creationDecision.archivedMatch }
 
-    private var canCreate: Bool {
-        let display = TagSupport.displayName(for: newName)
-        return !display.isEmpty &&
-            display.rangeOfCharacter(from: .alphanumerics) != nil &&
-            !hasDuplicate &&
-            matchingArchived == nil
-    }
+    private var canCreate: Bool { creationDecision.isCreatable }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -148,11 +142,10 @@ struct iOSTagsSettingsSection: View {
     /// report that the tag was made, so it runs on the committed path alone, and a refused insert
     /// is un-inserted by `commitInsert` rather than left pending for another screen's save.
     private func createTag() {
-        guard canCreate else { return }
-        let displayName = TagSupport.displayName(for: newName)
+        guard case let .creatable(displayName, slug) = creationDecision else { return }
         let tag = Tag(
             name: displayName,
-            slug: TagSupport.slug(for: displayName),
+            slug: slug,
             desc: newDescription.trimmingCharacters(in: .whitespacesAndNewlines),
             colorHex: TagSupport.normalizedColorHex(newColorHex),
             order: (tags.map(\.order).max() ?? -1) + 1

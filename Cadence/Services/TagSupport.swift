@@ -318,6 +318,83 @@ nonisolated enum TagSupport {
         Array(tagsBySlug(tags).values).sorted(by: precedes)
     }
 
+    /// What a settings screen is told when it asks whether a typed name can become a tag.
+    ///
+    /// **`archived` is ordered before `duplicate` on purpose.** A slug can carry both an active and
+    /// an archived tag at once, and both editors draw the restore row in that case
+    /// (`if let matchingArchived { … } else if hasDuplicate { … }`). Reversing these two cases
+    /// would silently swap which sentence the user sees.
+    enum CreationDecision {
+        /// Nothing carries this slug and the name is usable. Carries the two derived values the
+        /// caller would otherwise compute a second time to build the row.
+        case creatable(displayName: String, slug: String)
+        /// An archived tag already carries this slug. Both editors offer to restore **it** rather
+        /// than creating a second row that `deduplicateTags` would later merge away.
+        case archived(Tag)
+        /// An active tag already carries this slug.
+        case duplicate(Tag)
+        /// The name is empty after `displayName(for:)`, or holds no alphanumeric at all.
+        case unusableName
+
+        var isCreatable: Bool {
+            if case .creatable = self { return true }
+            return false
+        }
+
+        var archivedMatch: Tag? {
+            if case let .archived(tag) = self { return tag }
+            return nil
+        }
+
+        var activeDuplicate: Tag? {
+            if case let .duplicate(tag) = self { return tag }
+            return nil
+        }
+    }
+
+    /// The one answer to "may this name become a tag", asked by both Settings > Tags screens.
+    ///
+    /// It was four hand-rolled clauses written twice — `newTagSlug`/`matchingArchivedTag`/
+    /// `hasDuplicateSlug`/`canCreateTag` on macOS and `newSlug`/`matchingArchived`/`hasDuplicate`/
+    /// `canCreate` on iOS — and `TagSupport` owned none of them, which is why [[T-1122]] refused to
+    /// add a `create_tag` MCP arm: writing it would have been the **third** copy, the shape
+    /// `CadenceSavedLinkURL.normalized` was pulled into that target to prevent.
+    ///
+    /// **The empty-name and alphanumeric clauses are deliberately not merged**, because they do not
+    /// gate the same things. Today both editors compute the archived and duplicate matches behind
+    /// an empty-name guard alone, while the create button additionally requires an alphanumeric —
+    /// so a name that is non-empty but has no letter or digit (`"--"`, whose slug falls back to
+    /// `"tag"`) still offers to restore an archived `tag`, and still cannot create. That is
+    /// preserved here rather than tidied: the alphanumeric test runs only after both lookups miss.
+    ///
+    /// **Why `sorted(matches).first` and not `uniqueBySlug(all).first(where:)`.** The two editors
+    /// spelled this differently — macOS filtered `uniqueBySlug(archived)`, iOS filtered
+    /// `sorted(archived)` — and they agree only because `tagsBySlug` keeps the **sorted-first** row
+    /// per slug, so canonicalising the whole table and then filtering picks the same row as
+    /// filtering and then taking the first. That equivalence is not obvious and would break the day
+    /// `tagsBySlug` changed its tie-break, so this sorts the matches alone: same row, no dependence
+    /// on that coincidence, and it sorts the zero or one rows that share the slug rather than the
+    /// whole table on every keystroke.
+    ///
+    /// - Parameter tags: every tag in the store, archived and active. The caller's own
+    ///   `activeTags`/`archivedTags` views are for **display**; passing one of them here would ask
+    ///   half the question.
+    static func creationDecision(for candidate: String, in tags: [Tag]) -> CreationDecision {
+        let display = displayName(for: candidate)
+        guard !display.isEmpty else { return .unusableName }
+
+        let candidateSlug = slug(for: display)
+        if let match = sorted(tags.filter { $0.isArchived && $0.slug == candidateSlug }).first {
+            return .archived(match)
+        }
+        if let match = sorted(tags.filter { !$0.isArchived && $0.slug == candidateSlug }).first {
+            return .duplicate(match)
+        }
+
+        guard display.rangeOfCharacter(from: .alphanumerics) != nil else { return .unusableName }
+        return .creatable(displayName: display, slug: candidateSlug)
+    }
+
     fileprivate static func tagsBySlug(_ tags: [Tag]) -> [String: Tag] {
         var result: [String: Tag] = [:]
         for tag in sorted(tags) where result[tag.slug] == nil {
