@@ -47,8 +47,13 @@ jobs:
   # allowance. It costs nobody a trim today and stops the biggest file getting bigger. Bytes, not
   # tokens: no tokenizer is chosen here, and `wc -c` is a number any reader can reproduce.
   #
-  # `AgentContextBudgetTests` remains the authority and carries the same two numbers; this is the
-  # fast red, on Ubuntu minutes, for the docs-only pushes ci.yml excludes.
+  # `AgentContextBudgetTests` remains the authority; this is the fast red, on Ubuntu minutes, for
+  # the docs-only pushes ci.yml excludes. The two carry the same BYTE number and, until [[T-1363]],
+  # NOT the same line number: the test counts `split(separator: "\n")`, which is `wc -l` + 1 for a
+  # newline-terminated file, and caps that at 200 -- so it permits 199 by `wc -l` while this job
+  # permitted 200. A guide at exactly 200 was green here and red there, from one commit. This job
+  # now refuses at `-ge 200` so the two agree, and states both counts the way the test's failure
+  # message does, because an agent who reads only one of them must not land on the wrong one.
   budget:
     name: Always-read guides stay under 200 lines and 18000 bytes
     runs-on: ubuntu-latest
@@ -61,22 +66,35 @@ jobs:
           rc=0
           count=0
           max_bytes=0
+          near=0
+          # `-ge 200`, not `-gt`: the cap is 200 by AgentContextBudgetTests' count, which is one
+          # MORE than `wc -l` for a newline-terminated file. 199 here is the same file as 200 there.
           while IFS= read -r guide; do
             count=$((count + 1))
             lines=$(wc -l < "$guide" | tr -d ' ')
             bytes=$(wc -c < "$guide" | tr -d ' ')
             [ "$bytes" -le "$max_bytes" ] || max_bytes=$bytes
             printf '  %-40s %4s lines %7s bytes\n' "$guide" "$lines" "$bytes"
-            if [ "$lines" -gt 200 ]; then
-              echo "::error file=$guide::$guide is $lines lines, over the 200-line cap (and $bytes bytes of 18000)."
+            if [ "$lines" -ge 200 ]; then
+              echo "::error file=$guide::$guide is $lines lines by wc -l ($((lines + 1)) by AgentContextBudgetTests' count); the cap is 199 by wc -l (200 by that count). It is $bytes bytes of 18000."
               rc=1
+            elif [ "$lines" -ge 195 ]; then
+              # T-1363's other half. Three of the thirteen guides sat at exactly 199 -- the maximum
+              # -- so the next line added to any of them was red by construction, which is how
+              # T-1208 and T-1362 both happened. A ceiling files sit flush against is being used
+              # as a target. This says so BEFORE the commit that goes over, not after.
+              echo "::warning file=$guide::$guide is $lines lines of 199 by wc -l, $((199 - lines)) from the cap. Displace prose to a linked reference now; do not spend the last lines."
+              near=$((near + 1))
             fi
             if [ "$bytes" -gt 18000 ]; then
-              echo "::error file=$guide::$guide is $bytes bytes, over the 18000-byte cap (and $lines lines of 200)."
+              echo "::error file=$guide::$guide is $bytes bytes, over the 18000-byte cap (and $lines lines of 199 by wc -l)."
               rc=1
+            elif [ "$bytes" -ge 17500 ]; then
+              echo "::warning file=$guide::$guide is $bytes bytes of 18000, $((18000 - bytes)) from the cap. Displace prose to a linked reference now."
+              near=$((near + 1))
             fi
           done < <(git ls-files '*AGENTS.md' 'CLAUDE.md' | sort)
-          echo "  checked $count guides; largest is $max_bytes bytes of the 18000-byte budget."
+          echo "  checked $count guides; largest is $max_bytes bytes of the 18000-byte budget; $near are within a whisker of a cap."
           # Non-vacuity: a glob that found nothing must not read as a pass. The tree had 13
           # capped guides when this was written; AgentContextBudgetTests asserts >= 12.
           if [ "$count" -lt 12 ]; then

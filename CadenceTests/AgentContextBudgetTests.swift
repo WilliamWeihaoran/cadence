@@ -120,6 +120,46 @@ struct AgentContextBudgetTests {
         #expect(index.contains("iOS/iPadOS UI"))
         #expect(index.contains("MCP server/plugin"))
     }
+
+    /// T-1363. This suite and `.github/workflows/docs.yml` are two guards on one rule, and until
+    /// this test nothing compared their numbers. They disagreed by exactly one line: this suite
+    /// counts `split(separator: "\n", omittingEmptySubsequences: false)`, which is `wc -l` + 1 on
+    /// a newline-terminated file, and caps that at 200 — so it permits 199 by `wc -l`, while the
+    /// job refused only `-gt 200` and permitted 200. A guide at exactly 200 `wc -l` lines was
+    /// **green in the docs job and red in the test job from the same commit**, and which answer
+    /// you got depended on which one you read.
+    ///
+    /// Asserted on the shell text rather than on behaviour because the job cannot be executed
+    /// from here. That is a weaker instrument, so it is pinned to the two comparisons by their
+    /// exact spelling and fails closed: a rewrite of the job that drops either operator fails
+    /// this test rather than silently reopening the gap.
+    @Test func theWorkflowJobAndThisSuiteCapTheGuidesAtTheSameSize() throws {
+        let job = try repositoryFile(".github/workflows/docs.yml")
+
+        // `wc -l` is one BELOW this suite's count, so the job's refusal is `>=` the budget.
+        #expect(
+            job.contains("[ \"$lines\" -ge \(Self.lineBudget) ]"),
+            """
+            docs.yml no longer refuses at `-ge \(Self.lineBudget)`. With `-gt` it permits a guide \
+            of \(Self.lineBudget) lines by `wc -l`, which is \(Self.lineBudget + 1) by this \
+            suite's count and red here — the T-1363 disagreement, reopened.
+            """
+        )
+        // Bytes need no adjustment: `.utf8.count` and `wc -c` are the same number.
+        #expect(
+            job.contains("[ \"$bytes\" -gt \(Self.byteBudget) ]"),
+            "docs.yml no longer refuses bytes at `-gt \(Self.byteBudget)`, so the two byte caps differ"
+        )
+        // The warning band is the other half: three guides sat at exactly the maximum, so the next
+        // line added to any of them was red by construction. Losing the band loses the notice.
+        #expect(
+            job.contains("::warning file=$guide::"),
+            "docs.yml lost T-1363's warning band, so a guide reaches the cap with no notice first"
+        )
+        // Non-vacuity: a file that failed to load, or a job renamed out from under this test,
+        // would satisfy none of the above for the wrong reason.
+        #expect(job.contains("git ls-files '*AGENTS.md' 'CLAUDE.md'"), "the budget job is gone or renamed")
+    }
 }
 
 private func repositoryRoot() -> URL {
@@ -141,7 +181,9 @@ private func repositoryFile(_ relativePath: String) throws -> String {
 /// reach for `wc -l` and land on the wrong one by exactly one.
 ///
 /// The byte count is `.utf8.count`, which is the file's byte length exactly — the same number
-/// `wc -c` and the `docs.yml` job report, so the three instruments cannot disagree.
+/// `wc -c` and the `docs.yml` job report, so the three instruments cannot disagree ON BYTES. The
+/// LINE counts are not automatically equal — `wc -l` is one below this one — and keeping the two
+/// guards on the same file size is `theWorkflowJobAndThisSuiteCapTheGuidesAtTheSameSize` (T-1363).
 private func expectSizeBudget(_ relativePath: String, lines lineLimit: Int, bytes byteLimit: Int) throws {
     let text = try repositoryFile(relativePath)
     let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
