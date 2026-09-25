@@ -849,7 +849,9 @@ ledger_rewrites_only_new_entries() {  # $1 = head blob, $2 = base blob, $3 = con
 # and stood for a week, and `T-1117` was handed out inside T-624's closure with no stub -- which is
 # the incident T-1106 itself cites as its reason for existing.
 #
-# THE READING IS A DELTA against HEAD, for LEDGER-ID-DUPLICATE's reason and not for taste. Measured
+# THE READING IS A DELTA against HEAD -- for the reason LEDGER-ID-DUPLICATE used to be one, and it
+# is worth saying that the duplicate guard has since STOPPED being a delta (T-1356): its standing
+# population fell to one id that could be named as an exemption, and this one's has not. Measured
 # at `b23845d`: the two ledgers hold **486** distinct `[[T-n]]` links and **22** of them resolve to
 # no formal `- [T-n]` entry anywhere. Twenty-one are `T-441` or below, inside the ~200-ticket
 # deficit T-462 measured and deliberately did not backfill; the twenty-second is `T-1069`, a link
@@ -1030,20 +1032,42 @@ ledger_selfduplicated_ids() {  # $1 = file, $2 = minimum run length; prints "<id
 # artefact the collision leaves anywhere is a ledger with two formal `- [T-n]` entries for one id,
 # and until now nothing read it.
 #
-# WHY THE READING IS A DELTA AND NOT THE WHOLE FILE, which is the opposite of the choice T-1106
-# made one function up, and the difference is not taste:
+# THE READING WAS A DELTA AGAINST HEAD AND IS NOW THE WHOLE STAGED FILE (T-1356). The delta was
+# never the better reading; it was the only one HEAD's contents allowed. T-1072 wrote: HEAD carries
+# three standing duplicates -- T-781, T-974 and T-1043 -- T-781 and T-974 being a closure filed as
+# a NEW entry with the open original left behind, T-1043 being two genuinely different tickets (an
+# image fix and a calendar-link one) whose renumbering would orphan every `[[T-1043]]` reference.
+# A whole-file reading then refused every future commit to docs/TODO.md: a permanent false refusal
+# in the commit path, the one failure this family must not have.
 #
-#   * The event being guarded IS a single commit. An id is allocated once; "did THIS commit hand
-#     out an id that was already handed out" is the literal question, and a whole-file reading
-#     answers a different one.
-#   * HEAD carries three standing duplicates -- T-781, T-974 and T-1043 -- and they are not all
-#     fixable. T-781 and T-974 each have a closure filed as a NEW entry with the original open copy
-#     left behind, so one id reads open and closed at once. T-1043 is two genuinely different
-#     tickets (an image fix and a calendar-link one), and T-1072 decided in as many words: **"Fix
-#     the allocator, not the three collisions."** Renumbering either would orphan every `[[T-1043]]`
-#     reference in the ledger. A whole-file reading would therefore refuse every future commit to
-#     docs/TODO.md until a fix the ticket forbids had been made -- a permanent false refusal in the
-#     commit path, which is the one failure this family must not have.
+# [[T-1136]] folded T-781's and T-974's stale open copies back into their closures, so the standing
+# population is ONE id, and `scripts/replay-duplicate-reading.sh` measured what that is worth over
+# every commit that has ever touched either ledger -- **527 commits, 538 (commit,file) pairs**:
+#
+#   reading        refuses       newly refused (innocent)   no longer refused (real)
+#   delta (was)    7 of 527          --                          --
+#   whole        213 of 527      206 (206)                    0 (0)      refuses T-1043 at HEAD
+#   wholeexempt  207 of 527      200 (200)                    0 (0)      refuses NOBODY at HEAD
+#   wholeactive   89 of 527       83  (83)                    1 (1)      refuses NOBODY at HEAD
+#
+# `wholeactive` -- restrict the duplicate set to ids with at least one entry that is not closed --
+# is what T-1356 proposed, and the replay disqualified it: it loses `988d7cb`, one of the seven
+# true refusals in the table below, because that commit's stale open copies of T-781 and T-974 sat
+# physically under `## Done`, so a section-aware closure reading calls them closed. That is exactly
+# [[T-1085]]'s five-day failure -- the ledger says closed, an agent reading top-down says open --
+# so the active filter is blind to the very incident it was proposed to catch.
+#
+# `wholeexempt` -- the whole file, with permanent duplicates NAMED -- keeps all seven and refuses
+# nobody at HEAD. Its 200 historical innocents are not a cost it would impose today: every one of
+# them is attributable to a duplicate since repaired (T-781 170, T-974 170, T-777 19, T-572 11,
+# T-1109/T-1110 2 each), and none of those stand now. Re-derive all of it with the replay; do not
+# trust these numbers past the next ledger commit.
+#
+# WHAT THE WHOLE-FILE READING BUYS, and it is the delta's real cost: the delta is blind to a
+# duplicate already in HEAD, so the FIRST commit to file a collision is refused and every later one
+# rides free -- which is how T-781 and T-974 sat duplicated for 170 commits each. It is also
+# SELF-HEALING, because it reads the STAGED content: a commit that removes the duplicate always
+# passes, so the guard can never strand the repair it is asking for.
 #
 # MEASURED, by replaying every commit that has ever touched either ledger and asking each one
 # whether it introduced a duplicate its parent did not have. **436 commits, 7 refusals:**
@@ -1071,6 +1095,25 @@ ledger_selfduplicated_ids() {  # $1 = file, $2 = minimum run length; prints "<id
 ledger_duplicate_ids() {  # $1... = ledger files, read as one ledger
     grep -h -oE '^- \[T-[0-9]+\]' -- "$@" 2>/dev/null | sed 's/^- \[//; s/\]$//' | sort | uniq -d
 }
+
+# THE PERMANENT EXEMPTIONS (T-1356), and the list is a constant in this script on purpose. A
+# duplicate that is permanent BY DECISION is a claim about the ledger that outlives any one commit,
+# so it is recorded where the guard reads it and reviewed when this file is, not re-asserted on the
+# command line by every agent who happens to touch the ledger next. `--duplicate-ids` remains the
+# escape for ONE commit; it is not a way to live with a standing duplicate, because under the
+# whole-file reading the commit after it is refused too.
+#
+# T-1043 is the only member and T-1072 put it there in as many words -- **"Fix the allocator, not
+# the three collisions"** -- because it is two genuinely different tickets (an image fix, closed
+# 2026-09-05, and a calendar-link one, closed 2026-09-11) under one number, and renumbering either
+# orphans every `[[T-1043]]` reference in the ledger. The other two collisions that sentence covers
+# were repaired by [[T-1136]] and are deliberately NOT listed.
+#
+# The exemption takes effect in the commit that lands it -- this script runs from the working tree,
+# not from HEAD -- so the list and the entries it excuses go in one hunk, and the reviewer of that
+# hunk sees both. That is the point: a permanent duplicate should be hard to add and obvious once
+# added, not invisible in a flag on one command line.
+LEDGER_DUPLICATE_EXEMPT_IDS=(T-1043)
 
 STALE_MINUTES="${CADENCE_DECLINED_STALE_MINUTES:-30}"
 
@@ -2090,24 +2133,24 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #      reading "next free" before either committed. `T-1119` in one week, `T-1109`/`T-1110` in
     #      another, and `T-1043` -- all three incidents left one shape behind, a ledger with two
     #      formal entries for one id, and nothing read it. Rationale, the delta reading and the
-    #      436-commit replay that measured 6 true refusals and 1 false are on `ledger_duplicate_ids`.
+    #      436-commit replay that measured 6 true refusals and 1 false are on `ledger_duplicate_ids`,
+    #      together with the 527-commit replay (T-1356) that replaced the delta reading with this
+    #      one: the WHOLE staged file, minus the ids named in `$LEDGER_DUPLICATE_EXEMPT_IDS`.
     #
     #      Read PER LEDGER FILE, not across both, and that is what was measured: an entry moving
     #      from TODO.md to TODO_DONE.md is briefly in both by construction, and a commit staging one
     #      side of that move is an ordinary commit, not a double allocation.
     local -a duplicate_ids
-    duplicate_ids=(); local duplicate_in="" dup_head="" dup_staged="" dup_new="" dup_headfile=""
+    duplicate_ids=(); local duplicate_in="" dup_staged="" dup_new="" dup_exempt=""
+    dup_exempt="$scratch/dup.exempt"
+    print -rl -- "${(@o)LEDGER_DUPLICATE_EXEMPT_IDS}" | sort -u > "$dup_exempt"
     for name in "${names[@]}"; do
         is_any_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
         dup_staged="$scratch/$(ledger_key "$name").dupstaged"
         ledger_duplicate_ids "${staged_content[$name]}" > "$dup_staged"
         [[ -s "$dup_staged" ]] || continue
-        dup_head="$scratch/$(ledger_key "$name").duphead"
-        dup_headfile="$scratch/$(ledger_key "$name").duphead.blob"
-        git cat-file -p "$headsha:$name" > "$dup_headfile" 2>/dev/null || : > "$dup_headfile"
-        ledger_duplicate_ids "$dup_headfile" > "$dup_head"
-        dup_new=$(comm -23 "$dup_staged" "$dup_head")
+        dup_new=$(comm -23 "$dup_staged" "$dup_exempt")
         [[ -n "$dup_new" ]] || continue
         duplicate_ids+=(${(f)dup_new}); duplicate_in="$name"
     done
@@ -2116,13 +2159,19 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         local duplicate_sorted="${(pj:,:)${(@o)duplicate_ids}}"
         if [[ "$declared_duplicate_sorted" != "$duplicate_sorted" ]]; then
             rm -rf "$scratch"
-            refuse LEDGER-ID-DUPLICATE "this commit files a second formal entry for ids already allocated: ${(j:, :)duplicate_ids}
+            refuse LEDGER-ID-DUPLICATE "the ledger this commit stages carries two formal entries for: ${(j:, :)duplicate_ids}
   The ledger IS the allocator, so an id with two entries is an id two pieces of work answer to, and
   every later \`[[$duplicate_ids[1]]]\` reference is ambiguous forever. This is what two agents both
   reading \"next free\" before either committed leaves behind -- HEAD already moved under you once,
   a sibling's stub for this id landed, and your reconstruction carried yours in beside theirs.
-  Renumber YOUR entry to an id that is free in $duplicate_in as this commit leaves it, and fix the
-  references in your own hunk. If this really is one ticket written twice on purpose, say so:
+  THE READING IS THE WHOLE STAGED FILE, not a delta against HEAD (T-1356), so a duplicate already
+  in HEAD refuses this commit too -- and the cure is always inside your own hunk, because the file
+  this reads is the one you are staging. Renumber YOUR entry to an id that is free in
+  $duplicate_in as this commit leaves it, or fold the two entries into one, and fix the references.
+  A duplicate that is PERMANENT by decision -- one number, two genuinely different tickets, the way
+  \`T-1043\` is -- belongs in LEDGER_DUPLICATE_EXEMPT_IDS in this script, added in the same hunk:
+  this script runs from the working tree, so the exemption covers the commit that lands it.
+  If this really is one ticket written twice on purpose, for THIS commit only:
   --duplicate-ids $duplicate_sorted"
         fi
     fi
@@ -3378,23 +3427,74 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "renumbering to a free id is accepted" $(( rc == 0 )) "exit $rc: $out"
     check "and both pieces of work now have an id" \
         $( [[ $( cd "$ws" && git show HEAD:TODO.md | grep -cE '^- \[T-(901|903)\]' ) == 2 ]] && print 1 || print 0 )
-    # THE CHECK THAT PINS THE DELTA READING, and it is the reason this guard can live in the commit
-    # path at all. HEAD's real docs/TODO.md carries three standing duplicates -- T-781 and T-974
-    # (a closure filed as a new entry beside the open original) and T-1043 (two genuinely different
-    # tickets) -- and T-1072 decided that the allocator gets fixed and the collisions do not, so
-    # renumbering them would orphan every reference. A whole-file reading would refuse every commit
-    # to the ledger forever. This proves the pre-existing duplicate is tolerated and only a NEW one
-    # refuses.
+    # THE CHECKS THAT PIN THE WHOLE-FILE READING (T-1356), and they replace the pair that pinned
+    # the delta. The delta was never the better reading; it was the only one HEAD's contents
+    # allowed, because T-781, T-974 and T-1043 all stood duplicated and T-1072 refused to renumber
+    # them. [[T-1136]] repaired the first two, `scripts/replay-duplicate-reading.sh` measured the
+    # rest over 527 ledger commits, and the reading is now the whole staged file minus
+    # `$LEDGER_DUPLICATE_EXEMPT_IDS`. What that buys is below: under the delta the FIRST commit to
+    # file a collision was refused and every later one rode free, which is how T-781 and T-974 sat
+    # duplicated for 170 commits each.
     ( cd "$ws"
       git show HEAD:TODO.md > collide2.md
       print -rl -- "" "- [T-901] **filed twice on purpose, to make the pre-existing duplicate real.**" \
                       "  So the next check is asked of a ledger that already carries one." >> collide2.md ) >/dev/null 2>&1
     out=$( cd "$ws" && zsh "$here" d3 -m "$M" --duplicate-ids T-901 TODO.md=collide2.md 2>&1 ); rc=$?
-    check "declaring the duplicate deliberately lands it" $(( rc == 0 )) "exit $rc: $out"
+    check "declaring the duplicate deliberately lands it, for that one commit" $(( rc == 0 )) "exit $rc: $out"
     ( cd "$ws"
       git show HEAD:TODO.md | sed 's/^  Renumbered off T-901 by the refusal./  Renumbered, and this line was later edited./' > afterdup.md ) >/dev/null 2>&1
     out=$( cd "$ws" && zsh "$here" d4 -m "$M" --removes 1 TODO.md=afterdup.md 2>&1 ); rc=$?
-    check "an ordinary later edit to a ledger that ALREADY has that duplicate needs no flag" \
+    check "an ordinary later edit to a ledger that ALREADY has that duplicate is refused too" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "...and the refusal points at the exemption list rather than at a repeat of the flag" \
+        $( [[ "$out" == *LEDGER_DUPLICATE_EXEMPT_IDS* ]] && print 1 || print 0 ) "$out"
+    # SELF-HEALING, and it is the property that makes a whole-file reading safe in the commit path
+    # where T-1072 judged it unsafe: the file it reads is the one being STAGED, so the repair the
+    # refusal asks for always passes. A guard that could strand its own cure would be the permanent
+    # false refusal all over again.
+    ( cd "$ws"
+      git show HEAD:TODO.md | sed 's/^- \[T-901\] \*\*filed twice on purpose.*/- [T-904] **renumbered off the deliberate duplicate.**/' > healed.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d5 -m "$M" --removes 1 TODO.md=healed.md 2>&1 ); rc=$?
+    check "the commit that REMOVES the standing duplicate is accepted, so the cure is never stranded" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the ledger now has one entry for that id" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md | grep -c '^- \[T-901\]' ) == 1 ]] && print 1 || print 0 )
+    # THE CASE T-1356 ASKED FOR, and the replay's answer to it. The ticket proposed restricting the
+    # whole-file set to ids with at least one entry that is NOT closed, on the argument that a
+    # duplicate whose entries are all closed cannot be picked up again by an agent scanning for
+    # work. `replay-duplicate-reading.sh` disqualified it: that reading loses `988d7cb`, one of the
+    # seven true refusals in the 436-commit table, because T-781's and T-974's stale open copies sat
+    # physically under `## Done` and a section-aware closure reading calls them closed -- which is
+    # [[T-1085]]'s five-day failure exactly. So two CLOSED entries for one id are refused like any
+    # other duplicate, and the escape for a permanent one is the NAMED exemption, not a filter.
+    ( cd "$ws"
+      git show HEAD:TODO.md > bothclosed.md
+      print -rl -- "" "- [T-903] **CLOSED 2026-09-25 -- a second entry for an id whose entries are BOTH closed.**" \
+                      "  T-1356's proposed active filter would wave this through; the shipped reading does not." >> bothclosed.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d6 -m "$M" TODO.md=bothclosed.md 2>&1 ); rc=$?
+    check "two CLOSED entries for one id are refused, not excused by being closed" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* && "$out" == *"T-903"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # ...and the other half of the same case: an id with one closed entry and one still open. Under
+    # the active filter this is the ONLY shape that refuses; under the shipped reading it refuses
+    # too, which is what makes the filter redundant rather than merely wrong.
+    ( cd "$ws"
+      git show HEAD:TODO.md > oneactive.md
+      print -rl -- "" "- [T-903] **still open, and filed against an id that already has a closure above.**" \
+                      "  One closed entry, one active: the shape the active filter exists to catch." >> oneactive.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d7 -m "$M" TODO.md=oneactive.md 2>&1 ); rc=$?
+    check "two entries for one id with one still active are refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* && "$out" == *"T-903"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # THE EXEMPTION ITSELF, read from this script rather than asserted in prose. T-1043 is the one
+    # member; a ledger carrying two entries for it commits with no flag at all, which is the
+    # property that lets the real docs/TODO.md keep T-1072's decision.
+    ( cd "$ws"
+      git show HEAD:TODO.md > exempt.md
+      print -rl -- "" "- [T-1043] **CLOSED 2026-09-05 -- the image half.**" \
+                      "  One number, two unrelated tickets, permanent by T-1072's decision." \
+                      "" "- [T-1043] **CLOSED 2026-09-11 -- the calendar-link half.**" \
+                      "  Renumbering either orphans every reference in the ledger." >> exempt.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d8 -m "$M" TODO.md=exempt.md 2>&1 ); rc=$?
+    check "the NAMED permanent exemption commits with no flag" \
         $( [[ $rc == 0 && "$out" != *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""

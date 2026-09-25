@@ -780,8 +780,9 @@ because the commits are already pushed and cannot be amended.
     need the reservation recomputed on resize, the way the image block's already is.
 
 
-- [T-73] **Audit iPhone/iPad divergence and share what should be shared — CLOSED BY SPLITTING, not
-  by building.** The user's call, 2026-08-26, and the same move [[T-32]] got in `D-130`: one audit
+- [T-73] **CLOSED 2026-08-26 — audit iPhone/iPad divergence and share what should be shared: closed
+  by splitting, not by building.** The user's call, 2026-08-26, and the same move [[T-32]] got in
+  `D-130`: one audit
   pass files each real divergence as a ticket with a definite end, and the sweep stops being an
   open item. A sweep never finishes; the specific bugs inside it do.
   **Filed out of it: [[T-281]], [[T-282]], [[T-283]]** — the two identical iOS note-editor sheet
@@ -821,8 +822,9 @@ because the commits are already pushed and cannot be amended.
   `CadenceFocusHandoff` and `CadenceTodayLayoutSupport` are there to be testable, not to be shared.
   Check the modifier and the fence before calling a one-sided reader count a finding.
 
-- [T-170] **How far iPadOS and iPhone layout should converge — DECIDED AND CLOSED, split rather
-  than swept.** The user's call, 2026-08-26. This asked for a decision recorded, not a sweep, and
+- [T-170] **CLOSED 2026-08-26 — how far iPadOS and iPhone layout should converge: decided, split
+  rather than swept.** The user's call, 2026-08-26. This asked for a decision recorded, not a
+  sweep, and
   the [[T-73]] audit above is what it took to answer it from the code.
   **The decision: the line falls at the shell and the pane count, and nowhere else.** iPhone gets a
   four-tab bottom bar with one column; iPad gets a sidebar and, above
@@ -845,8 +847,9 @@ because the commits are already pushed and cannot be amended.
   `AGENTS.md` and `CLAUDE.md`. What was missing was the answer to *where the seam is*, and it is the
   shell, not the screen.
 
-- [T-123] **Tighten the repo, and converge the three platforms' UI — CLOSED BY SPLITTING.** The
-  user's call, 2026-08-26. Item 3 (MCP) was already closed by inspection in the 2026-08-24 pass;
+- [T-123] **CLOSED 2026-08-26 — tighten the repo, and converge the three platforms' UI: closed by
+  splitting.** The user's call, 2026-08-26. Item 3 (MCP) was already closed by inspection in the
+  2026-08-24 pass;
   item 2 is a standing rule about *how* a macOS visual change lands (best spelling wins, and every
   macOS visual change is screenshotted rather than argued), not a unit of work, and it carries
   forward attached to each child ticket below rather than needing a parent to live in. Item 1 — the
