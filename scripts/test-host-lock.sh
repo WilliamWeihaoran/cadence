@@ -166,12 +166,24 @@ HOST_PATTERN="^/Applications/.*/xcodebuild$HOST_PATTERN_ACTION"
 # The probe COMMAND, overridable for testing only -- and it is a different knob from the pattern
 # above, because the failure this guards is not "the pattern matched nothing", it is "the tool could
 # not answer at all". Nothing can induce that by choosing a pattern, so nothing could test it.
-PGREP_CMD='pgrep'
-[[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_PGREP_CMD:-}" ]] && PGREP_CMD="$CADENCE_LOCK_PGREP_CMD"
+#
+# A COMMAND ARRAY, NOT A SINGLE WORD (T-1381), AND THE DIFFERENCE IS FOUR PROPERTIES. As one word
+# exec'd directly, this knob is useless from inside the App-Sandboxed `CadenceTests` host: that
+# process cannot exec a file it wrote itself, at any mode, even as a byte-identical copy of
+# `/bin/ls` (`CadenceTestHostSandboxCapabilityTests.itCannotExecAFileItWroteItself`). So a stub the
+# selftest writes into `$TMPDIR` fails to LAUNCH in there, and every property needing a substituted
+# probe stayed unprovable -- which is the whole of [[T-1381]]. What that host CAN do is exec an
+# already-trusted binary and hand it a script path
+# (`...itSpawnsOrdinaryToolsAndScriptsHandedToAShell`); it is how `CadenceGuardScriptSelftestTests`
+# runs every selftest in this repository, including this one. An array lets the knob say
+# `/bin/zsh <stub>` instead of `<stub>`. Word-split on spaces, the same shape `CADENCE_SIMCTL`
+# already uses in scripts/simulator-claim.sh, and splatted at each call site.
+PGREP_CMD=(pgrep)
+[[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_PGREP_CMD:-}" ]] && PGREP_CMD=(${=CADENCE_LOCK_PGREP_CMD})
 # The same knob for `ps`, used by `waiter_alive` below, and needed for the same reason: `ps` is
 # setuid root and the one thing no test can arrange is a `ps` that runs and answers nothing.
-PS_CMD='ps'
-[[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_PS_CMD:-}" ]] && PS_CMD="$CADENCE_LOCK_PS_CMD"
+PS_CMD=(ps)
+[[ -n "${CADENCE_LOCK_TESTING:-}" && -n "${CADENCE_LOCK_PS_CMD:-}" ]] && PS_CMD=(${=CADENCE_LOCK_PS_CMD})
 
 # "NO HOSTS" AND "CANNOT TELL" ARE DIFFERENT ANSWERS, AND THE OLD ONE CONFLATED THEM (T-1152).
 #
@@ -211,28 +223,28 @@ LIVE_HOSTS_WHY=""
 live_test_hosts() {   # returns 0 = the count is trustworthy, 4 = cannot tell
   local out rc line
   local -a pids noise
-  out=$("$PGREP_CMD" -f "$HOST_PATTERN" 2>&1); rc=$?
+  out=$("${PGREP_CMD[@]}" -f "$HOST_PATTERN" 2>&1); rc=$?
   LIVE_HOSTS_COUNT=0; LIVE_HOSTS_WHY=""
   for line in ${(f)out}; do
     if [[ "$line" == <-> ]]; then pids+=("$line"); else noise+=("$line"); fi
   done
   if (( ${#noise} )); then
-    LIVE_HOSTS_WHY="$PGREP_CMD exited $rc and said: ${noise[1]}"
+    LIVE_HOSTS_WHY="${PGREP_CMD[*]} exited $rc and said: ${noise[1]}"
     return 4
   fi
   if (( rc >= 2 )); then
-    LIVE_HOSTS_WHY="$PGREP_CMD exited $rc (>=2 is a pgrep error, not an empty result)"
+    LIVE_HOSTS_WHY="${PGREP_CMD[*]} exited $rc (>=2 is a pgrep error, not an empty result)"
     return 4
   fi
   if (( rc == 1 )); then
     if (( ${#pids} )); then
-      LIVE_HOSTS_WHY="$PGREP_CMD exited 1 (no matches) yet printed ${#pids} pid(s)"
+      LIVE_HOSTS_WHY="${PGREP_CMD[*]} exited 1 (no matches) yet printed ${#pids} pid(s)"
       return 4
     fi
     return 0
   fi
   if (( ${#pids} == 0 )); then
-    LIVE_HOSTS_WHY="$PGREP_CMD exited 0 (matched) yet printed no pid"
+    LIVE_HOSTS_WHY="${PGREP_CMD[*]} exited 0 (matched) yet printed no pid"
     return 4
   fi
   LIVE_HOSTS_COUNT=${#pids}
@@ -275,7 +287,7 @@ waiter_alive() {   # 0 = alive, 1 = gone, 2 = cannot tell
   local pid="${1:-}" cmd
   [[ -n "$pid" ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  cmd=$("$PS_CMD" -o command= -p "$pid" 2>/dev/null)
+  cmd=$("${PS_CMD[@]}" -o command= -p "$pid" 2>/dev/null)
   [[ -n "$cmd" ]] || return 2
   [[ "$cmd" == *test-host-lock* ]]
 }
@@ -540,6 +552,50 @@ case "$CMD" in
       wait 2>/dev/null
     }
 
+    # A FAKE `pgrep -f`, AND A FAKE PROCESS TABLE FOR IT TO READ (T-1381). Modes 2, 5 and 5b all
+    # need `live_test_hosts` to give a TRUSTWORTHY answer about a fake host -- one that is running,
+    # or one that is not -- and the real `pgrep` cannot give one inside the App-Sandboxed
+    # `CadenceTests` host: it spawns, is denied the process list, and exits 3, so the lock correctly
+    # refuses and those four properties failed in there for a reason that is about the host rather
+    # than about the lock. Substituting the probe is what `CADENCE_LOCK_PGREP_CMD` is for, and it
+    # only became usable when that knob became a command ARRAY, because a stub this process wrote
+    # can be run as `/bin/zsh <stub>` and cannot be exec'd directly (see the knob, above).
+    #
+    # NOTHING IS GIVEN UP BY FAKING IT. Every one of those modes already matched a FAKE pattern
+    # (`CADENCE_LOCK_PGREP`) against a FAKE process (`zsh $root/fakehost*`) on a developer Mac too;
+    # the real constant and the real tool are exercised by mode 7 alone, which keeps both and is the
+    # one property no spelling of this knob can rescue. What is proved here is the lock's decision
+    # given what the probe said -- so the probe may as well be one this fixture controls.
+    #
+    # Liveness in the stub is `kill -0`, deliberately: it is a signal to a process this selftest
+    # started, not a read of the process list, and it works in the sandbox where the list does not.
+    mkdir -p "$root/proctable"
+    print -r -- '#!/bin/zsh
+# Stand-in for `pgrep -f <pattern>`, answering from the sibling proctable directory: one file per
+# fake process, named by its pid, holding the command line that pid would show. Reproduces pgreps
+# OWN two-signal contract, because live_test_hosts reads both: exit 0 with one pid per line when
+# something matched, exit 1 and total silence when nothing did. Anything else means "cannot tell",
+# which is mode 6 and is a different stub.
+emulate -L zsh
+table=${0:h}/proctable
+pattern=$2
+found=0
+for entry in $table/*(N.); do
+  pid=${entry:t}
+  kill -0 $pid 2>/dev/null || continue
+  [[ "$(<$entry)" =~ "$pattern" ]] || continue
+  print -r -- $pid
+  found=1
+done
+(( found )) && exit 0
+exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
+    # `-f`, and it is not decoration: the stub writes to stdout and the lock parses every line of
+    # it, so one `print` from somebody's ~/.zshrc would arrive as a non-pid line and be read as
+    # "cannot tell". Same flag `CadenceGuardScriptSelftestTests` runs these selftests under.
+    FAKE_PGREP="/bin/zsh -f $root/fakepgrep"
+    fake_proc_add() { print -r -- "$2" > "$root/proctable/$1" }
+    fake_proc_del() { rm -f "$root/proctable/$1" 2>/dev/null }
+
     # 1. ORDERING, posed as the failure that was actually measured: "a short run
     #    that arrives at the right instant beats a long one that has been waiting
     #    an hour". w1..w3 queue behind a held lock; w4 arrives at the moment of
@@ -581,10 +637,12 @@ case "$CMD" in
     #    zero live test hosts -- is what stops a second host starting against the
     #    same app-group container while a nohup'd run outlives its shell.
     export CADENCE_LOCK_PGREP="$root/fakehost"
+    export CADENCE_LOCK_PGREP_CMD="$FAKE_PGREP"
     # A stand-in for a real `xcodebuild test`, matched through CADENCE_LOCK_PGREP.
     # It sleeps in a child, so killing it later means killing that child too --
     # a `kill $host` alone leaves the sleep holding this selftest's stdout open.
     print -r -- 'sleep 90' > "$root/fakehost"; zsh "$root/fakehost" & host=$!
+    fake_proc_add $host "zsh $root/fakehost"
     ( "$SELF" acquire 10 ghost >/dev/null; : )  # subshell exits: owner pid is now dead
     sleep 6                                     # lease (4s) has expired
     ghost_pid=$(cat "$CADENCE_LOCK_DIR/pid" 2>/dev/null)
@@ -596,10 +654,11 @@ case "$CMD" in
       else print -r -- "FAIL no-reclaim: rc=$rc out='$out'"; (( fails++ )); fi
     else print -r -- "FAIL no-reclaim: fixture did not set up"; (( fails++ )); fi
     pkill -P $host 2>/dev/null; kill $host 2>/dev/null; wait $host 2>/dev/null
+    fake_proc_del $host
     out="$("$SELF" acquire 20 prober 2>&1)"
     if [[ "$out" == *reclaiming* ]]; then print -r -- "PASS reclaim: with the host gone the expired lease was reclaimable"
     else print -r -- "FAIL reclaim: '$out'"; (( fails++ )); fi
-    unset CADENCE_LOCK_PGREP
+    unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
     # 3. A KILLED WAITER DOES NOT BLOCK THE QUEUE. SIGKILL, so no trap can help:
@@ -676,6 +735,7 @@ case "$CMD" in
     saved_lease=$CADENCE_LOCK_LEASE
     export CADENCE_LOCK_LEASE=300
     export CADENCE_LOCK_PGREP="$root/never-a-live-host"
+    export CADENCE_LOCK_PGREP_CMD="$FAKE_PGREP"   # nothing in the proctable can match that pattern
     ( "$SELF" acquire 20 deadowner2 >/dev/null 2>&1; : )  # subshell exits: owner pid dies immediately
     sleep 1
     dead_pid=$(cat "$CADENCE_LOCK_DIR/pid" 2>/dev/null)
@@ -692,14 +752,16 @@ case "$CMD" in
     else
       print -r -- "FAIL dead-owner-reclaims-early: fixture did not set up (pid '$dead_pid' still alive or missing)"; (( fails++ ))
     fi
-    unset CADENCE_LOCK_PGREP
+    unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
     # 5b. ...but a dead owner still defers to a live test host even with the lease
     #     bumped: the fix is "dead owner pid shortcuts the LEASE wait", not "dead
     #     owner pid always wins" -- that second reading would restart T-236.
     export CADENCE_LOCK_PGREP="$root/fakehost2"
+    export CADENCE_LOCK_PGREP_CMD="$FAKE_PGREP"
     print -r -- 'sleep 90' > "$root/fakehost2"; zsh "$root/fakehost2" & host2=$!
+    fake_proc_add $host2 "zsh $root/fakehost2"
     ( "$SELF" acquire 10 deadowner3 >/dev/null 2>&1; : )
     sleep 1
     dead_pid2=$(cat "$CADENCE_LOCK_DIR/pid" 2>/dev/null)
@@ -714,7 +776,8 @@ case "$CMD" in
       print -r -- "FAIL dead-owner-defers-to-live-host: fixture did not set up"; (( fails++ ))
     fi
     pkill -P $host2 2>/dev/null; kill $host2 2>/dev/null; wait $host2 2>/dev/null
-    unset CADENCE_LOCK_PGREP
+    fake_proc_del $host2
+    unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
     export CADENCE_LOCK_LEASE=$saved_lease
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
@@ -740,16 +803,19 @@ exit 3' > "$root/blindpgrep"; chmod +x "$root/blindpgrep"
       # First the failing-first half, and it is the point of the whole mode: the OLD expression,
       # run verbatim against this same fixture, answers a confident `0`. A guard whose "before"
       # is not demonstrated is a guard nobody can tell from a no-op.
-      was=$("$root/blindpgrep" -f "$CADENCE_LOCK_PGREP" 2>/dev/null | wc -l | tr -d ' ')
-      export CADENCE_LOCK_PGREP_CMD="$root/blindpgrep"
+      was=$(/bin/zsh -f "$root/blindpgrep" -f "$CADENCE_LOCK_PGREP" 2>/dev/null | wc -l | tr -d ' ')
+      export CADENCE_LOCK_PGREP_CMD="/bin/zsh -f $root/blindpgrep"
       out="$("$SELF" acquire 6 blindprober 2>&1)"; rc=$?
       unset CADENCE_LOCK_PGREP_CMD
       # The diagnosis is asserted by the PROBE'S OWN NAME appearing in it, not by the fixture's
-      # message text. Run from inside the App-Sandboxed CadenceTests host this fixture degrades:
-      # a file that process wrote cannot be exec'd at all (T-959), so `blindpgrep` fails to launch
-      # instead of running and complaining. Both are "cannot tell", the refusal is the same, and
-      # the reason string names the probe either way -- but the words differ, and pinning the
-      # words would make this mode pass or fail on where it happens to be run.
+      # message text. That used to be a concession: run from inside the App-Sandboxed CadenceTests
+      # host, `blindpgrep` was named as a bare path and could not be exec'd at all (T-959), so it
+      # failed to LAUNCH rather than running and complaining. Both are "cannot tell" and the
+      # refusal was the same, but the words differed and pinning them would have made this mode
+      # pass or fail on where it happened to run. Since T-1381 the knob is a command array and the
+      # stub is handed to `/bin/zsh`, which that host can exec, so the fixture now behaves
+      # identically in both places: it runs, says so on stderr, and exits 3. Still asserted by
+      # name, because the reason string is the lock's and the message is the stub's.
       if [[ "$was" == 0 ]] && (( rc == 2 )) && [[ "$out" == *"REFUSING to reclaim"* ]] \
          && [[ "$out" == *"$root/blindpgrep"* ]] \
          && [[ "$(cat "$CADENCE_LOCK_DIR/id" 2>/dev/null)" == blindowner ]]; then
@@ -780,9 +846,9 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
       old_dead=0
       for t in "$QUEUE"/*(N.); do
         read -r qpid qrest < "$t" 2>/dev/null || qpid=""
-        [[ "$($root/blindps -o command= -p "$qpid" 2>/dev/null)" == *test-host-lock* ]] || (( old_dead++ ))
+        [[ "$(/bin/zsh -f $root/blindps -o command= -p "$qpid" 2>/dev/null)" == *test-host-lock* ]] || (( old_dead++ ))
       done
-      export CADENCE_LOCK_PS_CMD="$root/blindps"
+      export CADENCE_LOCK_PS_CMD="/bin/zsh -f $root/blindps"
       # `status` runs prune_queue and nothing else destructive, so it is the cheapest way to make
       # one real pass happen inside a process that has the blind `ps`.
       "$SELF" status >/dev/null 2>&1

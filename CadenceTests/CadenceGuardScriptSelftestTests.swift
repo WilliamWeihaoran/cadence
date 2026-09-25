@@ -409,8 +409,10 @@ struct CadenceGuardScriptSelftestTests {
     /// about the lock got weaker; two green lines stopped being green for no reason.
     ///
     /// Six of the eleven properties were listed here as unprovable, which is a poor ratio for a
-    /// suite whose job is to notice rot. That was [[T-1161]], and this is its answer — **five**,
-    /// and every one of them for the same single reason.
+    /// suite whose job is to notice rot. That was [[T-1161]], and its answer was **five**, every
+    /// one of them for the same single reason. [[T-1381]], the same day, took it to **one**; the
+    /// paragraphs below are in the order the readings were made, so read to the end before
+    /// believing a count.
     ///
     /// **NAME THE MECHANISM, NEVER "THE SANDBOX".** A property is unprovable here only if a
     /// specific syscall or path refusal stops it; "awkward" is not one, and neither is a mood.
@@ -428,7 +430,9 @@ struct CadenceGuardScriptSelftestTests {
     ///   are about the REAL probes, and the selftest already has knobs for substituting fake ones
     ///   (`CADENCE_LOCK_PS_CMD`, `CADENCE_LOCK_PGREP_CMD`, added by T-1152) — but a stub the fixture
     ///   writes into `$TMPDIR` cannot be launched from in here either, which is what mode 6's own
-    ///   comment records about `blindpgrep`.
+    ///   comment used to record about `blindpgrep`. M3 is still exactly this; what T-1381 found is
+    ///   that it only ever shut the escape because the knobs named ONE WORD, and `/bin/zsh <stub>`
+    ///   was never an exec of a file this process wrote.
     ///
     /// **`ordering` IS PROVABLE HERE, AND HAS BEEN SINCE T-1152 — measured 2026-09-25, `PASS
     /// ordering: w1 w2 w3 w4`.** It was tolerated on M1, and M1 stopped stranding it the moment
@@ -439,29 +443,45 @@ struct CadenceGuardScriptSelftestTests {
     /// thirteen days — because nothing read `passed ∩ tolerating`. That is now a complaint
     /// (`staleTolerations`), which is how this line came to be written.
     ///
-    /// So all five survivors are **M2 alone**, and the asymmetry is the useful part: this host can
-    /// prove anything the lock decides from its own files, and nothing it decides by asking the
-    /// kernel who else is running.
+    /// So all five survivors of T-1161 were **M2 alone**, and the asymmetry looked like the useful
+    /// part: this host can prove anything the lock decides from its own files, and nothing it
+    /// decides by asking the kernel who else is running. That reading was right about the
+    /// mechanism and wrong about the consequence — four of the five were not asking the kernel
+    /// anything they could not have faked.
     ///
-    /// **What the five would cost to reclaim.** M3 shuts the substitution escape *as the knobs are
-    /// spelled today*: `"$PGREP_CMD" -f …` is one word, exec'd directly. The host CAN run
-    /// `/bin/zsh <script>` — that is how every selftest in this file runs at all — so a knob taking
-    /// a command **array** would reopen four of them, whose fixtures already match a FAKE pattern
-    /// against a FAKE process even outside the sandbox (`CADENCE_LOCK_PGREP`) and so lose nothing
-    /// by faking the probe too. `host-pattern-calibration` is the exception under any spelling: its
-    /// whole subject is the REAL constant read by a REAL `pgrep` over REAL argv. [[T-1381]].
+    /// **FOUR OF THE FIVE WERE RECLAIMED ON 2026-09-25, AND ONE SHELL CHANGE BOUGHT ALL FOUR
+    /// ([[T-1381]]).** M3 shut the substitution escape only *as the knobs were spelled*:
+    /// `"$PGREP_CMD" -f …` was one word, exec'd directly, so pointing it at a stub this process
+    /// wrote pointed it at a file this process cannot launch. The host CAN run `/bin/zsh <script>`
+    /// — that is how every selftest in this file runs at all — so the knobs are **command arrays**
+    /// now (`PGREP_CMD=(/bin/zsh -f "$root/fakepgrep")`, splatted at the call site), and
+    /// `no-reclaim`, `reclaim`, `dead-owner-reclaims-early` and `dead-owner-defers-to-live-host`
+    /// are proved in here like everything else.
     ///
-    /// **The list is now pinned in both directions.** Until 2026-09-25 a tolerated property that
+    /// **Nothing was given up to get them.** Those four fixtures already matched a FAKE pattern
+    /// (`CADENCE_LOCK_PGREP`) against a FAKE process (`zsh $root/fakehost*`) on a developer Mac
+    /// too — what they prove is the lock's DECISION given what the probe said, so a probe the
+    /// fixture controls proves exactly as much. The stand-in reads the selftest's own process
+    /// table (one file per fake host, named by pid) and answers liveness with `kill -0`, which is
+    /// a signal to a process the fixture started rather than a read of the process list, and so
+    /// works in here where M2 bites. Non-vacuity was measured rather than argued: with the
+    /// registration of a fake host turned into a no-op, `no-reclaim` and
+    /// `dead-owner-defers-to-live-host` both go red and say the lock reclaimed.
+    ///
+    /// `host-pattern-calibration` is the one survivor and is unprovable under any spelling of any
+    /// knob: its whole subject is the REAL constant read by a REAL `pgrep` over REAL argv (T-1162),
+    /// so substituting either would delete the property rather than move it. In here `pgrep` runs,
+    /// is denied the process list and exits 3; `live_test_hosts` correctly refuses to answer, the
+    /// fixture correctly calls that a failure, and the run outside the sandbox is where the
+    /// calibration is read.
+    ///
+    /// **The list is pinned in both directions.** Until 2026-09-25 a tolerated property that
     /// started PASSING was accepted in silence, so this set could only grow — the rot the ticket
     /// names, in the field meant to record it. `complaintsForNamedRuns` now complains about
-    /// `passed ∩ tolerating` too, so a name only stays here while the host really cannot prove it.
+    /// `passed ∩ tolerating` too, so a name only stays here while the host really cannot prove it;
+    /// this shrink from five to one had to land in the same change as the script, or the suite
+    /// goes red on four stale tolerations.
     static let testHostLockPropertiesUnverifiableInThisSandbox: Set<String> = [
-        "no-reclaim", "dead-owner-defers-to-live-host",
-        "reclaim", "dead-owner-reclaims-early",
-        // T-1162's property is the same sandbox limit one step earlier: it asks a real `pgrep`
-        // about real processes it spawned, and in here `pgrep` runs, is denied the process list
-        // and exits 3. `live_test_hosts` correctly refuses to answer, the fixture correctly calls
-        // that a failure, and the run outside the sandbox is where the calibration is read.
         "host-pattern-calibration",
     ]
 
@@ -470,24 +490,31 @@ struct CadenceGuardScriptSelftestTests {
     /// the same way: `ordering` is the fairness fix itself (a 16-minute starvation measured on the
     /// same race the FIFO closes), `killed-waiter` is the new queue's own prune-liveness check,
     /// exercised for real rather than read off the source.
+    ///
+    /// `cannot-tell-keeps-queue` is [[T-1382]]'s, and it is the port's missing half: a `ps` that
+    /// RUNS and answers nothing must leave the queue alone. Same name as the lock's mode 6b,
+    /// because it is the same property of the same queue.
     static let simulatorClaimProperties = [
         "ordering",
         "killed-waiter",
+        "cannot-tell-keeps-queue",
     ]
 
-    /// `ordering` depends on `waiter_alive`'s `ps` the same way `test-host-lock.sh`'s used to --
-    /// this script's queue is a direct port of that one. Proven by terminal instead:
-    /// docs/TODO.md's T-749 entry (`w4 w1 w2 w3` before, `w1 w2 w3 w4` after).
+    /// **Empty, as of [[T-1382]], and the emptiness is the finding.** `ordering` was tolerated
+    /// here for one reason: `waiter_alive`'s setuid `ps`, which an App-Sandboxed caller is refused
+    /// at `posix_spawn` (M1). That stopped stranding `test-host-lock.sh`'s `ordering` the moment
+    /// T-1152 gave the function a third answer — but T-749 had ported this queue over wholesale
+    /// and the repair never followed it, so for thirteen days two copies of one FIFO disagreed
+    /// about what an unanswerable probe means. Measured together on 2026-09-25 (T-1161): the
+    /// lock's `ordering` PASSED in this host and this one FAILED, and the difference was that one
+    /// function. It now has the same three-way reading and the same `prune_queue` fall-through to
+    /// the ticket-age check, so a blind `ps` is "cannot tell" and no live ticket is deleted.
     ///
-    /// **And it is M1 here only because the port never received T-1152's repair**, which is a
-    /// finding rather than a footnote and is why this list and the lock's no longer agree. Measured
-    /// together on 2026-09-25: the lock's `ordering` PASSES in this host and this one FAILS. The
-    /// difference is one function -- `waiter_alive` here is still the two-way reading, so a `ps`
-    /// that cannot spawn reads as *dead* for every pid and `prune_queue` deletes every waiter's
-    /// ticket in a single pass, which is precisely the defect T-1152 exists to abolish. Filed as
-    /// [[T-1382]]; not repaired from here, because sibling agents hold real device claims through
-    /// this script while these tests run.
-    static let simulatorClaimPropertiesUnverifiableInThisSandbox: Set<String> = ["ordering"]
+    /// The honest size of what that fixed, since a guard oversold is a guard nobody re-reads:
+    /// `ps` runs perfectly well from an ordinary agent shell, which is where this script is driven
+    /// from, and the repository's rule is already never to drive a claim from inside a test. The
+    /// reachable case was narrow. The divergence between two copies of one queue was not.
+    static let simulatorClaimPropertiesUnverifiableInThisSandbox: Set<String> = []
 
     /// T-1076. `scripts/xcb.sh`'s two `-only-testing:` outcomes, and they are deliberately
     /// asymmetric. `UNKNOWN-SUITE` REFUSES (exit 8, before the build and before the test-host
@@ -688,11 +715,13 @@ struct CadenceGuardScriptSelftestTests {
     /// actually holding that lock. Real subprocesses and real `sleep`s, so this one runs for tens of
     /// seconds rather than about one -- see the type doc above.
     ///
-    /// `no-reclaim` and four others are TOLERATED, not required -- all five for one reason, the
-    /// `pgrep` this host can spawn but cannot get an answer out of (see the
-    /// `testHostLockPropertiesUnverifiableInThisSandbox` doc). Tolerating a named failure is not
-    /// the same as ignoring it: this still fails loudly if any of them PASSES unexpectedly (the
-    /// limit lifted, this list is stale) or if anything NOT on the tolerated list fails.
+    /// `host-pattern-calibration` is TOLERATED, not required -- **one of eleven since T-1381**,
+    /// where it was five: the probe knobs became command arrays, the four properties that only
+    /// needed a substituted probe became provable in here, and the tolerated list had to shrink in
+    /// the same change (see the `testHostLockPropertiesUnverifiableInThisSandbox` doc). Tolerating
+    /// a named failure is not the same as ignoring it: this still fails loudly if it PASSES
+    /// unexpectedly (the limit lifted, this list is stale) or if anything NOT on the tolerated
+    /// list fails.
     ///
     /// That second sentence was **false for eighteen days** and is true as of T-1161: nothing read
     /// `passed ∩ tolerating`, so "it fails loudly if either PASSES" described a check that did not
@@ -709,8 +738,16 @@ struct CadenceGuardScriptSelftestTests {
     }
 
     /// T-749. Runs against a throwaway claims root and a fake `simctl` (`CADENCE_SIM_CLAIMS_DIR` /
-    /// `CADENCE_SIMCTL`), so this is safe alongside sibling agents holding real device claims.
-    /// `ordering` is TOLERATED, not required -- `waiter_alive`'s setuid `ps`, same as above (T-959).
+    /// `CADENCE_SIMCTL`), so this is safe alongside sibling agents holding real device claims —
+    /// and MORE safely than before T-1382, which found the selftest process's own `$CLAIMS` and
+    /// `$QUEUE` still naming the real store, fixed at startup from an environment that did not yet
+    /// carry the overrides. Every mode reached the sandbox through a `$SELF` subprocess, so
+    /// nothing noticed until a mode read the queue in-process; they are repointed before any mode
+    /// runs now, as `test-host-lock.sh`'s selftest already did (T-1343).
+    ///
+    /// **Nothing is tolerated here as of T-1382** — all three properties are required. `ordering`
+    /// was the one exception, on `waiter_alive`'s setuid `ps` (T-959), until that function got the
+    /// three-way reading the lock has had since T-1152.
     @Test func theSimulatorClaimsOwnGuardStillFires() throws {
         let run = try CadenceSelftestRun.of("scripts/simulator-claim.sh")
         let complaints = run.complaintsForNamedRuns(
@@ -1091,6 +1128,16 @@ struct CadenceGuardScriptSelftestTests {
     /// And it would be a nested `xcodebuild test` spawned from inside a test host that already
     /// holds the test-host lock — which cannot work and should not be made to.
     ///
+    /// **T-1151 asked which of those is the MECHANISM, because the reason on record was not one.**
+    /// `ci.yml` said this host *"cannot spawn `xcodebuild`, ps or pgrep at all"*, and Xcode's own
+    /// `xcodebuild` exits 0 in here. The answer is the second sentence above and it is now
+    /// measured end to end rather than asserted:
+    /// `CadenceTestHostSandboxCapabilityTests.theSweepManifestSelftestIsStoppedByTheWritePolicyAndNotBySomethingVaguer`
+    /// walks the selftest's own steps from inside a real test host and finds the read and the
+    /// `$TMPDIR` backup working and the `sed -i ''` into `CadenceTests/` refused — a write policy,
+    /// not a spawn refusal and not "the sandbox". The build and the held lock are a separate,
+    /// non-sandbox objection that would survive even if the write policy changed.
+    ///
     /// It is not unpinned, though, which is what a sweep of `scripts/` and `.githooks/` could not
     /// see: `.github/workflows/ci.yml` has run it on every push since T-977, reusing the derived
     /// data and signing overrides the test job above it already paid for. A hosted runner is not
@@ -1126,6 +1173,320 @@ struct CadenceGuardScriptSelftestTests {
             `precheck-selftest` is chained by agent-commit.sh's mode 8 and is not this.
             """
         )
+    }
+
+    // MARK: - The build-free precheck against the authoritative answer (T-1139)
+
+    /// Manifest entries the build-free precheck does NOT reach.
+    ///
+    /// Empty, measured 2026-09-25 over all 330 files under `CadenceTests/`: the precheck names 293
+    /// of the manifest's 293, with 0 false positives, in about 3s and with no build.
+    ///
+    /// A declared set rather than a comment, because the comparison below reads it in BOTH
+    /// directions: a name here the precheck does in fact reach is as much a complaint as an entry
+    /// it misses. A list nobody reads in the passing direction is the stale toleration this file
+    /// was already caught by once (T-1161) — thirteen days green while proving nothing.
+    ///
+    /// And a set rather than a recall floor, because [[T-1092]] promises the cheap reader is
+    /// SOUND, not complete. A sweep it cannot see is allowed. It may not be *silent*: adding a
+    /// name here is one visible line somebody has to write, which is the whole difference between
+    /// an admission and a decay.
+    static let precheckShortfall: Set<String> = []
+
+    /// One manifest entry per REACH the precheck has, each chosen by ablation rather than by
+    /// reading: cut the machinery named beside it out of the reader and that entry is the one that
+    /// disappears. Measured 2026-09-25 against the whole of `CadenceTests/` — of the 293 entries
+    /// the precheck names, 156 survive a body-only reader, 249 survive a single-hop one, 44 need
+    /// the transitive closure, 15 need `var`/`let` admitted as hop targets, and 5 need file-scope
+    /// names resolved ACROSS files.
+    ///
+    /// Positional, and that is [[T-1139]]'s own argument: a recall percentage would make the
+    /// precheck's incompleteness a failure, which is exactly what [[T-1092]] declines to promise.
+    /// What this catches instead is the failure that really happened — a whole FAMILY of sweeps
+    /// going dark, the 46 cross-file ones [[T-1092]] recovered, while the reader still looked at
+    /// the right six needles and still reported a clean tree.
+    static let precheckReaches: [(entry: String, reach: String)] = [
+        (
+            "DateFormatterSupportTests/everyDateFormatterInTheAppIsDeclaredInTheFormatterFile",
+            "the walk is in the @Test's own body — the one reach a reader that hops nothing has"
+        ),
+        (
+            "CadenceDefaultsRoutingSweepTests/everyPreferenceInTheAppTargetResolvesThroughTheDefaultsRouter",
+            "one hop, into a helper beside it — the T-1091 shape; 93 entries need at least this"
+        ),
+        (
+            "CadenceSaveCommitDisciplineTests/everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule",
+            "two hops or more — 44 entries vanish when the closure is cut back to a single hop"
+        ),
+        (
+            "CadenceContextlessListSurfaceTests/theAddFirstListRowIsOneComponentBothCallersShare",
+            "a file-scope helper in ANOTHER file — 5 entries, and the one [[T-1092]] names"
+        ),
+        (
+            "CadenceInMemoryStoreHygieneTests/noInMemoryStoreInTheRepositoryLeavesCloudKitMirroringOn",
+            "the product root is reached through a stored `var`/`let` — 15 entries"
+        ),
+    ]
+
+    /// **T-1139. Two readers of one rule, and nothing compared their ANSWERS.**
+    ///
+    /// `CadenceTestTargetHygieneTests.theCheapPrecheckLooksForExactlyTheWalkNeedlesTheScanDoes`
+    /// compares the two readers' NEEDLES — the smallest thing that can differ between them, and
+    /// not the thing that went wrong. The precheck once missed 46 entries, every sweep written as
+    /// a bare call to a file-scope helper in the file next door, while looking at exactly the
+    /// right six needles, reporting a clean tree and passing every test in the repository. Needle
+    /// equality cannot see a lost family. Answer equality can, and this is it.
+    ///
+    /// **The authoritative answer is the committed manifest**, which is not a second opinion:
+    /// `CadenceTestTargetHygieneTests` regenerates it from `CadenceRealTreeSweepScan` on every run
+    /// and fails on any difference, so the file in the tree is what the scan said the last time
+    /// this target was green. The precheck's own answer is taken the way its header documents —
+    /// hand it a manifest naming no real test, and everything it can see comes back as unlisted.
+    ///
+    /// **It refuses rather than reports when it cannot compare.** Exit 2 is the script's own
+    /// refusal (no usable `python3`, an unreadable or empty manifest, no sources) and fails here;
+    /// so does exit 0, which over a manifest naming nothing means the reader saw nothing at all;
+    /// so does a line that is not `<repo path>\t<test>`, a test named twice, a manifest that
+    /// parsed to fewer entries than it can have, a census of source files too small to mean
+    /// anything, and a manifest whose test names stopped being unique — that last one because the
+    /// test name is the key the two answers come back on. None of those states may read as
+    /// agreement. Each is quoted, with `CadenceSelftestRun.probe()`, rather than summarised.
+    ///
+    /// **Cost**, honestly: about 3s, against this suite's usual one. That is the price of asking
+    /// for an answer instead of a needle list, and it is still 50x cheaper than the build the
+    /// authoritative scan needs.
+    @Test func theCheapPrecheckStillAnswersWhatTheAuthoritativeScanAnswers() throws {
+        let complaints = try Self.precheckComparisonComplaints()
+        #expect(
+            complaints.isEmpty,
+            """
+            the build-free precheck in scripts/real-tree-sweep-manifest.sh and the authoritative \
+            scan behind CadenceTests/CadenceRealTreeSweepManifest.txt no longer agree, or could \
+            not be compared at all:
+            - \(complaints.joined(separator: "\n- "))
+            """
+        )
+    }
+
+    /// Every reason the two readers disagree, and every reason they could not be compared. Empty
+    /// means they agree. Separated from the `@Test` so the reasons are a value rather than a pile
+    /// of expectations, and so an unreadable answer stops the comparison instead of being carried
+    /// into assertions that would then pass over nothing.
+    static func precheckComparisonComplaints() throws -> [String] {
+        var complaints: [String] = []
+        let root = CadenceSelftestRun.repositoryRoot()
+        let testsDirectory = root.appendingPathComponent("CadenceTests")
+        let script = root.appendingPathComponent("scripts/real-tree-sweep-manifest.sh").path
+
+        let entries = try String(
+            contentsOf: testsDirectory.appendingPathComponent("CadenceRealTreeSweepManifest.txt"),
+            encoding: .utf8
+        )
+        .split(separator: "\n")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        guard entries.count >= 250 else {
+            return ["""
+            the committed manifest parsed to \(entries.count) entr(ies), and 293 were there on \
+            2026-09-25. Below that this would be measuring the reader of the manifest rather than \
+            the precheck, so there is no comparison to report.
+            """]
+        }
+        let authoritative = Set(entries.map { Self.testName(of: $0) })
+        guard authoritative.count == entries.count else {
+            return ["""
+            two manifest entries share a test name, and the test name is the key the two answers \
+            come back on (the precheck reports a FILE, and a file does not have to be named for \
+            the suite it declares). Compare on whole entries instead of weakening this.
+            """]
+        }
+
+        let sourceNames = try FileManager.default
+            .contentsOfDirectory(atPath: testsDirectory.path)
+            .filter { $0.hasSuffix(".swift") }
+            .sorted()
+        guard sourceNames.count >= 300 else {
+            return ["""
+            only \(sourceNames.count) source file(s) under CadenceTests/, and 330 were there on \
+            2026-09-25 — too few for an answer taken over them to mean anything.
+            """]
+        }
+
+        let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "cadence-precheck-comparison-\(ProcessInfo.processInfo.processIdentifier)"
+        )
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        // The script header's own technique for reading the precheck's WHOLE answer rather than
+        // its delta: hand it a manifest that names no real test, so everything it can see is
+        // unlisted. Written into this host's own container, the one place it may write.
+        let namesNothing = workspace.appendingPathComponent("names-nothing.txt")
+        try "Fixture/nothingRealIsNamedHere\n"
+            .write(to: namesNothing, atomically: true, encoding: .utf8)
+
+        func target(_ name: String) -> String {
+            "CadenceTests/\(name)=\(testsDirectory.appendingPathComponent(name).path)"
+        }
+        func precheckRun(_ corpus: [String], _ targets: [String]) throws -> CadenceSelftestRun {
+            try CadenceSelftestRun.run(
+                "/bin/zsh",
+                ["-f", script, "precheck-comparison", "precheck"] + corpus + [namesNothing.path]
+                    + targets
+            )
+        }
+
+        let full = try precheckRun(["--corpus", testsDirectory.path], sourceNames.map(target))
+        let reading = Self.precheckAnswer(full)
+        guard let precheck = reading.answer else { return [reading.why] }
+
+        let falsePositives = precheck.subtracting(authoritative).sorted()
+        if !falsePositives.isEmpty {
+            complaints.append("""
+            \(falsePositives.count) test(s) the cheap precheck calls a real-tree sweep are not on \
+            the manifest the authoritative scan wrote: \(falsePositives.joined(separator: ", ")). \
+            Soundness is the entire reason the cheap reader is allowed to exist ([[T-1092]]) — \
+            every one of these refuses somebody's commit over a sweep that is not one.
+            """)
+        }
+
+        for shape in Self.precheckReaches {
+            guard entries.contains(shape.entry) else {
+                complaints.append("""
+                \(shape.entry) is no longer on the manifest, so it can no longer stand for a reach \
+                — name another entry that needs: \(shape.reach)
+                """)
+                continue
+            }
+            if !precheck.contains(Self.testName(of: shape.entry)) {
+                complaints.append("""
+                the precheck no longer reaches \(shape.entry), whose reach is \(shape.reach). One \
+                named shape lost is one FAMILY of sweeps the cheap reader has gone blind to.
+                """)
+            }
+        }
+
+        let unadmitted = authoritative.subtracting(precheck).subtracting(Self.precheckShortfall)
+        if !unadmitted.isEmpty {
+            complaints.append("""
+            \(unadmitted.count) manifest entr(ies) the precheck does not reach and nothing admits \
+            to: \(unadmitted.sorted().joined(separator: ", ")). The cheap reader is allowed to be \
+            incomplete ([[T-1092]]); it is not allowed to become so quietly. Add the name to \
+            CadenceGuardScriptSelftestTests.precheckShortfall, or teach the reader the shape.
+            """)
+        }
+        let stale = Self.precheckShortfall.intersection(precheck).sorted()
+        if !stale.isEmpty {
+            complaints.append("""
+            precheckShortfall still admits \(stale.joined(separator: ", ")), which the precheck \
+            DOES now reach. A toleration that has stopped being true is how a green run and a \
+            vacuous one come to look identical (T-1161) — delete the name.
+            """)
+        }
+
+        complaints += try Self.corpusReachComplaints(precheckRun: precheckRun, target: target)
+        return complaints
+    }
+
+    /// The cross-file reach, ablated live rather than asserted from a table.
+    ///
+    /// One file, read twice: with the corpus and with `--no-corpus`. The difference must be
+    /// exactly the entry whose only route to a walk is a file-scope helper in ANOTHER file, and
+    /// the entry that never needed the corpus must survive both — otherwise the two readings are
+    /// two silences rather than two answers. Without this the positional check above would also
+    /// be satisfied by a reader that answers from the corpus alone, which is the unsoundness the
+    /// script's header records an earlier spelling of this reach having had.
+    static func corpusReachComplaints(
+        precheckRun: ([String], [String]) throws -> CadenceSelftestRun,
+        target: (String) -> String
+    ) throws -> [String] {
+        var complaints: [String] = []
+        let file = "CadenceContextlessListSurfaceTests.swift"
+        let needsTheCorpus = "theAddFirstListRowIsOneComponentBothCallersShare"
+        let staysWithoutIt = "theListEditorContextRowIsDeclaredInExactlyOnePlace"
+        let corpusDirectory = CadenceSelftestRun.repositoryRoot()
+            .appendingPathComponent("CadenceTests").path
+
+        let readings: [(label: String, flags: [String], mustReachIt: Bool)] = [
+            ("with the corpus", ["--corpus", corpusDirectory], true),
+            ("with --no-corpus", ["--no-corpus"], false),
+        ]
+        for reading in readings {
+            let run = try precheckRun(reading.flags, [target(file)])
+            let answered = precheckAnswer(run)
+            guard let answer = answered.answer else {
+                complaints.append("the one-file ablation \(reading.label) has no answer: \(answered.why)")
+                continue
+            }
+            if !answer.contains(staysWithoutIt) {
+                complaints.append("""
+                \(reading.label), the precheck no longer names \(staysWithoutIt) in \(file). That \
+                one never needed the corpus, so losing it makes this ablation a comparison of two \
+                silences.
+                """)
+            }
+            if reading.mustReachIt, !answer.contains(needsTheCorpus) {
+                complaints.append("""
+                with the corpus the precheck no longer names \(needsTheCorpus), whose only route is \
+                a file-scope helper in another file — the family [[T-1092]] recovered.
+                """)
+            }
+            if !reading.mustReachIt, answer.contains(needsTheCorpus) {
+                complaints.append("""
+                with --no-corpus the precheck still names \(needsTheCorpus), so whatever reaches it \
+                is not the corpus and this ablation establishes nothing about the cross-file reach.
+                """)
+            }
+        }
+        return complaints
+    }
+
+    /// The test name a manifest entry ends in — the key the two answers are compared on, because
+    /// the precheck reports the FILE a test lives in and a file is under no obligation to be named
+    /// for the suite it declares (39 of the 293 are not, measured 2026-09-25).
+    static func testName(of entry: String) -> String {
+        String(entry.split(separator: "/").last ?? "")
+    }
+
+    /// The precheck's answer, or the reason there is none. Exit 4 is the only reading that carries
+    /// one here: 0 means it named nothing over a manifest that lists no real test, which is a
+    /// reader that has stopped reading rather than a clean tree, and 2 is its own refusal.
+    static func precheckAnswer(_ run: CadenceSelftestRun) -> (answer: Set<String>?, why: String) {
+        guard run.status == 4 else {
+            return (nil, """
+            the precheck exited \(run.status) rather than 4 over a manifest that names no real \
+            test. 4 is "it has findings"; 0 would mean it saw nothing at all; 2 is its own refusal \
+            — no usable python3, an unreadable or empty manifest, no sources. There is no answer \
+            to compare either way. \(CadenceSelftestRun.probe()). It said: \(run.output)
+            """)
+        }
+        var answer: Set<String> = []
+        var unreadable: [String] = []
+        var repeated: [String] = []
+        for line in run.output.split(separator: "\n") {
+            let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
+            guard parts.count == 2, parts[0].hasPrefix("CadenceTests/"),
+                  parts[0].hasSuffix(".swift"), !parts[1].isEmpty else {
+                unreadable.append(String(line))
+                continue
+            }
+            if !answer.insert(String(parts[1])).inserted { repeated.append(String(parts[1])) }
+        }
+        if !unreadable.isEmpty {
+            return (nil, """
+            the precheck printed \(unreadable.count) line(s) that are not `<repo path>\\t<test>`, \
+            so its answer cannot be read at all: \(unreadable.prefix(5).joined(separator: " | "))
+            """)
+        }
+        if !repeated.isEmpty {
+            return (nil, """
+            the precheck named \(repeated.count) test(s) twice (\(repeated.prefix(5).joined(separator: ", "))), \
+            and a test name is the key the two answers come back on.
+            """)
+        }
+        if answer.isEmpty {
+            return (nil, "the precheck exited 4 — it has findings — and named none of them")
+        }
+        return (answer, "")
     }
 
     /// **T-1328. One rule with two implementations, and a divergence between them is a new trap.**

@@ -183,13 +183,42 @@ arrival_stamp() {
   else printf '%017.6f' "$(date +%s).000000"
   fi
 }
+# The `ps` this queue reads, overridable for testing ONLY -- the knob test-host-lock.sh calls
+# `CADENCE_LOCK_PS_CMD`, ported here with the rest of T-1152 (T-1382). It exists because the one
+# thing no fixture can arrange with a real `ps` is a `ps` that runs and answers nothing, which is
+# the case the three answers below are about. Honoured only under CADENCE_SIM_CLAIM_TESTING, same
+# reason as CADENCE_SIM_CLAIMS_DIR: a stray override in a live agent's environment would change how
+# every sibling's ticket is read.
+#
+# A COMMAND ARRAY, not a single word (T-1381): an App-Sandboxed caller cannot exec a file it wrote
+# itself, so a stub named as a bare path fails to launch there, while `/bin/zsh <stub>` runs.
+SIM_PS_CMD=(ps)
+[[ -n "${CADENCE_SIM_CLAIM_TESTING:-}" && -n "${CADENCE_SIM_PS_CMD:-}" ]] && SIM_PS_CMD=(${=CADENCE_SIM_PS_CMD})
+
 # Alive, AND still this script -- a recycled pid landing on some unrelated
 # long-lived process must not pin a dead waiter at the head forever.
-waiter_alive() {
-  local pid="${1:-}"
+#
+# THREE ANSWERS, NOT TWO (T-1382, porting T-1152). `ps` is setuid root (`4555`), so a caller that
+# is refused it -- an App-Sandboxed one is refused at `posix_spawn`, and a `ps` can fail for
+# ordinary reasons too -- reads the empty string for EVERY pid, live or dead. Under the two-way
+# form this function was `false` for every waiter and `prune_queue` below then deleted every
+# sibling's ticket in a single pass: the whole FIFO, gone, on a probe that never answered. So an
+# empty answer is "cannot tell" (exit 2) and never "dead", and the caller falls through to the
+# check that needs no process list at all.
+#
+# This queue was ported from test-host-lock.sh wholesale by T-749 and then did not receive that
+# script's T-1152 repair, which is the entire content of [[T-1382]]. How small the reachable case
+# is, stated rather than inflated: `ps` runs perfectly well from an ordinary agent shell, which is
+# where this script is driven from, and the repository's rule is already never to drive a claim
+# from inside a test. The defect was real and the divergence between two copies of one queue was
+# the thing worth removing.
+waiter_alive() {   # 0 = alive, 1 = gone, 2 = cannot tell
+  local pid="${1:-}" cmd
   [[ -n "$pid" ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  [[ "$(ps -o command= -p "$pid" 2>/dev/null)" == *simulator-claim* ]]
+  cmd=$("${SIM_PS_CMD[@]}" -o command= -p "$pid" 2>/dev/null)
+  [[ -n "$cmd" ]] || return 2
+  [[ "$cmd" == *simulator-claim* ]]
 }
 # Liveness catches a killed waiter immediately; the touch-age catches what
 # liveness cannot -- a stopped process, a pid reused by another copy of this
@@ -197,13 +226,20 @@ waiter_alive() {
 # ticket to this re-files it under its ORIGINAL arrival stamp (see the `claim`
 # loop below), so pruning can never cost anyone their place in line; the worst
 # case is a redundant write.
+#
+# T-1382: a "cannot tell" from `waiter_alive` falls through to the AGE check rather than pruning.
+# That is not a new backstop invented for it -- it is the one the paragraph above already names,
+# for exactly the cases liveness cannot answer, and a caller that cannot read command lines is one
+# more of them. Nothing stalls: an untouched ticket still ages out after $TICKET_STALE, and a live
+# waiter that loses its ticket re-files it under its original arrival stamp.
 prune_queue() {
   [[ -n "$QUEUE" && -d "$QUEUE" ]] || return 0
-  local t pid rest now age
+  local t pid rest now age wrc
   now=$(date +%s)
   for t in "$QUEUE"/*(N.); do
     read -r pid rest < "$t" 2>/dev/null || pid=""
-    if ! waiter_alive "$pid"; then rm -f "$t" 2>/dev/null; continue; fi
+    waiter_alive "$pid"; wrc=$?
+    if (( wrc == 1 )); then rm -f "$t" 2>/dev/null; continue; fi
     age=$(( now - $(stat -f %m "$t" 2>/dev/null || print "$now") ))
     (( age > TICKET_STALE )) && rm -f "$t" 2>/dev/null
   done
@@ -479,6 +515,16 @@ FAKESIMCTL
     # "could not claim the fake device" and nothing else, before `booted_udids` ever saw a device.
     export CADENCE_SIM_CLAIM_TESTING=1 CADENCE_SIM_CLAIMS_DIR CADENCE_SIMCTL="/bin/zsh $root/fake-simctl"
     export CADENCE_SIM_LEASE=4 CADENCE_SIM_CLAIM_POLL=1 CADENCE_SIM_CLAIM_TICKET_STALE=10
+    # THIS PROCESS's own $CLAIMS and $QUEUE were fixed at startup, from an environment that did not
+    # yet have the overrides just exported -- so they still name the REAL claim store that sibling
+    # agents are using. Every mode until now only ever reached the sandbox through a `$SELF`
+    # SUBPROCESS, which re-reads the environment, so nothing noticed. Mode 3 below reads the queue
+    # in-process, and against the real one it would be both dangerous and hollow. Repoint them
+    # before any mode runs, exactly as test-host-lock.sh's selftest does and for the reason it
+    # records (T-1343): an assertion about a directory the fixture never writes to passes by
+    # reading somebody else's.
+    CLAIMS="$CADENCE_SIM_CLAIMS_DIR"; QUEUE="${CLAIMS}.queue"
+    TICKET_STALE=$CADENCE_SIM_CLAIM_TICKET_STALE; POLL=$CADENCE_SIM_CLAIM_POLL
     print -r -- "selftest: target $SELF"
     print -r -- "selftest: claims $CADENCE_SIM_CLAIMS_DIR, fake device $FAKE_UDID"
     fails=0
@@ -532,6 +578,48 @@ FAKESIMCTL
     for _ in {1..40}; do [[ -s "$survivor" ]] && break; sleep 1; done
     if [[ -s "$survivor" ]]; then print -r -- "PASS killed-waiter: the waiter behind a SIGKILLed one still got the device"
     else print -r -- "FAIL killed-waiter: queue stalled behind the dead ticket"; (( fails++ )); fi
+    cleanup_kids; rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"; mkdir -p "$CADENCE_SIM_CLAIMS_DIR"
+
+    # 3. A `ps` THAT CANNOT ANSWER MUST NOT EMPTY THE QUEUE (T-1382). Property 2 above proves the
+    #    queue drops a ticket whose waiter is genuinely gone. This is the case underneath it, and
+    #    the opposite polarity: a `ps` that RUNS and answers nothing -- which is what a setuid
+    #    binary refused at `posix_spawn` looks like from here -- used to read as "dead" for every
+    #    pid, so one `prune_queue` pass deleted every sibling's ticket and the FIFO this script
+    #    exists to provide simply vanished. Ported from test-host-lock.sh's mode 6b, which this
+    #    queue should have received with the rest of T-1152 and did not.
+    #
+    #    The fixture is built so the waiters are all genuinely LIVE, so "pruned nothing" cannot be
+    #    explained by there being nothing to prune; and the old two-way reading is run verbatim
+    #    over the same pids first, so the before is demonstrated rather than asserted. `/bin/zsh
+    #    -f <stub>`, not the bare path: a caller that cannot exec a file it wrote itself would
+    #    otherwise be testing a stub that never ran (T-1381).
+    print -r -- '#!/bin/zsh
+exit 0' > "$root/blindps"; chmod +x "$root/blindps"
+    "$SELF" claim holder3 30 >/dev/null || { print -r -- "selftest: could not retake the fake device (blind-ps)"; exit 2; }
+    for w in q1 q2 q3; do waiter "$w"; sleep 0.4; done
+    for _ in {1..20}; do (( $(queue_names | wc -l) >= 3 )) && break; sleep 0.5; done
+    before_q=$(queue_names | wc -l | tr -d ' ')
+    if (( before_q >= 3 )); then
+      old_dead=0
+      for t in "$QUEUE"/*(N.); do
+        read -r qpid qrest < "$t" 2>/dev/null || qpid=""
+        [[ "$(/bin/zsh -f $root/blindps -o command= -p "$qpid" 2>/dev/null)" == *simulator-claim* ]] || (( old_dead++ ))
+      done
+      export CADENCE_SIM_PS_CMD="/bin/zsh -f $root/blindps"
+      # `status` runs prune_queue and touches no device, so it is the cheapest way to make one
+      # real pass happen inside a process that has the blind `ps`.
+      "$SELF" status >/dev/null 2>&1
+      unset CADENCE_SIM_PS_CMD
+      after_q=$(queue_names | wc -l | tr -d ' ')
+      if (( old_dead == before_q )) && (( after_q == before_q )); then
+        print -r -- "PASS cannot-tell-keeps-queue: the old reading called all $old_dead waiters dead; a blind \`ps\` pruned none of $before_q"
+      else
+        print -r -- "FAIL cannot-tell-keeps-queue: old reading called $old_dead of $before_q dead, queue went $before_q -> $after_q"; (( fails++ ))
+      fi
+    else
+      print -r -- "FAIL cannot-tell-keeps-queue: fixture did not set up (queue has $before_q)"; (( fails++ ))
+    fi
+    "$SELF" release holder3 >/dev/null
 
     cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"
     print -r -- "selftest: $fails failure(s)"
