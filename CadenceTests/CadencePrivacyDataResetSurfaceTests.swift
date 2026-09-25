@@ -812,6 +812,15 @@ struct CadencePrivacyDataResetSurfaceTests {
             body.contains("retainedAPIKeyReason: retainedAPIKeyReason"),
             "the reset drops the retained key on the floor before the outcome (T-1101)"
         )
+        // The backup half has the same shape and had none of the same protection. The outcome's
+        // `retainedBackupReason` is `String? = nil`, so deleting this one argument at the call
+        // site still compiles and the reset silently stops reporting a backups directory it
+        // failed to remove — the T-1101 defect again, one field over. `removedBackupCount` has no
+        // default and so cannot be dropped the same way; this is the only half that can.
+        #expect(
+            body.contains("retainedBackupReason: backups.retainedBackupReason"),
+            "the reset drops the retained backup reason before the outcome (T-1313)"
+        )
         #expect(
             !live.contains("try? aiSettingsManager"),
             "the reset swallows the Keychain deletion again (T-1101)"

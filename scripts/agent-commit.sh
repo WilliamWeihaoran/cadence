@@ -476,6 +476,15 @@ function closure_visible(s,   bq) {
 function first_line_closed(s) {
     return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
 }
+# The PARTIAL status, spelled identically in `scripts/ledger-view.sh` and in
+# `scripts/ledger-lag-check.sh` (T-1359). T-1335 converged the three scripts on the closure TOKEN
+# and left the STATUS MODEL unconverged: `ledger-view.sh` has had `**PARTIAL` as its own status
+# since it shipped, these two had closed-or-open, and a deliberately part-done ticket therefore
+# read plain OPEN here and in CI. Anchored right after the id, so a first line that merely QUOTES
+# the token cannot match and no `closure_visible` pass is needed.
+function first_line_partial(s) {
+    return s ~ /^- \[T-[0-9]+\] \*\*PARTIAL([^A-Za-z]|$)/
+}
 '
 
 # There is deliberately no narrower `is_ledger_path` beside `is_any_ledger_path` (T-1145). One
@@ -586,6 +595,20 @@ ledger_closed_ids() {  # $1 = file
     awk "$LEDGER_CLOSURE_READING"'
         /^- \[T-[0-9]+\]/ && first_line_closed($0) {
             id = $0; sub(/^- \[/, "", id); sub(/\].*$/, "", id); print id
+        }
+    ' "$1" 2>/dev/null | sort -u
+}
+
+# T-1359. `**PARTIAL` is NOT a closure and this returns it as the whole LINE rather than the id on
+# purpose: the caller's question is not "is this entry partial" -- which is rideable, and would let
+# any later commit naming that id pass for free -- but "did THIS commit write or rewrite that
+# line". Comparing the line verbatim against the same reading of the HEAD blob answers it, and a
+# rewrite counts as writing. `scripts/ledger-lag-check.sh` asks the identical question of a
+# commit's own diff in CI; `scripts/replay-partial-reading.sh` measured the candidates first.
+ledger_partial_first_lines() {  # $1 = file -> "<id>\t<first line>" for each PARTIAL entry
+    awk "$LEDGER_CLOSURE_READING"'
+        /^- \[T-[0-9]+\]/ && first_line_partial($0) && !first_line_closed($0) {
+            id = $0; sub(/^- \[/, "", id); sub(/\].*$/, "", id); print id "\t" $0
         }
     ' "$1" 2>/dev/null | sort -u
 }
@@ -1888,8 +1911,9 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     unfiled_ids=()
     local filed_ids="$scratch/filed.ids" ledger_text="$scratch/ledger.text" link_ids="$scratch/link.ids"
     local notopen_ids="$scratch/notopen.ids"
-    local lpath lblob lcontent
-    : > "$filed_ids"; : > "$ledger_text"; : > "$link_ids"; : > "$notopen_ids"
+    local partialhere_ids="$scratch/partialhere.ids"      # T-1359
+    local lpath lblob lcontent lphead
+    : > "$filed_ids"; : > "$ledger_text"; : > "$link_ids"; : > "$notopen_ids"; : > "$partialhere_ids"
     for lpath in ${(f)"$(git ls-tree -r --name-only "$headsha" 2>/dev/null | grep -E '(^|/)TODO(_DONE)?\.md$')"} "${names[@]}"; do
         [[ -n "$lpath" ]] || continue
         is_any_ledger_path "$lpath" || continue
@@ -1907,6 +1931,19 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         ledger_ids "$lcontent" >> "$filed_ids"
         ledger_link_ids "$lcontent" >> "$link_ids"
         ledger_not_open_ids "$lcontent" "${lpath:t}" >> "$notopen_ids"   # T-1300
+        # T-1359: a `**PARTIAL` first line this commit STAGED that HEAD does not already carry
+        # verbatim. Only asked of a ledger this commit actually rewrites; an untouched ledger can
+        # contribute nothing here by construction.
+        if [[ -n "${staged_content[$lpath]+x}" ]]; then
+            lphead="$scratch/$(ledger_key "$lpath").partialhead"
+            if git cat-file -e "$headsha:$lpath" 2>/dev/null; then
+                git cat-file -p "$headsha:$lpath" > "$lphead"
+            else
+                : > "$lphead"
+            fi
+            comm -23 <(ledger_partial_first_lines "$lcontent") <(ledger_partial_first_lines "$lphead") \
+                | cut -f1 >> "$partialhere_ids"
+        fi
         cat -- "$lcontent" >> "$ledger_text"
     done
     # Only ask the question at all where there is a ledger to ask it of. A checkout with neither
@@ -2184,7 +2221,13 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         for lagid in ${(f)"$(subject_ids "$message")"}; do
             [[ -n "$lagid" ]] || continue
             grep -qx -- "$lagid" "$filed_ids" || continue       # unfiled: out of reach, as in CI
-            if grep -qx -- "$lagid" "$notopen_ids"; then closed_any=1; else lagging_ids+=("$lagid"); fi
+            # T-1359: a `**PARTIAL` line THIS commit wrote is a recorded closure, exactly as
+            # `scripts/ledger-lag-check.sh` reads it in CI. A PARTIAL somebody else wrote is not.
+            if grep -qx -- "$lagid" "$notopen_ids" || grep -qx -- "$lagid" "$partialhere_ids"; then
+                closed_any=1
+            else
+                lagging_ids+=("$lagid")
+            fi
         done
         if (( ${#lagging_ids} )) && (( closed_any == 0 )); then
             say "note: LEDGER-CLOSURE-LAGGED (a warning, not a refusal) -- this commit lands code, its subject names ${(j:, :)lagging_ids}, and every one of them is still OPEN in the ledger as this commit leaves it."
@@ -3708,6 +3751,20 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" l3 -m "$LAGDOCS" docs/TODO.md=docs-only.md 2>&1 ); rc=$?
     check "a docs-only commit naming an open id says nothing" \
         $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LAGGED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # T-1359. `**PARTIAL` is a recorded closure for the commit that WROTE the line and for no
+    # other, and this pair is what tells the adopted reading from the rideable one -- "PARTIAL is
+    # not open" would pass BOTH of these, and the second is a commit that recorded nothing.
+    ( cd "$ws" && git show HEAD:docs/TODO.md > with-partial.md
+      print -r -- '- [T-3004] **PARTIAL 2026-09-25 (agent `fixture`) -- three of the six are built; the other three are refused with a measurement each.**' >> with-partial.md
+      print -r -- "code landing under a part-done ticket" >> mine.txt ) >/dev/null 2>&1
+    local LAGPART=$'T-3004: three of the six, and the other three refused with a measurement each\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    out=$( cd "$ws" && zsh "$here" l4 -m "$LAGPART" mine.txt docs/TODO.md=with-partial.md 2>&1 ); rc=$?
+    check "a **PARTIAL first line the commit itself writes says nothing" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LAGGED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    ( cd "$ws" && print -r -- "more code under the same part-done ticket" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" l5 -m "$LAGPART" mine.txt 2>&1 ); rc=$?
+    check "but a **PARTIAL somebody ELSE wrote does not excuse a later commit" \
+        $( [[ $rc == 0 && "$out" == *LEDGER-CLOSURE-LAGGED* && "$out" == *T-3004* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
     say " mode 4m (LEDGER-HUNK-UNCLAIMED) -- T-1304: a message about one set of tickets over a"

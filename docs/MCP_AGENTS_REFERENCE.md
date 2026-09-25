@@ -100,3 +100,33 @@ The claim stays there; the argument is here, and it is also written out on
 The framing T-1120 expected — no confirmation, no undo, `mcp-audit.log` for a record — is true and
 is *not* the binding constraint: `CadencePendingChangePersistence.commitCascade` is an undo for a
 delete, and the cascades already return `false` for the caller to roll back.
+
+## Why Three Kinds Have No Constructor (T-1122)
+
+Displaced from `CadenceMCPServer/AGENTS.md` when T-1122's second pass pushed it past its 200-line
+cap again. A tag, a list note and a task bundle are each **refused with a measurement**, not left
+undecided, and the three refusals share one shape: the app's only helper for that kind lives
+somewhere this target cannot compile, or has no single owner at all.
+
+- **Task bundle.** `CadenceTaskMutationSupport` calls `NotificationManager`, which is
+  `import UserNotifications` — the same boundary that already makes `createTask` insert its
+  subtasks by hand, and the same one deletion is refused on.
+- **List note.** `CadenceNoteFolderSupport` owns both the folder-path rule and the seeded
+  `# Title`, and also declares four SwiftUI `View`s reading `Theme`. Compiling it here would drag
+  the theme layer into a command-line tool to reach two string rules.
+- **Tag.** There is no shared owner for the create rule to call. `create_task(tagNames:)` already
+  mints tags by a *different* rule than either settings editor uses, so adding `create_tag` would
+  have been a third spelling. `TagSupport.creationDecision(for:in:)` now owns the editors' rule,
+  which removes half of that objection; the other half stands — the archived-match branch's answer
+  is "offer restore", which a headless caller cannot take.
+
+Do not re-decide any of these from a summary. The measurements are in T-1122's ledger entry.
+
+## Why The Tracking Helpers Cost Four Files (T-1122)
+
+`create_goal` and `create_habit` added four files to the Sources phase rather than one, and the
+closure is the reason. `CadenceTrackingMutationSupport` owns `saveGoal`/`saveHabit` — both already
+take a `commit:`, so the deferred-commit shape `appendCoreNote` uses works unchanged — and it
+reaches `GoalAssignmentRules`, `CadenceOrderAllocation` and `CadencePluralization`. All four are
+`import Foundation`/`SwiftData` only, which is exactly what the three unbuilt kinds' helpers are
+not: that import list, not the file count, is what makes a helper eligible here.

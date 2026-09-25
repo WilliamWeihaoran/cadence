@@ -871,6 +871,72 @@ struct CadenceGuardScriptSelftestTests {
             #expect(body.contains(reading), "scripts/ledger-lag-check.sh no longer makes the reading \(reading)")
         }
         #expect(selftest.contains("T-1303"), "scripts/ledger-lag-check.sh's selftest no longer induces T-1303")
+
+        // T-1359's second pass is the same shape: a reading that WITHDRAWS a candidate finding, so
+        // it names no refusal of its own and would otherwise be deletable without a red run. A
+        // `**PARTIAL` first line excuses the commit that WROTE it and no other, which is the one
+        // clause that keeps the widening from being rideable — write `**PARTIAL` on an entry once
+        // and, under the reading this replaced, every later commit naming that id passes for free.
+        for reading in ["T-1359", "partial_written_here", "first_line_partial"] {
+            #expect(body.contains(reading), "scripts/ledger-lag-check.sh no longer makes the reading \(reading)")
+        }
+        #expect(
+            selftest.contains("T-1359"),
+            "scripts/ledger-lag-check.sh's selftest no longer induces T-1359's PARTIAL reading"
+        )
+    }
+
+    /// T-1359, and it is [[T-1335]]'s convergence finished. That ticket made the three scripts
+    /// spell the closure TOKEN identically and left the STATUS MODEL unconverged:
+    /// `scripts/ledger-view.sh` has modelled `**PARTIAL` as its own status since it shipped, while
+    /// `agent-commit.sh` and `scripts/ledger-lag-check.sh` had two states and PARTIAL fell on the
+    /// open side. The gap arrived live — `7b5897d` landed two MCP constructors under [[T-1122]],
+    /// whose entry opens `**PARTIAL 2026-09-25 (agent ...)`, and the lag check went red and STAYED
+    /// red, because a finding never expires. One rule in three files, pinned here, is the shape
+    /// this family keeps having to restore; a fourth reading is the defect.
+    ///
+    /// The reading is anchored right after the id on purpose, which is why it needs no
+    /// `closure_visible` pass: a first line that merely QUOTES the token cannot match it, so
+    /// [[T-1335]]'s defect cannot recur through this door. `scripts/replay-partial-reading.sh` is
+    /// pinned beside it for the same reason `scripts/replay-closure-reading.sh` is — the number
+    /// that justified the widening is left in the tree to be re-run rather than quoted.
+    @Test func theThreeLedgerScriptsStillReadPartialWithOneRule() throws {
+        let expected = #"""
+            function first_line_partial(s) {
+                return s ~ /^- \[T-[0-9]+\] \*\*PARTIAL([^A-Za-z]|$)/
+            }
+            """#
+        for script in ["scripts/agent-commit.sh", "scripts/ledger-lag-check.sh", "scripts/ledger-view.sh"] {
+            let text = try String(
+                contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent(script),
+                encoding: .utf8
+            )
+            #expect(
+                text.contains(expected),
+                """
+                \(script) no longer spells the T-1359 PARTIAL status the way the other two do, \
+                so one rule has three implementations again
+                """
+            )
+        }
+
+        let replay = CadenceSelftestRun.repositoryRoot()
+            .appendingPathComponent("scripts/replay-partial-reading.sh")
+        #expect(
+            FileManager.default.isExecutableFile(atPath: replay.path),
+            "scripts/replay-partial-reading.sh is missing or not executable, so T-1359's number cannot be re-derived"
+        )
+        let replayText = try String(contentsOf: replay, encoding: .utf8)
+        for reading in ["partialdated", "partialauthored", "partialhere", "ownledger"] {
+            #expect(
+                replayText.contains(reading),
+                "scripts/replay-partial-reading.sh no longer measures the \(reading) candidate"
+            )
+        }
+        #expect(
+            replayText.contains("REPLAY-PARTIAL-VACUOUS"),
+            "scripts/replay-partial-reading.sh lost its floor, so a replay that read nothing reports a clean sweep"
+        )
     }
 
     /// T-1340, first half. `scripts/prune-shared-derived-data.sh selftest` is the one guard in

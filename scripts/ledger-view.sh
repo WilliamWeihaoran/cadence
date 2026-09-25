@@ -120,6 +120,14 @@ function closure_visible(s,   bq) {
 function first_line_closed(s) {
     return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
 }
+# The PARTIAL status, and it is spelled identically in `agent-commit.sh` and in
+# `scripts/ledger-lag-check.sh` for the same reason `first_line_closed` is (T-1359). This file had
+# it and the other two did not, which is how a deliberately part-done ticket read OPEN to the lag
+# check and turned a correct commit red and kept it red. Anchored right after the id, so a first
+# line that merely QUOTES the token cannot match and no `closure_visible` pass is needed here.
+function first_line_partial(s) {
+    return s ~ /^- \[T-[0-9]+\] \*\*PARTIAL([^A-Za-z]|$)/
+}
 function trim(s) { sub(/^[ \t\n]+/, "", s); sub(/[ \t\n]+$/, "", s); return s }
 function plain(s) { gsub(/\*\*/, "", s); gsub(/\[\[/, "", s); gsub(/\]\]/, "", s); return trim(s) }
 function trunc(s, n) { return (length(s) <= n) ? s : (substr(s, 1, n - 1) "\342\200\246") }
@@ -188,7 +196,7 @@ function status_of(i,   first, sect) {
     if (sect ~ /^Done/) return "DONE"
     if (sect ~ /^Cancelled/) return "CANCELLED"
     if (first_line_closed(first)) return "CLOSED"
-    if (first ~ /^- \[T-[0-9]+\] \*\*PARTIAL([^A-Za-z]|$)/) return "PARTIAL"
+    if (first_line_partial(first)) return "PARTIAL"
     if (park_of(i) != "") return "PARKED"
     return "OPEN"
 }

@@ -56,13 +56,11 @@ compiles in a view is not evidence it compiles here.
   no confirmation step: `createContext`, `updateContext`, `createContainer`, `updateContainer`,
   `updateContainerColumns`, `createTask`, `updateTask`, `scheduleTask`, `completeTask`,
   `reopenTask`, `cancelTask`, `bulkCancelTasks`, `appendCoreNote`, `createSavedLink`, `createGoal`
-  and `createHabit` — **sixteen arms** — write and save. *No undo stack* is no longer true of any of them (T-1121): every arm goes through
-  `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts what the call added and restores what it
-  changed in place before the caller is told. **The one residue is gone too** (T-1181): the core-note
-  accessors take a `commit:`, `append_core_note` defers their insert into its own `inserted:` list,
-  and `CadenceWriteError.coreNoteCreatedButNotAppended` was deleted with the residue it named.
-  `mcp-audit.log` beside the store is
-  the only record, and `CadenceMCPRefreshCoordinator` (macOS Services) watches a
+  and `createHabit` — **sixteen arms** — write and save. *No undo stack* is no longer true of any
+  of them (T-1121): every arm goes through `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts
+  what the call added and restores what it changed in place before the caller is told. The one
+  residue went with it (T-1181): the core-note accessors take a `commit:` and `append_core_note`
+  defers their insert into its own `inserted:` list. `mcp-audit.log` beside the store is
   `.cadence-mcp-refresh` marker file so the app reloads after an external write. Treat a write-path
   change as a data-safety change.
 - Opening the read-write container also runs `NoteMigrationService`, `TagSupport` seeding/sync and
@@ -148,9 +146,7 @@ as `timed out waiting for response 100` rather than naming a build.
   `CadenceReadService.fetchedRowCount` is the instrument — it counts rows materialised through a
   fetch descriptor, and `CadenceReadServiceTests` asserts bounded numbers against it. Full-text
   scoring, the explicit `statuses` filter and the **sort** are not pushable, so `offset`/`limit`
-  still slice in memory; that is **settled, not deferred** (T-415, closed as X-09). The three real
-  reasons — and the false `UUID` one this file used to give — are on `CadencePage.paging` and in
-  the reference.
+  still slice in memory; that is **settled, not deferred** (T-415, X-09) — see the reference.
 - **Read-write startup prepares the store exactly once** (T-309). The four-step sequence — note
   migration, tag seeding, tag sync, integrity repair — lives in `CadenceMCPStorePreparation.prepare`
   and is run by `makeReadWriteContainer()`. `main.swift` then passes `performsMigrations: false` and
@@ -168,14 +164,10 @@ as `timed out waiting for response 100` rather than naming a build.
   re-filing alone still renumbers nothing. `linkedCalendarID` stays refused, on T-390's opacity and
   the absence of any picker here; the reasoning is on `CadenceUpdateContainerOptions`.
   **`create_link`, `create_goal` and `create_habit` are the constructors outside the
-  context/list/task triangle; nothing creates a tag, a list note or a task bundle, and all three
-  of those are now *refused with a measurement* rather than undecided ([[T-1122]]).** Each refusal
-  is the same shape: the app's one helper for that kind lives in a file this target cannot compile
-  — `CadenceTaskMutationSupport` calls `NotificationManager` (`import UserNotifications`), and
-  `CadenceNoteFolderSupport`, which owns both the folder-path rule and the seeded `# Title`, also
-  declares four SwiftUI `View`s reading `Theme` — and a tag has no shared owner for its create rule
-  at all while `create_task(tagNames:)` already mints tags by a *different* one. The measurements
-  are in T-1122's ledger entry; do not re-decide any of them from the summary here.
+  context/list/task triangle; nothing creates a tag, a list note or a task bundle, and those three
+  are *refused with a measurement* rather than undecided ([[T-1122]]).** All three refusals share
+  one shape — no eligible owner this target can compile — and are in the reference, "Why three
+  kinds have no constructor". Do not re-decide any of them from a summary.
   **Nothing deletes anything, and that is settled, not deferred.** Two measured reasons, either
   sufficient — the cascade is unreachable from this target, and `deleteContext` walks *local*
   relationship arrays so it could not honestly report what it removed — written out on
@@ -189,14 +181,9 @@ as `timed out waiting for response 100` rather than naming a build.
   `CadencePendingChangePersistence`. The fourth came with `create_link`, and not for the
   persistence half it is named after — `saveNotifyAndAudit` owns the commit here — but for
   `CadenceSavedLinkURL.normalized`, T-509's case-insensitive scheme rule, which a third hand-rolled
-  copy would re-break. The last four came together with `create_goal`/`create_habit`, and the
-  closure is the reason there are four rather than one: `CadenceTrackingMutationSupport` owns
-  `saveGoal`/`saveHabit` — both of which already take a `commit:`, so the deferred-commit shape
-  `appendCoreNote` uses works unchanged — and it reaches `GoalAssignmentRules`,
-  `CadenceOrderAllocation` and `CadencePluralization`. All four are `import Foundation`/`SwiftData`
-  only, which is exactly what the three unbuilt kinds' helpers are not. Full reasoning in T-1095's
-  and T-1122's ledger entries. Adding a file here is
-  still not casual: it is another path by which an app-side edit breaks a target no scheme builds.
+  copy would re-break. The last four came with `create_goal`/`create_habit`; why that is four files
+  rather than one is in the reference, "Why the tracking helpers cost four files". Full reasoning
+  in T-1095's and T-1122's ledger entries. Adding a file here is
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
   renders as `isError`, plus an undo.** The first half it always had; the second it did not.
   `CadenceWriteService` holds one long-lived `ModelContext`, so a refused `save()` left the

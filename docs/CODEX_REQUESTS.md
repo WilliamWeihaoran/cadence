@@ -33,6 +33,13 @@ implemented tooling. Find sections with `rg -n '^## R(57|58|59|60|61|62|63) ' do
 R56 is separate naming work; its statement that the icon geometry is settled may supersede parts
 of R55. Confirm that scope before generating more icons. Do not silently close either request.
 
+**Research update 2026-09-25:** inline responses now cover every previously unanswered non-standing
+request. [Handoff index, priorities and explicitly outstanding evidence](audits/2026-09-25/README.md).
+R32-R35/R37-R38 were reconciled too, although they fall below the historical fold boundary and are
+not advertised by the inbox as new arrivals. Answered does not mean runtime-certified: the index
+names the remaining device checks, semantic-census limits and missing concept-A artwork. Fold only
+after acting; no fold marker was changed by this research batch.
+
 ---
 
 ## R1 — Diagnose T-739: literal arithmetic disagrees with variable arithmetic in `CadenceTests`
@@ -2581,6 +2588,22 @@ projects with nothing seeding a starter workspace.
 The last one is the one I care most about, because two separate readings now say the app opens
 completely empty and I have never seen it run.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: source/count reconciliation complete; classifier and runtime behavior not executed
+```
+
+**MEASURED:** 291 distinct manifest entries, not 240; zero missing bare test functions. The
+three-condition classifier is still the authority, not this lexical name check. Recovery export
+does create its own ModelContext, but does not need the failed ambient one. The blanket settings-sync
+description was corrected (T-1098); some look preferences now sync. Startup intentionally seeds no
+workspace, and the empty-store test now calls production maintenance (T-1108 fixed the old replay gap).
+[Evidence, commands and limits](audits/2026-09-25/queue-reconciliation.md#r32-four-claims).
+No new fix ticket from these stale premises; no claim that every description sentence was runtime-tested.
+
 ## R33 — The commit-message-to-ledger correspondence nobody checks
 
 Five tickets — T-803, T-804, T-806, T-813, T-817 — were named in commit subjects and had no ledger
@@ -2594,6 +2617,23 @@ unrelated work.
 
 Then say whether this is worth a guard or whether five was the whole population and it was a
 one-week artefact of a blocked permission.
+
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: complete lexical history inventory; bounded semantic collision review
+```
+
+**Premise disproved, MEASURED:** unfiled-ID and duplicate-ID guards already exist, with ledger-lag CI.
+Across all 1,191 ancestor commits, 930 IDs occur; 350 lack a TODO entry and 163 lack either ledger
+entry. These include historical deficits and references, not 163 newly allocated bugs. The full
+sets, 17 entries without commit mentions, and repeated-ID subjects are in the machine inventory.
+T-1043 is the real known unrelated allocation; both entries are now closed and T-1303 handles the
+reader. T-974/T-781 duplicates preserve historical text. Do not add a competing guard or mass-backfill.
+[Report and full-set links](audits/2026-09-25/queue-reconciliation.md#r33-ledger-correspondence).
+An exhaustive semantic-negative verdict across every repeated ID is not claimed.
 
 ## R34 — Is the empty first run a decision or an accident?
 
@@ -2609,6 +2649,22 @@ Then: what is the minimum a user must do, in clicks, before each main surface st
 Count it per surface. If Kanban needs a context, then an area, then a project, then a column config
 before it shows anything, that is a number worth knowing before the app is submitted.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: source/history and creation-route review; literal click minima not measured
+```
+
+**MEASURED:** fixture seeding requires CADENCE_UI_TEST_MODE=1; ordinary launch does not opt in.
+It is an environment gate, not a Release-build prohibition. Empty production startup is intentional.
+**The first-list detour is already fixed by T-1113:** the empty sidebar has Add first list, without
+requiring a Context. Global Kanban can use Inbox tasks; the proposed hierarchy chain is unnecessary.
+[Per-surface routes and explicitly REASONED activation counts](audits/2026-09-25/queue-reconciliation.md#r34-empty-first-run).
+Do not market those counts as observed minima; a full-screen clean-fixture walkthrough is the remaining
+verification, not a reason to seed fake workspace data.
+
 ## R35 — The 12 CORRECTNESS tickets, reachability-ranked
 
 R21 did this for the 28 PRODUCT tickets and found 7 with no population and 6 iOS-only. Do the same
@@ -2623,6 +2679,22 @@ T-623 is the one to look at hardest — a local-replica-only hard delete leaving
 the only finding in this whole run that could corrupt a user's data rather than merely display it
 wrongly, and an earlier investigation concluded the proposed gate was both unimplementable and aimed
 at the wrong half of the race.
+
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: all twelve dispositions reconciled; source/ledger evidence, no sync experiment
+```
+
+[All twelve: write reachability, visible consequence, exact evidence and disposition](audits/2026-09-25/queue-reconciliation.md#r35-twelve-correctness-tickets).
+**REASONED:** the original save/report mechanisms are repaired; T-623 remains a conditional sync
+race parked by decision, not proof of reproduced data loss. T-624 still needs device identifier
+evidence (T-1117); T-744 deliberately keeps subject-less logs. **MEASURED corrections to the old
+report:** T-745 routing is now fixed, and T-661 now has a real importer that preserves raw calendar
+IDs with a preview warning (T-1084). Do not reuse the old "no importer" safety argument. No new
+destructive fix is proposed; preserve the evidence gate and do not collect transient sync orphans.
 
 ---
 
@@ -2724,6 +2796,21 @@ tracking areas, `wantsLayer`, `isOpaque`, `acceptsFirstResponder`, `acceptsFirst
 rest the code paints the accent at alpha 0, deliberately invisible, while AppKit drew a focus ring
 over the top of that care.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: source-property census complete; native defaults not runtime-inspected
+```
+
+**Premise correction:** T-1037 disproved the divider's inherited-focus-ring explanation. Do not
+reopen it. **MEASURED:** six custom native view classes and six representables remain, down from
+seven of each after right-click consolidation. The old hit-test defect now respects super.hitTest.
+[Eight-property matrix, construction-path caveats and wrapper map](audits/2026-09-25/queue-reconciliation.md#r37-appkit-decisions).
+Inherited means unconfigured here, not false, harmless, or demonstrably drawn. No blanket AppKit
+default override is recommended.
+
 ## R38 — Every spacing pair that expresses a grouping
 
 The sidebar header was 3pt above and 6pt below. Both numbers are individually plausible; the defect
@@ -2737,6 +2824,23 @@ labels is **not smaller** than the gap away from it.
 Note the trap and do not fall into it: the gap a reader sees above the sidebar header is
 `contextSectionBottomSpacing + contextHeaderTopPadding`, not the top padding alone. Composed
 spacing is why this was invisible by inspection — compare what renders, not what is declared.
+
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: refreshed candidate census and known-pair review; complete visual census not certified
+```
+
+**MEASURED:** populated sidebar gaps compose to 26pt above / 9pt below; empty-context below is 3pt.
+The old Create Goal 20/20 label grouping is repaired with the shared label-to-block token. The
+generated inventory now includes 1,452 raw candidate lines with source context across Cadence.
+[Evidence, inventory and next verification](audits/2026-09-25/queue-reconciliation.md#r38-grouping-relationships).
+**No new reversed pair confirmed.** This source-only pass does not pretend that raw padding hits
+identify every semantic label owner or painted distance. Conditional surface states and full-screen
+screenshots are still needed for a complete visual census; keep SidebarContextHeaderRhythm as the
+correct composition pattern.
 
 ## R39 — The markdown editor's layout manager, and what reflows it
 
@@ -3650,6 +3754,20 @@ Note the app currently ships as **Cadence**. If the owner keeps that name the le
 is an open bowl and harder than `D` — worth one concept showing whether it can be made to work,
 since "keep the name" is the cheapest option available and nobody has tested whether it is viable.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: geometry exploration superseded by R56; final render QA blocked on missing chosen asset
+```
+
+**MEASURED:** R56 records the owner's chosen folded-D concept A, so I did not reopen the D/C
+concept exercise. Its referenced directory contains only README.md, not the selected artwork.
+The requested exact-size/light-dark render checks cannot be performed on that missing asset, and
+generating a similar D would not verify the approved geometry. [Asset disposition and naming report](audits/2026-09-25/naming-screen.md).
+Restore/supply concept A for final QA. No image generation or visual clearance is claimed.
+
 ## R56 — Screen these eight names, and say which survive a real search rather than an exact-match one
 
 The owner has chosen **concept A, the folded D** (see `design/icon-concepts-2026-09-20-dwell-d/`),
@@ -3695,6 +3813,24 @@ Two extra questions worth more than the list:
   That is the visual-similarity screen round 4 explicitly did not do, and concept A is now committed
   to exactly that composition.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: all eight names screened against public product/listing pages on 2026-09-25
+```
+
+**MEASURED-WEB / REASONED verdict:** none survives this batch. Dayfold, Daymark, Dayleaf, Daylet,
+Denote, Diem and Docket have direct or close planner/note/task conflicts; Dovetail is an established
+adjacent research-software brand, not a same-category planner. The latter distinction is explicit in
+the [URL-backed table](audits/2026-09-25/naming-screen.md#r56-all-eight-have-conflicts).
+Only four candidates have the Day prefix, not six; Notchday has a suffix. The sample shows crowding,
+not a measured market-wide saturation rate. With no survivor and no selected icon asset available,
+no icon-collision clearance is claimed. Dayflet/Notchday keep only their older provisional status.
+Disclaimer unchanged: not exhaustive, not phonetic, no trademarks, domains or logo imagery, no claim
+of legal clearance.
+
 ## R57 — This app has 1,159 hardcoded font sizes and zero Dynamic Type
 
 Measured at `e52ae96` over `Cadence/`:
@@ -3730,6 +3866,25 @@ This is a productivity app its owner uses daily on a phone, an iPad and a Mac. A
 Also worth saying if true: whether the 253 labels are load-bearing for VoiceOver *navigation* or
 only for naming, and what else VoiceOver needs that a label sweep cannot see.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: source inventory, Apple requirements research and scoped migration design; no rendered audit
+```
+
+**MEASURED:** 1,160 numeric .system(size:) occurrences, zero ScaledMetric/dynamicTypeSize, 145
+.accessibilityLabel modifiers under the stated raw patterns. Native implicit text means "no text
+responds anywhere" is too broad. **DOCUMENTED:** Apple's Larger Text support claim has concrete
+evaluation criteria; no blanket App Review rejection rule for every fixed font was found.
+**REASONED:** adopt semantic roles plus environment-scaled custom baselines, one complete workflow
+at a time. Composer keyboard budgets, fixed calendar rows/blocks and native editor fonts are the
+first risks. Radius tests do not automatically fail, and unchanged metric tests may miss clipping.
+[Exact hotspots, tests, Apple sources, three-device plan and patch order](audits/2026-09-25/accessibility-sdk.md#r57-text-scaling).
+VoiceOver naming is not navigation certification. Partial support is worthwhile when its whole
+workflow is usable, not when isolated labels grow inside fixed frames.
+
 ## R58 — The MCP boundary can write to the owner's real store. What stops it?
 
 `Cadence/Services/MCPReadOnly/` — the directory name is now a lie — exposes nine write tools:
@@ -3754,6 +3909,24 @@ The MCP server runs as a separate target and speaks stdio to whatever client lau
 
 This is the one part of the product with no adversary model written down anywhere.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4; close-out MCP delta inspected at 7b5897d
+Dirty files: 23 at initial capture; working edits excluded
+Status: source threat model and Apple sandbox/distribution research, no exploit or signing test
+```
+
+**MEASURED:** 14 write tools at the snapshot, **16 after 7b5897d added create_goal/create_habit**,
+not nine. Default read-only is enforced at storage and dispatch. Once the trusted launcher enables
+writes, authority is store-wide: no server-side per-client scope or human confirmation. Private
+reads plus writes permit a prompt-injected client to submit valid but unintended mutations; no
+claim of a network-listener exploit. Successful bad writes are not undone by audit summaries, and
+audit logging itself can fail after a successful commit. [Ranked damage, exact paths, recovery limits,
+sandbox caveats and suggested fix order](audits/2026-09-25/mcp-widget-startup.md#r58-mcp-trust-boundary).
+Keep read-only default; prioritize host-enforced approval/scoping and bulk previews before new auth
+machinery. The actual signed distribution needs verification, not assumptions from app entitlements.
+
 ## R59 — WidgetKit: what does this app's widget do when the rules bite?
 
 `CadenceWidgets` reads the app-group `UserDefaults` suite and the shared store. It has its own
@@ -3772,6 +3945,22 @@ anything in the current code would notice or report it. Then say which of those 
 *silent* — a blank or stale widget is the classic one, and the owner would read it as the app being
 broken rather than as a budget.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: provider/query and failure-path review; no device budget measurement
+```
+
+**MEASURED premise corrections:** Today is filtered but uncapped; visible limits are not fetch limits.
+Widgets open a local read-only store with CloudKit disabled for that process. Caught failures render
+unavailable; termination before completion cannot reach that path. **REASONED:** stale last-success
+content and late refreshes can be silent. Which budget binds first cannot be named from source,
+and Apple's refresh guidance is not a guaranteed delivery schedule or universal memory limit.
+[Four-provider table, exact paths, first measurement targets and cache/invalidation design](audits/2026-09-25/mcp-widget-startup.md#r59-widget-budgets).
+Measure cold on-device stages before changing queries; do not cap before global ranking/counts.
+
 ## R60 — What is documented to differ between the Xcode 26 and 27 SDKs?
 
 T-1318 lists nine assertions in this suite that pin **framework** behaviour rather than this
@@ -3789,6 +3978,23 @@ Two are already known to differ and are the calibration for your answer: `ModelC
 treatment of an already-materialised reference (T-1279, T-1296), and SwiftData's synchronous inverse
 back-population, which an agent measured while writing `create_link` and which changed the order in
 which an `order` value had to be allocated.
+
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; in-flight framework-test edits excluded
+Status: public release-note/contract research and test map; no second-toolchain runtime or full SDK diff
+```
+
+**DOCUMENTED:** 27 fixes a SwiftData background-save/@Query deadlock and changes nearby AppKit
+selection/focus behavior. Neither specifies the exact inverse, rollback-reference or glyph-layout
+assertions in T-1318. Rollback restoration is documented; its recorded reference-observation
+difference must not be generalized to "undefined restoration." No exact listed empirical value is
+certified changed or stable by the checked documents. [Seven-family test map, Apple sources and
+minimal comparison plan](audits/2026-09-25/accessibility-sdk.md#r60-what-apple-documents-about-26-to-27).
+Keep app invariants strict. Collect one-commit CI/local values with runtime OS as well as SDK/Xcode;
+a second Xcode on the same OS does not recreate a different SwiftData/AppKit runtime.
 
 ## R61 — Verify the recent fixes against their claims and realistic failure cases
 
@@ -3817,6 +4023,43 @@ file:line, a 30-second confirming command, MEASURED-SOURCE vs REASONED, and spec
 counterevidence. Start with `git show --stat <sha>`, then only the relevant diff and callers. No
 builds, tests, app launches, or production edits for this pass. Test suggestions are not test results.
 
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 0
+Scope: eight requested commits plus current callers and follow-up fixes
+Verification: source/test-body inspection only; no builds, tests, mutations or app launches
+```
+
+**R61 answered.** Full claim/source/test/unpinned-case matrix and confirming commands:
+[Recent fix claim audit](audits/2026-09-25/recent-fix-claims.md).
+
+- **MEASURED-SOURCE:** the requested production wiring remains present. Context deletion
+  preserves goal-only foreign work; the deliberate foreign-child-goal distinction is pinned;
+  recursive confirmation counts and deferred reminder cancellation have since landed. Do not
+  refile T-1327/T-1348/T-1349 from older source. Held-reference rollback is still T-1336.
+- **MEASURED-SOURCE, test-only follow-up:** the reset correctly forwards backup-cleanup warnings,
+  but its whole-reset wiring test pins only the equivalent key-warning field. The backup helper
+  and outcome wording are tested separately. R61-A proposes the missing narrow source guard,
+  extending T-1313 without changing the working production sequence.
+- **MEASURED-SOURCE + REASONED mutation candidate:** recovery's exact synthetic test covers
+  NSError's underlying key, not its independent reflection path. The relaxed real-store tests
+  can accept losing that path. R61-B proposes a synthetic optional-child Swift error fixture;
+  R61-C replaces the unsupported all-or-none message cardinality assumption. These extend
+  T-1319/T-1318, not an observed new recovery failure. Mutations were not run.
+- **MEASURED-SOURCE:** the tag sweep has meaningful index-use and deterministic-order witnesses;
+  push configuration, both defaults reasons, and encoded `store: false` remain wired. Distribution
+  archive contents, live device delivery, and provider retention are not proved by source. The AI
+  tests inspect factories/encoding, not captured transport from the two async methods; the report
+  suggests an optional local URLProtocol witness using the existing injected session.
+
+No new reachable destructive regression identified in this bounded review. Suggested order:
+backup-warning wiring guard, reflected-error fixture, framework oracle adjustment, optional AI
+transport witness. No production or TODO edits. The clean count describes the committed source
+capture; an unrelated untracked script appeared later and was excluded. Folding remains the
+coordinator's action, not this answer's.
+
 ## R62 — Bound the remaining startup maintenance cost (extends T-1329)
 
 Requested by the owner on 2026-09-22. **Status: queued; read-only design/research, not a benchmark.**
@@ -3839,6 +4082,23 @@ repair callees and their existing tests. Re-read T-1329 for measurements already
 Deliver pass table, ranked candidates, existing correct patterns, patch order, exact source/test
 locations, and a minimal future measurement plan. No builds, app launches, or benchmarks in this
 read-only request. Coordinate overlap with R59 instead of scanning the same widget helpers twice.
+
+ANSWER 2026-09-25:
+
+```text
+Tree read: c8735e4
+Dirty files: 23 at capture; clean committed snapshot used
+Status: all passes mapped; prior benchmark evidence reconciled; no new timing run
+```
+
+**MEASURED-SOURCE:** preflight, container opening and ordered maintenance run synchronously before
+the initializer returns, on a dedicated startup context. The report separates these from later UI
+composition and asynchronous CloudKit import. **REPO-RECORDED:** T-1329's large fixture was 15,967
+total rows, not 4,000 total; its in-memory timing is not cold launch time. T-1341 already removed
+the no-legacy full Note scan. [Pass/condition/table/save/failure matrix, ranked candidates and
+264/1k/5k/10k total-row fixture plan](audits/2026-09-25/mcp-widget-startup.md#r62-remaining-startup-cost).
+Measure disk/preflight and note bytes/fanout before another optimization; preserve live probes,
+migration ordering and original-store safety. T-1352 already owns late legacy-row migration latency.
 
 ## R63 — Rough scan: where can future repo work use fewer tokens?
 

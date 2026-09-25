@@ -141,7 +141,100 @@ run_check() {  # $1 = rev
         -v min_examined="$SELF_MIN_EXAMINED" \
         -v todo="$TODO_PATH" \
         -v f_todo="$tmp/todo.md" -v f_done="$tmp/done.md" -v f_log="$tmp/log.txt" \
-        "$AWK_PROG" "$tmp/todo.md" "$tmp/done.md" "$tmp/log.txt"
+        "$AWK_PROG" "$tmp/todo.md" "$tmp/done.md" "$tmp/log.txt" > "$tmp/pass1.txt"
+    rc=$?
+    [ "$rc" = 0 ] || return "$rc"          # LEDGER-LAG-VACUOUS already printed its own refusal
+
+    second_pass "$tmp/pass1.txt"
+}
+
+# THE SECOND PASS (T-1359, and it is [[T-1325]]'s shape taken one step).
+#
+# The first pass has two states for an entry -- closed, or open -- and `**PARTIAL` falls on the open
+# side. `scripts/ledger-view.sh` has modelled PARTIAL as its own status since it shipped, so the
+# three scripts agreed on the closure TOKEN (T-1335) and disagreed on the STATUS MODEL, and
+# [[T-1359]] is that gap arriving live: `7b5897d` landed two MCP constructors under [[T-1122]],
+# whose entry opens `**PARTIAL 2026-09-25 (agent `mcpcreate`) -- three of the six are built ...`,
+# and the run went red and STAYED red, because a finding never expires.
+#
+# THE READING ADOPTED, and it is narrow on purpose: an id whose entry reads `**PARTIAL` at <rev>
+# excuses the commit ONLY WHEN THAT COMMIT'S OWN DIFF WROTE OR REWROTE THAT FIRST LINE. Not
+# "PARTIAL is not open" -- that one is rideable: write `**PARTIAL` on an entry once and every later
+# commit naming that id passes for free, forever, which is precisely the hole T-1298 built this to
+# close. Here the PARTIAL line is evidence only for the commit that produced it, exactly as a
+# `**CLOSED` line is evidence for the commit whose sha it carries.
+#
+# MEASURED, because every widening in this family is (`scripts/replay-partial-reading.sh`,
+# committed alongside this and re-runnable in ~19 s). Over all 309 commits this check examines, in
+# both scopes -- judged against the ledger at HEAD, which is what CI does, and judged against the
+# ledger as each commit itself left it, which is the rule the script PRINTS:
+#
+#   reading           newly excused (HEAD / as landed)   ...that recorded NOTHING
+#   partial                 1 of 1    /   1 of 200              0  /  0
+#   partialdated            1 of 1    /   1 of 200              0  /  0
+#   partialauthored         1 of 1    /   1 of 200              0  /  0
+#   partialhere   <-- this  1 of 1    /   1 of 200              0  /  0
+#   ownledger               0 of 1    / 199 of 200              0  /  199
+#
+# The one commit every partial reading newly excuses is `7b5897d` itself, and it recorded its work.
+# The four partial readings are indistinguishable on the numbers, so the choice is made on what
+# each one costs when it is WRONG, and `partialhere` is the only one that cannot be ridden by a
+# commit that did not write the line. `ownledger` -- [[T-1325]]'s "closed at HEAD OR closed in the
+# commit's own ledger" -- is a different question with a different answer and does not touch this
+# one: it excuses 0 of the 1 flagged at HEAD, and in the as-landed scope it excuses 199 commits
+# that recorded nothing at the time. That is not an argument against it (its whole point is that a
+# later commit may repair the ledger, which is what the HEAD leg already does), but it is why it is
+# not adopted HERE, by an agent, as a side effect of a red run: see [[T-1325]].
+#
+# COST. The probe runs only for a CANDIDATE finding that names a PARTIAL id, which is zero commits
+# on a green run and one today -- `git show` of one commit's ledger diff, ~30 ms. Nothing is added
+# to the 0.3 s green path.
+partial_written_here() {  # $1 = sha, $2 = space-separated PARTIAL ids; 0 if this commit wrote one
+    _sha=$1; _ids=$2
+    [ -n "$_ids" ] || return 1
+    git show --format= --unified=0 "$_sha" -- "$TODO_PATH" "$DONE_PATH" 2>/dev/null \
+        | sed -n 's/^+//p' > "$tmp/added.txt" || return 1
+    for _pid in $_ids; do
+        grep -qE "^- \\[$_pid\\] \\*\\*PARTIAL([^A-Za-z]|\$)" "$tmp/added.txt" && return 0
+    done
+    return 1
+}
+
+second_pass() {  # $1 = the first pass's records
+    _findings=0
+    _excused=0
+    _body=""
+    _commits=0; _entries=0; _examined=0
+    _us=$(printf '\037')
+    while IFS="$_us" read -r _kind _a _b _c _d _e; do
+        case "$_kind" in
+            N) _commits=$_a; _entries=$_b; _examined=$_c ;;
+            F)
+                if partial_written_here "$_a" "$_e"; then
+                    _excused=$((_excused + 1))
+                    continue
+                fi
+                _findings=$((_findings + 1))
+                _body="$_body$(printf '  %s  %s %-24s %s' "$(echo "$_a" | cut -c1-7)" "$_b" "$_c" "$_d")
+"
+                ;;
+        esac
+    done < "$1"
+
+    [ -n "$_body" ] && printf '%s' "$_body"
+    printf 'ledger-lag: %d commits, %d ledger entries, %d examined, %d findings' \
+        "$_commits" "$_entries" "$_examined" "$_findings"
+    if [ "$_excused" -gt 0 ]; then
+        printf ', %d excused by a **PARTIAL line the commit wrote itself' "$_excused"
+    fi
+    printf '\n'
+
+    if [ "$_findings" -gt 0 ]; then
+        printf 'REFUSED (LEDGER-CLOSURE-LAGGED): %d commit(s) landed code under ticket ids and closed none of them in the ledger.\n  Every id each commit names is still open in %s. Either write the closure on the entry'"'"'s own\n  first line (`- [T-n] **CLOSED <date> (`<sha>`) -- ...`), or -- if the work is genuinely part-done --\n  a `- [T-n] **PARTIAL <date> (...) -- ...` first line IN THIS COMMIT, or, if the ticket is\n  legitimately still open, make the commit name an id it did close.\n' \
+            "$_findings" "$TODO_PATH" >&2
+        return 3
+    fi
+    return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -151,6 +244,10 @@ run_check() {  # $1 = rev
 # refusal path is the one that litters is a guard that gets noticed for the wrong reason.
 # ---------------------------------------------------------------------------
 AWK_PROG=$(cat <<'AWK'
+# The record separator between this pass and the shell that filters its candidates. A unit
+# separator, because a commit subject can hold anything a human can type but not a control
+# character, and the alternative -- re-parsing the formatted human line -- is a second reading.
+BEGIN { US = sprintf("%c", 31) }
 function entry_id(line,   id) {
     id = line; sub(/^- \[/, "", id); sub(/\].*$/, "", id); return id
 }
@@ -185,6 +282,13 @@ function closure_visible(s,   bq) {
 function first_line_closed(s) {
     return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
 }
+# The PARTIAL status, character for character `scripts/ledger-view.sh`'s `status_of` (T-1359). That
+# script has modelled `**PARTIAL` as its own status since it shipped; this one had two states, and
+# the gap between the two models is the whole of T-1359. Anchored right after the id, so a first
+# line that merely QUOTES the token cannot match and no `closure_visible` pass is needed here.
+function first_line_partial(s) {
+    return s ~ /^- \[T-[0-9]+\] \*\*PARTIAL([^A-Za-z]|$)/
+}
 function is_code(p) {
     if (p == "") return 0
     if (p ~ /^docs\//) return 0
@@ -194,21 +298,28 @@ function is_code(p) {
 }
 # One commit's verdict. `known` is the subject ids that have a formal entry; a commit is flagged
 # when it landed code, named at least one known id, and every one of them is still open.
-function verdict(   id, known, openn, list) {
+function verdict(   id, known, openn, list, plist) {
     if (c_sha == "") return
     commits++
     if (c_code == 0) return
-    known = 0; openn = 0; list = ""
+    known = 0; openn = 0; list = ""; plist = ""
     for (id in c_ids) {
         if (!(id in filed)) continue
         known++
-        if (id in openi) { openn++; list = list " " id }
+        if (id in openi) {
+            openn++; list = list " " id
+            if (id in partiali) plist = plist " " id
+        }
     }
     if (known == 0) return
     examined++
     if (known == openn) {
-        findings++
-        printf "  %s  %s %-24s %s\n", substr(c_sha, 1, 7), c_date, substr(list, 2), c_subj
+        # A CANDIDATE finding, not yet a finding. The second pass in the shell asks, for the ids in
+        # `plist`, whether THIS commit is the one that wrote that `**PARTIAL` line; see
+        # partial_written_here() and T-1359. `plist` is empty for every commit that names no
+        # PARTIAL id, which is 308 of the 309 this repository examines, and an empty `plist` skips
+        # the probe entirely -- so a green run costs nothing extra.
+        printf "F%c%s%c%s%c%s%c%s%c%s\n", US, c_sha, US, c_date, US, substr(list, 2), US, c_subj, US, substr(plist, 2)
     }
 }
 
@@ -246,9 +357,14 @@ part == 1 {
     if ($0 ~ /^- \[T-[0-9]+\]/) {
         id = entry_id($0); filed[id] = 1; entries++
         if (sec ~ /^## (Done|Cancelled)/ || first_line_closed($0)) {   # the entry's OWN first line
-            closedi[id] = 1; delete openi[id]; next
+            closedi[id] = 1; delete openi[id]; delete partiali[id]; next
         }
-        if (!(id in closedi)) openi[id] = 1
+        if (!(id in closedi)) {
+            openi[id] = 1
+            # PARTIAL is still OPEN here -- it does not excuse anything on its own. It only marks
+            # the id as worth the second pass, which is what actually decides (T-1359).
+            if (first_line_partial($0)) partiali[id] = 1
+        }
     }
     next
 }
@@ -275,18 +391,14 @@ part == 3 {
 
 END {
     verdict()
-    printf "ledger-lag: %d commits, %d ledger entries, %d examined, %d findings\n",
-        commits, entries, examined, findings
     if (commits < min_commits || entries < min_entries || examined < min_examined) {
+        printf "ledger-lag: %d commits, %d ledger entries, %d examined, 0 findings\n",
+            commits, entries, examined
         printf "REFUSED (LEDGER-LAG-VACUOUS): this run read too little to mean anything -- %d commits (floor %d), %d entries (floor %d), %d examined (floor %d).\n  A shallow checkout, a renamed ledger or a rotted path predicate all look like a pass here.\n",
             commits, min_commits, entries, min_entries, examined, min_examined > "/dev/stderr"
         exit 4
     }
-    if (findings > 0) {
-        printf "REFUSED (LEDGER-CLOSURE-LAGGED): %d commit(s) landed code under ticket ids and closed none of them in the ledger.\n  Every id each commit names is still open in %s. Either write the closure on the entry's own\n  first line (`- [T-n] **CLOSED <date> (`<sha>`) -- ...`), or, if the ticket is legitimately still\n  open, make the commit name an id it did close.\n",
-            findings, todo > "/dev/stderr"
-        exit 3
-    }
+    printf "N%c%d%c%d%c%d\n", US, commits, US, entries, US, examined
     exit 0
 }
 AWK
@@ -490,6 +602,77 @@ cmd_selftest() {
     land "docs: write both closures so the modes below start from a clean history" docs/DUP.md dup4
     out=$(run); rc=$?
     check "$rc" 0 "$out" "and the history goes quiet once both carry a written closure" 0 findings
+
+    # --- mode 2d: `**PARTIAL` is a closure only for the commit that WROTE it (T-1359) -------
+    # `scripts/ledger-view.sh` has always had a PARTIAL status and this check had two states, so a
+    # deliberately part-done entry read as plain open and its own commit went red and STAYED red.
+    # The repair is not "PARTIAL is not open" -- that one is rideable, and the first two checks
+    # below are the pair that tells the two readings apart. `scripts/replay-partial-reading.sh`
+    # measured every candidate over all 309 examined commits before this was written.
+    echo; echo " mode 2d (T-1359) -- a **PARTIAL line excuses only the commit that wrote it"
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-30] **CLOSED 2026-09-21 (`3333333`) — the closure, written rather than quoted.**' \
+        '- [T-31] **A finding that was closed after the fact.** **CLOSED 2026-09-21 (`2222222`) — the closure written mid-line, after the original finding.**' \
+        '- [T-32] **CLOSED 2026-09-21 (`4444444`) — and this one too.**' \
+        '- [T-40] **PARTIAL 2026-09-25 (agent `fixture`) — three of the six are built; the other three are refused with a measurement each.**' \
+        '- [T-41] **An open finding whose first line quotes `**PARTIAL 2026-09-25`** while writing about the ledger format.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "T-40: three of the six constructors, and the other three refused with a measurement each" \
+        Cadence/P1.swift "let p1 = 1"
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "a **PARTIAL first line THIS commit wrote is a recorded closure" \
+        0 findings excused
+
+    land "T-40: a later commit lands more code and writes nothing in the ledger" Cadence/P2.swift "let p2 = 2"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "a **PARTIAL somebody ELSE wrote does not excuse a later commit" \
+        LEDGER-CLOSURE-LAGGED T-40
+
+    land "T-41: code lands under an id whose entry only QUOTES the PARTIAL marker" Cadence/P3.swift "let p3 = 3"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "an entry that QUOTES **PARTIAL in backticks is not a PARTIAL status" \
+        LEDGER-CLOSURE-LAGGED T-41
+
+    # The scoping half: writing a PARTIAL line for an id the commit does NOT name buys nothing.
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-30] **CLOSED 2026-09-21 (`3333333`) — the closure, written rather than quoted.**' \
+        '- [T-31] **A finding that was closed after the fact.** **CLOSED 2026-09-21 (`2222222`) — the closure written mid-line, after the original finding.**' \
+        '- [T-32] **CLOSED 2026-09-21 (`4444444`) — and this one too.**' \
+        '- [T-40] **CLOSED 2026-09-25 (`5555555`) — the remaining three landed.**' \
+        '- [T-41] **CLOSED 2026-09-25 (`6666666`) — and this one too.**' \
+        '- [T-42] **PARTIAL 2026-09-25 (agent `fixture`) — an unrelated part-done ticket.**' \
+        '- [T-43] **An open finding, named by the commit below and untouched by it.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "T-43: code lands under an open id while the same commit writes an UNRELATED **PARTIAL" \
+        Cadence/P4.swift "let p4 = 4"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "a **PARTIAL written for an id the commit does not name excuses nothing" \
+        LEDGER-CLOSURE-LAGGED T-43
+
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-30] **CLOSED 2026-09-21 (`3333333`) — the closure, written rather than quoted.**' \
+        '- [T-31] **A finding that was closed after the fact.** **CLOSED 2026-09-21 (`2222222`) — the closure written mid-line, after the original finding.**' \
+        '- [T-32] **CLOSED 2026-09-21 (`4444444`) — and this one too.**' \
+        '- [T-40] **CLOSED 2026-09-25 (`5555555`) — the remaining three landed.**' \
+        '- [T-41] **CLOSED 2026-09-25 (`6666666`) — and this one too.**' \
+        '- [T-42] **PARTIAL 2026-09-25 (agent `fixture`) — an unrelated part-done ticket.**' \
+        '- [T-43] **CLOSED 2026-09-25 (`7777777`) — closed so the modes below start clean.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "docs: write the closures so the modes below start from a clean history" docs/DUP.md dup5
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "and the history goes quiet again once every entry carries its closure" 0 findings
 
     # --- mode 3: the subject shapes this repository actually writes ---------
     echo; echo " mode 3 (subject shapes) -- ranges and separators are read, not just the bare prefix"

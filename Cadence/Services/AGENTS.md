@@ -32,10 +32,10 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
   same instant; `everyTimestampInTheArchiveIsAtTheArchivesPrecision` reflects over a seeded archive
   and names the field that skipped it. `exportArchive(in:)` is the one
   call both Settings > Data Safety screens make; the copy they show is
-  `Shared/CadenceDataExportPresentation.swift`, which also holds the `FileDocument`. **Export only** —
-  the archive decodes as a value and that round trip is pinned, but nothing applies one to a live
-  store, because a restore into a CloudKit-synced container is not a local write. See `docs/TODO.md`
-  T-274 before building an import; do not ship one this file's tests do not exercise end to end.
+  `Shared/CadenceDataExportPresentation.swift`, which also holds the `FileDocument`. **Import shipped**
+  with T-274/T-1082: `CadenceArchiveImportService.importArchive`/`.apply`, surfaced by
+  `Shared/CadenceArchiveImportPresentation.swift`; it restores `linkedCalendarID` verbatim and its
+  preview counts those links (T-1084). Keep that warning: a CloudKit restore is not a local write.
 
 - **List/context deletion** - `CadenceListDeleteHelpers.swift` (prefixed file, unprefixed
   `ListDeleteHelpers` name on the `ModelContext` extension it declares). `deleteContext`,
