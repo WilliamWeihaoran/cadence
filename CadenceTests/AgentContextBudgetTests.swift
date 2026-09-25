@@ -314,6 +314,91 @@ struct AgentContextBudgetTests {
         // would satisfy none of the above for the wrong reason.
         #expect(job.contains("git ls-files '*AGENTS.md' 'CLAUDE.md'"), "the budget job is gone or renamed")
     }
+
+    /// T-1367, and the defect is mine. Commit `307052a` — whose subject was *"two always-read
+    /// guides stop being wrong"* — spliced two passages out of `CadenceMCPServer/AGENTS.md` by
+    /// line number and got the range end off by one **twice**, dropping the last line of each
+    /// replaced run. The guide shipped with two sentences cut mid-clause: *"`mcp-audit.log` beside
+    /// the store is"* and *"Adding a file here is"*. A full 5,022-test run passed over both,
+    /// because nothing in this repository reads guide PROSE for completeness — only its size, its
+    /// routing, and the section names it cites. An always-read guide is the one document where a
+    /// half-sentence is expensive: it is read before the code it governs, by a reader with no
+    /// context to notice the tail is missing.
+    ///
+    /// **The rule, and it is narrow on purpose.** Wrapped prose ends nearly every line mid-clause,
+    /// so "ends mid-sentence" cannot be the test. What is never correct is a **paragraph-final**
+    /// line — one the next line does not continue — whose last word is a function word and which
+    /// carries no terminal punctuation. "…Adding a file here is" ⏎ ⏎ is that shape. "…closing
+    /// it." is not, because the period ends it; both conditions are needed, and dropping either
+    /// one reintroduces false positives measured at 2 in 13 guides.
+    ///
+    /// **Measured, and it is a PARTIAL catch — stated so nobody reads a green run as proof the
+    /// class is closed.** Against the three revisions: `7b5897d` (before the defect) **0**,
+    /// `307052a` (carrying it) **1**, HEAD **0**. One of the two real truncations, not both. The
+    /// miss is structural rather than a tuning problem: the other tail was dropped in the MIDDLE
+    /// of a wrapped paragraph, where the following line continues the text and no rule that works
+    /// on one line at a time can tell a dropped line from a wrap. Closing that half needs prose
+    /// parsing this repository has no reason to own.
+    @Test func noAlwaysReadGuideEndsAParagraphMidSentence() throws {
+        // Function words a sentence cannot end on. Deliberately short: every addition widens the
+        // rule, and this list already covers the shape a dropped line leaves behind.
+        let functionWords: Set<String> = [
+            "is", "are", "was", "were", "the", "a", "an", "and", "or", "but", "of", "to", "in",
+            "on", "at", "for", "with", "that", "which", "this", "these", "those", "its", "it",
+            "as", "by", "from", "than", "then", "so", "not", "no", "be", "been", "has", "have",
+            "had", "will", "would", "can", "could", "may", "might", "must", "should", "when",
+            "where", "while", "because", "if", "into", "onto", "over", "under", "per", "via",
+            "each", "both", "every", "any", "all", "one", "two", "three", "four",
+        ]
+
+        var guides = try agentGuidePaths()
+        guides.append("CLAUDE.md")
+        // Non-vacuity: the same floor the size budget uses. A walk that found nothing must not
+        // read as a clean sweep — that is the shape this repository refuses everywhere else.
+        #expect(guides.count >= 13, "found only \(guides.count) guides to scan for truncation")
+
+        var truncations: [String] = []
+        for guide in guides {
+            let lines = try repositoryFile(guide).split(separator: "\n", omittingEmptySubsequences: false)
+            var insideFence = false
+            for (index, rawLine) in lines.enumerated() {
+                let line = String(rawLine)
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("```") { insideFence.toggle(); continue }
+                // Headings, tables and block quotes are not prose and end how they like.
+                if insideFence || trimmed.isEmpty
+                    || trimmed.hasPrefix("#") || trimmed.hasPrefix("|") || trimmed.hasPrefix(">") {
+                    continue
+                }
+
+                let next = index + 1 < lines.count
+                    ? String(lines[index + 1]).trimmingCharacters(in: .whitespaces)
+                    : ""
+                let paragraphFinal = next.isEmpty || next.hasPrefix("- ")
+                    || next.hasPrefix("#") || next.hasPrefix("```")
+                guard paragraphFinal else { continue }
+
+                // Terminal punctuation ends the sentence whatever the last word is.
+                let tail = line.trimmingCharacters(in: .whitespaces)
+                guard let lastCharacter = tail.last, lastCharacter.isLetter else { continue }
+
+                let words = tail.split(whereSeparator: { !$0.isLetter && $0 != "'" })
+                guard let lastWord = words.last?.lowercased(), functionWords.contains(lastWord) else { continue }
+
+                truncations.append("\(guide):\(index + 1) ends on \"\(lastWord)\" — \(tail.suffix(60))")
+            }
+        }
+
+        #expect(
+            truncations.isEmpty,
+            """
+            \(truncations.count) always-read guide paragraph(s) end mid-sentence:
+            \(truncations.joined(separator: "\n"))
+            A line-numbered splice that drops the last line of its replaced range leaves exactly \
+            this. Restore the tail from the commit before the edit rather than inventing one.
+            """
+        )
+    }
 }
 
 private func repositoryRoot() -> URL {
