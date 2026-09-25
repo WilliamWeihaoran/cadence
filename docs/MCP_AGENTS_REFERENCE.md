@@ -130,3 +130,74 @@ take a `commit:`, so the deferred-commit shape `appendCoreNote` uses works uncha
 reaches `GoalAssignmentRules`, `CadenceOrderAllocation` and `CadencePluralization`. All four are
 `import Foundation`/`SwiftData` only, which is exactly what the three unbuilt kinds' helpers are
 not: that import list, not the file count, is what makes a helper eligible here.
+
+## Why Bulk Cancel Got A Cap And A Dry Run (T-1365)
+
+`bulk_cancel_tasks` is the only arm on this surface whose selector is a **pattern**. Every other
+write arm names one entity the caller already resolved. Until T-1365 the prefix branch guarded
+exactly one thing — `prefix.count >= 8` — lowercased the prefix, filtered the whole table and
+cancelled whatever came back; `CadenceBulkCancelResult` reported the count *afterwards*.
+
+**The 8-character floor is not a breadth control and raising it does not make it one.** It was
+chosen against typos: it stops `MCP` matching every task with `MCP` in front. A longer prefix is
+not a smaller selection — `MCP TEST ` matches 3 tasks or 3,000 depending on the store, and the
+caller finds out which by having done it.
+
+**It also is not covered by the undo.** T-1121's `saveNotifyAndAudit(_:inserted:undo:)` undoes a
+*refused* save. A successful cancellation of 500 rows is exactly the case it does not reach.
+`mcp-audit.log` holds summaries, not before-images, so recovery there is a restore from backup
+rather than a reversal, and `reopen_task` is not a general transactional undo either — it clears
+`status`/`completedAt` and says nothing about the recurrence successors `markCancelled` spawned.
+
+The ticket named three readings. Two shipped, and the third falls out of them:
+
+- **(a) Cap the executed selection, refusing with the number.** `CadenceWriteError`
+  `bulkSelectionTooBroad(matched:limit:)`, structural the way `updateContainerColumns` refuses
+  rather than half-applies. The bound is `CadenceMCPServiceSupport.maximumPageSize` — the read
+  surface's own page ceiling — on the argument that an executed *pattern* cancellation may not
+  exceed what the caller could have read back in one look. Inventing a fresh number would have
+  been a second scale for "one look at a list" on a surface that already has one.
+- **(b) `dryRun`, which resolves the selection and cancels nothing.** This is the half a headless
+  caller actually needs: the app-side answer to "are you sure about 500 rows" is a confirmation
+  sheet, and there is no sheet here. Same reasoning as T-1122's refusals — a branch whose answer
+  is "ask the user" is unavailable to this caller, so the surface has to hand back the
+  measurement instead. It is deliberately **not** capped: a preview that refuses to describe a
+  large selection withholds the exact measurement the cap exists to make actionable.
+- **(c) Require explicit `taskIds` above a threshold** was not built as a separate mechanism,
+  because it is what (a) and (b) already produce. Over the cap the prefix stops executing and the
+  dry run still answers, so the prefix *is* the finder and `taskIds` is the executor. Building it
+  as its own rule would have meant the caller assembling the id list from `list_tasks`, whose
+  matcher is not `title.lowercased().hasPrefix` — a finder that disagrees with the executor is
+  worse than no finder, because the disagreement is silent. The `taskIds` branch is therefore
+  left uncapped: there the caller named every entity, the standard every other write arm meets.
+
+Neither half is sufficient alone, which is why both shipped. A cap with no preview leaves a
+headless caller guessing at a selection it has no UI to inspect, and it fails *closed* on a
+legitimate 300-task cleanup with no way forward. A preview with no cap is advisory, and nothing
+makes a caller use it.
+
+Two smaller decisions are on the function and worth not re-litigating. A dry run over an empty
+selection answers with an empty selection rather than `noChanges`: "your prefix matches nothing"
+is the question it was asked, and making it `isError` puts a typo'd prefix and a malformed request
+in one bucket. And `CadenceBulkCancelResult` carries `matchedTasks` *and* `cancelledTasks` rather
+than one list whose meaning depends on `dryRun`, because this surface's standing failure mode is a
+caller that reads only the shape of a success.
+
+## Why The Write Path's Undo Is Two Composed Primitives (T-1121)
+
+Displaced from `CadenceMCPServer/AGENTS.md` when T-1365's breadth-control note pushed it past the
+200-line cap. Nothing here is new; it stood in the guide verbatim.
+
+`saveNotifyAndAudit(_:inserted:undo:)` *composes* the two `CadencePendingChangePersistence`
+primitives rather than re-spelling either. `commitInsert` deletes the rows this call added and
+rethrows; `commitEdit` then runs the field restore and rethrows. Nesting them is what gives
+`completeTask` — a status change **and** a spawned successor — one undo covering both, and it is
+what lets `bulkCancelTasks` put back a whole batch instead of whichever prefix of it was pending.
+
+Neither is a `rollback()`, and that is the point: one long-lived `ModelContext` per process means a
+rollback discards whatever else happens to be pending, including work from an unrelated earlier
+call. The undo is scoped to what this call did.
+
+Two field snapshots (`CadenceMCPTaskFieldSnapshot`, `CadenceMCPContainerFieldSnapshot`) stay local
+to `CadenceWriteService.swift` rather than being reused from `Cadence/Shared/`; both reasons are on
+the local types and in "Why Two Field Snapshots Stay Local To `CadenceWriteService.swift`" above.

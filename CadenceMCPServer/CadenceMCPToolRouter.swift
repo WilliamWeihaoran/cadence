@@ -318,7 +318,8 @@ struct CadenceMCPToolRouter {
             let writeService = try requireWriteService(for: name)
             return try encode(writeService.bulkCancelTasks(options: CadenceBulkCancelTaskOptions(
                 taskIds: try arguments.flexibleStringArray("taskIds"),
-                titlePrefix: arguments.string("titlePrefix")
+                titlePrefix: arguments.string("titlePrefix"),
+                dryRun: arguments.bool("dryRun") ?? false
             )))
 
         case "create_link":

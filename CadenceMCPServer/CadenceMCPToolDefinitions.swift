@@ -318,9 +318,10 @@ enum CadenceMCPToolDefinitions {
             Tool(name: "cancel_task", description: "Cancel a Cadence task without deleting it.", inputSchema: schema([
                 "taskId": uuidProperty("Task UUID."),
             ], required: ["taskId"])),
-            Tool(name: "bulk_cancel_tasks", description: "Cancel multiple Cadence tasks without deleting them. Requires exact taskIds or a titlePrefix of at least 8 characters.", inputSchema: schema([
-                "taskIds": flexibleStringArrayProperty("Optional array of exact task UUIDs. Cannot be combined with titlePrefix."),
-                "titlePrefix": stringProperty("Optional title prefix, minimum 8 characters. Cannot be combined with taskIds.", minLength: 8),
+            Tool(name: "bulk_cancel_tasks", description: "Cancel multiple Cadence tasks without deleting them. Requires exact taskIds or a titlePrefix of at least 8 characters. A titlePrefix that matches more than \(CadenceMCPServiceSupport.maximumPageSize) tasks is refused with the number it matched; send dryRun first to see the selection, then pass the taskIds you mean. Answers matchedTasks (the selection either way) and cancelledTasks (empty on a dry run).", inputSchema: schema([
+                "taskIds": flexibleStringArrayProperty("Optional array of exact task UUIDs. Cannot be combined with titlePrefix. Not capped: every task is named."),
+                "titlePrefix": stringProperty("Optional title prefix, minimum 8 characters. Cannot be combined with taskIds. Capped at \(CadenceMCPServiceSupport.maximumPageSize) matched tasks unless dryRun is true.", minLength: 8),
+                "dryRun": booleanProperty("Optional. True resolves the same selection this call would cancel and returns it in matchedTasks without cancelling anything, writing an audit entry, or spawning a recurring successor. Uncapped, so it is also how you see a selection too broad to execute."),
             ])),
             Tool(name: "create_link", description: "Attach a saved link to a Cadence area or project. Answers the same summary list_links returns. A url with no scheme is stored as https; a blank one is rejected. There is no deletion on this surface.", inputSchema: schema([
                 "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),

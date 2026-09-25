@@ -32,6 +32,10 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     /// `parentGoalId` named a goal that is itself a milestone — the third level
     /// `GoalAssignmentRules.canOwnMilestones` refuses on both editors.
     case goalCannotOwnMilestones(String)
+    /// A `titlePrefix` bulk cancellation whose selection is larger than the surface will execute
+    /// in one call (T-1365). Carries both numbers because the refusal is only useful if the caller
+    /// learns how big the blast radius actually was.
+    case bulkSelectionTooBroad(matched: Int, limit: Int)
 
     var errorDescription: String? {
         switch self {
@@ -86,6 +90,8 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "Invalid progressType: \(value). Expected one of: \(GoalProgressType.allCases.map(\.rawValue).joined(separator: ", "))."
         case .invalidHabitFrequency(let value):
             return "Invalid frequencyType: \(value). Expected one of: \(HabitFrequency.allCases.map(\.rawValue).joined(separator: ", "))."
+        case .bulkSelectionTooBroad(let matched, let limit):
+            return "titlePrefix matches \(matched) tasks, above the \(limit) this call will cancel at once. Narrow the prefix, or send dryRun and pass the taskIds you mean."
         case .goalCannotOwnMilestones(let id):
             return "Goal \(id) is already a milestone of another goal, so it cannot own milestones of its own. Goals nest exactly one level: a top-level goal is a direction and its sub-goals are its milestones."
         }
@@ -130,9 +136,18 @@ nonisolated struct CadenceScheduleTaskOptions: Sendable {
     var clearScheduledDate: Bool = false
 }
 
+/// **`dryRun` is the argument a headless caller needs and a UI does not** (T-1365).
+///
+/// Every other write arm on this surface names one entity. This one takes a *pattern*, from a
+/// second process, and the app-side answer to "are you sure about 500 rows" — show a confirmation
+/// sheet — is unavailable here, which is the same reasoning [[T-1122]]'s refusals are written on.
+/// A dry run resolves the selection with the **executor's own matcher** and returns it without
+/// cancelling anything, so the blast radius the caller is shown is the one the next call acts on
+/// rather than an approximation reassembled out of `list_tasks`.
 nonisolated struct CadenceBulkCancelTaskOptions: Sendable {
     var taskIds: [String]? = nil
     var titlePrefix: String? = nil
+    var dryRun: Bool = false
 }
 
 nonisolated struct CadenceCreateContextOptions: Sendable {
@@ -1604,6 +1619,36 @@ final class CadenceWriteService {
         return try readService.getTask(taskID: task.id.uuidString)
     }
 
+    /// Cancel a named set of tasks, or every task whose title starts with a prefix.
+    ///
+    /// **This is the only arm on the surface that takes a pattern, and until T-1365 the only thing
+    /// standing between a prefix and the whole table was `prefix.count >= 8`.** That floor was
+    /// chosen against *typos* — it stops `MCP` matching everything with an `MCP` in front — and a
+    /// longer prefix is not a smaller selection, so raising it would not have made it a breadth
+    /// control. Nothing capped the count; `CadenceBulkCancelResult` reported it afterwards.
+    ///
+    /// Two halves, and they are not alternatives:
+    ///
+    /// - **The prefix branch refuses above `CadenceMCPServiceSupport.maximumPageSize`, naming the
+    ///   number it matched.** Structural refusal, the way `updateContainerColumns` refuses rather
+    ///   than half-applies. The bound is the read surface's own page ceiling on purpose: an
+    ///   executed pattern cancellation may not exceed what the caller could have read back in one
+    ///   look. The **`taskIds` branch stays uncapped** — there the caller named every entity, which
+    ///   is the standard every other write arm here is held to.
+    /// - **`dryRun` resolves the selection and cancels nothing**, and is *not* capped, because a
+    ///   preview that refuses to describe a large selection withholds exactly the measurement the
+    ///   cap exists to make actionable. That is what turns the prefix into a finder above the cap:
+    ///   dry-run it, then send the `taskIds` you meant. A cap alone leaves a headless caller
+    ///   guessing at a selection it has no UI to inspect; a dry run alone is advisory and nothing
+    ///   makes a caller use it. Neither half is sufficient, which is why both are here.
+    ///
+    /// A dry run over an empty selection answers with an empty selection rather than `noChanges`:
+    /// "your prefix matches nothing" is the question it was asked, and turning it into `isError`
+    /// makes a typo'd prefix indistinguishable from a malformed request.
+    ///
+    /// Its cost is proportional to what it is asked to show, which is the one place on this surface
+    /// that is not bounded. It is deliberate: the unbounded read lives on the branch that mutates
+    /// nothing, and truncating it silently is the failure T-385 was filed about.
     func bulkCancelTasks(options: CadenceBulkCancelTaskOptions) throws -> CadenceBulkCancelResult {
         let tasks = try fetchTasks()
         let ids = options.taskIds?.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } ?? []
@@ -1635,6 +1680,21 @@ final class CadenceWriteService {
             selectedTasks = tasks.filter {
                 !$0.isCancelled && $0.title.lowercased().hasPrefix(normalizedPrefix)
             }
+            // The breadth control, and only on the branch that executes: see this function's note.
+            let limit = CadenceMCPServiceSupport.maximumPageSize
+            if !options.dryRun, selectedTasks.count > limit {
+                throw CadenceWriteError.bulkSelectionTooBroad(matched: selectedTasks.count, limit: limit)
+            }
+        }
+
+        if options.dryRun {
+            // Resolved by the executor's own matcher and returned without a commit, an audit entry
+            // or a spawned successor. The empty selection is an answer here, not a refusal.
+            return CadenceBulkCancelResult(
+                dryRun: true,
+                matchedTasks: try selectedTasks.map { try readService.getTask(taskID: $0.id.uuidString).summary },
+                cancelledTasks: []
+            )
         }
 
         guard !selectedTasks.isEmpty else {
@@ -1673,9 +1733,8 @@ final class CadenceWriteService {
             }
         }
 
-        return CadenceBulkCancelResult(
-            cancelledTasks: try selectedTasks.map { try readService.getTask(taskID: $0.id.uuidString).summary }
-        )
+        let summaries = try selectedTasks.map { try readService.getTask(taskID: $0.id.uuidString).summary }
+        return CadenceBulkCancelResult(dryRun: false, matchedTasks: summaries, cancelledTasks: summaries)
     }
 
     /// Append to a daily, weekly or permanent core note.

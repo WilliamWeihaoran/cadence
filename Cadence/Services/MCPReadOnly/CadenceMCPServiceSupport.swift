@@ -76,8 +76,15 @@ nonisolated enum CadenceMCPServiceSupport {
         }
     }
 
+    /// The largest page any read tool on this surface will hand back in one response.
+    ///
+    /// Named rather than spelled inline because it is no longer only a read number: `bulkCancelTasks`
+    /// refuses a *pattern* selection larger than this (T-1365), on the argument that an executed
+    /// bulk cancellation may not exceed what the caller could have read back in one look.
+    static let maximumPageSize = 200
+
     static func cappedLimit(_ limit: Int) -> Int {
-        min(max(limit, 0), 200)
+        min(max(limit, 0), maximumPageSize)
     }
 
     static func excerpt(_ text: String, maxLength: Int = 240) -> String {

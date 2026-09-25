@@ -1557,6 +1557,25 @@ def main() -> int:
         if not invalid_bulk_prefix["result"].get("isError", False):
             raise AssertionError("bulk_cancel_tasks with a short titlePrefix should return an MCP tool error")
 
+        # T-1365. The dry run is the half of the breadth control a headless caller actually uses:
+        # it resolves the selection with the executor's own matcher and cancels nothing, so the
+        # blast radius it shows is the one the call below acts on. Run before the real one so the
+        # two selections can be compared, and so "cancelled nothing" is observable.
+        dry_run = call_ok(143, "bulk_cancel_tasks", {"titlePrefix": "MCP smoke", "dryRun": True})
+        if dry_run["dryRun"] is not True or dry_run["cancelledTasks"]:
+            raise AssertionError(f"a dry run must report dryRun and cancel nothing, got {dry_run}")
+        dry_run_titles = sorted(row["title"] for row in dry_run["matchedTasks"])
+        if len(dry_run_titles) < 3:
+            raise AssertionError(f"expected the smoke tasks in the dry-run selection, got {dry_run}")
+        if any(row["isCancelled"] for row in dry_run["matchedTasks"]):
+            raise AssertionError(f"a dry run cancelled its own selection, got {dry_run}")
+        # Re-read one of them through a different tool: a payload that merely *says* nothing was
+        # cancelled is exactly the "reads only the word success" failure this surface is built
+        # against.
+        probed = call_ok(144, "get_task", {"taskId": dry_run["matchedTasks"][0]["id"]})
+        if probed["summary"]["isCancelled"]:
+            raise AssertionError(f"a dry run cancelled a task, got {probed['summary']}")
+
         send(
             {
                 "jsonrpc": "2.0",
@@ -1571,6 +1590,14 @@ def main() -> int:
         bulk_cancel_payload = json.loads(bulk_cancel["result"]["content"][0]["text"])
         if len(bulk_cancel_payload["cancelledTasks"]) < 3:
             raise AssertionError(f"expected bulk cancel to cancel smoke tasks, got {bulk_cancel_payload}")
+        if bulk_cancel_payload["dryRun"] is not False:
+            raise AssertionError(f"an executed bulk cancel must not claim to be a dry run, got {bulk_cancel_payload}")
+        if bulk_cancel_payload["matchedTasks"] != bulk_cancel_payload["cancelledTasks"]:
+            raise AssertionError(f"an executed bulk cancel selected and cancelled different sets, got {bulk_cancel_payload}")
+        if sorted(row["title"] for row in bulk_cancel_payload["cancelledTasks"]) != dry_run_titles:
+            raise AssertionError(
+                f"the dry run previewed a different selection than the execution: {dry_run_titles} vs {bulk_cancel_payload}"
+            )
 
         send(
             {

@@ -60,9 +60,14 @@ compiles in a view is not evidence it compiles here.
   of them (T-1121): every arm goes through `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts
   what the call added and restores what it changed in place before the caller is told. The one
   residue went with it (T-1181): the core-note accessors take a `commit:` and `append_core_note`
-  defers their insert into its own `inserted:` list. `mcp-audit.log` beside the store is
-  `.cadence-mcp-refresh` marker file so the app reloads after an external write. Treat a write-path
-  change as a data-safety change.
+  defers their insert into its own `inserted:` list. `mcp-audit.log` beside the store is the only
+  record, and `CadenceMCPRefreshCoordinator` (macOS Services) watches a `.cadence-mcp-refresh`
+  marker file so the app reloads after an external write. **`bulk_cancel_tasks` selects by
+  *pattern*, so it alone has a breadth control** ([[T-1365]]): `titlePrefix` refuses a selection
+  above `CadenceMCPServiceSupport.maximumPageSize` naming the count it matched, `dryRun` returns
+  that selection uncapped without cancelling, and the 8-character floor was only ever a typo guard.
+  Why both halves and why `taskIds` stays uncapped: `../docs/MCP_AGENTS_REFERENCE.md`, "Why bulk
+  cancel got a cap and a dry run". Treat a write-path change as a data-safety change.
 - Opening the read-write container also runs `NoteMigrationService`, `TagSupport` seeding/sync and
   `DataIntegrityRepairService` against live data. A migration bug reaches users through this door
   as much as through app launch.
@@ -183,17 +188,12 @@ as `timed out waiting for response 100` rather than naming a build.
   `CadenceSavedLinkURL.normalized`, T-509's case-insensitive scheme rule, which a third hand-rolled
   copy would re-break. The last four came with `create_goal`/`create_habit`; why that is four files
   rather than one is in the reference, "Why the tracking helpers cost four files". Full reasoning
-  in T-1095's and T-1122's ledger entries. Adding a file here is
+  in T-1095's and T-1122's ledger entries. Adding a file here is still not casual: it is another
+  path by which an app-side edit breaks a target no scheme builds.
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
-  renders as `isError`, plus an undo.** The first half it always had; the second it did not.
-  `CadenceWriteService` holds one long-lived `ModelContext`, so a refused `save()` left the
-  mutation *pending* for the next tool call's `save()` to commit — a write the caller was told had
-  failed, landing later from a call that never mentioned it. **Every arm now has both halves**
-  (T-1121). `saveNotifyAndAudit(_:inserted:undo:)` *composes* the two
-  `CadencePendingChangePersistence` primitives rather than re-spelling either: `commitInsert`
-  deletes the rows this call added and rethrows, `commitEdit` then runs the field restore and
-  rethrows. Nesting them is what gives `completeTask` — a status change **and** a spawned successor
-  — one undo covering both. Neither is a `rollback()`: one long-lived context per process means a
-  rollback discards whatever else is pending. Two field snapshots stay local to this file rather
-  than being reused from `Cadence/Shared/`; both reasons are on the local types and in the
-  reference.
+  renders as `isError`, plus an undo, and every arm now has both halves** (T-1121). One long-lived
+  `ModelContext` per process means a refused `save()` used to leave the mutation *pending* for the
+  next tool call's `save()` — a write the caller was told had failed, landing later from a call that
+  never mentioned it. How `saveNotifyAndAudit` composes the two `CadencePendingChangePersistence`
+  primitives, why that is not a `rollback()`, and why two field snapshots stay local to this file:
+  `../docs/MCP_AGENTS_REFERENCE.md`, "Why the write path's undo is two composed primitives".

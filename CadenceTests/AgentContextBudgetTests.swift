@@ -71,14 +71,18 @@ struct AgentContextBudgetTests {
             try expectSizeBudget(guide, lines: Self.lineBudget, bytes: Self.byteBudget)
         }
 
-        #expect(try repositoryFile("AGENTS.md").contains("docs/AGENTS_REFERENCE.md"))
         #expect(try repositoryFile("AGENTS.md").contains("docs/CONTEXT_INDEX.md"))
-        #expect(try repositoryFile("Cadence/Shared/AGENTS.md").contains("../../docs/SHARED_AGENTS_REFERENCE.md"))
-        #expect(try repositoryFile("Cadence/iOS/AGENTS.md").contains("../../docs/IOS_AGENTS_REFERENCE.md"))
-        // T-1344. The Services guide sat 54 bytes under the byte cap with no long reference to
-        // displace prose into; one was created, so the route out of the guide is pinned like the
-        // other two rather than left as a link nothing checks.
-        #expect(try repositoryFile("Cadence/Services/AGENTS.md").contains("../../docs/SERVICES_AGENTS_REFERENCE.md"))
+
+        // T-1211: one loop over `Self.guideReferencePairings` rather than a clause per pair. The
+        // hand-written list is exactly why `docs/MCP_AGENTS_REFERENCE.md` went unpinned — it was
+        // created after the clauses were written, and a list does not add to itself. (T-1344 added
+        // the Services route the same way and is now a row instead.)
+        for pairing in Self.guideReferencePairings {
+            #expect(
+                try repositoryFile(pairing.guidePath).contains(pairing.linkFromGuide),
+                "\(pairing.guidePath) never routes to \(pairing.linkFromGuide)"
+            )
+        }
     }
 
     /// The cap only helps if the guide is reachable. Root `AGENTS.md` is the only index of the
@@ -103,27 +107,164 @@ struct AgentContextBudgetTests {
         #expect(reference.contains("## Calendar / Events"))
     }
 
+    /// A long reference is half of a pair, and this checks the half that rots.
+    ///
+    /// **T-1211.** `docs/MCP_AGENTS_REFERENCE.md` was the only one of the long references nothing
+    /// pinned, because the clauses this replaces were written when there were three and a fourth
+    /// file does not add itself to a hand-written list. That is T-434's "unpinned and unrouted"
+    /// gap one file later, which is why the fix is a table rather than another clause.
+    ///
+    /// **`citedSections` is the assertion with teeth, and it is why "the file still exists" was not
+    /// enough.** These guides do not summarise their reference; they *name a section of it* at the
+    /// point where the reasoning is needed — `CadenceMCPServer/AGENTS.md` sends a reader to "Why
+    /// three kinds have no constructor" instead of restating T-1122, and `Cadence/Services/AGENTS.md`
+    /// does it for eleven sections at once. Each entry is checked from **both** ends: the guide must
+    /// still contain the quoted phrase, and the reference must still spell it as a `##` heading. So
+    /// a renamed heading, a deleted section and a dropped citation all go red — which is the drift
+    /// the ticket is about, a guide quietly ceasing to match the reference it exists for.
+    ///
+    /// `pinnedHeadings` is the weaker fallback for a reference whose guide links it without quoting
+    /// a section name. It catches a gutted file and nothing finer.
     @Test func longAgentReferencesRemainExplicitlyArchived() throws {
-        let root = try repositoryFile("docs/AGENTS_REFERENCE.md")
-        let shared = try repositoryFile("docs/SHARED_AGENTS_REFERENCE.md")
-        let iOS = try repositoryFile("docs/IOS_AGENTS_REFERENCE.md")
+        for pairing in Self.guideReferencePairings {
+            // Flattened: a guide wraps its prose at ~100 columns, so a cited section name is as
+            // likely to straddle a newline plus two spaces of indent as not. Comparing raw text
+            // would make this pass or fail on where the wrap happened to land.
+            let guide = flattenedWhitespace(try repositoryFile(pairing.guidePath))
+            let reference = try repositoryFile(pairing.referencePath)
+            let headings = reference
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .filter { $0.hasPrefix("## ") }
+                .map { $0.lowercased() }
 
-        #expect(root.contains("former long root `AGENTS.md`"))
-        #expect(shared.contains("former long `Cadence/Shared/AGENTS.md`"))
-        #expect(iOS.contains("former long `Cadence/iOS/AGENTS.md`"))
-        #expect(root.contains("## Red Runs That Are Not Regressions"))
-        #expect(shared.contains("## Source-Scanning Tests"))
-        #expect(iOS.contains("## The Task Inspector Is Presented By A Host"))
+            #expect(
+                reference.contains(pairing.archivalMarker),
+                "\(pairing.referencePath) no longer says it is \(pairing.archivalMarker)"
+            )
+            #expect(
+                reference.contains("Do not load this whole file by default"),
+                "\(pairing.referencePath) no longer tells a reader not to load it whole"
+            )
+            #expect(headings.count >= 4, "\(pairing.referencePath) has only \(headings.count) sections")
 
-        // T-1344. Not "the former long guide" — `Cadence/Services/AGENTS.md` still exists and still
-        // carries every rule. What moved is the measurement, the incident and the argument, which
-        // is the `docs/MCP_AGENTS_REFERENCE.md` shape rather than the root/Shared/iOS one.
-        let services = try repositoryFile("docs/SERVICES_AGENTS_REFERENCE.md")
-        #expect(services.contains("lifted out of `Cadence/Services/AGENTS.md`"))
-        #expect(services.contains("Do not load this whole file by default"))
-        #expect(services.contains("## Container Wind-Down"))
-        #expect(services.contains("## List And Context Deletion Cascades"))
+            for heading in pairing.pinnedHeadings {
+                #expect(reference.contains(heading), "\(pairing.referencePath) lost \(heading)")
+            }
+
+            for section in pairing.citedSections {
+                #expect(
+                    guide.contains("\"\(section)\""),
+                    "\(pairing.guidePath) no longer cites \"\(section)\"; pin what it cites now instead"
+                )
+                #expect(
+                    headings.contains { $0.contains(section.lowercased()) },
+                    "\(pairing.referencePath) has no heading for \"\(section)\", which \(pairing.guidePath) still sends readers to"
+                )
+            }
+        }
     }
+
+    /// Every assertion in the two loops above is satisfied by an empty string, which is what a path
+    /// mismatch produces — the failure mode `CadenceMCPToolContractTests` names, and the reason this
+    /// exists rather than being trusted.
+    @Test func theGuideReferencePairingTableIsNotVacuous() throws {
+        #expect(Self.guideReferencePairings.count == 5)
+        #expect(Self.guideReferencePairings.contains { $0.referencePath == "docs/MCP_AGENTS_REFERENCE.md" })
+        #expect(Self.guideReferencePairings.filter { !$0.citedSections.isEmpty }.count >= 4)
+
+        for pairing in Self.guideReferencePairings {
+            #expect(try repositoryFile(pairing.guidePath).count > 1_000)
+            #expect(try repositoryFile(pairing.referencePath).count > 1_000)
+            #expect(pairing.citedSections.isEmpty == false || pairing.pinnedHeadings.isEmpty == false)
+        }
+    }
+
+    /// One row per long agent reference: where its guide links it, that it still says what it is,
+    /// and the sections that guide sends readers to by name.
+    private struct GuideReferencePairing {
+        let guidePath: String
+        /// Spelled as the guide spells it, relative path included — a link a reader can follow.
+        let linkFromGuide: String
+        let referencePath: String
+        /// How the reference describes its own provenance. Not one wording: "former long" is for a
+        /// guide that was replaced, "lifted out of" for one that still exists and still carries the
+        /// rules, and flattening the two would lose the distinction T-1344 wrote down.
+        let archivalMarker: String
+        /// Quoted in the guide **and** a `##` heading in the reference. Matched case-insensitively
+        /// and by containment, so a heading may carry a ticket suffix the citation does not.
+        let citedSections: [String]
+        /// Headings pinned without a citation to pair them to.
+        let pinnedHeadings: [String]
+    }
+
+    private static let guideReferencePairings: [GuideReferencePairing] = [
+        GuideReferencePairing(
+            guidePath: "AGENTS.md",
+            linkFromGuide: "docs/AGENTS_REFERENCE.md",
+            referencePath: "docs/AGENTS_REFERENCE.md",
+            archivalMarker: "former long root `AGENTS.md`",
+            citedSections: [
+                "Why the pre-commit hook ships inert",
+                "The `try? save()` rule",
+            ],
+            pinnedHeadings: ["## Red Runs That Are Not Regressions"]
+        ),
+        GuideReferencePairing(
+            guidePath: "Cadence/Shared/AGENTS.md",
+            linkFromGuide: "../../docs/SHARED_AGENTS_REFERENCE.md",
+            referencePath: "docs/SHARED_AGENTS_REFERENCE.md",
+            archivalMarker: "former long `Cadence/Shared/AGENTS.md`",
+            citedSections: ["This Task Is Over"],
+            pinnedHeadings: ["## Source-Scanning Tests"]
+        ),
+        GuideReferencePairing(
+            guidePath: "Cadence/iOS/AGENTS.md",
+            linkFromGuide: "../../docs/IOS_AGENTS_REFERENCE.md",
+            referencePath: "docs/IOS_AGENTS_REFERENCE.md",
+            archivalMarker: "former long `Cadence/iOS/AGENTS.md`",
+            // The one guide that links its reference without naming a section, so it gets the
+            // weaker pin. A citation added there belongs here.
+            citedSections: [],
+            pinnedHeadings: ["## The Task Inspector Is Presented By A Host"]
+        ),
+        GuideReferencePairing(
+            guidePath: "Cadence/Services/AGENTS.md",
+            linkFromGuide: "../../docs/SERVICES_AGENTS_REFERENCE.md",
+            referencePath: "docs/SERVICES_AGENTS_REFERENCE.md",
+            archivalMarker: "lifted out of `Cadence/Services/AGENTS.md`",
+            // T-1344 wrote this guide as one section name per bullet, so the pairing is total here
+            // and this row is what the mechanism was built for.
+            citedSections: [
+                "Why The Store-Failure Reason Goes Through An Extractor",
+                "Silent-Push Registration, And The Build With No Entitlement",
+                "The Markdown File Count, And Why It Is Re-Counted",
+                "The Markdown Image Lifecycle Sweep",
+                "The Tag Slug Index, Measured",
+                "Privacy Data Reset: Two Failure Rules",
+                "Data Export: The Archive Timestamp, And Import",
+                "List And Context Deletion Cascades",
+                "Container Wind-Down",
+                "EventKit Reminders Lived Behind An `#if os(macOS)`",
+                "The Shared Write-Capable Container Gate",
+            ],
+            pinnedHeadings: []
+        ),
+        GuideReferencePairing(
+            guidePath: "CadenceMCPServer/AGENTS.md",
+            linkFromGuide: "../docs/MCP_AGENTS_REFERENCE.md",
+            referencePath: "docs/MCP_AGENTS_REFERENCE.md",
+            archivalMarker: "lifted out of `CadenceMCPServer/AGENTS.md`",
+            citedSections: [
+                "Why the prohibition was wrong",
+                "Why deletion is refused",
+                "Why three kinds have no constructor",
+                "Why the tracking helpers cost four files",
+                "Why bulk cancel got a cap and a dry run",
+                "Why the write path's undo is two composed primitives",
+            ],
+            pinnedHeadings: []
+        ),
+    ]
 
     @Test func contextIndexRoutesByChangeType() throws {
         let index = try repositoryFile("docs/CONTEXT_INDEX.md")
@@ -197,6 +338,12 @@ private func repositoryFile(_ relativePath: String) throws -> String {
 /// `wc -c` and the `docs.yml` job report, so the three instruments cannot disagree ON BYTES. The
 /// LINE counts are not automatically equal — `wc -l` is one below this one — and keeping the two
 /// guards on the same file size is `theWorkflowJobAndThisSuiteCapTheGuidesAtTheSameSize` (T-1363).
+/// Every run of whitespace collapsed to one space, so a phrase quoted across a line wrap in a
+/// markdown guide still reads as the phrase it is.
+private func flattenedWhitespace(_ text: String) -> String {
+    text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+}
+
 private func expectSizeBudget(_ relativePath: String, lines lineLimit: Int, bytes byteLimit: Int) throws {
     let text = try repositoryFile(relativePath)
     let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count

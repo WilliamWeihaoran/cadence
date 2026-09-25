@@ -463,6 +463,111 @@ struct CadenceWriteServiceTests {
         #expect(auditEntries.allSatisfy { $0.summary.hasPrefix("Bulk cancelled task: MCP TEST cleanup") })
     }
 
+    // MARK: - T-1365: the pattern branch gets a breadth control, and a way to look first
+
+    /// A dry run resolves the selection with the executor's own matcher and touches nothing: no
+    /// status change, no audit entry, no spawned recurring successor. That last one matters —
+    /// `markCancelled` is what makes a bulk cancellation more than a status flip, so a preview
+    /// that ran it would leave the series advanced for a call that "cancelled nothing".
+    @Test func bulkCancelDryRunPreviewsTheSelectionAndChangesNothing() throws {
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-bulk-dryrun-audit-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+
+        let fixture = try Fixture(auditLogger: CadenceMCPAuditLogger(logURL: auditURL))
+        let recurring = AppTask(title: "MCP TEST daily standup")
+        recurring.recurrenceRule = .daily
+        recurring.scheduledDate = DateFormatters.todayKey()
+        let oneOff = AppTask(title: "MCP TEST one-off cleanup")
+        let unrelated = AppTask(title: "Personal cleanup")
+        fixture.modelContext.insert(recurring)
+        fixture.modelContext.insert(oneOff)
+        fixture.modelContext.insert(unrelated)
+        try fixture.modelContext.save()
+
+        let preview = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST", dryRun: true))
+
+        #expect(preview.dryRun)
+        #expect(preview.cancelledTasks.isEmpty)
+        #expect(preview.matchedTasks.map(\.title).sorted() == ["MCP TEST daily standup", "MCP TEST one-off cleanup"])
+        #expect(preview.matchedTasks.allSatisfy { $0.isCancelled == false })
+        #expect(try fixture.readService.getTask(taskID: recurring.id.uuidString).summary.isCancelled == false)
+        #expect(recurring.recurrenceSpawnedTaskID == nil)
+        #expect(FileManager.default.fileExists(atPath: auditURL.path) == false)
+
+        // …and the same selection, executed, is the one the preview described.
+        let executed = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST"))
+        #expect(executed.dryRun == false)
+        #expect(executed.cancelledTasks.map(\.title).sorted() == preview.matchedTasks.map(\.title).sorted())
+        #expect(executed.matchedTasks.map(\.id) == executed.cancelledTasks.map(\.id))
+        #expect(try fixture.readService.getTask(taskID: unrelated.id.uuidString).summary.isCancelled == false)
+    }
+
+    /// A dry run over a prefix that matches nothing answers with an empty selection rather than
+    /// `noChanges`. "Nothing matches your prefix" is the question it was asked; making it an error
+    /// puts a typo'd prefix and a malformed request in the same bucket, which is the one thing a
+    /// caller using the preview is trying to tell apart.
+    @Test func bulkCancelDryRunAnswersAnEmptySelectionInsteadOfRefusing() throws {
+        let fixture = try Fixture()
+        fixture.modelContext.insert(AppTask(title: "Personal cleanup"))
+        try fixture.modelContext.save()
+
+        let preview = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "NOTHINGMATCHES", dryRun: true))
+        #expect(preview.dryRun)
+        #expect(preview.matchedTasks.isEmpty)
+        #expect(preview.cancelledTasks.isEmpty)
+
+        // The executed call on the same prefix still refuses, which is the behaviour that existed
+        // before the preview did.
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "NOTHINGMATCHES"))
+        }
+    }
+
+    /// The breadth control itself. Over the cap the prefix branch refuses **with both numbers** and
+    /// cancels nothing; the dry run over the same selection is still allowed, which is what makes
+    /// the prefix a finder rather than a dead end; and `taskIds` — where the caller named every
+    /// entity, the standard every other write arm here meets — stays uncapped.
+    @Test func bulkCancelRefusesAPrefixWiderThanOnePageWhileTheDryRunAndTaskIdsStayOpen() throws {
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-bulk-cap-audit-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+
+        let fixture = try Fixture(auditLogger: CadenceMCPAuditLogger(logURL: auditURL))
+        let limit = CadenceMCPServiceSupport.maximumPageSize
+        var tasks: [AppTask] = []
+        for index in 0...limit {
+            let task = AppTask(title: "MCP TEST wide \(index)")
+            fixture.modelContext.insert(task)
+            tasks.append(task)
+        }
+        try fixture.modelContext.save()
+        #expect(tasks.count == limit + 1)
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST"))
+        }
+        // The number it matched, not just "too many": the 8-character floor's failure was that it
+        // never told the caller how wide the selection actually was.
+        #expect(error?.errorDescription?.contains("\(limit + 1) tasks") == true)
+        #expect(error?.errorDescription?.contains("above the \(limit)") == true)
+        #expect(tasks.allSatisfy { $0.status != .cancelled })
+        #expect(FileManager.default.fileExists(atPath: auditURL.path) == false)
+
+        let preview = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST", dryRun: true))
+        #expect(preview.matchedTasks.count == limit + 1)
+        #expect(preview.cancelledTasks.isEmpty)
+        #expect(tasks.allSatisfy { $0.status != .cancelled })
+
+        let named = try fixture.writeService.bulkCancelTasks(
+            options: .init(taskIds: tasks.map { $0.id.uuidString })
+        )
+        #expect(named.cancelledTasks.count == limit + 1)
+        #expect(tasks.allSatisfy { $0.status == .cancelled })
+    }
+
     // MARK: - T-308: a wrong section name is not a missing one
 
     @Test func createTaskRejectsASectionNameTheListDoesNotHave() throws {

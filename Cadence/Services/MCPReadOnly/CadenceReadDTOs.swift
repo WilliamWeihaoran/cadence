@@ -468,6 +468,16 @@ nonisolated struct CadenceCompleteTaskResult: Codable, Sendable {
     let spawnedRecurringTask: CadenceTaskDetail?
 }
 
+/// **Two lists, because a dry run must not answer in the word `cancelledTasks`** (T-1365).
+///
+/// `matchedTasks` is the selection either way — what a dry run *would* cancel, and what an
+/// executed call did. `cancelledTasks` is empty exactly when `dryRun` is true, and on an executed
+/// call it repeats `matchedTasks`. The repetition is the price of a key set that never varies:
+/// this surface's standing failure mode is a caller who reads only the shape of a success, so one
+/// list whose meaning depends on a sibling flag is the shape that gets misread. Bounded on the
+/// executed path by `CadenceMCPServiceSupport.maximumPageSize`.
 nonisolated struct CadenceBulkCancelResult: Codable, Sendable {
+    let dryRun: Bool
+    let matchedTasks: [CadenceTaskSummary]
     let cancelledTasks: [CadenceTaskSummary]
 }
