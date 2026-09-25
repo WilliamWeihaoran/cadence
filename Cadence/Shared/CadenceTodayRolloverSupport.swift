@@ -105,11 +105,20 @@ enum CadenceTodayRolloverSupport {
     /// for the rest of the day over a store that still held yesterday's plans — and hid it on the
     /// *other* device too, since the key is deliberately shared.
     ///
-    /// `commitDelete` rather than `commitEdit`, because the roll is an existence change two frames
-    /// down: `rollOverTaskToToday` reaches `deleteBundleIfFullySettled`, which does
-    /// `modelContext.delete(bundle)`. A block whose last active member was carried away has no
-    /// object left to hand back, so `rollback()` is the only undo that makes it visible again —
-    /// the same reasoning `CadenceTaskMutationSupport.deleteBundle` records.
+    /// `commitDelete` rather than `commitEdit` for the *existence* half, because the roll is an
+    /// existence change two frames down: `rollOverTaskToToday` reaches `deleteBundleIfFullySettled`,
+    /// which does `modelContext.delete(bundle)`. A block whose last active member was carried away
+    /// has no object left to hand back, so `rollback()` is the only undo that makes it visible
+    /// again — the same reasoning `CadenceTaskMutationSupport.deleteBundle` records.
+    ///
+    /// **And `commitEdit` around it for the other half ([[T-1336]]).** Almost everything this
+    /// writes lands on a task that *survives* the roll — the day it sits on, the minute it starts
+    /// at, the block it left and the order of whatever stayed behind — and `rollback()`'s reach
+    /// onto an already-materialised reference is the one thing this repository's two toolchains
+    /// disagree about. So the roll's own writes are snapshotted and put back explicitly, from
+    /// inside `commitDelete`'s `commit:` so the restore lands *before* the rollback;
+    /// `CadenceDeleteSurvivorSnapshot` carries the full argument, including why that order is what
+    /// keeps `hasChanges` false on every toolchain.
     ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
@@ -119,10 +128,28 @@ enum CadenceTodayRolloverSupport {
         modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws -> String {
+        // Every task rolled, and every other member of every block they are leaving, because
+        // `rollOverTaskToToday` renumbers the block it empties and may dispose of it — and all of
+        // those rows **survive** the one delete this commit carries (T-1336). The refusal has to
+        // put their slots back, not only un-delete the block; `CadenceDeleteSurvivorSnapshot`
+        // carries the argument for why `rollback()` alone does not.
+        var survivors = CadenceDeleteSurvivorSnapshot()
+        for task in tasks {
+            survivors.captureSlot(of: task)
+            guard let bundle = task.bundle else { continue }
+            survivors.captureMembership(of: bundle)
+            for member in bundle.tasks ?? [] {
+                survivors.captureSlot(of: member)
+            }
+        }
+
         for task in tasks {
             CadenceTaskMutationSupport.rollOverTaskToToday(task, todayKey: todayKey, modelContext: modelContext)
         }
-        try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
+        try CadencePendingChangePersistence.commitDelete(
+            in: modelContext,
+            commit: { try CadencePendingChangePersistence.commitEdit(in: $0, commit: commit, undo: survivors.restore) }
+        )
         return todayKey
     }
 }

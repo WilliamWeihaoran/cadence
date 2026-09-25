@@ -287,6 +287,15 @@ struct TaskDeleteParityTests {
     /// commit this function does not make and its caller may still be refused, so the needle below
     /// rejects any spelling that cancels outright on the deferred path. The behaviour that pins is
     /// in `CadenceDeferredReminderCancellationTests`; this is the ordering it cannot see.
+    ///
+    /// **[[T-1336]] widened the commit needle by one nesting level, and not by accident.** The
+    /// spine is still `commitDelete`, and the failure branch still returns `false` without reaching
+    /// the cancellation — neither clause moved. What changed is what `commitDelete` is handed as
+    /// its `commit:`: a `commitEdit` carrying the undo for the rows this delete edits and does
+    /// *not* remove, so the restore lands before the rollback rather than after it. The order is
+    /// the fix, so the needle reads it rather than only the outer call;
+    /// `CadenceDeleteSurvivorRestoreTests` argues why, and holds the same rule for the other two
+    /// helpers.
     @Test func theSharedDeleteCommitsThroughThePendingChangeSpineAndCancelsOnlyOnSuccess() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
         #expect(raw.count > 400, "the delete core read as \(raw.count) characters")
@@ -295,7 +304,7 @@ struct TaskDeleteParityTests {
         #expect(core.count == raw.count, "the stripper changed the length")
         #expect(core.contains("static func deleteTasks("), "the shared task-deletion core moved")
 
-        let spineCommit = #"if commitsImmediately \{\s*do \{\s*try CadencePendingChangePersistence\.commitDelete\(in: modelContext, commit: commit\)\s*\} catch \{\s*return false"#
+        let spineCommit = #"if commitsImmediately \{\s*do \{\s*try CadencePendingChangePersistence\.commitDelete\(\s*in: modelContext,\s*commit: \{\s*try CadencePendingChangePersistence\.commitEdit\(in: \$0, commit: commit, undo: survivors\.restore\)\s*\}\s*\)\s*\} catch \{\s*return false"#
         #expect(
             CadenceSourceScan.matchCount(spineCommit, in: core) == 1,
             "the ordinary delete no longer commits through the spine that rolls back"
@@ -319,7 +328,7 @@ struct TaskDeleteParityTests {
         #expect(
             CadenceSourceScan.matchCount(
                 spineCommit,
-                in: "if commitsImmediately {\n            do {\n                try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)\n            } catch {\n                return false\n            }\n        }"
+                in: "if commitsImmediately {\n            do {\n                try CadencePendingChangePersistence.commitDelete(\n                    in: modelContext,\n                    commit: {\n                        try CadencePendingChangePersistence.commitEdit(in: $0, commit: commit, undo: survivors.restore)\n                    }\n                )\n            } catch {\n                return false\n            }\n        }"
             ) == 1,
             "the commit needle does not match the spelling it is hunting"
         )
@@ -329,6 +338,13 @@ struct TaskDeleteParityTests {
                 in: "if commitsImmediately {\n            try? modelContext.save()\n        }"
             ) == 0,
             "the commit needle accepts the swallowed save"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                spineCommit,
+                in: "if commitsImmediately {\n            do {\n                try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)\n            } catch {\n                return false\n            }\n        }"
+            ) == 0,
+            "the commit needle still accepts the T-1336 spelling that commits without the survivor undo"
         )
         #expect(
             CadenceSourceScan.matchCount(

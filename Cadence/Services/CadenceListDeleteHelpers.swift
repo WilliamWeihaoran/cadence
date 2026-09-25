@@ -132,7 +132,7 @@ extension ModelContext {
         // reconcile. That is exactly the defect T-1301 fixed on `deleteHabit` by moving the line
         // below the commit, and it could not be fixed the same way here because there is nothing
         // to move it below. `CadencePendingChangePersistence.commitCascade` releases the queue
-        // once its commit lands; `CadenceDeferredReminderCancellations` carries the argument.
+        // once its commit lands; `CadenceDeferredDeleteEffects` carries the argument.
         //
         // `cascadeDeleteTasks(withIDs:)` above reaches the same queue for the same reason: it
         // passes `commitsImmediately: false`, which is what puts its own cancellation in the

@@ -161,13 +161,13 @@ final class NotificationManager: NSObject {
     /// For the delete that **does not commit itself**: a list cascade is one pending change owned
     /// by the surface that asked for it, so cancelling here would be a change made by a delete
     /// that may yet promise it made none. With no cascade in scope the cancellation is dropped;
-    /// `CadenceDeferredReminderCancellations` argues why that is the recoverable direction.
+    /// `CadenceDeferredDeleteEffects` argues why that is the recoverable direction.
     nonisolated static func deferReminderCancellation(taskIDs: [UUID] = [], habitIDs: [UUID] = []) {
         guard let cancel = reminderCancellation(taskIDs: taskIDs, habitIDs: habitIDs) else { return }
-        CadenceDeferredReminderCancellations.current?.hold(
+        CadenceDeferredDeleteEffects.current?.hold(
             taskIDs: taskIDs,
             habitIDs: habitIDs,
-            cancel: cancel
+            effect: cancel
         )
     }
 

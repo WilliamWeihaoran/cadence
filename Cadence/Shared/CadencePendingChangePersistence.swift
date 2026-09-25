@@ -188,16 +188,17 @@ nonisolated enum CadencePendingChangePersistence {
     /// because from the user's side the two are the same event: the delete did not happen, and
     /// nothing was removed.
     ///
-    /// **It is also the scope a deferred delete's side effects are released from ([[T-1348]]).**
-    /// A cascade commits nothing — that is the whole of T-291 — so any *success-only* effect it
-    /// earns along the way has nothing to sit below. `CadenceDeferredReminderCancellations` is
-    /// where those effects wait, this is the only place the scope is opened, and `release()` below
-    /// is reachable on exactly one path: the cascade finished **and** the commit landed. Every
-    /// other exit throws past it, which is what makes "nothing was removed" also mean "nothing was
-    /// cancelled".
+    /// **It is also the scope a deferred delete's side effects are released from ([[T-1348]],
+    /// [[T-1351]]).** A cascade commits nothing — that is the whole of T-291 — so any
+    /// *success-only* effect it earns along the way has nothing to sit below.
+    /// `CadenceDeferredDeleteEffects` is where those effects wait, this is the only place the scope
+    /// is opened, and `release()` below is reachable on exactly one path: the cascade finished
+    /// **and** the commit landed. Every other exit throws past it, which is what makes "nothing was
+    /// removed" also mean "nothing was cancelled" — and, since T-1351, "nothing was ended", because
+    /// the macOS delete wrapper's focus-session teardown waits in the same queue.
     ///
     /// - Parameter cascade: Runs the delete. Returns `false` if it could not finish.
-    /// - Parameter cancellations: The queue the cascade's reminder cancellations wait in. It is a
+    /// - Parameter effects: The queue the cascade's success-only effects wait in. It is a
     ///   parameter for the reason `commit` is: a released cancellation is otherwise unobservable
     ///   from a test, because `NotificationManager.cancel` is inert under
     ///   `NotificationManager.isTestEnvironment`, and a side effect no test can see is a side
@@ -205,17 +206,17 @@ nonisolated enum CadencePendingChangePersistence {
     static func commitCascade(
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() },
-        cancellations: CadenceDeferredReminderCancellations = CadenceDeferredReminderCancellations(),
+        effects: CadenceDeferredDeleteEffects = CadenceDeferredDeleteEffects(),
         cascade: () -> Bool
     ) throws {
-        try CadenceDeferredReminderCancellations.$current.withValue(cancellations) {
+        try CadenceDeferredDeleteEffects.$current.withValue(effects) {
             guard cascade() else {
                 modelContext.rollback()
                 throw CascadeIncomplete()
             }
             try commitDelete(in: modelContext, commit: commit)
         }
-        cancellations.release()
+        effects.release()
     }
 
     /// Thrown by `commitCascade(in:commit:cascade:)` when the cascade itself could not finish.
@@ -226,7 +227,15 @@ nonisolated enum CadencePendingChangePersistence {
     struct CascadeIncomplete: Error {}
 }
 
-/// The reminder cancellations a **deferred** delete has earned and may not perform yet.
+/// The success-only side effects a **deferred** delete has earned and may not perform yet.
+///
+/// **It was named for reminders, and it is not only about reminders ([[T-1351]]).** A reminder
+/// cancellation was the first effect to need this and is still the one the doc below argues from,
+/// but the property that earns the queue is not "reminder": it is *right below a commit that
+/// landed, and wrong anywhere else*. macOS's delete wrapper ends the user's running focus session
+/// when the delete names its task or its block, which is the same shape one layer up — in-memory
+/// rather than scheduled with the OS, and therefore lower severity, but equally not repairable
+/// from a refusal alert. `ModelContext.deleteTasks` holds it here too.
 ///
 /// **Why this exists ([[T-1348]]).** A reminder cancellation is a success-only side effect: it is
 /// right below a commit that landed, and wrong anywhere else, because a cancelled reminder for a
@@ -263,14 +272,14 @@ nonisolated enum CadencePendingChangePersistence {
 ///
 /// `@unchecked Sendable` with a lock rather than an actor: every touch is synchronous and inside
 /// one `commitCascade` frame, and a `@TaskLocal` value must be `Sendable`.
-nonisolated final class CadenceDeferredReminderCancellations: @unchecked Sendable {
+nonisolated final class CadenceDeferredDeleteEffects: @unchecked Sendable {
     /// The queue in scope, set only by `CadencePendingChangePersistence.commitCascade`.
-    @TaskLocal static var current: CadenceDeferredReminderCancellations?
+    @TaskLocal static var current: CadenceDeferredDeleteEffects?
 
     private struct Held {
         let taskIDs: [UUID]
         let habitIDs: [UUID]
-        let cancel: @Sendable () -> Void
+        let effect: @Sendable () -> Void
     }
 
     private let lock = NSLock()
@@ -281,15 +290,15 @@ nonisolated final class CadenceDeferredReminderCancellations: @unchecked Sendabl
     var pendingTaskIDs: [UUID] { lock.withLock { held.flatMap(\.taskIDs) } }
     /// See `pendingTaskIDs`.
     var pendingHabitIDs: [UUID] { lock.withLock { held.flatMap(\.habitIDs) } }
-    /// The ids whose cancellation actually ran. Empty unless a commit landed.
+    /// The ids whose effect actually ran. Empty unless a commit landed.
     var releasedTaskIDs: [UUID] { lock.withLock { releasedEffects.flatMap(\.taskIDs) } }
     /// See `releasedTaskIDs`.
     var releasedHabitIDs: [UUID] { lock.withLock { releasedEffects.flatMap(\.habitIDs) } }
 
-    /// - Parameter cancel: What to run once the enclosing commit has landed. The ids beside it are
-    ///   the same ids it will cancel, recorded so the queue can be read without a second spy.
-    func hold(taskIDs: [UUID], habitIDs: [UUID], cancel: @escaping @Sendable () -> Void) {
-        lock.withLock { held.append(Held(taskIDs: taskIDs, habitIDs: habitIDs, cancel: cancel)) }
+    /// - Parameter effect: What to run once the enclosing commit has landed. The ids beside it are
+    ///   the same ids it concerns, recorded so the queue can be read without a second spy.
+    func hold(taskIDs: [UUID], habitIDs: [UUID], effect: @escaping @Sendable () -> Void) {
+        lock.withLock { held.append(Held(taskIDs: taskIDs, habitIDs: habitIDs, effect: effect)) }
     }
 
     /// Runs everything held, once. Called only from the one path where the commit succeeded.
@@ -300,8 +309,8 @@ nonisolated final class CadenceDeferredReminderCancellations: @unchecked Sendabl
             releasedEffects.append(contentsOf: due)
             return due
         }
-        for effect in due {
-            effect.cancel()
+        for held in due {
+            held.effect()
         }
     }
 }

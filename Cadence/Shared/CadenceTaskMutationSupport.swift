@@ -731,6 +731,13 @@ enum CadenceTaskMutationSupport {
     ///   subtasks, the emptied bundle and the repaired recurrence links, which are one pending
     ///   change by this point — and this function says so with `false`.
     ///
+    ///   **Two of those are edits on rows that survive, and they get an undo of their own
+    ///   ([[T-1336]]).** `detachRelationships` filters the doomed task out of its area's, project's,
+    ///   context's, goal's, block's and tags' arrays, and `repairDanglingRecurrenceLinks` clears a
+    ///   *predecessor's* pointer — six containers and a task that are all still on screen when the
+    ///   commit is refused. `CadenceDeleteSurvivorSnapshot` captures them before the first write and
+    ///   `commitEdit` puts them back around `commitDelete`'s rollback.
+    ///
     ///   **The notification cancellation below is gated on it too, and used not to be (T-1348).**
     ///   The old reasoning held only for the committing half: a **refused** commit skips the
     ///   cancellation because it returns first, so the task is demonstrably still there and
@@ -768,6 +775,21 @@ enum CadenceTaskMutationSupport {
         // Only now that the reads have succeeded and there is real work to do.
         willDelete(taskIDs)
 
+        // The writes below that land on rows which **survive** this delete, captured before any of
+        // them happens (T-1336). Only the committing half builds one: the deferred half makes no
+        // commit, so there is no refusal here for an undo to hang off — the cascade's own is
+        // `commitCascade`'s, and reaching it from this depth is [[T-1377]].
+        var survivors = CadenceDeleteSurvivorSnapshot()
+        if commitsImmediately {
+            let doomedIDs = Set(tasks.map(\.id))
+            for task in tasks {
+                survivors.captureContainers(of: task)
+            }
+            for other in allTasks where other.recurrenceSpawnedTaskID.map(doomedIDs.contains) == true {
+                survivors.captureRecurrencePointer(of: other)
+            }
+        }
+
         let subtasks = allSubtasks.filter { subtask in
             guard let parentTask = subtask.parentTask else { return false }
             return taskIDs.contains(parentTask.id)
@@ -796,7 +818,12 @@ enum CadenceTaskMutationSupport {
         modelContext.processPendingChanges()
         if commitsImmediately {
             do {
-                try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
+                try CadencePendingChangePersistence.commitDelete(
+                    in: modelContext,
+                    commit: {
+                        try CadencePendingChangePersistence.commitEdit(in: $0, commit: commit, undo: survivors.restore)
+                    }
+                )
             } catch {
                 return false
             }
@@ -1384,12 +1411,29 @@ enum CadenceTaskMutationSupport {
     /// `commitDelete` rolls back, so `bundleDeleteFailureNotice` can say nothing was removed and be
     /// telling the truth — the block and its members are visible again, unbundling and all.
     ///
+    /// **"Unbundling and all" is earned rather than assumed since [[T-1336]].** The member loop
+    /// above writes five fields on rows that *survive* this delete, and `rollback()`'s reach onto
+    /// an already-materialised reference is the one clause this repository's two Xcode majors have
+    /// answered differently ([[T-1279]], [[T-1296]]). The refusal path therefore restores those
+    /// five fields itself, from inside `commitDelete`'s own `commit:` so the restore lands before
+    /// the rollback rather than after it; `CadenceDeleteSurvivorSnapshot` carries why that order is
+    /// the fix and not a detail.
+    ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitDelete(in:commit:)`.
     static func deleteBundle(
         _ bundle: TaskBundle,
         modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
+        // Captured before the first write, because every one of them lands on a task that
+        // **survives** this delete — see `CadenceDeleteSurvivorSnapshot` for why `rollback()` alone
+        // is not the whole undo here (T-1336).
+        var survivors = CadenceDeleteSurvivorSnapshot()
+        survivors.captureMembership(of: bundle)
+        for task in bundle.tasks ?? [] {
+            survivors.captureSlot(of: task)
+        }
+
         for task in bundle.tasks ?? [] {
             task.bundle = nil
             task.bundleOrder = 0
@@ -1400,7 +1444,10 @@ enum CadenceTaskMutationSupport {
 
         bundle.tasks = []
         modelContext.delete(bundle)
-        try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
+        try CadencePendingChangePersistence.commitDelete(
+            in: modelContext,
+            commit: { try CadencePendingChangePersistence.commitEdit(in: $0, commit: commit, undo: survivors.restore) }
+        )
     }
 
     private static func nextContainerOrder(
@@ -1430,3 +1477,140 @@ enum CadenceTaskMutationSupport {
 // CadenceTaskRecurrenceEditScope and CadenceTaskRecurrenceWorkflowSupport now live in
 // CadenceTaskRecurrenceWorkflowSupport.swift (Foundation + SwiftData only) so the same
 // recurrence logic can also compile into the headless CadenceMCPServer tool target.
+
+/// What a delete wrote on rows that **survive** it, captured before the write so a refused commit
+/// can put those rows back the way the user last saw them.
+///
+/// **Why `commitDelete`'s `rollback()` is not the whole undo ([[T-1336]]).** `rollback()` discards
+/// pending inserts and deletes and restores changed models to their last committed values. That
+/// clause is documented, this type does not relabel it undefined, and the *store* is correct under
+/// it on every toolchain. What is not documented — and what this repository's two Xcode majors have
+/// answered differently ([[T-1279]], [[T-1296]]) — is when an already-materialised *reference*
+/// stops reading the value the refused delete wrote. A delete that only marks rows deleted cannot
+/// read either way, which is what [[T-1321]] settled for `detachGoalListLink`: there was no edit to
+/// restore. A delete that also edits rows which **survive** it can, and those rows are still on
+/// screen: on the toolchain where an edit's undo waits for a refetch, they are on screen unbundled,
+/// unscheduled or unlinked under an alert reading "Nothing was removed."
+///
+/// **The composition, and the order inside it, is the whole fix.** `commitEdit` goes *inside*
+/// `commitDelete`, not around it:
+///
+/// ```swift
+/// try CadencePendingChangePersistence.commitDelete(
+///     in: modelContext,
+///     commit: { try CadencePendingChangePersistence.commitEdit(in: $0, commit: commit, undo: survivors.restore) }
+/// )
+/// ```
+///
+/// so a refused commit runs **restore first and `rollback()` second**. `CadenceWriteService
+/// .saveNotifyAndAudit` nests the same two primitives the other way round because its inner undo is
+/// `commitInsert`'s `delete(model)`, which has nothing to be sequenced against; here the order is
+/// load-bearing, and both available orders were considered:
+///
+/// - **Restore *after* the rollback** is what the three captured-array repairs that predate this
+///   type do (`CadenceHabitCompletionStore.toggle`, both `deleteSubtask` hosts). It repairs the
+///   reference, but it writes *into a context the rollback has just made clean* — so on the
+///   toolchain where the repair is needed it is also a fresh pending edit, and
+///   `!modelContext.hasChanges` after a refusal is a clause half the delete suites assert. Pinning
+///   that outcome either way is [[T-1296]] happening a third time.
+/// - **Restore *before* the rollback** costs nothing on either toolchain. The restore lands while
+///   the context is already dirty from the delete it is undoing, and then `rollback()` runs and
+///   settles everything: the store is untouched, `hasChanges` is `false`, and the reference reads
+///   the original value under *both* readings of the undisputed part — because a toolchain that
+///   refreshes the reference refreshes it to the store's value, and a toolchain that leaves the
+///   reference at whatever was last written finds the original there, put back a line earlier.
+///
+/// That is a property of the construction rather than a measurement, which matters: the Xcode 26
+/// reading cannot be taken on the Mac this was written on, and nothing here needs it.
+///
+/// **Each write is still conditional on the reference disagreeing with the snapshot**, so a field
+/// the delete never actually changed is never rewritten — the same care `CadenceTaskFieldSnapshot`
+/// takes by snapshotting raw values rather than coerced ones.
+///
+/// It is deliberately **not** a second `rollback()`: this app has one `ModelContext`, and a
+/// rollback discards whatever else is pending in it. That is `commitEdit`'s own reason for taking a
+/// caller-supplied `undo`, and it does not depend on any SwiftData timing.
+struct CadenceDeleteSurvivorSnapshot {
+    private var restorations: [() -> Void] = []
+
+    var isEmpty: Bool { restorations.isEmpty }
+
+    /// The five schedule-and-block fields a delete rewrites on a task it leaves behind.
+    ///
+    /// Exactly the set `deleteBundle`, `deleteBundleIfFullySettled` and `rollOverTaskToToday`
+    /// write: the three of them unbundle a member and park it back on a day, and each field they
+    /// touch is one a timeline row draws itself from.
+    mutating func captureSlot(of task: AppTask) {
+        let bundle = task.bundle
+        let bundleID = bundle?.id
+        let bundleOrder = task.bundleOrder
+        let scheduledDate = task.scheduledDate
+        let scheduledStartMin = task.scheduledStartMin
+        let calendarEventID = task.calendarEventID
+        restorations.append {
+            if task.bundle?.id != bundleID { task.bundle = bundle }
+            if task.bundleOrder != bundleOrder { task.bundleOrder = bundleOrder }
+            if task.scheduledDate != scheduledDate { task.scheduledDate = scheduledDate }
+            if task.scheduledStartMin != scheduledStartMin { task.scheduledStartMin = scheduledStartMin }
+            if task.calendarEventID != calendarEventID { task.calendarEventID = calendarEventID }
+        }
+    }
+
+    /// The pointer `CadenceTaskRecurrenceWorkflowSupport.repairDanglingRecurrenceLinks` clears on a
+    /// *predecessor* that survives the delete of its successor.
+    ///
+    /// The raw string rather than the `UUID?` in front of it, for the reason
+    /// `CadenceTaskFieldSnapshot` gives: the computed property coerces, and restoring the coerced
+    /// value would rewrite a row this is meant to leave alone.
+    mutating func captureRecurrencePointer(of task: AppTask) {
+        let raw = task.recurrenceSpawnedTaskIDRaw
+        restorations.append {
+            if task.recurrenceSpawnedTaskIDRaw != raw { task.recurrenceSpawnedTaskIDRaw = raw }
+        }
+    }
+
+    /// Every to-many array `detachRelationships` filters the doomed task out of.
+    ///
+    /// The containers themselves are the survivors here — an area, a project, a context, a goal, a
+    /// block, a tag — and the array is what a list, a board or a chip counts.
+    mutating func captureContainers(of task: AppTask) {
+        if let area = task.area { capture({ area.tasks ?? [] }, put: { area.tasks = $0 }) }
+        if let project = task.project { capture({ project.tasks ?? [] }, put: { project.tasks = $0 }) }
+        if let context = task.context { capture({ context.tasks ?? [] }, put: { context.tasks = $0 }) }
+        if let goal = task.goal { capture({ goal.tasks ?? [] }, put: { goal.tasks = $0 }) }
+        if let bundle = task.bundle { capture({ bundle.tasks ?? [] }, put: { bundle.tasks = $0 }) }
+        for tag in task.tags ?? [] { capture({ tag.tasks ?? [] }, put: { tag.tasks = $0 }) }
+    }
+
+    /// A block's member list, for the deletes that empty it before disposing of the block.
+    mutating func captureMembership(of bundle: TaskBundle) {
+        capture({ bundle.tasks ?? [] }, put: { bundle.tasks = $0 })
+    }
+
+    /// Runs every restoration, in capture order.
+    ///
+    /// Capturing the same row twice is harmless and expected — `rollOver` reaches a task both
+    /// directly and as a member of its block — because both captures hold the same pre-delete
+    /// values and the second write is the same write as the first.
+    func restore() {
+        for restoration in restorations {
+            restoration()
+        }
+    }
+
+    /// Reads the array back before writing it, so a reference the rollback has already restored is
+    /// left strictly alone. See the type's note on why that comparison is the whole design.
+    ///
+    /// Both halves are handed in because a to-many on a `@Model` is a stored property, not a
+    /// keypath this type can hold generically across six unrelated model types.
+    private mutating func capture(
+        _ read: @escaping () -> [AppTask],
+        put back: @escaping ([AppTask]) -> Void
+    ) {
+        let members = read()
+        let ids = members.map(\.id)
+        restorations.append {
+            if read().map(\.id) != ids { back(members) }
+        }
+    }
+}

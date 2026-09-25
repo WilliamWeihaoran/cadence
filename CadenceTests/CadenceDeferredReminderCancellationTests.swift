@@ -17,7 +17,7 @@ import Testing
 /// **Why the queue is the seam and not a notification-centre read.** `NotificationManager.cancel`
 /// returns early under `isTestEnvironment`, so a cancellation that runs is invisible to this
 /// target — which is precisely how a side effect on the refusal path survived. The tests below
-/// therefore assert on `CadenceDeferredReminderCancellations`, the object
+/// therefore assert on `CadenceDeferredDeleteEffects`, the object
 /// `CadencePendingChangePersistence.commitCascade` releases: `releasedHabitIDs` is what actually
 /// reached the notification centre, `pendingHabitIDs` is what was earned and correctly withheld.
 /// Asserting both is what keeps "no cancellation ran" from passing vacuously on a cascade that
@@ -72,13 +72,13 @@ struct CadenceDeferredReminderCancellationTests {
     /// the store assertion here is the control and `releasedHabitIDs` is the measurement.
     @Test func arefusedCommitLeavesTheHabitInTheStoreWithItsReminderUncancelled() throws {
         let fixture = try makeFixture()
-        let cancellations = CadenceDeferredReminderCancellations()
+        let cancellations = CadenceDeferredDeleteEffects()
 
         #expect(throws: CommitRefused.self) {
             try CadencePendingChangePersistence.commitCascade(
                 in: fixture.modelContext,
                 commit: { _ in throw CommitRefused() },
-                cancellations: cancellations,
+                effects: cancellations,
                 cascade: { fixture.modelContext.deleteContext(fixture.context) }
             )
         }
@@ -113,12 +113,12 @@ struct CadenceDeferredReminderCancellationTests {
         modelContext.insert(task)
         try modelContext.save()
 
-        let cancellations = CadenceDeferredReminderCancellations()
+        let cancellations = CadenceDeferredDeleteEffects()
         #expect(throws: CommitRefused.self) {
             try CadencePendingChangePersistence.commitCascade(
                 in: modelContext,
                 commit: { _ in throw CommitRefused() },
-                cancellations: cancellations,
+                effects: cancellations,
                 cascade: { modelContext.deleteArea(area) }
             )
         }
@@ -140,12 +140,12 @@ struct CadenceDeferredReminderCancellationTests {
     /// reminders exactly as it does for rows.
     @Test func acascadeThatCannotFinishCancelsNothing() throws {
         let fixture = try makeFixture()
-        let cancellations = CadenceDeferredReminderCancellations()
+        let cancellations = CadenceDeferredDeleteEffects()
 
         #expect(throws: CadencePendingChangePersistence.CascadeIncomplete.self) {
             try CadencePendingChangePersistence.commitCascade(
                 in: fixture.modelContext,
-                cancellations: cancellations,
+                effects: cancellations,
                 cascade: {
                     fixture.modelContext.deleteContext(fixture.context, sweepTasks: Self.refusingSweep)
                 }
@@ -167,11 +167,11 @@ struct CadenceDeferredReminderCancellationTests {
     /// A commit that lands releases both legs, once, with the ids the cascade actually removed.
     @Test func acommittedContextDeleteCancelsItsHabitAndTaskRemindersOnce() throws {
         let fixture = try makeFixture()
-        let cancellations = CadenceDeferredReminderCancellations()
+        let cancellations = CadenceDeferredDeleteEffects()
 
         try CadencePendingChangePersistence.commitCascade(
             in: fixture.modelContext,
-            cancellations: cancellations,
+            effects: cancellations,
             cascade: { fixture.modelContext.deleteContext(fixture.context) }
         )
 
@@ -192,7 +192,7 @@ struct CadenceDeferredReminderCancellationTests {
     /// cancellation twice. `commitCascade` calls it once, but the queue is the thing that has to
     /// guarantee it rather than the caller.
     @Test func releasingTwiceCancelsOnce() {
-        let cancellations = CadenceDeferredReminderCancellations()
+        let cancellations = CadenceDeferredDeleteEffects()
         let id = UUID()
         let runs = Counter()
         cancellations.hold(taskIDs: [id], habitIDs: []) { runs.increment() }
@@ -213,9 +213,9 @@ struct CadenceDeferredReminderCancellationTests {
     /// somebody else's commit is the mirror of the bug being fixed.
     @Test func adeleteThatCommitsItselfDefersNothing() throws {
         let fixture = try makeFixture()
-        let cancellations = CadenceDeferredReminderCancellations()
+        let cancellations = CadenceDeferredDeleteEffects()
 
-        let deleted = CadenceDeferredReminderCancellations.$current.withValue(cancellations) {
+        let deleted = CadenceDeferredDeleteEffects.$current.withValue(cancellations) {
             CadenceTaskMutationSupport.deleteTasks(
                 withIDs: [fixture.task.id],
                 modelContext: fixture.modelContext,
@@ -235,9 +235,9 @@ struct CadenceDeferredReminderCancellationTests {
     /// is the property T-1301 established and T-1348 must not have disturbed.
     @Test func arefusedDirectTaskDeleteStillCancelsNothing() throws {
         let fixture = try makeFixture()
-        let cancellations = CadenceDeferredReminderCancellations()
+        let cancellations = CadenceDeferredDeleteEffects()
 
-        let deleted = CadenceDeferredReminderCancellations.$current.withValue(cancellations) {
+        let deleted = CadenceDeferredDeleteEffects.$current.withValue(cancellations) {
             CadenceTaskMutationSupport.deleteTasks(
                 withIDs: [fixture.task.id],
                 modelContext: fixture.modelContext,
