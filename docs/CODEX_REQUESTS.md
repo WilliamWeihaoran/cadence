@@ -2558,7 +2558,7 @@ user-selected color corpus, build, tests, or visual Dynamic Type run. Ratios are
 pair reachability is source-derived where cited and cannot account for arbitrary SwiftUI compositing.
 
 <!-- FOLDED-THROUGH: R54 -->
-<!-- FOLDED-ALSO: R63 R64 R65 -->
+<!-- FOLDED-ALSO: R57 R58 R59 R60 R61 R62 R63 R64 R65 -->
 
 ## R31 — Standing: has any of R25–R30 gone stale yet?
 
