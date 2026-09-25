@@ -75,6 +75,10 @@ struct AgentContextBudgetTests {
         #expect(try repositoryFile("AGENTS.md").contains("docs/CONTEXT_INDEX.md"))
         #expect(try repositoryFile("Cadence/Shared/AGENTS.md").contains("../../docs/SHARED_AGENTS_REFERENCE.md"))
         #expect(try repositoryFile("Cadence/iOS/AGENTS.md").contains("../../docs/IOS_AGENTS_REFERENCE.md"))
+        // T-1344. The Services guide sat 54 bytes under the byte cap with no long reference to
+        // displace prose into; one was created, so the route out of the guide is pinned like the
+        // other two rather than left as a link nothing checks.
+        #expect(try repositoryFile("Cadence/Services/AGENTS.md").contains("../../docs/SERVICES_AGENTS_REFERENCE.md"))
     }
 
     /// The cap only helps if the guide is reachable. Root `AGENTS.md` is the only index of the
@@ -110,6 +114,15 @@ struct AgentContextBudgetTests {
         #expect(root.contains("## Red Runs That Are Not Regressions"))
         #expect(shared.contains("## Source-Scanning Tests"))
         #expect(iOS.contains("## The Task Inspector Is Presented By A Host"))
+
+        // T-1344. Not "the former long guide" — `Cadence/Services/AGENTS.md` still exists and still
+        // carries every rule. What moved is the measurement, the incident and the argument, which
+        // is the `docs/MCP_AGENTS_REFERENCE.md` shape rather than the root/Shared/iOS one.
+        let services = try repositoryFile("docs/SERVICES_AGENTS_REFERENCE.md")
+        #expect(services.contains("lifted out of `Cadence/Services/AGENTS.md`"))
+        #expect(services.contains("Do not load this whole file by default"))
+        #expect(services.contains("## Container Wind-Down"))
+        #expect(services.contains("## List And Context Deletion Cascades"))
     }
 
     @Test func contextIndexRoutesByChangeType() throws {

@@ -580,3 +580,36 @@ commands. The hook is a guard for a human typing `git commit`, not a mechanism a
 
 The rule that stays in the root guide is therefore just the prohibition: never run
 `git config core.hooksPath`, and never teach a script to.
+
+## The `try? save()` rule (moved out of AGENTS.md, 2026-09-25)
+
+Moved out by T-1344, which found root `AGENTS.md` at exactly the 199-line cap with no room
+for another route. This was the largest single block of rationale in that file — 26 lines of a
+199-line index — and it is a rule for one surface (persistence call sites) rather than one every
+agent needs before starting. The guide keeps the rule and the four names; the argument for each
+half, and why it matters, is below, verbatim as it stood in the guide.
+
+`try? modelContext.save()` is allowed **only** when the save commits nothing but in-place field
+edits to objects the store already holds, and nothing after it tells the user it worked. A site
+breaks the rule if any of four halves is true:
+
+1. **Existence** — the function inserts or deletes, **in its own frame or one below**: a pending
+   change travels up through every frame *handed* a `ModelContext` and stops at the first that was not.
+2. **Report** — something **anywhere in the swallowed commit's own block** says it worked: `dismiss…()`,
+   `is/show<X> = false`, `editing/selected/pending<X> = nil`, `presentedX = …`, `onSave(…)`, an
+   `@AppStorage` write, a write through **any `@Binding`** (the surface stays open and fills itself
+   in — T-664, scalars too since T-997), **the answer itself** (`return true` from a `-> Bool`,
+   non-`nil` from a `-> X?`), or **a rearrangement the user can see** (T-614). **A reorder surface
+   answering `Bool` is never `@discardableResult`** (T-996). A "swallowed commit" is `try?` on a
+   `save()` **or** a `Cadence*Persistence` helper — the commit surface, not the method name —
+   **one frame down included**.
+3. **Commit reach** — the function inserts **or deletes** and reaches no commit at all. A declaration
+   **handed** a `ModelContext` is exempt by rule; one that reached for an ambient context must commit.
+4. **The callee's undo** (T-1299) — `try?` over **any** helper that changes existence and reaches a raw
+   `save()`; safe only if it changes no existence or commits through `CadencePendingChangePersistence`.
+
+In `extension ModelContext` the receiver is `self` and is left off (T-1301): `save()`, `insert(` and
+`delete(` count in every half above, and the declaration counts as **handed** its context for half 3.
+All four are fixed the same way: commit through `CadencePendingChangePersistence` (`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and name the failure on screen.
+Why it matters: one `ModelContext` app-wide, so a swallowed failure leaves the change *pending*, for
+the next unrelated `save()` to take or `rollback()` to discard. Enforced by `CadenceSaveCommitDisciplineTests`.

@@ -1,0 +1,177 @@
+# Services Agent Reference
+
+This is prose lifted out of `Cadence/Services/AGENTS.md`, preserved so no service detail is lost
+while the active scoped guide stays under its 18,000-byte context budget
+(`CadenceTests/AgentContextBudgetTests.swift`). Nothing here is new: every section below stood in
+the guide verbatim until the guide reached 17,946 of 18,000 bytes and T-1344 displaced it.
+Do not load this whole file by default; the guide names the section you need where it needs it.
+
+The guide keeps the rule. This file keeps the measurement, the incident and the argument — the
+three things an agent needs only when changing the behaviour, not when obeying it.
+
+## Why The Store-Failure Reason Goes Through An Extractor
+
+_Guide bullet: **Schema/persistence**. Moved out 2026-09-25 (T-1344); the rule itself stays in the guide._
+
+- **Schema/persistence** - `CadenceSchema.swift`, `CadenceStoreSupport.swift`, `PersistenceController.swift` (legacy shim that also kicks off migrations). **A startup failure's reason goes through `PersistenceController.storeFailureReason(_:)`, never through `error.localizedDescription` directly** (T-1319). A `ModelContainer` that will not open throws a `SwiftData.SwiftDataError` whose description is *"The operation couldn't be completed. (SwiftData.SwiftDataError error 1.)"* for **every** cause — measured 2026-09-21 against a corrupt store file, a directory in the store's place and an unwritable parent, all three identical. The cause is in `_underlyingCocoaError`, and `userInfo` is empty, so reflection is the only way to it. All five startup sentences (primary open, preflight, recovery, in-memory, maintenance save) share that extractor.
+
+## Silent-Push Registration, And The Build With No Entitlement
+
+_Guide bullet: **Silent-push registration**. Moved out 2026-09-25 (T-1344)._
+
+- **Silent-push registration** - `CadenceRemoteNotificationRegistrar.swift`. The one place the app asks either platform to subscribe to CloudKit's pushes; the platform difference is a single `Application` typealias (`NSApplication`/`UIApplication`), so there is exactly one `registerForRemoteNotifications()` call site in the tree. Each platform's app delegate calls it once at launch and nothing else may. `CadenceLaunchWiringTests` pins both halves — a second `#if`-guarded body here is the regression it is built to catch (T-626). A refusal lands in `CadencePushRegistrationMonitor` in the same file and degrades the Settings > iCloud Sync card on both platforms; it was a `logger.error` and nothing else, which is how a signed iOS build with **no push entitlement at all** looked healthy for as long as it did (T-1309). The entitlement is per-platform: `Cadence/Cadence-iOS.entitlements` carries the bare `aps-environment`, `Cadence/Cadence.entitlements` the `com.apple.developer.` spelling, and the two files must otherwise stay identical.
+
+## The Markdown File Count, And Why It Is Re-Counted
+
+_Guide bullet: **Markdown**. Moved out 2026-09-25 (T-1344)._
+
+- **Markdown** - 30 `Markdown*.swift` files, 28 of them named `*Support.swift` (the other two are `MarkdownImageAssetService.swift` and `MarkdownPreviewParser.swift`), plus `CadenceMarkdownSourceInventory.swift`, which does not match the glob. Re-count when you add one; the glob and the number have disagreed here before, and were three apart when T-411 landed. **This is where markdown logic lives, not `macOS/Editor/`** — parsing, attributed-string building, list/quote/checklist rules, typing transforms, backspace and line-break behavior, slash-command core, link/reference/task-embed support, inline preview, image assets. The `macOS/Editor/` files are the AppKit bridge that calls into these.
+
+## The Markdown Image Lifecycle Sweep
+
+_Guide bullet: **Markdown image lifecycle**. Moved out 2026-09-25 (T-1344)._
+
+- **Markdown image lifecycle** - `CadenceMarkdownSourceInventory.swift` enumerates every stored field in `CadenceSchema` that can hold markdown, and it is the *only* answer to "what still references this image". `ModelContext.deleteUnreferencedMarkdownImageAssets` reads it; nothing else should re-derive the set. **Adding a markdown-bearing field to a model means adding a `Source` case** — the reader switches exhaustively, so the case is a compile error until it is read, and `CadenceMarkdownSourceInventoryTests` scans `Cadence/Models/` and fails on any stored `String` that is neither in the inventory nor declared plain. T-411 is what that guard is for: the sweep asked `Note.content` alone while the same editor writes `AppTask.notes`, so an image pasted into a task was collected by the next delete. Use `MarkdownImageAssetService.referencedIDs` (unanchored) for lifecycle questions and `standaloneReferencedIDs` (anchored) only for rendering; over-counting defers garbage, under-counting destroys a picture.
+
+## The Tag Slug Index, Measured
+
+_Guide bullet: **Notes/tags/tasks**. Moved out 2026-09-25 (T-1344)._
+
+- **Notes/tags/tasks** - `MarkdownNoteSupport.swift`, `NoteReferenceSupport.swift`, `TagSupport.swift`, `TaskCreationService.swift`. **A pass that resolves tags for many rows reads the `Tag` table once and hands a `TagSlugIndex` down** (T-1314); `TagSupport.resolution`'s `index:` parameter is that, and left `nil` it reads the table itself, which is right for the one-name-at-a-time pickers and was catastrophic for the launch sweep. `syncAllNoteTagsFromMarkdown` was a full table fetch plus a re-sort **per note**: measured 2026-09-21 at 4,000 notes over 4,000 tags, **694.5s before and 0.741s after**, quadratic (x4.2 per doubling) to linear (x2.0). Two tests hold it — one counts index builds through the sweep's `makingTagIndex` seam, one hands the sweep an index the store disagrees with so a refetch anywhere underneath changes the outcome.
+
+## Privacy Data Reset: Two Failure Rules
+
+_Guide bullet: **Privacy data reset**. Moved out 2026-09-25 (T-1344)._
+
+- **Privacy data reset** - `CadencePrivacyDataResetService.swift` (prefixed file, unprefixed `PrivacyDataResetService` type — the old `macOS/Services/` path keeps a tombstone under the unprefixed name). Wipes every model in `CadenceSchema`, including the legacy note types and `Pursuit`, and cancels pending Cadence notifications; `deleteCadenceDataAndLocalArtifacts` adds the OpenAI key, the widget snapshot, the pending restore and the local backups, and is the one sequence **both** Settings > Data Safety screens run. **Add a new `@Model` here whenever you add one to `CadenceSchema`** — `CadencePrivacyDataResetSurfaceTests` drives the coverage check off the schema, so it fails if you don't. Same story as reminders below: it sat under `macOS/Services/` behind an `#if os(macOS)` while importing only Foundation and SwiftData, and the shipped privacy policy promised iOS a deletion route that did not exist. **Two failure rules, both load-bearing to a claim the app makes about deletion.** The store sweep commits through `CadencePendingChangePersistence.commitDelete(in:commit:building:)`, so a refusal from any of the twenty-one fetches *or* from the save leaves the shared context exactly where it was rather than pending for someone else's `save()` (T-1102). And the OpenAI key deletion is **reported, not swallowed**: `removeStoredAPIKey` answers the failure sentence, which becomes `PrivacyDataResetOutcome.retainedAPIKeyReason` and is printed by both platforms, because by then the store is gone and the sentence is the whole report (T-1101).
+
+## Data Export: The Archive Timestamp, And Import
+
+_Guide bullet: **Data export**. Moved out 2026-09-25 (T-1344)._
+
+- **Data export** - `CadenceDataExportService.swift`. The *other* half of data safety, and the one
+  `StoreBackupManager` does not cover: that manager's snapshots are opaque SwiftData stores kept
+  inside the app's own container and deleted by the reset, so they survive a bad launch and nothing
+  else. This produces one JSON archive of **every** entity in `CadenceSchema` — relationships as id
+  references rather than nesting, image bytes as base64, ISO-8601 dates, pretty-printed with sorted
+  keys so two exports diff. **Add a new `@Model` here whenever you add one to `CadenceSchema`**, the
+  same standing rule as the reset above and enforced the same way:
+  `CadenceDataExportSurfaceTests` compares `CadenceArchive.recordCountsByEntityName` to the schema
+  as a set and then checks a seeded row of every entity comes back, so an omission is a red test
+  rather than a backup that quietly restores less than it claims.
+  **A new `Date` field on a record goes through `CadenceArchiveTimestamp.normalized(_:)`**, not
+  straight from the model. The archive's stated precision is the **millisecond**
+  (`DateFormatters.archiveTimestamp`), because `JSONEncoder`'s stock `.iso8601` writes whole
+  seconds — which is what the first cut of this exporter shipped, silently truncating every
+  timestamp and breaking `TaskOrdering`'s `createdAt` tie-break for anything restored from it.
+  Normalizing at record construction is what makes the value in memory and the text in the file the
+  same instant; `everyTimestampInTheArchiveIsAtTheArchivesPrecision` reflects over a seeded archive
+  and names the field that skipped it. `exportArchive(in:)` is the one
+  call both Settings > Data Safety screens make; the copy they show is
+  `Shared/CadenceDataExportPresentation.swift`, which also holds the `FileDocument`. **Import shipped**
+  with T-274/T-1082: `CadenceArchiveImportService.importArchive`/`.apply`, surfaced by
+  `Shared/CadenceArchiveImportPresentation.swift`; it restores `linkedCalendarID` verbatim and its
+  preview counts those links (T-1084). Keep that warning: a CloudKit restore is not a local write.
+
+## List And Context Deletion Cascades
+
+_Guide bullet: **List/context deletion**. Moved out 2026-09-25 (T-1344)._
+
+- **List/context deletion** - `CadenceListDeleteHelpers.swift` (prefixed file, unprefixed
+  `ListDeleteHelpers` name on the `ModelContext` extension it declares). `deleteContext`,
+  `deleteArea` and `deleteProject` — the recursive cascades that take a list's tasks, notes, links,
+  goal links, image assets and nested projects with it. Moved here from `macOS/Services/` by
+  `c84732e`, which is what let iOS delete a list or a context at all. **One `#if os(macOS)` seam
+  and no more**, in `cascadeDeleteTasks(withIDs:)`: `ModelContext.deleteTasks(withIDs:)` really is
+  macOS-only (it tears down the focus, hover, completion-animation and subtask-entry managers), so
+  iOS calls the shared `CadenceTaskMutationSupport.deleteTasks(withIDs:modelContext:)` core
+  directly. `CadenceListDeletionSurfaceTests.theCascadesLiveInServicesWithExactlyOnePlatformSeam`
+  counts the `#if` directives in the file and fails at two. The user-facing copy is
+  `Shared/CadenceListDeletionSummary.swift`, and it is **two types with two audiences**:
+  `CadenceListDeletionKind.cascadeSentence` is the categorical sentence read by five macOS dialog
+  sites (`EditListSheet` x2, `SettingsView` x3) *and* iOS, so that copy cannot drift; the
+  `CadenceListDeletionSummary` counts ("1 project", "7 tasks") are read by iOS alone, because
+  macOS's dialog reports scope categorically and cannot state a number.
+  **A cascade reaching an object through its container may not take more than the cascade aimed at
+  that object directly** (T-1312). `deleteContext` swept `goals.flatMap(\.tasks)` while
+  `ModelContext.deleteGoal` nullifies the same link — so deleting a context destroyed tasks filed
+  under *other* contexts, which deleting the goal itself preserves. `AppTask.goal` is independent of
+  `AppTask.context`; a task that really is a context's own is already reached through its area, its
+  project or its own `context`, so a leg through a free relationship can only add somebody else's
+  rows. `CadenceListDeletionSummary` mirrors these legs and moves with them.
+  Goal **nesting** is the one place the two disagree, and it is decided rather than drifted
+  (T-1324): `deleteGoal` walks `subGoals` with no container filter while `deleteContext` deletes
+  `context.goals` alone, so a milestone filed under another context goes with its parent but
+  survives a delete of its parent's context. The rule above still forbids the other repair —
+  `context.goals` is already exact, so a subtree walk from a context cascade could only add
+  somebody else's goals. Why a *redundant* leg (T-1312) and the *only* leg (this one) are not the
+  same question is argued on `ModelContext.deleteGoal`; both readings are pinned by tests.
+
+## Container Wind-Down
+
+_Guide bullet: **Container wind-down**. Moved out 2026-09-25 (T-1344)._
+
+- **Container wind-down** - `CadenceTaskContainerLifecycleService.swift` (prefixed file, unprefixed
+  `TaskContainerLifecycleService` type). Completing or archiving an area, a project or a kanban
+  column settles the work still open inside it. It lived in `macOS/Services/TaskWorkflowService.swift`
+  behind that file's `#if os(macOS)` until T-215 while importing only Foundation, SwiftData, the
+  models and `CadenceTaskRecurrenceWorkflowSupport` — the sixth instance of the shape the three
+  tombstones in `macOS/Services/` record — and the guard is what left iOS's list archive a bare
+  `status = .archived` while macOS's cancelled the list's remaining active tasks. It settles through
+  `CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries` and **must not** be rerouted
+  through `markDone` / `markCancelled` / `applyStatusCompletion`: those spawn the next recurrence
+  occurrence into the same area, project and section, so a wind-down would refill the container it
+  just closed (T-213, T-214). `remainingActiveTasks(...)` is public so a confirmation can count
+  before the fact from the *same* array the settle walks; `CadenceContainerWindDownSummary` in the
+  same file is that count plus its one sentence, and it is what
+  `Cadence/iOS/iOSListWindDownSupport.swift` and `Cadence/iOS/iOSColumnWindDownSupport.swift` read.
+  That struct was `CadenceListArchiveSummary` until T-247 gave the kanban column the same confirmed
+  action, which needed the identical four members with one word changed — hence the `outcome`
+  dimension (`CadenceWindDownOutcome.cancelled` / `.done`) rather than a second struct beside it.
+  All three factories — `forArea`, `forProject`, `forColumn` — take that `outcome` as a **required**
+  argument since T-214 gave iOS a list Complete action; the first two defaulted to `.cancelled`
+  while archive was the only direction a list had, and a default there is how a completion comes to
+  promise "cancelled" over a correct number. It is deliberately **not** in `Shared/`: this is a persistence mutation, and
+  `Shared/CadenceTaskRecurrenceWorkflowSupport.swift` compiles into `CadenceWidgets` and
+  `CadenceMCPServer`, which have no business with a bulk container wind-down.
+  Since T-241 the settle also **reconciles notifications** for the batch, which is what finally
+  makes the `in context:` parameters on all six entry points load-bearing — they were declared and
+  unread from T-212 until then. It goes through an injected `CadenceWindDownReconciler` rather than
+  calling `HabitNotificationReconcileSupport.scheduleReconcile` directly: that helper spawns an
+  unstructured `Task` doing two full-store fetches into the `@MainActor` `NotificationManager`, so
+  an unconditional call would have handed eighteen existing wind-down tests async work outliving
+  their bodies. `nil` (the default) resolves to `.live` in the app and `.inert` under
+  `NotificationManager.isTestEnvironment`; a test proves the wiring by injecting a recorder, which
+  is why deleting the call is a red test and not a silent regression.
+
+## EventKit Reminders Lived Behind An `#if os(macOS)`
+
+_Guide bullet: **EventKit reminders**. Moved out 2026-09-25 (T-1344)._
+
+- **EventKit reminders** - `CadenceRemindersManager.swift` (prefixed file, unprefixed `RemindersManager` type — the old path keeps a tombstone under the unprefixed name). Separately authorized from calendar, and cross-platform: both platforms read it in the Inbox and in Settings -> Reminders. It lived under `macOS/Services/` behind an `#if os(macOS)` for a long time despite touching no AppKit. Its pure presentation half (`RemindersConnectionState`, `RemindersSyncSummary`) is in `Shared/CadenceRemindersPresentationSupport.swift`, where `CadenceTests` can reach it.
+
+## The Shared Write-Capable Container Gate
+
+_Boundaries bullet: `CadenceStoreSupport.makeSharedWriteContainer`. Moved out 2026-09-25 (T-1344)._
+
+- `CadenceStoreSupport.makeSharedWriteContainer` is the **only** write-capable open of the
+  app-group store outside `PersistenceController`'s startup. A write-capable open *creates* a
+  missing store and a read-only one does not, so a widget/App Intent write used to be able to
+  create `default.store` before the app had migrated the legacy one into it, permanently
+  skipping that migration (T-311). The gate refuses instead of migrating: an extension cannot
+  read the app's own container, cannot see `UserDefaults.standard`, and this project has no
+  `SchemaMigrationPlan`.
+
+## Why "Do Not Edit `MCPReadOnly/`" Was Wrong
+
+_Boundaries bullet: `MCPReadOnly/`. Moved out 2026-09-25 (T-1344)._
+
+- `MCPReadOnly/` is integration-facing **and compiles into two targets** — the app and
+  `CadenceMCPServer`, the latter on Swift 6 without `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+  This line used to say "do not edit it unless the task explicitly asks for MCP/read-only API
+  work", which contradicted `Models/AGENTS.md`'s correct instruction to *check any read-only API
+  or export surface that mirrors models* for the same edit — and the model changes that skipped it
+  shipped stale response schemas. When a model or a shared service you touch is mirrored here,
+  update it and verify it: build the `CadenceMCPServer` scheme into a private `-derivedDataPath`
+  and grep the log. What still holds is the narrower rule: do not *redesign* the tool surface or
+  the response DTOs as a side effect of app work. See `CadenceMCPServer/AGENTS.md`.

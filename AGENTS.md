@@ -72,8 +72,9 @@ Read the nearest scoped `AGENTS.md` before editing under that tree:
 Long references, searchable only when needed:
 
 - `docs/CONTEXT_INDEX.md` - routing map by change type; `docs/AUDIT_BRIEF.md` - the audit-report shape.
-- `docs/{AGENTS,SHARED_AGENTS,IOS_AGENTS}_REFERENCE.md` - the detailed root, Shared and iOS guides,
-  plus red-run history; `docs/CLAUDE_REFERENCE.md` - detailed product/feature history.
+- `docs/{AGENTS,SHARED_AGENTS,IOS_AGENTS,SERVICES_AGENTS,MCP_AGENTS}_REFERENCE.md` - the detailed
+  root, Shared, iOS, Services and MCP guides, plus red-run history;
+  `docs/CLAUDE_REFERENCE.md` - detailed product/feature history.
 
 ## Non-Negotiable Patterns
 
@@ -102,28 +103,17 @@ Long references, searchable only when needed:
 
 `try? modelContext.save()` is allowed **only** when the save commits nothing but in-place field
 edits to objects the store already holds, and nothing after it tells the user it worked. A site
-breaks the rule if any of four halves is true:
-
-1. **Existence** — the function inserts or deletes, **in its own frame or one below**: a pending
-   change travels up through every frame *handed* a `ModelContext` and stops at the first that was not.
-2. **Report** — something **anywhere in the swallowed commit's own block** says it worked: `dismiss…()`,
-   `is/show<X> = false`, `editing/selected/pending<X> = nil`, `presentedX = …`, `onSave(…)`, an
-   `@AppStorage` write, a write through **any `@Binding`** (the surface stays open and fills itself
-   in — T-664, scalars too since T-997), **the answer itself** (`return true` from a `-> Bool`,
-   non-`nil` from a `-> X?`), or **a rearrangement the user can see** (T-614). **A reorder surface
-   answering `Bool` is never `@discardableResult`** (T-996). A "swallowed commit" is `try?` on a
-   `save()` **or** a `Cadence*Persistence` helper — the commit surface, not the method name —
-   **one frame down included**.
-3. **Commit reach** — the function inserts **or deletes** and reaches no commit at all. A declaration
-   **handed** a `ModelContext` is exempt by rule; one that reached for an ambient context must commit.
-4. **The callee's undo** (T-1299) — `try?` over **any** helper that changes existence and reaches a raw
-   `save()`; safe only if it changes no existence or commits through `CadencePendingChangePersistence`.
-
-In `extension ModelContext` the receiver is `self` and is left off (T-1301): `save()`, `insert(` and
-`delete(` count in every half above, and the declaration counts as **handed** its context for half 3.
-All four are fixed the same way: commit through `CadencePendingChangePersistence` (`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and name the failure on screen.
-Why it matters: one `ModelContext` app-wide, so a swallowed failure leaves the change *pending*, for
-the next unrelated `save()` to take or `rollback()` to discard. Enforced by `CadenceSaveCommitDisciplineTests`.
+breaks the rule if any of four halves is true: **existence** (it inserts or deletes, in its own
+frame or one below), **report** (something in the swallowed commit's own block says it worked — a
+dismiss, a flag, a `@Binding` write, the answer itself, a visible rearrangement), **commit reach**
+(it changes existence and reaches no commit at all), or **the callee's undo** (T-1299 — `try?` over
+a helper that changes existence and reaches a raw `save()`). In `extension ModelContext` the
+receiver is `self` and is left off (T-1301). All four are fixed the same way: commit through
+`CadencePendingChangePersistence` (`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`),
+`throws`, take `commit:`, and name the failure on screen. There is one `ModelContext` app-wide, so
+a swallowed failure leaves the change *pending* for someone else's `save()` or `rollback()`.
+Enforced by `CadenceSaveCommitDisciplineTests`; each half argued in full, with T-614/T-664/T-996/
+T-997, in `docs/AGENTS_REFERENCE.md`, "The `try? save()` rule".
 
 ## Build And Run Safety
 
