@@ -738,6 +738,18 @@ enum CadenceTaskMutationSupport {
     ///   commit is refused. `CadenceDeleteSurvivorSnapshot` captures them before the first write and
     ///   `commitEdit` puts them back around `commitDelete`'s rollback.
     ///
+    ///   **The deferred half owes the same undo, and its refusal is two frames up ([[T-1377]]).**
+    ///   Deleting an area takes its containers with it, so the survivors of a *cascade* are the
+    ///   **free** relationships — `AppTask.goal`, the tags, and the recurrence pointer a
+    ///   predecessor in another list still carries — rather than the list the row was filed in.
+    ///   Nothing here can hang an undo off a commit it does not make, so the snapshot is handed to
+    ///   `CadenceDeferredDeleteEffects.current` and `commitCascade` runs it if its commit is
+    ///   refused. That is the same queue, and the same ambient-scope argument, [[T-1348]] wrote
+    ///   down for the cancellation and [[T-1351]] reused for the focus teardown: an accumulator
+    ///   threaded down through `deleteContext` / `deleteArea` / `deleteProject` / `deleteTasks`
+    ///   would make correctness depend on every present and future caller remembering to pass one.
+    ///   The two buckets differ only in which side of the commit releases them.
+    ///
     ///   **The notification cancellation below is gated on it too, and used not to be (T-1348).**
     ///   The old reasoning held only for the committing half: a **refused** commit skips the
     ///   cancellation because it returns first, so the task is demonstrably still there and
@@ -776,18 +788,21 @@ enum CadenceTaskMutationSupport {
         willDelete(taskIDs)
 
         // The writes below that land on rows which **survive** this delete, captured before any of
-        // them happens (T-1336). Only the committing half builds one: the deferred half makes no
-        // commit, so there is no refusal here for an undo to hang off — the cascade's own is
-        // `commitCascade`'s, and reaching it from this depth is [[T-1377]].
+        // them happens (T-1336). Both halves build one now (T-1377): the deferred half makes no
+        // commit of its own, so its refusal is the enclosing `commitCascade`'s, and the undo is
+        // handed to the same ambient queue the deferred reminder cancellation and the deferred
+        // focus teardown already travel in — `CadenceDeferredDeleteEffects`, which holds a
+        // success-only bucket and a refusal-only one.
         var survivors = CadenceDeleteSurvivorSnapshot()
-        if commitsImmediately {
-            let doomedIDs = Set(tasks.map(\.id))
-            for task in tasks {
-                survivors.captureContainers(of: task)
-            }
-            for other in allTasks where other.recurrenceSpawnedTaskID.map(doomedIDs.contains) == true {
-                survivors.captureRecurrencePointer(of: other)
-            }
+        let doomedIDs = Set(tasks.map(\.id))
+        for task in tasks {
+            survivors.captureContainers(of: task)
+        }
+        for other in allTasks where other.recurrenceSpawnedTaskID.map(doomedIDs.contains) == true {
+            survivors.captureRecurrencePointer(of: other)
+        }
+        if !commitsImmediately {
+            CadenceDeferredDeleteEffects.current?.holdUndo(survivors.restore)
         }
 
         let subtasks = allSubtasks.filter { subtask in
@@ -1527,6 +1542,23 @@ enum CadenceTaskMutationSupport {
 /// the delete never actually changed is never rewritten — the same care `CadenceTaskFieldSnapshot`
 /// takes by snapshotting raw values rather than coerced ones.
 ///
+/// **What is deliberately not captured: a write whose *both* ends are doomed ([[T-1376]]).**
+/// `deleteGoal` empties `doomed.listLinks` while deleting every link in it, and `deleteHabit`
+/// empties `doomed.completions` while deleting every completion in it. Those are the shape
+/// [[T-1321]] settled — the rows are marked deleted, not edited, and `rollback()` un-deletes both
+/// ends at once — and restoring them would mean writing rows that are currently marked deleted back
+/// into a live array, which is a different operation with hazards of its own and buys nothing.
+/// The rule this type applies is therefore: **capture a write when at least one end of it outlives
+/// the delete.** `bundle.tasks`, `goal.habits` and `goal.tasks` qualify even though the array's
+/// owner is doomed, because the *members* survive and a refusal puts the owner back on screen
+/// holding them.
+///
+/// **A delete that makes no commit hands the same snapshot upwards ([[T-1377]]).** The cascade half
+/// of `deleteTasks` has no refusal of its own to hang an undo off — that is T-291's whole design —
+/// so it hands `restore` to `CadenceDeferredDeleteEffects.current` and
+/// `CadencePendingChangePersistence.commitCascade` runs it, still before its `rollback()`. Nothing
+/// about the construction changes; only who owns the commit does.
+///
 /// It is deliberately **not** a second `rollback()`: this app has one `ModelContext`, and a
 /// rollback discards whatever else is pending in it. That is `commitEdit`'s own reason for taking a
 /// caller-supplied `undo`, and it does not depend on any SwiftData timing.
@@ -1587,6 +1619,85 @@ struct CadenceDeleteSurvivorSnapshot {
         capture({ bundle.tasks ?? [] }, put: { bundle.tasks = $0 })
     }
 
+    /// The goal a habit names, and the goal's own list of habits that the pointer populates.
+    ///
+    /// **Both deletes in the tracking tree write this, from opposite sides ([[T-1376]]).**
+    /// `ModelContext.deleteGoal` clears it on every habit under a doomed goal, and those habits
+    /// **survive** — a goal organised them, it never owned them, which is the whole of
+    /// `deleteGoal`'s "the relationships are severed, the objects survive". `ModelContext
+    /// .deleteHabit` clears the same field with the *habit* doomed and the **goal** surviving, and
+    /// `Goal.habits` is what a goal's detail page counts and what `GoalHabitMomentumResolver`
+    /// scores. Either way one end of the write outlives the delete, so either way it is captured.
+    ///
+    /// The pointer is put back before the array, for the reason `capture` describes.
+    mutating func captureGoalAssignment(of habit: Habit) {
+        let goal = habit.goal
+        let goalID = goal?.id
+        restorations.append {
+            if habit.goal?.id != goalID { habit.goal = goal }
+        }
+        if let goal {
+            capture({ goal.habits ?? [] }, put: { goal.habits = $0 })
+        }
+    }
+
+    /// The goal a task contributes to, and the goal's contribution list.
+    ///
+    /// The task is the survivor here — `deleteGoal` severs `task.goal` on rows it is explicitly
+    /// not deleting ([[T-1312]]) — and `Goal.tasks` is what `GoalContributionResolver.summary`
+    /// reads for the percentage on the goal's own row. A refusal that missed either leaves a goal
+    /// reading 0/0 under an alert that says nothing was removed.
+    mutating func captureGoalAssignment(of task: AppTask) {
+        let goal = task.goal
+        let goalID = goal?.id
+        restorations.append {
+            if task.goal?.id != goalID { task.goal = goal }
+        }
+        if let goal {
+            capture({ goal.tasks ?? [] }, put: { goal.tasks = $0 })
+        }
+    }
+
+    /// The context a habit is filed under, and that context's list of habits.
+    ///
+    /// `ModelContext.deleteHabit` clears this on the doomed habit; the **`Context` survives**, and
+    /// `Context.habits` is the only place a habit with no goal can be reached from at all.
+    mutating func captureContextAssignment(of habit: Habit) {
+        let context = habit.context
+        let contextID = context?.id
+        restorations.append {
+            if habit.context?.id != contextID { habit.context = context }
+        }
+        if let context {
+            capture({ context.habits ?? [] }, put: { context.habits = $0 })
+        }
+    }
+
+    /// A goal's place in the tracking tree: its pointer at its parent, and the parent's milestone
+    /// list that pointer populates.
+    ///
+    /// **The parent is the survivor that matters.** `deleteGoal` walks
+    /// `GoalAssignmentRules.deletionCascade`, which takes the whole subtree with no container
+    /// filter ([[T-1324]]), so every doomed goal's children are doomed too — the one goal on the
+    /// far side of a `parentGoal = nil` that outlives the delete is the parent of the goal the
+    /// user actually aimed at. Both Goals pages draw a direction with its milestones nested under
+    /// it (`GoalMissionGrouping.groups` on macOS, `milestones(of:)` on iOS), so a refusal that
+    /// missed `subGoals` shows a direction that has lost the milestone it was not asked to remove.
+    ///
+    /// Applied to every doomed goal rather than only the root, which also covers the arrays
+    /// `doomed.subGoals = []` empties on the way down: a doomed goal's parent is itself doomed,
+    /// and a refused commit puts that parent back on screen too.
+    mutating func captureNesting(of goal: Goal) {
+        let parent = goal.parentGoal
+        let parentID = parent?.id
+        restorations.append {
+            if goal.parentGoal?.id != parentID { goal.parentGoal = parent }
+        }
+        if let parent {
+            capture({ parent.subGoals ?? [] }, put: { parent.subGoals = $0 })
+        }
+    }
+
     /// Runs every restoration, in capture order.
     ///
     /// Capturing the same row twice is harmless and expected — `rollOver` reaches a task both
@@ -1602,10 +1713,13 @@ struct CadenceDeleteSurvivorSnapshot {
     /// left strictly alone. See the type's note on why that comparison is the whole design.
     ///
     /// Both halves are handed in because a to-many on a `@Model` is a stored property, not a
-    /// keypath this type can hold generically across six unrelated model types.
-    private mutating func capture(
-        _ read: @escaping () -> [AppTask],
-        put back: @escaping ([AppTask]) -> Void
+    /// keypath this type can hold generically across nine unrelated model types. The *element* is
+    /// generic since [[T-1376]] brought the tracking tree in — the arrays a delete rewrites hold
+    /// `AppTask`, `Habit` and `Goal` — and `CadenceDeleteSurvivorMember` is the one thing the
+    /// comparison needs from any of them.
+    private mutating func capture<Member: CadenceDeleteSurvivorMember>(
+        _ read: @escaping () -> [Member],
+        put back: @escaping ([Member]) -> Void
     ) {
         let members = read()
         let ids = members.map(\.id)
@@ -1613,4 +1727,24 @@ struct CadenceDeleteSurvivorSnapshot {
             if read().map(\.id) != ids { back(members) }
         }
     }
+
 }
+
+/// The one thing `CadenceDeleteSurvivorSnapshot`'s array captures need from a model: the stable
+/// identity they compare by.
+///
+/// It exists so one capture serves every to-many a delete rewrites — `Area.tasks`, `Goal.habits`,
+/// `Goal.subGoals`, `Context.habits` — instead of one near-copy per element type ([[T-1376]]). A
+/// to-many on a `@Model` is a stored property rather than a keypath this type can hold generically,
+/// so the read and the write are still handed in; only the element comparison is shared.
+///
+/// `nonisolated` for the reason `Models/AGENTS.md` gives for the data enums: the app sets
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, and a bare protocol would hand a main-actor
+/// requirement to models that are not.
+nonisolated protocol CadenceDeleteSurvivorMember: AnyObject {
+    var id: UUID { get }
+}
+
+extension AppTask: CadenceDeleteSurvivorMember {}
+extension Habit: CadenceDeleteSurvivorMember {}
+extension Goal: CadenceDeleteSurvivorMember {}

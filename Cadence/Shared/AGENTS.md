@@ -114,6 +114,12 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   and all three are correct. The `building:` form (T-1102) is for a delete whose *construction*
   can throw part-way, the privacy reset being the one that does: twenty-one fetch-and-delete
   passes, so wrapping only the save would leave a half-marked delete pending.
+  **It is not the *whole* undo for a delete that also edits rows which survive it** (T-1336,
+  T-1376, T-1377): those get `CadenceDeleteSurvivorSnapshot` as well, and its `commitEdit` nests
+  **inside** `commitDelete`'s `commit:` so the restore lands before the rollback. A cascade, which
+  commits nothing, hands the same undo to `CadenceDeferredDeleteEffects` and `commitCascade` runs
+  it. The order is argued on the type; `CadenceDeleteSurvivorRestoreTests` is red on a new site
+  that skips it.
   Edit undo is a field snapshot (`CadenceTaskFieldSnapshot`, `CadenceListEditSnapshot`). The
   **load-bearing** reason, and the one to lead with: this app has a single `ModelContext`, so a
   rollback discards pending work the editor knows nothing about. Pinned by

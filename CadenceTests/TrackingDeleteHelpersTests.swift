@@ -626,7 +626,14 @@ struct TrackingDeleteHelpersTests {
             CadenceSourceScan.functionBody(named: "deleteHabit", in: stripped),
             "deleteHabit is no longer a function"
         )
-        let commitThenCancel = #"commitDelete\(in: self, commit: commit\)\s*NotificationManager\.cancelReminders\(habitIDs: \[habitID\]\)"#
+        // **Widened by one nesting level for [[T-1376]], the way `TaskDeleteParityTests`' was for
+        // [[T-1336]].** The clause being pinned did not move: the cancellation is still below the
+        // commit and a refusal still throws out of the line above it. What changed is what
+        // `commitDelete` is handed as its `commit:` — a `commitEdit` carrying the undo for the
+        // filing this delete severs on rows that outlive it — so the needle reads that too, and a
+        // reversion to the bare spelling fails here as well as in
+        // `CadenceDeleteSurvivorRestoreTests`.
+        let commitThenCancel = #"commitDelete\(\s*in: self,\s*commit: \{ try CadencePendingChangePersistence\.commitEdit\(in: \$0, commit: commit, undo: survivors\.restore\) \}\s*\)\s*NotificationManager\.cancelReminders\(habitIDs: \[habitID\]\)"#
         #expect(
             CadenceSourceScan.matchCount(commitThenCancel, in: body) == 1,
             "the habit delete no longer cancels its reminder below the commit that earns it"
@@ -639,9 +646,17 @@ struct TrackingDeleteHelpersTests {
         #expect(
             CadenceSourceScan.matchCount(
                 commitThenCancel,
-                in: "NotificationManager.cancelReminders(habitIDs: [habitID])\n        try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)"
+                in: "NotificationManager.cancelReminders(habitIDs: [habitID])\n        try CadencePendingChangePersistence.commitDelete(\n            in: self,\n            commit: { try CadencePendingChangePersistence.commitEdit(in: $0, commit: commit, undo: survivors.restore) }\n        )"
             ) == 0,
             "the ordering needle passes on a delete that cancels above its commit"
+        )
+        // And against the pre-T-1376 spelling, which committed without the survivor undo.
+        #expect(
+            CadenceSourceScan.matchCount(
+                commitThenCancel,
+                in: "try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)\n\n        NotificationManager.cancelReminders(habitIDs: [habitID])"
+            ) == 0,
+            "the ordering needle still accepts a habit delete that commits without the survivor undo"
         )
     }
 }

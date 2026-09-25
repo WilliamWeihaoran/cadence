@@ -112,6 +112,20 @@ extension ModelContext {
         // out of `goal.tasks`, so what is left in these arrays is precisely the rows that survive
         // (T-1312). The habit half is the same hazard one model over: a habit filed under another
         // context can name a goal in this one, and it outlives the goal rather than going with it.
+        //
+        // **Which is exactly why the undo goes to the queue ([[T-1377]]).** The comment above says
+        // in as many words that what is left in these arrays is the rows that survive, and this
+        // function makes no commit — T-291 — so a refusal happens two frames up in
+        // `commitCascade`. `CadenceDeleteSurvivorSnapshot` captures the filing before the loop
+        // writes over it and `CadenceDeferredDeleteEffects` carries it to the commit that owns it,
+        // the same route the deferred reminder cancellation below already takes.
+        var survivors = CadenceDeleteSurvivorSnapshot()
+        for goal in goals {
+            for task in goal.tasks ?? [] { survivors.captureGoalAssignment(of: task) }
+            for habit in goal.habits ?? [] { survivors.captureGoalAssignment(of: habit) }
+        }
+        CadenceDeferredDeleteEffects.current?.holdUndo(survivors.restore)
+
         for goal in goals {
             for task in goal.tasks ?? [] { task.goal = nil }
             for habit in goal.habits ?? [] { habit.goal = nil }

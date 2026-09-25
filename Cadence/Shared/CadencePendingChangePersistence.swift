@@ -197,8 +197,22 @@ nonisolated enum CadencePendingChangePersistence {
     /// removed" also mean "nothing was cancelled" — and, since T-1351, "nothing was ended", because
     /// the macOS delete wrapper's focus-session teardown waits in the same queue.
     ///
+    /// **It is also the scope a deferred delete's *undo* is run from ([[T-1377]]).** The mirror of
+    /// the paragraph above, and the same object: a cascade edits rows it is not removing — a
+    /// surviving goal's `tasks`, a surviving tag's `tasks`, a surviving predecessor's
+    /// `recurrenceSpawnedTaskID` — and has no refusal of its own to hang the undo off, so it hands
+    /// the undo to `CadenceDeferredDeleteEffects` and this function runs it on both refusal paths.
+    /// **Before the `rollback()`, never after**, which is the whole of [[T-1336]]'s construction
+    /// carried up one frame: a restore that lands after the rollback writes into a context the
+    /// rollback has just made clean, so on the toolchain that needs the repair it is also a fresh
+    /// pending edit and `!modelContext.hasChanges` after a refusal stops holding — a clause every
+    /// cascade suite asserts. On the commit path that ordering is bought by nesting `commitEdit`
+    /// inside `commitDelete`'s `commit:`, exactly as the three delete helpers do; on the
+    /// cascade-could-not-finish path the rollback is right here and the undo goes above it.
+    ///
     /// - Parameter cascade: Runs the delete. Returns `false` if it could not finish.
-    /// - Parameter effects: The queue the cascade's success-only effects wait in. It is a
+    /// - Parameter effects: The queue the cascade's success-only effects wait in, and since
+    ///   [[T-1377]] its refusal-only undos too. It is a
     ///   parameter for the reason `commit` is: a released cancellation is otherwise unobservable
     ///   from a test, because `NotificationManager.cancel` is inert under
     ///   `NotificationManager.isTestEnvironment`, and a side effect no test can see is a side
@@ -211,10 +225,14 @@ nonisolated enum CadencePendingChangePersistence {
     ) throws {
         try CadenceDeferredDeleteEffects.$current.withValue(effects) {
             guard cascade() else {
+                effects.undo()
                 modelContext.rollback()
                 throw CascadeIncomplete()
             }
-            try commitDelete(in: modelContext, commit: commit)
+            try commitDelete(
+                in: modelContext,
+                commit: { try commitEdit(in: $0, commit: commit, undo: effects.undo) }
+            )
         }
         effects.release()
     }
@@ -227,7 +245,16 @@ nonisolated enum CadencePendingChangePersistence {
     struct CascadeIncomplete: Error {}
 }
 
-/// The success-only side effects a **deferred** delete has earned and may not perform yet.
+/// The side effects a **deferred** delete has earned and may not perform yet, and the undo for
+/// what it wrote on rows it is not removing.
+///
+/// **Two buckets, one queue, one ambient scope ([[T-1377]]).** `hold(taskIDs:habitIDs:effect:)`
+/// holds what is right only if the commit **landed**; `holdUndo(_:)` holds what is right only if it
+/// was **refused**. They were nearly two objects, and are one because the argument below for why
+/// the scope is ambient rather than a parameter applies identically to both, and a second
+/// `@TaskLocal` beside this one would be a second thing every present and future cascade caller has
+/// to remember to be inside. `CadencePendingChangePersistence.commitCascade` is still the only
+/// place the scope is opened, and it is what releases one bucket or runs the other.
 ///
 /// **It was named for reminders, and it is not only about reminders ([[T-1351]]).** A reminder
 /// cancellation was the first effect to need this and is still the one the doc below argues from,
@@ -285,6 +312,7 @@ nonisolated final class CadenceDeferredDeleteEffects: @unchecked Sendable {
     private let lock = NSLock()
     private var held: [Held] = []
     private var releasedEffects: [Held] = []
+    private var undos: [() -> Void] = []
 
     /// The ids waiting on a commit that has not landed. Empty after `release()`.
     var pendingTaskIDs: [UUID] { lock.withLock { held.flatMap(\.taskIDs) } }
@@ -311,6 +339,43 @@ nonisolated final class CadenceDeferredDeleteEffects: @unchecked Sendable {
         }
         for held in due {
             held.effect()
+        }
+    }
+
+    /// How many undos are waiting. Non-vacuity for a test asserting that none of them ran.
+    var heldUndoCount: Int { lock.withLock { undos.count } }
+
+    /// What a **deferred** delete wrote on rows it is not removing, to be put back if the commit
+    /// that owns it is refused ([[T-1377]]).
+    ///
+    /// The mirror of `hold(taskIDs:habitIDs:effect:)` and deliberately the same object rather than
+    /// a second ambient scope beside it. One queue, two buckets, one `@TaskLocal`: a delete that
+    /// reaches this one has by construction reached the other, and a second scope would be a second
+    /// thing every future cascade caller has to be inside.
+    ///
+    /// **Not `@Sendable`, unlike `effect`.** An undo closes over the `@Model` rows it is putting
+    /// back, which are not `Sendable`, and it does not need to be: it is appended and run inside
+    /// one synchronous `commitCascade` frame, which is the same reason the lock here is an
+    /// `NSLock` rather than an actor.
+    func holdUndo(_ undo: @escaping () -> Void) {
+        lock.withLock { undos.append(undo) }
+    }
+
+    /// Runs every held undo, once, in the order they were captured, and forgets them.
+    ///
+    /// Called only from the paths where the commit did **not** land, and on each of those it runs
+    /// **before** the `rollback()` — see `CadencePendingChangePersistence.commitCascade` for why
+    /// that order is the fix rather than a detail. Draining rather than replaying keeps the
+    /// idempotence `release()` has: a second call after a first cannot write a stale value back
+    /// over a context somebody else has since changed.
+    func undo() {
+        let due = lock.withLock { () -> [() -> Void] in
+            let due = undos
+            undos = []
+            return due
+        }
+        for restoration in due {
+            restoration()
         }
     }
 }
