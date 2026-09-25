@@ -88,6 +88,20 @@ line of Swift; the whole discriminator is two greps and, once, `xcresulttool`.
 | Four-figure failure count, 0 compile errors, most failures at `0.000 seconds` | a second macOS test host on the one app-group container (T-236) | `grep -oE "My Mac - Cadence \([0-9]+\)" log \| sort -u` → more than one PID; a healthy run prints exactly one. Take `scripts/test-host-lock.sh`, re-run. |
 | A handful of `0.000 seconds` failures scattered over suites your change cannot reach, 0 compile errors, one host PID | the test runner exited early; the harness failed whatever was in flight (T-238) | `xcrun xcresulttool get test-results summary --path <derivedDataPath>/Logs/Test/Test-Cadence-*.xcresult`, then read `result`, `statistics`, `topInsights`, `testFailures`. The reason — "The test runner exited with code 0 before finishing running tests" — exists **only** in the `.xcresult`; the xcodebuild log cannot show it. Re-run, `-parallel-testing-enabled NO` to confirm. |
 
+**The CAN half, which has now been discovered twice** (T-986, then T-1153). The App-Sandboxed
+`CadenceTests` host **can** spawn `/bin/zsh <script>`, at any depth, against a script already on
+disk — that single fact is what makes every guard-script selftest wireable into a test run at all,
+and both times it was found the finding read as a surprise. It can also exec a repository script
+directly and run Xcode's own `xcodebuild`. What it cannot do is exec a **setuid** binary (`/bin/ps`,
+`/usr/bin/top` — EPERM at `posix_spawn`), exec a file **it wrote itself** (even a byte-identical
+copy of `/bin/ls`), write outside its own container, or read the process list at all: `/usr/bin/pgrep`
+spawns and runs and then exits 3 saying *"Cannot get process list"*, which is worse than a refusal
+because a caller piping it into `wc -l` reads a plausible `0`. The `/usr/bin` **xcrun shims**
+(`git`, `python3`, `xcodebuild`) spawn and then refuse with *"cannot be used within an App Sandbox"*
+— a different failure with a different fix. Every sentence in this paragraph is measured by
+`CadenceTestHostSandboxCapabilityTests`; none of it may be restated anywhere without naming it
+(T-1153, enforced by `CadenceTestHostEnvironmentPinTests`).
+
 Two things the table does not cover: failures inside `CadenceUITests` mean the run was not scoped
 (above), and a mutation that failed to compile also exits 65 — but that one names your file. The
 evidence for each row is in `docs/TODO.md` under its id; the detail on T-236 and T-117 is in the
@@ -551,6 +565,20 @@ the same everywhere — while ambient *and* a day-boundary derivation is 22 acro
 a weaker, separate finding (a clock race, which the pin does not fix) and is ledgered per file rather
 than banned. `WeekKeyResolutionTests` is exempt by file: its subject *is* the parameterless helpers'
 device-zone default, so it cannot state a zone instead.
+
+**What the pin does not reach, which is the rest of the same dependency (2026-09-25).** The two pins
+arrive by two channels, and neither channel is general. `TZ` is an environment variable;
+`-AppleLocale en_US` is an argument-domain overlay on **one key**. System Settings' Language & Region
+pane writes its switches into the **global** domain, where an argument-domain pin cannot reach them:
+`AppleFirstWeekday` moves `Calendar.current.firstWeekday` to 2 on a Mac set to Monday,
+`AppleICUForce24HourTime` moves the hour cycle under the locale that is pinned,
+`AppleICUDateFormatStrings` re-templates `DateFormatter`'s styles, `AppleICUNumberSymbols` the
+separators. So **a green run additionally requires that the Mac has no Language & Region override
+set** — and the test best placed to notice, `theTestHostRunsInTheClockTheSchemePins`, used to report
+such a failure as a dropped scheme argument, which is a diagnosis that cannot be true of a switch the
+scheme has no way to set. `CadenceTestHostEnvironmentPinTests` now refuses by name instead, and there
+is no fix beyond the refusal: the answer for a test that turns on one of these is to state its own
+calendar or locale, exactly as `CadenceTestTimeZones` and `CadenceTestClocks` do.
 
 ### The loose `warning:` reading, measured (T-1147, 2026-09-12)
 

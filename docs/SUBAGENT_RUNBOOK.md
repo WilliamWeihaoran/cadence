@@ -585,7 +585,8 @@ in-flight hunk, which is the exact case `DECLINED-HUNK-STALE`'s grace period exi
 and `mutate.sh` alone runs it dozens of times per needle. A Swift test cannot reach the ledger at
 all: it lives under `$TMPDIR` and the App-Sandboxed test host's `$TMPDIR` is its own container —
 not because that host cannot spawn a script (it can; it runs this one's `selftest` on every test
-run), but because it would read a different, permanently empty ledger. **And CI cannot either**,
+run, and `CadenceTestHostSandboxCapabilityTests` holds both halves of that), but because it would
+read a different, permanently empty ledger. **And CI cannot either**,
 which is worth saying because it is now the obvious candidate: `ci.yml` does run a guard script
 in-repo since T-977, but a hosted job is a fresh VM with `TMPDIR=$RUNNER_TEMP/`, so the call would
 see an empty ledger and exit 0 on every run — a gate that cannot fail — and `paths-ignore` skips
@@ -622,6 +623,7 @@ scripts (`/usr/bin/git` and `/usr/bin/python3` are xcrun shims that refuse; `$TM
 prepending `$scratch/shim` to `$PATH` works perfectly from a shell and does nothing in the test
 host — zsh cannot exec it, walks on down `$PATH`, finds the real git, and the run looks *normal*.
 The selftest passed thirty-seven checks and proved nothing about the five it was written for.
+`CadenceTestHostSandboxCapabilityTests`' `itCannotExecAFileItWroteItself` is the measurement.
 
 Intercept **in-process** instead: zsh sources `$ZDOTDIR/.zshenv` on every non-`-f` invocation, and a
 shell *function* named `git` shadows the `$PATH` lookup and can `command git` through to the real

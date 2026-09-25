@@ -98,6 +98,11 @@ Long references, searchable only when needed:
 - **`.githooks/pre-commit` is not yours to arm** (T-780). Never run `git config core.hooksPath`, or
   teach a script to. Why, and why an armed hook still lets `agent-commit.sh` through:
   `docs/AGENTS_REFERENCE.md`, "Why the pre-commit hook ships inert".
+- **A claim about what the test host can do must name the test that holds it** (T-1153) —
+  `CadenceTestHostSandboxCapabilityTests`, or `CadenceGuardScriptSelftestTests` for a script in it.
+  `CadenceTestHostEnvironmentPinTests` enforces that and pins T-1116's other half: the `TestAction`
+  reaches `TZ` and `AppleLocale` and **cannot** reach a Language & Region switch, so a date/week/
+  clock test that moves on one Mac is the machine.
 
 ### The `try? save()` rule
 
@@ -128,7 +133,7 @@ T-997, in `docs/AGENTS_REFERENCE.md`, "The `try? save()` rule".
   took the lease, so the pid is routinely gone mid-run. It reclaims only on an expired lease **and**
   zero live test hosts; forcing it starts a second host on one app-group container (T-236). **Never
   drive the lock from inside a test** (T-1152): there `pgrep` runs but is denied the process list, so
-  it refuses to reclaim and `status` prints `unknown` rather than the plausible `0` it used to.
+  it refuses and `status` prints `unknown` (`CadenceTestHostSandboxCapabilityTests` holds that).
 - `xcodebuild` idle at `Command line invocation` with 0% CPU is a project-file lock, not Swift.
 - Never create simulator devices. Use one existing stock simulator and `scripts/simulator-claim.sh`.
 - Launch the macOS app only through `scripts/run-macos-app.sh start <Cadence.app> <id>`, and pair it

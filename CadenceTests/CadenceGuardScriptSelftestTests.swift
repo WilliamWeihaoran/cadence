@@ -408,10 +408,55 @@ struct CadenceGuardScriptSelftestTests {
     /// than counting when it cannot ask, the two fail here and are tolerated honestly. Nothing
     /// about the lock got weaker; two green lines stopped being green for no reason.
     ///
-    /// Six of the eleven properties are now unprovable from this host, which is a poor ratio for a
-    /// suite whose job is to notice rot. That is filed as [[T-1161]] rather than absorbed here.
+    /// Six of the eleven properties were listed here as unprovable, which is a poor ratio for a
+    /// suite whose job is to notice rot. That was [[T-1161]], and this is its answer — **five**,
+    /// and every one of them for the same single reason.
+    ///
+    /// **NAME THE MECHANISM, NEVER "THE SANDBOX".** A property is unprovable here only if a
+    /// specific syscall or path refusal stops it; "awkward" is not one, and neither is a mood.
+    /// Three refusals are in play, each measured by `CadenceTestHostSandboxCapabilityTests`:
+    ///
+    /// * **M1 — exec of a setuid binary is refused at `posix_spawn` (EPERM).** `/bin/ps` is `4555`,
+    ///   so `waiter_alive`'s `ps -o command= -p $pid` can never run, for any pid.
+    /// * **M2 — the process list is not readable at all.** `/usr/bin/pgrep` is not setuid, spawns
+    ///   fine, and exits 3; measured in here on 2026-09-25 it says *"sysmon request failed with
+    ///   error: sysmond service not found"*, and in-process `proc_listpids` returns ≤ 0 by the same
+    ///   denial. `live_test_hosts` therefore refuses rather than counting, and every property whose
+    ///   fixture needs a live host to be SEEN fails honestly.
+    /// * **M3 — a file this process wrote cannot be exec'd**, even at 0755 and even as a
+    ///   byte-identical copy of `/bin/ls`. This is the one that shuts the obvious escape: M1 and M2
+    ///   are about the REAL probes, and the selftest already has knobs for substituting fake ones
+    ///   (`CADENCE_LOCK_PS_CMD`, `CADENCE_LOCK_PGREP_CMD`, added by T-1152) — but a stub the fixture
+    ///   writes into `$TMPDIR` cannot be launched from in here either, which is what mode 6's own
+    ///   comment records about `blindpgrep`.
+    ///
+    /// **`ordering` IS PROVABLE HERE, AND HAS BEEN SINCE T-1152 — measured 2026-09-25, `PASS
+    /// ordering: w1 w2 w3 w4`.** It was tolerated on M1, and M1 stopped stranding it the moment
+    /// T-1152 gave `waiter_alive` a third answer: a blind `ps` is now "cannot tell", `prune_queue`
+    /// falls through to the ticket-age check instead of deleting every sibling's ticket, and the
+    /// FIFO survives a host that cannot see a single process. The repair that made the toleration
+    /// obsolete is the same commit the toleration was re-argued in, and nothing noticed for
+    /// thirteen days — because nothing read `passed ∩ tolerating`. That is now a complaint
+    /// (`staleTolerations`), which is how this line came to be written.
+    ///
+    /// So all five survivors are **M2 alone**, and the asymmetry is the useful part: this host can
+    /// prove anything the lock decides from its own files, and nothing it decides by asking the
+    /// kernel who else is running.
+    ///
+    /// **What the five would cost to reclaim.** M3 shuts the substitution escape *as the knobs are
+    /// spelled today*: `"$PGREP_CMD" -f …` is one word, exec'd directly. The host CAN run
+    /// `/bin/zsh <script>` — that is how every selftest in this file runs at all — so a knob taking
+    /// a command **array** would reopen four of them, whose fixtures already match a FAKE pattern
+    /// against a FAKE process even outside the sandbox (`CADENCE_LOCK_PGREP`) and so lose nothing
+    /// by faking the probe too. `host-pattern-calibration` is the exception under any spelling: its
+    /// whole subject is the REAL constant read by a REAL `pgrep` over REAL argv. [[T-1381]].
+    ///
+    /// **The list is now pinned in both directions.** Until 2026-09-25 a tolerated property that
+    /// started PASSING was accepted in silence, so this set could only grow — the rot the ticket
+    /// names, in the field meant to record it. `complaintsForNamedRuns` now complains about
+    /// `passed ∩ tolerating` too, so a name only stays here while the host really cannot prove it.
     static let testHostLockPropertiesUnverifiableInThisSandbox: Set<String> = [
-        "ordering", "no-reclaim", "dead-owner-defers-to-live-host",
+        "no-reclaim", "dead-owner-defers-to-live-host",
         "reclaim", "dead-owner-reclaims-early",
         // T-1162's property is the same sandbox limit one step earlier: it asks a real `pgrep`
         // about real processes it spawned, and in here `pgrep` runs, is denied the process list
@@ -430,9 +475,18 @@ struct CadenceGuardScriptSelftestTests {
         "killed-waiter",
     ]
 
-    /// Same T-959 sandbox limit as above: `ordering` depends on `waiter_alive`'s `ps` call the same
-    /// way test-host-lock.sh's does (this script's queue is a direct port of that one). Proven by
-    /// terminal instead -- docs/TODO.md's T-749 entry (`w4 w1 w2 w3` before, `w1 w2 w3 w4` after).
+    /// `ordering` depends on `waiter_alive`'s `ps` the same way `test-host-lock.sh`'s used to --
+    /// this script's queue is a direct port of that one. Proven by terminal instead:
+    /// docs/TODO.md's T-749 entry (`w4 w1 w2 w3` before, `w1 w2 w3 w4` after).
+    ///
+    /// **And it is M1 here only because the port never received T-1152's repair**, which is a
+    /// finding rather than a footnote and is why this list and the lock's no longer agree. Measured
+    /// together on 2026-09-25: the lock's `ordering` PASSES in this host and this one FAILS. The
+    /// difference is one function -- `waiter_alive` here is still the two-way reading, so a `ps`
+    /// that cannot spawn reads as *dead* for every pid and `prune_queue` deletes every waiter's
+    /// ticket in a single pass, which is precisely the defect T-1152 exists to abolish. Filed as
+    /// [[T-1382]]; not repaired from here, because sibling agents hold real device claims through
+    /// this script while these tests run.
     static let simulatorClaimPropertiesUnverifiableInThisSandbox: Set<String> = ["ordering"]
 
     /// T-1076. `scripts/xcb.sh`'s two `-only-testing:` outcomes, and they are deliberately
@@ -634,11 +688,17 @@ struct CadenceGuardScriptSelftestTests {
     /// actually holding that lock. Real subprocesses and real `sleep`s, so this one runs for tens of
     /// seconds rather than about one -- see the type doc above.
     ///
-    /// `ordering` / `no-reclaim` are TOLERATED, not required (T-959: this host cannot spawn the
-    /// setuid `ps` at all, and the `pgrep` it can spawn cannot read the process list -- see the
+    /// `no-reclaim` and four others are TOLERATED, not required -- all five for one reason, the
+    /// `pgrep` this host can spawn but cannot get an answer out of (see the
     /// `testHostLockPropertiesUnverifiableInThisSandbox` doc). Tolerating a named failure is not
-    /// the same as ignoring it: this still fails loudly if either PASSES unexpectedly (the sandbox
+    /// the same as ignoring it: this still fails loudly if any of them PASSES unexpectedly (the
     /// limit lifted, this list is stale) or if anything NOT on the tolerated list fails.
+    ///
+    /// That second sentence was **false for eighteen days** and is true as of T-1161: nothing read
+    /// `passed ∩ tolerating`, so "it fails loudly if either PASSES" described a check that did not
+    /// exist. Left in place, now that it is the behaviour -- and kept in mind as the exact shape
+    /// T-1153 is about, since it is a claim about the test environment that survived on being
+    /// written down next to the thing it described.
     @Test func theTestHostLocksOwnGuardsStillFire() throws {
         let run = try CadenceSelftestRun.of("scripts/test-host-lock.sh")
         let complaints = run.complaintsForNamedRuns(
@@ -751,6 +811,26 @@ struct CadenceGuardScriptSelftestTests {
         )
         #expect(!toleratedPropertyDeletedEntirely.complaintsForNamedRuns(requiring: ["ordering", "killed-waiter"], tolerating: ["ordering"]).isEmpty,
                 "a tolerated property that stopped running at all must still be complained about")
+
+        // T-1161. A tolerated property that PASSES falsifies the claim that put it on the list, so
+        // it is a complaint in its own right -- and it is the ONLY way the tolerated list can ever
+        // shrink. Until 2026-09-25 this ran green, while the test that passes `tolerating:` claimed
+        // in its own doc comment that it "fails loudly if either PASSES unexpectedly".
+        let toleratedPropertyStartedPassing = CadenceSelftestRun(
+            status: 0,
+            output: "PASS ordering: w1 w2 w3 w4\nPASS killed-waiter: ok\nselftest: 0 failure(s)\n"
+        )
+        let stale = toleratedPropertyStartedPassing.complaintsForNamedRuns(
+            requiring: ["ordering", "killed-waiter"], tolerating: ["ordering"]
+        )
+        #expect(!stale.isEmpty,
+                "a tolerated property that passed must be complained about: the toleration is stale")
+        #expect(stale.contains { $0.contains("ordering") },
+                "the complaint must NAME the property whose toleration went stale, not just object")
+        // ...and the same output with nothing tolerated is the ordinary green run, so the new
+        // reading cannot be a blanket objection to a PASS.
+        #expect(toleratedPropertyStartedPassing.complaintsForNamedRuns(requiring: ["ordering", "killed-waiter"]).isEmpty,
+                "an all-passing selftest with no tolerations must still read as green")
 
         // Setup failures (this script family's `exit 2`, e.g. "could not claim the fake device")
         // must be complained about even if, by construction, no property ever got the chance to
@@ -1606,6 +1686,16 @@ struct CadenceSelftestRun {
     /// (`properties` minus `tolerating`) has to show `PASS`, not merely "not FAIL" -- a property
     /// deleted from the selftest entirely would satisfy the latter and this is exactly the
     /// hollow-instrument shape this whole file exists to catch.
+    ///
+    /// **And since T-1161 a tolerated property that PASSES is a complaint too**, which is the only
+    /// direction the tolerated list could previously move in. See `staleTolerations` below.
+    ///
+    /// Every reading here is taken off `PASS`/`FAIL` lines the selftest prints on EVERY run,
+    /// whatever its outcome -- not off a diagnostic that only a failure produces. That distinction
+    /// is what T-1343 cost a session to learn: `complaints(requiring:)` above reads needles that
+    /// its script prints only when a check fails, so a green run named one refusal of four and the
+    /// test looked thorough while proving almost nothing. The named-run vocabulary does not have
+    /// that shape, and nothing added here may reintroduce it.
     func complaintsForNamedRuns(requiring properties: [String], tolerating: Set<String> = []) -> [String] {
         var complaints: [String] = []
         // 0 = every property passed; 1 = at least one failed (tolerated or not) -- both are the
@@ -1632,6 +1722,25 @@ struct CadenceSelftestRun {
         let unexpectedFailures = failed.subtracting(tolerating)
         if !unexpectedFailures.isEmpty {
             complaints.append("unexpected failure(s): \(unexpectedFailures.sorted().joined(separator: ", "))")
+        }
+
+        // T-1161. The claim `theTestHostLocksOwnGuardsStillFire` has made since T-959 -- "this still
+        // fails loudly if either PASSES unexpectedly (the sandbox limit lifted, this list is
+        // stale)" -- was not true of this function until 2026-09-25. Nothing here read
+        // `passed ∩ tolerating`, so a tolerated property that started passing was accepted in
+        // silence and the list could only ever grow. That is the T-1153 defect in miniature and
+        // inside the suite written to catch it: a sentence about the environment, believed because
+        // it was written down, guarding nothing.
+        //
+        // A tolerated name is a CLAIM that this host cannot prove that property. A PASS falsifies
+        // it, and the right response to a falsified claim is to delete it, not to bank the win.
+        let staleTolerations = passed.intersection(tolerating)
+        if !staleTolerations.isEmpty {
+            complaints.append("""
+                tolerated propert(y/ies) PASSED: \(staleTolerations.sorted().joined(separator: ", ")). \
+                Tolerating one is a claim that this host CANNOT prove it; a pass falsifies that claim. \
+                Take the name off the tolerated list (T-1161)
+                """)
         }
 
         if Self.trailerFailureCount(in: output) == nil {
