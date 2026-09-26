@@ -2340,7 +2340,17 @@ struct CadenceShellLocalScan {
             }
             guard rest.hasPrefix("=") else { break }
             names.append((String(name), true))
-            if rest.contains("'") || rest.contains("\"") { break }
+            // T-1397. Stopping at ANY quote read `local hseen="" hline hno hid` as declaring
+            // `hseen` alone, which hid a real in-loop redeclaration in `agent-commit.sh` from the
+            // very check written to catch it. The `break` is still right when a quoted value is
+            // UNBALANCED inside this token, because the value then contains the spaces this line
+            // was split on and every later token is a fragment of it rather than a name. Balanced
+            // here means the token closes what it opened, so the next token really is the next
+            // declaration. Measured across `scripts/*.sh` and `.githooks/pre-commit`: 27 lines
+            // stopped the old parser early, of which exactly one declared anything after the quote.
+            let doubles = rest.filter { $0 == "\"" }.count
+            let singles = rest.filter { $0 == "'" }.count
+            if !doubles.isMultiple(of: 2) || !singles.isMultiple(of: 2) { break }
         }
         return names.isEmpty ? nil : (hasFlag, names)
     }

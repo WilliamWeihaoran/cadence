@@ -2390,6 +2390,13 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         local own_ids="$scratch/own.ids"
         { subject_ids "$message"; cat -- "$partialhere_ids" } | sort -u > "$own_ids"
         local fname fhead fnew fids fhunks
+        # T-1397: declared once, out here. A bare `local` reached per iteration is
+        # what `noZshScriptReachesABareLocalDeclarationTwice` refuses -- and the one
+        # below hid from it, because that scan stops reading a line at its first
+        # QUOTED value, so `local hseen="" hline hno hid` was read as declaring
+        # `hseen` alone. The scan now continues across a balanced quoted value.
+        local hseen hline hno hid
+        local -a path_foreign
         for fname in "${names[@]}"; do
             [[ "$fname" == docs/* ]] && continue
             [[ "${fname:t}" == "AGENTS.md" ]] && continue
@@ -2404,9 +2411,8 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
             fhead="$scratch/$(ledger_key "$fname").fhead"
             git cat-file -p "$headsha:$fname" > "$fhead" 2>/dev/null || : > "$fhead"
             fscan_paths=$(( fscan_paths + 1 ))
-            local -a path_foreign
             path_foreign=()
-            local hseen="" hline hno hid
+            hseen=""
             while IFS=$'\t' read -r hno hid; do
                 [[ -n "$hid" ]] || continue
                 if [[ "$hseen" != *" $hno "* ]]; then hseen="$hseen $hno "; fscan_hunks=$(( fscan_hunks + 1 )); fi
