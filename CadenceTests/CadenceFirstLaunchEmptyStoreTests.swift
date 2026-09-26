@@ -88,6 +88,21 @@ struct CadenceFirstLaunchEmptyStoreTests {
         // that is genuinely later than where the walk finished.
         #expect(body.range(of: "PursuitToGoalMigration.runIfNeeded", range: cursor..<body.endIndex) == nil)
 
+        // T-1140. `expectedOrder` is still a list, and a list of passes is the thing that goes
+        // stale here — the focus reconcile was missing from the one in
+        // `noStartupPassReportsAChangeOnAFirstLaunch` for exactly that reason. It cannot go stale
+        // quietly now: the passes are derived from the body, and every one of them has to be named
+        // above. This asks nothing about order, which is what the walk above is for.
+        let derived = try Self.passesTheLaunchRuns()
+        #expect(
+            derived.count >= 5,
+            "the pass reader found \(derived.count) passes in the launch body \(derived.sorted()), fewer than the five it runs"
+        )
+        #expect(
+            Set(expectedOrder) == derived,
+            "the ordering list and the launch body disagree about which passes exist: \(derived.symmetricDifference(Set(expectedOrder)).sorted().joined(separator: ", "))"
+        )
+
         // T-528. Stated on the launch path itself rather than left to the sweep below, because
         // this is the one call site the ticket is about: whatever else `performStartupMaintenance`
         // grows, it does not seed tags.
@@ -170,28 +185,100 @@ struct CadenceFirstLaunchEmptyStoreTests {
     ///
     /// This one calls the passes individually on purpose, because it asks each one's *answer* and
     /// `performStartupMaintenance` returns none of them. That is a different thing from replaying
-    /// the sequence, but it drifts the same way, so every term `changedStore` reads is here:
-    /// omitting `CadenceFocusLedger.reconcile` is exactly what T-1108 found in the old replay.
+    /// the sequence, but it drifted the same way and had already done so once: omitting
+    /// `CadenceFocusLedger.reconcile` is exactly what T-1108 found in the old replay, and it was
+    /// missing from this list too, added by hand in the same commit.
+    ///
+    /// **So the list is not written down any more (T-1140).** The calls are still spelled out —
+    /// they have to be, an answer cannot be asked of a sequence that returns none — but *which*
+    /// calls they have to be is read out of two function bodies: the launch's own, and this suite's
+    /// `everyLaunchPassAnsweredOnAnEmptyStore`. Neither side is a literal anybody maintains, so a
+    /// sixth pass that joins `changedStore` and not this test fails here, by name, instead of going
+    /// unasked. The floors below are what stops a reader that has quietly stopped reading from
+    /// proving two empty sets equal.
     @Test func noStartupPassReportsAChangeOnAFirstLaunch() throws {
         let context = try Self.makeEmptyContext()
 
         try withTemporaryDefaults("CadenceTests.firstLaunchPasses") { defaults in
-            PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
-            let migrationReport = NoteMigrationService.migrateAndRecordFailure(
-                in: context, source: "empty-store-test", saveChanges: false
-            )
-            let synced = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
-            let repairReport = DataIntegrityRepairService.repairAndRecordFailure(
-                in: context, source: "empty-store-test", saveChanges: false
-            )
-            let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)
-
-            #expect(migrationReport?.insertedTotal == 0)
-            #expect(!synced)
-            #expect(repairReport?.changed == false)
-            #expect(!reconciledFocusMinutes, "the focus reconcile raised a counter on an empty store")
-            #expect(!context.hasChanges, "a first launch left the store dirty")
+            Self.everyLaunchPassAnsweredOnAnEmptyStore(in: context, defaults: defaults)
         }
+
+        let launchRuns = try Self.passesTheLaunchRuns()
+        let suiteAsks = try Self.passesThisSuiteAsks()
+
+        // The floor, and where its number comes from: `performStartupMaintenance` ran exactly five
+        // passes when T-1108 closed it on 2026-09-12, and still ran five when T-1140 derived this
+        // on 2026-09-26. A floor and not an equality on purpose — a sixth pass is allowed to
+        // exist, it is only not allowed to be absent from the comparison underneath. Without these
+        // two, a reader that had silently stopped reading would make that comparison `[] == []`.
+        #expect(
+            launchRuns.count >= 5,
+            "the launch reads as \(launchRuns.count) passes \(launchRuns.sorted()), fewer than the five it has run since T-1108"
+        )
+        #expect(
+            suiteAsks.count >= 5,
+            "this suite reads as asking \(suiteAsks.count) passes \(suiteAsks.sorted()), fewer than the five a launch runs"
+        )
+        #expect(
+            suiteAsks == launchRuns,
+            "the passes a launch runs and the passes this test asks the answer of differ: \(suiteAsks.symmetricDifference(launchRuns).sorted().joined(separator: ", "))"
+        )
+    }
+
+    /// The pass calls the test above is about, in a body of their own so the derivation has one
+    /// span to read.
+    ///
+    /// **Nothing else belongs between these braces.** Every `Type.method(` in here is read as a
+    /// launch pass, and that is what makes the comparison above two derivations rather than one
+    /// derivation and one list — which is why the context and the defaults suite arrive as
+    /// parameters instead of being built here through `Self.makeEmptyContext()`.
+    private static func everyLaunchPassAnsweredOnAnEmptyStore(
+        in context: ModelContext,
+        defaults: UserDefaults
+    ) {
+        PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
+        let migrationReport = NoteMigrationService.migrateAndRecordFailure(
+            in: context, source: "empty-store-test", saveChanges: false
+        )
+        let synced = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
+        let repairReport = DataIntegrityRepairService.repairAndRecordFailure(
+            in: context, source: "empty-store-test", saveChanges: false
+        )
+        let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)
+
+        #expect(migrationReport?.insertedTotal == 0)
+        #expect(!synced)
+        #expect(repairReport?.changed == false)
+        #expect(!reconciledFocusMinutes, "the focus reconcile raised a counter on an empty store")
+        #expect(!context.hasChanges, "a first launch left the store dirty")
+    }
+
+    /// **The pass reader sees a call, and can tell one from four things that are not one.**
+    ///
+    /// Literal fixtures rather than repo files, which is `CadenceScanInstrument`'s own argument for
+    /// its two witnesses: a witness read out of the tree can be retuned by the same edit that
+    /// breaks the rule. Without this pair the two derivations above could agree because the reader
+    /// had stopped discriminating — an always-empty reader passes every set comparison it is given,
+    /// and an always-everything one passes them too.
+    @Test func theLaunchPassReaderSeesACallAndNotItsNeighbours() {
+        let passes = """
+            Alpha.beta(modelContext: context, defaults: defaults)
+            let report = Gamma.delta(
+                in: context, source: "app-startup", saveChanges: false
+            )
+            """
+        #expect(Self.launchPassNames(in: passes) == ["Alpha.beta", "Gamma.delta"])
+
+        // The nearest four non-passes, each of them a real line of one of the two bodies this
+        // reads: a call on the store rather than on a type, an initializer, an unqualified call,
+        // and a function *reference* handed to a pass as an argument.
+        let notPasses = """
+            context.save()
+            startupIssue = Epsilon(kind: .zeta, message: "no")
+            storeFailureReason(error)
+            removingForkedOccurrences: Eta.thetaIota
+            """
+        #expect(Self.launchPassNames(in: notPasses).isEmpty)
     }
 
     // MARK: - The seed's reading of "empty"
@@ -658,6 +745,64 @@ struct CadenceFirstLaunchEmptyStoreTests {
             cursor = found.upperBound
         }
         return offsets
+    }
+
+    // MARK: - Deriving the pass list instead of maintaining one (T-1140)
+
+    /// Every launch pass a body **names**: a qualified static call, `Type.method(`, over source
+    /// whose comments *and string literals* are already blanked.
+    ///
+    /// Shape-based, not a list of names, and that is the whole of T-1140 — a derivation that reads
+    /// a literal array somebody also maintains is the same hand-written list in a scan's clothes.
+    /// `codeOnly` rather than `strippingComments` because both bodies this is pointed at spell pass
+    /// names inside string literals a few lines away, and a scan that counts its own fixtures as
+    /// code is the older of the two mistakes `CadenceSourceScan` records.
+    ///
+    /// The shape leaves out exactly four things, and each is a real line of one of those two
+    /// bodies: `context.save()`, because a lowercase receiver is the store and not a pass;
+    /// `CadenceStartupIssue(kind:)`, an initializer rather than a call on a type;
+    /// `storeFailureReason(error)`, unqualified; and
+    /// `CadenceForkedOccurrenceRemover.removeAndCancelReminders` with no `(` after it, which is a
+    /// function *reference* handed to a pass as an argument. It leaves out nothing else — not even
+    /// `Self.`, so a pass that ever lands as a static method on `PersistenceController` is derived
+    /// too and the comparison demands it rather than shrugging at it.
+    /// `theLaunchPassReaderSeesACallAndNotItsNeighbours` holds both directions.
+    private static func launchPassNames(in body: String) -> Set<String> {
+        Set(
+            CadenceSourceScan.captures(
+                "\\b([A-Z][A-Za-z0-9_]*\\.[a-z][A-Za-z0-9_]*)\\s*\\(",
+                in: body
+            ).map(\.text)
+        )
+    }
+
+    /// The passes **a launch runs**, read out of `performStartupMaintenance` itself.
+    private static func passesTheLaunchRuns() throws -> Set<String> {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "performStartupMaintenance", in: source),
+            "performStartupMaintenance is gone or its braces do not balance, so this reads nothing"
+        )
+        #expect(body.count > 200, "the blanked launch body is too small to be the real one")
+        return launchPassNames(in: body)
+    }
+
+    /// The passes **this suite asks the answer of**, read out of this file.
+    ///
+    /// A rename of the helper it reads leaves the `#require` below with nothing, which is a red
+    /// run naming the rename — the one direction a derivation is allowed to fail in.
+    private static func passesThisSuiteAsks() throws -> Set<String> {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("CadenceTests/CadenceFirstLaunchEmptyStoreTests.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "everyLaunchPassAnsweredOnAnEmptyStore", in: source),
+            "the helper holding this suite's pass calls has been renamed, so this reads nothing"
+        )
+        #expect(body.count > 200, "the blanked helper body is too small to be the real one")
+        return launchPassNames(in: body)
     }
 
     private static func makeEmptyContext() throws -> ModelContext {
