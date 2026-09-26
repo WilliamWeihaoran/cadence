@@ -2543,6 +2543,9 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     local -a resynced left_behind
     resynced=(); left_behind=()
     local wt_previous
+    # Declared out here, not in the loop: a bare `local` reached twice is what
+    # `noZshScriptReachesABareLocalDeclarationTwice` refuses.
+    local resync_tmp resync_mode
     for name in "${names[@]}"; do
         [[ -n "${source_of[$name]}" ]] || continue      # the bare form staged the worktree copy
         [[ -f "$name" ]] || continue
@@ -2560,8 +2563,7 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
             # DIRECTORY ENTRY instead, so the running interpreter keeps reading the inode it
             # opened and finishes the script it started. `mv` within one directory is atomic, so a
             # failure cannot leave a half-written script behind either.
-            local resync_tmp="$name.cadence-resync.$$"
-            local resync_mode
+            resync_tmp="$name.cadence-resync.$$"
             resync_mode=$(stat -f '%Lp' -- "$name" 2>/dev/null)
             if cp -- "${staged_content[$name]}" "$resync_tmp" 2>/dev/null; then
                 [[ -n "$resync_mode" ]] && chmod "$resync_mode" -- "$resync_tmp" 2>/dev/null
