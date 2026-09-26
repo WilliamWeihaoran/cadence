@@ -58,18 +58,31 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
         )
     }
 
+    /// Instrumented for [[T-1366]] at the same coarseness as `HabitCheckInWidgetProvider`, and for
+    /// the same reason: `CadenceMilestoneWidgetSupport`'s contribution traversal is the fanout the
+    /// audit points at, and timing it apart needs an edit to a file this ticket does not own. What
+    /// this does record is that the traversal happened and what the whole generation cost.
     private func currentSnapshot() -> CadenceMilestoneWidgetSnapshot {
+        let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.milestoneWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
                 allowsSave: false,
                 cloudKitDatabase: .none
             )
+            probe.finished(.containerOpen)
             let modelContext = ModelContext(container)
-            return try CadenceMilestoneWidgetSupport.snapshot(
+            let snapshot = try CadenceMilestoneWidgetSupport.snapshot(
                 modelContext: modelContext,
                 limit: 5
             )
+            probe.recordGeneration(
+                outcome: snapshot.state == .empty ? .empty : .ready,
+                renderedCount: snapshot.visibleGoals.count,
+                sourceSnapshotAt: snapshot.date
+            )
+            return snapshot
         } catch {
+            probe.recordRefusal(error)
             return CadenceMilestoneWidgetSupport.unavailableSnapshot()
         }
     }

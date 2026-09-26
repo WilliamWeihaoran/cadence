@@ -125,18 +125,34 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
         )
     }
 
+    /// **The catch already rendered `.unavailable`; what it did not do was leave a number behind
+    /// ([[T-1366]]).** `CadenceWidgetGenerationProbe` is opt-in and inert unless
+    /// `CadenceWidgetGenerationLedger.enabledDefaultsKey` is set in the app group, and when it is,
+    /// this generation leaves its container-open, fetch and derive durations, the rows the fetch
+    /// materialised, the rows this family actually draws, the process footprint, and — separately
+    /// from an empty result — the refusal, if the store could not be read.
     private func currentSnapshot(for family: WidgetFamily) -> CadenceTodayWidgetSnapshot {
+        let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.todayWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
                 allowsSave: false,
                 cloudKitDatabase: .none
             )
+            probe.finished(.containerOpen)
             let modelContext = ModelContext(container)
-            return try CadenceTodayWidgetSupport.snapshot(
+            let snapshot = try CadenceTodayWidgetSupport.snapshot(
                 modelContext: modelContext,
-                limit: snapshotLimit(for: family)
+                limit: snapshotLimit(for: family),
+                probe: probe
             )
+            probe.recordGeneration(
+                outcome: snapshot.state == .empty ? .empty : .ready,
+                renderedCount: snapshot.tasks.count,
+                sourceSnapshotAt: snapshot.date
+            )
+            return snapshot
         } catch {
+            probe.recordRefusal(error)
             return CadenceTodayWidgetSupport.unavailableSnapshot()
         }
     }

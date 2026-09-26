@@ -69,18 +69,32 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
         )
     }
 
+    /// Instrumented for [[T-1366]]; see `TodayTasksWidgetProvider` for what the probe records and
+    /// why it is off until the app group says otherwise. `renderedCount` here is the day strip,
+    /// which is a fixed 14 — the number worth watching on this widget is `rowsFetched`, because
+    /// this provider's fetch has no predicate.
     private func currentSnapshot() -> CadenceCalendarWidgetSnapshot {
+        let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.calendarWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
                 allowsSave: false,
                 cloudKitDatabase: .none
             )
+            probe.finished(.containerOpen)
             let modelContext = ModelContext(container)
-            return try CadenceCalendarWidgetSupport.snapshot(
+            let snapshot = try CadenceCalendarWidgetSupport.snapshot(
                 modelContext: modelContext,
-                dayCount: 14
+                dayCount: 14,
+                probe: probe
             )
+            probe.recordGeneration(
+                outcome: snapshot.state == .empty ? .empty : .ready,
+                renderedCount: snapshot.days.count,
+                sourceSnapshotAt: snapshot.date
+            )
+            return snapshot
         } catch {
+            probe.recordRefusal(error)
             return CadenceCalendarWidgetSupport.unavailableSnapshot()
         }
     }

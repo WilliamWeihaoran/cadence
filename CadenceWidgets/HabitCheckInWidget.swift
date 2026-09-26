@@ -63,18 +63,32 @@ struct HabitCheckInWidgetProvider: TimelineProvider {
         )
     }
 
+    /// Instrumented for [[T-1366]], and **deliberately less finely than Today and Calendar**:
+    /// `CadenceHabitWidgetSupport` is outside this ticket's file ownership, so the probe can close
+    /// `containerOpen` and stop there. The record's fetch and derive stages are therefore *absent*
+    /// rather than zero, and `rowsFetched` is `nil` rather than `0` — a stage nobody measured must
+    /// not read as a stage that cost nothing.
     private func currentSnapshot() -> CadenceHabitWidgetSnapshot {
+        let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.habitWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
                 allowsSave: false,
                 cloudKitDatabase: .none
             )
+            probe.finished(.containerOpen)
             let modelContext = ModelContext(container)
-            return try CadenceHabitWidgetSupport.snapshot(
+            let snapshot = try CadenceHabitWidgetSupport.snapshot(
                 modelContext: modelContext,
                 limit: 8
             )
+            probe.recordGeneration(
+                outcome: snapshot.state == .empty ? .empty : .ready,
+                renderedCount: snapshot.habits.count,
+                sourceSnapshotAt: snapshot.date
+            )
+            return snapshot
         } catch {
+            probe.recordRefusal(error)
             return CadenceHabitWidgetSupport.unavailableSnapshot()
         }
     }

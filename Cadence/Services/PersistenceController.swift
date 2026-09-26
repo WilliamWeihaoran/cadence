@@ -1,5 +1,6 @@
-import SwiftData
+import Dispatch
 import Foundation
+import SwiftData
 
 struct PersistenceController {
     static let shared = PersistenceController()
@@ -52,6 +53,11 @@ struct PersistenceController {
             }
         }
 
+        // T-1366. `nil` unless someone set `CadenceStartupCostLedger.enabledDefaultsKey`, and every
+        // `measure`/`finished` below is written on the optional so an uninstrumented launch runs
+        // exactly the statements it always did.
+        let recorder = CadenceStartupCostLedger.begin()
+
         var failedRestore: StoreBackupManager.FailedRestoreRecord?
         do {
             let storeDirectoryURL = try CadenceStoreSupport.primaryStoreDirectoryURL()
@@ -78,7 +84,13 @@ struct PersistenceController {
                 reason: .startup,
                 storeDirectoryURL: storeDirectoryURL
             )
+            // A *refused* pending restore is not a preflight that did nothing: the original store
+            // is intact and the launch is about to open it, which is the right outcome and still
+            // the one the ledger has to keep apart from a clean pass.
+            recorder.finished(.preflight, failedRestore == nil ? .completed : .refused("pendingRestoreRefused"))
         } catch {
+            recorder.finished(.preflight, .refused(Self.instrumentReason(for: error)))
+            recorder.commit()
             container = Self.makeRecoveryContainer(
                 issue: "Cadence opened a recovery store because backup/restore preflight failed: \(Self.storeFailureReason(error))"
             )
@@ -88,6 +100,7 @@ struct PersistenceController {
         let primaryStoreFailure: Error
         do {
             let c = try PersistenceController.makeContainer()
+            recorder.finished(.containerOpen, .completed)
             container = c
             if let failedRestore {
                 Self.startupIssue = CadenceStartupIssue(
@@ -96,7 +109,8 @@ struct PersistenceController {
                 )
             }
             let startupContext = ModelContext(c)
-            Self.performStartupMaintenance(in: startupContext)
+            Self.performStartupMaintenance(in: startupContext, recorder: recorder)
+            recorder.commit()
             return
         } catch {
             // T-1319. This was `if let c = try? makeContainer()`, and the discarded error was the
@@ -109,9 +123,22 @@ struct PersistenceController {
             // interpolate theirs; this is the one that did not.
             primaryStoreFailure = error
         }
+        recorder.finished(.containerOpen, .refused(Self.instrumentReason(for: primaryStoreFailure)))
+        recorder.commit()
         container = Self.makeRecoveryContainer(
             issue: Self.primaryStoreFailureMessage(primaryStoreFailure)
         )
+    }
+
+    /// A failure reason for the **instrument**, which is not the sentence the user reads.
+    ///
+    /// `storeFailureReason(_:)` is built to be informative and therefore quotes the framework:
+    /// nested Cocoa errors name file paths, and the whole point of the durable ledger is that it
+    /// can be left behind by a widget or a launch and read later. This is the same error reduced to
+    /// three things that cannot carry content — the Swift type, the `NSError` domain, and the code.
+    static func instrumentReason(for error: Error) -> String {
+        let bridged = error as NSError
+        return "\(type(of: error))/\(bridged.domain)/\(bridged.code)"
     }
 
     /// What a launch that fell back to the recovery store says about why.
@@ -194,13 +221,33 @@ struct PersistenceController {
     /// calls this instead. `defaults` is the one thing a test cannot share with a launch — writing
     /// the migration's completion flag into the real suite would leak between runs — and
     /// `PursuitToGoalMigration.runIfNeeded` already took it for the same reason.
+    ///
+    /// **`recorder` is [[T-1366]]'s instrument and is `nil` for every caller but a launch.** It is
+    /// reached through `Optional.measure(_:_:classifying:)` rather than `recorder?.measure`, so an
+    /// uninstrumented run executes each pass exactly as it always did; and it is reached on a
+    /// lowercase receiver rather than a type, so the pass-set derivation in
+    /// `CadenceFirstLaunchEmptyStoreTests` does not read the instrument as a sixth startup pass.
+    ///
+    /// **Three of the five verdicts below are `indeterminate`, and that is a measurement, not a
+    /// gap in the instrument.** `PursuitToGoalMigration.runIfNeeded` returns `Void` while the
+    /// `migrate` beneath it returns a clean/failed `Bool`; `TagSupport.syncAllNoteTagsFromMarkdown`
+    /// returns `false` for an unreadable `Note` table, an unreadable `Tag` table, an empty store
+    /// and a clean pass alike; `CadenceFocusLedger.reconcile` returns `false` for a fetch it could
+    /// not run and for a store with nothing to raise. So on those three "nothing to do" and "could
+    /// not do it" are the same value, which is what the audit says and what this records rather
+    /// than quietly calls a no-op.
     static func performStartupMaintenance(
         in context: ModelContext,
-        defaults: UserDefaults = CadenceDefaults.store
+        defaults: UserDefaults = CadenceDefaults.store,
+        recorder: CadenceStartupCostRecorder? = nil
     ) {
         // Folds any surviving `Pursuit` rows into `Goal`. Self-guarding and idempotent, and
         // manages its own saves because it deletes rows rather than just inserting them.
-        PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
+        recorder.measure(.pursuitMigration) {
+            PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
+        } classifying: { _ in
+            .indeterminate("runIfNeededReturnsVoid")
+        }
 
         // **No pass here seeds the default tags, and that is the point (T-528).**
         //
@@ -223,38 +270,67 @@ struct PersistenceController {
         // This also restores the symmetry `DataIntegrityRepairService`'s own doc comment argues
         // for twelve lines from here: every startup pass is now inert against a store that is
         // empty only because sync has not landed.
-        let migrationReport = NoteMigrationService.migrateAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
-        let syncedNoteTags = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
+        let migrationReport = recorder.measure(.noteMigration) {
+            NoteMigrationService.migrateAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
+        } classifying: { report in
+            guard let report else { return .refused("noReport") }
+            guard report.success else { return .refused("passReportedFailure") }
+            return report.insertedTotal > 0 ? .changed(report.insertedTotal) : .noChange
+        }
+        let syncedNoteTags = recorder.measure(.tagSync) {
+            TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
+        } classifying: { changed in
+            changed ? .changed(nil) : .indeterminate("falseIsCleanPassAndUnreadableTable")
+        }
         // `removingForkedOccurrences:` is the app supplying the half of T-622's collapse that
         // `DataIntegrityRepairService` cannot spell: it is in `CadenceMCPServer`'s explicit source
         // list and the task-deletion core is not. Omitting it here would leave forked recurring
         // occurrences uncollapsed on the one launch that matters, silently, so
         // `DataIntegrityRepairServiceTests.theAppStartupRepairSuppliesTheForkedOccurrenceRemover`
         // pins that this argument is present.
-        let repairReport = DataIntegrityRepairService.repairAndRecordFailure(
-            in: context,
-            source: "app-startup",
-            saveChanges: false,
-            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
-        )
+        let repairReport = recorder.measure(.integrityRepair) {
+            DataIntegrityRepairService.repairAndRecordFailure(
+                in: context,
+                source: "app-startup",
+                saveChanges: false,
+                removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+            )
+        } classifying: { report in
+            guard let report else { return .refused("noReport") }
+            guard report.success else { return .refused("passReportedFailure") }
+            return report.changed ? .changed(nil) : .noChange
+        }
         // T-621's store-wide pass, safe here by the same argument the repair above uses: it only
         // ever raises a counter and is a pure function of the counter and the ledger's rows, so a
         // launch that races the first CloudKit import computes a total that is too low and leaves
         // the counter alone. `bank` already heals the subject it writes to; this is for the task
         // nobody opens again, whose stale total an hours-mode `Goal` is still reading.
-        let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)
+        let reconciledFocusMinutes = recorder.measure(.focusReconciliation) {
+            CadenceFocusLedger.reconcile(in: context)
+        } classifying: { changed in
+            changed ? .changed(nil) : .indeterminate("falseIsCleanPassAndUnreadableLedger")
+        }
         let changedStore = (migrationReport?.insertedTotal ?? 0) > 0 ||
             syncedNoteTags ||
             reconciledFocusMinutes ||
             repairReport?.changed == true
 
         guard changedStore, context.hasChanges else { return }
-        do {
-            try context.save()
-        } catch {
+        let saveFailure = recorder.measure(.maintenanceSave) { () -> Error? in
+            do {
+                try context.save()
+                return nil
+            } catch {
+                return error
+            }
+        } classifying: { failure in
+            guard let failure else { return .completed }
+            return .refused(instrumentReason(for: failure))
+        }
+        if let saveFailure {
             startupIssue = CadenceStartupIssue(
                 kind: .maintenanceSaveFailed,
-                message: "Cadence could not save startup maintenance changes: \(storeFailureReason(error))"
+                message: "Cadence could not save startup maintenance changes: \(storeFailureReason(saveFailure))"
             )
         }
     }
@@ -1388,5 +1464,363 @@ private extension JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+}
+
+// MARK: - T-1366: what a launch's startup passes cost, and which of them refused
+
+/// Every stage a launch runs before the first frame that this instrument can time from inside
+/// `PersistenceController`.
+///
+/// It is not the whole of launch and does not pretend to be: view composition, the initial
+/// `@Query` fetches, image decoding and the first frame follow this work, the initial CloudKit
+/// import is asynchronous and nothing here waits for it, and none of those are reachable from this
+/// file. What was measured before this was **none of it** — [[T-1329]]'s medians are in-memory
+/// fixture numbers for four of the maintenance passes, taken with no disk, no preflight and no
+/// container open in the picture at all.
+nonisolated enum CadenceStartupStage: String, Hashable, CaseIterable {
+    /// Legacy-store migration, a pending restore, and the startup backup copy. File work, so its
+    /// cost follows store *bytes* rather than row counts — the reason it cannot be inferred from
+    /// any of the fixture numbers already in the ledger.
+    case preflight
+    /// Opening the CloudKit-backed `ModelContainer` on the real store.
+    case containerOpen
+    case pursuitMigration
+    case noteMigration
+    case tagSync
+    case integrityRepair
+    case focusReconciliation
+    /// The one save at the end, which only happens when a pass reported a change.
+    case maintenanceSave
+}
+
+/// What a stage's own result says it did. **`noChange` and `refused` are stored apart**, which is
+/// the thing the audit asks for by name: "nothing to do" and "could not do it" read the same in
+/// three of these passes today, and a launch that silently failed to repair looks exactly like a
+/// launch with nothing to repair.
+nonisolated enum CadenceStartupStageOutcome: String, Hashable {
+    /// The pass ran and reported that it changed the store.
+    case changed
+    /// The pass ran and reported there was nothing to do. A **result**.
+    case noChange
+    /// The pass reported it could not do its work. A **failure**, never a result.
+    case refused
+    /// The pass ran and its answer **cannot separate** the two above from this call site. Recorded
+    /// as its own outcome rather than folded into `noChange`, because calling an unknown a clean
+    /// result is the defect, not the reporting of it. See `CadenceStartupStageVerdict` for which
+    /// three passes are here and what each would have to return to leave.
+    case indeterminate
+    /// A stage with no change vocabulary at all: it either completed or threw.
+    case completed
+}
+
+/// A stage's verdict, built at the call site out of what that pass actually returns.
+nonisolated struct CadenceStartupStageVerdict: Hashable {
+    let outcome: CadenceStartupStageOutcome
+    /// Why it refused, or why its outcome is indeterminate. Never user text: a refusal reason goes
+    /// through `PersistenceController.instrumentReason(for:)`, which is built from an error's type
+    /// and `NSError` domain and code alone.
+    let note: String?
+    /// A count the pass reported about itself — rows inserted, rows repaired — with no content in
+    /// it. `nil` where the pass reports no number at all, which is not the same as reporting zero.
+    let count: Int?
+
+    static func changed(_ count: Int?) -> Self {
+        Self(outcome: .changed, note: nil, count: count)
+    }
+
+    static var noChange: Self {
+        Self(outcome: .noChange, note: nil, count: nil)
+    }
+
+    static func refused(_ reason: String) -> Self {
+        Self(outcome: .refused, note: reason, count: nil)
+    }
+
+    static func indeterminate(_ why: String) -> Self {
+        Self(outcome: .indeterminate, note: why, count: nil)
+    }
+
+    static var completed: Self {
+        Self(outcome: .completed, note: nil, count: nil)
+    }
+}
+
+nonisolated struct CadenceStartupStageRecord: Hashable {
+    let stage: CadenceStartupStage
+    let duration: TimeInterval
+    let outcome: CadenceStartupStageOutcome
+    let note: String?
+    let count: Int?
+}
+
+/// One launch's measured startup cost.
+nonisolated struct CadenceStartupCostReport: Hashable {
+    let recordedAt: Date
+    /// In the order the launch ran them.
+    let stages: [CadenceStartupStageRecord]
+    let totalDuration: TimeInterval
+    /// Physical footprint at the end of startup maintenance, or `nil` when the kernel would not
+    /// answer. Never `0` — `CadenceProcessFootprint.currentBytes()` returns nothing rather than a
+    /// figure no live process can have.
+    let footprintBytes: Int?
+
+    /// **A report with no stages in it refuses to exist.** An instrument that timed nothing and
+    /// reports a total of zero is the false clean sweep this ticket is written against.
+    init?(recordedAt: Date, stages: [CadenceStartupStageRecord], totalDuration: TimeInterval, footprintBytes: Int?) {
+        guard !stages.isEmpty, totalDuration.isFinite, totalDuration >= 0 else { return nil }
+        guard stages.allSatisfy({ $0.duration.isFinite && $0.duration >= 0 }) else { return nil }
+        self.recordedAt = recordedAt
+        self.stages = stages
+        self.totalDuration = totalDuration
+        self.footprintBytes = footprintBytes
+    }
+
+    func stage(_ stage: CadenceStartupStage) -> CadenceStartupStageRecord? {
+        stages.first { $0.stage == stage }
+    }
+
+    /// The stages this report is entitled to speak about. A stage outside it was not reached by
+    /// this launch — a store that failed preflight never opens a container, and a launch whose
+    /// passes all reported no change never saves.
+    var measuredStages: Set<CadenceStartupStage> {
+        Set(stages.map(\.stage))
+    }
+
+    /// Stages whose own result could not separate a no-op from a failure. Non-empty is not a bug in
+    /// this report; it is the report saying what the pass would not tell it.
+    var indeterminateStages: [CadenceStartupStage] {
+        stages.filter { $0.outcome == .indeterminate }.map(\.stage)
+    }
+
+    var refusedStages: [CadenceStartupStage] {
+        stages.filter { $0.outcome == .refused }.map(\.stage)
+    }
+}
+
+/// Why the startup ledger has no number.
+nonisolated enum CadenceStartupLedgerSilence: String, Hashable {
+    case instrumentDisabled
+    case nothingRecorded
+    case reportUnreadable
+}
+
+nonisolated enum CadenceStartupLedgerReading: Hashable {
+    case recorded(CadenceStartupCostReport)
+    case silent(CadenceStartupLedgerSilence)
+
+    var report: CadenceStartupCostReport? {
+        switch self {
+        case let .recorded(report): return report
+        case .silent: return nil
+        }
+    }
+
+    var silence: CadenceStartupLedgerSilence? {
+        switch self {
+        case .recorded: return nil
+        case let .silent(silence): return silence
+        }
+    }
+}
+
+/// The durable half of the startup instrument: the most recent launch's stage costs.
+///
+/// Opt-in through `enabledDefaultsKey`. With it unset `begin(defaults:)` answers `nil`, every
+/// `measure` on that `nil` runs its body and does nothing else, and `lastReport(defaults:)`
+/// answers `.silent(.instrumentDisabled)` rather than an empty report.
+nonisolated enum CadenceStartupCostLedger {
+    static let enabledDefaultsKey = "cadence.instrument.startupCost.enabled"
+    static let lastReportDefaultsKey = "cadence.instrument.startupCost.lastReport"
+
+    static func isEnabled(defaults: UserDefaults = CadenceDefaults.store) -> Bool {
+        defaults.bool(forKey: enabledDefaultsKey)
+    }
+
+    static func setEnabled(_ enabled: Bool, defaults: UserDefaults = CadenceDefaults.store) {
+        if enabled {
+            defaults.set(true, forKey: enabledDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: enabledDefaultsKey)
+        }
+    }
+
+    /// A recorder for this launch, or `nil` when nobody asked for one.
+    static func begin(
+        defaults: UserDefaults = CadenceDefaults.store,
+        nanoseconds: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+        wallClock: @escaping () -> Date = Date.init,
+        footprint: @escaping () -> Int? = CadenceProcessFootprint.currentBytes
+    ) -> CadenceStartupCostRecorder? {
+        guard isEnabled(defaults: defaults) else { return nil }
+        return CadenceStartupCostRecorder(
+            defaults: defaults,
+            nanoseconds: nanoseconds,
+            wallClock: wallClock,
+            footprint: footprint
+        )
+    }
+
+    static func lastReport(defaults: UserDefaults = CadenceDefaults.store) -> CadenceStartupLedgerReading {
+        guard isEnabled(defaults: defaults) else { return .silent(.instrumentDisabled) }
+        guard let payload = defaults.dictionary(forKey: lastReportDefaultsKey) else {
+            return .silent(.nothingRecorded)
+        }
+        guard let report = CadenceStartupCostReport(storagePayload: payload) else {
+            return .silent(.reportUnreadable)
+        }
+        return .recorded(report)
+    }
+
+    static func clearStoredState(defaults: UserDefaults = CadenceDefaults.store) {
+        defaults.removeObject(forKey: lastReportDefaultsKey)
+    }
+
+    static func store(_ report: CadenceStartupCostReport, defaults: UserDefaults) {
+        defaults.set(report.storagePayload, forKey: lastReportDefaultsKey)
+    }
+}
+
+extension CadenceStartupCostReport {
+    nonisolated fileprivate var storagePayload: [String: Any] {
+        var payload: [String: Any] = [
+            "recordedAt": recordedAt.timeIntervalSince1970,
+            "total": totalDuration,
+            "stages": stages.map { record -> [String: Any] in
+                var encoded: [String: Any] = [
+                    "stage": record.stage.rawValue,
+                    "duration": record.duration,
+                    "outcome": record.outcome.rawValue,
+                ]
+                if let note = record.note { encoded["note"] = note }
+                if let count = record.count { encoded["count"] = count }
+                return encoded
+            },
+        ]
+        if let footprintBytes { payload["footprint"] = footprintBytes }
+        return payload
+    }
+
+    nonisolated fileprivate init?(storagePayload payload: [String: Any]) {
+        guard let recordedAt = (payload["recordedAt"] as? NSNumber)?.doubleValue,
+              recordedAt > 0,
+              let total = (payload["total"] as? NSNumber)?.doubleValue,
+              let rawStages = payload["stages"] as? [[String: Any]]
+        else { return nil }
+
+        var stages: [CadenceStartupStageRecord] = []
+        for raw in rawStages {
+            guard let rawStage = raw["stage"] as? String,
+                  let stage = CadenceStartupStage(rawValue: rawStage),
+                  let duration = (raw["duration"] as? NSNumber)?.doubleValue,
+                  let rawOutcome = raw["outcome"] as? String,
+                  let outcome = CadenceStartupStageOutcome(rawValue: rawOutcome)
+            else { return nil }
+            stages.append(
+                CadenceStartupStageRecord(
+                    stage: stage,
+                    duration: duration,
+                    outcome: outcome,
+                    note: raw["note"] as? String,
+                    count: (raw["count"] as? NSNumber)?.intValue
+                )
+            )
+        }
+
+        self.init(
+            recordedAt: Date(timeIntervalSince1970: recordedAt),
+            stages: stages,
+            totalDuration: total,
+            footprintBytes: (payload["footprint"] as? NSNumber)?.intValue
+        )
+    }
+}
+
+/// The live half: one per launch, handed down into `PersistenceController.performStartupMaintenance`.
+nonisolated final class CadenceStartupCostRecorder {
+    private let defaults: UserDefaults
+    private let nanoseconds: () -> UInt64
+    private let wallClock: () -> Date
+    private let footprint: () -> Int?
+    private let started: UInt64
+    private var lastMark: UInt64
+    private var stages: [CadenceStartupStageRecord] = []
+
+    init(
+        defaults: UserDefaults,
+        nanoseconds: @escaping () -> UInt64,
+        wallClock: @escaping () -> Date,
+        footprint: @escaping () -> Int?
+    ) {
+        self.defaults = defaults
+        self.nanoseconds = nanoseconds
+        self.wallClock = wallClock
+        self.footprint = footprint
+        let now = nanoseconds()
+        self.started = now
+        self.lastMark = now
+    }
+
+    /// Closes the stage that has been running since the last mark.
+    func finished(_ stage: CadenceStartupStage, _ verdict: CadenceStartupStageVerdict) {
+        let now = nanoseconds()
+        stages.append(
+            CadenceStartupStageRecord(
+                stage: stage,
+                duration: Self.seconds(from: lastMark, to: now),
+                outcome: verdict.outcome,
+                note: verdict.note,
+                count: verdict.count
+            )
+        )
+        lastMark = now
+    }
+
+    /// Writes this launch's report, or nothing if it timed nothing.
+    @discardableResult
+    func commit() -> CadenceStartupCostReport? {
+        guard let report = CadenceStartupCostReport(
+            recordedAt: wallClock(),
+            stages: stages,
+            totalDuration: Self.seconds(from: started, to: nanoseconds()),
+            footprintBytes: footprint()
+        ) else { return nil }
+        CadenceStartupCostLedger.store(report, defaults: defaults)
+        return report
+    }
+
+    private static func seconds(from start: UInt64, to end: UInt64) -> TimeInterval {
+        guard end > start else { return 0 }
+        return TimeInterval(end - start) / 1_000_000_000
+    }
+}
+
+/// Measuring through the **optional**, so an uninstrumented launch runs the body and nothing else.
+///
+/// `recorder?.measure { … }` would skip the body entirely when the recorder is `nil`, which is how
+/// an instrument comes to change the behaviour it is supposed to observe. This is also why the
+/// method is reached on a lowercase receiver rather than through a type: `CadenceFirstLaunchEmpty-
+/// StoreTests` derives the set of passes a launch runs by reading `Type.member(` call shapes out of
+/// `performStartupMaintenance`'s own body, and an instrument that added itself to that set would
+/// make the derivation name it as a sixth startup pass.
+extension Optional where Wrapped == CadenceStartupCostRecorder {
+    func measure<Value>(
+        _ stage: CadenceStartupStage,
+        _ body: () -> Value,
+        classifying verdict: (Value) -> CadenceStartupStageVerdict
+    ) -> Value {
+        guard let recorder = self else { return body() }
+        let value = body()
+        recorder.finished(stage, verdict(value))
+        return value
+    }
+
+    func finished(_ stage: CadenceStartupStage, _ verdict: CadenceStartupStageVerdict) {
+        self?.finished(stage, verdict)
+    }
+
+    @discardableResult
+    func commit() -> CadenceStartupCostReport? {
+        self?.commit()
     }
 }

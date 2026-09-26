@@ -140,9 +140,20 @@ struct CadenceFirstLaunchEmptyStoreTests {
             signature.contains("defaults: UserDefaults = CadenceDefaults.store"),
             "startup maintenance no longer defaults to the real defaults suite, so a launch would read somewhere a test chose: \(signature)"
         )
+        // [[T-1366]] added a third parameter, `recorder:`, and a launch passes one. The claim this
+        // makes is unchanged and is the one that matters: the launch supplies **no `defaults:`**,
+        // so it lands on the real suite rather than one a test chose. The recorder is `nil` unless
+        // `CadenceStartupCostLedger.enabledDefaultsKey` is set, and an absent recorder changes no
+        // statement in the body — `Optional.measure(_:_:classifying:)` runs each pass either way.
+        let launchCall = try #require(
+            source.range(of: "Self.performStartupMaintenance(in: startupContext").map { range in
+                String(source[range.lowerBound..<(source.range(of: ")", range: range.upperBound..<source.endIndex)?.upperBound ?? source.endIndex)])
+            },
+            "the launch path no longer calls startup maintenance at all"
+        )
         #expect(
-            source.contains("Self.performStartupMaintenance(in: startupContext)"),
-            "the launch path no longer calls startup maintenance with only the launch's own arguments"
+            !launchCall.contains("defaults:"),
+            "the launch path names a defaults suite of its own: \(launchCall)"
         )
     }
 

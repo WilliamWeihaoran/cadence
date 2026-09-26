@@ -101,7 +101,9 @@ struct CadenceDefaultsRoutingSweepTests {
         "Cadence/Shared/Theme.swift":
             "CadenceWidgets compiles it; the accent id is app-group state two processes must agree on",
         "Cadence/Services/CadenceWidgetRefreshCenter.swift":
-            "CadenceWidgets compiles it; the reload throttle and completion overrides are app-group state"
+            "CadenceWidgets compiles it; the reload throttle and completion overrides are app-group state",
+        "Cadence/Services/CadenceTodayWidgetSupport.swift":
+            "CadenceWidgets compiles it; T-1366's generation ledger is app-group state the widget process writes and the app reads"
     ]
 
     /// Every spelling of "some store other than the one this app resolves preferences against".

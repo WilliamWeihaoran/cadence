@@ -42,13 +42,22 @@ nonisolated struct CadenceCalendarWidgetSnapshot: Hashable {
 }
 
 nonisolated enum CadenceCalendarWidgetSupport {
+    /// `probe` is [[T-1366]]'s instrument, `nil` for every caller but the timeline provider. It is
+    /// worth more here than on any other widget: this fetch carries **no predicate at all**, so
+    /// the number it records is the whole `AppTask` table, and the audit's premise correction —
+    /// Today filters and Calendar does not — becomes a measured difference rather than a reading
+    /// of two source lines.
     nonisolated static func snapshot(
         modelContext: ModelContext,
-        dayCount: Int
+        dayCount: Int,
+        probe: CadenceWidgetGenerationProbe? = nil
     ) throws -> CadenceCalendarWidgetSnapshot {
         let today = Calendar.current.startOfDay(for: Date())
         let tasks = try modelContext.fetch(FetchDescriptor<AppTask>())
-        return snapshot(from: tasks, today: today, dayCount: dayCount)
+        probe?.finished(.fetch, rows: tasks.count)
+        let built = snapshot(from: tasks, today: today, dayCount: dayCount)
+        probe?.finished(.derive)
+        return built
     }
 
     nonisolated static func snapshot(

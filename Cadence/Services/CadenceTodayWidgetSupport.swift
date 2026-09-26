@@ -1,3 +1,5 @@
+import Darwin
+import Dispatch
 import Foundation
 import SwiftData
 
@@ -43,24 +45,35 @@ nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
 nonisolated enum CadenceTodayWidgetSupport {
     nonisolated static func snapshot(
         modelContext: ModelContext,
-        limit: Int = 3
+        limit: Int = 3,
+        probe: CadenceWidgetGenerationProbe? = nil
     ) throws -> CadenceTodayWidgetSnapshot {
-        try snapshot(modelContext: modelContext, todayKey: currentTodayKey(), limit: limit)
+        try snapshot(modelContext: modelContext, todayKey: currentTodayKey(), limit: limit, probe: probe)
     }
 
+    /// `probe` is [[T-1366]]'s instrument and nothing else: with it left `nil` — which is every
+    /// caller outside the four timeline providers — this reads exactly as it did before, and with
+    /// one supplied the store fetch and the in-memory derivation are timed apart and the row count
+    /// the fetch materialised is recorded. The count is the population Today *ranks*, not the
+    /// prefix it draws; `CadenceTodayWidgetSupport.todayCandidateFetchDescriptor()` is a deliberate
+    /// superset and this is the first thing that says how big a superset it is.
     nonisolated static func snapshot(
         modelContext: ModelContext,
         todayKey: String,
-        limit: Int = 3
+        limit: Int = 3,
+        probe: CadenceWidgetGenerationProbe? = nil
     ) throws -> CadenceTodayWidgetSnapshot {
         let tasks = try modelContext.fetch(todayCandidateFetchDescriptor())
+        probe?.finished(.fetch, rows: tasks.count)
         let suppressedTaskIDs = CadenceWidgetRefreshCenter.suppressedTaskIDs()
-        return snapshot(
+        let built = snapshot(
             from: tasks,
             todayKey: todayKey,
             limit: limit,
             suppressedTaskIDs: suppressedTaskIDs
         )
+        probe?.finished(.derive)
+        return built
     }
 
     nonisolated static func snapshot(
@@ -336,5 +349,434 @@ nonisolated enum CadenceWidgetDateSupport {
     /// Resolves a `yyyy-MM-dd` key to midnight in the current calendar's time zone.
     nonisolated static func parsedDate(fromKey key: String) -> Date? {
         DateFormatters.date(from: key, in: .current)
+    }
+}
+
+// MARK: - T-1366: what one widget generation cost, and whether it finished
+
+/// The parts of a widget generation this instrument times separately.
+///
+/// **A stage is absent from a record when the path that produced it does not separate that stage,
+/// and absent is not zero.** That is the same distinction `NoteMigrationReport.noteTableScanned`
+/// exists to make one file over: a `0` in an `Int` field reads identically whether the number was
+/// measured or never computed, and a reader that prints it without asking first is reporting a
+/// number nobody took. Today and Calendar thread a probe through their own `snapshot` overloads and
+/// so time `fetch` and `derive` apart; Habit and Milestone derive inside support types this ticket
+/// does not own, so their records carry `containerOpen` and a total and say nothing about the rest.
+nonisolated enum CadenceWidgetStage: String, Hashable, CaseIterable {
+    case containerOpen
+    case fetch
+    case derive
+}
+
+/// How a generation ended. **`empty` and `refused` are different answers and are stored apart.**
+///
+/// Before this, they were not: all four providers catch an open or fetch failure and return their
+/// `unavailableSnapshot()`, which renders the same "open Cadence once" chrome whether the store
+/// held no work or could not be read at all — and nothing outlived the process to say which. The
+/// audit's silent case is exactly this pair: a widget that looks successfully stale and a refresh
+/// that arrived late are indistinguishable from outside.
+nonisolated enum CadenceWidgetGenerationOutcome: String, Hashable {
+    /// The provider built an entry with rows in it.
+    case ready
+    /// The provider ran to completion and there was nothing to draw. A **result**, not a failure.
+    case empty
+    /// The provider could not run. A **failure**, never a result.
+    case refused
+}
+
+/// One generation's measured cost, small enough to live in the app group and carry no user text.
+///
+/// **Content-free by construction, not by review.** Every field here is a duration, a count, a
+/// timestamp, or a refusal reason built by `CadenceWidgetGenerationLedger.refusalReason(for:)` out
+/// of an error's type name and `NSError` domain/code. No title, note body, tag or identifier
+/// reaches it, which is why it is safe for the widget process to leave behind in shared storage.
+nonisolated struct CadenceWidgetGenerationRecord: Hashable {
+    let kind: String
+    let outcome: CadenceWidgetGenerationOutcome
+    /// Non-`nil` exactly when `outcome` is `refused`.
+    let refusalReason: String?
+    /// Seconds per stage this path actually separated. Never carries a stage it did not measure.
+    let stageDurations: [CadenceWidgetStage: TimeInterval]
+    /// Seconds from the first instruction of the provider's body to the record being built.
+    let totalDuration: TimeInterval
+    /// Rows the store materialised, or `nil` where the path has no row instrument at all.
+    let rowsFetched: Int?
+    /// Rows the entry draws, which is the visible prefix and not the population it was ranked from.
+    let renderedCount: Int
+    /// Physical footprint in bytes at the end of the generation, or `nil` when the kernel refused
+    /// to answer. Never `0`: see `CadenceProcessFootprint.currentBytes()`.
+    let footprintBytes: Int?
+    /// When this generation ran.
+    let generatedAt: Date
+    /// The instant the snapshot says its data came from — **the thing a next-reload date cannot
+    /// tell you.** `nil` for a refusal, whose snapshot has no source.
+    let sourceSnapshotAt: Date?
+
+    /// **An instrument with nothing in it refuses to be a record.**
+    ///
+    /// A successful generation that measured no stage is a reader that returned nothing, and
+    /// reporting it as a clean sweep of zeroes is the failure this whole ticket is against. A
+    /// refusal is allowed to have measured no stage — the container open can throw before any
+    /// stage finishes — but it must then say why it refused.
+    init?(
+        kind: String,
+        outcome: CadenceWidgetGenerationOutcome,
+        refusalReason: String?,
+        stageDurations: [CadenceWidgetStage: TimeInterval],
+        totalDuration: TimeInterval,
+        rowsFetched: Int?,
+        renderedCount: Int,
+        footprintBytes: Int?,
+        generatedAt: Date,
+        sourceSnapshotAt: Date?
+    ) {
+        guard !kind.isEmpty, totalDuration.isFinite, totalDuration >= 0, renderedCount >= 0 else { return nil }
+        guard stageDurations.values.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return nil }
+        switch outcome {
+        case .refused:
+            guard let refusalReason, !refusalReason.isEmpty else { return nil }
+            self.refusalReason = refusalReason
+        case .ready, .empty:
+            guard !stageDurations.isEmpty, refusalReason == nil else { return nil }
+            self.refusalReason = nil
+        }
+        self.kind = kind
+        self.outcome = outcome
+        self.stageDurations = stageDurations
+        self.totalDuration = totalDuration
+        self.rowsFetched = rowsFetched
+        self.renderedCount = renderedCount
+        self.footprintBytes = footprintBytes
+        self.generatedAt = generatedAt
+        self.sourceSnapshotAt = sourceSnapshotAt
+    }
+
+    /// The stages this record is entitled to speak about. Anything outside it was not measured.
+    var measuredStages: Set<CadenceWidgetStage> {
+        Set(stageDurations.keys)
+    }
+
+    /// Seconds the measured stages account for. Never more than `totalDuration`.
+    var accountedDuration: TimeInterval {
+        stageDurations.values.reduce(0, +)
+    }
+}
+
+/// Why the ledger has no number, said out loud instead of returned as zeroes.
+nonisolated enum CadenceWidgetLedgerSilence: String, Hashable {
+    /// Nobody opted the instrument in, so nothing was ever written.
+    case instrumentDisabled
+    /// The instrument is on and this kind has not generated since the state was cleared.
+    case nothingRecorded
+    /// Something is stored under the key and it is not a record this reader can believe.
+    case recordUnreadable
+}
+
+/// A reading, or a refusal to give one. There is no third answer and no empty report.
+nonisolated enum CadenceWidgetLedgerReading: Hashable {
+    case recorded(CadenceWidgetGenerationRecord)
+    case silent(CadenceWidgetLedgerSilence)
+
+    var record: CadenceWidgetGenerationRecord? {
+        switch self {
+        case let .recorded(record): return record
+        case .silent: return nil
+        }
+    }
+
+    var silence: CadenceWidgetLedgerSilence? {
+        switch self {
+        case .recorded: return nil
+        case let .silent(silence): return silence
+        }
+    }
+}
+
+/// The durable half of the widget instrument: three slots per widget kind in the app group.
+///
+/// **Three and not one, because the last generation is the wrong question.** The audit's silent
+/// pair needs the last *successful* generation kept beside the last *refusal*: a widget whose last
+/// success is hours old and whose last refusal is seconds old is failing to refresh, and a widget
+/// whose last success is hours old with no refusal behind it was never asked. One slot holding
+/// whichever happened most recently cannot separate those, and `.after(date)` — the only thing the
+/// providers record today — is a *request* for a timeline opportunity, not evidence one arrived.
+///
+/// Opt-in: with `enabledDefaultsKey` unset, `CadenceWidgetGenerationProbe` still times its stages
+/// in memory (three integer subtractions) but takes no footprint reading and writes nothing at all,
+/// and every reader below answers `.silent(.instrumentDisabled)`.
+nonisolated enum CadenceWidgetGenerationLedger {
+    static let enabledDefaultsKey = "cadence.instrument.widgetCost.enabled"
+    static let lastGenerationKeyPrefix = "cadence.instrument.widgetCost.lastGeneration."
+    static let lastSuccessKeyPrefix = "cadence.instrument.widgetCost.lastSuccess."
+    static let lastRefusalKeyPrefix = "cadence.instrument.widgetCost.lastRefusal."
+
+    /// Every widget kind that writes here, so a reader can sweep without a second hand-list.
+    static let instrumentedKinds = [
+        CadenceWidgetRefreshCenter.todayWidgetKind,
+        CadenceWidgetRefreshCenter.calendarWidgetKind,
+        CadenceWidgetRefreshCenter.habitWidgetKind,
+        CadenceWidgetRefreshCenter.milestoneWidgetKind,
+    ]
+
+    static func isEnabled(userDefaults: UserDefaults? = nil) -> Bool {
+        sharedDefaults(userDefaults).bool(forKey: enabledDefaultsKey)
+    }
+
+    static func setEnabled(_ enabled: Bool, userDefaults: UserDefaults? = nil) {
+        let defaults = sharedDefaults(userDefaults)
+        if enabled {
+            defaults.set(true, forKey: enabledDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: enabledDefaultsKey)
+        }
+    }
+
+    /// The most recent generation of `kind`, whatever it ended as.
+    static func lastGeneration(kind: String, userDefaults: UserDefaults? = nil) -> CadenceWidgetLedgerReading {
+        read(prefix: lastGenerationKeyPrefix, kind: kind, userDefaults: userDefaults)
+    }
+
+    /// The most recent generation of `kind` that produced an entry — `ready` or `empty`.
+    static func lastSuccess(kind: String, userDefaults: UserDefaults? = nil) -> CadenceWidgetLedgerReading {
+        read(prefix: lastSuccessKeyPrefix, kind: kind, userDefaults: userDefaults)
+    }
+
+    /// The most recent generation of `kind` that could not run.
+    static func lastRefusal(kind: String, userDefaults: UserDefaults? = nil) -> CadenceWidgetLedgerReading {
+        read(prefix: lastRefusalKeyPrefix, kind: kind, userDefaults: userDefaults)
+    }
+
+    static func record(_ record: CadenceWidgetGenerationRecord, userDefaults: UserDefaults? = nil) {
+        let defaults = sharedDefaults(userDefaults)
+        guard defaults.bool(forKey: enabledDefaultsKey) else { return }
+        let payload = record.storagePayload
+        defaults.set(payload, forKey: lastGenerationKeyPrefix + record.kind)
+        switch record.outcome {
+        case .ready, .empty:
+            defaults.set(payload, forKey: lastSuccessKeyPrefix + record.kind)
+        case .refused:
+            defaults.set(payload, forKey: lastRefusalKeyPrefix + record.kind)
+        }
+    }
+
+    static func clearStoredState(userDefaults: UserDefaults? = nil) {
+        let defaults = sharedDefaults(userDefaults)
+        for kind in instrumentedKinds {
+            defaults.removeObject(forKey: lastGenerationKeyPrefix + kind)
+            defaults.removeObject(forKey: lastSuccessKeyPrefix + kind)
+            defaults.removeObject(forKey: lastRefusalKeyPrefix + kind)
+        }
+    }
+
+    /// A refusal reason that **cannot** carry user text, because it is built only from an error's
+    /// type name and its `NSError` domain and code. `localizedDescription` is not used: SwiftData's
+    /// own sentence is one fixed string for every cause, and the Cocoa errors underneath it name
+    /// file paths.
+    static func refusalReason(for error: Error) -> String {
+        let bridged = error as NSError
+        return "\(type(of: error))/\(bridged.domain)/\(bridged.code)"
+    }
+
+    private static func read(
+        prefix: String,
+        kind: String,
+        userDefaults: UserDefaults?
+    ) -> CadenceWidgetLedgerReading {
+        let defaults = sharedDefaults(userDefaults)
+        guard defaults.bool(forKey: enabledDefaultsKey) else { return .silent(.instrumentDisabled) }
+        guard let payload = defaults.dictionary(forKey: prefix + kind) else { return .silent(.nothingRecorded) }
+        guard let record = CadenceWidgetGenerationRecord(storagePayload: payload) else {
+            return .silent(.recordUnreadable)
+        }
+        return .recorded(record)
+    }
+
+    private static func sharedDefaults(_ defaults: UserDefaults?) -> UserDefaults {
+        if let defaults {
+            return defaults
+        }
+        if let sharedDefaults = UserDefaults(suiteName: CadenceStoreSupport.appGroupIdentifier) {
+            return sharedDefaults
+        }
+        return .standard
+    }
+}
+
+extension CadenceWidgetGenerationRecord {
+    nonisolated fileprivate var storagePayload: [String: Any] {
+        var payload: [String: Any] = [
+            "kind": kind,
+            "outcome": outcome.rawValue,
+            "stages": Dictionary(uniqueKeysWithValues: stageDurations.map { ($0.key.rawValue, $0.value) }),
+            "total": totalDuration,
+            "rendered": renderedCount,
+            "generatedAt": generatedAt.timeIntervalSince1970,
+        ]
+        if let refusalReason { payload["refusalReason"] = refusalReason }
+        if let rowsFetched { payload["rows"] = rowsFetched }
+        if let footprintBytes { payload["footprint"] = footprintBytes }
+        if let sourceSnapshotAt { payload["sourceSnapshotAt"] = sourceSnapshotAt.timeIntervalSince1970 }
+        return payload
+    }
+
+    /// Decodes, or refuses. Every guard here is the storage-side half of the initializer's rule:
+    /// a payload that has lost its stages, its outcome or its timestamp is not a quiet zero.
+    nonisolated fileprivate init?(storagePayload payload: [String: Any]) {
+        guard let kind = payload["kind"] as? String,
+              let rawOutcome = payload["outcome"] as? String,
+              let outcome = CadenceWidgetGenerationOutcome(rawValue: rawOutcome),
+              let total = (payload["total"] as? NSNumber)?.doubleValue,
+              let rendered = (payload["rendered"] as? NSNumber)?.intValue,
+              let generatedAt = (payload["generatedAt"] as? NSNumber)?.doubleValue,
+              generatedAt > 0
+        else { return nil }
+
+        var stages: [CadenceWidgetStage: TimeInterval] = [:]
+        for (rawStage, rawValue) in (payload["stages"] as? [String: Any] ?? [:]) {
+            guard let stage = CadenceWidgetStage(rawValue: rawStage),
+                  let seconds = (rawValue as? NSNumber)?.doubleValue
+            else { return nil }
+            stages[stage] = seconds
+        }
+
+        let sourceSnapshotAt = (payload["sourceSnapshotAt"] as? NSNumber)?.doubleValue
+        self.init(
+            kind: kind,
+            outcome: outcome,
+            refusalReason: payload["refusalReason"] as? String,
+            stageDurations: stages,
+            totalDuration: total,
+            rowsFetched: (payload["rows"] as? NSNumber)?.intValue,
+            renderedCount: rendered,
+            footprintBytes: (payload["footprint"] as? NSNumber)?.intValue,
+            generatedAt: Date(timeIntervalSince1970: generatedAt),
+            sourceSnapshotAt: sourceSnapshotAt.map(Date.init(timeIntervalSince1970:))
+        )
+    }
+}
+
+/// The live half: one of these per generation, driven by the provider that owns the catch.
+///
+/// A reference type so the support types can take it as `probe: CadenceWidgetGenerationProbe? = nil`
+/// and stay source-compatible with every existing caller — an `inout` parameter cannot be defaulted,
+/// and `WidgetSupportTests` calls all four `snapshot` entry points.
+nonisolated final class CadenceWidgetGenerationProbe {
+    let kind: String
+    private let userDefaults: UserDefaults?
+    private let isEnabled: Bool
+    private let nanoseconds: () -> UInt64
+    private let wallClock: () -> Date
+    private let footprint: () -> Int?
+    private let started: UInt64
+    private var lastMark: UInt64
+    private var stageDurations: [CadenceWidgetStage: TimeInterval] = [:]
+    private var rowsFetched: Int?
+
+    init(
+        kind: String,
+        userDefaults: UserDefaults? = nil,
+        nanoseconds: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+        wallClock: @escaping () -> Date = Date.init,
+        footprint: @escaping () -> Int? = CadenceProcessFootprint.currentBytes
+    ) {
+        self.kind = kind
+        self.userDefaults = userDefaults
+        self.isEnabled = CadenceWidgetGenerationLedger.isEnabled(userDefaults: userDefaults)
+        self.nanoseconds = nanoseconds
+        self.wallClock = wallClock
+        self.footprint = footprint
+        let now = nanoseconds()
+        self.started = now
+        self.lastMark = now
+    }
+
+    /// Closes `stage` at whatever the clock says now, and opens the next one.
+    func finished(_ stage: CadenceWidgetStage, rows: Int? = nil) {
+        let now = nanoseconds()
+        stageDurations[stage] = Self.seconds(from: lastMark, to: now)
+        lastMark = now
+        if let rows {
+            rowsFetched = (rowsFetched ?? 0) + rows
+        }
+    }
+
+    /// Records a generation that produced an entry. Returns the record it wrote, or `nil` when the
+    /// instrument is off or the reading would have been empty.
+    @discardableResult
+    func recordGeneration(
+        outcome: CadenceWidgetGenerationOutcome,
+        renderedCount: Int,
+        sourceSnapshotAt: Date?
+    ) -> CadenceWidgetGenerationRecord? {
+        guard outcome != .refused else { return nil }
+        return commit(
+            outcome: outcome,
+            refusalReason: nil,
+            renderedCount: renderedCount,
+            sourceSnapshotAt: sourceSnapshotAt
+        )
+    }
+
+    /// Records a generation that could not run. **Stored apart from an empty result**, and the
+    /// reason goes through `CadenceWidgetGenerationLedger.refusalReason(for:)` so it cannot carry
+    /// note or task text.
+    @discardableResult
+    func recordRefusal(_ error: Error) -> CadenceWidgetGenerationRecord? {
+        commit(
+            outcome: .refused,
+            refusalReason: CadenceWidgetGenerationLedger.refusalReason(for: error),
+            renderedCount: 0,
+            sourceSnapshotAt: nil
+        )
+    }
+
+    private func commit(
+        outcome: CadenceWidgetGenerationOutcome,
+        refusalReason: String?,
+        renderedCount: Int,
+        sourceSnapshotAt: Date?
+    ) -> CadenceWidgetGenerationRecord? {
+        guard isEnabled else { return nil }
+        let record = CadenceWidgetGenerationRecord(
+            kind: kind,
+            outcome: outcome,
+            refusalReason: refusalReason,
+            stageDurations: stageDurations,
+            totalDuration: Self.seconds(from: started, to: nanoseconds()),
+            rowsFetched: rowsFetched,
+            renderedCount: renderedCount,
+            footprintBytes: footprint(),
+            generatedAt: wallClock(),
+            sourceSnapshotAt: sourceSnapshotAt
+        )
+        guard let record else { return nil }
+        CadenceWidgetGenerationLedger.record(record, userDefaults: userDefaults)
+        return record
+    }
+
+    private static func seconds(from start: UInt64, to end: UInt64) -> TimeInterval {
+        guard end > start else { return 0 }
+        return TimeInterval(end - start) / 1_000_000_000
+    }
+}
+
+/// This process's physical memory footprint, or nothing.
+///
+/// **Never `0`.** A zero footprint is not a measurement any live process can produce, so returning
+/// one would be the instrument reporting a clean sweep where it had failed to read — the shape
+/// every guard in this repository is written against. A kernel that will not answer gets `nil`, and
+/// `CadenceWidgetGenerationRecord.footprintBytes` carries the `nil` through to the reader.
+nonisolated enum CadenceProcessFootprint {
+    nonisolated static func currentBytes() -> Int? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let status = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), reboundPointer, &count)
+            }
+        }
+        guard status == KERN_SUCCESS, info.phys_footprint > 0 else { return nil }
+        return Int(info.phys_footprint)
     }
 }

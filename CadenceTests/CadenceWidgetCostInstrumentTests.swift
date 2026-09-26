@@ -1,0 +1,408 @@
+import Foundation
+import SwiftData
+import Testing
+@testable import Cadence
+
+/// **T-1366, the widget half: a generation that finished and one that could not now leave different
+/// marks, and both of them leave numbers.**
+///
+/// Before this there was no durable duration, memory or last-success instrument anywhere on the
+/// widget path. All four providers catch an open or fetch failure and return their
+/// `unavailableSnapshot()`, which is the right thing to draw and says nothing afterwards — so a
+/// widget that is successfully showing hours-old data and a refresh that was requested and arrived
+/// late are the same observation from outside the process. `.after(date)` is the only thing the
+/// providers recorded, and it is a *request* for a timeline opportunity rather than evidence one
+/// was granted.
+///
+/// **Everything here runs against a disk-backed store in a temporary directory.** Never the app
+/// group, never `~/Library/Containers/com.haoranwei.Cadence/Data`: the numbers below are about a
+/// fixture, and the owner's 264-row store is not a fixture. Disk rather than memory because
+/// container opening is one of the four costs [[T-1329]] did not pay for, and an in-memory store
+/// does not open one.
+@MainActor
+struct CadenceWidgetCostInstrumentTests {
+
+    // MARK: - Opt-in, and what silence means
+
+    /// **The instrument writes nothing until someone asks for it, and a reader with nothing to read
+    /// refuses rather than reporting zeroes.**
+    ///
+    /// The second half is the one with teeth. `.silent(.instrumentDisabled)` and a record of all
+    /// zeroes are the same bytes to a careless reader, and a test that only checked "no crash"
+    /// would be green against an instrument that had quietly stopped recording — which is the shape
+    /// [[T-1161]] sat in for thirteen days.
+    @Test func theLedgerIsSilentUntilItIsOptedInAndRecordsOnceItIs() throws {
+        try withTemporaryDefaults("CadenceTests.widgetCost") { defaults in
+            let kind = CadenceWidgetRefreshCenter.todayWidgetKind
+
+            #expect(CadenceWidgetGenerationLedger.isEnabled(userDefaults: defaults) == false)
+            let offProbe = probe(kind: kind, defaults: defaults)
+            offProbe.finished(.containerOpen)
+            offProbe.finished(.fetch, rows: 12)
+            #expect(
+                offProbe.recordGeneration(outcome: .ready, renderedCount: 3, sourceSnapshotAt: Date()) == nil,
+                "a probe wrote a record while the instrument was off"
+            )
+            #expect(
+                CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).silence == .instrumentDisabled
+            )
+
+            CadenceWidgetGenerationLedger.setEnabled(true, userDefaults: defaults)
+            #expect(
+                CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).silence == .nothingRecorded,
+                "the instrument is on and has recorded nothing, which is a third answer and not a zeroed record"
+            )
+
+            let onProbe = probe(kind: kind, defaults: defaults)
+            onProbe.finished(.containerOpen)
+            onProbe.finished(.fetch, rows: 12)
+            onProbe.finished(.derive)
+            let written = try #require(
+                onProbe.recordGeneration(outcome: .ready, renderedCount: 3, sourceSnapshotAt: Date(timeIntervalSince1970: 5_000)),
+                "the probe recorded nothing with the instrument on"
+            )
+
+            // Non-vacuity for the reader: it really can come back with something, so the two
+            // silences above are the ledger's answer and not a reader that always says nothing.
+            let read = try #require(
+                CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).record,
+                "the ledger refused to read back the record it had just written"
+            )
+            // Field-wise rather than `read == written`: a `Date` that has been through
+            // `timeIntervalSince1970` and back is the same instant to within a rounding bit and not
+            // necessarily the same `Double`, and pinning bit-equality of a timestamp would make
+            // this a test about floating point.
+            #expect(read.outcome == written.outcome)
+            #expect(read.stageDurations == written.stageDurations)
+            #expect(read.totalDuration == written.totalDuration)
+            #expect(abs(read.generatedAt.timeIntervalSince(written.generatedAt)) < 0.001)
+            #expect(read.rowsFetched == 12)
+            #expect(read.renderedCount == 3)
+            #expect(read.measuredStages == [.containerOpen, .fetch, .derive])
+            #expect(read.sourceSnapshotAt?.timeIntervalSince1970 == 5_000)
+        }
+    }
+
+    /// **"Nothing to draw" and "could not read the store" are stored in different slots.**
+    ///
+    /// This is the audit's silent pair, made separable. Both render the same chrome and both used
+    /// to leave the same nothing behind; a last-success timestamp beside a last-refusal timestamp
+    /// is what turns "the widget looks stale" into either "it was asked and refused" or "it was
+    /// never asked".
+    @Test func aRefusalIsKeptApartFromAResultWithNothingInIt() throws {
+        try withTemporaryDefaults("CadenceTests.widgetCost") { defaults in
+            let kind = CadenceWidgetRefreshCenter.calendarWidgetKind
+            CadenceWidgetGenerationLedger.setEnabled(true, userDefaults: defaults)
+
+            let emptyProbe = probe(kind: kind, defaults: defaults)
+            emptyProbe.finished(.containerOpen)
+            emptyProbe.finished(.fetch, rows: 0)
+            emptyProbe.finished(.derive)
+            _ = emptyProbe.recordGeneration(
+                outcome: .empty,
+                renderedCount: 0,
+                sourceSnapshotAt: Date(timeIntervalSince1970: 1_000)
+            )
+
+            let refusalProbe = probe(kind: kind, defaults: defaults)
+            _ = refusalProbe.recordRefusal(CocoaError(.fileReadNoSuchFile))
+
+            let success = try #require(CadenceWidgetGenerationLedger.lastSuccess(kind: kind, userDefaults: defaults).record)
+            let refusal = try #require(CadenceWidgetGenerationLedger.lastRefusal(kind: kind, userDefaults: defaults).record)
+            let latest = try #require(CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).record)
+
+            #expect(success.outcome == .empty)
+            #expect(success.refusalReason == nil)
+            #expect(success.sourceSnapshotAt?.timeIntervalSince1970 == 1_000)
+            #expect(refusal.outcome == .refused)
+            #expect(refusal.sourceSnapshotAt == nil, "a refusal has no source snapshot to be stale from")
+            let refusalReason = try #require(refusal.refusalReason)
+            #expect(refusalReason.contains(CocoaError.errorDomain))
+            #expect(latest.outcome == .refused, "the most recent generation is the refusal")
+
+            // The other widget's slots are untouched: a refusal on one kind must not read as one
+            // on another, which is what a single shared slot would have produced.
+            #expect(
+                CadenceWidgetGenerationLedger.lastRefusal(
+                    kind: CadenceWidgetRefreshCenter.todayWidgetKind,
+                    userDefaults: defaults
+                ).silence == .nothingRecorded
+            )
+        }
+    }
+
+    /// **A successful generation that measured no stage is not a record.**
+    ///
+    /// The instrument refuses to write it, and the reader would refuse to believe it: an empty
+    /// stage map decodes to nothing rather than to a generation that cost zero seconds. A *refusal*
+    /// is allowed to have measured no stage — the container open can throw before the first mark —
+    /// and must then carry the reason it refused, which is the only thing it has to say.
+    @Test func anInstrumentThatMeasuredNothingRefusesToReportACleanSweep() throws {
+        try withTemporaryDefaults("CadenceTests.widgetCost") { defaults in
+            let kind = CadenceWidgetRefreshCenter.habitWidgetKind
+            CadenceWidgetGenerationLedger.setEnabled(true, userDefaults: defaults)
+
+            let blind = probe(kind: kind, defaults: defaults)
+            #expect(
+                blind.recordGeneration(outcome: .ready, renderedCount: 4, sourceSnapshotAt: Date()) == nil,
+                "a generation that timed no stage at all was written as a successful record"
+            )
+            #expect(CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).silence == .nothingRecorded)
+
+            // The same probe, refusing before it ever marked a stage: that one is recorded.
+            let refused = try #require(
+                blind.recordRefusal(CocoaError(.fileReadCorruptFile)),
+                "a container open that threw before the first mark left nothing behind"
+            )
+            #expect(refused.measuredStages.isEmpty)
+            #expect(refused.refusalReason?.isEmpty == false)
+
+            // And the storage side enforces the same rule, so a payload that has lost its stages
+            // cannot come back as a zero-cost success.
+            var ruined: [String: Any] = [
+                "kind": kind,
+                "outcome": CadenceWidgetGenerationOutcome.ready.rawValue,
+                "stages": [String: Any](),
+                "total": 0.25,
+                "rendered": 2,
+                "generatedAt": Date().timeIntervalSince1970,
+            ]
+            defaults.set(ruined, forKey: CadenceWidgetGenerationLedger.lastGenerationKeyPrefix + kind)
+            #expect(
+                CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).silence == .recordUnreadable
+            )
+
+            // Non-vacuity for that decode: the same payload *with* a stage in it reads back fine,
+            // so the refusal above is the emptiness and not a reader that rejects everything.
+            ruined["stages"] = [CadenceWidgetStage.fetch.rawValue: 0.25]
+            defaults.set(ruined, forKey: CadenceWidgetGenerationLedger.lastGenerationKeyPrefix + kind)
+            #expect(CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).record != nil)
+        }
+    }
+
+    /// The refusal reason is built from an error's type, domain and code, so it **cannot** carry a
+    /// task title, a note body or a file path even when the error it came from does.
+    @Test func theRefusalReasonCannotCarryUserText() {
+        let leaky = NSError(
+            domain: "CadenceFixtureDomain",
+            code: 42,
+            userInfo: [NSLocalizedDescriptionKey: "Could not read /Users/someone/Notes/Quarterly salary review.md"]
+        )
+        let reason = CadenceWidgetGenerationLedger.refusalReason(for: leaky)
+
+        #expect(reason.contains("CadenceFixtureDomain"))
+        #expect(reason.contains("42"))
+        #expect(!reason.contains("salary"))
+        #expect(!reason.contains("/Users/"))
+        // Non-vacuity: the text really is in the error this was built from.
+        #expect(leaky.localizedDescription.contains("salary"))
+    }
+
+    // MARK: - The measurement
+
+    /// **Measured, on disk: Today hands the store a predicate and Calendar hands it none.**
+    ///
+    /// The audit corrected the premise that Today fetches every task — it fetches a filtered
+    /// superset — and noted that Calendar's fetch is the broad one. Both readings came from source.
+    /// This is the number: two probes over one disk-backed fixture, in one test, so the two counts
+    /// cannot drift apart by fixture.
+    ///
+    /// **No time threshold is asserted and none should be.** A duration here is a fact about this
+    /// machine on this day; what is bounded is the *shape* — every stage measured, nothing claiming
+    /// to have cost less than nothing, and the parts never summing past the whole.
+    @Test func todayFetchesAFilteredSupersetWhereCalendarFetchesTheWholeTable() throws {
+        let fixture = try DiskFixture()
+        defer { fixture.tearDown() }
+
+        try withTemporaryDefaults("CadenceTests.widgetCost") { defaults in
+            CadenceWidgetGenerationLedger.setEnabled(true, userDefaults: defaults)
+
+            let todayProbe = CadenceWidgetGenerationProbe(
+                kind: CadenceWidgetRefreshCenter.todayWidgetKind,
+                userDefaults: defaults
+            )
+            let todayContainer = try fixture.openReadOnlyContainer()
+            todayProbe.finished(.containerOpen)
+            let todaySnapshot = try CadenceTodayWidgetSupport.snapshot(
+                modelContext: ModelContext(todayContainer),
+                todayKey: fixture.todayKey,
+                limit: 3,
+                probe: todayProbe
+            )
+            let today = try #require(
+                todayProbe.recordGeneration(
+                    outcome: todaySnapshot.state == .empty ? .empty : .ready,
+                    renderedCount: todaySnapshot.tasks.count,
+                    sourceSnapshotAt: todaySnapshot.date
+                ),
+                "the Today probe recorded nothing"
+            )
+
+            let calendarProbe = CadenceWidgetGenerationProbe(
+                kind: CadenceWidgetRefreshCenter.calendarWidgetKind,
+                userDefaults: defaults
+            )
+            let calendarContainer = try fixture.openReadOnlyContainer()
+            calendarProbe.finished(.containerOpen)
+            let calendarSnapshot = try CadenceCalendarWidgetSupport.snapshot(
+                modelContext: ModelContext(calendarContainer),
+                dayCount: 14,
+                probe: calendarProbe
+            )
+            let calendar = try #require(
+                calendarProbe.recordGeneration(
+                    outcome: calendarSnapshot.state == .empty ? .empty : .ready,
+                    renderedCount: calendarSnapshot.days.count,
+                    sourceSnapshotAt: calendarSnapshot.date
+                ),
+                "the Calendar probe recorded nothing"
+            )
+
+            // The counts, against the fixture's own arithmetic rather than a literal.
+            let todayRows = try #require(today.rowsFetched, "the Today probe counted no rows at all")
+            let calendarRows = try #require(calendar.rowsFetched, "the Calendar probe counted no rows at all")
+            #expect(calendarRows == DiskFixture.totalTaskCount)
+            #expect(todayRows == DiskFixture.openDatedTaskCount)
+            #expect(todayRows < calendarRows)
+            #expect(todayRows > todaySnapshot.tasks.count)
+
+            // Non-vacuity for that inequality: the fixture holds rows of both kinds a correct
+            // predicate must drop, so the two numbers being equal would be a real regression and
+            // not an artefact of a store where every task happens to qualify.
+            #expect(DiskFixture.totalTaskCount >= 300)
+            #expect(DiskFixture.settledTaskCount > 0)
+            #expect(DiskFixture.openUndatedTaskCount > 0)
+            #expect(DiskFixture.totalTaskCount > DiskFixture.openDatedTaskCount)
+
+            // The shape of every duration, bounded rather than pinned.
+            for record in [today, calendar] {
+                #expect(record.measuredStages == [.containerOpen, .fetch, .derive], "\(record.kind)")
+                #expect(record.totalDuration.isFinite && record.totalDuration >= 0, "\(record.kind)")
+                #expect(
+                    record.accountedDuration <= record.totalDuration + 0.000_001,
+                    "\(record.kind) attributed \(record.accountedDuration)s of stages to a \(record.totalDuration)s generation"
+                )
+                #expect(record.footprintBytes.map { $0 > 0 } ?? true, "a footprint of zero is not a reading")
+                #expect(record.renderedCount >= 0)
+            }
+
+            // The footprint reader is a Darwin `task_info` call, not a toolchain answer: a live
+            // process has a physical footprint. If this ever fails it is the platform, which is
+            // worth a red run, and the bound is deliberately loose.
+            let footprint = try #require(
+                CadenceProcessFootprint.currentBytes(),
+                "the kernel would not report this process's footprint"
+            )
+            #expect(footprint > 1_000_000)
+
+            print("""
+                T-1366 widget measurement (disk-backed fixture, \(DiskFixture.totalTaskCount) AppTask rows)
+                  today:    rows=\(todayRows) rendered=\(today.renderedCount) \
+                total=\(today.totalDuration)s stages=\(Self.described(today.stageDurations))
+                  calendar: rows=\(calendarRows) rendered=\(calendar.renderedCount) \
+                total=\(calendar.totalDuration)s stages=\(Self.described(calendar.stageDurations))
+                  footprint=\(footprint) bytes
+                """)
+        }
+    }
+
+    /// The four widget kinds the ledger keeps slots for are the four the bundle ships, read from
+    /// `CadenceWidgetRefreshCenter` rather than written down twice.
+    @Test func theLedgerKeepsASlotForEveryWidgetKindTheBundleShips() {
+        #expect(
+            Set(CadenceWidgetGenerationLedger.instrumentedKinds) == [
+                CadenceWidgetRefreshCenter.todayWidgetKind,
+                CadenceWidgetRefreshCenter.calendarWidgetKind,
+                CadenceWidgetRefreshCenter.habitWidgetKind,
+                CadenceWidgetRefreshCenter.milestoneWidgetKind,
+            ]
+        )
+        #expect(Set(CadenceWidgetGenerationLedger.instrumentedKinds).count == 4)
+    }
+
+    // MARK: - Fixtures
+
+    private func probe(kind: String, defaults: UserDefaults) -> CadenceWidgetGenerationProbe {
+        CadenceWidgetGenerationProbe(kind: kind, userDefaults: defaults)
+    }
+
+    private static func described(_ stages: [CadenceWidgetStage: TimeInterval]) -> String {
+        stages
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { "\($0.key.rawValue)=\($0.value)s" }
+            .joined(separator: " ")
+    }
+
+    /// A store **on disk, in a temporary directory**, so a container open is a real one.
+    ///
+    /// Three populations, because the claim being measured is about which of them a fetch has to
+    /// materialise: open work carrying a date, open work carrying none, and settled work.
+    private struct DiskFixture {
+        static let openDatedTaskCount = 120
+        static let openUndatedTaskCount = 100
+        static let settledTaskCount = 80
+        static var totalTaskCount: Int { openDatedTaskCount + openUndatedTaskCount + settledTaskCount }
+
+        let directory: URL
+        let storeURL: URL
+        let todayKey: String
+
+        init() throws {
+            directory = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("cadence-widget-cost-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            storeURL = directory.appendingPathComponent("fixture.store")
+            todayKey = DateFormatters.dateKey(from: Date(), calendar: .current)
+
+            let container = try ModelContainer(
+                for: CadenceSchema.schema,
+                configurations: ModelConfiguration(
+                    "CadenceWidgetCostFixture",
+                    schema: CadenceSchema.schema,
+                    url: storeURL,
+                    cloudKitDatabase: .none
+                )
+            )
+            let context = ModelContext(container)
+            let yesterday = DateFormatters.dateKey(
+                from: Date().addingTimeInterval(-86_400),
+                calendar: .current
+            )
+
+            for index in 0..<Self.openDatedTaskCount {
+                let task = AppTask(title: "Dated \(index)")
+                if index.isMultiple(of: 3) {
+                    task.dueDate = todayKey
+                } else if index.isMultiple(of: 3) == false && index.isMultiple(of: 2) {
+                    task.dueDate = yesterday
+                } else {
+                    task.scheduledDate = todayKey
+                }
+                context.insert(task)
+            }
+            for index in 0..<Self.openUndatedTaskCount {
+                context.insert(AppTask(title: "Undated \(index)"))
+            }
+            for index in 0..<Self.settledTaskCount {
+                let task = AppTask(title: "Settled \(index)")
+                task.dueDate = todayKey
+                task.status = index.isMultiple(of: 2) ? .done : .cancelled
+                context.insert(task)
+            }
+            try context.save()
+        }
+
+        /// The same read-only, CloudKit-free open the four providers make, against the fixture.
+        func openReadOnlyContainer() throws -> ModelContainer {
+            try CadenceStoreSupport.makePrimaryContainer(
+                allowsSave: false,
+                cloudKitDatabase: .none,
+                storeURL: storeURL
+            )
+        }
+
+        func tearDown() {
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
+}
