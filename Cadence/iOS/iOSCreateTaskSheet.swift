@@ -69,6 +69,17 @@ struct iOSCreateTaskSheet: View {
     /// `@FocusState` does not even hold a value.
     @FocusState private var focusedField: Field?
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// **This sheet is one of the two surfaces T-1364 converted**, so it says so rather than asking.
+    ///
+    /// A view cannot read an environment value its own `body` installs: `.cadenceScaledTypography()`
+    /// below hands `.enabled` to everything *inside* the sheet — the value tiles, their eyebrow
+    /// captions, the suggestion strip — while the title and notes fields here are the thing doing
+    /// the declaring. Holding it as a constant keeps the sheet's own two heights on the same answer
+    /// as its children's rather than a frame behind them.
+    private let typographyScaling: CadenceTypographyScaling = .enabled
+
     private enum Field: Hashable {
         case title
         case notes
@@ -102,6 +113,7 @@ struct iOSCreateTaskSheet: View {
                     }
                 }
         }
+        .cadenceScaledTypography()
         .tint(Theme.blue)
         .preferredColorScheme(.dark)
         .presentationBackground(Theme.bg)
@@ -146,7 +158,7 @@ struct iOSCreateTaskSheet: View {
     private var actionErrorNotice: some View {
         if let actionError {
             Text(actionError)
-                .font(.system(size: 13, weight: .semibold))
+                .cadenceFont(.controlLabel)
                 .foregroundStyle(Theme.red)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -159,14 +171,17 @@ struct iOSCreateTaskSheet: View {
     private var titleField: some View {
         TextField("What needs doing?", text: $title)
             .textFieldStyle(.plain)
-            .font(.system(size: 20, weight: .semibold))
+            .cadenceFont(.composerTitle)
             .foregroundStyle(Theme.text)
             .tint(Theme.blue)
             .focused($focusedField, equals: .title)
             .submitLabel(.done)
             .onSubmit(create)
-            .padding(.horizontal, 14)
-            .frame(minHeight: CadenceTaskComposerLayout.titleHeight)
+            .padding(.horizontal, CadenceTaskComposerLayout.fieldPadding)
+            // A minimum derived from the line the title is actually set on, not the 52 it is at the
+            // default size: a field pinned to 52 with 47pt of glyph in it is where "supports larger
+            // text" stops being true.
+            .frame(minHeight: CadenceTaskComposerLayout.titleHeight(at: dynamicTypeSize, scaling: typographyScaling))
             .background(Theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }
@@ -181,7 +196,7 @@ struct iOSCreateTaskSheet: View {
     private var notesField: some View {
         TextField("Notes", text: $notes, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(.system(size: 15))
+            .cadenceFont(.bodyText)
             .foregroundStyle(Theme.text)
             .tint(Theme.blue)
             .focused($focusedField, equals: .notes)
@@ -190,8 +205,12 @@ struct iOSCreateTaskSheet: View {
             // from, and a seeded sheet takes the `!notes.isEmpty` branch so pre-filled notes are
             // never hidden behind a collapsed box.
             .lineLimit(focusedField == .notes || !notes.isEmpty ? 3...6 : 1...1)
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(CadenceTaskComposerLayout.fieldPadding)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: CadenceTaskComposerLayout.notesRestingHeight(at: dynamicTypeSize, scaling: typographyScaling),
+                alignment: .leading
+            )
             .background(Theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
     }

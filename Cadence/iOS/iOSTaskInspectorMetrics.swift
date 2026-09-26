@@ -87,8 +87,19 @@ nonisolated enum iOSTaskInspectorMetrics {
     }
 
     /// The first line of a title, as SwiftUI lays it out. Used only to place the circle against it.
+    ///
+    /// The `1.2` moved to `CadenceTypeScale.lineHeightRatio` (T-1364) so that every height in the
+    /// app computed from a font size uses one ratio rather than each surface picking its own.
     static var titleLineHeight: CGFloat {
-        titleSize * 1.2
+        titleSize * CadenceTypeScale.lineHeightRatio
+    }
+
+    /// The same line, at the reader's text size.
+    static func titleLineHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.lineHeight(.editorTitle, base: Self.titleSize, at: dynamicTypeSize, scaling: scaling)
     }
 
     /// The nudge that centres the completion circle on the **first** line of a title that may wrap
@@ -99,6 +110,39 @@ nonisolated enum iOSTaskInspectorMetrics {
     /// 3pt and a circle that differed by 2 — three independent numbers describing one alignment.
     static var completionTopPadding: CGFloat {
         max(0, (titleLineHeight - completionGlyphSize) / 2)
+    }
+
+    /// The completion circle's own diameter at the reader's text size.
+    ///
+    /// **It has to move with the title or the alignment it was derived from stops holding.** The
+    /// circle is centred on the first line of the title; at `accessibility5` that line is 59pt and
+    /// a 24pt circle beside it reads as a bullet. It follows the title's role so the pair scales as
+    /// one control, and 44pt of touch target is still added around it by the view.
+    static func completionGlyphSize(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.size(.editorTitle, base: Self.completionGlyphSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// The indent, still derived: the circle at this size plus the gap.
+    static func titleColumnInset(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        completionGlyphSize(at: dynamicTypeSize, scaling: scaling) + titleRowSpacing
+    }
+
+    /// The nudge, still derived from the two sizes it sits between — both of which now move.
+    static func completionTopPadding(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        max(
+            0,
+            (titleLineHeight(at: dynamicTypeSize, scaling: scaling)
+                - completionGlyphSize(at: dynamicTypeSize, scaling: scaling)) / 2
+        )
     }
 
     // MARK: - Notes

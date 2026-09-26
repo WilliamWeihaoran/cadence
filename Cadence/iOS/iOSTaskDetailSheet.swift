@@ -146,6 +146,12 @@ struct iOSTaskDetailSheet: View {
         NavigationStack {
             editorScrollView
         }
+        // **The other half of T-1364's one converted workflow.** Creating a task and then opening
+        // it are the same errand, so the sheet that reads it back scales exactly where the sheet
+        // that wrote it does — the title, the field rows, the tags, the subtasks and the markdown
+        // well. Everything below here is inside the scope; the sheet itself declares no heights of
+        // its own, so unlike `iOSCreateTaskSheet` it has nothing to read back.
+        .cadenceScaledTypography()
         .preferredColorScheme(.dark)
         .onAppear(perform: initializeTaskSheet)
         .onChange(of: containerSelection) { _, _ in

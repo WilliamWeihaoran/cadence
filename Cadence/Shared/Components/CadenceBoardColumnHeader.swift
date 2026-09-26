@@ -237,8 +237,10 @@ struct CadenceBoardColumnTitleRow<Trailing: View>: View {
                 )
 
             Text(title.uppercased())
-                .font(.system(size: CadenceBoardColumnHeaderMetrics.labelSize, weight: .semibold))
-                .kerning(CadenceBoardColumnHeaderMetrics.labelKerning)
+                .cadenceUppercaseLabel(
+                    size: CadenceBoardColumnHeaderMetrics.labelSize,
+                    kerning: CadenceBoardColumnHeaderMetrics.labelKerning
+                )
                 .foregroundStyle(Theme.muted)
                 .lineLimit(1)
                 .truncationMode(.tail)

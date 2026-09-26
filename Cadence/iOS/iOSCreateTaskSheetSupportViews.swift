@@ -366,6 +366,12 @@ struct iOSTaskComposerMarkerSuggestions: View {
     let onPickTag: (Tag) -> Void
     let onCreateTag: (String) -> Void
 
+    /// Read out of the environment here, unlike in the sheet: the strip is *inside*
+    /// `.cadenceScaledTypography()`, so it sees what the sheet installed. Anywhere else it is
+    /// `.fixed` and the strip is the 34pt control it has always been.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
     private var trimmedQuery: String {
         shortcut.query.trimmingCharacters(in: .whitespaces)
     }
@@ -478,15 +484,18 @@ struct iOSTaskComposerMarkerSuggestions: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
+                    // The glyph follows the label's role, not a curve of its own: a 13pt label at
+                    // 38pt beside an 11pt glyph still at 11 is a chip whose two halves have come
+                    // apart.
+                    .cadenceFont(.controlLabel, base: 11)
                     .foregroundStyle(tint)
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel)
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
             }
             .padding(.horizontal, 11)
-            .frame(minHeight: 34)
+            .frame(minHeight: CadenceTaskComposerLayout.suggestionHeight(at: dynamicTypeSize, scaling: scaling))
             .background(tint.opacity(0.13))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay {
@@ -501,11 +510,11 @@ struct iOSTaskComposerMarkerSuggestions: View {
 
     private func emptyHint(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .medium))
+            .cadenceFont(.metadata)
             .foregroundStyle(Theme.dim)
-            .lineLimit(1)
+            .lineLimit(CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) && scaling == .enabled ? 2 : 1)
             .padding(.horizontal, 4)
-            .frame(minHeight: 34)
+            .frame(minHeight: CadenceTaskComposerLayout.suggestionHeight(at: dynamicTypeSize, scaling: scaling))
     }
 }
 #endif

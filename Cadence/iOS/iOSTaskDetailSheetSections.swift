@@ -444,7 +444,7 @@ struct iOSTaskFieldListSection: View {
             iOSEditorDivider()
             iOSEditorFieldRow(label: "Logged", systemImage: "stopwatch", color: Theme.dim) {
                 Text(logged)
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel)
                     .foregroundStyle(Theme.text)
             }
         }
@@ -525,14 +525,14 @@ struct iOSTaskSubtasksSection: View {
     private var addSubtaskRow: some View {
         HStack(spacing: 9) {
             Image(systemName: "plus")
-                .font(.system(size: 13, weight: .semibold))
+                .cadenceFont(.controlLabel)
                 .foregroundStyle(Theme.dim)
                 .frame(width: 20, height: 20)
                 .accessibilityHidden(true)
 
             TextField("Add subtask", text: newSubtaskTitle)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14, weight: .medium))
+                .cadenceFont(.rowTitle)
                 .foregroundStyle(Theme.text)
                 .submitLabel(.done)
                 .onSubmit(onAdd)
@@ -545,7 +545,7 @@ struct iOSTaskSubtasksSection: View {
             // row does not change width as the user types.
             Button(action: onAdd) {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 20))
+                    .cadenceFont(.rowTitle, base: 20, weight: .regular)
                     .foregroundStyle(canAddSubtask ? Theme.blue : Theme.dim)
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())

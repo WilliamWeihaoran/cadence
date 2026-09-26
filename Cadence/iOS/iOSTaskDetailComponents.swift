@@ -26,12 +26,18 @@ struct iOSTaskEditorTitleCard: View {
 
     @State private var showPriorityPicker = false
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
     /// Every figure in this row comes from `iOSTaskInspectorMetrics` and none of them from
     /// `horizontalSizeClass`. The row used to size its circle, its title and the gap above the
     /// circle by the width of the screen *behind* the sheet — three numbers for one control, none
     /// of which the sheet's own 640pt column varies by.
+    ///
+    /// Since T-1364 the width it does answer to is the reader's text size, and the circle answers
+    /// through the same metrics type rather than beside it.
     private var glyphSize: CGFloat {
-        iOSTaskInspectorMetrics.completionGlyphSize
+        iOSTaskInspectorMetrics.completionGlyphSize(at: dynamicTypeSize, scaling: scaling)
     }
 
     /// Done and cancelled are both "settled": the title reads as struck through and stops being
@@ -59,7 +65,7 @@ struct iOSTaskEditorTitleCard: View {
             // Aligns the circle with the first line of a title that may wrap to three — derived
             // from the circle and the title it sits beside, so it cannot fall out of step with
             // either.
-            .padding(.top, iOSTaskInspectorMetrics.completionTopPadding)
+            .padding(.top, iOSTaskInspectorMetrics.completionTopPadding(at: dynamicTypeSize, scaling: scaling))
 
             VStack(alignment: .leading, spacing: 3) {
                 // Only the two statuses a checkbox cannot express say anything here. "Todo" over
@@ -73,7 +79,7 @@ struct iOSTaskEditorTitleCard: View {
                 }
 
                 TextField("Task title", text: $task.title, axis: .vertical)
-                    .font(.system(size: iOSTaskInspectorMetrics.titleSize, weight: .bold))
+                    .cadenceFont(.editorTitle, base: iOSTaskInspectorMetrics.titleSize)
                     .foregroundStyle(isSettled ? Theme.dim : Theme.text)
                     .strikethrough(isSettled, color: Theme.dim)
                     .textFieldStyle(.plain)
@@ -214,7 +220,7 @@ struct iOSTaskPlacementBreadcrumb: View {
 
             if showsSectionSegment {
                 Text("\u{203A}")
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel)
                     .foregroundStyle(Theme.dim)
                     .accessibilityHidden(true)
 
@@ -280,6 +286,9 @@ struct iOSTaskAttributeChip: View {
     var textColor: Color? = nil
     let action: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
     private var glyphColor: Color {
         guard isSet, let tint else { return Theme.dim }
         return tint
@@ -295,17 +304,22 @@ struct iOSTaskAttributeChip: View {
             HStack(spacing: size.iconSpacing) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: size.iconSize, weight: .semibold))
+                        .cadenceFont(.controlLabel, base: size.iconSize)
                         .foregroundStyle(glyphColor)
                 }
                 Text(title)
-                    .font(.system(size: size.fontSize, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: size.fontSize)
                     .foregroundStyle(titleColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             .padding(.horizontal, size.horizontalPadding)
-            .frame(height: size.height)
+            // `minHeight`, not `height` (T-1364). The plate was pinned at 30pt around a 13pt label;
+            // at an accessibility size that label is 38pt and a fixed 30pt frame does not clip it,
+            // it centres it and lets it draw over the chips on the lines above and below. The
+            // floor still grows by what the label gained, so a 44pt touch target is unchanged at
+            // the sizes it was measured at.
+            .frame(minHeight: size.height(at: dynamicTypeSize, scaling: scaling))
             .background(Theme.surfaceElevated.opacity(0.62))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .contentShape(Rectangle())
@@ -339,6 +353,16 @@ enum iOSTaskAttributeChipSize {
     /// gap — and a 26pt pill with an 18pt gap under it read as two disconnected strips rather than
     /// one wrapped one.
     var height: CGFloat { 30 }
+
+    /// The plate, holding its own label at the reader's text size. Additive, like every other
+    /// container in `CadenceTypeScale`: the 17pt of padding inside a 30pt plate around a 13pt label
+    /// is padding, and padding does not triple.
+    func height(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(self.height, holding: .controlLabel, textBase: fontSize, at: dynamicTypeSize, scaling: scaling)
+    }
 
     var fontSize: CGFloat {
         switch self {
@@ -427,7 +451,7 @@ struct iOSTaskTagStrip: View {
                 showPicker = true
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .bold))
+                    .cadenceFont(.controlLabel, base: 11, weight: .bold)
                     .foregroundStyle(Theme.dim)
                     .frame(width: 30, height: 26)
                     .background(Theme.surfaceElevated.opacity(0.62))
@@ -538,7 +562,7 @@ struct iOSTaskTagPickerPopover: View {
                             addDefaultTags()
                         } label: {
                             Text("Add Default Tags")
-                                .font(.system(size: 14, weight: .medium))
+                                .cadenceFont(.rowTitle)
                                 .foregroundStyle(Theme.blue)
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                                 .padding(.horizontal, 12)
@@ -567,7 +591,7 @@ struct iOSTaskTagPickerPopover: View {
             HStack(spacing: 8) {
                 TextField("New tag", text: $newTagName)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .medium))
+                    .cadenceFont(.fieldLabel)
                     .foregroundStyle(Theme.text)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -579,7 +603,7 @@ struct iOSTaskTagPickerPopover: View {
 
                 Button(action: addTag) {
                     Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .bold))
+                        .cadenceFont(.fieldLabel, weight: .bold)
                         .foregroundStyle(Theme.onColor(for: Theme.blue))
                         .frame(width: 40, height: 40)
                         .background(trimmedNewTagName.isEmpty ? Theme.surface : Theme.blue)
@@ -609,7 +633,7 @@ struct iOSTaskTagPickerPopover: View {
                 Spacer(minLength: 8)
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
+                        .cadenceFont(.metadata, weight: .semibold)
                         .foregroundStyle(Theme.blue)
                 }
             }
@@ -711,7 +735,7 @@ struct iOSSubtaskRow: View {
 
             TextField("Subtask", text: $subtask.title, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14, weight: .medium))
+                .cadenceFont(.rowTitle)
                 .foregroundStyle(subtask.isDone ? Theme.dim : Theme.text)
                 .strikethrough(subtask.isDone, color: Theme.dim)
                 .lineLimit(2)
@@ -725,7 +749,7 @@ struct iOSSubtaskRow: View {
 
             Button(action: delete) {
                 Image(systemName: "trash")
-                    .font(.system(size: 12, weight: .semibold))
+                    .cadenceFont(.metadata, weight: .semibold)
                     .foregroundStyle(Theme.dim)
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())

@@ -32,6 +32,27 @@ enum CadenceSettingsRowMetrics {
     static let glyphLabelSpacing: CGFloat = 9
     /// Gap between a row's label and the control on its trailing edge.
     static let valueSpacing: CGFloat = 10
+
+    // MARK: - The same two figures, once the reader has a text size (T-1364)
+    //
+    // Both grow **additively**, by what the label gained rather than by what it was multiplied by.
+    // A 44pt row holding a 13pt label is 31pt of touch target and padding, and a touch target does
+    // not need to triple for the label inside it to stop being clipped; a slot 22pt wide for a 13pt
+    // glyph is the glyph plus 9pt of column, and it is the glyph that grew.
+
+    static func rowHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(Self.rowHeight, holding: .fieldLabel, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    static func glyphSlot(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(Self.glyphSlot, holding: .fieldLabel, at: dynamicTypeSize, scaling: scaling)
+    }
 }
 
 /// The gap between a section label and the block it names.
@@ -103,7 +124,11 @@ struct CadenceFieldSection<Content: View>: View {
 
                     if let trailing {
                         Text(trailing)
-                            .font(SectionEyebrowLabel.Size.standard.font)
+                            // The count sits on the eyebrow's line and is the eyebrow's size, so it
+                            // has to move when the eyebrow does (T-1364) — a fixed `2 of 5` beside
+                            // a heading that grew is the inconsistency this ticket exists to stop.
+                            // Not `cadenceUppercaseLabel`: it is digits, and it carries no tracking.
+                            .cadenceFont(.sectionLabel, base: SectionEyebrowLabel.Size.standard.fontSize)
                             .foregroundStyle(Theme.dim)
                             .monospacedDigit()
                     }
@@ -317,15 +342,21 @@ struct CadenceInlineFieldLabel: View {
     /// (an overdue due date, a past do date), not for every field that happens to have an icon.
     var color: Color = Theme.dim
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
     var body: some View {
         HStack(spacing: CadenceSettingsRowMetrics.glyphLabelSpacing) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
+                .cadenceFont(.fieldLabel)
                 .foregroundStyle(color)
-                .frame(width: CadenceSettingsRowMetrics.glyphSlot, alignment: .leading)
+                .frame(
+                    width: CadenceSettingsRowMetrics.glyphSlot(at: dynamicTypeSize, scaling: scaling),
+                    alignment: .leading
+                )
 
             Text(label)
-                .font(.system(size: 13, weight: .medium))
+                .cadenceFont(.fieldLabel)
                 .foregroundStyle(Theme.dim)
         }
     }
@@ -338,6 +369,9 @@ struct CadenceFieldRow<Content: View>: View {
     var color: Color = Theme.dim
     @ViewBuilder let content: () -> Content
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
     var body: some View {
         HStack(spacing: CadenceSettingsRowMetrics.valueSpacing) {
             CadenceInlineFieldLabel(label: label, systemImage: systemImage, color: color)
@@ -346,7 +380,7 @@ struct CadenceFieldRow<Content: View>: View {
 
             content()
         }
-        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
+        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling))
     }
 }
 

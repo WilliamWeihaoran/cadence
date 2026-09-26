@@ -406,9 +406,11 @@ struct CalDayHeaderView: View {
         VStack(spacing: 0) {
             VStack(spacing: CadenceCalendarWeekdayHeaderMetrics.labelSpacing) {
                 Text(DateFormatters.dayOfWeek.string(from: date).uppercased())
-                    .font(.system(size: CadenceCalendarWeekdayHeaderMetrics.labelSize, weight: .semibold))
+                    .cadenceUppercaseLabel(
+                        size: CadenceCalendarWeekdayHeaderMetrics.labelSize,
+                        kerning: CadenceCalendarWeekdayHeaderMetrics.labelKerning
+                    )
                     .foregroundStyle(isToday ? Theme.blue : Theme.dim)
-                    .kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)
                 Text(DateFormatters.dayNumber.string(from: date))
                     .font(.system(size: CadenceCalendarWeekdayHeaderMetrics.dayNumberSize, weight: isToday ? .bold : .regular))
                     .foregroundStyle(isToday ? Theme.onColor(for: Theme.blue) : Theme.text)

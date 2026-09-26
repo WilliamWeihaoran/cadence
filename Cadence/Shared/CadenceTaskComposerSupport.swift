@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 /// What an entry point hands the task composer.
 ///
@@ -459,6 +460,9 @@ nonisolated enum CadenceTaskComposerLayout {
     /// `notesField` at rest: one 18pt line inside 14pt of padding. It grows on focus and opens
     /// grown when the seed carried notes, but the resting height is what has to clear the keyboard.
     static let notesRestingHeight: CGFloat = 46
+    /// The padding inside the title and notes fields, named because the size-aware heights below
+    /// are the padding plus a line rather than a literal.
+    static let fieldPadding: CGFloat = 14
     /// Gap between the sheet's stacked blocks — title, notes, grid.
     static let fieldSpacing: CGFloat = 12
     /// Gap between two tiles, in both axes.
@@ -532,5 +536,113 @@ nonisolated enum CadenceTaskComposerLayout {
     /// under the fold, which is the condition this whole shape exists to avoid.
     static func slackBelowFold(showsSectionTile: Bool = false) -> CGFloat {
         keyboardVisibleContentHeight - contentHeight(showsSectionTile: showsSectionTile)
+    }
+
+    // MARK: - What the reader's text size does to all of it (T-1364)
+
+    /// **The fold is not a promise that survives an accessibility text size, and pretending it is
+    /// would be the failure this ticket is about.**
+    ///
+    /// Everything above is the layout at the default size, and it was solved by making the sheet
+    /// shorter. At `accessibility5` the same six fields need roughly twice the height, and no
+    /// arrangement of them fits above a software keyboard on a 390×844pt phone — the keyboard alone
+    /// takes 336 of the 844, and one title field plus one tile is already most of what is left. The
+    /// honest answer is therefore not "it still fits". It is:
+    ///
+    /// 1. the field the sheet opens focused on — the title — stays above the fold at **every**
+    ///    supported size, so the screen is never opened onto a blank scroll position
+    ///    (`titleClearsFold(at:scaling:)`);
+    /// 2. everything else is reachable by scrolling, and the sheet already says
+    ///    `.scrollDismissesKeyboard(.never)` so scrolling does not fight the focus;
+    /// 3. nothing *overlaps*, because every height below is derived from the text inside it rather
+    ///    than written down.
+    ///
+    /// `fitsAboveFold(at:scaling:)` is what distinguishes the two regimes, and it is asserted at
+    /// both ends rather than only at the one that passes.
+
+    /// The title field's height: its padding plus the line the title is set on.
+    static func titleHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        let line = CadenceTypeScale.lineHeight(.composerTitle, at: dynamicTypeSize, scaling: scaling)
+        return max(Self.titleHeight, 2 * fieldPadding + line)
+    }
+
+    /// The notes field's resting height: one line of prose inside the same padding.
+    static func notesRestingHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        let line = CadenceTypeScale.lineHeight(.bodyText, at: dynamicTypeSize, scaling: scaling)
+        return max(Self.notesRestingHeight, 2 * fieldPadding + line)
+    }
+
+    /// The tile's own answer, not a copy of it.
+    static func tileHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceValueTileMetrics.minHeight(at: dynamicTypeSize, scaling: scaling)
+    }
+
+    static func contentHeight(
+        showsSectionTile: Bool = false,
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        _ = showsSectionTile
+        let tile = tileHeight(at: dynamicTypeSize, scaling: scaling)
+        let grid = CGFloat(gridRowCount) * tile + CGFloat(gridRowCount - 1) * tileSpacing
+
+        return contentTopPadding
+            + titleHeight(at: dynamicTypeSize, scaling: scaling)
+            + fieldSpacing
+            + notesRestingHeight(at: dynamicTypeSize, scaling: scaling)
+            + fieldSpacing
+            + grid
+            + contentBottomPadding
+    }
+
+    static func slackBelowFold(
+        showsSectionTile: Bool = false,
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        keyboardVisibleContentHeight
+            - contentHeight(showsSectionTile: showsSectionTile, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// Whether the whole form still clears the keyboard at this text size.
+    static func fitsAboveFold(
+        showsSectionTile: Bool = false,
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> Bool {
+        slackBelowFold(showsSectionTile: showsSectionTile, at: dynamicTypeSize, scaling: scaling) >= 0
+    }
+
+    /// The `~`/`#` suggestion strip's control height, and the height of the "no match" hint beside
+    /// it. Stated here rather than in the view because the view is inside `#if os(iOS)` and the
+    /// assertion about what it does at the largest text size has to be written on macOS.
+    static let suggestionHeight: CGFloat = 34
+
+    /// The strip's controls, holding their label.
+    static func suggestionHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(Self.suggestionHeight, holding: .controlLabel, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// Whether the **focused** field — the one the sheet opens on, with the keyboard already up —
+    /// is visible above the keyboard. This is the invariant that has to hold at every size, and the
+    /// one a "it scrolls" answer would otherwise quietly drop.
+    static func titleClearsFold(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> Bool {
+        contentTopPadding + titleHeight(at: dynamicTypeSize, scaling: scaling)
+            <= keyboardVisibleContentHeight
     }
 }

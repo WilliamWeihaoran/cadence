@@ -1469,35 +1469,59 @@ struct CadenceUppercaseLabelTrackingTests {
     /// of the four sites are inside `Cadence/iOS/`, which this macOS-built target cannot see. Read
     /// as source, with comments stripped and whitespace removed so a reformat is not a failure and
     /// a rewrite is.
+    ///
+    /// **T-1364 replaced four `.font` + `.kerning` pairs with one modifier, and that is a
+    /// strengthening of what this test pinned rather than a relaxation of it.** What it used to
+    /// require was that each of the four sites set the *same* size and the *same* weight, each in
+    /// its own two modifiers — which is as much as source text can check while both figures are
+    /// constants. Once the size can move with the reader's text setting the pair stops being two
+    /// independent facts: tracking is optical, so an eyebrow drawn at 33pt with the 0.8pt of
+    /// tracking chosen for 10pt is an eyebrow set solid, which is the condition this style exists
+    /// to prevent. `cadenceUppercaseLabel(size:kerning:)` applies both by one multiplier, so a site
+    /// can no longer scale one without the other, and the weight is read from
+    /// `CadenceTypographyRole.sectionLabel` instead of being typed at each site.
+    ///
+    /// Each site still passes **its own** constants, so nothing moved about where the numbers are
+    /// decided and `everyUppercaseTrackingReadsTheOneRatioRatherThanRestatingIt` below is untouched
+    /// — it reads the three declarations, which still name `kerningRatio` and still carry no
+    /// literal `0.8`.
     @Test func allFourDrawSitesSetTheSameUppercaseSemiboldLabel() throws {
+        // The modifier the four of them now share, asserted before the four are believed: a
+        // version of it that dropped the kerning, or read a second weight, would satisfy every
+        // call-site needle below while putting the sites back on two independent answers.
+        let shared = try sourceFile("Cadence/Shared/Components/SectionEyebrowLabel.swift")
+        let sharedDense = try strippingComments(shared).filter { !$0.isWhitespace }
+        #expect(sharedDense.contains(
+            ".font(.system(size:size*multiplier,weight:CadenceTypographyRole.sectionLabel.weight)).kerning(kerning*multiplier)"
+        ), "the shared uppercase label no longer applies size and tracking by one multiplier")
+
         let sites: [(path: String, needles: [String])] = [
             (
                 "Cadence/Shared/Components/SectionEyebrowLabel.swift",
                 [
-                    "Text(text.uppercased()).font(size.font)",
-                    "varfont:Font{.system(size:fontSize,weight:.semibold)}",
-                    ".kerning(size.kerning)"
+                    "Text(text.uppercased()).cadenceUppercaseLabel(size:size.fontSize,kerning:size.kerning)",
+                    // The fixed-size form, still read by the two macOS/settings call sites that
+                    // T-1364 did not convert. It is what keeps the unconverted surfaces on this
+                    // same size rather than on a literal of their own.
+                    "varfont:Font{.system(size:fontSize,weight:.semibold)}"
                 ]
             ),
             (
                 "Cadence/Shared/Components/CadenceBoardColumnHeader.swift",
                 [
-                    "Text(title.uppercased()).font(.system(size:CadenceBoardColumnHeaderMetrics.labelSize,weight:.semibold))",
-                    ".kerning(CadenceBoardColumnHeaderMetrics.labelKerning)"
+                    "Text(title.uppercased()).cadenceUppercaseLabel(size:CadenceBoardColumnHeaderMetrics.labelSize,kerning:CadenceBoardColumnHeaderMetrics.labelKerning)"
                 ]
             ),
             (
                 "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
                 [
-                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).font(.system(size:CadenceCalendarWeekdayHeaderMetrics.labelSize,weight:.semibold))",
-                    ".kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
+                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).cadenceUppercaseLabel(size:CadenceCalendarWeekdayHeaderMetrics.labelSize,kerning:CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
                 ]
             ),
             (
                 "Cadence/iOS/iOSCalendarTimelineViews.swift",
                 [
-                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).font(.system(size:iOSCalendarTimelineMetrics.weekdaySize,weight:.semibold))",
-                    ".kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
+                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).cadenceUppercaseLabel(size:iOSCalendarTimelineMetrics.weekdaySize,kerning:CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
                 ]
             )
         ]
@@ -1587,11 +1611,19 @@ struct CadenceUppercaseLabelTrackingTests {
     ///
     /// Each of the three files justified its 10 by pointing at a sibling, which is why the "same
     /// role" premise above is the codebase's own claim and not this suite's. It was never mutual:
-    /// the calendar cites both siblings, the eyebrow and the board cite each other, and neither
-    /// cites the calendar. Asserted over raw source rather than stripped, because the citations
+    /// the calendar cited both siblings, the eyebrow and the board cited each other, and neither
+    /// cited the calendar. Asserted over raw source rather than stripped, because the citations
     /// *are* prose — that half of the defect is now cosmetic rather than load-bearing, since no
     /// file can disagree with a sibling about a value it no longer holds, but the edges are what
     /// the ticket's "4 of 6" measured and a measurement nothing checks decays.
+    ///
+    /// **It is 5 of 6 since T-1364, and the missing edge that closed is the eyebrow's.** This test
+    /// said in its own comment that adding either absent citation is an improvement and that the
+    /// line asserting its absence should then be deleted and the change recorded in T-496 — which
+    /// is what happened: `cadenceUppercaseLabel(size:kerning:)` lives in `SectionEyebrowLabel.swift`
+    /// and is drawn by all four sites, so its doc comment names
+    /// `CadenceCalendarWeekdayHeaderMetrics` as one of the pairs it is handed. The board header's
+    /// absent edge is untouched and is still asserted below.
     @Test func eachTrackingsFileCitesTheSiblingItTakesItsSizeFrom() throws {
         let eyebrow = try sourceFile("Cadence/Shared/Components/SectionEyebrowLabel.swift")
         let board = try sourceFile("Cadence/Shared/Components/CadenceBoardColumnHeader.swift")
@@ -1612,17 +1644,22 @@ struct CadenceUppercaseLabelTrackingTests {
         #expect(board.contains("SectionEyebrowLabel.kerningRatio"))
         #expect(calendar.contains("SectionEyebrowLabel.kerningRatio"))
 
-        // The two edges that still do *not* exist, kept from the pre-decision suite so the "4 of 6"
-        // stays a measurement rather than a remembered number. Adding either citation is an
-        // improvement, not a regression — if one of these fails because somebody wrote the missing
-        // cross-reference, delete the line and say so in T-496.
+        // The fifth edge, which T-1364 added: the shared uppercase-label modifier lives in the
+        // eyebrow's file and is drawn by the calendar rails, so the eyebrow now cites them. This
+        // was an absence assertion until then; it is asserted positively now rather than deleted,
+        // because an edge that exists and is unchecked decays exactly as an absent one did.
         #expect(
-            eyebrow.contains("CadenceCalendarWeekdayHeaderMetrics") == false,
-            "the eyebrow now cites the calendar too — the citation graph is no longer 4 of 6"
+            eyebrow.contains("CadenceCalendarWeekdayHeaderMetrics"),
+            "the eyebrow stopped naming the calendar rails its shared modifier draws"
         )
+
+        // The one edge that still does *not* exist, kept from the pre-decision suite so the count
+        // stays a measurement rather than a remembered number. Adding it is an improvement, not a
+        // regression — if this fails because somebody wrote the missing cross-reference, delete the
+        // line and say so in T-496.
         #expect(
             board.contains("CadenceCalendarWeekdayHeaderMetrics") == false,
-            "the board header now cites the calendar too — the citation graph is no longer 4 of 6"
+            "the board header now cites the calendar too — the citation graph is no longer 5 of 6"
         )
     }
 }

@@ -565,9 +565,11 @@ private struct iOSCalendarTimelineDayHeader: View {
                     // simply absent, which is the half of the fork macOS had right and this side
                     // did not. Every uppercased short label in Cadence is kerned. T-277.
                     Text(DateFormatters.dayOfWeek.string(from: date).uppercased())
-                        .font(.system(size: iOSCalendarTimelineMetrics.weekdaySize, weight: .semibold))
+                        .cadenceUppercaseLabel(
+                            size: iOSCalendarTimelineMetrics.weekdaySize,
+                            kerning: CadenceCalendarWeekdayHeaderMetrics.labelKerning
+                        )
                         .foregroundStyle(isToday ? Theme.blue : Theme.dim)
-                        .kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)
                     Text(DateFormatters.dayNumber.string(from: date))
                         .font(.system(size: iOSCalendarTimelineMetrics.dayNumberSize, weight: isToday ? .bold : .regular))
                         .foregroundStyle(isToday ? Theme.onColor(for: Theme.blue) : Theme.text)

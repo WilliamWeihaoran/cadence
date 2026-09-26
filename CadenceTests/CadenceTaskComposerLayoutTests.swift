@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -135,5 +136,116 @@ struct CadenceTaskComposerTileValueTests {
             container: .area(UUID()),
             availableSections: [TaskSectionDefaults.defaultName, "Doing"]
         ))
+    }
+}
+
+/// The same sheet, at the text sizes it was never evaluated at (T-1364).
+///
+/// **The suite above is exactly the trap the audit names.** Every assertion in it is arithmetic over
+/// constants at the default text size, and every one of them stays green while the composer clips:
+/// `contentHeight()` would go on returning 342 with a 47pt title drawn inside a 52pt box. So this
+/// suite asks the fold question again, once per `DynamicTypeSize`, and — more importantly — states
+/// what the honest answer is when the answer stops being "it fits".
+///
+/// **It stops being "it fits", and that is the result rather than a failure.** A 390×844pt phone
+/// gives a sheet about 390pt above a raised keyboard. Six fields at `accessibility5` need roughly
+/// 730. No arrangement of them fits, so a test asserting they do would be a test asserting the
+/// feature had not been built. What is asserted instead is the pair of properties that make the
+/// screen usable anyway: the form fits **whole** at every non-accessibility size, and the field the
+/// sheet opens focused on clears the keyboard at **every** size, so it never opens onto a blank
+/// scroll position with the keyboard covering the only thing the user came here to type.
+@MainActor
+struct CadenceTaskComposerLargeTextLayoutTests {
+
+    private let everySize = DynamicTypeSize.allCases
+
+    /// The conversion has to be reviewable as a refactor, so the whole of the suite above has to
+    /// still be describing what is drawn.
+    @Test("At the default text size the sheet is the sheet the fold tests measured")
+    func theComposerIsUnchangedAtTheDefaultTextSize() {
+        for scaling in CadenceTypographyScaling.allCases {
+            #expect(CadenceTaskComposerLayout.contentHeight(at: .large, scaling: scaling)
+                == CadenceTaskComposerLayout.contentHeight())
+            #expect(CadenceTaskComposerLayout.titleHeight(at: .large, scaling: scaling)
+                == CadenceTaskComposerLayout.titleHeight)
+            #expect(CadenceTaskComposerLayout.notesRestingHeight(at: .large, scaling: scaling)
+                == CadenceTaskComposerLayout.notesRestingHeight)
+            #expect(CadenceTaskComposerLayout.tileHeight(at: .large, scaling: scaling)
+                == CadenceTaskComposerLayout.tileHeight)
+        }
+        #expect(CadenceTaskComposerLayout.slackBelowFold(at: .large, scaling: .enabled) >= 40)
+    }
+
+    /// An unconverted copy of this sheet — which is what every other form in the app still is —
+    /// must be the same 342pt at `accessibility5`, or the migration boundary is not a boundary.
+    @Test("Scaling off leaves the composer at its old height at every size")
+    func anUnconvertedComposerDoesNotMove() {
+        for size in everySize {
+            #expect(CadenceTaskComposerLayout.contentHeight(at: size, scaling: .fixed)
+                == CadenceTaskComposerLayout.contentHeight())
+            #expect(CadenceTaskComposerLayout.fitsAboveFold(at: size, scaling: .fixed))
+        }
+    }
+
+    @Test("Every block of the sheet grows with the reader's text size")
+    func everyBlockOfTheComposerGrows() {
+        var previousContent: CGFloat = 0
+        for size in everySize {
+            let content = CadenceTaskComposerLayout.contentHeight(at: size, scaling: .enabled)
+            #expect(content >= previousContent, "content height went backwards at \(size)")
+            previousContent = content
+        }
+
+        let big = DynamicTypeSize.accessibility5
+        #expect(CadenceTaskComposerLayout.titleHeight(at: big, scaling: .enabled)
+            > CadenceTaskComposerLayout.titleHeight)
+        #expect(CadenceTaskComposerLayout.notesRestingHeight(at: big, scaling: .enabled)
+            > CadenceTaskComposerLayout.notesRestingHeight)
+        #expect(CadenceTaskComposerLayout.tileHeight(at: big, scaling: .enabled)
+            > CadenceTaskComposerLayout.tileHeight)
+        #expect(CadenceTaskComposerLayout.suggestionHeight(at: big, scaling: .enabled)
+            > CadenceTaskComposerLayout.suggestionHeight)
+
+        // Each field's box is at least the line of text drawn inside it plus its own padding, which
+        // is the property that separates "grew" from "stopped clipping".
+        for size in everySize {
+            let titleLine = CadenceTypeScale.lineHeight(.composerTitle, at: size, scaling: .enabled)
+            let notesLine = CadenceTypeScale.lineHeight(.bodyText, at: size, scaling: .enabled)
+            let padding: CGFloat = 2 * CadenceTaskComposerLayout.fieldPadding
+            #expect(CadenceTaskComposerLayout.titleHeight(at: size, scaling: .enabled) >= titleLine + padding)
+            #expect(CadenceTaskComposerLayout.notesRestingHeight(at: size, scaling: .enabled) >= notesLine + padding)
+        }
+    }
+
+    /// The boundary, asserted at both ends rather than only at the end that passes.
+    @Test("The whole form clears the keyboard up to the accessibility sizes, and not past them")
+    func theFoldHoldsUntilTheAccessibilitySizes() {
+        for size in everySize {
+            let fits = CadenceTaskComposerLayout.fitsAboveFold(at: size, scaling: .enabled)
+            if CadenceTypeScale.isAccessibilitySize(size) {
+                #expect(fits == false,
+                        "\(size) is claimed to fit above the keyboard; six fields at that size do not")
+            } else {
+                #expect(fits, "\(size) no longer fits, which is a regression in the default experience")
+            }
+        }
+        // Once it stops fitting it stays stopped: a non-monotonic answer here would mean some
+        // block shrank as the text grew.
+        #expect(CadenceTaskComposerLayout.slackBelowFold(at: .accessibility5, scaling: .enabled)
+            < CadenceTaskComposerLayout.slackBelowFold(at: .accessibility1, scaling: .enabled))
+    }
+
+    /// The invariant that has to hold everywhere, and the one an "it just scrolls" answer drops.
+    @Test("The field the sheet opens focused on clears the keyboard at every size")
+    func theFocusedTitleAlwaysClearsTheFold() {
+        for size in everySize {
+            #expect(CadenceTaskComposerLayout.titleClearsFold(at: size, scaling: .enabled),
+                    "the title field is under the keyboard at \(size), so the sheet opens on nothing")
+        }
+        // With real room left over, not by a hairline: the notes field under it should be reachable
+        // with one short scroll rather than a full screen of it.
+        #expect(CadenceTaskComposerLayout.keyboardVisibleContentHeight
+            - CadenceTaskComposerLayout.contentTopPadding
+            - CadenceTaskComposerLayout.titleHeight(at: .accessibility5, scaling: .enabled) > 200)
     }
 }

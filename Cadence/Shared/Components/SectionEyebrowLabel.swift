@@ -86,10 +86,51 @@ struct SectionEyebrowLabel: View {
     var size: Size = .standard
     var tint: Color = Theme.dim
 
+    /// **The eyebrow is the component that forced T-1364's migration boundary to be an environment
+    /// value.** Sixty-odd files draw one, across surfaces whose heights are still literals, so
+    /// converting it "for the composer" would have meant a second eyebrow — and a second eyebrow is
+    /// the exact defect T-284 spent this file's doc comment removing. `cadenceUppercaseLabel`
+    /// reads `\.cadenceTypographyScaling` instead: inside a converted workflow it grows, everywhere
+    /// else it is the same 10 or 9 points it has always been, and there is still one of it.
     var body: some View {
         Text(text.uppercased())
-            .font(size.font)
+            .cadenceUppercaseLabel(size: size.fontSize, kerning: size.kerning)
             .foregroundStyle(tint)
-            .kerning(size.kerning)
+    }
+}
+
+private struct CadenceUppercaseLabelType: ViewModifier {
+    let size: CGFloat
+    let kerning: CGFloat
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
+    func body(content: Content) -> some View {
+        let multiplier = CadenceTypeScale.multiplier(.sectionLabel, at: dynamicTypeSize, scaling: scaling)
+        return content
+            .font(.system(size: size * multiplier, weight: CadenceTypographyRole.sectionLabel.weight))
+            .kerning(kerning * multiplier)
+    }
+}
+
+extension View {
+    /// The app's uppercase kerned label — the eyebrow, the board column header, and the two
+    /// calendar weekday rails — as one modifier rather than four spellings of it.
+    ///
+    /// **It takes both figures because tracking is optical (T-1364, extending T-496).** T-496 put
+    /// the four sites on one size and one tracking *ratio*; each still set its own `.font` and its
+    /// own `.kerning`, which was fine while both were constants and is not once the size can move.
+    /// An eyebrow set at 33pt with 0.8pt of tracking is an eyebrow set solid, which is the
+    /// condition this style exists to prevent. So the two are applied together, by the same
+    /// multiplier, and a site cannot scale one without the other.
+    ///
+    /// Each site still passes **its own** constants — `CadenceBoardColumnHeaderMetrics.labelSize`
+    /// and `.labelKerning`, `CadenceCalendarWeekdayHeaderMetrics`' pair, the eyebrow's `Size` —
+    /// so this consolidates the *drawing* and changes nothing about where the numbers are decided.
+    /// `CadenceUppercaseLabelTrackingTests` still reads those declarations and still requires each
+    /// to name `SectionEyebrowLabel.kerningRatio`.
+    func cadenceUppercaseLabel(size: CGFloat, kerning: CGFloat) -> some View {
+        modifier(CadenceUppercaseLabelType(size: size, kerning: kerning))
     }
 }
