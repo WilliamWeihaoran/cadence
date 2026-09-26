@@ -236,4 +236,78 @@ struct CadenceTestHostSandboxCapabilityTests {
         #expect(prefixed.status == 0 && prefixed.output.contains("hi"),
                 "…and must work with it: \(prefixed.output)")
     }
+
+    /// **T-1151, and the honest attempt that ticket asked for: which step actually stops it.**
+    ///
+    /// `.github/workflows/ci.yml` justified keeping `scripts/real-tree-sweep-manifest.sh selftest`
+    /// out of this target by saying the host *"cannot spawn `xcodebuild`, ps or pgrep at all"*.
+    /// All three thirds are falsified by the cases above: Xcode's own `xcodebuild` exits 0
+    /// (`theXcrunShimsRefuseButTheRealToolsSpawn`), `pgrep` spawns and runs and is merely denied
+    /// the process list (`pgrepRunsHereAndReportsNoProcessesAtAll`), and only a setuid binary is
+    /// refused at `posix_spawn` (`itRefusesToExecASetuidBinaryAndOnlyThose`). "The sandbox" is not
+    /// a reason; a mechanism is, and the mechanism is the **write policy**.
+    ///
+    /// Walk that `selftest` mode in order, from in here:
+    ///
+    /// 1. read `CadenceTests/CadenceRealTreeSweepManifest.txt` out of the checkout — **works**;
+    /// 2. `cp` it to a backup under `$TMPDIR`, which in here is this host's own container —
+    ///    **works**, and so does the `sed -i ''` the next step is spelled with, against that copy;
+    /// 3. `sed -i '' "<n>d"` the manifest **in the checkout** — the step that lays down the
+    ///    deliberately stale tree the whole trial regenerates from — **refused**. `sed -i ''`
+    ///    rewrites in place by laying a temporary beside the file and renaming it over, so it
+    ///    needs the manifest's *directory* to be writable, and nothing in the checkout is.
+    ///
+    /// Steps 1 and 2 are measured here too, and not for symmetry. Without them a refusal at step 3
+    /// is indistinguishable from a host on which nothing works at all — which is exactly the
+    /// over-generalisation T-959 found and T-1153 made a rule about.
+    ///
+    /// The probe never touches the manifest. If this host's write policy ever changes, this test
+    /// must go red leaving a stray dotfile in `CadenceTests/`, never a hole in the manifest — and
+    /// the last expectation re-reads the committed bytes to say so.
+    ///
+    /// **There is a second objection and it is not a sandbox one**, so nothing here settles it:
+    /// step 4 is `xcb.sh <id> test`, a real build, spawned from inside a test host that is already
+    /// holding the FIFO test-host lock. That argument is about cost and re-entrancy and survives
+    /// whatever the write policy does.
+    @Test func theSweepManifestSelftestIsStoppedByTheWritePolicyAndNotBySomethingVaguer() throws {
+        let directory = Self.repositoryRoot.appendingPathComponent("CadenceTests")
+        let manifest = directory.appendingPathComponent("CadenceRealTreeSweepManifest.txt")
+
+        // Step 1: the read the selftest opens with.
+        let committed = try Data(contentsOf: manifest)
+        #expect(!committed.isEmpty,
+                "the manifest read as empty from in here, so step 1 is what fails and this test is aimed at the wrong step")
+
+        // Step 2: the backup, and the in-place edit it is restored by — both against a file in
+        // this host's own container, where both are allowed.
+        let scratch = try Self.scratchDirectory("sweep-selftest")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let backup = scratch.appendingPathComponent("manifest-backup.txt")
+        let copied = Self.spawn("/bin/zsh", ["-f", "-c", "cp '\(manifest.path)' '\(backup.path)'"])
+        #expect(copied.status == 0,
+                "the selftest's own `cp` of the manifest into $TMPDIR was refused: \(copied.output)")
+        let inContainer = Self.spawn("/bin/zsh", ["-f", "-c", "sed -i '' '1d' '\(backup.path)'"])
+        #expect(inContainer.status == 0,
+                "`sed -i ''` cannot edit a file in this host's own container either, so step 3's refusal would not be about the checkout: \(inContainer.output)")
+        #expect(try Data(contentsOf: backup).count < committed.count,
+                "`sed -i ''` exited 0 against the container copy and removed nothing, so it proves nothing about step 3")
+
+        // Step 3: the same edit, in the checkout. Probed by the file `sed -i ''` would have to
+        // create — never the manifest, which must stay byte-identical whatever this measures.
+        let probe = directory.appendingPathComponent(".cadence-sweep-selftest-write-probe")
+        defer { try? FileManager.default.removeItem(at: probe) }
+        let beside = Self.spawn("/bin/zsh", ["-f", "-c", "print x > '\(probe.path)'"])
+        #expect(beside.status != 0,
+                "the directory holding the sweep manifest is writable from in here, so T-1151's replacement reason has expired and the exclusion needs deciding again: \(beside.output)")
+        #expect(!FileManager.default.fileExists(atPath: probe.path),
+                "the shell reported a refusal and the file is there anyway")
+        #expect(throws: (any Error).self) {
+            try Data("x".utf8).write(to: probe, options: .atomic)
+        }
+        #expect(Self.spawn("/bin/zsh", ["-f", "-c", "head -1 '\(manifest.path)'"]).status == 0,
+                "…while READING the manifest from the same directory must keep working, or this measured the checkout being gone")
+
+        #expect(try Data(contentsOf: manifest) == committed,
+                "this test changed the committed manifest, which it must never be able to do")
+    }
 }

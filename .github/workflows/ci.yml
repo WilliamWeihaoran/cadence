@@ -217,7 +217,10 @@ jobs:
       # spawn Xcode's own `xcodebuild` (exit 0) and CAN spawn `pgrep`; only the setuid `ps` is
       # refused. What stops an in-host run is that the host may write nothing outside its own
       # container -- not `/tmp`, and not the checkout it is testing -- so it cannot lay down the
-      # stale tree this selftest regenerates from. That is unmeasured end to end (T-1151). A
+      # stale tree this selftest regenerates from. Measured end to end 2026-09-25 closing T-1151,
+      # step by step, by CadenceTestHostSandboxCapabilityTests'
+      # theSweepManifestSelftestIsStoppedByTheWritePolicyAndNotBySomethingVaguer: the read and the
+      # $TMPDIR backup work from in there and the `sed -i ''` into CadenceTests/ is refused. A
       # hosted runner is not sandboxed at all, so this is the one place that CAN run it. Reuses
       # the derived data and signing overrides the Test step above already built, so this is
       # close to free rather than a second full compile.
