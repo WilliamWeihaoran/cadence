@@ -19,6 +19,7 @@ nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
     case goalNotFound(String)
     case habitNotFound(String)
     case linkNotFound(String)
+    case tagNotFound(String)
 
     var errorDescription: String? {
         switch self {
@@ -56,6 +57,8 @@ nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
             return "No habit found with id \(value)."
         case .linkNotFound(let value):
             return "No saved link found with id \(value)."
+        case .tagNotFound(let value):
+            return "No tag found with id \(value)."
         }
     }
 }
@@ -829,6 +832,19 @@ final class CadenceReadService {
             throw CadenceReadError.linkNotFound(linkID)
         }
         return linkSummary(link)
+    }
+
+    /// One tag, in the shape `list_tags` returns it (T-1122).
+    ///
+    /// `create_tag` answers with this for the same reason every create arm here answers with the
+    /// list tool's own shape: the caller's next call is a read, and a create that invented a
+    /// narrower payload would be a second description of one row.
+    func tagDetail(tagID: String) throws -> CadenceTagDetail {
+        let id = try uuid(from: tagID)
+        guard let tag = try fetchFirst(Tag.self, where: #Predicate { $0.id == id }) else {
+            throw CadenceReadError.tagNotFound(tagID)
+        }
+        return tagDetail(tag)
     }
 
     func search(query: String, scopes: [String]? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceSearchHit> {

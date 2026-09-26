@@ -129,15 +129,21 @@ nonisolated enum CadenceMCPServiceSupport {
         return match
     }
 
-    /// The tags the caller asked for, or `tagsUnavailable`.
+    /// The tags the caller asked for **and the ones resolving them had to mint**, or
+    /// `tagsUnavailable`.
     ///
-    /// `TagSupport.resolveTags` answers `nil` — not `[]` — when the tag table could not be read,
-    /// and it is `TagSupport.setTags` that turns that `nil` into a bare `return`. In a view the
-    /// unchanged chips are on screen; on this path the only reader is an agent, and `update_task`
-    /// counts a non-nil `tagNames` as a real requested change, so a tag-only update saved nothing
-    /// and audited success. Resolve through here *before* the mutation so a failed read is the
-    /// caller's answer instead of a silent no-op.
-    static func requiredTags(_ resolved: [Tag]?) throws -> [Tag] {
+    /// `TagSupport.resolution` answers `nil` — not `([], [])` — when the tag table could not be
+    /// read, and it is `TagSupport.setTags` that turns that `nil` into a bare `return`. In a view
+    /// the unchanged chips are on screen; on this path the only reader is an agent, and
+    /// `update_task` counts a non-nil `tagNames` as a real requested change, so a tag-only update
+    /// saved nothing and audited success. Resolve through here *before* the mutation so a failed
+    /// read is the caller's answer instead of a silent no-op.
+    ///
+    /// **It takes the whole resolution rather than `resolution?.tags`** ([[T-1406]]). Dropping the
+    /// `inserted` half here is what let `create_task` insert a `Tag` it never handed to
+    /// `saveNotifyAndAudit(inserted:)`, leaving a minted tag pending in a process-lifetime
+    /// `ModelContext` after a refused commit.
+    static func requiredTags(_ resolved: (tags: [Tag], inserted: [Tag])?) throws -> (tags: [Tag], inserted: [Tag]) {
         guard let resolved else { throw CadenceWriteError.tagsUnavailable }
         return resolved
     }

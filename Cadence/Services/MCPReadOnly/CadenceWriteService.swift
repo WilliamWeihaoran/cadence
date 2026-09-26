@@ -36,6 +36,18 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     /// in one call (T-1365). Carries both numbers because the refusal is only useful if the caller
     /// learns how big the blast radius actually was.
     case bulkSelectionTooBroad(matched: Int, limit: Int)
+    /// `create_tag` was handed a name `TagSupport.creationDecision` answered `.unusableName` for —
+    /// empty after `displayName(for:)`, or holding no alphanumeric at all. Carries the name as
+    /// sent, not as normalised: the caller has to recognise what it typed.
+    case tagNameUnusable(String)
+    /// An **active** tag already carries this slug. Names the row so the caller can use it rather
+    /// than reaching for a second spelling of the same name; there is no merge on this surface.
+    case tagAlreadyExists(name: String, slug: String, id: String)
+    /// An **archived** tag already carries this slug ([[T-1122]]). This is the branch the app
+    /// answers with a Restore button, which a headless caller cannot press — so it is refused by
+    /// default and the refusal names the row and the opt-in that takes it, the same shape
+    /// `bulk_cancel_tasks`' `dryRun` gives a caller with no confirmation sheet ([[T-1365]]).
+    case tagArchived(name: String, slug: String, id: String)
 
     var errorDescription: String? {
         switch self {
@@ -94,6 +106,12 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "titlePrefix matches \(matched) tasks, above the \(limit) this call will cancel at once. Narrow the prefix, or send dryRun and pass the taskIds you mean."
         case .goalCannotOwnMilestones(let id):
             return "Goal \(id) is already a milestone of another goal, so it cannot own milestones of its own. Goals nest exactly one level: a top-level goal is a direction and its sub-goals are its milestones."
+        case .tagNameUnusable(let value):
+            return "Invalid tag name: \(value). A tag name must contain at least one letter or digit."
+        case .tagAlreadyExists(let name, let slug, let id):
+            return "Tag \(name) (\(id)) already carries the slug \(slug), so nothing was created. Use it by name in create_task or update_task."
+        case .tagArchived(let name, let slug, let id):
+            return "Archived tag \(name) (\(id)) already carries the slug \(slug), so nothing was created. Send unarchive: true to restore that tag instead of making a second one, or list_tags with includeArchived to look at it first."
         }
     }
 }
@@ -379,6 +397,47 @@ nonisolated struct CadenceCreateSavedLinkOptions: Sendable {
     var title: String? = nil
 }
 
+/// The fourth constructor outside the context/list/task triangle, and the one [[T-1122]] refused
+/// twice before building ([[T-1406]]).
+///
+/// **Both halves of the original refusal had to fall, and only one of them fell on its own.** The
+/// first was that the create rule had no owner: `SettingsTagsSection.canCreateTag` and
+/// `iOSTagsSettingsSection.canCreate` were the same four clauses written twice, so an MCP arm
+/// would have been the third copy. `TagSupport.creationDecision(for:in:)` owns them now and both
+/// editors ask it, so this arm asks it too and there is still exactly one rule.
+///
+/// **`unarchive` is the second half, and it is [[T-1365]]'s shape rather than a new idea.** The
+/// rule's `.archived` branch is answered in the app by drawing a **Restore** button — a UI
+/// affordance a headless caller cannot press. The options weighed were: refuse and name the row
+/// (which strands the caller, because there is no `update_tag` arm on this surface to unarchive
+/// through), a `dryRun`-shaped preview (which `list_tags(includeArchived: true)` already is), and
+/// this — refuse by default, naming the archived row, and take the restore only when the caller
+/// asks for it by name. Silently unarchiving a tag the owner archived is a write nobody asked
+/// for; refusing with no reachable remedy is a dead end; so the opt-in is what ships.
+///
+/// **`unarchive` restores and does not re-colour.** Passing it beside `description` or `colorHex`
+/// is refused rather than half-applied, because this arm never edits an existing tag's fields:
+/// the `.duplicate` branch beside it refuses outright, and an `unarchive` that quietly rewrote a
+/// colour would make one arm a create on one branch and an editor on the other. The app's Restore
+/// button flips `isArchived` and touches `updatedAt`; that is all this does too.
+///
+/// **This does not change how `create_task`'s `tagNames` mints tags, deliberately.** That path asks
+/// `TagSupport.resolution`, which resolves by slug and inserts what it does not find — the app's
+/// *attachment* rule, shared with every inline tag picker through
+/// `TagSupport.resolveTagsCommittingInsertions`. `creationDecision` answers a different question:
+/// may this name become a new row in the tag **catalogue**. The app has had both rules since
+/// T-631 and asks each from its own place; routing `create_task` through `creationDecision` would
+/// make this surface the only one in the repo where attaching an existing archived tag to a task
+/// fails, which is a disagreement with the app rather than an agreement with this arm.
+nonisolated struct CadenceCreateTagOptions: Sendable {
+    var name: String
+    var description: String? = nil
+    var colorHex: String? = nil
+    /// Opt in to restoring an archived tag that already carries this slug, instead of being
+    /// refused. Has no effect when nothing archived carries it — the tag is created as normal.
+    var unarchive: Bool = false
+}
+
 /// Every field `updateContainer` writes to an `Area` or a `Project`, captured before the write so
 /// a refused commit puts all of it back (T-1121).
 ///
@@ -580,6 +639,13 @@ private struct PendingAuditEntry {
 
     static func habit(id: UUID, summary: String) -> PendingAuditEntry {
         PendingAuditEntry(tool: "create_habit", entityType: "habit", entityId: id.uuidString, summary: summary)
+    }
+
+    /// `tool` is a parameter rather than pinned to `create_tag`, because the arm's two committed
+    /// branches are a create and a restore and `mcp-audit.log` should be able to tell them apart
+    /// the day a second tag-writing arm exists. The summary already does today.
+    static func tag(tool: String, id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: tool, entityType: "tag", entityId: id.uuidString, summary: summary)
     }
 
     static func contextFields(id: UUID, summary: String) -> PendingAuditEntry {
@@ -1385,6 +1451,84 @@ final class CadenceWriteService {
         return try readService.habitSummary(habitID: habit.id.uuidString)
     }
 
+    /// Mint a tag, or restore the archived one that already carries its slug ([[T-1406]], the
+    /// half of [[T-1122]] that was refused twice).
+    ///
+    /// The rule is **asked, not re-spelled**: `TagSupport.creationDecision(for:in:)` is the one
+    /// function both Settings > Tags screens ask, and this is the third caller rather than the
+    /// third copy. It is handed **every** tag, archived and active, because that is the question
+    /// it answers; `activeTags`-shaped views ask half of it. The reasoning for each branch, for
+    /// `unarchive`, and for why `create_task`'s `tagNames` keeps `TagSupport.resolution`, is on
+    /// `CadenceCreateTagOptions`.
+    ///
+    /// **`order` comes from `CadenceOrderAllocation.nextOrder`** — max-plus-one over the whole
+    /// table, archived rows included, which is what both editors allocate and what T-329 exists to
+    /// stop being retyped. Counting instead would hand the new row an order an existing one holds.
+    func createTag(options: CadenceCreateTagOptions) throws -> CadenceTagDetail {
+        let tags = try fetchTags()
+        let description = CadenceMCPServiceSupport.normalizedOptionalText(options.description)
+        let colorHex = try normalizedOptionalColorHex(options.colorHex)
+
+        switch TagSupport.creationDecision(for: options.name, in: tags) {
+        case .unusableName:
+            throw CadenceWriteError.tagNameUnusable(options.name)
+
+        case .duplicate(let existing):
+            throw CadenceWriteError.tagAlreadyExists(
+                name: existing.name,
+                slug: existing.slug,
+                id: existing.id.uuidString
+            )
+
+        case .archived(let archived):
+            guard options.unarchive else {
+                throw CadenceWriteError.tagArchived(
+                    name: archived.name,
+                    slug: archived.slug,
+                    id: archived.id.uuidString
+                )
+            }
+            // Refused rather than applied: this arm never edits an existing tag's fields, and a
+            // caller who only reads the word "success" would not notice a colour it sent being
+            // dropped — the argument `normalizedSectionName` makes about a mistyped section.
+            guard description == nil, colorHex == nil else {
+                throw CadenceWriteError.invalidCombination(
+                    "unarchive restores the existing tag and does not re-colour or re-describe it. Resend without description/colorHex."
+                )
+            }
+            let previousUpdatedAt = archived.updatedAt
+            archived.isArchived = false
+            archived.updatedAt = Date()
+            try saveNotifyAndAudit(
+                [.tag(tool: "create_tag", id: archived.id, summary: "Restored tag: \(archived.name)")],
+                undo: {
+                    archived.isArchived = true
+                    archived.updatedAt = previousUpdatedAt
+                }
+            )
+            return try readService.tagDetail(tagID: archived.id.uuidString)
+
+        case let .creatable(displayName, slug):
+            // Read off an uninserted `Tag` rather than restated, for `createGoal`'s reason: a hex
+            // literal here would be a second copy of the model's declared default *and* a
+            // hardcoded colour outside `Theme.swift`, which the root `AGENTS.md` forbids.
+            let modelDefaults = Tag(name: "")
+            let tag = Tag(
+                name: displayName,
+                slug: slug,
+                desc: description ?? "",
+                colorHex: colorHex ?? modelDefaults.colorHex,
+                order: CadenceOrderAllocation.nextOrder(after: tags, order: \.order)
+            )
+            context.insert(tag)
+            try saveNotifyAndAudit(
+                .tag(tool: "create_tag", id: tag.id, summary: "Created tag: \(displayName)"),
+                inserted: [tag]
+            )
+            return try readService.tagDetail(tagID: tag.id.uuidString)
+        }
+    }
+
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {
         let title = try normalizedRequiredText(options.title, emptyError: CadenceWriteError.emptyTitle)
         let priority = try options.priority.map(validatePriority) ?? .none
@@ -1402,7 +1546,7 @@ final class CadenceWriteService {
 
         // Resolved before anything is built, so an unreadable tag table fails the call rather than
         // producing an untagged task the caller is told it tagged (T-307).
-        let tags = try resolvedTags(named: options.tagNames ?? [])
+        let tagResolution = try resolvedTags(named: options.tagNames ?? [])
 
         let task = AppTask(title: title)
         task.notes = options.notes ?? ""
@@ -1413,7 +1557,7 @@ final class CadenceWriteService {
         task.estimatedMinutes = estimatedMinutes
         task.sectionName = sectionName
         apply(container: container, to: task)
-        task.tags = tags
+        task.tags = tagResolution.tags
 
         context.insert(task)
         // NOT `CadenceTaskMutationSupport.insertSubtasks` — that file is not in this target's
@@ -1438,7 +1582,7 @@ final class CadenceWriteService {
         // context that outlives the call (T-1121).
         try saveNotifyAndAudit(
             .task(tool: "create_task", id: task.id, summary: "Created task: \(task.title)"),
-            inserted: [task] + insertedSubtasks
+            inserted: [task] + insertedSubtasks + tagResolution.inserted
         )
         return try readService.getTask(taskID: task.id.uuidString)
     }
@@ -1474,7 +1618,7 @@ final class CadenceWriteService {
         }
 
         // Same reason as createTask: the throw has to happen while the task is still untouched.
-        let tags = try options.tagNames.map { try resolvedTags(named: $0) }
+        let tagResolution = try options.tagNames.map { try resolvedTags(named: $0) }
 
         let snapshot = CadenceMCPTaskFieldSnapshot(task)
         if let title { task.title = title }
@@ -1496,13 +1640,15 @@ final class CadenceWriteService {
         } else if options.clearContainer {
             task.sectionName = TaskSectionDefaults.defaultName
         }
-        if let tags {
-            task.tags = tags
+        if let tagResolution {
+            task.tags = tagResolution.tags
         }
 
-        try saveNotifyAndAudit([.task(tool: "update_task", id: task.id, summary: "Updated task: \(task.title)")]) {
-            snapshot.restore()
-        }
+        try saveNotifyAndAudit(
+            [.task(tool: "update_task", id: task.id, summary: "Updated task: \(task.title)")],
+            inserted: tagResolution?.inserted ?? [],
+            undo: { snapshot.restore() }
+        )
         return try readService.getTask(taskID: task.id.uuidString)
     }
 
@@ -1899,6 +2045,12 @@ final class CadenceWriteService {
         try context.fetch(FetchDescriptor<Habit>())
     }
 
+    /// Every tag, archived and active. `TagSupport.creationDecision` asks the whole table on
+    /// purpose, and `CadenceOrderAllocation.nextOrder` must see the archived rows' orders too.
+    private func fetchTags() throws -> [Tag] {
+        try context.fetch(FetchDescriptor<Tag>())
+    }
+
     private func resolveGoal(_ id: String?) throws -> Goal? {
         guard let requested = CadenceMCPServiceSupport.normalizedOptionalText(id) else { return nil }
         let uuid = try uuid(from: requested)
@@ -2167,8 +2319,17 @@ final class CadenceWriteService {
         try CadenceMCPServiceSupport.normalizedSectionName(value, container: container)
     }
 
-    private func resolvedTags(named names: [String]) throws -> [Tag] {
-        try CadenceMCPServiceSupport.requiredTags(TagSupport.resolveTags(named: names, in: context))
+    /// The tags these names resolve to, **and the subset this call had to mint** ([[T-1406]]).
+    ///
+    /// It asked `TagSupport.resolveTags` and threw the inserted list away, which is the exact
+    /// shape T-631 fixed in the app and T-1121 fixed everywhere else on this surface: a `Tag` this
+    /// call inserted but did not hand to `saveNotifyAndAudit(inserted:)` survives a refused commit
+    /// as a *pending* insert in a `ModelContext` that lives as long as the server process, and
+    /// lands later under the next unrelated tool call's `save()`. `TagSupport.resolution` reports
+    /// which rows it minted for precisely this reason — "which of these did I just mint" is only
+    /// knowable there — so both arms that take `tagNames` now pass them through.
+    private func resolvedTags(named names: [String]) throws -> (tags: [Tag], inserted: [Tag]) {
+        try CadenceMCPServiceSupport.requiredTags(TagSupport.resolution(named: names, in: context))
     }
 
     private func normalizedSubtaskTitles(_ values: [String]) -> [String] {

@@ -34,6 +34,7 @@ WRITE_TOOLS = {
     "create_link",
     "create_goal",
     "create_habit",
+    "create_tag",
 }
 EXPECTED_TOOLS = {
     "mcp_diagnostics",
@@ -1343,6 +1344,64 @@ def main() -> int:
             raise AssertionError(f"expected the new habit under the goal, got {listed_habits}")
         for row in listed_habits:
             check_keys(row, HABIT_SUMMARY_KEYS, HABIT_SUMMARY_OPTIONAL, "list_habits row")
+
+        # --- create_tag (T-1406, the half of T-1122 that was refused twice) ---------------
+        # Two of the four branches of `TagSupport.creationDecision` are reachable over the wire
+        # and both are exercised here. The other two — `.archived` refused, and the `unarchive`
+        # restore that takes it — are NOT reachable from this file and that is a property of the
+        # surface rather than a gap: nothing on it archives a tag, so a fixture store driven
+        # through `tools/call` can never hold an archived one. They run in
+        # `CadenceTests/CadenceWriteServiceTests`, against a real in-memory container that can
+        # insert one, and the assertions there are named in T-1406's ledger entry.
+        tag = call_ok(145, "create_tag", {
+            "name": "  MCP Smoke Tag  ",
+            "description": "made over the wire",
+            "colorHex": "4a9eff",
+        })
+        check_keys(tag, TAG_DETAIL_KEYS, set(), "create_tag detail")
+        check_keys(tag["summary"], TAG_SUMMARY_KEYS, set(), "create_tag summary")
+        if tag["summary"]["name"] != "MCP Smoke Tag" or tag["summary"]["slug"] != "mcp-smoke-tag":
+            raise AssertionError(f"expected the name trimmed and the slug derived, got {tag}")
+        # A bare hex is normalised to `#4a9eff` by `TagSupport.normalizedColorHex`; a caller that
+        # read only "success" would not notice it being dropped.
+        if tag["summary"]["colorHex"] != "#4a9eff" or tag["summary"]["description"] != "made over the wire":
+            raise AssertionError(f"expected colour and description stored, got {tag}")
+        if tag["summary"]["isArchived"] or tag["taskCount"] != 0 or tag["noteCount"] != 0:
+            raise AssertionError(f"expected a fresh unarchived tag with no rows, got {tag}")
+
+        # Slug equality, not name equality: `#MCP smoke TAG!` slugs to `mcp-smoke-tag`. This is the
+        # branch that stops a second door minting a duplicate of a tag the catalogue already has.
+        duplicate_message = call_error(
+            146,
+            "create_tag",
+            {"name": "#MCP smoke TAG!"},
+            "a tag whose slug an active tag already carries",
+            "already carries the slug mcp-smoke-tag",
+        )
+        if tag["summary"]["id"] not in duplicate_message:
+            raise AssertionError(f"expected the refusal to name the existing tag, got {duplicate_message!r}")
+
+        # `--` is non-empty and slugs to the `tag` fallback, so only the alphanumeric clause
+        # refuses it — the clause `creationDecision` runs last, after both lookups miss.
+        call_error(
+            147,
+            "create_tag",
+            {"name": "--"},
+            "a tag name with no alphanumeric",
+            "at least one letter or digit",
+        )
+        call_error(148, "create_tag", {}, "a tag with no name", "Missing required argument: name")
+
+        # Read back over the whole table rather than through the matcher: what the two refusals
+        # above are protecting is that exactly ONE row carries this slug, and asserting that
+        # against `list_tags`' scoring would be testing the matcher instead.
+        listed_tags = page_items(
+            call_ok(149, "list_tags", {"includeArchived": True, "limit": 200}),
+            "list_tags after create_tag",
+        )
+        carrying_slug = [row for row in listed_tags if row["summary"]["slug"] == "mcp-smoke-tag"]
+        if [row["summary"]["id"] for row in carrying_slug] != [tag["summary"]["id"]]:
+            raise AssertionError(f"expected exactly the new tag carrying its slug, got {carrying_slug}")
 
         # --- The five write tools that ran nowhere at all (T-259) ------------------------
         # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are

@@ -1580,12 +1580,22 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
   **Originally:** **The MCP write surface can now create a list but still cannot change one, and six model types have no constructor at all.** [[T-799]] added `create_context` and `create_container`; what is still missing, in rough order of how often it bites: (a) **no tool mutates an existing list's kanban columns** — add, rename, recolour, archive, reorder. This is the case `Cadence/Shared/CadenceSectionConfigMerge` exists for, so unlike the create path it genuinely needs `base`/`edited`/`current`, and that file is **not** in `CadenceMCPServer`'s explicit Sources phase; adding it there is the decision, and `KanbanColumnRenameRefusal`'s two refusals are the vocabulary. (b) No tool creates a **goal, habit, tag, saved link, list note or task bundle**, which is exactly the set `CadenceMCPToolContractTests.listToolDTOSpecs` still pins by source scan because the smoke test can never see a row of them. (c) Nothing **renames, archives or deletes** anything — `update_task` is the only editor on the surface, and there is no `update_container` / `update_context`. Deletion is the one that should stay refused without a separate decision: this path has no undo and no confirmation, and `mcp-audit.log` is its only record. Not urgent — nothing measured needs it — but it is the honest shape of the gap, and (a) is what a second seeding job will hit first.
 
-- [T-1122] **PARTIAL 2026-09-25 (agent `mcpcreate`) — three of the six are built (`create_link`,
+- [T-1122] **PARTIAL 2026-09-26 (agents `mcpcreate`, then `mcptag`) — FOUR of the six are built
+  (`create_link`, `create_goal`, `create_habit`, and now `create_tag` under [[T-1406]]) and the
+  other two are refused with a measurement each (`create_list_note`, `create_task_bundle`).
+  Nothing is left undecided, and what keeps this PARTIAL rather than closed is that each of the
+  two remaining refusals carries a named condition that would lift it — they are decisions about
+  today's file layout, not about the tools.** As of [[T-1406]] the surface is **39 tools**, the
+  write half **17 arms**, and `serverVersion` **0.12.0** in both of the two places it is written.
+  **The tag refusal below is the one that fell, and re-reading it is the point:** it was the
+  cheapest by files and the most expensive by rule, and what lifted it was the named condition
+  being met — `TagSupport` came to own the rule — plus [[T-1365]] establishing what to do with a
+  branch whose answer is "ask the user". The numbers in the rest of this entry are the ones
+  `mcpcreate` measured on 2026-09-25 and are left as written.
+
+  **Originally (2026-09-25, agent `mcpcreate`):** three of the six are built (`create_link`,
   `create_goal`, `create_habit`) and the other three are now refused with a measurement each
-  (`create_tag`, `create_list_note`, `create_task_bundle`). Nothing is left undecided, and what
-  keeps this PARTIAL rather than closed is that each of the three refusals carries a named
-  condition that would lift it — they are decisions about today's file layout, not about the
-  tools.** The
+  (`create_tag`, `create_list_note`, `create_task_bundle`). The
   surface goes to **38 tools**, the write half to **16 arms**, and `serverVersion` to **0.11.0** in
   both of the two places it is written.
 
@@ -1748,6 +1758,82 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `insert(GoalListLink(...))`). Not urgent: nothing measured needs one. Doing even *one* of them
   turns four list tools from a scan into an execution, which is the argument for starting with
   whichever is cheapest rather than all six.
+- [T-1406] **CLOSED 2026-09-26 (agent `mcptag`) — `create_tag` is built, [[T-1122]]'s tag refusal
+  is retired, and `create_task(tagNames:)` keeps its own rule with the reason written down beside
+  it.** Surface **38 → 39 tools**, write half **16 → 17 arms**, `serverVersion` **0.11.0 → 0.12.0**
+  in both places. **Zero files added to the Sources phase** — the measurement that decided this:
+  `TagSupport`, `CadenceOrderAllocation` and `CadencePendingChangePersistence` were already in it,
+  so unlike the other two refusals there was no `import` to pay for, only a rule to find an owner
+  for.
+
+  **What changed since the refusal, and why that was enough.** The refusal had two halves, either
+  sufficient. **(b) the rule had no owner** is now false: `TagSupport.creationDecision(for:in:)`
+  owns the four clauses `SettingsTagsSection.canCreateTag` and `iOSTagsSettingsSection.canCreate`
+  used to hand-roll, both editors ask it, and `TagSupportTests` pins that by scan — so this arm is
+  the third **caller**, not the third **copy**, which is the whole distinction
+  `CadenceSavedLinkURL.normalized` was pulled into this target to make. **The archived-match half
+  stood and is answered rather than dodged**, on [[T-1365]]'s pattern: the app replies to
+  `.archived` by drawing a **Restore** button, and a headless caller cannot press one. Three
+  readings were weighed. *Refuse and name the row* is a **dead end** here and that is measured,
+  not asserted — there is no `update_tag` arm on this surface, so a refusal pointing at an
+  archived tag points at something the caller has no way to unarchive. *A `dryRun`-shaped preview*
+  adds nothing `list_tags(includeArchived: true)` does not already answer. So: **refused by
+  default, the refusal names the tag's id and the opt-in, and `unarchive: true` takes the restore**
+  — the same act the app's button performs, `isArchived = false` and `updatedAt`, on the row that
+  already exists rather than a second one. Silently unarchiving a tag the owner archived would be a
+  write nobody asked for; `unarchive` beside `description`/`colorHex` is **refused** rather than
+  half-applied, because this arm never edits an existing tag's fields and the `.duplicate` branch
+  beside it refuses outright — one arm that is a create on one branch and an editor on the other is
+  the asymmetry that refusal buys out.
+
+  **`create_task(tagNames:)` deliberately keeps `TagSupport.resolution`, and this is NOT the third
+  spelling T-1122 feared.** The app has exactly **two** tag rules and both are shared: the
+  **attachment** rule (`resolution` — resolve by slug, insert what is missing, reuse an archived
+  row silently), which every inline picker reaches through
+  `TagSupport.resolveTagsCommittingInsertions` and which note markdown sync uses; and the
+  **catalogue** rule (`creationDecision`), asked only where a user manages the tag list. Routing
+  `create_task` through `creationDecision` would make this surface the only place in the repo where
+  attaching an existing archived tag to a task fails — a disagreement with the app, bought to buy
+  an agreement with one arm. The difference is pinned at runtime by
+  `attachingTagsKeepsTheAppsAttachRuleWhileCreateTagKeepsTheCatalogueRule` rather than left in
+  prose, which is the "silent disagreement" clause of T-1365's `taskIds` argument applied to tags.
+
+  **A T-1121 hole found and closed on the way, in the same subject.** `create_task` and
+  `update_task` minted tags through `TagSupport.resolveTags`, which **discards** the `inserted`
+  list `TagSupport.resolution` splits out precisely so an undo can have it. A `Tag` those arms
+  inserted was therefore never in `saveNotifyAndAudit(inserted:)`, so a refused commit un-inserted
+  the task and its subtasks and left the freshly minted tag **pending** in a `ModelContext` that
+  lives as long as the server process — to land later under the next unrelated tool call's
+  `save()`, which is exactly the shape T-631 fixed in the app and T-1121 fixed everywhere else
+  here. `CadenceMCPServiceSupport.requiredTags` now carries the whole resolution through, and
+  `aRefusedTaskCreateUnInsertsTheTagsItHadToMint` is red without the fix.
+
+  **The `.archived` branch is only executable from `CadenceTests`, and that is a property of the
+  surface.** Nothing on the MCP surface archives a tag, so a fixture store driven through
+  `tools/call` can never hold an archived one — `smoke-test.py` exercises `.creatable` and
+  `.duplicate` (plus the unusable-name and missing-argument refusals, and a whole-table read-back
+  asserting exactly one row carries the slug), and `CadenceWriteServiceTests` runs the two it
+  cannot: the archived refusal naming the row, the combination refusal, and the restore producing
+  **one** row with its original name and colour. That split is stated in both files so neither
+  looks like an oversight.
+
+  **The two remaining refusals were re-measured rather than inherited, and both still hold.**
+  `CadenceTaskMutationSupport` still calls `NotificationManager.cancelReminders` /
+  `deferReminderCancellation` (now lines 859/861; `insertBundle` at 1129), and `NotificationManager`
+  is still `import UserNotifications`. `Cadence/Shared/CadenceNoteFolderSupport.swift` still opens
+  `import SwiftUI` and still declares `NoteFolderSectionHeader`, `NoteFolderGroupList`,
+  `NoteFolderListRow` and `NoteFolderMoveMenu` reading `Theme.dim`/`Theme.blue`/
+  `Theme.surfaceHover`/`Theme.radiusControl`, with `CadenceListNoteFiling` inside it. Neither has a
+  `create_tag`-shaped move available, because what blocks them is an `import` and no argument on a
+  tool changes what a Sources phase compiles.
+
+  **Runs.** `CadenceMCPServer` scheme: `XCODEBUILD_EXIT=0`, **470 swift compile tasks** (cold), 0
+  errors, 0 warnings. App scheme `-only-testing:CadenceTests/...` over
+  `CadenceMCPToolContractTests`, `CadenceWriteServiceTests`, `CadenceReadServiceTests`,
+  `TagSupportTests`, `CadenceCommentSymbolClaimTests`, `CadenceTargetSourceMembershipTests` and
+  `AgentContextBudgetTests`: counts in the commit message. `smoke-test.py` against a temp fixture
+  store via `CADENCE_MCP_STORE_URL`, never the app-group store.
+
 - [T-1120] **CLOSED 2026-09-12 (agent `mcpwrite3`) — the MCP write surface can now rename, re-file
   and retire a list or a context, and the deletion half is settled as a refusal with two measured
   reasons rather than left open.** Two additive tools, `update_context` and `update_container`,

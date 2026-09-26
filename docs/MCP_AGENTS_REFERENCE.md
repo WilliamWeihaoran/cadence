@@ -111,26 +111,49 @@ The framing T-1120 expected — no confirmation, no undo, `mcp-audit.log` for a 
 is *not* the binding constraint: `CadencePendingChangePersistence.commitCascade` is an undo for a
 delete, and the cascades already return `false` for the caller to roll back.
 
-## Why Three Kinds Have No Constructor (T-1122)
+## Why Two Kinds Have No Constructor (T-1122)
 
 Displaced from `CadenceMCPServer/AGENTS.md` when T-1122's second pass pushed it past its 200-line
-cap again. A tag, a list note and a task bundle are each **refused with a measurement**, not left
-undecided, and the three refusals share one shape: the app's only helper for that kind lives
-somewhere this target cannot compile, or has no single owner at all.
+cap again. **It was three until [[T-1406]] built `create_tag`**; a list note and a task bundle are
+still each **refused with a measurement**, not left undecided, and both refusals share one shape:
+the app's only helper for that kind lives in a file this target cannot compile.
 
 - **Task bundle.** `CadenceTaskMutationSupport` calls `NotificationManager`, which is
   `import UserNotifications` — the same boundary that already makes `createTask` insert its
-  subtasks by hand, and the same one deletion is refused on.
+  subtasks by hand, and the same one deletion is refused on. Re-measured 2026-09-26: the calls
+  have moved to lines 859 and 861 and `insertBundle` to 1129, and the dependency is unchanged.
 - **List note.** `CadenceNoteFolderSupport` owns both the folder-path rule and the seeded
   `# Title`, and also declares four SwiftUI `View`s reading `Theme`. Compiling it here would drag
-  the theme layer into a command-line tool to reach two string rules.
-- **Tag.** There is no shared owner for the create rule to call. `create_task(tagNames:)` already
-  mints tags by a *different* rule than either settings editor uses, so adding `create_tag` would
-  have been a third spelling. `TagSupport.creationDecision(for:in:)` now owns the editors' rule,
-  which removes half of that objection; the other half stands — the archived-match branch's answer
-  is "offer restore", which a headless caller cannot take.
+  the theme layer into a command-line tool to reach two string rules. Re-measured 2026-09-26: the
+  file still opens `import SwiftUI` and still declares `NoteFolderSectionHeader`,
+  `NoteFolderGroupList`, `NoteFolderListRow` and `NoteFolderMoveMenu`, and `CadenceListNoteFiling`
+  is still inside it.
 
-Do not re-decide any of these from a summary. The measurements are in T-1122's ledger entry.
+**Why the tag refusal fell and these two did not.** The tag was always the odd one out: it cost
+**zero** new files, because `TagSupport` was already in the Sources phase, and what refused it was
+a *rule* rather than an import. Both halves of that rule objection have now gone. The first went
+on its own — `TagSupport.creationDecision(for:in:)` owns the four clauses both Settings editors
+used to hand-roll, so an MCP arm is the third *caller* rather than the third *copy*. The second,
+the `.archived` branch whose app-side answer is a Restore button, is answered the way [[T-1365]]
+answers a caller with no confirmation sheet: refuse by default, name the row in the refusal, and
+take the act only on an explicit `unarchive`. Refusing with no remedy would have been a dead end,
+because there is no `update_tag` arm to unarchive through; unarchiving silently would be a write
+nobody asked for. The two remaining refusals have no equivalent move available, because what
+blocks them is an `import`, and no argument on a tool changes what a Sources phase compiles.
+
+**`create_task(tagNames:)` keeps its own rule, and that is not the third spelling T-1122 feared.**
+It asks `TagSupport.resolution`, which resolves by slug and inserts what it does not find — the
+app's **attachment** rule, shared with every inline picker through
+`TagSupport.resolveTagsCommittingInsertions` and with note markdown sync. `creationDecision` is
+the app's **catalogue** rule, asked only where a user manages the tag list. The app has had both
+since T-631 and has exactly two; routing `create_task` through `creationDecision` would make this
+surface the only place in the repo where attaching an existing archived tag to a task fails, which
+is a disagreement with the app rather than an agreement with `create_tag`. The visible consequence
+is pinned by a test rather than left to be rediscovered:
+`attachingTagsKeepsTheAppsAttachRuleWhileCreateTagKeepsTheCatalogueRule`.
+
+Do not re-decide any of these from a summary. The measurements are in T-1122's and T-1406's
+ledger entries.
 
 ## Why The Tracking Helpers Cost Four Files (T-1122)
 
@@ -313,11 +336,12 @@ measurement and the enumeration are here._
   destination bucket, not the stored number, and the arm renumbers that whole bucket densely;
   re-filing alone still renumbers nothing. `linkedCalendarID` stays refused, on T-390's opacity and
   the absence of any picker here; the reasoning is on `CadenceUpdateContainerOptions`.
-  **`create_link`, `create_goal` and `create_habit` are the constructors outside the
-  context/list/task triangle; nothing creates a tag, a list note or a task bundle, and those three
-  are *refused with a measurement* rather than undecided ([[T-1122]]).** All three refusals share
-  one shape — no eligible owner this target can compile — and are in the reference, "Why three
-  kinds have no constructor". Do not re-decide any of them from a summary.
+  **`create_link`, `create_goal`, `create_habit` and `create_tag` are the constructors outside the
+  context/list/task triangle; nothing creates a list note or a task bundle, and those two
+  are *refused with a measurement* rather than undecided ([[T-1122]]).** Both refusals share
+  one shape — no eligible owner this target can compile — and are above, "Why two
+  kinds have no constructor", together with why the tag refusal fell to [[T-1406]] and these did
+  not. Do not re-decide any of them from a summary.
   **Nothing deletes anything, and that is settled, not deferred.** Two measured reasons, either
   sufficient — the cascade is unreachable from this target, and `deleteContext` walks *local*
   relationship arrays so it could not honestly report what it removed — written out on

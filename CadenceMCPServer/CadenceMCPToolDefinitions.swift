@@ -67,7 +67,14 @@ enum CadenceMCPToolDefinitions {
     // mint are tag, list note and task bundle, each refused with a measurement in `docs/TODO.md`
     // rather than left undecided; "can this server mint a goal?" is a capability question, and the
     // version is the only thing a client can ask.
-    private static let serverVersion = "0.11.0"
+    // 0.12.0, on the same capability argument and adding no response key: `create_tag` is the
+    // fourth constructor outside the context/list/task triangle ([[T-1122]]/[[T-1406]]), and it is
+    // the one the ledger refused twice before `TagSupport.creationDecision(for:in:)` existed to be
+    // asked. Additive — one tool, no field moved and none dropped. The two model types this
+    // surface still cannot mint are a list note and a task bundle, each refused with a measurement
+    // in `docs/TODO.md` rather than left undecided; "can this server mint a tag?" is a capability
+    // question, and the version is the only thing a client can ask.
+    private static let serverVersion = "0.12.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
@@ -85,6 +92,7 @@ enum CadenceMCPToolDefinitions {
         "create_link",
         "create_goal",
         "create_habit",
+        "create_tag",
     ]
 
     static var tools: [Tool] {
@@ -353,6 +361,12 @@ enum CadenceMCPToolDefinitions {
                 "contextId": uuidProperty("Optional context UUID. Omitted, the habit inherits its goal's context."),
                 "goalId": uuidProperty("Optional goal UUID this habit contributes to."),
             ], required: ["title"])),
+            Tool(name: "create_tag", description: "Create a Cadence tag, or restore the archived one that already carries its slug. Answers the same detail list_tags returns. A name whose slug an ACTIVE tag already carries is rejected rather than duplicated; a name an ARCHIVED tag carries is rejected too unless unarchive is set, because silently reviving a tag the owner archived is a write nobody asked for. There is no deletion on this surface; archiving is the app's reversible alternative.", inputSchema: schema([
+                "name": stringProperty("Tag display name. Trimmed, and must contain at least one letter or digit. The slug is derived from it.", minLength: 1),
+                "description": stringProperty("Optional tag description."),
+                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. Omitted, the model default is kept."),
+                "unarchive": booleanProperty("Restore the archived tag carrying this slug instead of being refused. Refused alongside description or colorHex: a restore does not re-colour or re-describe the tag it brings back. No effect when nothing archived carries the slug."),
+            ], required: ["name"])),
             Tool(name: "append_core_note", description: "Append text to a daily, weekly, or permanent Cadence note, creating it if needed.", inputSchema: schema([
                 "kind": stringProperty("daily, weekly, or permanent.", enumValues: ["daily", "weekly", "permanent"]),
                 "content": stringProperty("Text to append.", minLength: 1),

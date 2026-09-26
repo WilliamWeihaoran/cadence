@@ -878,13 +878,156 @@ struct CadenceWriteServiceTests {
         #expect(containers.items.map(\.name) == ["Cadence MCP"])
     }
 
+    // MARK: - T-1406 / T-1122: create_tag, and the branch the smoke test cannot induce
+
+    /// The `.archived` branch is **only** reachable here, and that is a property of the surface
+    /// rather than a gap in `smoke-test.py`. Nothing on the MCP surface archives a tag — there is
+    /// no `update_tag` arm — so a fixture store driven over the wire can never hold an archived
+    /// one, and the smoke test covers the two branches it *can* induce (`.creatable` and
+    /// `.duplicate`) while these run the two it cannot.
+    @Test func createTagAsksTheSharedRuleAndMintsWhatItAnswersCreatableFor() throws {
+        let fixture = try Fixture()
+
+        let detail = try fixture.writeService.createTag(options: .init(
+            name: "  Deep Work  ",
+            description: "  focus blocks  ",
+            colorHex: "4a9eff"
+        ))
+
+        #expect(detail.summary.name == "Deep Work")
+        #expect(detail.summary.slug == "deep-work")
+        #expect(detail.summary.description == "focus blocks")
+        #expect(detail.summary.colorHex == "#4a9eff")
+        #expect(detail.summary.isArchived == false)
+        #expect(detail.taskCount == 0)
+        #expect(detail.noteCount == 0)
+
+        // Max-plus-one over the whole table, `CadenceOrderAllocation`'s rule, not `count`.
+        let seeded = Cadence.Tag(name: "prior", slug: "prior", order: 7)
+        fixture.modelContext.insert(seeded)
+        try fixture.modelContext.save()
+        let second = try fixture.writeService.createTag(options: .init(name: "Later"))
+        let stored = try #require(
+            try fixture.modelContext.fetch(FetchDescriptor<Cadence.Tag>())
+                .first { $0.slug == "later" }
+        )
+        #expect(stored.order == 8)
+        #expect(second.summary.colorHex == Cadence.Tag(name: "").colorHex)
+    }
+
+    @Test func createTagRefusesAnUnusableNameAndAnActiveDuplicate() throws {
+        let fixture = try Fixture()
+        _ = try fixture.writeService.createTag(options: .init(name: "Bug"))
+
+        // `"--"` is non-empty and its slug falls back to `"tag"`, so only the alphanumeric clause
+        // refuses it — the clause `TagSupport.creationDecision` deliberately runs last.
+        let unusable = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTag(options: .init(name: "--"))
+        }
+        #expect(unusable?.errorDescription?.contains("at least one letter or digit") == true)
+
+        // Slug equality, not name equality: `#BUG!` slugs to `bug`.
+        let duplicate = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTag(options: .init(name: "#BUG!"))
+        }
+        #expect(duplicate?.errorDescription?.contains("already carries the slug bug") == true)
+
+        #expect(try fixture.readService.listTags(includeArchived: true, limit: 50).items.count == 1)
+    }
+
+    @Test func createTagRefusesAnArchivedMatchUntilTheCallerAsksForTheRestore() throws {
+        let fixture = try Fixture()
+        let archived = Cadence.Tag(name: "Bug", slug: "bug", colorHex: "#111111", order: 3)
+        archived.isArchived = true
+        fixture.modelContext.insert(archived)
+        try fixture.modelContext.save()
+
+        // Default: refused, and the refusal names the row and the opt-in that takes it. The app
+        // answers this branch with a Restore button, which a headless caller cannot press.
+        let refused = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTag(options: .init(name: "bug"))
+        }
+        let message = try #require(refused?.errorDescription)
+        #expect(message.contains(archived.id.uuidString))
+        #expect(message.contains("unarchive: true"))
+        #expect(archived.isArchived, "the refusal must not have unarchived anything")
+        #expect(try fixture.readService.listTags(includeArchived: true, limit: 50).items.count == 1)
+
+        // A restore is not an edit: this arm never rewrites an existing tag's fields, so the
+        // combination is refused rather than half-applied.
+        let combined = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTag(options: .init(name: "bug", colorHex: "#4a9eff", unarchive: true))
+        }
+        #expect(combined?.errorDescription?.contains("does not re-colour") == true)
+        #expect(archived.isArchived)
+
+        let restored = try fixture.writeService.createTag(options: .init(name: "bug", unarchive: true))
+        #expect(restored.summary.id == archived.id.uuidString)
+        #expect(restored.summary.isArchived == false)
+        #expect(restored.summary.colorHex == "#111111", "the restore kept the archived row's colour")
+        #expect(restored.summary.name == "Bug", "the restore kept the archived row's display name")
+        // One row, not two: the point of the whole branch is that a second `bug` is not minted.
+        #expect(try fixture.readService.listTags(includeArchived: true, limit: 50).items.count == 1)
+
+        // `unarchive` on a name nothing archived carries is simply the ordinary create.
+        let fresh = try fixture.writeService.createTag(options: .init(name: "Chore", unarchive: true))
+        #expect(fresh.summary.slug == "chore")
+        #expect(fresh.summary.isArchived == false)
+    }
+
+    /// `create_task`'s `tagNames` keeps `TagSupport.resolution` on purpose, and this is the
+    /// difference written down so it is not read as a bug later: the **attach** rule reuses an
+    /// archived tag silently, exactly as every inline picker in the app does, while the
+    /// **catalogue** rule `create_tag` asks refuses it. Two rules, both shared, neither hand-rolled.
+    @Test func attachingTagsKeepsTheAppsAttachRuleWhileCreateTagKeepsTheCatalogueRule() throws {
+        let fixture = try Fixture()
+        let archived = Cadence.Tag(name: "Bug", slug: "bug")
+        archived.isArchived = true
+        fixture.modelContext.insert(archived)
+        try fixture.modelContext.save()
+
+        let detail = try fixture.writeService.createTask(options: .init(title: "Tagged", tagNames: ["bug"]))
+        #expect(detail.summary.tags.map(\.id) == [archived.id.uuidString])
+        #expect(detail.summary.tags.map(\.isArchived) == [true])
+        #expect(archived.isArchived, "attaching a tag must not unarchive it either")
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTag(options: .init(name: "bug"))
+        }
+    }
+
+    /// T-1406, the T-1121 half. `create_task` minted its tags through `resolveTags`, which throws
+    /// the inserted rows away, so a `Tag` this call inserted was never in the `inserted:` list a
+    /// refused commit un-inserts — leaving it pending in a `ModelContext` that outlives the call.
+    @Test func aRefusedTaskCreateUnInsertsTheTagsItHadToMint() throws {
+        let fixture = try Fixture()
+        let failing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(throws: CommitRefused.self) {
+            try failing.createTask(options: .init(title: "Doomed", tagNames: ["brand-new-tag"]))
+        }
+
+        let tags = try fixture.modelContext.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(tags.isEmpty, "the minted tag stayed pending after a refused commit: \(tags.map(\.slug))")
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
+    }
+
     // MARK: - T-307: an unreadable tag table is a failure, not "no tags"
 
     @Test func unreadableTagsFailTheWriteInsteadOfSilentlyChangingNothing() throws {
         let resolvedTag = Cadence.Tag(name: "bug", slug: "bug")
 
-        #expect(try CadenceMCPServiceSupport.requiredTags([resolvedTag]).map(\.slug) == ["bug"])
-        #expect(try CadenceMCPServiceSupport.requiredTags([]).isEmpty)
+        let minted = Cadence.Tag(name: "new", slug: "new")
+        let passed = try CadenceMCPServiceSupport.requiredTags((tags: [resolvedTag, minted], inserted: [minted]))
+        #expect(passed.tags.map(\.slug) == ["bug", "new"])
+        // T-1406: the `inserted` half survives the unwrap. It is what `saveNotifyAndAudit` un-inserts
+        // on a refused commit, and dropping it here is what left a minted tag pending.
+        #expect(passed.inserted.map(\.slug) == ["new"])
+        #expect(try CadenceMCPServiceSupport.requiredTags((tags: [], inserted: [])).tags.isEmpty)
 
         let error = #expect(throws: CadenceWriteError.self) {
             try CadenceMCPServiceSupport.requiredTags(nil)

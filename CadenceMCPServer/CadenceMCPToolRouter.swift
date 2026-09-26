@@ -361,6 +361,15 @@ struct CadenceMCPToolRouter {
                 goalId: arguments.string("goalId")
             )))
 
+        case "create_tag":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.createTag(options: CadenceCreateTagOptions(
+                name: try arguments.requiredString("name"),
+                description: arguments.string("description"),
+                colorHex: arguments.string("colorHex"),
+                unarchive: arguments.bool("unarchive") ?? false
+            )))
+
         case "append_core_note":
             let writeService = try requireWriteService(for: name)
             return try encode(writeService.appendCoreNote(
