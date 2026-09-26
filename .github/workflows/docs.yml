@@ -47,6 +47,13 @@ jobs:
   # allowance. It costs nobody a trim today and stops the biggest file getting bigger. Bytes, not
   # tokens: no tokenizer is chosen here, and `wc -c` is a number any reader can reproduce.
   #
+  # T-1333 added `docs/SUBAGENT_RUNBOOK.md` to the glob. It is not an AGENTS.md, so neither
+  # instrument had ever listed it, and it was the largest always-read document in the tree -- 786
+  # lines / 61,428 bytes, three times the byte cap, and still growing. Its incident narratives are
+  # in `docs/SUBAGENT_RUNBOOK_REFERENCE.md` now and the front matter lands at 157 / 11,879, so the
+  # cap costs nothing today. Same two numbers as the guides rather than a third scale: a reading
+  # budget does not care why a file is long.
+  #
   # `AgentContextBudgetTests` remains the authority; this is the fast red, on Ubuntu minutes, for
   # the docs-only pushes ci.yml excludes. The two carry the same BYTE number and, until [[T-1363]],
   # NOT the same line number: the test counts `split(separator: "\n")`, which is `wc -l` + 1 for a
@@ -93,11 +100,12 @@ jobs:
               echo "::warning file=$guide::$guide is $bytes bytes of 18000, $((18000 - bytes)) from the cap. Displace prose to a linked reference now."
               near=$((near + 1))
             fi
-          done < <(git ls-files '*AGENTS.md' 'CLAUDE.md' | sort)
+          done < <(git ls-files '*AGENTS.md' 'CLAUDE.md' 'docs/SUBAGENT_RUNBOOK.md' | sort)
           echo "  checked $count guides; largest is $max_bytes bytes of the 18000-byte budget; $near are within a whisker of a cap."
-          # Non-vacuity: a glob that found nothing must not read as a pass. The tree had 13
-          # capped guides when this was written; AgentContextBudgetTests asserts >= 12.
-          if [ "$count" -lt 12 ]; then
+          # Non-vacuity: a glob that found nothing must not read as a pass. The tree had 14
+          # capped files when T-1333 added the runbook; AgentContextBudgetTests asserts >= 12
+          # AGENTS.md guides and caps CLAUDE.md and the runbook by name.
+          if [ "$count" -lt 13 ]; then
             echo "::error::found only $count guides to cap; the file list is wrong, not the budget."
             rc=1
           fi

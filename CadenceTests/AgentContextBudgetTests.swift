@@ -41,6 +41,40 @@ struct AgentContextBudgetTests {
         try expectSizeBudget("CLAUDE.md", lines: Self.lineBudget, bytes: Self.byteBudget)
     }
 
+    /// T-1333. The third always-read document, and the last one without a budget.
+    ///
+    /// `docs/SUBAGENT_RUNBOOK.md` is not an `AGENTS.md`, so the walk above never saw it and the
+    /// `docs.yml` glob never listed it — yet root `AGENTS.md` points every subagent at it by name
+    /// and its own opening says to read it once. Measured when this was written: **786 lines /
+    /// 61,428 bytes**, three times the byte cap every capped guide answers to, and *growing* — it
+    /// was 60,327 when T-1333 was filed. Every other always-read document in this repository
+    /// acquired a budget (T-434's lines, T-1332's bytes, T-1363's warning band) and the largest
+    /// acquired none.
+    ///
+    /// **The same two numbers, deliberately, rather than a third scale.** The argument for a looser
+    /// cap here would be that the runbook covers more ground than a scoped guide; the argument
+    /// against is that an agent's reading budget does not care why a file is long. The split lands
+    /// it at 157 lines / 11,879 bytes, so the cap costs nothing today and the headroom is real —
+    /// which is the condition T-1332's ratchet reasoning sets for adding a budget at all.
+    @Test func subagentRunbookFrontMatterStaysCompactAndRoutesToReference() throws {
+        let runbook = try repositoryFile("docs/SUBAGENT_RUNBOOK.md")
+
+        #expect(runbook.contains("# Subagent verification runbook"))
+        #expect(runbook.contains("docs/SUBAGENT_RUNBOOK_REFERENCE.md"))
+        // The split is only worth a budget if the front matter is still the MANDATORY part. A
+        // runbook that routed everything away, rules included, would pass a size cap and be
+        // useless — so the four refusals it exists to carry are pinned by name.
+        for rule in [
+            "Never kill, quit or `pkill` a process named `Cadence`",
+            "Never `--commits-stale`",
+            "never erase or shut down a simulator you did not create",
+            "evidence about the WORKTREE, not about the COMMIT",
+        ] {
+            #expect(runbook.contains(rule), "the runbook front matter no longer states: \(rule)")
+        }
+        try expectSizeBudget("docs/SUBAGENT_RUNBOOK.md", lines: Self.lineBudget, bytes: Self.byteBudget)
+    }
+
     /// T-434. This used to name three files and three different literals, which meant nine of the
     /// twelve `AGENTS.md` files had no ceiling at all — including `Cadence/Models/` and
     /// `CadenceMCPServer/`, the two closest to one, and including the guide whose unmarked claim
@@ -168,9 +202,9 @@ struct AgentContextBudgetTests {
     /// mismatch produces — the failure mode `CadenceMCPToolContractTests` names, and the reason this
     /// exists rather than being trusted.
     @Test func theGuideReferencePairingTableIsNotVacuous() throws {
-        #expect(Self.guideReferencePairings.count == 5)
+        #expect(Self.guideReferencePairings.count == 6)
         #expect(Self.guideReferencePairings.contains { $0.referencePath == "docs/MCP_AGENTS_REFERENCE.md" })
-        #expect(Self.guideReferencePairings.filter { !$0.citedSections.isEmpty }.count >= 4)
+        #expect(Self.guideReferencePairings.filter { !$0.citedSections.isEmpty }.count >= 5)
 
         for pairing in Self.guideReferencePairings {
             #expect(try repositoryFile(pairing.guidePath).count > 1_000)
@@ -250,6 +284,26 @@ struct AgentContextBudgetTests {
             pinnedHeadings: []
         ),
         GuideReferencePairing(
+            guidePath: "docs/SUBAGENT_RUNBOOK.md",
+            linkFromGuide: "docs/SUBAGENT_RUNBOOK_REFERENCE.md",
+            referencePath: "docs/SUBAGENT_RUNBOOK_REFERENCE.md",
+            archivalMarker: "lifted out of `docs/SUBAGENT_RUNBOOK.md`",
+            // T-1333. The runbook's routing table is one quoted section name per bullet, the shape
+            // T-1344 established, so the pairing is total here too.
+            citedSections: [
+                "The opening rules, and the incidents behind them",
+                "Running the app and the simulator",
+                "A probe may not be fatal, and must report before it probes",
+                "Never assert a numeric floor over a population the repo is shrinking",
+                "Committing out of a shared checkout",
+                "Two ways a clean build reports someone else's mess as yours",
+                "A trap in a source-scan helper is a dead test host, not a test failure",
+                "A mutation that only weakens an assertion cannot be killed in a tree that does not violate it",
+                "A mutation runner that cannot report a survivor it did not earn",
+            ],
+            pinnedHeadings: []
+        ),
+        GuideReferencePairing(
             guidePath: "CadenceMCPServer/AGENTS.md",
             linkFromGuide: "../docs/MCP_AGENTS_REFERENCE.md",
             referencePath: "docs/MCP_AGENTS_REFERENCE.md",
@@ -312,7 +366,10 @@ struct AgentContextBudgetTests {
         )
         // Non-vacuity: a file that failed to load, or a job renamed out from under this test,
         // would satisfy none of the above for the wrong reason.
-        #expect(job.contains("git ls-files '*AGENTS.md' 'CLAUDE.md'"), "the budget job is gone or renamed")
+        #expect(
+            job.contains("git ls-files '*AGENTS.md' 'CLAUDE.md' 'docs/SUBAGENT_RUNBOOK.md'"),
+            "the budget job is gone, renamed, or stopped capping the subagent runbook (T-1333)"
+        )
     }
 
     /// T-1367, and the defect is mine. Commit `307052a` — whose subject was *"two always-read
@@ -353,9 +410,13 @@ struct AgentContextBudgetTests {
 
         var guides = try agentGuidePaths()
         guides.append("CLAUDE.md")
+        // T-1333 put the subagent runbook under the same budget, which made it the same kind of
+        // document — and it was spliced in two on the way there, which is precisely when a
+        // line-numbered edit drops a tail.
+        guides.append("docs/SUBAGENT_RUNBOOK.md")
         // Non-vacuity: the same floor the size budget uses. A walk that found nothing must not
         // read as a clean sweep — that is the shape this repository refuses everywhere else.
-        #expect(guides.count >= 13, "found only \(guides.count) guides to scan for truncation")
+        #expect(guides.count >= 14, "found only \(guides.count) guides to scan for truncation")
 
         var truncations: [String] = []
         for guide in guides {

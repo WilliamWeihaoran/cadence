@@ -211,11 +211,21 @@ import Testing
     /// `$TMPPREFIX` here-document path, the setuid `ps`, the unexecutable freshly-written file —
     /// and a rule that demanded a citation on every restatement would add 23 lines of the same
     /// name to files nobody reads end to end. Filed as [[T-1380]] rather than absorbed here.
+    ///
+    /// **T-1333 added the fifth, and it is the same inclusion as the second long reference.**
+    /// Splitting `docs/SUBAGENT_RUNBOOK.md` moved three environment claims — the ledger's
+    /// `$TMPDIR`, the `xcrun` shims, the shim on `$PATH` that is silently skipped — into
+    /// `docs/SUBAGENT_RUNBOOK_REFERENCE.md`. Leaving the corpus alone would have let a
+    /// reorganisation do what no edit was allowed to do: retire the citations by relocating the
+    /// sentences. The reference is in for exactly the reason `docs/AGENTS_REFERENCE.md` already
+    /// was — it is where its guide's reasoning went, and a claim does not stop being quotable for
+    /// having been displaced.
     static let alwaysReadGuides = [
         "AGENTS.md",
         "CLAUDE.md",
         "docs/AGENTS_REFERENCE.md",
         "docs/SUBAGENT_RUNBOOK.md",
+        "docs/SUBAGENT_RUNBOOK_REFERENCE.md",
     ]
 
     /// What counts as a claim about what the execution environment can do.

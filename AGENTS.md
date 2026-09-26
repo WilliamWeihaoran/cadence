@@ -191,4 +191,4 @@ edits scoped and run the relevant build/test command after structural changes.
 
 ## Subagent verification runbook
 
-Coordinators: point subagents at `docs/SUBAGENT_RUNBOOK.md` rather than restating its rules.
+Coordinators: point subagents at `docs/SUBAGENT_RUNBOOK.md` rather than restating its rules. Since T-1333 it is the mandatory rules alone and is budgeted like a guide; its incident narratives are in `docs/SUBAGENT_RUNBOOK_REFERENCE.md`, read on demand.

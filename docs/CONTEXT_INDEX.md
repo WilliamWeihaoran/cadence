@@ -27,6 +27,9 @@ loading broad histories.
   `docs/MCP_AGENTS_REFERENCE.md` for the boundary history the scoped guide routes out to.
 - Build/test/debugging weirdness:
   `AGENTS.md` first; search `docs/AGENTS_REFERENCE.md` only for the detailed incident history.
+- Verifying as a subagent (scratch trees, the test-host lock, mutation runs, committing out of the
+  shared checkout): `docs/SUBAGENT_RUNBOOK.md` is the mandatory section and the whole of it; open
+  the one named section of `docs/SUBAGENT_RUNBOOK_REFERENCE.md` its routing table sends you to.
 - Product/feature history:
   Search `docs/CLAUDE_REFERENCE.md` by section name.
 
