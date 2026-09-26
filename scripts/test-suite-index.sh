@@ -92,7 +92,7 @@ def blank(src):
     # T-1338: "equal length" is a **code point** count on this side and a grapheme-cluster count on
     # the Swift one, so the Swift pass now spells a blanked cluster as one space per scalar rather
     # than one per cluster. See `CadenceSourceScan.blankedSpansAsSpaces`, and
-    # `CadenceBlankingPassParityTests` for the fixtures that pin both halves.
+    # `CadenceGuardScriptSelftestTests` for the fixtures that pin both halves (T-1353).
     out = list(src)
     n = len(out)
 

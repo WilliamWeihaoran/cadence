@@ -150,7 +150,76 @@ claim_age()   { local s; s=$(claim_field "$1" since); print -r -- $(( $(date +%s
 # launch. ANCHOR on the word simctl: an unanchored match on the udid alone would
 # also match every waiting agent's own claim loop, which is how a mutex inverts
 # into a deadlock.
-live_simctl_for() { pgrep -f "simctl .*$1" 2>/dev/null | wc -l | tr -d ' ' }
+#
+# THREE ANSWERS, NOT TWO (T-1384) -- the same T-1152 correction `waiter_alive` below received in
+# T-1382, and the third copy of one expression this repository has now twice decided is wrong. This
+# line was `pgrep -f "simctl .*$1" 2>/dev/null | wc -l | tr -d ' '`, which routed every way `pgrep`
+# can fail to the same place: stderr to /dev/null, exit status swallowed by the pipe, and empty
+# stdin into `wc -l` printing a confident, plausible `0`. **Zero is the PERMISSIVE answer here.**
+# The only caller is the reclaim branch in `claim` below, and it reads zero as "nobody is
+# mid-operation, take the device" -- so a probe that cannot see the process list used to say
+# "nobody is busy" rather than "I cannot tell", and the device it frees may be one a sibling agent
+# is `simctl install`ing to right now.
+#
+# HOW THE THREE ARE TOLD APART, taken verbatim from `live_test_hosts` in scripts/test-host-lock.sh
+# rather than reinvented: stderr is MERGED into stdout and read, because pgrep's own output is one
+# pid per line and nothing else, so any line that is not a bare integer is the tool talking about
+# itself. Both signals are used, not just the exit status -- a future pgrep that complains and
+# still exits 1 would slip straight back through a status-only reading.
+#
+#   exit 0, every line a pid       -> counted, that many live simctl ops.
+#   exit 1, no output at all       -> counted, zero. The ordinary idle box.
+#   exit >= 2, or ANY non-pid line -> CANNOT TELL (return 4). Never reclaim on this.
+#
+# It sets globals instead of printing a number, for the reason the lock records: `live=$(...)` runs
+# the function in a SUBSHELL and the reason would be discarded with it, at exactly the call site
+# that needs it. Call it as a command and read the two globals.
+#
+# THE HONEST SIZE OF IT, because a guard oversold is a guard nobody re-reads: `pgrep` runs perfectly
+# well from an ordinary agent shell, which is where this script is driven from, and the reclaim path
+# it feeds also requires an EXPIRED LEASE before it asks at all. Narrower than [[T-1382]]'s, which
+# could empty the whole FIFO in a single pass. The divergence between three copies of one reading is
+# what was worth removing.
+#
+# The `pgrep` this runs, overridable for testing ONLY -- same command-array spelling, same
+# `CADENCE_SIM_CLAIM_TESTING` gate and the same reason as `SIM_PS_CMD` further down (T-1381): an
+# App-Sandboxed caller cannot exec a file it wrote itself, so a stub named as a bare path never
+# launches there while `/bin/zsh <stub>` does. A stray override in a live agent's environment would
+# change how every sibling's claim is read, hence the gate.
+SIM_PGREP_CMD=(pgrep)
+[[ -n "${CADENCE_SIM_CLAIM_TESTING:-}" && -n "${CADENCE_SIM_PGREP_CMD:-}" ]] && SIM_PGREP_CMD=(${=CADENCE_SIM_PGREP_CMD})
+LIVE_SIMCTL_COUNT=0
+LIVE_SIMCTL_WHY=""
+live_simctl_for() {   # 0 = the count in $LIVE_SIMCTL_COUNT is trustworthy, 4 = cannot tell
+  local out rc line
+  local -a pids noise
+  out=$("${SIM_PGREP_CMD[@]}" -f "simctl .*$1" 2>&1); rc=$?
+  LIVE_SIMCTL_COUNT=0; LIVE_SIMCTL_WHY=""
+  for line in ${(f)out}; do
+    if [[ "$line" == <-> ]]; then pids+=("$line"); else noise+=("$line"); fi
+  done
+  if (( ${#noise} )); then
+    LIVE_SIMCTL_WHY="${SIM_PGREP_CMD[*]} exited $rc and said: ${noise[1]}"
+    return 4
+  fi
+  if (( rc >= 2 )); then
+    LIVE_SIMCTL_WHY="${SIM_PGREP_CMD[*]} exited $rc (>=2 is a pgrep error, not an empty result)"
+    return 4
+  fi
+  if (( rc == 1 )); then
+    if (( ${#pids} )); then
+      LIVE_SIMCTL_WHY="${SIM_PGREP_CMD[*]} exited 1 (no matches) yet printed ${#pids} pid(s)"
+      return 4
+    fi
+    return 0
+  fi
+  if (( ${#pids} == 0 )); then
+    LIVE_SIMCTL_WHY="${SIM_PGREP_CMD[*]} exited 0 (matched) yet printed no pid"
+    return 4
+  fi
+  LIVE_SIMCTL_COUNT=${#pids}
+  return 0
+}
 
 claim_udid_for_id() {
   local c u
@@ -191,7 +260,8 @@ arrival_stamp() {
 # every sibling's ticket is read.
 #
 # A COMMAND ARRAY, not a single word (T-1381): an App-Sandboxed caller cannot exec a file it wrote
-# itself, so a stub named as a bare path fails to launch there, while `/bin/zsh <stub>` runs.
+# itself, so a stub named as a bare path fails to launch there, while `/bin/zsh <stub>` runs. The
+# same mechanism, reused rather than re-invented, is `SIM_PGREP_CMD` beside `live_simctl_for` above.
 SIM_PS_CMD=(ps)
 [[ -n "${CADENCE_SIM_CLAIM_TESTING:-}" && -n "${CADENCE_SIM_PS_CMD:-}" ]] && SIM_PS_CMD=(${=CADENCE_SIM_PS_CMD})
 
@@ -381,7 +451,22 @@ case "$CMD" in
           # behind the other.
           age=$(claim_age "$u"); owner=$(claim_field "$u" id)
           if (( age > LEASE )); then
-            live=$(live_simctl_for "$u")
+            # T-1384: ask first whether the probe could answer AT ALL. `live=$(live_simctl_for "$u")`
+            # used to read a `0` that meant "pgrep could not see the process list" identically to
+            # one that meant "no simctl is running", and this is the branch where that difference
+            # `rm -rf`s somebody else's claim. Falling through to the next device rather than
+            # exiting, which is what test-host-lock.sh does at the same point: there is exactly one
+            # test host, but there can be several booted devices, and abandoning the whole wait
+            # because ONE claimed device cannot be judged would give up free devices too. The wait
+            # still ends -- at $TIMEOUT, saying it did not claim -- and an owner's ordinary
+            # `release` still frees the device without anyone reclaiming anything.
+            if ! live_simctl_for "$u"; then
+              say "  $u: lease expired (${age}s) but I cannot read the process list, so \"no live"
+              say "     simctl op\" is UNKNOWN here, not false ($LIVE_SIMCTL_WHY);"
+              say "     NOT reclaiming -- that would take a device a sibling may be installing to (T-1384)."
+              continue
+            fi
+            live=$LIVE_SIMCTL_COUNT
             if (( live > 0 )); then
               say "  $u: lease expired (${age}s) but ${live} live simctl op(s); NOT reclaiming"
               continue
@@ -620,6 +705,80 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
       print -r -- "FAIL cannot-tell-keeps-queue: fixture did not set up (queue has $before_q)"; (( fails++ ))
     fi
     "$SELF" release holder3 >/dev/null
+    cleanup_kids; rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"
+
+    # 4. A `pgrep` THAT CANNOT ANSWER MUST NOT RECLAIM SOMEBODY ELSE'S DEVICE (T-1384). Mode 3 is
+    #    this property one function over, on the QUEUE; this is the one on the CLAIM, and the
+    #    damage is larger per occurrence: `prune_queue` costs a sibling its place in line, while
+    #    the reclaim branch below `rm -rf`s the claim of an agent that may be mid-`simctl install`,
+    #    which is T-225 itself.
+    #
+    #    THREE STUBS, because the property has to be a DISCRIMINATION and not "it never reclaims" —
+    #    a `live_simctl_for` hard-wired to `return 4` would pass a one-stub version of this while
+    #    disabling the reclaim path entirely, and a stale claim would then pin the fleet forever.
+    #      blind  — exits 3 with a complaint on stderr, which is what the process-list refusal
+    #               measured in T-959 looks like from here. MUST NOT reclaim.
+    #      idle   — exits 1, silent: the ordinary "no simctl is running" answer. MUST reclaim.
+    #      busy   — exits 0 naming a pid: a live op on an expired lease. MUST NOT reclaim.
+    #    The OLD expression is run verbatim over the blind stub first and its answer printed, so the
+    #    before is demonstrated rather than asserted — same failing-first shape as mode 3.
+    #    `/bin/zsh -f <stub>` for the T-1381 reason, and `print -r --` rather than a heredoc because
+    #    zsh writes here-documents to $TMPPREFIX (T-1343).
+    #
+    #    A FRESH CLAIMS ROOT, not the one the modes above shared. Measured while writing this: a
+    #    mode-3 waiter that outlives `cleanup_kids` by a moment is still looping against the
+    #    directory IT read at startup, and one such straggler reclaiming this fixture's expired
+    #    claim reads here as "the three-way check failed" — a flake that accuses the thing under
+    #    test. Nothing already running can race a root that did not exist when it started.
+    export CADENCE_SIM_CLAIMS_DIR="$root/CadenceSimClaims4"
+    CLAIMS="$CADENCE_SIM_CLAIMS_DIR"; QUEUE="${CLAIMS}.queue"
+    mkdir -p "$CLAIMS"
+    print -r -- '#!/bin/zsh
+print -u2 -- "pgrep: Cannot get process list"
+exit 3' > "$root/blindpgrep"
+    print -r -- '#!/bin/zsh
+exit 1' > "$root/idlepgrep"
+    print -r -- '#!/bin/zsh
+print -r -- 4242
+exit 0' > "$root/busypgrep"
+    chmod +x "$root/blindpgrep" "$root/idlepgrep" "$root/busypgrep"
+    # An expired claim held by a stranger, rebuilt before each stub. LEASE is 4s here, so 600s of
+    # age puts every run squarely in the reclaim branch and none of the three gets there by timing.
+    stale_stranger_claim() {
+      rm -rf "$CLAIMS/$FAKE_UDID.claim"
+      mkdir -p "$CLAIMS/$FAKE_UDID.claim"
+      print -r -- stranger                 > "$CLAIMS/$FAKE_UDID.claim/id"
+      print -r -- 1                        > "$CLAIMS/$FAKE_UDID.claim/pid"
+      print -r -- $(( $(date +%s) - 600 )) > "$CLAIMS/$FAKE_UDID.claim/since"
+    }
+    old_answer=$(/bin/zsh -f "$root/blindpgrep" -f "simctl .*$FAKE_UDID" 2>/dev/null | wc -l | tr -d ' ')
+
+    stale_stranger_claim
+    export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/blindpgrep"
+    blind_out=$("$SELF" claim cannottell 3 2>&1)
+    unset CADENCE_SIM_PGREP_CMD
+    blind_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && blind_kept=1
+    blind_said=0; [[ "$blind_out" == *"cannot read the process list"* ]] && blind_said=1
+
+    stale_stranger_claim
+    export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/idlepgrep"
+    "$SELF" claim reclaimer 12 >/dev/null 2>&1
+    unset CADENCE_SIM_PGREP_CMD
+    idle_took=0; [[ "$(claim_field "$FAKE_UDID" id)" == reclaimer ]] && idle_took=1
+    "$SELF" release reclaimer >/dev/null 2>&1
+
+    stale_stranger_claim
+    export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/busypgrep"
+    busy_out=$("$SELF" claim busyprobe 3 2>&1)
+    unset CADENCE_SIM_PGREP_CMD
+    busy_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && busy_kept=1
+    busy_said=0; [[ "$busy_out" == *"live simctl op(s)"* ]] && busy_said=1
+
+    if (( old_answer == 0 && blind_kept && blind_said && idle_took && busy_kept && busy_said )); then
+      print -r -- "PASS cannot-tell-keeps-claim: the old \`pgrep | wc -l\` answered '$old_answer' for a blind pgrep, which is the reclaim answer; the three-way reading kept the stranger's expired claim, still reclaimed it on an idle pgrep, and still deferred to a live simctl op"
+    else
+      print -r -- "FAIL cannot-tell-keeps-claim: old-expression=$old_answer (wanted 0), blind kept=$blind_kept said=$blind_said, idle reclaimed=$idle_took, busy kept=$busy_kept said=$busy_said; the device is now held by '$(claim_field "$FAKE_UDID" id)'"; (( fails++ ))
+    fi
 
     cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"
     print -r -- "selftest: $fails failure(s)"

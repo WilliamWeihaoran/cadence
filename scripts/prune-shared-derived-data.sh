@@ -361,7 +361,13 @@ def check(label, condition, detail=""):
     if condition:
         print("ok   - %s" % label)
     else:
-        print("FAIL - %s%s" % (label, "  (%s)" % detail if detail else ""))
+        # `% (detail,)`, not `% detail`. Found by the T-1350 mutation that flips the UNREADABLE
+        # branch to ORPHAN: every `detail` here is a `(verdict, reason)` tuple or a list, and the
+        # bare form spreads it across a one-placeholder format and dies with `TypeError: not all
+        # arguments converted`. That is the T-1343 shape exactly -- a defect on the path only a
+        # FAILING check walks, so it cannot be seen from a green run, and it turns the one
+        # explanation a red selftest owes its reader into a traceback halfway down the trial.
+        print("FAIL - %s%s" % (label, "  (%s)" % (detail,) if detail else ""))
         failures.append(label)
 
 def dd_suffix(path):
@@ -421,6 +427,34 @@ try:
     with open(os.path.join(orphan_by_plist_entry, "info.plist"), "wb") as fh:
         plistlib.dump({"WorkspacePath": os.path.join(fake_home, "GoneNow")}, fh)
 
+    # UNREADABLE, both ways in (T-1350). This is the third branch of the discriminator and until
+    # now the trial induced neither half of it, so a branch that had silently flipped to ORPHAN --
+    # deleting exactly what the script refuses to guess about -- would have gone on printing
+    # `unreadable (skipped): 0` and passing, because there were none of them in either world.
+    #
+    # Both entries have an `info.plist`, so the hash fallback never sees them, and neither name
+    # hashes to any project: if the branch regresses to ORPHAN they are DELETED, which is what the
+    # `prune-dd` check at the end measures rather than infers.
+    #
+    #   `truncated`  -- bytes that are not a plist. The real-world shape is a write interrupted
+    #                   mid-file, and `plistlib.load` raises.
+    #   `keyrenamed` -- a perfectly well-formed plist that simply has no `WorkspacePath` string,
+    #                   which is what an Xcode release renaming or dropping the key looks like from
+    #                   here. The second half matters on its own: it is the one an update causes
+    #                   across EVERY entry at once, and the fleet-wide version of "ORPHAN" is the
+    #                   whole shared DerivedData directory.
+    unreadable_truncated_entry_name = "Cadence-" + "e" * 28
+    unreadable_truncated_entry = os.path.join(fake_dd, unreadable_truncated_entry_name)
+    os.makedirs(unreadable_truncated_entry)
+    with open(os.path.join(unreadable_truncated_entry, "info.plist"), "wb") as fh:
+        fh.write(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict><key>Work")
+
+    unreadable_key_gone_entry_name = "Cadence-" + "f" * 28
+    unreadable_key_gone_entry = os.path.join(fake_dd, unreadable_key_gone_entry_name)
+    os.makedirs(unreadable_key_gone_entry)
+    with open(os.path.join(unreadable_key_gone_entry, "info.plist"), "wb") as fh:
+        plistlib.dump({"WorkspaceFileSystemPath": attributed_by_plist_project}, fh)
+
     # Orphan via hash: no info.plist, and no project anywhere hashes to this name.
     orphan_by_hash_entry_name = "Cadence-" + "c" * 28
     orphan_by_hash_entry = os.path.join(fake_dd, orphan_by_hash_entry_name)
@@ -472,12 +506,35 @@ try:
             rows.get(held_open_entry_name, (None,))[0] == "LIVE",
             rows.get(held_open_entry_name),
         )
+        # T-1350. The verdict AND the reason, because "UNREADABLE for the wrong reason" is a real
+        # way for this to rot: a `workspace_path` that swallowed the parse error and fell through
+        # to the missing-key message would still say UNREADABLE and would still be wrong about why.
+        truncated_row = rows.get(unreadable_truncated_entry_name, (None, ""))
+        check(
+            "an info.plist that is not a plist at all is UNREADABLE, never ORPHAN",
+            truncated_row[0] == "UNREADABLE" and "info.plist unreadable" in truncated_row[1],
+            truncated_row,
+        )
+        key_gone_row = rows.get(unreadable_key_gone_entry_name, (None, ""))
+        check(
+            "an info.plist with no WorkspacePath string is UNREADABLE, never ORPHAN",
+            key_gone_row[0] == "UNREADABLE" and "no string WorkspacePath" in key_gone_row[1],
+            key_gone_row,
+        )
 
-        # prune-dd must delete exactly the two orphans and leave the other three untouched, while
+        # prune-dd must delete exactly the two orphans and leave the other five untouched, while
         # the holder still has the file open.
-        subprocess.run(
+        pruned = subprocess.run(
             ["/bin/zsh", script, "prune-dd", fake_dd, fake_home],
             capture_output=True, text=True,
+        )
+        # The report a human reads, not only the verdicts a parser does. `unreadable (skipped): 0`
+        # is what this line printed before there were any, and it would have gone on printing 0 had
+        # the branch flipped -- the count is only evidence once the trial can make it move.
+        check(
+            "the run reports the unreadable entries as skipped rather than silently counting them elsewhere",
+            "unreadable (skipped): 2" in pruned.stdout,
+            pruned.stdout,
         )
     finally:
         holder.terminate()
@@ -485,8 +542,14 @@ try:
 
     remaining = sorted(os.listdir(fake_dd))
     check(
-        "prune-dd removes both orphans and leaves attributed/live entries untouched",
-        remaining == sorted([attributed_entry_name, live_by_hash_entry_name, held_open_entry_name]),
+        "prune-dd removes both orphans and leaves attributed/live/unreadable entries untouched",
+        remaining == sorted([
+            attributed_entry_name,
+            live_by_hash_entry_name,
+            held_open_entry_name,
+            unreadable_truncated_entry_name,
+            unreadable_key_gone_entry_name,
+        ]),
         remaining,
     )
 finally:

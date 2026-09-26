@@ -494,10 +494,21 @@ struct CadenceGuardScriptSelftestTests {
     /// `cannot-tell-keeps-queue` is [[T-1382]]'s, and it is the port's missing half: a `ps` that
     /// RUNS and answers nothing must leave the queue alone. Same name as the lock's mode 6b,
     /// because it is the same property of the same queue.
+    ///
+    /// `cannot-tell-keeps-claim` is [[T-1384]]'s, and it is the same correction one function over.
+    /// `live_simctl_for` was still the `pgrep -f … | wc -l | tr -d ' '` expression [[T-1152]]
+    /// abolished in `test-host-lock.sh` — stderr discarded, exit status swallowed by the pipe, and
+    /// empty stdin into `wc -l` printing a confident `0`. Zero is the PERMISSIVE answer at its one
+    /// call site, which `rm -rf`s an expired claim, so a probe that could not read the process list
+    /// used to free a device a sibling might be `simctl install`ing to. The mode is deliberately a
+    /// discrimination rather than a refusal: a blind `pgrep` must not reclaim, an idle one still
+    /// must, and one naming a live op still must not — a `live_simctl_for` hard-wired to "cannot
+    /// tell" would pass a one-stub version of this while pinning the fleet behind any stale claim.
     static let simulatorClaimProperties = [
         "ordering",
         "killed-waiter",
         "cannot-tell-keeps-queue",
+        "cannot-tell-keeps-claim",
     ]
 
     /// **Empty, as of [[T-1382]], and the emptiness is the finding.** `ordering` was tolerated
@@ -745,9 +756,12 @@ struct CadenceGuardScriptSelftestTests {
     /// nothing noticed until a mode read the queue in-process; they are repointed before any mode
     /// runs now, as `test-host-lock.sh`'s selftest already did (T-1343).
     ///
-    /// **Nothing is tolerated here as of T-1382** — all three properties are required. `ordering`
+    /// **Nothing is tolerated here as of T-1382** — all four properties are required. `ordering`
     /// was the one exception, on `waiter_alive`'s setuid `ps` (T-959), until that function got the
-    /// three-way reading the lock has had since T-1152.
+    /// three-way reading the lock has had since T-1152. T-1384's `cannot-tell-keeps-claim` needs no
+    /// toleration either, for the same reason and by the same mechanism: every `pgrep` it consults
+    /// is a `/bin/zsh <stub>` the fixture wrote, so the property never asks the host a question the
+    /// host cannot answer.
     @Test func theSimulatorClaimsOwnGuardStillFires() throws {
         let run = try CadenceSelftestRun.of("scripts/simulator-claim.sh")
         let complaints = run.complaintsForNamedRuns(
@@ -1218,9 +1232,17 @@ struct CadenceGuardScriptSelftestTests {
     ///
     /// The body half and the trial half are deliberately different lists rather than one list asked
     /// twice, because they are not the same claim and pretending otherwise would force a false
-    /// symmetry. `UNREADABLE` is the proof: it is a real classification the script makes and the
-    /// trial does NOT induce it, so requiring it on both sides would fail today and the honest
-    /// response to that is [[T-1350]], not a needle quietly dropped from the body list.
+    /// symmetry. `UNREADABLE` used to be the proof of that: a real classification the script made
+    /// which the trial did not induce, so requiring it on both sides would have failed.
+    ///
+    /// **[[T-1350]] closed that, and the asymmetry survives it for a better reason.** The trial now
+    /// induces both halves of the branch — an `info.plist` that is not a plist at all, and a
+    /// well-formed one whose `WorkspacePath` key is gone, which is what an Xcode release renaming
+    /// the key would do to every entry at once — and asserts that `prune-dd` leaves both on disk.
+    /// Measured while closing it: with the branch flipped to `ORPHAN`, both fixtures are DELETED,
+    /// which is the whole hazard in one line. So `UNREADABLE` is now a needle on both lists, while
+    /// the lists stay separate because "the script still makes this reading" and "the trial still
+    /// exercises it" remain two claims about two halves of one file.
     @Test func thePruneScriptsDiscriminatorsAreStillInducedByItsOwnSelftest() throws {
         let source = try String(
             contentsOf: CadenceSelftestRun.repositoryRoot()
@@ -1259,7 +1281,10 @@ struct CadenceGuardScriptSelftestTests {
             "no info.plist, hash matches a live project, is ATTRIBUTED",
             "no info.plist, hash matches nothing, is ORPHAN",
             "an entry a live process holds open is LIVE, never ORPHAN, regardless of attribution",
-            "prune-dd removes both orphans and leaves attributed/live entries untouched",
+            "an info.plist that is not a plist at all is UNREADABLE, never ORPHAN",
+            "an info.plist with no WorkspacePath string is UNREADABLE, never ORPHAN",
+            "the run reports the unreadable entries as skipped rather than silently counting them elsewhere",
+            "prune-dd removes both orphans and leaves attributed/live/unreadable entries untouched",
         ] {
             #expect(selftest.contains(check), "scripts/prune-shared-derived-data.sh's selftest no longer checks: \(check)")
         }
@@ -1649,11 +1674,7 @@ struct CadenceGuardScriptSelftestTests {
     /// source is asserting nothing. Behavioural on the Swift side, in the same test, because the
     /// two halves are only worth pinning together.
     @Test func theTwoBlankingPassesOfOneRuleStillHandleInterpolatedCode() throws {
-        let script = try String(
-            contentsOf: CadenceSelftestRun.repositoryRoot()
-                .appendingPathComponent("scripts/test-suite-index.sh"),
-            encoding: .utf8
-        )
+        let script = try Self.blankingScriptSource()
         for marker in ["def scan_literal(", "def scan_code(", "stop_at_close_paren", "T-1328"] {
             #expect(
                 script.contains(marker),
@@ -1678,6 +1699,235 @@ struct CadenceGuardScriptSelftestTests {
         )
         #expect(code.contains("tags:") == false, "non-vacuity: the literal is blanked whole")
         #expect(code.contains("struct Suite"), "non-vacuity: the code around it is not")
+    }
+
+    // MARK: - The same two passes, the other two divergences (T-1338, folded home by T-1353)
+
+    /// The one script both blanking tests read. A shared accessor rather than the same seven lines
+    /// twice: when [[T-1338]]'s fixtures lived in their own file the duplicate read was invisible,
+    /// and putting them beside [[T-1328]]'s is only an improvement if the near-copy goes with it.
+    private static func blankingScriptSource() throws -> String {
+        try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot()
+                .appendingPathComponent("scripts/test-suite-index.sh"),
+            encoding: .utf8
+        )
+    }
+
+    /// **[[T-1338]], and it is the test above's finding twice more.** Same rule, same two
+    /// implementations, two further ways they indexed text differently — and it lives here, next to
+    /// its sibling, because of [[T-1353]]: these fixtures spent a fortnight in a file of their own
+    /// for no reason but that `CadenceGuardScriptSelftestTests.swift` belonged to a concurrent
+    /// agent the hour they were written, which is an ownership fact and not a design one. T-1338
+    /// itself named `theTwoBlankingPassesOfOneRuleStillHandleInterpolatedCode` as *the test that
+    /// should grow the fixture*.
+    ///
+    /// **Both divergences were real and both were measured**, on 2026-09-25, by compiling each
+    /// implementation out of this repository and running them over one fixture:
+    ///
+    /// - **Width.** A literal holding a combining acute, a ZWJ pair, an emoji with U+FE0F and a
+    ///   regional-indicator flag blanked to **26** characters on the Swift side and **31** on the
+    ///   Python one, so every column offset after it on that line differed by five.
+    /// - **Line terminators.** A lone `\r` ends a `//` comment in Swift's grammar. The Swift pass
+    ///   stopped there; the Python pass ran to the next `\n`, so `let b = 2` after the CR read as
+    ///   **comment** on one side and as **code** on the other — a worse shape than the ticket
+    ///   predicted, which only expected a `\r` inside a literal to blank differently.
+    ///
+    /// The repair is one change on each side: `CadenceSourceScan.blankedSpansAsSpaces` spells a
+    /// blanked cluster as one space *per unicode scalar*, and the script's `blank()` ends a line on
+    /// any of Swift's seven line terminators rather than on `\n` alone. Re-measured after it, over
+    /// all 938 `.swift` files in `Cadence/`, `CadenceTests/`, `CadenceWidgets/` and
+    /// `CadenceMCPServer/`: the two passes agree on every one, and the Swift pass's output is
+    /// byte-identical to what it produced before the change, because the exposure was zero.
+    ///
+    /// Swift's own grammar — and `Character.isNewline` — ends a line on each of these. `\r\n` is one
+    /// `Character` and two scalars; both of its scalars are here.
+    private static let lineTerminators: Set<Unicode.Scalar> = [
+        "\u{0A}", "\u{0B}", "\u{0C}", "\u{0D}", "\u{85}", "\u{2028}", "\u{2029}",
+    ]
+
+    /// A scalar that attaches itself to whatever precedes it, which is the whole class the two
+    /// passes count differently: combining marks and variation selectors (Grapheme_Extend), the
+    /// zero-width joiner, and regional indicators.
+    private static func joinsWhatPrecedesIt(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.isGraphemeExtend
+            || scalar == "\u{200D}"
+            || (0x1F1E6...0x1F1FF).contains(scalar.value)
+    }
+
+    /// A combining acute, a ZWJ pair, an emoji with a variation selector and a flag — inside a
+    /// literal and inside a comment, which are the two spans that get blanked.
+    private static let multiScalarFixture = """
+    struct Combining {
+        func caption() -> String {
+            "cafe\u{301} \u{1F469}\u{200D}\u{1F4BB} \u{2764}\u{FE0F} \u{1F1EF}\u{1F1F5}"
+        }
+        // a comment holding cafe\u{301} and \u{1F469}\u{200D}\u{1F4BB} too
+        func brace() -> Int { 1 }
+    }
+    """
+
+    /// **The fixture that made the two passes disagree, and the property that makes them agree.**
+    ///
+    /// A code-point walk and a grapheme-cluster walk can only produce the same text if a blanked
+    /// span comes back the same number of *scalars* wide — one space per scalar, not one per
+    /// cluster. Asserted as the scalar count rather than by re-running the Python pass, because
+    /// this host cannot run it; the equality over all 938 real files was measured out of band and
+    /// is recorded in the doc above.
+    @Test func blankingAMultiScalarClusterKeepsTheScalarWidthTheShellPassCounts() {
+        let fixture = Self.multiScalarFixture
+        // Non-vacuity: this really is a fixture the two walks index differently. A pure-ASCII one
+        // would satisfy everything below while proving nothing.
+        #expect(
+            fixture.count != fixture.unicodeScalars.count,
+            "the fixture holds no multi-scalar grapheme cluster, so it cannot separate the two walks"
+        )
+
+        let code = CadenceSourceScan.codeOnly(fixture)
+        #expect(
+            code.unicodeScalars.count == fixture.unicodeScalars.count,
+            """
+            codeOnly returned \(code.unicodeScalars.count) scalars for a \
+            \(fixture.unicodeScalars.count)-scalar fixture, so every column offset after the \
+            first multi-scalar cluster on that line disagrees with scripts/test-suite-index.sh
+            """
+        )
+
+        // Non-vacuity for the blanking itself: the literal and the comment are gone, the code is not.
+        #expect(!code.contains("cafe"), "the literal and the comment were not blanked")
+        #expect(code.contains("struct Combining"))
+        #expect(code.contains("func brace() -> Int { 1 }"))
+        #expect(
+            code.filter { $0 == "{" }.count == code.filter { $0 == "}" }.count,
+            "brace depth desynchronised over a multi-scalar cluster"
+        )
+    }
+
+    /// A lone `\r` and a `\r\n` ending a `//` comment, and a line separator (U+2028) ending
+    /// another. Swift's grammar ends a line on all three; the shell pass used to end one only on
+    /// `\n`.
+    private static let lineTerminatorFixture =
+        "let a = 1 // alpha\rlet b = 2\r\nlet c = 3 // beta\u{2028}let d = 4\n"
+
+    @Test func aCommentEndsOnEverySpellingOfALineSwiftEndsOneOn() {
+        let fixture = Self.lineTerminatorFixture
+        let code = CadenceSourceScan.codeOnly(fixture)
+
+        #expect(code.unicodeScalars.count == fixture.unicodeScalars.count)
+
+        // The terminators are in the same places, and no blanking invented or removed one. This is
+        // what keeps line indices aligned between the two passes.
+        let before = Array(fixture.unicodeScalars)
+        let after = Array(code.unicodeScalars)
+        #expect(before.count == after.count)
+        for position in before.indices where position < after.count {
+            #expect(
+                Self.lineTerminators.contains(before[position])
+                    == Self.lineTerminators.contains(after[position]),
+                "scalar \(position) changed its line-terminator status"
+            )
+        }
+
+        // The claim the shell pass used to get wrong: the comment stops at the terminator, so the
+        // code after it on the next line is code.
+        #expect(!code.contains("alpha"), "the CR-terminated comment survived")
+        #expect(!code.contains("beta"), "the U+2028-terminated comment survived")
+        #expect(code.contains("let b = 2"), "code after a lone CR was blanked as comment")
+        #expect(code.contains("let d = 4"), "code after a U+2028 was blanked as comment")
+        #expect(code.contains("let a = 1"))
+        #expect(code.contains("let c = 3"))
+    }
+
+    /// The shell half of the same repair. The script cannot be executed from this host, so it is
+    /// read — each marker is a half of T-1338 that a rewrite of `blank()` would silently lose.
+    @Test func theShellBlankingPassStillEndsALineTheWaySwiftDoes() throws {
+        let script = try Self.blankingScriptSource()
+        for marker in [
+            "NEWLINES = ",
+            "def line_end(",
+            "if out[k] not in NEWLINES:",
+            "if not multiline and src[pos] in NEWLINES:",
+            "j = line_end(i)",
+            "T-1338",
+        ] {
+            #expect(
+                script.contains(marker),
+                """
+                scripts/test-suite-index.sh's blank() no longer carries \(marker), so it has \
+                diverged from CadenceSourceScan.codeOnly again — see T-1338
+                """
+            )
+        }
+        // …and the spelling the repair replaced is gone, so a partial revert is visible too.
+        #expect(
+            !script.contains("j = src.find('\\n', i)"),
+            "the shell pass ends a // comment on \\n again, so a lone CR reads as comment there and as code in Swift"
+        )
+    }
+
+    /// **What the repair does not close, held at zero so the next agent is told rather than
+    /// surprised.**
+    ///
+    /// The two passes still *index* text differently — one cluster here is several code points
+    /// there — so a joining scalar written **directly onto a syntactic character** (a quote, a
+    /// `#`, a slash, a backslash, a parenthesis or a brace) would still be read as one unit by the
+    /// Swift scanner and as two by the Python one, and the widths would come apart again. Nothing
+    /// in this tree does that and nothing plausibly would; closing it properly means giving the
+    /// shell pass a grapheme segmenter, which is not proportionate to a class with zero members.
+    ///
+    /// Measured 2026-09-25: zero offenders across all `.swift` files in the four source roots.
+    /// This is a *pinned divergence*, in T-1338's own words: it fails the day such a file enters
+    /// the tree. It is the one member of this group on
+    /// `CadenceTests/CadenceRealTreeSweepManifest.txt`, so moving it between suites is a manifest
+    /// change too — regenerated, never hand-edited, by
+    /// `scripts/real-tree-sweep-manifest.sh <id> --write`.
+    @Test func noSourceFileWritesAJoiningScalarOntoASyntacticCharacter() throws {
+        let syntactic: Set<Unicode.Scalar> = ["\"", "#", "/", "\\", "(", ")", "{", "}", "*"]
+        var scanned = 0
+        var offenders: [String] = []
+
+        for root in ["Cadence", "CadenceTests", "CadenceWidgets", "CadenceMCPServer"] {
+            for path in try CadenceSourceScan.swiftFiles(under: root) {
+                scanned += 1
+                let scalars = Array(try CadenceSourceScan.sourceFile(path).unicodeScalars)
+                for index in scalars.indices.dropFirst()
+                where Self.joinsWhatPrecedesIt(scalars[index]) && syntactic.contains(scalars[index - 1]) {
+                    offenders.append("\(path): U+\(String(scalars[index].value, radix: 16, uppercase: true))")
+                    break
+                }
+            }
+        }
+
+        #expect(scanned > 900, "the walk read \(scanned) files; an empty walk would pass vacuously")
+        #expect(
+            offenders == [],
+            """
+            a joining scalar sits on a syntactic character, which is the one text shape \
+            CadenceSourceScan.codeOnly and the blank() in scripts/test-suite-index.sh still index \
+            differently (T-1338): \(offenders)
+            """
+        )
+    }
+
+    /// Non-vacuity for the sweep above: the detector fires on the shape it is hunting and not on
+    /// an ordinary multi-scalar cluster, which is now harmless.
+    @Test func theJoiningScalarDetectorSeparatesTheHarmfulShapeFromTheHarmlessOne() {
+        let harmful = Array("let s = \"\u{301}x\"".unicodeScalars)
+        let harmless = Array("let s = \"cafe\u{301}\"".unicodeScalars)
+        let syntactic: Set<Unicode.Scalar> = ["\""]
+
+        #expect(
+            harmful.indices.dropFirst().contains {
+                Self.joinsWhatPrecedesIt(harmful[$0]) && syntactic.contains(harmful[$0 - 1])
+            },
+            "the detector cannot see a combining mark written onto a quote"
+        )
+        #expect(
+            !harmless.indices.dropFirst().contains {
+                Self.joinsWhatPrecedesIt(harmless[$0]) && syntactic.contains(harmless[$0 - 1])
+            },
+            "the detector fires on an ordinary accented letter, which the repair already handles"
+        )
     }
 
     /// **T-1335. One closure reading, three scripts, and a divergence between them is the defect.**

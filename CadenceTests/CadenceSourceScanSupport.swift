@@ -817,8 +817,9 @@ extension CadenceSourceScan {
     /// **What is left, and it is narrow.** The two passes still index text differently, so a
     /// combining mark written *directly onto* a syntactic character — a `"`, `#`, `/`, `\` or a
     /// parenthesis — would still be one `Character` here and two code points there.
-    /// `CadenceBlankingPassParityTests` pins that class at zero across the tree, so the day such a
-    /// file arrives the next agent is told rather than surprised.
+    /// `CadenceGuardScriptSelftestTests` pins that class at zero across the tree — beside the two
+    /// behavioural fixtures and the shell-source markers, which T-1353 folded back into it — so the
+    /// day such a file arrives the next agent is told rather than surprised.
     private static func blankedSpansAsSpaces(_ characters: [Character], _ blanked: [Bool]) -> String {
         var result = String.UnicodeScalarView()
         result.reserveCapacity(characters.count)
