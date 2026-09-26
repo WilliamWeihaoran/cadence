@@ -2551,7 +2551,24 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         wt_previous="$scratch/$(ledger_key "$name").wtprevious"
         git cat-file -p "$headsha:$name" > "$wt_previous" 2>/dev/null || : > "$wt_previous"
         if cmp -s -- "$name" "$wt_previous"; then
-            cp -- "${staged_content[$name]}" "$name" && resynced+=("$name")
+            # T-1387. NOT `cp` onto "$name": `cp` truncates and rewrites the existing inode, and
+            # when "$name" is THIS script zsh -- which reads a script lazily, not wholly -- resumes
+            # at a byte offset into content that has moved. Measured on `0fbfc74`, which grew this
+            # file by 243 lines and named it: the interpreter carried on inside `cmd_selftest` and
+            # executed four of its lines, the rest of this loop never ran, and two files stayed in
+            # the commit and out of the checkout. Writing a sibling and `mv -f`ing it swaps the
+            # DIRECTORY ENTRY instead, so the running interpreter keeps reading the inode it
+            # opened and finishes the script it started. `mv` within one directory is atomic, so a
+            # failure cannot leave a half-written script behind either.
+            local resync_tmp="$name.cadence-resync.$$"
+            local resync_mode
+            resync_mode=$(stat -f '%Lp' -- "$name" 2>/dev/null)
+            if cp -- "${staged_content[$name]}" "$resync_tmp" 2>/dev/null; then
+                [[ -n "$resync_mode" ]] && chmod "$resync_mode" -- "$resync_tmp" 2>/dev/null
+                mv -f -- "$resync_tmp" "$name" && resynced+=("$name")
+            else
+                rm -f -- "$resync_tmp" 2>/dev/null
+            fi
         else
             left_behind+=("$name")
         fi
