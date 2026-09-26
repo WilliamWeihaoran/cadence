@@ -7,7 +7,9 @@ loading broad histories.
 
 - SwiftData model, relationship, schema, migration, export, reset:
   `AGENTS.md`, `Cadence/Models/AGENTS.md`, `Cadence/Services/AGENTS.md`, then
-  `CadenceMCPServer/AGENTS.md` if shared model/service code crosses the MCP boundary.
+  `CadenceMCPServer/AGENTS.md` if shared model/service code crosses the MCP boundary. For the
+  measurement, the incident and the argument behind a model rule, open the named section of
+  `docs/MODELS_AGENTS_REFERENCE.md` rather than re-deriving it.
 - Shared service behaviour (deletion cascades, wind-down, export/import, push, tags, markdown
   assets): `Cadence/Services/AGENTS.md` for the rule, then the named section of
   `docs/SERVICES_AGENTS_REFERENCE.md` for the measurement, the incident and the argument.

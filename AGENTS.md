@@ -72,8 +72,8 @@ Read the nearest scoped `AGENTS.md` before editing under that tree:
 Long references, searchable only when needed:
 
 - `docs/CONTEXT_INDEX.md` - routing map by change type; `docs/AUDIT_BRIEF.md` - the audit-report shape.
-- `docs/{AGENTS,SHARED_AGENTS,IOS_AGENTS,SERVICES_AGENTS,MCP_AGENTS}_REFERENCE.md` - the detailed
-  root, Shared, iOS, Services and MCP guides, plus red-run history;
+- `docs/{AGENTS,SHARED_AGENTS,IOS_AGENTS,MODELS_AGENTS,SERVICES_AGENTS,MCP_AGENTS}_REFERENCE.md` -
+  the detailed root, Shared, iOS, Models, Services and MCP guides, plus red-run history;
   `docs/CLAUDE_REFERENCE.md` - detailed product/feature history.
 
 ## Non-Negotiable Patterns

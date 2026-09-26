@@ -202,9 +202,10 @@ struct AgentContextBudgetTests {
     /// mismatch produces — the failure mode `CadenceMCPToolContractTests` names, and the reason this
     /// exists rather than being trusted.
     @Test func theGuideReferencePairingTableIsNotVacuous() throws {
-        #expect(Self.guideReferencePairings.count == 6)
+        #expect(Self.guideReferencePairings.count == 7)
         #expect(Self.guideReferencePairings.contains { $0.referencePath == "docs/MCP_AGENTS_REFERENCE.md" })
-        #expect(Self.guideReferencePairings.filter { !$0.citedSections.isEmpty }.count >= 5)
+        #expect(Self.guideReferencePairings.contains { $0.referencePath == "docs/MODELS_AGENTS_REFERENCE.md" })
+        #expect(Self.guideReferencePairings.filter { !$0.citedSections.isEmpty }.count >= 6)
 
         for pairing in Self.guideReferencePairings {
             #expect(try repositoryFile(pairing.guidePath).count > 1_000)
@@ -304,6 +305,26 @@ struct AgentContextBudgetTests {
             pinnedHeadings: []
         ),
         GuideReferencePairing(
+            guidePath: "Cadence/Models/AGENTS.md",
+            linkFromGuide: "../../docs/MODELS_AGENTS_REFERENCE.md",
+            referencePath: "docs/MODELS_AGENTS_REFERENCE.md",
+            archivalMarker: "lifted out of `Cadence/Models/AGENTS.md`",
+            // T-1391. The seventh long reference, and the last always-read guide that had none:
+            // `Cadence/Models/AGENTS.md` sat at 199 lines of 199 with nothing to spend into, so a
+            // displacement had to create the file it displaced into. Written on T-1344's shape —
+            // one quoted section name per rule — so the pairing is total here too.
+            citedSections: [
+                "The two halves of the to-many rule",
+                "Why a new model type needs a Console deploy",
+                "The one write path for a goal list link",
+                "Why the enums and the comparator live here",
+                "Why the calendar link is a bare identifier",
+                "Persisted fields with no readers",
+                "Why the Default column has no lifecycle",
+            ],
+            pinnedHeadings: []
+        ),
+        GuideReferencePairing(
             guidePath: "CadenceMCPServer/AGENTS.md",
             linkFromGuide: "../docs/MCP_AGENTS_REFERENCE.md",
             referencePath: "docs/MCP_AGENTS_REFERENCE.md",
@@ -315,6 +336,13 @@ struct AgentContextBudgetTests {
                 "Why the tracking helpers cost four files",
                 "Why bulk cancel got a cap and a dry run",
                 "Why the write path's undo is two composed primitives",
+                // T-1391 displaced six more blocks out of a guide that sat at 199 of 199 lines.
+                "What the write path does to the real store",
+                "What is and is not executed under this target",
+                "Why the reads fetch what they return",
+                "Why in-memory sort is settled, not deferred",
+                "What the create and update arms cover",
+                "Why eight shared files joined the Sources phase",
             ],
             pinnedHeadings: []
         ),
