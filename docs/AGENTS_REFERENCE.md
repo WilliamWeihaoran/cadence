@@ -498,6 +498,8 @@ Good refactor targets are files that combine orchestration, state, row rendering
 
 After structural refactors, run `git diff --check` and the macOS build command above.
 
+Keep SwiftUI roots thin: root view for state and orchestration, support views for rows and sections, support/state files for derived state and geometry, services for persistence and side effects. Keep edits scoped and run the relevant build/test command after structural changes. That sentence was the whole of `AGENTS.md`'s own "Refactor Guidance" section until T-1386 displaced it here to pay for the English-only rule; it was a shorter copy of the list above, so nothing routes to it separately.
+
 ## Why `parallelizable = "NO"` stays (moved out of AGENTS.md, 2026-08-31)
 
 The original 2026-08-28 reason — "it spawns 2 test hosts" — is **stale**. Re-measured twice on

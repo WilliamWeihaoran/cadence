@@ -89,6 +89,9 @@ Long references, searchable only when needed:
 - Use one hover/selection layer at one radius.
 - Prefer one shared component over near-copies.
 - iPhone and iPad share one style; they differ by layout, not by row/chip/header vocabulary.
+- **v1 ships English-only** (T-1386). There is no `.strings`, `.xcstrings` or `.lproj` resource and
+  `knownRegions` is `en`/`Base`; user-facing copy stays an English literal. T-18 is deferred scope,
+  not an oversight. Pinned by `CadenceTests/CadenceAgentOperatingRuleTests`.
 - Do not revert unrelated user or agent changes.
 - **Commit with `scripts/agent-commit.sh <id> -m <msg> <path>...`, not `git commit`** (T-679). The
   index is shared: it refuses a foreign staged path, commits a private one, then repairs the shared one.
@@ -182,12 +185,6 @@ Before treating a red run as a code regression, check:
   `TaskWorkflowService.swift`, deletion helpers - mutations and EventKit side effects.
 - Model or shared-service changes must review the MCP boundary; build `CadenceMCPServer` separately
   when relevant.
-
-## Refactor Guidance
-
-Keep SwiftUI roots thin: root view for state/orchestration, support views for rows/sections,
-support/state files for derived state and geometry, services for persistence and side effects. Keep
-edits scoped and run the relevant build/test command after structural changes.
 
 ## Subagent verification runbook
 
