@@ -1056,6 +1056,153 @@ struct CadenceGuardScriptSelftestTests {
         )
     }
 
+    /// **T-1385. The hole every other refusal in `agent-commit.sh` is on the wrong side of.**
+    ///
+    /// That script stages WHOLE FILES. `FOREIGN-STAGED` watches paths you did NOT name and the
+    /// declined-hunk ledger records what a `=` reconstruction left behind; inside a path you DID
+    /// name in the bare form both are silent by construction, because the staged content *is* the
+    /// worktree. `d65d294` named `CadenceTests/CadenceGuardScriptSelftestTests.swift` legitimately
+    /// and carried sibling `sweepcheck`'s whole in-flight [[T-1139]] block with it —
+    /// `git show dacb9d4:<that file> | grep -c precheckShortfall` is 0 and the same read at
+    /// `d65d294` is 5 — and the block cited a declaration still sitting in `sweepcheck`'s other,
+    /// uncommitted file, so `CadenceCommentSymbolClaimTests` went red in CI on a commit that was
+    /// green locally. The committing agent reported *"no declined hunks"*, which was true.
+    ///
+    /// The reading ships as a NOTICE and the replay is why: `open` would print on 94 of the last
+    /// 300 commits, and two agents editing one file is normal. What this test holds is that the
+    /// two NARROWER candidates stay named in the replay as DISQUALIFIED rather than quietly
+    /// adopted later — both are quieter and both are blind to `d65d294` itself, because T-1139 and
+    /// T-1151 are backlog ids two hundred below the highest one filed that evening. That is
+    /// [[T-1356]]'s `wholeactive` a second time.
+    @Test func theCommitHelperNoticesAForeignHunkInsideAPathItWasToldToStage() throws {
+        let source = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/agent-commit.sh"),
+            encoding: .utf8
+        )
+        guard let split = source.range(of: "\ncmd_selftest()") else {
+            Issue.record("scripts/agent-commit.sh has no `cmd_selftest()` to split on")
+            return
+        }
+        let body = String(source[source.startIndex..<split.lowerBound])
+        let selftest = String(source[split.lowerBound...])
+
+        for reading in ["FOREIGN-HUNK", "added_hunk_citations", "T-1385"] {
+            #expect(body.contains(reading), "scripts/agent-commit.sh no longer makes the reading \(reading)")
+        }
+        // The helper is body-only by construction, so only the two names the fixture can induce
+        // are required of the selftest. Mode 4n is what actually drives it.
+        for reading in ["FOREIGN-HUNK", "T-1385"] {
+            #expect(selftest.contains(reading), "scripts/agent-commit.sh's selftest no longer induces \(reading)")
+        }
+        // `--unified=0` is the clause, not an optimisation: with context lines a hunk spreads into
+        // its neighbours and an id three lines above an unrelated edit reads as cited by it, which
+        // is the same `-U3` merge that made marker-based hunk filtering take a sibling's work in
+        // the first place.
+        #expect(
+            body.contains("git diff --no-index --unified=0"),
+            "the foreign-hunk scan no longer reads a zero-context diff, so a hunk absorbs its neighbours' ids"
+        )
+        // T-1343: a check whose evidence only FAILURE produces proves nothing on a green run.
+        #expect(
+            body.contains("foreign-hunk scan:"),
+            "the scan no longer prints what it read, so a run that scanned nothing looks like a clean one"
+        )
+
+        let replay = CadenceSelftestRun.repositoryRoot()
+            .appendingPathComponent("scripts/replay-foreign-hunk-reading.sh")
+        #expect(
+            FileManager.default.isExecutableFile(atPath: replay.path),
+            "scripts/replay-foreign-hunk-reading.sh is missing or not executable, so T-1385's number cannot be re-derived"
+        )
+        let replayText = try String(contentsOf: replay, encoding: .utf8)
+        for reading in ["subjectonly", "msgledger", "openrecent", "opennear"] {
+            #expect(
+                replayText.contains(reading),
+                "scripts/replay-foreign-hunk-reading.sh no longer measures the \(reading) candidate"
+            )
+        }
+        #expect(
+            replayText.contains("REPLAY-FOREIGN-VACUOUS"),
+            "scripts/replay-foreign-hunk-reading.sh lost its floor, so a replay that read nothing reports a clean sweep"
+        )
+        #expect(
+            replayText.contains("REPLAY-FOREIGN-FOUNDING-LOST") && replayText.contains("d65d294"),
+            """
+            scripts/replay-foreign-hunk-reading.sh no longer refuses when it cannot see its own \
+            founding case, so a reading that is blind to d65d294 can be adopted on an aggregate
+            """
+        )
+    }
+
+    /// **T-1342. `scripts/ledger-lag-check.sh`'s mirror image, and it is a NOTICE.**
+    ///
+    /// That check asks whether a commit that LANDS CODE closed anything. Nothing asked the other
+    /// direction: an id that reads CLOSED with nothing landed. It happens because
+    /// `agent-commit.sh` stages whole files and `docs/TODO.md` is the one file every agent edits,
+    /// so any agent naming the ledger carries a sibling's unlanded closure lines with it. Measured
+    /// over this repository by `scripts/replay-closure-code-lag.sh`: 250 of the 734 closures ever
+    /// written are for tickets that never had code to land, which is why a refusal is disqualified
+    /// and the duration is the quantity that matters — median 20 minutes, none over a day, and the
+    /// four founding cases resolved in 11, 11, 12 and 12.
+    ///
+    /// `anywhere` is the disqualifying column made into a reading, and the replay shows it is
+    /// blind to all four founding cases: each self-resolved, so hindsight sees code that a guard
+    /// standing at the tip cannot. Naming it here means it cannot be adopted as "the quiet one".
+    @Test func theLagCheckNoticesAClosureWhoseCodeIsInNoCommit() throws {
+        let source = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/ledger-lag-check.sh"),
+            encoding: .utf8
+        )
+        guard let split = source.range(of: "\n# --- selftest") else {
+            Issue.record("scripts/ledger-lag-check.sh has no `# --- selftest` section to read")
+            return
+        }
+        let body = String(source[source.startIndex..<split.lowerBound])
+        let selftest = String(source[split.lowerBound...])
+
+        for reading in ["LEDGER-CLOSURE-UNLANDED", "tipclosed", "hascode", "T-1342"] {
+            #expect(body.contains(reading), "scripts/ledger-lag-check.sh no longer makes the reading \(reading)")
+        }
+        #expect(
+            selftest.contains("LEDGER-CLOSURE-UNLANDED"),
+            "scripts/ledger-lag-check.sh's selftest no longer induces T-1342's notice"
+        )
+        // T-1343 / T-1350: the denominator is printed on every run, so a green one is evidence the
+        // reading ran rather than evidence only that nothing tripped it.
+        #expect(
+            body.contains("closure-lag: %s wrote %d closure(s); %d name no code in this history"),
+            "the closure count is no longer printed unconditionally, so a green run proves nothing"
+        )
+
+        let replay = CadenceSelftestRun.repositoryRoot()
+            .appendingPathComponent("scripts/replay-closure-code-lag.sh")
+        #expect(
+            FileManager.default.isExecutableFile(atPath: replay.path),
+            "scripts/replay-closure-code-lag.sh is missing or not executable, so T-1342's number cannot be re-derived"
+        )
+        let replayText = try String(contentsOf: replay, encoding: .utf8)
+        for reading in ["hereorbefore", "unnamed", "anywhere"] {
+            #expect(
+                replayText.contains(reading),
+                "scripts/replay-closure-code-lag.sh no longer measures the \(reading) candidate"
+            )
+        }
+        #expect(
+            replayText.contains("REPLAY-LAG-VACUOUS"),
+            "scripts/replay-closure-code-lag.sh lost its floor, so a replay that read nothing reports a clean sweep"
+        )
+        for founding in ["b358aa3/T-1334", "b358aa3/T-1339", "e28bc87/T-1348", "e28bc87/T-1349"] {
+            #expect(
+                replayText.contains(founding),
+                "scripts/replay-closure-code-lag.sh no longer checks the founding case \(founding) by name"
+            )
+        }
+        #expect(
+            replayText.contains("REPLAY-LAG-FOUNDING-LOST"),
+            "scripts/replay-closure-code-lag.sh no longer refuses when it cannot read its own founding cases"
+        )
+    }
+
     /// T-1340, first half. `scripts/prune-shared-derived-data.sh selftest` is the one guard in
     /// `scripts/` that this test target structurally cannot run: the entire trial is a heredoc fed
     /// to `$PYTHON_BIN`, and the App-Sandboxed host is refused by the `/usr/bin/python3` xcrun shim

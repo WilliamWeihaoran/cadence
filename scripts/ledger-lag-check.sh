@@ -2,7 +2,7 @@
 # Ask the ledger the question `agent-commit.sh` never asks (T-1298).
 #
 #   ./scripts/ledger-lag-check.sh [<rev>]     # default HEAD; exit 3 on a finding
-#   ./scripts/ledger-lag-check.sh selftest    # prove both refusals still fire
+#   ./scripts/ledger-lag-check.sh selftest    # prove both refusals and the notice still fire
 #
 # WHY THIS EXISTS
 #
@@ -92,6 +92,48 @@
 # ledger closure to a follow-up commit buys one red run in between. Write the closure in the commit
 # that lands the code.
 #
+# THE MIRROR DIRECTION, AND IT IS A NOTICE (T-1342)
+#
+# Everything above asks whether a commit that LANDS CODE closed anything. The other direction is an
+# id that reads CLOSED with nothing landed, and it is invisible in precisely the way that matters,
+# because the ledger is what the next agent reads to decide what is already done. It happens
+# because `agent-commit.sh` stages WHOLE FILES and `docs/TODO.md` is the one file every agent
+# edits: any agent naming the ledger carries whatever else is sitting in it, including a sibling's
+# closure lines for work that sibling has not committed yet. The spill is CORRECT behaviour and
+# must not be repaired by reverting.
+#
+# THE READING: an id whose entry <rev>'s OWN ledger diff closed -- a first line added to
+# `$TODO_PATH` carrying the T-1335 run, or an entry arriving in `$DONE_PATH` -- which <rev>'s
+# subject does not name, and which no commit reachable from <rev> lands code under. It is
+# evaluated at the TIP and does not stick: once the sibling's commit lands, the next push is
+# silent, which is the whole difference between this and LEDGER-CLOSURE-LAGGED above.
+#
+# MEASURED FIRST, by `scripts/replay-closure-code-lag.sh`, over all 734 closure events this
+# repository has written, in two scopes, with the disqualifying column *how many flagged closures
+# never needed code at all*:
+#
+#   reading         newly refuses (all / last 300)   ...that never needed code
+#   here                 558 of 734 / 179 of 347            250 / 38
+#   hereorbefore         316 of 734 /  55 of 347            250 / 38
+#   unnamed  <-- this    285 of 734 /  43 of 347            219 / 26
+#   anywhere             250 of 734 /  38 of 347            250 / 38
+#
+# The second column is why this is a NOTICE and not a refusal: 250 of the 734 closures this ledger
+# has written are for decision, park, duplicate and documentation tickets that never had code to
+# land, and nothing visible at commit time tells one from the other. A refusal over that population
+# blocks correct commits to prevent a window nobody read. `anywhere` is that column made into a
+# reading, and the replay shows it is blind to all four founding cases, because each of them
+# self-resolved: the code landed in a LATER commit, which is exactly what hindsight can see and a
+# guard standing at the tip cannot.
+#
+# AND THE DURATION, which is the quantity the harm actually depends on: of the closures flagged
+# with their code in another commit, 16 had the code land AFTER, median 20 minutes, p90 350, max
+# 553, eight over half an hour and none over a day; 292 had it land BEFORE, which is the direction
+# this check already refuses. The four founding cases -- `b358aa3`/T-1334, `b358aa3`/T-1339,
+# `e28bc87`/T-1348, `e28bc87`/T-1349 -- resolved in 11, 11, 12 and 12 minutes. [[T-1342]]'s own
+# prose put two of those on `cd81288` and read `e28bc87` as carrying T-1351; the replay reads the
+# diffs and says otherwise, which is the argument for the script over the number.
+#
 # NON-VACUITY, which is the whole reason the floors below exist. A GitHub Actions checkout defaults
 # to `fetch-depth: 1`, and this check over one commit examines nothing and exits 0 -- the exact
 # failure T-1282 found in an iOS gate that compiled nothing and T-1291 found in a canary that had
@@ -123,6 +165,15 @@ if ! git --version >/dev/null 2>&1; then
     done
 fi
 
+# The `+` lines one commit's own diff added to one ledger. An empty file is the ordinary answer --
+# most commits touch no ledger at all -- and an empty file is also what a MISSING path yields, which
+# is why the reading below never concludes anything from emptiness alone: the count is printed on
+# every run, green or not (T-1343).
+tip_added() {  # $1 = rev, $2 = ledger path
+    git show --format= --unified=0 "$1" -- "$2" 2>/dev/null | sed -n 's/^+//p'
+    return 0
+}
+
 run_check() {  # $1 = rev
     rev=$1
     root=$(git rev-parse --show-toplevel 2>/dev/null) || refuse NOT-REPO-ROOT "not inside a git repository" 3
@@ -136,12 +187,21 @@ run_check() {  # $1 = rev
     git show "$rev:$DONE_PATH" > "$tmp/done.md" 2>/dev/null || : > "$tmp/done.md"
     git log --format='%x01%H%x1f%ad%x1f%s' --date=short --name-only "$rev" > "$tmp/log.txt" || exit 3
 
+    # T-1342: the lines <rev>'s OWN diff added to each ledger, split by which ledger they landed in
+    # -- in `$TODO_PATH` a closure has to carry the T-1335 run, while ARRIVING in `$DONE_PATH` is
+    # itself the closure. Two files rather than one tagged stream, because the awk below is keyed on
+    # FILENAME and reads raw ledger lines (T-1317); a tag column would need a second reading of the
+    # line shape in the one pass that must not have one.
+    tip_added "$rev" "$TODO_PATH" > "$tmp/tip_todo.txt"
+    tip_added "$rev" "$DONE_PATH" > "$tmp/tip_done.txt"
+
     awk -v min_commits="$SELF_MIN_COMMITS" \
         -v min_entries="$SELF_MIN_ENTRIES" \
         -v min_examined="$SELF_MIN_EXAMINED" \
         -v todo="$TODO_PATH" \
         -v f_todo="$tmp/todo.md" -v f_done="$tmp/done.md" -v f_log="$tmp/log.txt" \
-        "$AWK_PROG" "$tmp/todo.md" "$tmp/done.md" "$tmp/log.txt" > "$tmp/pass1.txt"
+        -v f_tipt="$tmp/tip_todo.txt" -v f_tipd="$tmp/tip_done.txt" \
+        "$AWK_PROG" "$tmp/todo.md" "$tmp/done.md" "$tmp/log.txt" "$tmp/tip_todo.txt" "$tmp/tip_done.txt" > "$tmp/pass1.txt"
     rc=$?
     [ "$rc" = 0 ] || return "$rc"          # LEDGER-LAG-VACUOUS already printed its own refusal
 
@@ -201,14 +261,17 @@ partial_written_here() {  # $1 = sha, $2 = space-separated PARTIAL ids; 0 if thi
 }
 
 second_pass() {  # $1 = the first pass's records
+    _rev_short=$(git rev-parse --short "${rev:-HEAD}" 2>/dev/null || printf '%s' "${rev:-HEAD}")
     _findings=0
     _excused=0
     _body=""
     _commits=0; _entries=0; _examined=0
     _us=$(printf '\037')
+    _ntip=0; _nunlanded=0; _ulist=""
     while IFS="$_us" read -r _kind _a _b _c _d _e; do
         case "$_kind" in
             N) _commits=$_a; _entries=$_b; _examined=$_c ;;
+            U) _ntip=$_a; _nunlanded=$_b; _ulist=$_c ;;
             F)
                 if partial_written_here "$_a" "$_e"; then
                     _excused=$((_excused + 1))
@@ -228,6 +291,24 @@ second_pass() {  # $1 = the first pass's records
         printf ', %d excused by a **PARTIAL line the commit wrote itself' "$_excused"
     fi
     printf '\n'
+
+    # T-1342, AND IT PRINTS ITS DENOMINATOR EVERY RUN. A check whose evidence only FAILURE produces
+    # proves nothing when it is green -- T-1343's `complaints(requiring:)` read one of four
+    # refusals and looked clean, and T-1350's toleration went 13 days unread because nothing
+    # reported `passed n tolerating`. So the closure count is stated whether or not any of them is
+    # unlanded; a run that read no ledger diff at all is then visibly different from a clean one.
+    printf 'closure-lag: %s wrote %d closure(s); %d name no code in this history\n' \
+        "$_rev_short" "$_ntip" "$_nunlanded"
+    if [ "$_nunlanded" -gt 0 ]; then
+        printf 'NOTICE (LEDGER-CLOSURE-UNLANDED): %s closed %s in the ledger, names none of them in its\n' "$_rev_short" "$_ulist" >&2
+        printf '  subject, and no commit reachable from here lands code under any of them. That is what a\n' >&2
+        printf '  sibling'"'"'s closure lines riding in your ledger commit look like: `agent-commit.sh` stages WHOLE\n' >&2
+        printf '  FILES and %s is the one file every agent edits, so the spill is expected and must NOT be\n' "$TODO_PATH" >&2
+        printf '  repaired by reverting (T-1342). This is a NOTICE: nothing is failing and the run still passes.\n' >&2
+        printf '  Measured with scripts/replay-closure-code-lag.sh: the four founding cases resolved in 11, 11,\n' >&2
+        printf '  12 and 12 minutes and the median gap over this history is 20m, so the one thing worth checking\n' >&2
+        printf '  is that whoever owns the ticket is still alive to land it.\n' >&2
+    fi
 
     if [ "$_findings" -gt 0 ]; then
         printf 'REFUSED (LEDGER-CLOSURE-LAGGED): %d commit(s) landed code under ticket ids and closed none of them in the ledger.\n  Every id each commit names is still open in %s. Either write the closure on the entry'"'"'s own\n  first line (`- [T-n] **CLOSED <date> (`<sha>`) -- ...`), or -- if the work is genuinely part-done --\n  a `- [T-n] **PARTIAL <date> (...) -- ...` first line IN THIS COMMIT, or, if the ticket is\n  legitimately still open, make the commit name an id it did close.\n' \
@@ -302,6 +383,11 @@ function verdict(   id, known, openn, list, plist) {
     if (c_sha == "") return
     commits++
     if (c_code == 0) return
+    # T-1342, and it is this check\047s mirror image. `hascode` is *some commit reachable from <rev>
+    # lands code and names this id in its subject* -- the same two readings this function already
+    # uses, asked of the whole history rather than of one commit. It is collected here rather than
+    # in a second pass because the log is read once and this is the pass that reads it.
+    for (id in c_ids) hascode[id] = 1
     known = 0; openn = 0; list = ""; plist = ""
     for (id in c_ids) {
         if (!(id in filed)) continue
@@ -341,6 +427,8 @@ function verdict(   id, known, openn, list, plist) {
 FILENAME == f_todo { part = 1 }
 FILENAME == f_done { part = 2 }
 FILENAME == f_log  { part = 3 }
+FILENAME == f_tipt { part = 4 }
+FILENAME == f_tipd { part = 5 }
 
 # An id is open only while NO entry of it is closed -- `ledger_closed_ids`' reading, which collects
 # a SET of ids over every entry and is why the commit-path note T-1300 added never had this defect
@@ -374,6 +462,19 @@ part == 2 {
     next
 }
 
+# T-1342. The closures <rev> WROTE, read off its own diff. In `$TODO_PATH` the added first line has
+# to carry the T-1335 closure run; an entry ARRIVING in `$DONE_PATH` is a closure by the same rule
+# part 2 already uses. An entry merely MOVED under `## Done` without gaining a marker is invisible
+# in an added line and is not counted -- that undercounts and never invents.
+part == 4 {
+    if ($0 ~ /^- \[T-[0-9]+\]/ && first_line_closed($0)) { tipclosed[entry_id($0)] = 1 }
+    next
+}
+part == 5 {
+    if ($0 ~ /^- \[T-[0-9]+\]/) { tipclosed[entry_id($0)] = 1 }
+    next
+}
+
 part == 3 {
     if (substr($0, 1, 1) == "\001") {
         verdict()
@@ -383,6 +484,9 @@ part == 3 {
         subject_ids(c_subj)
         delete c_ids
         for (k in SID) c_ids[k] = 1
+        # `git log <rev>` is newest first, so the FIRST record is <rev> itself. Its subject ids are
+        # the ids it OWNS; a closure it wrote for anything else is a closure it carried (T-1342).
+        if (!tipseen) { tipseen = 1; for (k in SID) tipown[k] = 1 }
         next
     }
     if ($0 != "" && is_code($0)) c_code++
@@ -398,6 +502,14 @@ END {
             commits, min_commits, entries, min_entries, examined, min_examined > "/dev/stderr"
         exit 4
     }
+    ntip = 0; nunlanded = 0; ulist = ""
+    for (id in tipclosed) {
+        ntip++
+        if (id in tipown)  continue      # <rev> names it: its own closure, whatever else is true
+        if (id in hascode) continue      # code for it is in <rev> or in an ancestor
+        nunlanded++; ulist = ulist " " id
+    }
+    printf "U%c%d%c%d%c%s\n", US, ntip, US, nunlanded, US, substr(ulist, 2)
     printf "N%c%d%c%d%c%d\n", US, commits, US, entries, US, examined
     exit 0
 }
@@ -770,6 +882,107 @@ cmd_selftest() {
     ( cd "$repo" && git add -A . && git commit -q -m "docs: empty the ledger file itself" )
     out=$(run); rc=$?
     check "$rc" 0 "$out" "an EMPTY docs/TODO.md shifts nothing either" ledger-lag:
+
+    # --- mode 7: the MIRROR direction (T-1342) -------------------------------
+    echo; echo " mode 7 (LEDGER-CLOSURE-UNLANDED) -- a closure this commit did not name and no code anywhere"
+    # Modes 1-6 all ask whether a commit that LANDS CODE closed anything. This is the other
+    # direction: an id that reads CLOSED with nothing landed, which happens because
+    # `agent-commit.sh` stages WHOLE FILES and docs/TODO.md is the one file every agent edits.
+    # A NOTICE, not a refusal -- `scripts/replay-closure-code-lag.sh` measured 558 of 734 closure
+    # events over this history with no code in their own commit, 250 of which never needed any.
+    # Mode 6 left the ledger EMPTY, so it is rebuilt here -- with ids of its own. Refiling an id an
+    # earlier mode already closed would resurrect that mode's finding, because a finding here is
+    # sticky and the ledger at <rev> is the only thing that clears one.
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-50] **Open, and its code is about to land with its closure.**' \
+        '- [T-51] **Open, and a sibling will carry its closure before its code exists.**' \
+        '- [T-52] **Open, and it will be archived by a commit that does not name it.**'
+    land "docs: a fresh ledger for the closure-lag modes" docs/SEED2.md seed2
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "the count is printed on a run with nothing to report (T-1343)" \
+        "wrote 0 closure(s); 0 name no code"
+
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-50] **CLOSED 2026-09-26 (`aaaaaaa`) — landed with its own code.**' \
+        '- [T-51] **Open, and a sibling will carry its closure before its code exists.**' \
+        '- [T-52] **Open, and it will be archived by a commit that does not name it.**'
+    land "T-50: the code and the closure in one commit" Cadence/J.swift "let j = 10"
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "a closure the commit names, over code it lands, is not noticed" \
+        "wrote 1 closure(s); 0 name no code"
+
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-50] **CLOSED 2026-09-26 (`aaaaaaa`) — landed with its own code.**' \
+        '- [T-51] **CLOSED 2026-09-26 (`bbbbbbb`) — a sibling closure, carried by someone else.**' \
+        '- [T-52] **Open, and it will be archived by a commit that does not name it.**'
+    land "T-50: a ledger tidy that swept up a sibling's closure lines" docs/NOTE2.md note2
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "a closure this commit does not name, with no code anywhere, is noticed" \
+        LEDGER-CLOSURE-UNLANDED T-51
+    check "$rc" 0 "$out" "and it is a NOTICE -- the run still passes" 0 findings
+
+    land "T-51: the sibling's code, arriving after its closure" Cadence/K.swift "let k = 11"
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "once the code lands the tip has no unlanded closure of its own" \
+        "wrote 0 closure(s)"
+    out=$(run "HEAD~1"); rc=$?
+    check "$rc" 0 "$out" "and the spilling commit is still judged against ITS OWN history" \
+        LEDGER-CLOSURE-UNLANDED T-51
+
+    # Archival is a closure: an entry ARRIVING in the archive needs no marker, which is the same
+    # reading part 2 already uses for the open/closed question.
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-50] **CLOSED 2026-09-26 (`aaaaaaa`) — landed with its own code.**' \
+        '- [T-51] **CLOSED 2026-09-26 (`bbbbbbb`) — a sibling closure, carried by someone else.**'
+    archive '# archive' '' '- [T-14] **CLOSED 2026-09-01 (`def5678`).**' \
+        '- [T-52] **CLOSED 2026-09-26 (`ccccccc`) — moved to the archive.**'
+    land "T-50: an archive move carried in somebody else's ledger commit" docs/NOTE3.md note3
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "an entry arriving in the archive is a closure too" \
+        LEDGER-CLOSURE-UNLANDED T-52
+
+    # The direction this check ALREADY guards, and it must not be noticed twice: code first,
+    # closure later. `hascode` is asked of every commit reachable from <rev>, so an ancestor
+    # answers it.
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-50] **CLOSED 2026-09-26 (`aaaaaaa`) — landed with its own code.**' \
+        '- [T-51] **CLOSED 2026-09-26 (`bbbbbbb`) — a sibling closure, carried by someone else.**' \
+        '- [T-53] **Open, and its code is landing before its closure is written.**'
+    land "T-53: the code lands first and the closure is deferred" Cadence/L.swift "let l = 12"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "the control: the OTHER direction is still a refusal" LEDGER-CLOSURE-LAGGED T-53
+
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-50] **CLOSED 2026-09-26 (`aaaaaaa`) — landed with its own code.**' \
+        '- [T-51] **CLOSED 2026-09-26 (`bbbbbbb`) — a sibling closure, carried by someone else.**' \
+        '- [T-53] **CLOSED 2026-09-26 (`ddddddd`) — the closure the commit before owed.**'
+    # The subject must name NOTHING here, or `tipown` excuses the closure and this says nothing
+    # about `hascode` at all. Measured: with the id left in the subject, deleting the `hascode`
+    # clause outright kept this mode green.
+    land "docs: write the closure the commit before it owed" docs/NOTE4.md note4
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "a closure whose code is already an ancestor is not noticed" \
+        "wrote 1 closure(s); 0 name no code"
+
+    # And the other half of the same isolation: a ticket that never had code to land -- a decision,
+    # a park, a duplicate -- closed by a commit that NAMES it. 250 of this repository's 734
+    # closures are this shape, which is the whole reason the reading is a notice and not a refusal.
+    # Nothing but `tipown` excuses it, so deleting that clause turns this red.
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-50] **CLOSED 2026-09-26 (`aaaaaaa`) — landed with its own code.**' \
+        '- [T-51] **CLOSED 2026-09-26 (`bbbbbbb`) — a sibling closure, carried by someone else.**' \
+        '- [T-53] **CLOSED 2026-09-26 (`ddddddd`) — the closure the commit before owed.**' \
+        '- [T-54] **A decision to record, with nothing to build for it.**'
+    land "docs: file the decision ticket" docs/NOTE5.md note5
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-50] **CLOSED 2026-09-26 (`aaaaaaa`) — landed with its own code.**' \
+        '- [T-51] **CLOSED 2026-09-26 (`bbbbbbb`) — a sibling closure, carried by someone else.**' \
+        '- [T-53] **CLOSED 2026-09-26 (`ddddddd`) — the closure the commit before owed.**' \
+        '- [T-54] **CLOSED 2026-09-26 (`eeeeeee`) — decided, and there was never any code to land.**'
+    land "T-54: the decision is recorded and the ticket is closed" docs/NOTE6.md note6
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "a closure the commit NAMES, for a ticket with no code anywhere, is not noticed" \
+        "wrote 1 closure(s); 0 name no code"
 
     echo
     # The vocabulary `CadenceGuardScriptSelftestTests` reads. A tally is what a selftest gutted to

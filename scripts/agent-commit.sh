@@ -35,6 +35,17 @@
 # path that is not yours, commits through a private index, **repairs the shared index afterwards**,
 # and remembers hunks you declined so the next commit of that file has to account for them.
 #
+# WHAT IT NOTICES WITHOUT REFUSING
+#
+#   FOREIGN-HUNK        a hunk you are staging into a source path you DID name cites a ticket this
+#                       commit does not name and the ledger still has OPEN -- which is what a
+#                       sibling's in-flight work looks like when it is inside a file you named
+#                       legitimately. FOREIGN-STAGED and the declined-hunk ledger are both blind
+#                       there, because the unit of staging is the FILE (T-1385, `d65d294`). A
+#                       NOTICE: two agents editing one file is normal, and the reading is measured
+#                       by `scripts/replay-foreign-hunk-reading.sh`.
+#   LEDGER-CLOSURE-LAGGED  see 3a6 below.
+#
 # WHAT IT REFUSES
 #
 #   NOT-REPO-ROOT        run from somewhere other than the top of the checkout
@@ -440,6 +451,34 @@ declined_lines() {  # $1 = staged content, $2 = worktree PATH, $3 = content bein
     # against the file.
     [[ -s "$survivors" ]] || return 0
     grep -F -x -f "$survivors" -- "$sc/$key.wtworktree" 2>/dev/null | awk '!seen[$0]++'
+    return 0
+}
+
+# Every `T-<n>` cited by a line this change ADDS, tagged with the hunk it sits in (T-1385).
+#
+# `--unified=0` decides the HUNK COUNT, which is the number the caller prints as its evidence that
+# the scan ran at all (T-1343). Under `-U3` two additions twenty lines apart merge into one hunk
+# once their context touches, so "three id-citing hunks" becomes "one" and the line stops
+# distinguishing a file with three separate citations from a file with one. It is the same `-U3`
+# merge that made marker-based hunk filtering take a sibling's work in the first place -- see the
+# note above `declined_lines`, which is why that comparison is whole-line set membership and not a
+# diff at all. Only ADDED lines are read either way, so a context line can never be mistaken for a
+# citation; the count is what changes.
+#
+# `--no-index` because both sides are files in the scratch directory rather than revisions, and it
+# exits 1 when they differ, which is the ORDINARY case here and not an error.
+added_hunk_citations() {  # $1 = the content being replaced, $2 = the content being staged
+    git diff --no-index --unified=0 -- "$1" "$2" 2>/dev/null | awk '
+        substr($0, 1, 3) == "@@ "  { h++; next }
+        substr($0, 1, 3) == "+++"  { next }
+        substr($0, 1, 1) == "+" {
+            if (h == 0) next
+            rest = $0
+            while (match(rest, /T-[0-9]+/)) {
+                printf "%d\t%s\n", h, substr(rest, RSTART, RLENGTH)
+                rest = substr(rest, RSTART + RLENGTH)
+            }
+        }'
     return 0
 }
 
@@ -2286,6 +2325,114 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         fi
     fi
 
+    # 3a7. T-1385, and this is the hole every other guard in this file is on the wrong side of.
+    #
+    #      THE INCIDENT. `d65d294` (agent `simlock`, T-1381/T-1382) named
+    #      `CadenceTests/CadenceGuardScriptSelftestTests.swift` legitimately -- it had its own
+    #      changes there. Sibling `sweepcheck` was editing the same file for [[T-1139]] at the time.
+    #      `git show dacb9d4:<that file> | grep -c precheckShortfall` is 0 and the same read at
+    #      `d65d294` is 5, so `sweepcheck`'s entire in-flight block entered the repository inside
+    #      `simlock`'s commit. It carried a doc comment citing a declaration that was still in
+    #      `sweepcheck`'s OTHER, uncommitted file, and `CadenceCommentSymbolClaimTests` went red in
+    #      CI on a commit that was green locally. `simlock` reported *"no declined hunks -- the
+    #      shared index was clean for all four paths"*, which was true and told it nothing.
+    #
+    #      WHY NOTHING SAW IT. FOREIGN-STAGED watches paths you did NOT name. The declined-hunk
+    #      ledger records what a `=` RECONSTRUCTION left behind. Both are blind inside a path you
+    #      DID name in the bare form, because there the unit of staging is the whole file and the
+    #      staged content IS the worktree -- `declined_lines` compares them and finds nothing by
+    #      construction. The information that would have caught it is not in the index at all.
+    #
+    #      THE SIGNAL, and it is the one this repository actually has. Every agent works a ticket,
+    #      every commit names its ids, and the ledger says which ids are OPEN. A hunk of source
+    #      that cites `T-nnnn` is citing the ticket it was written for. So: a hunk this commit ADDS
+    #      to a source path, citing an id this commit does not own and which is still OPEN as this
+    #      commit leaves the ledger, is a hunk written for somebody else's live ticket. At
+    #      `d65d294` that names T-1139 and T-1151 -- both `sweepcheck`'s, both open -- and nothing
+    #      else, while every hunk `simlock` did write cites T-1381, T-1382, or a CLOSED id it is
+    #      referring back to.
+    #
+    #      MEASURED, because every reading in this family is: `scripts/replay-foreign-hunk-reading.sh`,
+    #      committed alongside this and re-runnable in ~3 s. Over 3,874 id-citing hunks in 1,210
+    #      commits, in two scopes, with the disqualifying column *how many flagged hunks cite an id
+    #      no other commit ever closed while touching that same file* -- the hindsight shape of a
+    #      false alarm:
+    #
+    #        reading        hunks noticed (all / era)   commits (era)   ...likely false (era)
+    #        subjectonly       2481 / 673                    136              68%
+    #        msgledger         2449 / 656                    135              68%
+    #        open  <-- this    1962 / 320                     94              72%
+    #        openrecent        1413 / 183                     42         BLIND TO d65d294
+    #        opennear          1412 / 178                     41         BLIND TO d65d294
+    #
+    #      The two NARROWER readings are the ones to look at. Both restrict the foreign id to the
+    #      live batch -- by filing recency, and by id number -- both are quieter, and both LOSE THE
+    #      FOUNDING CASE, because T-1139 and T-1151 are backlog ids two hundred below the highest
+    #      one filed that evening and were being worked anyway. That is [[T-1356]]'s `wholeactive`
+    #      a second time, and it is why the replay checks `d65d294` by name rather than in
+    #      aggregate.
+    #
+    #      A NOTICE AND NOT A REFUSAL. Two agents editing one file is normal and often correct: the
+    #      batch that produced this defect landed nine tickets across five agents in one evening
+    #      and this was its only escape. 94 of the last 300 commits would have printed this line.
+    #      Refusing on that population stops the pattern to prevent a case one line of output
+    #      resolves.
+    #
+    #      THE COUNT IS PRINTED EVEN WHEN IT IS ZERO (T-1343). A check whose evidence only FAILURE
+    #      produces proves nothing on a green run -- `complaints(requiring:)` read one of four
+    #      refusals and looked clean. The scan line below says how many source paths and how many
+    #      id-citing hunks it read, so a run that scanned nothing is visibly different from a run
+    #      that scanned everything and found nothing.
+    local -a foreign_notices
+    foreign_notices=()
+    local fscan_paths=0 fscan_hunks=0 fscan_foreign=0
+    if (( lands_code )) && [[ -s "$filed_ids" ]]; then
+        local own_ids="$scratch/own.ids"
+        { subject_ids "$message"; cat -- "$partialhere_ids" } | sort -u > "$own_ids"
+        local fname fhead fnew fids fhunks
+        for fname in "${names[@]}"; do
+            [[ "$fname" == docs/* ]] && continue
+            [[ "${fname:t}" == "AGENTS.md" ]] && continue
+            [[ "$fname" == "CLAUDE.md" || "$fname" == "README.md" ]] && continue
+            if [[ -n "${staged_content[$fname]+x}" ]]; then
+                fnew="${staged_content[$fname]}"
+            elif [[ -f "$fname" ]]; then
+                fnew="$fname"
+            else
+                continue                      # a deletion adds no hunk
+            fi
+            fhead="$scratch/$(ledger_key "$fname").fhead"
+            git cat-file -p "$headsha:$fname" > "$fhead" 2>/dev/null || : > "$fhead"
+            fscan_paths=$(( fscan_paths + 1 ))
+            local -a path_foreign
+            path_foreign=()
+            local hseen="" hline hno hid
+            while IFS=$'\t' read -r hno hid; do
+                [[ -n "$hid" ]] || continue
+                if [[ "$hseen" != *" $hno "* ]]; then hseen="$hseen $hno "; fscan_hunks=$(( fscan_hunks + 1 )); fi
+                grep -qx -- "$hid" "$filed_ids"  || continue     # unfiled: out of reach, as in CI
+                grep -qx -- "$hid" "$notopen_ids" && continue    # closed here: a back-reference
+                grep -qx -- "$hid" "$own_ids"     && continue    # yours, by subject or by PARTIAL
+                path_foreign+=("$hid")
+            done < <(added_hunk_citations "$fhead" "$fnew")
+            (( ${#path_foreign} )) || continue
+            local -a path_uniq
+            path_uniq=(${(u)path_foreign})
+            fscan_foreign=$(( fscan_foreign + ${#path_uniq} ))
+            foreign_notices+=("$fname: ${(j:, :)path_uniq}")
+        done
+        say "note: foreign-hunk scan: $fscan_paths source path(s), $fscan_hunks id-citing hunk(s) added, $fscan_foreign foreign id(s)."
+        if (( ${#foreign_notices} )); then
+            say "note: FOREIGN-HUNK (a warning, not a refusal) -- a hunk you are staging cites a ticket this commit does not name and the ledger still has OPEN:"
+            local fnote
+            for fnote in "${foreign_notices[@]}"; do say "        $fnote"; done
+            say "      That is what a sibling's in-flight work looks like inside a path you named legitimately: staging is per FILE, so"
+            say "      FOREIGN-STAGED and the declined-hunk ledger cannot see it (T-1385, d65d294). Read \`git diff HEAD -- <path>\` and"
+            say "      decide. If the hunk is yours, nothing is wrong and nothing needs doing. If it is not, commit only your own lines"
+            say "      with the \`<path>=<content-file>\` form -- which records what it declined -- and let its author land theirs."
+        fi
+    fi
+
     # 3b. A line HEAD has and your staged content does not is a DELETION, and a reconstruction built
     #     on a stale HEAD deletes a sibling's landed work without either of you seeing it. Measured
     #     twice on 2026-09-03 within an hour, both on `docs/TODO.md`, both reverting a ledger edit
@@ -3865,6 +4012,102 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" l5 -m "$LAGPART" mine.txt 2>&1 ); rc=$?
     check "but a **PARTIAL somebody ELSE wrote does not excuse a later commit" \
         $( [[ $rc == 0 && "$out" == *LEDGER-CLOSURE-LAGGED* && "$out" == *T-3004* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 4n (FOREIGN-HUNK) -- T-1385: a sibling's in-flight hunk inside a path you DID name"
+    # The hole every other refusal in this file is on the wrong side of. `d65d294` named
+    # `CadenceGuardScriptSelftestTests.swift` legitimately and carried a sibling's whole T-1139
+    # block with it; FOREIGN-STAGED watches paths you did not name and the declined-hunk ledger
+    # watches what a `=` reconstruction left behind, so both were silent and correct. A NOTE, for
+    # the reason `scripts/replay-foreign-hunk-reading.sh` measures: 94 of the last 300 commits
+    # would print it, and two agents editing one file is normal.
+    #
+    # The ledger these run against is mode 4l's: T-3001 open, T-3002 closed, T-3003 open,
+    # T-3004 open with a `**PARTIAL` first line an EARLIER commit wrote.
+    local FGN3=$'T-3003: a commit of my own, over a file a sibling is also editing\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    local FGN1=$'T-3001: a commit that names the ticket its hunk cites\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    ( cd "$ws" && print -rl -- "// a source file two agents are editing" "let base = 1" > sib.swift )
+    out=$( cd "$ws" && zsh "$here" f0 -m "$FGN3" sib.swift 2>&1 ); rc=$?
+    check "the foreign-hunk fixture file commits" $(( rc == 0 )) "exit $rc: $out"
+    # T-1343: the count is printed on a run that finds nothing, or a green run is no evidence the
+    # scan ran at all. This first commit cites no id anywhere and must still say so.
+    check "the scan says what it read even with nothing to report" \
+        $( [[ "$out" == *"foreign-hunk scan: 1 source path(s)"*"0 foreign id(s)"* ]] && print 1 || print 0 ) "$out"
+    check "and prints no finding" $( [[ "$out" != *FOREIGN-HUNK* ]] && print 1 || print 0 ) "$out"
+
+    ( cd "$ws" && print -r -- "// the block the sibling was writing for T-3001" >> sib.swift )
+    out=$( cd "$ws" && zsh "$here" f1 -m "$FGN3" sib.swift 2>&1 ); rc=$?
+    check "a hunk citing an OPEN id this commit does not name is reported" \
+        $( [[ $rc == 0 && "$out" == *FOREIGN-HUNK* && "$out" == *T-3001* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it names the path the hunk is in" \
+        $( [[ "$out" == *"sib.swift: T-3001"* ]] && print 1 || print 0 ) "$out"
+    check "and it is a note, not a refusal -- the commit landed" \
+        $( [[ $( cd "$ws" && git log -1 --format=%s ) == "T-3003: a commit of my own, over a file a sibling is also editing" ]] && print 1 || print 0 )
+    check "and the count agrees with the finding" \
+        $( [[ "$out" == *"1 id-citing hunk(s) added, 1 foreign id(s)"* ]] && print 1 || print 0 ) "$out"
+
+    # The three exemptions, and each is a different reason the id is not a sibling's live work.
+    ( cd "$ws" && print -r -- "// a back-reference to T-3002, which the ledger closed long ago" >> sib.swift )
+    out=$( cd "$ws" && zsh "$here" f2 -m "$FGN3" sib.swift 2>&1 ); rc=$?
+    check "a hunk citing a CLOSED id says nothing -- that is a back-reference" \
+        $( [[ $rc == 0 && "$out" != *FOREIGN-HUNK* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the scan still says it read the hunk" \
+        $( [[ "$out" == *"1 id-citing hunk(s) added, 0 foreign id(s)"* ]] && print 1 || print 0 ) "$out"
+
+    ( cd "$ws" && print -r -- "// my own work, for T-3001, under a subject that names it" >> sib.swift )
+    out=$( cd "$ws" && zsh "$here" f3 -m "$FGN1" sib.swift 2>&1 ); rc=$?
+    check "a hunk citing an id THIS commit names says nothing" \
+        $( [[ $rc == 0 && "$out" != *FOREIGN-HUNK* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    ( cd "$ws" && print -r -- "// see T-9999, which no ledger has ever filed" >> sib.swift )
+    out=$( cd "$ws" && zsh "$here" f4 -m "$FGN3" sib.swift 2>&1 ); rc=$?
+    check "a hunk citing an UNFILED id says nothing -- out of reach, as in CI" \
+        $( [[ $rc == 0 && "$out" != *FOREIGN-HUNK* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    # The reading is over lines this commit ADDS, not over the file. By now `sib.swift` holds
+    # T-3001 twice in lines HEAD already has, and a per-FILE reading would report it forever.
+    ( cd "$ws" && print -r -- "let unrelated = 2" >> sib.swift )
+    out=$( cd "$ws" && zsh "$here" f5 -m "$FGN3" sib.swift 2>&1 ); rc=$?
+    check "an id already in HEAD's copy of the file is not re-reported by a later commit" \
+        $( [[ $rc == 0 && "$out" != *FOREIGN-HUNK* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and that run read a source path with no id-citing hunk at all" \
+        $( [[ "$out" == *"1 source path(s), 0 id-citing hunk(s) added, 0 foreign id(s)"* ]] && print 1 || print 0 ) "$out"
+
+    # T-1359's distinction, asked here: a `**PARTIAL` line SOMEBODY ELSE wrote does not make the
+    # ticket yours. T-3004's PARTIAL is in HEAD, written by mode 4l's l4.
+    ( cd "$ws" && print -r -- "// half of T-3004, which is somebody else's part-done ticket" >> sib.swift )
+    out=$( cd "$ws" && zsh "$here" f6 -m "$FGN3" sib.swift 2>&1 ); rc=$?
+    check "a hunk citing an id whose PARTIAL somebody ELSE wrote is still reported" \
+        $( [[ $rc == 0 && "$out" == *FOREIGN-HUNK* && "$out" == *T-3004* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    # The hunk COUNT is the scan's evidence that it ran, so it has to mean something: two additions
+    # far enough apart are two hunks. Under `-U3` they merge once their context touches and the
+    # count silently becomes 1 -- which is the one thing `--unified=0` buys here, and the only
+    # mutation of `added_hunk_citations` this mode would otherwise not kill.
+    # FOUR lines apart, deliberately: that is inside `-U3`'s context window and outside `-U0`'s, so
+    # this pair is the only thing in the mode that tells the two spellings apart. Twenty lines
+    # apart would read 2 under both and kill nothing.
+    ( cd "$ws" && { for _i in 1 2 3 4 5 6 7 8 9 10; do print -r -- "let pad$_i = $_i"; done } > near.swift )
+    out=$( cd "$ws" && zsh "$here" f7 -m "$FGN3" near.swift 2>&1 ); rc=$?
+    check "the close-pair fixture commits" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && { sed -n '1,3p' near.swift
+                    print -r -- "// the sibling's note about T-3001"
+                    sed -n '4,7p' near.swift
+                    print -r -- "// and a second note about T-3001, four lines on"
+                    sed -n '8,10p' near.swift
+                  } > near.next && mv near.next near.swift )
+    out=$( cd "$ws" && zsh "$here" f8 -m "$FGN3" near.swift 2>&1 ); rc=$?
+    check "two citations four lines apart are counted as two hunks, not one" \
+        $( [[ $rc == 0 && "$out" == *"2 id-citing hunk(s) added, 1 foreign id(s)"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    # And the scan is scoped to code, by `ci.yml`'s own paths-ignore: a ledger-only commit has no
+    # source hunk to read and must not print a scan line at all.
+    ( cd "$ws" && git show HEAD:docs/TODO.md > docs-only-2.md
+      print -r -- "- [T-3005] **A finding filed by a commit that lands no code, citing T-3001 in its prose.**" >> docs-only-2.md ) >/dev/null 2>&1
+    local FGNDOC=$'T-3003 + T-3005: a ledger-only commit, filing one beside the other\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+    out=$( cd "$ws" && zsh "$here" f9 -m "$FGNDOC" docs/TODO.md=docs-only-2.md 2>&1 ); rc=$?
+    check "a ledger-only commit is not scanned and says nothing" \
+        $( [[ $rc == 0 && "$out" != *FOREIGN-HUNK* && "$out" != *"foreign-hunk scan"* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
     say " mode 4m (LEDGER-HUNK-UNCLAIMED) -- T-1304: a message about one set of tickets over a"
