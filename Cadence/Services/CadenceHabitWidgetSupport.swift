@@ -53,14 +53,30 @@ nonisolated struct CadenceHabitWidgetSnapshot: Hashable {
 }
 
 nonisolated enum CadenceHabitWidgetSupport {
+    /// `probe` is [[T-1366]]'s instrument, threaded here by [[T-1403]] and `nil` for every caller
+    /// but the timeline provider — so with it left off this reads exactly as it did before.
+    ///
+    /// **Until now this widget's records carried a container open and a total and nothing else.**
+    /// The provider closed `containerOpen` and stopped, because this file was outside T-1366's
+    /// ownership; the `fetch` and `derive` stages were *absent* from the record rather than zero,
+    /// and `rowsFetched` was `nil` rather than `0`. That distinction was the honest part and it
+    /// stays honest: a record written by a caller that passes no probe still has no fetch stage in
+    /// it, because absent is not zero.
+    ///
+    /// The fetch carries **no predicate**, so the row count is the whole `Habit` table — the
+    /// population `dueHabits` filters down to, not the prefix the widget draws.
     nonisolated static func snapshot(
         modelContext: ModelContext,
-        limit: Int
+        limit: Int,
+        probe: CadenceWidgetGenerationProbe? = nil
     ) throws -> CadenceHabitWidgetSnapshot {
         let today = Calendar.current.startOfDay(for: Date())
         let descriptor = FetchDescriptor<Habit>()
         let habits = try modelContext.fetch(descriptor)
-        return snapshot(from: habits, today: today, limit: limit)
+        probe?.finished(.fetch, rows: habits.count)
+        let built = snapshot(from: habits, today: today, limit: limit)
+        probe?.finished(.derive)
+        return built
     }
 
     nonisolated static func snapshot(

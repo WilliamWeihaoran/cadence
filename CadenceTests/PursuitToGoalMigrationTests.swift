@@ -21,7 +21,7 @@ struct PursuitToGoalMigrationTests {
         modelContext.insert(pursuit)
         try modelContext.save()
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext) == .changed)
 
         let migrated = try #require(try modelContext.fetch(FetchDescriptor<Goal>()).first)
         #expect(migrated.title == "Become more knowledgeable")
@@ -52,7 +52,7 @@ struct PursuitToGoalMigrationTests {
         modelContext.insert(milestone)
         try modelContext.save()
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext) == .changed)
 
         let goals = try modelContext.fetch(FetchDescriptor<Goal>())
         let migrated = try #require(goals.first { $0.title == "Become more knowledgeable" })
@@ -74,7 +74,7 @@ struct PursuitToGoalMigrationTests {
         modelContext.insert(habit)
         try modelContext.save()
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext) == .changed)
 
         let migrated = try #require(try modelContext.fetch(FetchDescriptor<Goal>()).first)
         #expect(habit.goal?.id == migrated.id)
@@ -96,7 +96,7 @@ struct PursuitToGoalMigrationTests {
         modelContext.insert(child)
         try modelContext.save()
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext) == .changed)
 
         // The explicit nesting is more specific than the pursuit grouping, so it wins.
         #expect(child.parentGoal?.id == existingParent.id)
@@ -119,7 +119,7 @@ struct PursuitToGoalMigrationTests {
         modelContext.insert(habit)
         try modelContext.save()
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext) == .changed)
 
         #expect(habit.goal?.id == goal.id)
         #expect(habit.pursuit == nil)
@@ -144,7 +144,7 @@ struct PursuitToGoalMigrationTests {
         modelContext.insert(habit)
         try modelContext.save()
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext) == .changed)
 
         #expect(try modelContext.fetch(FetchDescriptor<Pursuit>()).isEmpty)
         #expect((context.pursuits ?? []).isEmpty)
@@ -168,10 +168,13 @@ struct PursuitToGoalMigrationTests {
         modelContext.insert(habit)
         try modelContext.save()
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext) == .changed)
         let goalIDsAfterFirstPass = Set(try modelContext.fetch(FetchDescriptor<Goal>()).map(\.id))
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        // **T-1402.** The second pass is where the old `Bool` was weakest: `true` meant both "I
+        // folded rows" and "there was nothing left to fold", so this assertion held equally for a
+        // migration that had silently run twice. It now says which one happened.
+        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext) == .nothingToDo)
 
         #expect(Set(try modelContext.fetch(FetchDescriptor<Goal>()).map(\.id)) == goalIDsAfterFirstPass)
         #expect(try modelContext.fetch(FetchDescriptor<Pursuit>()).isEmpty)
@@ -182,8 +185,32 @@ struct PursuitToGoalMigrationTests {
     @Test func emptyStoreMigratesCleanly() throws {
         let modelContext = try makeContext()
 
-        #expect(PursuitToGoalMigration.migrate(modelContext: modelContext))
+        // `nothingToDo` and not `changed`: a clean pass over an empty store is a result, and since
+        // T-1402 it is a different value from a pass that could not read the store at all.
+        let outcome = PursuitToGoalMigration.migrate(modelContext: modelContext)
+        #expect(outcome == .nothingToDo)
+        #expect(outcome != .couldNotRead, "an empty store is not a store that could not be read")
         #expect(try modelContext.fetch(FetchDescriptor<Goal>()).isEmpty)
+    }
+
+    /// **T-1402: `runIfNeeded` answers, and the three answers are different things.**
+    ///
+    /// It returned `Void`, so [[T-1366]]'s launch instrument had nothing at all to classify and
+    /// filed the pursuit migration as `indeterminate` — a launch that folded rows, a launch with
+    /// nothing to fold, and a launch that never ran the pass all left the same mark. Non-vacuity
+    /// is the point of doing all three in one test: an implementation that always answered
+    /// `nothingToDo` would pass either half of this alone.
+    @Test func runIfNeededSeparatesAFoldFromAStoreWithNothingLeftToFold() throws {
+        try withTemporaryDefaults("PursuitToGoalMigrationTests") { defaults in
+            let modelContext = try makeContext()
+            modelContext.insert(Pursuit(title: "Become more knowledgeable"))
+            try modelContext.save()
+
+            #expect(PursuitToGoalMigration.runIfNeeded(modelContext: modelContext, defaults: defaults) == .changed)
+            // The flag is latched now, so this is the fast path as well as the second pass.
+            #expect(defaults.bool(forKey: Self.completionKey))
+            #expect(PursuitToGoalMigration.runIfNeeded(modelContext: modelContext, defaults: defaults) == .nothingToDo)
+        }
     }
 
     /// `PursuitToGoalMigration.completionKey` is private, so it is spelled here — which also pins

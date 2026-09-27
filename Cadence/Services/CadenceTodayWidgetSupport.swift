@@ -360,9 +360,15 @@ nonisolated enum CadenceWidgetDateSupport {
 /// and absent is not zero.** That is the same distinction `NoteMigrationReport.noteTableScanned`
 /// exists to make one file over: a `0` in an `Int` field reads identically whether the number was
 /// measured or never computed, and a reader that prints it without asking first is reporting a
-/// number nobody took. Today and Calendar thread a probe through their own `snapshot` overloads and
-/// so time `fetch` and `derive` apart; Habit and Milestone derive inside support types this ticket
-/// does not own, so their records carry `containerOpen` and a total and say nothing about the rest.
+/// number nobody took.
+///
+/// **All four widget kinds now separate all three stages** ([[T-1403]]): each support type's
+/// store-facing `snapshot` takes `probe:` and closes `fetch` and `derive` around its own fetch, and
+/// each provider closes `containerOpen`. Habit and Milestone were the two that did not, because
+/// their support types were outside [[T-1366]]'s file ownership. **The absent-is-not-zero rule is
+/// unchanged and is what makes the widening visible**: `probe:` defaults to `nil`, so a caller that
+/// passes none still produces a record with no `fetch` and no `derive` in `measuredStages` and a
+/// `nil` `rowsFetched` — not a record claiming a fetch that cost nothing and materialised no rows.
 nonisolated enum CadenceWidgetStage: String, Hashable, CaseIterable {
     case containerOpen
     case fetch

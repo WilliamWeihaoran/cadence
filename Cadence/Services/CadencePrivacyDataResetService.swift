@@ -251,9 +251,30 @@ enum PrivacyDataResetService {
     /// stays on the home screen until the system next decides to refresh, which can be a long time.
     /// `force` because the reset must not be swallowed by the reload throttle it just cleared the
     /// other side of. `docs/TODO.md` T-310.
+    ///
+    /// **[[T-1366]]'s generation ledger is cleared here too, and it is a tidiness defect rather
+    /// than a disclosure — which is not a reason to leave it** ([[T-1404]]). Its three slots per
+    /// widget kind are durable app-group state written by the *widget* process, and every field in
+    /// a `CadenceWidgetGenerationRecord` is a duration, a count, a timestamp, or a refusal reason
+    /// built from an error's Swift type and `NSError` domain and code — no title, body, tag or
+    /// identifier can reach one, which `theRefusalReasonCannotCarryUserText` holds. So nothing the
+    /// user wrote survives a reset that skips these keys. What survives is a *measure* of what was
+    /// deleted: how many rows the last fetch materialised, how many the widget drew, and when. A
+    /// reset that leaves a row count behind has still left something behind, and this is the
+    /// function whose whole job is dropping the widget's app-group state — extending it is the
+    /// home, rather than a second sweep beside it that could be deleted without this one going red.
+    ///
+    /// Before the reload for the same reason the snapshot clear is: a generation that runs *after*
+    /// the reload is a new measurement of the emptied store, which is a record worth having, and
+    /// clearing afterwards could take it away instead of the survivors.
+    ///
+    /// The opt-in flag is deliberately **not** cleared. It is a preference the owner set, not data
+    /// the store held, and a reset that silently turned an instrument off would leave the next
+    /// launch unmeasured without saying so.
     @MainActor
     static func clearWidgetState(userDefaults: UserDefaults? = nil) {
         CadenceWidgetRefreshCenter.clearStoredState(userDefaults: userDefaults)
+        CadenceWidgetGenerationLedger.clearStoredState(userDefaults: userDefaults)
         CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, userDefaults: userDefaults)
     }
 
@@ -293,6 +314,15 @@ enum PrivacyDataResetService {
         // the reset — it can only fail to be *mentioned*, which is what it did (T-1101).
         let retainedAPIKeyReason = removeStoredAPIKey(using: aiSettingsManager)
         clearWidgetState()
+        // [[T-1366]]'s launch ledger, for the reason its widget half is cleared inside
+        // `clearWidgetState` one line up ([[T-1404]]). It is *not* in that function because it is
+        // not widget state and not in the app group: `CadenceStartupCostLedger` writes the last
+        // launch's stage costs into `CadenceDefaults.store`, the app's own domain. Same reading
+        // either way — stage names, durations, row counts, and a refusal reason reduced to a Swift
+        // type and an `NSError` domain and code by `PersistenceController.instrumentReason(for:)`,
+        // so no user text is in it and a reset that skipped it would still be a reset that left a
+        // number describing the deleted store behind.
+        CadenceStartupCostLedger.clearStoredState()
         StoreBackupManager.clearPendingRestore()
         StoreBackupManager.clearFailedRestore()
         let backups = removeStoredBackups()

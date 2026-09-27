@@ -228,14 +228,16 @@ struct PersistenceController {
     /// lowercase receiver rather than a type, so the pass-set derivation in
     /// `CadenceFirstLaunchEmptyStoreTests` does not read the instrument as a sixth startup pass.
     ///
-    /// **Three of the five verdicts below are `indeterminate`, and that is a measurement, not a
-    /// gap in the instrument.** `PursuitToGoalMigration.runIfNeeded` returns `Void` while the
-    /// `migrate` beneath it returns a clean/failed `Bool`; `TagSupport.syncAllNoteTagsFromMarkdown`
-    /// returns `false` for an unreadable `Note` table, an unreadable `Tag` table, an empty store
-    /// and a clean pass alike; `CadenceFocusLedger.reconcile` returns `false` for a fetch it could
-    /// not run and for a store with nothing to raise. So on those three "nothing to do" and "could
-    /// not do it" are the same value, which is what the audit says and what this records rather
-    /// than quietly calls a no-op.
+    /// **All five verdicts below are now real answers** ([[T-1402]]). Three of them used to be
+    /// `indeterminate`, and that was a measurement rather than a gap in the instrument:
+    /// `PursuitToGoalMigration.runIfNeeded` returned `Void` while the `migrate` beneath it returned
+    /// a clean/failed `Bool`; `TagSupport.syncAllNoteTagsFromMarkdown` returned `false` for an
+    /// unreadable `Note` table, an unreadable `Tag` table, an empty store and a clean pass alike;
+    /// `CadenceFocusLedger.reconcile` returned `false` for a fetch it could not run and for a store
+    /// with nothing to raise. The fix was to the **passes**, not to the meter: all three answer
+    /// `CadenceMaintenancePassOutcome` now, and `CadenceStartupStageVerdict.forMaintenancePass`
+    /// turns a `couldNotRead` into a `refused` rather than into a no-op. A launch that silently
+    /// failed to repair no longer reads like a launch with nothing to repair.
     static func performStartupMaintenance(
         in context: ModelContext,
         defaults: UserDefaults = CadenceDefaults.store,
@@ -243,10 +245,14 @@ struct PersistenceController {
     ) {
         // Folds any surviving `Pursuit` rows into `Goal`. Self-guarding and idempotent, and
         // manages its own saves because it deletes rows rather than just inserting them.
-        recorder.measure(.pursuitMigration) {
+        // `_ =` and not a term in `changedStore` below: this pass manages its own saves — it
+        // deletes rows rather than only inserting them — so by the time it returns, a store it
+        // changed has already been committed and `context.hasChanges` is false. Its answer is the
+        // instrument's to keep, which since [[T-1402]] it has one worth keeping.
+        _ = recorder.measure(.pursuitMigration) {
             PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
-        } classifying: { _ in
-            .indeterminate("runIfNeededReturnsVoid")
+        } classifying: { outcome in
+            .forMaintenancePass(outcome)
         }
 
         // **No pass here seeds the default tags, and that is the point (T-528).**
@@ -279,8 +285,8 @@ struct PersistenceController {
         }
         let syncedNoteTags = recorder.measure(.tagSync) {
             TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
-        } classifying: { changed in
-            changed ? .changed(nil) : .indeterminate("falseIsCleanPassAndUnreadableTable")
+        } classifying: { outcome in
+            .forMaintenancePass(outcome)
         }
         // `removingForkedOccurrences:` is the app supplying the half of T-622's collapse that
         // `DataIntegrityRepairService` cannot spell: it is in `CadenceMCPServer`'s explicit source
@@ -307,12 +313,12 @@ struct PersistenceController {
         // nobody opens again, whose stale total an hours-mode `Goal` is still reading.
         let reconciledFocusMinutes = recorder.measure(.focusReconciliation) {
             CadenceFocusLedger.reconcile(in: context)
-        } classifying: { changed in
-            changed ? .changed(nil) : .indeterminate("falseIsCleanPassAndUnreadableLedger")
+        } classifying: { outcome in
+            .forMaintenancePass(outcome)
         }
         let changedStore = (migrationReport?.insertedTotal ?? 0) > 0 ||
-            syncedNoteTags ||
-            reconciledFocusMinutes ||
+            syncedNoteTags.changedStore ||
+            reconciledFocusMinutes.changedStore ||
             repairReport?.changed == true
 
         guard changedStore, context.hasChanges else { return }
@@ -1507,8 +1513,15 @@ nonisolated enum CadenceStartupStageOutcome: String, Hashable {
     case refused
     /// The pass ran and its answer **cannot separate** the two above from this call site. Recorded
     /// as its own outcome rather than folded into `noChange`, because calling an unknown a clean
-    /// result is the defect, not the reporting of it. See `CadenceStartupStageVerdict` for which
-    /// three passes are here and what each would have to return to leave.
+    /// result is the defect, not the reporting of it.
+    ///
+    /// **No startup pass produces this any more, and the case stays** ([[T-1402]]). All three that
+    /// did — the pursuit migration, the tag sync and the focus reconcile — now answer
+    /// `CadenceMaintenancePassOutcome`, so `performStartupMaintenance` classifies nothing as
+    /// indeterminate and `CadenceStartupCostInstrumentTests` asserts that as an equality rather
+    /// than the subset it could only assert before. The vocabulary is kept because a *future* pass
+    /// added with a two-reading `Bool` must be recordable as what it is; deleting the case would
+    /// leave the next such pass with nowhere to go but `noChange`, which is the defect.
     case indeterminate
     /// A stage with no change vocabulary at all: it either completed or threw.
     case completed
@@ -1543,6 +1556,26 @@ nonisolated struct CadenceStartupStageVerdict: Hashable {
 
     static var completed: Self {
         Self(outcome: .completed, note: nil, count: nil)
+    }
+
+    /// The verdict for a pass that answers `CadenceMaintenancePassOutcome` — which, since
+    /// [[T-1402]], is all three of the passes that used to answer `indeterminate`.
+    ///
+    /// **`couldNotRead` becomes `refused` and not `noChange`, and that is the whole ticket.** The
+    /// note is the pass's own vocabulary rather than an error's text: these three report that they
+    /// could not read, not *what* they could not read, so there is nothing here that could carry a
+    /// title or a path even by accident.
+    ///
+    /// `changed` carries no count: none of the three reports a number about itself, and inventing
+    /// a `0` for a pass that changed something would be worse than saying nothing —
+    /// `CadenceStartupStageRecord.count` is `nil` for "reported no number", which is not the same
+    /// as a number that happens to be zero.
+    static func forMaintenancePass(_ outcome: CadenceMaintenancePassOutcome) -> Self {
+        switch outcome {
+        case .changed: return .changed(nil)
+        case .nothingToDo: return .noChange
+        case .couldNotRead: return .refused("passCouldNotRead")
+        }
     }
 }
 

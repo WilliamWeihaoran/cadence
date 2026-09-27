@@ -21,6 +21,43 @@ nonisolated enum CadenceSharedStoreWriteRefusal: LocalizedError, Equatable {
     }
 }
 
+/// What an unattended maintenance pass did, when "nothing to do" and "could not do it" are both
+/// possible answers ([[T-1402]]).
+///
+/// **It replaces a `Bool` that had two readings, and the second one was a failure.** Three launch
+/// passes answered `false` — or nothing at all — for a clean run *and* for a run they could not
+/// complete, so [[T-1366]]'s startup instrument had to file all three as `indeterminate`: a pass
+/// that silently failed to repair looked exactly like a pass with nothing to repair, which is the
+/// shape the audit named and the one this repository keeps re-finding. The two passes that already
+/// separated them — `NoteMigrationService` and `DataIntegrityRepairService`, through their reports'
+/// `success` — are the model this is the small version of.
+///
+/// **`couldNotRead` is a failure and is never a result.** A store the pass could not read is not a
+/// store with nothing in it; the difference is the whole type.
+///
+/// It lives in this file rather than beside any one of the three passes for a build reason worth
+/// stating: `TagSupport.swift` and `Cadence/Models/AppTask.swift` are both compiled into
+/// `CadenceWidgets` **and** `CadenceMCPServer`, whose Sources phases are explicit hand-picked
+/// lists. A shared type they both name has to be in a file on both of those lists, and
+/// `CadenceStoreSupport.swift` is — `PursuitToGoalMigration.swift` and `DataIntegrityRepairService.swift`
+/// are not. Putting it in one pass's own file would have made the other two read a vocabulary
+/// owned by a sibling; putting it in a new file would have meant editing two explicit Sources
+/// phases in `project.pbxproj`, where a missing entry is a link error in a target the app build
+/// never exercises.
+nonisolated enum CadenceMaintenancePassOutcome: String, Hashable, CaseIterable {
+    /// The pass ran and changed the store.
+    case changed
+    /// The pass ran, read what it needed, and there was nothing to change. A **result**.
+    case nothingToDo
+    /// The pass could not read what it needed and did not finish. A **failure**, never a result.
+    case couldNotRead
+
+    /// Whether the store moved. The one question the old `Bool` could answer, spelled so a caller
+    /// that genuinely only needs it does not have to re-derive it — and so that `couldNotRead`
+    /// cannot be mistaken for a change by a caller that forgot the third case exists.
+    var changedStore: Bool { self == .changed }
+}
+
 nonisolated enum CadenceStoreSupport {
     nonisolated static let appContainerIdentifier = "com.haoranwei.Cadence"
     nonisolated static let appGroupIdentifier = "group.com.haoranwei.Cadence"

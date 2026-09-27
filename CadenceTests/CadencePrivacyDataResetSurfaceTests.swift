@@ -149,6 +149,120 @@ struct CadencePrivacyDataResetSurfaceTests {
         }
     }
 
+    // MARK: - T-1404: the instrument ledgers are durable state the reset has to take
+
+    /// **A tidiness defect, not a disclosure — and the reset clears it either way.**
+    ///
+    /// [[T-1366]]'s two instruments are opt-in and **durable**: `CadenceWidgetGenerationLedger`
+    /// keeps three slots per widget kind in the app group and `CadenceStartupCostLedger` keeps the
+    /// last launch's stage costs in the app's own defaults, and neither was in the reset. Checked
+    /// field by field rather than asserted: every one is a duration, a count, a timestamp, or a
+    /// refusal reason built from a Swift type and an `NSError` domain and code — no note body, task
+    /// title, tag or identifier can reach one, which `theRefusalReasonCannotCarryUserText` and
+    /// `theStartupRefusalReasonCannotCarryUserText` hold one suite over. So nothing the user wrote
+    /// survived. What survived was a **measure of what was deleted**: the row count the last fetch
+    /// materialised, the rows the widget drew, and when. A reset that leaves a row count behind has
+    /// still left something behind.
+    ///
+    /// The widget half lives inside `clearWidgetState` rather than beside it, because that function
+    /// already *is* the step that drops the widget's app-group state and already carries the
+    /// `userDefaults:` seam a test needs. The launch half cannot: it is not widget state and not in
+    /// the app group, so it is its own line in the reset's second phase, pinned by the source read
+    /// in `theWholeResetCarriesTheRetainedKeyIntoItsOutcome`'s step list.
+    @Test func theResetClearsBothInstrumentLedgersAndLeavesNoRowCountBehind() throws {
+        try withTemporaryDefaults("cadence.tests.privacy-reset") { defaults in
+            CadenceWidgetGenerationLedger.setEnabled(true, userDefaults: defaults)
+
+            // Every kind, not just one: the slots are per widget kind, so a clear that swept only
+            // the kind a test happened to write would pass a one-kind assertion.
+            for kind in CadenceWidgetGenerationLedger.instrumentedKinds {
+                let probe = CadenceWidgetGenerationProbe(kind: kind, userDefaults: defaults)
+                probe.finished(.containerOpen)
+                probe.finished(.fetch, rows: 264)
+                probe.finished(.derive)
+                #expect(
+                    probe.recordGeneration(outcome: .ready, renderedCount: 3, sourceSnapshotAt: Date()) != nil,
+                    "the \(kind) probe wrote nothing, so this test would clear an empty ledger"
+                )
+                let refusalProbe = CadenceWidgetGenerationProbe(kind: kind, userDefaults: defaults)
+                #expect(refusalProbe.recordRefusal(CocoaError(.fileReadNoSuchFile)) != nil)
+            }
+
+            // Positive controls, on all three slots: the state about to be checked for removal was
+            // really there, and it really carried the number this ticket is about.
+            for kind in CadenceWidgetGenerationLedger.instrumentedKinds {
+                // `lastGeneration` holds the refusal, which was written second; the row count
+                // lives in `lastSuccess`, which is the point of there being three slots.
+                #expect(
+                    CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).record?.outcome == .refused,
+                    "\(kind) recorded no generation to clear"
+                )
+                let success = try #require(
+                    CadenceWidgetGenerationLedger.lastSuccess(kind: kind, userDefaults: defaults).record,
+                    "\(kind) recorded no successful generation to clear"
+                )
+                #expect(success.rowsFetched == 264, "the row count this reset has to take is not there")
+                #expect(CadenceWidgetGenerationLedger.lastRefusal(kind: kind, userDefaults: defaults).record != nil)
+            }
+
+            PrivacyDataResetService.clearWidgetState(userDefaults: defaults)
+
+            for kind in CadenceWidgetGenerationLedger.instrumentedKinds {
+                // `.nothingRecorded` and not `.instrumentDisabled`: the reset clears the *records*
+                // and deliberately leaves the opt-in flag alone. Turning an instrument the owner
+                // switched on off without saying so would be its own quiet defect.
+                #expect(
+                    CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults).silence == .nothingRecorded,
+                    "the reset left \(kind)'s last generation — its row count and its timestamp — in the app group (T-1404)"
+                )
+                #expect(
+                    CadenceWidgetGenerationLedger.lastSuccess(kind: kind, userDefaults: defaults).silence == .nothingRecorded,
+                    "the reset left \(kind)'s last success in the app group (T-1404)"
+                )
+                #expect(
+                    CadenceWidgetGenerationLedger.lastRefusal(kind: kind, userDefaults: defaults).silence == .nothingRecorded,
+                    "the reset left \(kind)'s last refusal in the app group (T-1404)"
+                )
+            }
+            #expect(
+                CadenceWidgetGenerationLedger.isEnabled(userDefaults: defaults),
+                "the reset switched the instrument off rather than clearing what it had recorded"
+            )
+        }
+    }
+
+    /// The launch ledger's half of the same claim, driven directly because
+    /// `deleteCadenceDataAndLocalArtifacts` deletes the real backups directory and no test may call
+    /// it. That the reset *performs* this step is the source read in the step list below.
+    @Test func clearingTheLaunchLedgerRemovesTheReportAndNotTheOptIn() throws {
+        try withTemporaryDefaults("cadence.tests.privacy-reset") { defaults in
+            CadenceStartupCostLedger.setEnabled(true, defaults: defaults)
+            let recorder = try #require(CadenceStartupCostLedger.begin(defaults: defaults))
+            recorder.finished(.containerOpen, .completed)
+            recorder.finished(.tagSync, .changed(41))
+            #expect(recorder.commit() != nil, "the recorder wrote nothing, so this would clear an empty ledger")
+
+            // Positive control, including the number: a stage count derived from the store the
+            // reset is about to delete is exactly the residue this ticket is about.
+            let before = try #require(
+                CadenceStartupCostLedger.lastReport(defaults: defaults).report,
+                "the launch ledger recorded no report to clear"
+            )
+            #expect(before.stage(.tagSync)?.count == 41)
+
+            CadenceStartupCostLedger.clearStoredState(defaults: defaults)
+
+            #expect(
+                CadenceStartupCostLedger.lastReport(defaults: defaults).silence == .nothingRecorded,
+                "the reset left the last launch's stage costs behind (T-1404)"
+            )
+            #expect(
+                CadenceStartupCostLedger.isEnabled(defaults: defaults),
+                "clearing the report switched the instrument off"
+            )
+        }
+    }
+
     // MARK: - iOS reaches the reset
 
     /// **The T-161 test for this ticket.** Delete the iOS call site and this fails; nothing else
@@ -827,9 +941,28 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
         // The remaining artifacts are still cleaned up after a refused key deletion: the store is
         // already gone, so stopping there would leave more behind, not less.
-        for step in ["clearWidgetState()", "removeStoredBackups()"] {
+        for step in [
+            "clearWidgetState()",
+            // T-1404. Not inside `clearWidgetState`, because it is not widget state and not in the
+            // app group: `CadenceStartupCostLedger` writes the last launch's stage costs into the
+            // app's own defaults domain. Its behaviour is driven directly in
+            // `clearingTheLaunchLedgerRemovesTheReportAndNotTheOptIn`; this is the pin that the
+            // reset is the thing that calls it.
+            "CadenceStartupCostLedger.clearStoredState()",
+            "removeStoredBackups()",
+        ] {
             #expect(body.contains(step), "the reset stopped performing \(step)")
         }
+        // And the widget half really is inside the step above rather than beside it, so deleting
+        // it from there is a red behavioural test and not only a red source read.
+        let widgetStep = try #require(
+            CadenceSourceScan.functionBody(named: "clearWidgetState", in: live),
+            "the widget-state seam is gone"
+        )
+        #expect(
+            widgetStep.contains("CadenceWidgetGenerationLedger.clearStoredState"),
+            "the reset stopped clearing the widget generation ledger (T-1404)"
+        )
         // The two backup steps moved behind `removeStoredBackups` (T-1313) rather than being
         // dropped: they are still performed, as that function's default arguments.
         let sweep = try #require(

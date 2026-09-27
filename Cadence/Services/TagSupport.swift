@@ -286,28 +286,41 @@ nonisolated enum TagSupport {
     /// (`TagSupportTests.theStartupSweepReadsTheWholeTagTableExactlyOnce`). The cheapest way to
     /// undo this fix is to move the index construction back inside the loop, which would keep
     /// every other assertion in that suite green.
+    ///
+    /// **It answers a `CadenceMaintenancePassOutcome` rather than a `Bool`, because the `Bool` had
+    /// four readings** ([[T-1402]]). `false` meant an unreadable `Note` table, an empty note set,
+    /// an unreadable `Tag` table, and a clean pass — two failures and two results on one value —
+    /// so [[T-1366]]'s launch instrument could only file this pass as `indeterminate`. Two of the
+    /// four are now `couldNotRead` and the launch records a real answer.
+    ///
+    /// **The outcome describes the sweep, not the commit.** The `try? context.save()` below is
+    /// unchanged and is still `CadenceSaveCommitRule`'s one standing exemption for this file: this
+    /// is launch-time maintenance with nobody watching, and its one production caller that owns the
+    /// unit of work passes `saveChanges: false`. `PersistenceController.performStartupMaintenance`
+    /// is that caller, and the commit it owns is timed and classified separately as
+    /// `CadenceStartupStage.maintenanceSave`.
     @discardableResult
     static func syncAllNoteTagsFromMarkdown(
         in context: ModelContext,
         saveChanges: Bool = true,
         makingTagIndex: (ModelContext) -> TagSlugIndex? = TagSupport.makeTagIndex(in:)
-    ) -> Bool {
+    ) -> CadenceMaintenancePassOutcome {
         var changed = false
         // `?? []` reported "nothing needed syncing" when the notes simply could not be read.
-        guard let notes = try? context.fetch(FetchDescriptor<Note>()) else { return false }
+        guard let notes = try? context.fetch(FetchDescriptor<Note>()) else { return .couldNotRead }
         // No notes, no tag read — the empty store this runs against on a first launch keeps
         // costing exactly one fetch, as it did when the tag fetch lived one frame down.
-        guard !notes.isEmpty else { return false }
+        guard !notes.isEmpty else { return .nothingToDo }
         // A tag table that cannot be read is the same refusal it was per note: resolution answered
         // `nil` for every note and nothing was written. It is answered once now instead of K times.
-        guard let index = makingTagIndex(context) else { return false }
+        guard let index = makingTagIndex(context) else { return .couldNotRead }
         for note in notes {
             changed = syncNoteTagsFromMarkdown(note, in: context, index: index) || changed
         }
         if saveChanges && context.hasChanges {
             try? context.save()
         }
-        return changed
+        return changed ? .changed : .nothingToDo
     }
 
     nonisolated static func tagSlugs(_ tags: [Tag]) -> [String] {

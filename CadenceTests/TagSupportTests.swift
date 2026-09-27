@@ -572,7 +572,10 @@ struct TagSupportTests {
             }
         )
 
-        #expect(changed, "non-vacuity: the sweep must have had work to do for the count to mean anything")
+        #expect(
+            changed == .changed,
+            "non-vacuity: the sweep must have had work to do for the count to mean anything"
+        )
         #expect(indexBuilds == 1, "the tag table was read \(indexBuilds) times for 200 notes")
         // And the sweep really did the work the single read was for.
         let notes = try context.fetch(FetchDescriptor<Note>())
@@ -605,7 +608,7 @@ struct TagSupportTests {
             makingTagIndex: { _ in TagSlugIndex(tags: []) }
         )
 
-        #expect(changed)
+        #expect(changed == .changed)
         let tags = try context.fetch(FetchDescriptor<Cadence.Tag>())
         #expect(
             tags.count == 4,
@@ -680,7 +683,7 @@ struct TagSupportTests {
         }
 
         let sweptContext = try seededContext()
-        #expect(TagSupport.syncAllNoteTagsFromMarkdown(in: sweptContext, saveChanges: false))
+        #expect(TagSupport.syncAllNoteTagsFromMarkdown(in: sweptContext, saveChanges: false) == .changed)
 
         let perNoteContext = try seededContext()
         for note in try perNoteContext.fetch(FetchDescriptor<Note>()) {
@@ -747,7 +750,11 @@ struct TagSupportTests {
             makingTagIndex: { _ in nil }
         )
 
-        #expect(!changed)
+        // **T-1402.** This used to read `#expect(!changed)`, and `false` there was the same value
+        // the clean pass two tests up returns. A tag table that could not be read is a refusal, and
+        // the sweep now says so rather than leaving the launch to guess.
+        #expect(changed == .couldNotRead)
+        #expect(changed != .nothingToDo, "a refused tag read is not a pass with nothing to do")
         #expect(try context.fetch(FetchDescriptor<Note>()).allSatisfy { ($0.tags ?? []).isEmpty })
         #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).count == 3, "a refused read minted tags")
     }
@@ -768,7 +775,10 @@ struct TagSupportTests {
             }
         )
 
-        #expect(!changed)
+        // A store with no notes is a **result**: there was nothing to sync and the pass read
+        // everything it needed to know that. T-1402's other half of the same `false`.
+        #expect(changed == .nothingToDo)
+        #expect(changed != .couldNotRead, "an empty note table is not a table that could not be read")
         #expect(indexBuilds == 0)
     }
     // MARK: - The create rule has one owner

@@ -63,11 +63,11 @@ struct HabitCheckInWidgetProvider: TimelineProvider {
         )
     }
 
-    /// Instrumented for [[T-1366]], and **deliberately less finely than Today and Calendar**:
-    /// `CadenceHabitWidgetSupport` is outside this ticket's file ownership, so the probe can close
-    /// `containerOpen` and stop there. The record's fetch and derive stages are therefore *absent*
-    /// rather than zero, and `rowsFetched` is `nil` rather than `0` — a stage nobody measured must
-    /// not read as a stage that cost nothing.
+    /// Instrumented for [[T-1366]] and split apart by [[T-1403]]: the probe closes `containerOpen`
+    /// here and `CadenceHabitWidgetSupport.snapshot` closes `fetch` and `derive`, so this widget's
+    /// records now say how much of a generation was the store and how much was the filtering —
+    /// which they could not while the support type was outside T-1366's file ownership and the two
+    /// stages were absent rather than measured.
     private func currentSnapshot() -> CadenceHabitWidgetSnapshot {
         let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.habitWidgetKind)
         do {
@@ -79,7 +79,8 @@ struct HabitCheckInWidgetProvider: TimelineProvider {
             let modelContext = ModelContext(container)
             let snapshot = try CadenceHabitWidgetSupport.snapshot(
                 modelContext: modelContext,
-                limit: 8
+                limit: 8,
+                probe: probe
             )
             probe.recordGeneration(
                 outcome: snapshot.state == .empty ? .empty : .ready,

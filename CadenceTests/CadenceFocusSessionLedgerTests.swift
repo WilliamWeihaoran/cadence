@@ -59,7 +59,7 @@ struct CadenceFocusSessionLedgerTests {
 
         let changed = CadenceFocusLedger.reconcile(in: context)
 
-        #expect(changed)
+        #expect(changed == .changed)
         #expect(
             task.actualMinutes == 135,
             "both sessions must survive the merge: 100 before the ledger, plus 25 and plus 10"
@@ -110,7 +110,7 @@ struct CadenceFocusSessionLedgerTests {
         CadenceFocusLedger.bank(5, to: task, in: context)
 
         #expect(task.actualMinutes == 140, "100 before the ledger, plus 25, plus 10, plus the 5 just banked")
-        #expect(CadenceFocusLedger.reconcile(in: context) == false, "bank left nothing for the sweep to do")
+        #expect(CadenceFocusLedger.reconcile(in: context) == .nothingToDo, "bank left nothing for the sweep to do")
     }
 
     /// After a bank, the counter and the ledger agree **exactly**. That equality is the invariant
@@ -168,9 +168,9 @@ struct CadenceFocusSessionLedgerTests {
         task.actualMinutes = 10 // the increment was clobbered
         try context.save()
 
-        #expect(CadenceFocusLedger.reconcile(in: context))
+        #expect(CadenceFocusLedger.reconcile(in: context) == .changed)
         #expect(task.actualMinutes == 15)
-        #expect(CadenceFocusLedger.reconcile(in: context) == false)
+        #expect(CadenceFocusLedger.reconcile(in: context) == .nothingToDo)
         #expect(task.actualMinutes == 15)
     }
 
@@ -183,7 +183,11 @@ struct CadenceFocusSessionLedgerTests {
         context.insert(task)
         try context.save()
 
-        #expect(CadenceFocusLedger.reconcile(in: context) == false)
+        // **T-1402.** `false` used to be this pass's answer for an empty ledger *and* for a fetch
+        // that threw. An empty ledger is a result; it is `nothingToDo`, and it is not `couldNotRead`.
+        let empty = CadenceFocusLedger.reconcile(in: context)
+        #expect(empty == .nothingToDo)
+        #expect(empty != .couldNotRead, "an empty ledger is not a ledger that could not be read")
         #expect(task.actualMinutes == 90, "a counter with no rows behind it is not a counter to lower")
     }
 
@@ -205,7 +209,7 @@ struct CadenceFocusSessionLedgerTests {
         arrived.task = task
         try context.save()
 
-        #expect(CadenceFocusLedger.reconcile(in: context) == false)
+        #expect(CadenceFocusLedger.reconcile(in: context) == .nothingToDo)
         #expect(task.actualMinutes == 135, "125 is what the visible rows say; 135 is what the store knows")
 
         // The straggler lands.
@@ -214,7 +218,7 @@ struct CadenceFocusSessionLedgerTests {
         late.task = task
         try context.save()
 
-        #expect(CadenceFocusLedger.reconcile(in: context) == false)
+        #expect(CadenceFocusLedger.reconcile(in: context) == .nothingToDo)
         #expect(task.actualMinutes == 135)
     }
 
@@ -367,7 +371,7 @@ struct CadenceFocusSessionLedgerTests {
         #expect((project.focusSessions ?? []).isEmpty)
         #expect(try context.fetchCount(FetchDescriptor<FocusSessionLog>()) == 0)
         // And the reconcile has nothing to resurrect.
-        #expect(CadenceFocusLedger.reconcile(in: context) == false)
+        #expect(CadenceFocusLedger.reconcile(in: context) == .nothingToDo)
         #expect(task.actualMinutes == 10)
     }
 

@@ -306,6 +306,134 @@ struct CadenceWidgetCostInstrumentTests {
         }
     }
 
+    /// **T-1403: all four widget kinds separate the store fetch from the in-memory derivation, and
+    /// a caller that passes no probe still records absence rather than zero.**
+    ///
+    /// Habit and Milestone were instrumented at the provider only — their support types were
+    /// outside [[T-1366]]'s file ownership — so their records carried a container open and a total
+    /// and said nothing about the fanout that is the reason to look at them. Milestone's is the one
+    /// that matters: `snapshot(from:now:limit:)` walks contributions and habit momentum through
+    /// sub-goals, linked lists, tasks and habits for every goal in the pool, and that walk is now
+    /// this record's `derive` stage.
+    ///
+    /// **The second half is the guard on the first.** `probe:` defaults to `nil`, and a record
+    /// written without one must come back with `fetch` and `derive` *absent* from `measuredStages`
+    /// and `rowsFetched == nil` — never `0`. That is the distinction `NoteMigrationReport.noteTableScanned`
+    /// exists to make: a zero in an `Int` reads identically whether the number was measured or
+    /// never taken. Both halves are in one test so neither can be satisfied by an instrument that
+    /// had stopped recording, or by one that records a zero for everything.
+    ///
+    /// No duration is asserted, for the [[T-1279]]/[[T-1296]] reason. What is bounded is shape.
+    @Test func habitAndMilestoneNowSplitFetchFromDeriveAndAbsentIsStillNotZero() throws {
+        let fixture = try DiskFixture()
+        defer { fixture.tearDown() }
+
+        try withTemporaryDefaults("CadenceTests.widgetCost") { defaults in
+            CadenceWidgetGenerationLedger.setEnabled(true, userDefaults: defaults)
+
+            let habitProbe = CadenceWidgetGenerationProbe(
+                kind: CadenceWidgetRefreshCenter.habitWidgetKind,
+                userDefaults: defaults
+            )
+            let habitContainer = try fixture.openReadOnlyContainer()
+            habitProbe.finished(.containerOpen)
+            let habitSnapshot = try CadenceHabitWidgetSupport.snapshot(
+                modelContext: ModelContext(habitContainer),
+                limit: 8,
+                probe: habitProbe
+            )
+            let habit = try #require(
+                habitProbe.recordGeneration(
+                    outcome: habitSnapshot.state == .empty ? .empty : .ready,
+                    renderedCount: habitSnapshot.habits.count,
+                    sourceSnapshotAt: habitSnapshot.date
+                ),
+                "the Habit probe recorded nothing"
+            )
+
+            let milestoneProbe = CadenceWidgetGenerationProbe(
+                kind: CadenceWidgetRefreshCenter.milestoneWidgetKind,
+                userDefaults: defaults
+            )
+            let milestoneContainer = try fixture.openReadOnlyContainer()
+            milestoneProbe.finished(.containerOpen)
+            let milestoneSnapshot = try CadenceMilestoneWidgetSupport.snapshot(
+                modelContext: ModelContext(milestoneContainer),
+                limit: 5,
+                probe: milestoneProbe
+            )
+            let milestone = try #require(
+                milestoneProbe.recordGeneration(
+                    outcome: milestoneSnapshot.state == .empty ? .empty : .ready,
+                    renderedCount: milestoneSnapshot.visibleGoals.count,
+                    sourceSnapshotAt: milestoneSnapshot.date
+                ),
+                "the Milestone probe recorded nothing"
+            )
+
+            for record in [habit, milestone] {
+                #expect(
+                    record.measuredStages == [.containerOpen, .fetch, .derive],
+                    "\(record.kind) measured \(record.measuredStages.map(\.rawValue).sorted())"
+                )
+                #expect(record.totalDuration.isFinite && record.totalDuration >= 0, "\(record.kind)")
+                #expect(
+                    record.accountedDuration <= record.totalDuration + 0.000_001,
+                    "\(record.kind) attributed \(record.accountedDuration)s of stages to a \(record.totalDuration)s generation"
+                )
+                #expect(record.stageDurations.values.allSatisfy { $0.isFinite && $0 >= 0 }, "\(record.kind)")
+                #expect(record.footprintBytes.map { $0 > 0 } ?? true, "a footprint of zero is not a reading")
+            }
+
+            // The counts, against the fixture's own arithmetic. The row count is the whole table
+            // each support type fetches, not the prefix its widget draws.
+            #expect(try #require(habit.rowsFetched) == DiskFixture.habitCount)
+            #expect(try #require(milestone.rowsFetched) == DiskFixture.goalCount)
+            #expect(milestone.renderedCount < DiskFixture.goalCount, "the fixture's pool is not bigger than the list")
+            #expect(habit.renderedCount <= DiskFixture.habitCount)
+
+            // **Absent is not zero.** The same two support calls with no probe, recorded by a probe
+            // that only closed the container open: the two stages are missing rather than zeroed,
+            // and the row count is `nil` rather than `0` — over a fixture that demonstrably has
+            // rows in it, so the `nil` is the instrument's silence and not the store's emptiness.
+            let blindProbe = CadenceWidgetGenerationProbe(
+                kind: CadenceWidgetRefreshCenter.habitWidgetKind,
+                userDefaults: defaults
+            )
+            let blindContainer = try fixture.openReadOnlyContainer()
+            blindProbe.finished(.containerOpen)
+            let blindSnapshot = try CadenceHabitWidgetSupport.snapshot(
+                modelContext: ModelContext(blindContainer),
+                limit: 8
+            )
+            let blind = try #require(
+                blindProbe.recordGeneration(
+                    outcome: blindSnapshot.state == .empty ? .empty : .ready,
+                    renderedCount: blindSnapshot.habits.count,
+                    sourceSnapshotAt: blindSnapshot.date
+                ),
+                "the un-probed generation recorded nothing"
+            )
+            #expect(blind.measuredStages == [.containerOpen])
+            #expect(blind.rowsFetched == nil, "an unmeasured fetch recorded a row count of zero")
+            #expect(blind.stageDurations[.fetch] == nil)
+            #expect(blind.stageDurations[.derive] == nil)
+            // Non-vacuity for that `nil`: the same store, read through a probe, really does count
+            // rows — so the absence above is the missing probe and not an empty table.
+            #expect(DiskFixture.habitCount > 0)
+            #expect(blindSnapshot.habits.count == habitSnapshot.habits.count)
+
+            print("""
+                T-1403 widget measurement (disk-backed fixture, \(DiskFixture.habitCount) Habit \
+                + \(DiskFixture.goalCount) Goal rows)
+                  habit:     rows=\(habit.rowsFetched as Int?) rendered=\(habit.renderedCount) \
+                total=\(habit.totalDuration)s stages=\(Self.described(habit.stageDurations))
+                  milestone: rows=\(milestone.rowsFetched as Int?) rendered=\(milestone.renderedCount) \
+                total=\(milestone.totalDuration)s stages=\(Self.described(milestone.stageDurations))
+                """)
+        }
+    }
+
     /// The four widget kinds the ledger keeps slots for are the four the bundle ships, read from
     /// `CadenceWidgetRefreshCenter` rather than written down twice.
     @Test func theLedgerKeepsASlotForEveryWidgetKindTheBundleShips() {
@@ -342,6 +470,12 @@ struct CadenceWidgetCostInstrumentTests {
         static let openUndatedTaskCount = 100
         static let settledTaskCount = 80
         static var totalTaskCount: Int { openDatedTaskCount + openUndatedTaskCount + settledTaskCount }
+        /// T-1403's two populations. Habit's fetch and Milestone's carry no predicate either, so
+        /// these are the whole tables their probes count — and both are deliberately larger than
+        /// the prefix their widgets draw (8 and 5), which is what `rowsFetched > renderedCount`
+        /// is a claim about.
+        static let habitCount = 24
+        static let goalCount = 18
 
         let directory: URL
         let storeURL: URL
@@ -388,6 +522,26 @@ struct CadenceWidgetCostInstrumentTests {
                 task.dueDate = todayKey
                 task.status = index.isMultiple(of: 2) ? .done : .cancelled
                 context.insert(task)
+            }
+            // T-1403. Daily habits so every row is due today and the Habit widget's derive pass
+            // has the whole table to filter rather than an empty result it can short-circuit.
+            for index in 0..<Self.habitCount {
+                let habit = Habit(title: "Habit \(index)")
+                habit.frequencyType = .daily
+                context.insert(habit)
+            }
+            // Goals in two layers, because Milestone's derive is a *traversal*: a flat pool would
+            // time the ranking and not the recursion through `subGoals` that is the fanout R59
+            // points at.
+            var parents: [Goal] = []
+            for index in 0..<Self.goalCount {
+                let goal = Goal(title: "Goal \(index)")
+                if index.isMultiple(of: 3), let parent = parents.last {
+                    goal.parentGoal = parent
+                } else {
+                    parents.append(goal)
+                }
+                context.insert(goal)
             }
             try context.save()
         }

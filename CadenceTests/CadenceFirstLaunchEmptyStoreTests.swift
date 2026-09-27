@@ -258,9 +258,19 @@ struct CadenceFirstLaunchEmptyStoreTests {
         let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)
 
         #expect(migrationReport?.insertedTotal == 0)
-        #expect(!synced)
+        // **T-1402.** These two were `#expect(!synced)` and `#expect(!reconciledFocusMinutes)`, and
+        // `false` there covered a clean pass *and* a table the pass could not read — so an empty
+        // first launch and a launch that could read nothing at all were the same assertion. They
+        // are `nothingToDo` now, which is the answer a first launch is supposed to give, and the
+        // `!= .couldNotRead` beside each is the reading that used to be indistinguishable.
+        #expect(synced == .nothingToDo)
+        #expect(synced != .couldNotRead, "the tag sweep could not read an empty store")
         #expect(repairReport?.changed == false)
-        #expect(!reconciledFocusMinutes, "the focus reconcile raised a counter on an empty store")
+        #expect(
+            reconciledFocusMinutes == .nothingToDo,
+            "the focus reconcile raised a counter on an empty store"
+        )
+        #expect(reconciledFocusMinutes != .couldNotRead, "the focus reconcile could not read an empty store")
         #expect(!context.hasChanges, "a first launch left the store dirty")
     }
 

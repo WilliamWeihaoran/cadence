@@ -58,10 +58,10 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
         )
     }
 
-    /// Instrumented for [[T-1366]] at the same coarseness as `HabitCheckInWidgetProvider`, and for
-    /// the same reason: `CadenceMilestoneWidgetSupport`'s contribution traversal is the fanout the
-    /// audit points at, and timing it apart needs an edit to a file this ticket does not own. What
-    /// this does record is that the traversal happened and what the whole generation cost.
+    /// Instrumented for [[T-1366]] and split apart by [[T-1403]], at the same grain as the other
+    /// three providers. `CadenceMilestoneWidgetSupport`'s contribution traversal is the fanout the
+    /// audit points at, and it is now timed as this record's `derive` stage instead of being folded
+    /// into a total that said only that the generation happened.
     private func currentSnapshot() -> CadenceMilestoneWidgetSnapshot {
         let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.milestoneWidgetKind)
         do {
@@ -73,7 +73,8 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
             let modelContext = ModelContext(container)
             let snapshot = try CadenceMilestoneWidgetSupport.snapshot(
                 modelContext: modelContext,
-                limit: 5
+                limit: 5,
+                probe: probe
             )
             probe.recordGeneration(
                 outcome: snapshot.state == .empty ? .empty : .ready,

@@ -50,13 +50,28 @@ nonisolated struct CadenceMilestoneWidgetGoalDecoration {
 }
 
 nonisolated enum CadenceMilestoneWidgetSupport {
+    /// `probe` is [[T-1366]]'s instrument, threaded here by [[T-1403]] and `nil` for every caller
+    /// but the timeline provider.
+    ///
+    /// **It is worth more on this widget than on the other three.** The `derive` stage it closes is
+    /// `snapshot(from:now:limit:)`, whose contribution and momentum walks recurse sub-goals, linked
+    /// lists, tasks and habits for every goal in the pool — the fanout R59 points at, and the one
+    /// this widget's records said nothing about while the provider closed `containerOpen` and
+    /// stopped. The `fetch` row count is the whole `Goal` table, the pool before `activeContributions`
+    /// filters it; `renderedCount` on the record is the handful the widget draws. A record written
+    /// by a caller that passes no probe still carries neither stage and a `nil` row count, because
+    /// absent is not zero.
     static func snapshot(
         modelContext: ModelContext,
-        limit: Int
+        limit: Int,
+        probe: CadenceWidgetGenerationProbe? = nil
     ) throws -> CadenceMilestoneWidgetSnapshot {
         let descriptor = FetchDescriptor<Goal>()
         let goals = try modelContext.fetch(descriptor)
-        return snapshot(from: goals, now: Date(), limit: limit)
+        probe?.finished(.fetch, rows: goals.count)
+        let built = snapshot(from: goals, now: Date(), limit: limit)
+        probe?.finished(.derive)
+        return built
     }
 
     /// **T-313: every goal is resolved exactly once here.**

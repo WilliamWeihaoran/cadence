@@ -766,12 +766,22 @@ nonisolated enum CadenceFocusLedger {
     /// reconcile carries the reconciled counter as its `previousMinutes`, which is at or above the
     /// existing minimum, so it cannot move the baseline either. There is no "run once" flag to
     /// hang on a migration that does not exist, and none is needed.
+    ///
+    /// **It answers a `CadenceMaintenancePassOutcome` rather than a `Bool`** ([[T-1402]]). The
+    /// `Bool` said `false` both for a store whose counters were already right and for a fetch that
+    /// threw, which is why [[T-1366]]'s launch instrument could only file this pass as
+    /// `indeterminate` — and why `reconcile(rows:)` below had to be split out for the one caller
+    /// that must not swallow the difference. The two are now different values here too, so the
+    /// launch records "nothing to raise" and "could not read the ledger" as the different things
+    /// they are. `reconcile(rows:)` keeps its `Bool`: it is handed the rows and has no fetch to
+    /// fail, so its `false` has only ever had one reading.
     @discardableResult
-    static func reconcile(in context: ModelContext) -> Bool {
-        guard let rows = try? context.fetch(FetchDescriptor<FocusSessionLog>()), !rows.isEmpty else {
-            return false
+    static func reconcile(in context: ModelContext) -> CadenceMaintenancePassOutcome {
+        guard let rows = try? context.fetch(FetchDescriptor<FocusSessionLog>()) else {
+            return .couldNotRead
         }
-        return reconcile(rows: rows)
+        guard !rows.isEmpty else { return .nothingToDo }
+        return reconcile(rows: rows) ? .changed : .nothingToDo
     }
 
     /// The same raise, over rows the caller already holds.

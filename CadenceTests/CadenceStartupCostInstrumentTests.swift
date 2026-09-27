@@ -12,16 +12,16 @@ import Testing
 /// `PersistenceController` now carries an opt-in recorder that times all of them, and this suite
 /// bounds what it produces.
 ///
-/// **The second claim is the one with consequences.** Three of the five maintenance passes answer
-/// `false`/`Void` for a clean run *and* for a run they could not complete —
-/// `TagSupport.syncAllNoteTagsFromMarkdown` returns `false` for an unreadable `Note` table, an
-/// unreadable `Tag` table, an empty store and a clean pass; `CadenceFocusLedger.reconcile` returns
-/// `false` for a fetch it could not run and for a store with nothing to raise; and
-/// `PursuitToGoalMigration.runIfNeeded` discards the `Bool` that `migrate` returns. Those three are
-/// recorded as `indeterminate`, which is not the instrument being coy: it is the instrument
-/// refusing to call an unknown a clean result. The two passes that *do* report a failure — note
-/// migration and integrity repair, through their reports' `success` — are never `indeterminate`,
-/// and that asymmetry is asserted in both directions so it cannot collapse quietly.
+/// **The second claim is the one with consequences, and [[T-1402]] finished it.** Three of the five
+/// maintenance passes used to answer `false`/`Void` for a clean run *and* for a run they could not
+/// complete — `TagSupport.syncAllNoteTagsFromMarkdown` returned `false` for an unreadable `Note`
+/// table, an unreadable `Tag` table, an empty store and a clean pass; `CadenceFocusLedger.reconcile`
+/// returned `false` for a fetch it could not run and for a store with nothing to raise; and
+/// `PursuitToGoalMigration.runIfNeeded` discarded the `Bool` that `migrate` returns. The instrument
+/// recorded all three as `indeterminate`, which was not it being coy: it was it refusing to call an
+/// unknown a clean result. **The passes were then widened rather than the meter loosened.** All
+/// three answer `CadenceMaintenancePassOutcome` now, so the assertion below is an equality — *no*
+/// stage is indeterminate — where it could only be a subset before.
 ///
 /// Nothing here touches the app-group store or the owner's container: the fixture is a disk-backed
 /// store in a temporary directory and a `UserDefaults` suite of its own.
@@ -156,7 +156,7 @@ struct CadenceStartupCostInstrumentTests {
     /// What is bounded is that **all five passes were timed**, that nothing claims to have cost
     /// less than nothing, that the parts never sum past the whole, and that the two passes with a
     /// `success` flag are never filed as indeterminate while the three without it always are.
-    @Test func everyMaintenancePassIsTimedAndOnlyThePassesThatCannotTellSayIndeterminate() throws {
+    @Test func everyMaintenancePassIsTimedAndNoneOfThemStillAnswersIndeterminate() throws {
         let fixture = try DiskFixture()
         defer { fixture.tearDown() }
 
@@ -190,10 +190,28 @@ struct CadenceStartupCostInstrumentTests {
             )
             #expect(report.measuredStages.isSuperset(of: Set(maintenance)))
 
-            // The asymmetry, both directions. `runIfNeeded` returns `Void` so the Pursuit pass can
-            // never be anything else; the two passes carrying a `success` flag can never be this.
-            #expect(report.stage(.pursuitMigration)?.outcome == .indeterminate)
-            #expect(Set(report.indeterminateStages).isSubset(of: [.pursuitMigration, .tagSync, .focusReconciliation]))
+            // **T-1402's equality.** This was `isSubset(of: [.pursuitMigration, .tagSync,
+            // .focusReconciliation])` beside `report.stage(.pursuitMigration)?.outcome ==
+            // .indeterminate`, because three of the five passes could not tell a clean run from a
+            // refusal. All five answer now, so the claim is that the list is *empty* — and the
+            // three `#require`s under it are the non-vacuity: an empty `indeterminateStages` is
+            // only worth something if those stages were recorded at all, which a report that had
+            // quietly stopped collecting them would also satisfy.
+            #expect(
+                report.indeterminateStages.isEmpty,
+                "these passes still cannot say whether they refused: \(report.indeterminateStages.map(\.rawValue))"
+            )
+            for stage in maintenance {
+                let record = try #require(report.stage(stage), "\(stage.rawValue) was not timed at all")
+                #expect(
+                    [.changed, .noChange, .refused, .completed].contains(record.outcome),
+                    "\(stage.rawValue) answered \(record.outcome.rawValue)"
+                )
+            }
+            // Over this fixture specifically: a store with rows, none of which any pass has to
+            // repair, and none of which any pass fails to read. A `refused` here would be a real
+            // regression rather than an environment.
+            #expect(report.refusedStages.isEmpty, "\(report.refusedStages.map(\.rawValue)) refused on a clean fixture")
             let noteMigration = try #require(report.stage(.noteMigration), "the note migration was not timed")
             let integrityRepair = try #require(report.stage(.integrityRepair), "the integrity repair was not timed")
             #expect(noteMigration.outcome != .indeterminate)
@@ -246,6 +264,66 @@ struct CadenceStartupCostInstrumentTests {
             "these stages exist in the vocabulary and are never recorded by a launch: \(unrecorded)"
         )
         #expect(CadenceStartupStage.allCases.count == 8)
+    }
+
+    // MARK: - T-1402: what the three widened passes now let the instrument say
+
+    /// **`couldNotRead` becomes `refused`, and `nothingToDo` becomes `noChange`.**
+    ///
+    /// The mapping is the entire load-bearing part of [[T-1402]] at this end: a pass that reports
+    /// it could not read must not arrive at the ledger as a launch with nothing to do. Asserted as
+    /// a total function over `CadenceMaintenancePassOutcome.allCases` so a fourth case added to
+    /// that enum and forgotten here fails rather than falling into whichever branch is last.
+    @Test func aPassThatCouldNotReadIsRecordedAsARefusalAndNeverAsANoOp() {
+        #expect(CadenceStartupStageVerdict.forMaintenancePass(.changed).outcome == .changed)
+        #expect(CadenceStartupStageVerdict.forMaintenancePass(.nothingToDo).outcome == .noChange)
+        #expect(CadenceStartupStageVerdict.forMaintenancePass(.couldNotRead).outcome == .refused)
+
+        // The three are genuinely three, which is what the old `Bool` could not manage.
+        let outcomes = Set(CadenceMaintenancePassOutcome.allCases.map {
+            CadenceStartupStageVerdict.forMaintenancePass($0).outcome
+        })
+        #expect(outcomes.count == CadenceMaintenancePassOutcome.allCases.count)
+        #expect(!outcomes.contains(.indeterminate), "a widened pass is being filed as one that cannot tell")
+
+        // The refusal note is the pass's own vocabulary, so it cannot carry a title or a path even
+        // by accident — the same rule `instrumentReason(for:)` keeps for an error.
+        let refusal = CadenceStartupStageVerdict.forMaintenancePass(.couldNotRead)
+        #expect(refusal.note?.isEmpty == false, "a refusal with no reason is a refusal that says nothing")
+        #expect(refusal.count == nil, "a pass that could not read reported a count")
+        // And a change carries no invented zero: `nil` is "reported no number", which is not `0`.
+        #expect(CadenceStartupStageVerdict.forMaintenancePass(.changed).count == nil)
+    }
+
+    /// **The launch body classifies through the widened passes and nothing else.**
+    ///
+    /// A source read, because the thing being pinned is that no call site went back to spelling
+    /// `indeterminate` by hand: the behavioural test above runs against one fixture, and a fixture
+    /// cannot prove a branch that fixture never takes.
+    @Test func noStartupPassIsStillClassifiedIndeterminateAtItsCallSite() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "performStartupMaintenance", in: source),
+            "performStartupMaintenance is gone or its braces do not balance, so this reads nothing"
+        )
+        #expect(body.count > 200, "the stripped body is too small to be the real one")
+        #expect(
+            !body.contains(".indeterminate("),
+            "a startup pass is classified as one that cannot tell a refusal from a no-op again (T-1402)"
+        )
+        // Non-vacuity, twice over: the reader can see this body's classifiers at all, and the
+        // three widened passes are still the ones being classified through the shared mapping.
+        #expect(body.contains("classifying:"), "the reader found no classifier in the launch body")
+        #expect(body.components(separatedBy: ".forMaintenancePass(").count - 1 == 3)
+        for pass in [
+            "PursuitToGoalMigration.runIfNeeded",
+            "TagSupport.syncAllNoteTagsFromMarkdown",
+            "CadenceFocusLedger.reconcile",
+        ] {
+            #expect(body.contains(pass), "the launch no longer runs \(pass)")
+        }
     }
 
     // MARK: - Fixtures
