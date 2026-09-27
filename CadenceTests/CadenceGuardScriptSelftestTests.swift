@@ -1015,6 +1015,80 @@ struct CadenceGuardScriptSelftestTests {
             selftest.contains("T-1359"),
             "scripts/ledger-lag-check.sh's selftest no longer induces T-1359's PARTIAL reading"
         )
+
+        // T-1325's re-open arm is the same shape a third time: a reading that WITHDRAWS a candidate
+        // finding, so it names no refusal of its own and would otherwise be deletable without a red
+        // run. `closed_in_own_ledger` is the whole widening — an id counts as closed at `<rev>` OR
+        // in the ledger that commit itself left — and the clause that keeps it from being rideable
+        // is that it reads `$_sha`'s ledger and not HEAD's, so the excuse belongs to the commit
+        // that owned the closure and expires for every commit that landed after the re-open.
+        for reading in ["T-1325", "closed_in_own_ledger", "OWN_LEDGER_AWK"] {
+            #expect(body.contains(reading), "scripts/ledger-lag-check.sh no longer makes the reading \(reading)")
+        }
+        #expect(
+            selftest.contains("T-1325"),
+            "scripts/ledger-lag-check.sh's selftest no longer induces T-1325's re-open reading"
+        )
+        // The three copies the widening replaced with one. `LEDGER_READING` is the closure and
+        // PARTIAL functions lifted out of `AWK_PROG` so the second-pass probe can share them
+        // rather than carry a fourth spelling of a rule T-1335 and T-1359 already converged.
+        #expect(
+            body.contains("LEDGER_READING=$(cat <<'AWK'"),
+            "scripts/ledger-lag-check.sh no longer spells its ledger reading once for both passes"
+        )
+    }
+
+    /// **T-1325, and the owner decided the question rather than an agent.** A finding here does not
+    /// expire, so an entry that is correctly closed and later RE-OPENED turns the commit that
+    /// closed it permanently red — on a commit that is in history and cannot be rewritten. The two
+    /// answers the ticket offered both spent something an agent does not own: a follow-up-id rule
+    /// retires re-opening, which this ledger uses to keep one ticket's history in one place, and a
+    /// reviewed exception list is a second allowlist in the repository whose [[T-1170]] is the
+    /// story of the first one. The owner kept re-opening, so the check widened.
+    ///
+    /// What this test holds is the MEASUREMENT, for the same reason `replay-partial-reading.sh` and
+    /// `replay-closure-reading.sh` are pinned beside their readings: the number that justified the
+    /// widening stays in the tree to be re-run rather than quoted. `headleg` is named explicitly
+    /// because it is the table's CONTROL — the disjunction's other, already-shipped leg read on its
+    /// own, which the replay expects to be DISQUALIFIED. A disqualifying column that never
+    /// disqualifies anything is indistinguishable from one that cannot reach the reading, which is
+    /// [[T-1394]]'s defect, caught by its own author before adoption.
+    @Test func theReOpenReadingIsMeasuredAndItsFoundingCasesArePinned() throws {
+        let replay = CadenceSelftestRun.repositoryRoot()
+            .appendingPathComponent("scripts/replay-reopen-reading.sh")
+        #expect(
+            FileManager.default.isExecutableFile(atPath: replay.path),
+            "scripts/replay-reopen-reading.sh is missing or not executable, so T-1325's number cannot be re-derived"
+        )
+        let text = try String(contentsOf: replay, encoding: .utf8)
+        for reading in ["today", "ownhere", "ownledger", "headleg"] {
+            #expect(
+                text.contains(reading),
+                "scripts/replay-reopen-reading.sh no longer measures the \(reading) candidate"
+            )
+        }
+        // T-1298's three founding cases, by name. A reading that excuses one of them is not
+        // adoptable however good its coverage column looks, and the replay refuses over them
+        // rather than reporting them.
+        for sha in ["00d576f", "e4719e3", "44eced5"] {
+            #expect(
+                text.contains(sha),
+                "scripts/replay-reopen-reading.sh no longer checks T-1298's founding case \(sha)"
+            )
+        }
+        // And the positive half: the one commit in this history that wrote its own closures and had
+        // them re-opened underneath it three pushes later. Without it the adopted reading is never
+        // once evaluated by the column that exists to disqualify it.
+        #expect(
+            text.contains("1273ea8"),
+            "scripts/replay-reopen-reading.sh no longer checks the re-open T-1325 was filed for"
+        )
+        for floor in ["REPLAY-REOPEN-VACUOUS", "REPLAY-REOPEN-FOUNDING-LOST"] {
+            #expect(
+                text.contains(floor),
+                "scripts/replay-reopen-reading.sh lost its \(floor) floor, so a run that read nothing reports a clean sweep"
+            )
+        }
     }
 
     /// T-1359, and it is [[T-1335]]'s convergence finished. That ticket made the three scripts

@@ -92,6 +92,16 @@
 # ledger closure to a follow-up commit buys one red run in between. Write the closure in the commit
 # that lands the code.
 #
+# WITH ONE EXCEPTION, AND IT IS THE ONLY DIRECTION STICKINESS RUNS THE WRONG WAY (T-1325). A
+# lagging closure is repairable -- write it later and the finding clears. A RE-OPEN is not: an entry
+# that was correctly closed goes back on the open list, and the commit that closed it becomes a
+# commit whose whole named set is open again, on a commit that is in history and cannot be
+# rewritten. The owner decided that re-opening an entry stays a practice, so the reading widened
+# rather than the practice narrowing: an id counts as closed at <rev> OR in that commit's own
+# `git show <sha>:docs/TODO.md`. Every finding this check made before, it still makes; the whole
+# argument, the measurement and the three founding cases it must still refuse are at
+# `closed_in_own_ledger()` below and in `scripts/replay-reopen-reading.sh`.
+#
 # THE MIRROR DIRECTION, AND IT IS A NOTICE (T-1342)
 #
 # Everything above asks whether a commit that LANDS CODE closed anything. The other direction is an
@@ -260,10 +270,60 @@ partial_written_here() {  # $1 = sha, $2 = space-separated PARTIAL ids; 0 if thi
     return 1
 }
 
+# THE RE-OPEN ARM (T-1325), and the owner decided the question it was filed to ask.
+#
+# Everything above judges an examined commit against the ledger at <rev> -- HEAD, in CI -- while
+# the rule this script PRINTS is about the commit itself: *"Write the closure in the commit that
+# lands the code."* Those two agree until an entry that was correctly closed is RE-OPENED. Then the
+# commit that closed it becomes a commit whose whole named set is open again, on a commit that is
+# in history and cannot be rewritten, so every later push is red until the ledger changes back.
+#
+# T-1325 offered the owner two ways out and both spent something an agent does not own: a
+# follow-up-id rule, which retires re-opening and fragments a ticket whose closures append an
+# `**Originally:**` suffix precisely to keep its history in one place, or a reviewed exception list,
+# which is a second allowlist in the repository whose [[T-1170]] is the story of the first one. THE
+# OWNER CHOSE TO KEEP RE-OPENING, so the check is what changes.
+#
+# THE READING: an id counts as closed if it is closed at <rev> OR closed in that commit's own
+# `git show <sha>:docs/TODO.md`. It restores each commit's verdict AT ITS OWN PUSH and changes no
+# other verdict. Note what it does NOT do, which is what separates it from the `**PARTIAL` reading
+# next to it: a PARTIAL line, read loosely, would excuse every FUTURE commit naming that id from
+# the moment it is written, which is why T-1359 took `partialhere` instead. This cannot be ridden
+# the same way, because a commit is only excused by it where the id was closed when the commit
+# landed AND is open now -- and the re-open is a later event the riding commit cannot cause or
+# anticipate, in a world where that commit was already green at its own push.
+#
+# MEASURED, by `scripts/replay-reopen-reading.sh`, over one verdict per (commit, push) pair across
+# all 1221 mainline pushes -- 3775 flagged verdicts, 3772 of which recorded nothing:
+#
+#   reading      newly excused   ...that recorded NOTHING
+#   ownhere          3 of 3775            0            credits only the commit that wrote it
+#   ownledger  <--   3 of 3775            0            this one
+#   headleg       3774 of 3775         3771            the control, DISQUALIFIED
+#
+# `headleg` is the disjunction's other leg -- the one that already ships -- read on its own, and it
+# is in that table because a disqualifying column that never disqualifies anything is
+# indistinguishable from one that cannot reach the reading ([[T-1394]]). The three verdicts
+# `ownledger` newly excuses are all `1273ea8`, which wrote its own closures for T-679 and T-719 and
+# had them re-opened underneath it by `169d594` three pushes later. T-1298's three founding cases
+# are refused by name there and here: `00d576f`, `e4719e3` and `44eced5` are flagged at 26, 24 and
+# 23 pushes and excused at none of them.
+#
+# COST. Like the PARTIAL probe, this runs only for a CANDIDATE finding -- zero commits on a green
+# run, ~60 ms per finding, and nothing at all added to the 0.5 s green path.
+closed_in_own_ledger() {  # $1 = sha, $2 = ids; 0 if any of them reads closed in THAT commit's ledger
+    _sha=$1; _ids=$2
+    [ -n "$_ids" ] || return 1
+    { git show "$_sha:$TODO_PATH" 2>/dev/null | sed 's/^/T	/'
+      git show "$_sha:$DONE_PATH" 2>/dev/null | sed 's/^/D	/'
+    } | awk -F'	' -v want="$_ids" "$OWN_LEDGER_AWK"
+}
+
 second_pass() {  # $1 = the first pass's records
     _rev_short=$(git rev-parse --short "${rev:-HEAD}" 2>/dev/null || printf '%s' "${rev:-HEAD}")
     _findings=0
     _excused=0
+    _reopened=0
     _body=""
     _commits=0; _entries=0; _examined=0
     _us=$(printf '\037')
@@ -275,6 +335,10 @@ second_pass() {  # $1 = the first pass's records
             F)
                 if partial_written_here "$_a" "$_e"; then
                     _excused=$((_excused + 1))
+                    continue
+                fi
+                if closed_in_own_ledger "$_a" "$_c"; then
+                    _reopened=$((_reopened + 1))
                     continue
                 fi
                 _findings=$((_findings + 1))
@@ -289,6 +353,9 @@ second_pass() {  # $1 = the first pass's records
         "$_commits" "$_entries" "$_examined" "$_findings"
     if [ "$_excused" -gt 0 ]; then
         printf ', %d excused by a **PARTIAL line the commit wrote itself' "$_excused"
+    fi
+    if [ "$_reopened" -gt 0 ]; then
+        printf ', %d excused by a closure their own ledger carried before the entry was re-opened' "$_reopened"
     fi
     printf '\n'
 
@@ -319,36 +386,15 @@ second_pass() {  # $1 = the first pass's records
 }
 
 # ---------------------------------------------------------------------------
-# The reading itself, as one awk pass over: TODO.md, TODO_DONE.md, the log.
-# Held in a variable rather than written to a temp file: the first draft wrote one and removed it
-# only on the success path, so every exit 3 and every exit 4 leaked one -- and a guard whose
-# refusal path is the one that litters is a guard that gets noticed for the wrong reason.
+# THE LEDGER READING, spelled ONCE in this file and shared by the main pass below and by the two
+# second-pass probes above it. It used to be written out inside `AWK_PROG` alone; T-1325's probe
+# needs the same `first_line_closed` over a DIFFERENT revision of the ledger, and a second copy of
+# a rule this repository has already converged across three files (T-1335, T-1359) would be the
+# defect those two tickets exist to prevent -- so the functions move out rather than multiply.
 # ---------------------------------------------------------------------------
-AWK_PROG=$(cat <<'AWK'
-# The record separator between this pass and the shell that filters its candidates. A unit
-# separator, because a commit subject can hold anything a human can type but not a control
-# character, and the alternative -- re-parsing the formatted human line -- is a second reading.
-BEGIN { US = sprintf("%c", 31) }
+LEDGER_READING=$(cat <<'AWK'
 function entry_id(line,   id) {
     id = line; sub(/^- \[/, "", id); sub(/\].*$/, "", id); return id
-}
-# Every `T-n` the subject names, with both range spellings expanded. A range is two ids separated
-# by nothing but dots and spaces -- `T-1271 .. T-1278` and `T-996..T-999` are both written here.
-function subject_ids(s,   tok, sep, prevnum, a, b, i, rest) {
-    delete SID
-    rest = s; prevnum = -1
-    while (match(rest, /T-[0-9]+/)) {
-        tok = substr(rest, RSTART, RLENGTH)
-        sep = substr(rest, 1, RSTART - 1)
-        b = substr(tok, 3) + 0
-        if (prevnum >= 0 && sep ~ /^ *\.\.+ *$/) {
-            a = prevnum
-            if (b > a && b - a <= 64) for (i = a + 1; i < b; i++) SID["T-" i] = 1
-        }
-        SID[tok] = 1
-        prevnum = b
-        rest = substr(rest, RSTART + RLENGTH)
-    }
 }
 # The closure reading, character for character `agent-commit.sh`'s `$LEDGER_CLOSURE_READING` and
 # `scripts/ledger-view.sh`'s copy of it (T-1335). One rule, three files, pinned against each other.
@@ -369,6 +415,54 @@ function first_line_closed(s) {
 # line that merely QUOTES the token cannot match and no `closure_visible` pass is needed here.
 function first_line_partial(s) {
     return s ~ /^- \[T-[0-9]+\] \*\*PARTIAL([^A-Za-z]|$)/
+}
+AWK
+)
+
+# The probe T-1325 adds, as its own awk program so the shell never has to quote a rule. It answers
+# one question about ONE commit: did the ledger THAT COMMIT LEFT already read any of these ids as
+# closed? Same three ways to be closed the main pass uses -- the archive, a `## Done` / `## Cancelled`
+# section, or the T-1335 closure run on the entry's own first line.
+OWN_LEDGER_AWK=$LEDGER_READING$(cat <<'AWK'
+BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) need[w[i]] = 1 }
+$1 == "T" && $2 ~ /^## / { sec = $2; next }
+$2 !~ /^- \[T-[0-9]+\]/ { next }
+{
+    if (!(entry_id($2) in need)) next
+    if ($1 == "D" || sec ~ /^## (Done|Cancelled)/ || first_line_closed($2)) { found = 1; exit }
+}
+END { exit(found ? 0 : 1) }
+AWK
+)
+
+# ---------------------------------------------------------------------------
+# The reading itself, as one awk pass over: TODO.md, TODO_DONE.md, the log.
+# Held in a variable rather than written to a temp file: the first draft wrote one and removed it
+# only on the success path, so every exit 3 and every exit 4 leaked one -- and a guard whose
+# refusal path is the one that litters is a guard that gets noticed for the wrong reason.
+# ---------------------------------------------------------------------------
+AWK_PROG=$LEDGER_READING$(cat <<'AWK'
+# The record separator between this pass and the shell that filters its candidates. A unit
+# separator, because a commit subject can hold anything a human can type but not a control
+# character, and the alternative -- re-parsing the formatted human line -- is a second reading.
+BEGIN { US = sprintf("%c", 31) }
+# Every `T-n` the subject names, with both range spellings expanded. A range is two ids separated
+# by nothing but dots and spaces -- `T-1271 .. T-1278` and `T-996..T-999` are both written here.
+function subject_ids(s,   tok, sep, prevnum, a, b, i, rest) {
+    delete SID
+    rest = s; prevnum = -1
+    while (match(rest, /T-[0-9]+/)) {
+        tok = substr(rest, RSTART, RLENGTH)
+        sep = substr(rest, 1, RSTART - 1)
+        b = substr(tok, 3) + 0
+        if (prevnum >= 0 && sep ~ /^ *\.\.+ *$/) {
+            a = prevnum
+            if (b > a && b - a <= 64) for (i = a + 1; i < b; i++) SID["T-" i] = 1
+        }
+        SID[tok] = 1
+        prevnum = b
+        rest = substr(rest, RSTART + RLENGTH)
+    }
 }
 function is_code(p) {
     if (p == "") return 0
@@ -622,7 +716,25 @@ cmd_selftest() {
     # The shape nothing else in this suite builds: ONE id with TWO formal entries. Measured on
     # `dcb0a15`, which closed T-1043 on the entry's own first line in the commit that landed the
     # fix and was flagged regardless, because a second open entry for the same id existed.
+    #
+    # ORDER MATTERS HERE, and it did not before T-1325. The code commit lands FIRST, while both
+    # twins are open, so the finding it produces is one the re-open arm cannot excuse -- the ledger
+    # that commit LEFT reads T-20 open too. Only then do the twins gain a closure, so the thing
+    # that clears the finding is the duplicate reading at <rev> and nothing else. Written the other
+    # way round -- closure and code in one commit, twins opened afterwards -- `closed_in_own_ledger`
+    # excuses that commit whatever the duplicate reading says, and the T-1303 mutation stays alive.
     echo; echo " mode 2b (double allocation) -- an id with a closed entry is closed, whichever twin is last"
+    ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **One open entry for the double-allocated id.**' \
+        '- [T-20] **And a second open one; neither carries a closure.**' \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
+    land "T-20: the fix lands while both entries for the id are open" Cadence/H.swift "let h = 8"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "two OPEN entries for one id are still open" LEDGER-CLOSURE-LAGGED T-20
+
     ledger '# ledger' '' '## Open — decided, not started' '' \
         '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
         '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
@@ -630,8 +742,7 @@ cmd_selftest() {
         '- [T-11] **Another open finding.**' \
         '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
         '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
-    land "T-20: the fix, closed on the entry's own first line in the commit that landed it" \
-        Cadence/H.swift "let h = 8"
+    ( cd "$repo" && git add -A . && git commit -q -m "docs: one twin carries the closure now" )
     out=$(run); rc=$?
     check "$rc" 0 "$out" "a closed entry followed by an open twin is not a finding" 0 findings
 
@@ -645,29 +756,6 @@ cmd_selftest() {
     land "docs: the same two entries, written the other way round" docs/DUP.md dup
     out=$(run); rc=$?
     check "$rc" 0 "$out" "and not a finding in the other entry order either" 0 findings
-
-    # The control, without which the line above would pass an id that is never open.
-    ledger '# ledger' '' '## Open — decided, not started' '' \
-        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
-        '- [T-20] **One open entry for the double-allocated id.**' \
-        '- [T-20] **And a second open one; neither carries a closure.**' \
-        '- [T-11] **Another open finding.**' \
-        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
-        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
-    land "docs: both twins open, so the id really is open" docs/DUP.md dup2
-    out=$(run); rc=$?
-    check "$rc" 3 "$out" "two OPEN entries for one id are still open" LEDGER-CLOSURE-LAGGED T-20
-
-    ledger '# ledger' '' '## Open — decided, not started' '' \
-        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
-        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
-        '- [T-20] **A second entry two concurrent agents allocated for the same id.**' \
-        '- [T-11] **Another open finding.**' \
-        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
-        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
-    land "docs: restore the closure so the modes below start from a clean history" docs/DUP.md dup3
-    out=$(run); rc=$?
-    check "$rc" 0 "$out" "writing the closure back clears the finding again" 0 findings
 
     # --- mode 2c: a QUOTED marker is not a closure (T-1335) -----------------
     # The hole this check carried until T-1335. "Closed" was the bare token ANYWHERE on the entry's
@@ -783,6 +871,70 @@ cmd_selftest() {
         '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
         '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'
     land "docs: write the closures so the modes below start from a clean history" docs/DUP.md dup5
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "and the history goes quiet again once every entry carries its closure" 0 findings
+
+    # --- mode 2e: a RE-OPENED entry stops punishing the commit that closed it (T-1325) ------
+    # The state this check had no bucket for and kept red forever. An entry that was correctly
+    # closed goes back on the open list -- `1c97dd8` did exactly that to T-497 -- and the commit
+    # that closed it becomes a commit whose whole named set is open again, on a commit that is in
+    # history and cannot be rewritten. The owner decided re-opening stays a practice, so the reading
+    # changed: an id counts as closed at <rev> OR in that commit's own ledger.
+    #
+    # The second and third checks are the pair that tells this reading from the loose one T-1359
+    # refused for `**PARTIAL`. The excuse belongs to the ledger a commit LEFT, so it cannot be
+    # ridden by a later commit, and it is scoped to the ids that commit NAMES.
+    echo; echo " mode 2e (T-1325) -- a re-opened entry stops punishing the commit that closed it"
+    # Nine closed entries and two open ones are carried from the modes above so they stay green;
+    # only the T-6x lines this mode is about vary, so they are the argument of one helper.
+    ledger_2e() { ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-30] **CLOSED 2026-09-21 (`3333333`) — the closure, written rather than quoted.**' \
+        '- [T-31] **A finding that was closed after the fact.** **CLOSED 2026-09-21 (`2222222`) — the closure written mid-line, after the original finding.**' \
+        '- [T-32] **CLOSED 2026-09-21 (`4444444`) — and this one too.**' \
+        '- [T-40] **CLOSED 2026-09-25 (`5555555`) — the remaining three landed.**' \
+        '- [T-41] **CLOSED 2026-09-25 (`6666666`) — and this one too.**' \
+        '- [T-42] **PARTIAL 2026-09-25 (agent `fixture`) — an unrelated part-done ticket.**' \
+        '- [T-43] **CLOSED 2026-09-25 (`7777777`) — closed so the modes below start clean.**' \
+        "$@" \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'; }
+
+    ledger_2e '- [T-60] **CLOSED 2026-09-27 (`8888888`) — the fix and its closure in one commit.**' \
+              '- [T-62] **CLOSED 2026-09-27 (`9999999`) — an unrelated ticket, closed long before.**'
+    land "T-60: the fix, closed on the entry's own first line in the commit that landed it" \
+        Cadence/R1.swift "let r1 = 1"
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "the control: a commit that wrote its own closure is not a finding" 0 findings
+
+    # THE RE-OPEN, in a ledger-only commit. Nothing about the commit above changed.
+    ledger_2e '- [T-60] **Re-opened: the fix covered 7 of the 12 sites, so this goes back on the open list.**' \
+              '- [T-62] **CLOSED 2026-09-27 (`9999999`) — an unrelated ticket, closed long before.**'
+    ( cd "$repo" && git add -A . && git commit -q -m "docs: T-60 goes back on the open list" )
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "and it is still not a finding once the entry is re-opened underneath it" \
+        "0 findings" re-opened
+
+    land "T-60: more code under the re-opened entry, recording nothing" Cadence/R2.swift "let r2 = 2"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "a commit landing AFTER the re-open cannot ride the old closure" \
+        LEDGER-CLOSURE-LAGGED T-60
+
+    ledger_2e '- [T-60] **CLOSED 2026-09-27 (`aaaabbb`) — the remaining five sites landed.**' \
+              '- [T-61] **Open, and named by the commit below.**' \
+              '- [T-62] **CLOSED 2026-09-27 (`9999999`) — an unrelated ticket, closed long before.**'
+    land "T-61: code lands under an open id while an unrelated one is closed in the same ledger" \
+        Cadence/R3.swift "let r3 = 3"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "a closure in its own ledger for an id it does NOT name excuses nothing" \
+        LEDGER-CLOSURE-LAGGED T-61
+
+    ledger_2e '- [T-60] **CLOSED 2026-09-27 (`aaaabbb`) — the remaining five sites landed.**' \
+              '- [T-61] **CLOSED 2026-09-27 (`ccccddd`) — closed so the modes below start clean.**' \
+              '- [T-62] **CLOSED 2026-09-27 (`9999999`) — an unrelated ticket, closed long before.**'
+    land "docs: write the closures so the modes below start from a clean history" docs/DUP.md dup6
     out=$(run); rc=$?
     check "$rc" 0 "$out" "and the history goes quiet again once every entry carries its closure" 0 findings
 
