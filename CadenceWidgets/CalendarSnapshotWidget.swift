@@ -71,8 +71,11 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
 
     /// Instrumented for [[T-1366]]; see `TodayTasksWidgetProvider` for what the probe records and
     /// why it is off until the app group says otherwise. `renderedCount` here is the day strip,
-    /// which is a fixed 14 — the number worth watching on this widget is `rowsFetched`, because
-    /// this provider's fetch has no predicate.
+    /// which is a fixed 14 — the number worth watching on this widget is `rowsFetched`, which is
+    /// where the cost was: this fetch carried no predicate until [[T-1366]]'s sweep measured what
+    /// the rows it could not use were costing, and it now materialises the dated open population
+    /// alone. `CadenceCalendarWidgetSupport.snapshot(modelContext:dayCount:probe:)` carries the
+    /// numbers and the equivalence argument.
     private func currentSnapshot() -> CadenceCalendarWidgetSnapshot {
         let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.calendarWidgetKind)
         do {

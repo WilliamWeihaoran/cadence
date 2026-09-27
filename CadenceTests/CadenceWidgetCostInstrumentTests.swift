@@ -200,17 +200,22 @@ struct CadenceWidgetCostInstrumentTests {
 
     // MARK: - The measurement
 
-    /// **Measured, on disk: Today hands the store a predicate and Calendar hands it none.**
+    /// **Measured, on disk: both widgets now hand the store the same predicate, and neither one
+    /// materialises the rest of the table.**
     ///
     /// The audit corrected the premise that Today fetches every task — it fetches a filtered
-    /// superset — and noted that Calendar's fetch is the broad one. Both readings came from source.
-    /// This is the number: two probes over one disk-backed fixture, in one test, so the two counts
-    /// cannot drift apart by fixture.
+    /// superset — and noted that Calendar's fetch was the broad one. That was true when this test
+    /// was written and it is the thing [[T-1366]]'s step-two sweep priced: holding the qualifying
+    /// population still and adding rows the derivation cannot read, Calendar's generation grew with
+    /// them and Today's did not. So Calendar fetches through
+    /// `CadenceTodayWidgetSupport.datedOpenTaskFetchDescriptor()` now, and the assertion below
+    /// moved with it: the number that used to be the whole table is the qualifying population.
+    /// `CadenceWidgetPopulationSweepTests` holds the cohorts and the equivalence oracle.
     ///
     /// **No time threshold is asserted and none should be.** A duration here is a fact about this
     /// machine on this day; what is bounded is the *shape* — every stage measured, nothing claiming
     /// to have cost less than nothing, and the parts never summing past the whole.
-    @Test func todayFetchesAFilteredSupersetWhereCalendarFetchesTheWholeTable() throws {
+    @Test func neitherWidgetsFetchMaterialisesMoreThanTheDatedOpenPopulation() throws {
         let fixture = try DiskFixture()
         defer { fixture.tearDown() }
 
@@ -261,14 +266,18 @@ struct CadenceWidgetCostInstrumentTests {
             // The counts, against the fixture's own arithmetic rather than a literal.
             let todayRows = try #require(today.rowsFetched, "the Today probe counted no rows at all")
             let calendarRows = try #require(calendar.rowsFetched, "the Calendar probe counted no rows at all")
-            #expect(calendarRows == DiskFixture.totalTaskCount)
             #expect(todayRows == DiskFixture.openDatedTaskCount)
-            #expect(todayRows < calendarRows)
+            #expect(calendarRows == DiskFixture.openDatedTaskCount)
             #expect(todayRows > todaySnapshot.tasks.count)
 
-            // Non-vacuity for that inequality: the fixture holds rows of both kinds a correct
-            // predicate must drop, so the two numbers being equal would be a real regression and
-            // not an artefact of a store where every task happens to qualify.
+            // Non-vacuity, and it is the whole point of the two numbers above: the fixture holds
+            // 180 rows of the two kinds the predicate must drop, and the same store read through a
+            // bare `FetchDescriptor<AppTask>()` really does hand back all 300 — so `120` is the
+            // predicate doing work and not a store where every task happens to qualify.
+            let wholeTable = try ModelContext(fixture.openReadOnlyContainer())
+                .fetchCount(FetchDescriptor<AppTask>())
+            #expect(wholeTable == DiskFixture.totalTaskCount)
+            #expect(wholeTable > todayRows)
             #expect(DiskFixture.totalTaskCount >= 300)
             #expect(DiskFixture.settledTaskCount > 0)
             #expect(DiskFixture.openUndatedTaskCount > 0)
@@ -296,7 +305,8 @@ struct CadenceWidgetCostInstrumentTests {
             #expect(footprint > 1_000_000)
 
             print("""
-                T-1366 widget measurement (disk-backed fixture, \(DiskFixture.totalTaskCount) AppTask rows)
+                T-1366 widget measurement (disk-backed fixture, \(DiskFixture.totalTaskCount) AppTask rows, \
+                \(DiskFixture.openDatedTaskCount) of them open and dated)
                   today:    rows=\(todayRows) rendered=\(today.renderedCount) \
                 total=\(today.totalDuration)s stages=\(Self.described(today.stageDurations))
                   calendar: rows=\(calendarRows) rendered=\(calendar.renderedCount) \
@@ -470,8 +480,9 @@ struct CadenceWidgetCostInstrumentTests {
         static let openUndatedTaskCount = 100
         static let settledTaskCount = 80
         static var totalTaskCount: Int { openDatedTaskCount + openUndatedTaskCount + settledTaskCount }
-        /// T-1403's two populations. Habit's fetch and Milestone's carry no predicate either, so
-        /// these are the whole tables their probes count — and both are deliberately larger than
+        /// T-1403's two populations. Habit's fetch and Milestone's carry no predicate — unlike
+        /// the two `AppTask` readers above, and unmeasured, which is why they were left alone —
+        /// so these are the whole tables their probes count, and both are deliberately larger than
         /// the prefix their widgets draw (8 and 5), which is what `rowsFetched > renderedCount`
         /// is a claim about.
         static let habitCount = 24

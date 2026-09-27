@@ -42,18 +42,37 @@ nonisolated struct CadenceCalendarWidgetSnapshot: Hashable {
 }
 
 nonisolated enum CadenceCalendarWidgetSupport {
-    /// `probe` is [[T-1366]]'s instrument, `nil` for every caller but the timeline provider. It is
-    /// worth more here than on any other widget: this fetch carries **no predicate at all**, so
-    /// the number it records is the whole `AppTask` table, and the audit's premise correction —
-    /// Today filters and Calendar does not — becomes a measured difference rather than a reading
-    /// of two source lines.
+    /// **This fetch used to carry no predicate at all, and [[T-1366]] measured what that cost.**
+    ///
+    /// The instrument's `rowsFetched` is what named the population: holding the qualifying rows —
+    /// open work carrying at least one date — at 120 and adding ballast the derivation cannot
+    /// read, this generation grew with the ballast and the Today widget's, over the *same* store,
+    /// did not. Medians of 7 on an M3 Pro, disk-backed fixtures, Xcode 27: 10,000 settled rows
+    /// took Calendar from 9.98ms to 337ms (fetch 4.25 -> 307.7ms) while Today stayed at 9.79ms,
+    /// and 10,000 open-but-undated rows took it to 579ms — worse, because those survive
+    /// `openTasks` and are then walked again by every day in the strip. The whole of that is rows
+    /// that cannot appear in the answer.
+    ///
+    /// **They cannot, and that is an argument rather than an observation.** Every term below
+    /// reads a task either through `$0.dueDate == dateKey` / `$0.scheduledDate == dateKey` for a
+    /// non-empty `dateKey`, through `!$0.dueDate.isEmpty`, or through
+    /// `CadenceTodayWidgetSupport.todayTasks`, whose membership test is `AppTask.isTodayWork` and
+    /// so needs a standing, and so needs a date. All of them sit behind `openTasks`. So the
+    /// predicate `datedOpenTaskFetchDescriptor()` already spells — unfinished, and carrying at
+    /// least one date — admits every row that can change this snapshot and nothing else, and
+    /// sharing that one descriptor rather than writing a second predicate here is the T-353 rule
+    /// this file has already been bitten by once.
+    ///
+    /// `probe` is [[T-1366]]'s instrument, `nil` for every caller but the timeline provider, and
+    /// `rowsFetched` is the bound: it is now the qualifying population and must not move with the
+    /// rest of the table again.
     nonisolated static func snapshot(
         modelContext: ModelContext,
         dayCount: Int,
         probe: CadenceWidgetGenerationProbe? = nil
     ) throws -> CadenceCalendarWidgetSnapshot {
         let today = Calendar.current.startOfDay(for: Date())
-        let tasks = try modelContext.fetch(FetchDescriptor<AppTask>())
+        let tasks = try modelContext.fetch(CadenceTodayWidgetSupport.datedOpenTaskFetchDescriptor())
         probe?.finished(.fetch, rows: tasks.count)
         let built = snapshot(from: tasks, today: today, dayCount: dayCount)
         probe?.finished(.derive)

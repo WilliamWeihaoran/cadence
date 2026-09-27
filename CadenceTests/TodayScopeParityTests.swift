@@ -204,7 +204,7 @@ struct TodayScopeParityTests {
         try modelContext.save()
 
         let everyRow = try modelContext.fetch(FetchDescriptor<AppTask>())
-        let queried = try modelContext.fetch(CadenceTodayWidgetSupport.todayCandidateFetchDescriptor())
+        let queried = try modelContext.fetch(CadenceTodayWidgetSupport.datedOpenTaskFetchDescriptor())
 
         let fromEveryRow = Set(CadenceTodayWidgetSupport.todayTasks(from: everyRow, todayKey: todayKey).map(\.id))
         let fromQuery = Set(CadenceTodayWidgetSupport.todayTasks(from: queried, todayKey: todayKey).map(\.id))

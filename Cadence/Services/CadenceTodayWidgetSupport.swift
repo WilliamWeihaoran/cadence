@@ -55,7 +55,7 @@ nonisolated enum CadenceTodayWidgetSupport {
     /// caller outside the four timeline providers — this reads exactly as it did before, and with
     /// one supplied the store fetch and the in-memory derivation are timed apart and the row count
     /// the fetch materialised is recorded. The count is the population Today *ranks*, not the
-    /// prefix it draws; `CadenceTodayWidgetSupport.todayCandidateFetchDescriptor()` is a deliberate
+    /// prefix it draws; `CadenceTodayWidgetSupport.datedOpenTaskFetchDescriptor()` is a deliberate
     /// superset and this is the first thing that says how big a superset it is.
     nonisolated static func snapshot(
         modelContext: ModelContext,
@@ -63,7 +63,7 @@ nonisolated enum CadenceTodayWidgetSupport {
         limit: Int = 3,
         probe: CadenceWidgetGenerationProbe? = nil
     ) throws -> CadenceTodayWidgetSnapshot {
-        let tasks = try modelContext.fetch(todayCandidateFetchDescriptor())
+        let tasks = try modelContext.fetch(datedOpenTaskFetchDescriptor())
         probe?.finished(.fetch, rows: tasks.count)
         let suppressedTaskIDs = CadenceWidgetRefreshCenter.suppressedTaskIDs()
         let built = snapshot(
@@ -201,8 +201,8 @@ nonisolated enum CadenceTodayWidgetSupport {
         )
     }
 
-    /// The rows the store has to hand over for `todayTasks` to pick from — **a deliberate
-    /// superset, and deliberately ignorant of what day it is.**
+    /// **Open work carrying at least one date** — the population every date-driven widget reads,
+    /// and a deliberate superset of any one day's scope, deliberately ignorant of what day it is.
     ///
     /// A `#Predicate` is a macro compiled to a store query; it cannot call
     /// `AppTask.isTodayWork(todayKey:)`, so this is the one place a Today rule *could* only exist
@@ -212,10 +212,17 @@ nonisolated enum CadenceTodayWidgetSupport {
     /// says only "unfinished, and carrying at least one date", which every standing in
     /// `CadenceTodayStanding` implies and no future edit to that rule can outgrow.
     ///
+    /// **The Calendar widget fetches through this too** ([[T-1366]]), which is why the name no
+    /// longer says "today": all four of that widget's output terms — the day strip's due and
+    /// scheduled counts, the overdue count and "Next up" — read a task only through a non-empty
+    /// `dateKey` comparison or through `todayTasks`, and all four sit behind its own
+    /// `!isDone && !isCancelled` filter. So a row this predicate drops could not have reached any
+    /// of them, and dropping it in the store rather than in memory is the same snapshot for less.
+    ///
     /// Internal rather than `private` so a test can drive the store query and the in-memory scope
     /// from one fixture set and require the same ids —
     /// `theWidgetsStoreQueryKeepsEveryTaskItsTodayScopeAdmits`.
-    nonisolated static func todayCandidateFetchDescriptor() -> FetchDescriptor<AppTask> {
+    nonisolated static func datedOpenTaskFetchDescriptor() -> FetchDescriptor<AppTask> {
         let doneStatus = TaskStatus.done.rawValue
         let cancelledStatus = TaskStatus.cancelled.rawValue
 
