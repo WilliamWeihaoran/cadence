@@ -255,12 +255,23 @@ struct CadenceQuickDatePopover: View {
             }
         }
         .background(inlineStyle ? Color.clear : Theme.surfaceElevated)
-        // **T-1398.** Every size in this panel is a literal, down to the 34x34 day cells, and the
-        // create sheet's date tiles present it from inside a converted root. Nothing it draws reads
-        // the scaling environment *today* — so unlike the other three this is the rule being kept
-        // rather than a regression being closed, and it is the cheap half of the rule: the day a
-        // shared component in here is converted, this panel does not silently start growing inside
-        // 34pt cells.
+        // **T-1398 kept the rule here; T-1410 measured whether it could be dropped and it cannot.**
+        //
+        // Every size in this panel is a literal, down to the 34x34 day cells, and the create
+        // sheet's date tiles present it from inside a converted root. Nothing it draws reads the
+        // scaling environment today, so the pin closed no regression — it stated the rule, so that
+        // the day a shared component in here is converted this panel does not silently start
+        // growing inside 34pt cells.
+        //
+        // **Why it stays fixed rather than being converted with the other panels.** A month is
+        // seven columns wide and that is not a layout choice, it is what a month is. A day cell
+        // has to hold two digits, so at `accessibility5` a 12pt numeral resolves to ~37pt and the
+        // cell it needs is ~46 — seven of those plus the grid's own gutters is wider than the
+        // 390pt a phone offers, before the popover's own insets. There is no arrangement of seven
+        // columns that fits, which makes this a redesign (a different date-entry shape at
+        // accessibility sizes, not a bigger grid) rather than a conversion. Priced in
+        // `CadenceQuickDateGridScaleTests` and filed as [[T-1413]]; until then the honest answer
+        // is the one the panel already gives, which is that it does not scale.
         .cadenceFixedTypography()
     }
 

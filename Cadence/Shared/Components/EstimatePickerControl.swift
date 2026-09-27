@@ -136,15 +136,20 @@ struct EstimatePickerPopoverContent: View {
     private static let minuteValues = EstimateRollerMetrics.minuteValues
     private static let presets = EstimateRollerMetrics.presets
 
-    /// Plate height for the presets and the footer buttons — the same on both platforms, because
-    /// the two surfaces are meant to look alike.
-    private static let presetPlateHeight: CGFloat = 24
-    private static let footerPlateHeight: CGFloat = 26
+    // The preset and footer plate heights used to be declared here. They are
+    // `EstimateRollerMetrics.presetPlateHeight` / `.footerPlateHeight` now, beside the `at:scaling:`
+    // forms the body actually reads — a base and its curve have to be one decision, and the macOS
+    // test target can only reach the metrics type.
+
+    /// **T-1410.** The panel declares `.cadenceScaledTypography()` below, so every number it draws
+    /// names `.enabled` rather than reading a flag back: this is the declaration, and a converted
+    /// panel is converted wherever it is opened from.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var total: Int { EstimateRollerMetrics.total(hours: hours, minutes: minutes) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: EstimateRollerMetrics.blockSpacing) {
             header
             rollers
             presetRow
@@ -155,15 +160,17 @@ struct EstimatePickerPopoverContent: View {
 
             footer
         }
-        .padding(10)
-        .frame(width: 260)
+        .padding(EstimateRollerMetrics.panelPadding)
+        .frame(width: EstimateRollerMetrics.panelWidth(at: dynamicTypeSize, scaling: .enabled))
         .background(Theme.surfaceElevated)
-        // **T-1398.** A literal 260pt panel over roller rows of a literal height, and its header
-        // draws a `SectionEyebrowLabel`, which reads the scaling environment. The task detail
-        // sheet presents it from inside `.cadenceScaledTypography()` and the value crosses the
-        // presentation, so the eyebrow was the one thing here that grew. It says `.fixed` until
-        // `EstimateRollerMetrics` grows with it.
-        .cadenceFixedTypography()
+        // **T-1410, replacing T-1398's pin.** T-1398 found the eyebrow in the header growing to
+        // ~28pt over roller rows fixed at 26 inside a literal 260pt panel, and stopped it by saying
+        // `.fixed` — which left the reader a scaled detail sheet opening an unscaled duration
+        // editor. `EstimateRollerMetrics` grew with it now: the panel widens by what a roller label
+        // gained, each row grows the same way and the column shows three of them instead of five,
+        // the presets reflow to two columns, and the header stacks. Nothing in here is a literal
+        // the type can outgrow.
+        .cadenceScaledTypography()
         .onAppear {
             seed(from: value)
             DispatchQueue.main.async { focusedColumn = .hours }
@@ -178,17 +185,36 @@ struct EstimatePickerPopoverContent: View {
 
     @ViewBuilder
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            SectionEyebrowLabel(text: title, size: .compact)
-
-            Spacer(minLength: 0)
-
-            Text(total > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: total) : "None")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(total > 0 ? Theme.text : Theme.dim)
-                .monospacedDigit()
-                .lineLimit(1)
+        if EstimateRollerMetrics.headerIsStacked(at: dynamicTypeSize, scaling: .enabled) {
+            VStack(alignment: .leading, spacing: 4) {
+                headingLabel
+                totalLabel
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                headingLabel
+                Spacer(minLength: 0)
+                totalLabel
+            }
         }
+    }
+
+    /// One call site for the shared eyebrow, not one per arrangement — the two branches above are
+    /// a layout decision and must not become two spellings of the label.
+    /// `CadenceCompactEyebrowConvergenceTests` counts this file's calls and is what says so.
+    private var headingLabel: some View {
+        SectionEyebrowLabel(text: title, size: .compact)
+    }
+
+    /// The live total. `lineLimit(1)` with **no** `minimumScaleFactor`: shrinking a duration back
+    /// down to fit is the one thing a reader who enlarged their text did not ask for.
+    private var totalLabel: some View {
+        Text(total > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: total) : "None")
+            .cadenceFont(.fieldValue, base: EstimateRollerMetrics.totalLabelSize)
+            .foregroundStyle(total > 0 ? Theme.text : Theme.dim)
+            .monospacedDigit()
+            .lineLimit(1)
     }
 
     @ViewBuilder
@@ -225,9 +251,20 @@ struct EstimatePickerPopoverContent: View {
         .onKeyPress(.return) { closeIfLanded(); return .handled }
     }
 
+    /// **A grid rather than a row, because five chips across one line is a count the type can
+    /// outgrow.** At every size the app was drawn at this is five flexible columns with the same
+    /// spacing the `HStack` had, so it lays out identically; at an accessibility size it is two,
+    /// and the five presets wrap onto three lines instead of truncating to three characters each.
     @ViewBuilder
     private var presetRow: some View {
-        HStack(spacing: 5) {
+        let plateHeight = EstimateRollerMetrics.presetPlateHeight(at: dynamicTypeSize, scaling: .enabled)
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(), spacing: EstimateRollerMetrics.presetSpacing),
+                count: EstimateRollerMetrics.presetColumns(at: dynamicTypeSize, scaling: .enabled)
+            ),
+            spacing: EstimateRollerMetrics.presetSpacing
+        ) {
             ForEach(Self.presets, id: \.self) { preset in
                 let isSelected = total == preset
                 Button {
@@ -235,14 +272,14 @@ struct EstimatePickerPopoverContent: View {
                     closeIfLanded()
                 } label: {
                     Text(CadenceTaskPresentationSupport.estimateLabel(minutes: preset))
-                        .font(.system(size: 10, weight: .medium))
+                        .cadenceFont(.metadata, base: EstimateRollerMetrics.presetLabelSize)
                         .foregroundStyle(isSelected ? Theme.blue : Theme.muted)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
-                        .frame(height: Self.presetPlateHeight)
+                        .frame(height: plateHeight)
                         .background(isSelected ? Theme.blue.opacity(0.14) : Theme.surface)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .estimatePickerTouchTarget(plateHeight: Self.presetPlateHeight)
+                        .estimatePickerTouchTarget(plateHeight: plateHeight)
                 }
                 .buttonStyle(.plain)
                 // One hover layer, at the plate's own radius — see the standing rule. It resolves
@@ -254,6 +291,7 @@ struct EstimatePickerPopoverContent: View {
 
     @ViewBuilder
     private var footer: some View {
+        let plateHeight = EstimateRollerMetrics.footerPlateHeight(at: dynamicTypeSize, scaling: .enabled)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Button {
@@ -261,11 +299,11 @@ struct EstimatePickerPopoverContent: View {
                     closeIfLanded()
                 } label: {
                     Text("Clear")
-                        .font(.system(size: 11, weight: .medium))
+                        .cadenceFont(.metadata, base: EstimateRollerMetrics.footerLabelSize)
                         .foregroundStyle(Theme.red)
                         .padding(.horizontal, 10)
-                        .frame(height: Self.footerPlateHeight)
-                        .estimatePickerTouchTarget(plateHeight: Self.footerPlateHeight)
+                        .frame(height: plateHeight)
+                        .estimatePickerTouchTarget(plateHeight: plateHeight)
                 }
                 .buttonStyle(.plain)
                 .cadenceHoverHighlight(cornerRadius: 6, fillColor: Theme.surfaceElevated, strokeColor: .clear)
@@ -277,13 +315,13 @@ struct EstimatePickerPopoverContent: View {
                     closeIfLanded()
                 } label: {
                     Text("Done")
-                        .font(.system(size: 11, weight: .semibold))
+                        .cadenceFont(.metadata, base: EstimateRollerMetrics.footerLabelSize, weight: .semibold)
                         .foregroundStyle(Theme.blue)
                         .padding(.horizontal, 12)
-                        .frame(height: Self.footerPlateHeight)
+                        .frame(height: plateHeight)
                         .background(Theme.blue.opacity(0.12))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .estimatePickerTouchTarget(plateHeight: Self.footerPlateHeight)
+                        .estimatePickerTouchTarget(plateHeight: plateHeight)
                 }
                 .buttonStyle(.plain)
             }
@@ -395,6 +433,142 @@ enum EstimateRollerMetrics {
     static let rowHeight: CGFloat = 26
     static let visibleRows: CGFloat = 5
 
+    // MARK: Geometry once the reader has a text size (T-1410)
+    //
+    // **Why this panel is intrinsically sized and does NOT become a capped scroll.** Its two roller
+    // columns are themselves vertical `ScrollView`s, so wrapping the panel in another one — which
+    // is what `CadenceFittedPopover` does, and what that panel is right to do — would nest a
+    // vertical scroll inside a vertical scroll over the control the reader is dragging. The height
+    // is bounded a different way instead: each roller row grows with its type and the column shows
+    // **fewer** of them, so the wheel never becomes a screen of its own. Everything else in here
+    // grows additively, so the panel's whole height stays inside a phone at every size —
+    // `EstimatePickerLargeTextLayoutTests` is what holds that rather than an eye.
+
+    /// The panel's width at the default size, and what it widens to.
+    static let panelWidth: CGFloat = 260
+    /// Interior padding on all four sides, and the gap between stacked blocks.
+    static let panelPadding: CGFloat = 10
+    static let blockSpacing: CGFloat = 10
+    /// The font the roller rows and the columns are drawn at.
+    static let rowLabelSize: CGFloat = 13
+    /// The live total beside the heading.
+    static let totalLabelSize: CGFloat = 15
+    static let presetLabelSize: CGFloat = 10
+    static let footerLabelSize: CGFloat = 11
+    static let presetPlateHeight: CGFloat = 24
+    static let footerPlateHeight: CGFloat = 26
+    static let presetSpacing: CGFloat = 5
+
+    static func panelWidth(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(panelWidth, holding: .controlLabel, textBase: rowLabelSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// A roller row grows by what its label gained: 26pt around a 13pt value is 13pt of well, and
+    /// a well does not need to triple for the value in it to stop overlapping its neighbour.
+    static func rowHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(rowHeight, holding: .controlLabel, textBase: rowLabelSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// Five neighbouring values at the sizes the wheel was drawn at; three once each row is roughly
+    /// twice as tall.
+    ///
+    /// This is the decision that keeps the panel a panel. A wheel is read by seeing the values
+    /// *around* the chosen one, and three is the smallest count that still shows one either side —
+    /// so the affordance survives while the viewport does not double.
+    static func visibleRows(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        guard scaling == .enabled, CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) else { return visibleRows }
+        return 3
+    }
+
+    static func viewportHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        rowHeight(at: dynamicTypeSize, scaling: scaling) * visibleRows(at: dynamicTypeSize, scaling: scaling)
+    }
+
+    static func presetPlateHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(presetPlateHeight, holding: .metadata, textBase: presetLabelSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    static func footerPlateHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(footerPlateHeight, holding: .metadata, textBase: footerLabelSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// The presets reflow rather than shrink. Five "1h 30m" chips across a 285pt panel is 44pt
+    /// each, which holds a 10pt label and not a 31pt one; two columns and three rows is the same
+    /// five one-tap durations at a size they can be read at.
+    static func presetColumns(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> Int {
+        guard scaling == .enabled, CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) else { return presets.count }
+        return 2
+    }
+
+    static func presetRows(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> Int {
+        let columns = presetColumns(at: dynamicTypeSize, scaling: scaling)
+        return (presets.count + columns - 1) / columns
+    }
+
+    /// The heading and the live total sit on one baseline until they stop fitting beside each
+    /// other, and then the total moves under the heading.
+    ///
+    /// Measured against the panel rather than guessed: "ESTIMATE" is eight uppercase kerned
+    /// characters and the total is up to six monospaced digits and units, and at an accessibility
+    /// size the two together are wider than the panel they head.
+    static func headerIsStacked(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> Bool {
+        scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
+    }
+
+    /// What the whole panel occupies, block by block, so "does the duration editor still fit on a
+    /// phone at the largest text size" is a question a unit test can answer.
+    static func panelHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        let eyebrow = CadenceTypeScale.lineHeight(
+            .sectionLabel,
+            base: SectionEyebrowLabel.compactFontSize,
+            at: dynamicTypeSize,
+            scaling: scaling
+        )
+        let total = CadenceTypeScale.lineHeight(.fieldValue, base: totalLabelSize, at: dynamicTypeSize, scaling: scaling)
+        let header = headerIsStacked(at: dynamicTypeSize, scaling: scaling)
+            ? eyebrow + 4 + total
+            : max(eyebrow, total)
+        let presetBlock = CGFloat(presetRows(at: dynamicTypeSize, scaling: scaling))
+            * presetPlateHeight(at: dynamicTypeSize, scaling: scaling)
+            + CGFloat(presetRows(at: dynamicTypeSize, scaling: scaling) - 1) * presetSpacing
+        return panelPadding * 2
+            + header
+            + blockSpacing + viewportHeight(at: dynamicTypeSize, scaling: scaling)
+            + blockSpacing + presetBlock
+            + blockSpacing + 1
+            + blockSpacing + footerPlateHeight(at: dynamicTypeSize, scaling: scaling)
+    }
+
     /// Apple's minimum comfortable touch target. Controls that *are* tapped — the presets, Clear,
     /// Done — reach this on touch without their plates growing.
     static let touchTargetHeight: CGFloat = 44
@@ -466,8 +640,14 @@ private struct EstimateRollerColumn: View {
 
     private static let cornerRadius: CGFloat = 8
 
-    private var rowHeight: CGFloat { EstimateRollerMetrics.rowHeight }
-    private var viewportHeight: CGFloat { rowHeight * EstimateRollerMetrics.visibleRows }
+    /// The column is drawn inside `EstimatePickerPopoverContent`'s declared scope, so these read
+    /// the flag back rather than naming it: the panel is the declaration and this is a private part
+    /// of it, which is why the two cannot disagree.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
+    private var rowHeight: CGFloat { EstimateRollerMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling) }
+    private var viewportHeight: CGFloat { EstimateRollerMetrics.viewportHeight(at: dynamicTypeSize, scaling: scaling) }
 
     /// `scrollPosition` wants an optional; a nil centre (mid-fling, empty content) must not wipe
     /// the selection.
@@ -483,7 +663,11 @@ private struct EstimateRollerColumn: View {
             LazyVStack(spacing: 0) {
                 ForEach(values, id: \.self) { item in
                     Text("\(item)\(unit)")
-                        .font(.system(size: 13, weight: item == selection ? .semibold : .regular))
+                        .cadenceFont(
+                            .controlLabel,
+                            base: EstimateRollerMetrics.rowLabelSize,
+                            weight: item == selection ? .semibold : .regular
+                        )
                         .foregroundStyle(item == selection ? Theme.text : Theme.muted)
                         .monospacedDigit()
                         .opacity(opacity(for: item))

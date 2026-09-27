@@ -63,6 +63,114 @@ struct CadenceChoiceRow<T: Hashable>: Identifiable {
     }
 }
 
+/// Every number this panel draws, once the reader has a text size (T-1410).
+///
+/// **The panel is `.enabled`, not "whatever it inherited".** T-1398 measured that the migration
+/// flag crosses a `.popover` while `\.dynamicTypeSize` is re-read from the host window, and closed
+/// the resulting mismatch by pinning this panel to `.fixed`. Pinning stopped a grown label sitting
+/// in a rigid box; it did not convert anything, so a reader with Larger Text on got a scaled sheet
+/// that opened an unscaled picker. This is the conversion: the frame, the rows and the fonts all
+/// come from here, and `CadenceFittedPopover` states `.cadenceScaledTypography()` so the type the
+/// rows draw and the numbers this type returns are the same answer.
+///
+/// The geometry functions take `scaling:` so the *contrast* is testable from `CadenceTests` — the
+/// views themselves always pass `.enabled`, because a converted panel is converted wherever it is
+/// opened from. On macOS `\.dynamicTypeSize` never leaves `.large`, so every number below is the
+/// literal it replaced there (T-1399).
+/// Not `nonisolated`: `rowMinHeight` reads `CadenceSettingsRowMetrics.rowHeight`, which is
+/// main-actor-isolated by this target's `SWIFT_APPROACHABLE_CONCURRENCY` default, and a
+/// nonisolated static cannot initialise from one. Every reader here is a view body already.
+enum CadenceChoicePopoverMetrics {
+    /// The generic picker's panel width, and the grouped container picker's.
+    static let width: CGFloat = 230
+    static let containerWidth: CGFloat = 250
+
+    /// A **cap on a scroll**, not a height — which is why it stays a constant while everything
+    /// else here moves.
+    ///
+    /// `CadenceFittedPopover` takes the unscrolled stack whenever it fits under this and falls back
+    /// to a `ScrollView` when it does not, so the cap is the point past which the panel stops
+    /// growing and starts scrolling. Growing *it* with the type is the one change that would make
+    /// an accessibility size worse: the popover would leave the screen instead of scrolling, and a
+    /// popover that has left the screen has no cap at all.
+    static let maxHeight: CGFloat = 380
+    static let containerMaxHeight: CGFloat = 340
+
+    /// The sizes the rows were drawn at before they could move, kept as the bases the roles read.
+    static let titleSize: CGFloat = 14
+    static let subtitleSize: CGFloat = 11
+    static let glyphSize: CGFloat = 12
+    /// Leading slot the row's glyph is centred in, so every title in the list starts on one x.
+    static let glyphSlot: CGFloat = 18
+    static let rowVerticalPadding: CGFloat = 9
+
+    /// The panel widens by what its title gained, not by what it was multiplied by: 230pt around a
+    /// 14pt row is mostly gutter and chrome, and tripling the gutter is how an accessibility size
+    /// becomes a panel wider than the phone.
+    static func width(
+        _ base: CGFloat,
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(base, holding: .rowTitle, textBase: titleSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    static func glyphSlot(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(glyphSlot, holding: .rowTitle, textBase: glyphSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// One line at every ordinary size; two once the reader's text size is an accessibility
+    /// setting.
+    ///
+    /// A 39pt title in a 255pt panel does not fit on one line, and the alternative to a second line
+    /// is `minimumScaleFactor` — shrinking the text back down, which is precisely what the reader
+    /// asked not to happen. Same call `CadenceValueTileMetrics.valueLineLimit` makes (T-1364).
+    static func titleLineLimit(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> Int {
+        guard scaling == .enabled, CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) else { return 1 }
+        return 2
+    }
+
+    /// What one line of the row's title occupies.
+    static func titleLineHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.lineHeight(.rowTitle, base: titleSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// The text this row must hold: as many lines as it is allowed, plus its own padding.
+    static func rowTextHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CGFloat(titleLineLimit(at: dynamicTypeSize, scaling: scaling))
+            * titleLineHeight(at: dynamicTypeSize, scaling: scaling)
+            + rowVerticalPadding * 2
+    }
+
+    /// The row's floor: whichever is larger of the platform's touch target and the text in it.
+    ///
+    /// Two reasons rather than one, and they change places as the type grows. At the sizes the app
+    /// was drawn at the touch target wins and the row is the 44 (34 on macOS) it always was; past
+    /// roughly `accessibility1` the text wins, which is the "font grew, box did not" case stated as
+    /// arithmetic instead of found in a screenshot.
+    static func rowMinHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        max(
+            CadenceSettingsRowMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling),
+            rowTextHeight(at: dynamicTypeSize, scaling: scaling)
+        )
+    }
+}
+
 /// Popover chrome that takes its height from what is actually in it, capped so a long list still
 /// scrolls instead of running off the screen.
 ///
@@ -73,12 +181,20 @@ struct CadenceChoiceRow<T: Hashable>: Identifiable {
 /// the cap and falls back to the scrolling one when it does not, so neither end of the range has to
 /// be guessed — a one-row picker is one row tall and a 96-row time picker still scrolls.
 struct CadenceFittedPopover<Content: View>: View {
-    var width: CGFloat = 230
+    /// The width at the default text size. What is drawn is this plus what a row title gained —
+    /// see `CadenceChoicePopoverMetrics.width(_:at:scaling:)`.
+    var width: CGFloat = CadenceChoicePopoverMetrics.width
     /// A cap, not a height: past this the content scrolls rather than growing.
-    var maxHeight: CGFloat = 380
+    var maxHeight: CGFloat = CadenceChoicePopoverMetrics.maxHeight
     let content: Content
 
-    init(width: CGFloat = 230, maxHeight: CGFloat = 380, @ViewBuilder content: () -> Content) {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(
+        width: CGFloat = CadenceChoicePopoverMetrics.width,
+        maxHeight: CGFloat = CadenceChoicePopoverMetrics.maxHeight,
+        @ViewBuilder content: () -> Content
+    ) {
         self.width = width
         self.maxHeight = maxHeight
         self.content = content()
@@ -89,17 +205,22 @@ struct CadenceFittedPopover<Content: View>: View {
             content
             ScrollView { content }
         }
-        .frame(width: width)
+        .frame(width: CadenceChoicePopoverMetrics.width(width, at: dynamicTypeSize, scaling: .enabled))
         .frame(maxHeight: maxHeight)
         .background(Theme.surfaceElevated)
-        // **T-1398.** The width above is a literal and the rows under it are literals, so this
-        // panel states that it is not laid out for larger text rather than inheriting an answer
-        // from whoever opened it. Two of its three presenters are T-1364's converted sheets, and a
-        // custom environment value crosses a `.popover` — measured, see `CadenceTypographyScaling`
-        // — so without this the group eyebrows inside grew to ~28pt in a 230pt-wide panel whose
-        // every other row stayed at 14. Delete it in the same change that makes `width`,
-        // `maxHeight` and the rows size-aware, not before.
-        .cadenceFixedTypography()
+        // **T-1410, and it replaces the `.cadenceFixedTypography()` T-1398 put here.** T-1398
+        // measured that the migration flag crosses a `.popover` while `\.dynamicTypeSize` is
+        // re-read from the host window, so this panel arrived from a converted sheet carrying
+        // `.enabled` over a literal `width: 230` and rows fixed at 14 — a group eyebrow resolving
+        // to ~28pt above them. Pinning it stopped that and converted nothing: the reader who turned
+        // Larger Text on still got a scaled sheet opening an unscaled picker.
+        //
+        // It is converted now, and the shape it converted *to* is the one it already had. The
+        // panel is intrinsically sized and scrolls past a cap, so the cap is the only literal left
+        // — deliberately, because a cap that grew with the type would put the panel off the screen
+        // rather than scroll it. Everything else comes from `CadenceChoicePopoverMetrics`, which
+        // the rows read too, so the frame and the font cannot disagree.
+        .cadenceScaledTypography()
         .modifier(CadencePopoverCompactAdaptation())
     }
 }
@@ -139,7 +260,7 @@ struct CadenceChoicePopoverList<T: Hashable>: View {
     let rows: [CadenceChoiceRow<T>]
     @Binding var selection: T
     @Binding var isPresented: Bool
-    var width: CGFloat = 230
+    var width: CGFloat = CadenceChoicePopoverMetrics.width
     /// Drawn under the rows when the last pick was refused. Always `nil` on a draft picker, which
     /// has nothing that can be refused.
     var failureNotice: String?
@@ -152,7 +273,7 @@ struct CadenceChoicePopoverList<T: Hashable>: View {
         rows: [CadenceChoiceRow<T>],
         selection: Binding<T>,
         isPresented: Binding<Bool>,
-        width: CGFloat = 230
+        width: CGFloat = CadenceChoicePopoverMetrics.width
     ) {
         self.rows = rows
         self._selection = selection
@@ -168,7 +289,7 @@ struct CadenceChoicePopoverList<T: Hashable>: View {
         rows: [CadenceChoiceRow<T>],
         selection: T,
         isPresented: Binding<Bool>,
-        width: CGFloat = 230,
+        width: CGFloat = CadenceChoicePopoverMetrics.width,
         failureNotice: String? = nil,
         select: @escaping (T) -> Bool
     ) {
@@ -183,6 +304,12 @@ struct CadenceChoicePopoverList<T: Hashable>: View {
     /// Pointer hover, by row id. Always `nil` where there is no pointer.
     @State private var hoveredRowID: AnyHashable?
 
+    /// The rows are built *outside* `CadenceFittedPopover`'s scope, so the numbers here name
+    /// `.enabled` rather than reading it back: this list and that chrome are one panel and it is
+    /// converted. The fonts below go through the environment the chrome installs, which is the same
+    /// answer arriving by the other route.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         CadenceFittedPopover(width: width) {
             VStack(alignment: .leading, spacing: 2) {
@@ -193,18 +320,18 @@ struct CadenceChoicePopoverList<T: Hashable>: View {
                         HStack(spacing: 8) {
                             if let systemImage = row.systemImage {
                                 Image(systemName: systemImage)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .cadenceFont(.rowTitle, base: CadenceChoicePopoverMetrics.glyphSize, weight: .semibold)
                                     .foregroundStyle(row.color)
-                                    .frame(width: 18)
+                                    .frame(width: CadenceChoicePopoverMetrics.glyphSlot(at: dynamicTypeSize, scaling: .enabled))
                             }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.title)
-                                    .font(.system(size: 14, weight: .medium))
+                                    .cadenceFont(.rowTitle)
                                     .foregroundStyle(row.value == selection ? Theme.text : Theme.muted)
-                                    .lineLimit(1)
+                                    .lineLimit(CadenceChoicePopoverMetrics.titleLineLimit(at: dynamicTypeSize, scaling: .enabled))
                                 if let subtitle = row.subtitle {
                                     Text(subtitle)
-                                        .font(.system(size: 11))
+                                        .cadenceFont(.metadata, base: CadenceChoicePopoverMetrics.subtitleSize, weight: .regular)
                                         .foregroundStyle(Theme.dim)
                                         .multilineTextAlignment(.leading)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -213,13 +340,17 @@ struct CadenceChoicePopoverList<T: Hashable>: View {
                             Spacer(minLength: 8)
                             if row.value == selection {
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .cadenceFont(.rowTitle, base: CadenceChoicePopoverMetrics.glyphSize, weight: .semibold)
                                     .foregroundStyle(Theme.blue)
                             }
                         }
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .frame(maxWidth: .infinity, minHeight: CadenceSettingsRowMetrics.rowHeight, alignment: .leading)
+                        .padding(.vertical, CadenceChoicePopoverMetrics.rowVerticalPadding)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: CadenceChoicePopoverMetrics.rowMinHeight(at: dynamicTypeSize, scaling: .enabled),
+                            alignment: .leading
+                        )
                         // One layer, one radius: selection and hover share this fill rather than
                         // stacking a second `.background()` at a second corner radius.
                         .background(

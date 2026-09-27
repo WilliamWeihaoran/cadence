@@ -41,6 +41,29 @@ struct CadenceInlineNotice: View {
     /// Supplied only by a caller whose notice has no next attempt to clear it.
     var onDismiss: (() -> Void)?
 
+    /// **Converted for T-1410, because the panels that draw it are.** This sentence has no rigid
+    /// geometry of its own — it is `fixedSize(vertical:)` inside whatever contains it — so it was
+    /// safe to convert everywhere at once: on an unconverted surface the environment says `.fixed`
+    /// and both figures below resolve to the 12 and the 22 they have always been. The one box here
+    /// is the dismiss control, and it is derived from the glyph in it rather than left at 22.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
+    /// Size of the `x`, and of the square it is centred in. The square grows by what the glyph
+    /// gained, not by what it was multiplied by.
+    static let dismissGlyphSize: CGFloat = 10
+    static let dismissControlSize: CGFloat = 22
+
+    private var dismissControlBox: CGFloat {
+        CadenceTypeScale.height(
+            Self.dismissControlSize,
+            holding: .metadata,
+            textBase: Self.dismissGlyphSize,
+            at: dynamicTypeSize,
+            scaling: scaling
+        )
+    }
+
     @ViewBuilder
     var body: some View {
         if let onDismiss {
@@ -48,9 +71,9 @@ struct CadenceInlineNotice: View {
                 sentence
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .cadenceFont(.metadata, base: Self.dismissGlyphSize, weight: .bold)
                         .foregroundStyle(tone.color)
-                        .frame(width: 22, height: 22)
+                        .frame(width: dismissControlBox, height: dismissControlBox)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
@@ -64,7 +87,7 @@ struct CadenceInlineNotice: View {
 
     private var sentence: some View {
         Text(text)
-            .font(.system(size: 12, weight: .medium))
+            .cadenceFont(.metadata)
             .foregroundStyle(tone.color)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)

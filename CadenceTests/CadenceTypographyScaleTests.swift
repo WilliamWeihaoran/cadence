@@ -311,11 +311,19 @@ struct CadenceTypographyConversionSweepTests {
         #expect(eyebrow.contains("CadenceTypeScale.multiplier(.sectionLabel, at: dynamicTypeSize, scaling: scaling)"))
     }
 
-    /// Where the scope begins, and that it begins in exactly two places.
+    /// Where the scope begins, and that it begins in exactly four places.
     ///
-    /// The count is the assertion. A third `.cadenceScaledTypography()` means a surface was opted in
-    /// without its geometry being made size-aware, which is the failure mode the environment flag
-    /// exists to make visible rather than the improvement it looks like.
+    /// The **list** is the assertion, not a count that a new file could satisfy by accident. A fifth
+    /// `.cadenceScaledTypography()` means a surface was opted in without its geometry being made
+    /// size-aware, which is the failure mode the environment flag exists to make visible rather than
+    /// the improvement it looks like.
+    ///
+    /// Two of the four are T-1364's workflow roots — a create sheet and a detail sheet. The other
+    /// two are T-1410's converted **panels**, which declare rather than inherit for the reason
+    /// T-1398 measured: the flag crosses a `.popover` and `\.dynamicTypeSize` does not, so a panel
+    /// that took its answer from whoever opened it would render differently depending on the
+    /// toolchain. `CadencePresentedTypographyBoundaryTests` holds which panels, and which two
+    /// stayed on `.cadenceFixedTypography()`.
     @Test func exactlyTwoSurfacesDeclareThemselvesConverted() throws {
         let instrument = try CadenceScanInstrument(
             "scaled typography scope",
@@ -340,9 +348,11 @@ struct CadenceTypographyConversionSweepTests {
             including: "Cadence/iOS/iOSCreateTaskSheet.swift",
             read: read
         )
-        #expect(hits == [
+        #expect(hits.sorted() == [
+            "Cadence/Shared/Components/CadenceChoicePicker.swift",
+            "Cadence/Shared/Components/EstimatePickerControl.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
-        ])
+        ].sorted())
     }
 }

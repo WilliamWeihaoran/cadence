@@ -33,18 +33,38 @@ import Testing
 /// is the one that is pinned.
 struct CadencePresentedTypographyBoundaryTests {
 
-    /// The five view types every `.popover` in T-1364's two converted workflows presents.
+    /// The four view types every `.popover` in T-1364's two converted workflows presents, and
+    /// **which answer each one gives**.
     ///
-    /// Not a guess: `CadencePresentedTypographyBoundaryTests.everyPopoverInAConvertedWorkflowOpensADeclaredPicker`
-    /// below re-derives the list out of the four files and fails if a sixth appears.
-    private static let presentedPickers: [String: String] = [
-        // `iOSFittedPopover` / `iOSChoicePopoverList` / `iOSContainerChoicePopover` are typealiases
-        // onto these, so the declaration belongs on the panel that owns the rigid frame.
-        "CadenceFittedPopover": "Cadence/Shared/Components/CadenceChoicePicker.swift",
-        "EstimatePickerPopoverContent": "Cadence/Shared/Components/EstimatePickerControl.swift",
-        "CadenceQuickDatePopover": "Cadence/Shared/Components/CadenceDatePicker.swift",
-        "iOSTaskTagPickerPopover": "Cadence/iOS/iOSTaskDetailComponents.swift",
+    /// T-1398 put all four on `.fixed`, which was the regression being stopped rather than the
+    /// question being answered. T-1410 answered it per panel, and the answers differ — which is the
+    /// finding, not an inconsistency. Two panels converted, because the shape they needed was the
+    /// shape they already had; two stayed pinned, each for a reason that is arithmetic rather than
+    /// appetite and each priced in its own test below.
+    ///
+    /// Not a guess: `everyPopoverInAConvertedWorkflowOpensADeclaredPicker` re-derives the list out
+    /// of the five workflow files and fails if a sixth appears.
+    private static let presentedPickers: [String: (path: String, scope: String)] = [
+        // Converted. `iOSFittedPopover` / `iOSChoicePopoverList` / `iOSContainerChoicePopover` are
+        // typealiases onto this, so the declaration belongs on the panel that owns the frame.
+        "CadenceFittedPopover": (
+            "Cadence/Shared/Components/CadenceChoicePicker.swift", ".cadenceScaledTypography()"
+        ),
+        // Converted.
+        "EstimatePickerPopoverContent": (
+            "Cadence/Shared/Components/EstimatePickerControl.swift", ".cadenceScaledTypography()"
+        ),
+        // Pinned: seven columns of a month grid do not fit a phone once a day cell can grow.
+        "CadenceQuickDatePopover": (
+            "Cadence/Shared/Components/CadenceDatePicker.swift", ".cadenceFixedTypography()"
+        ),
+        // Pinned: every row of it is a `CadenceTagChip`, which twelve surfaces draw.
+        "iOSTaskTagPickerPopover": (
+            "Cadence/iOS/iOSTaskDetailComponents.swift", ".cadenceFixedTypography()"
+        ),
     ]
+
+    private static let scopeModifiers = [".cadenceScaledTypography()", ".cadenceFixedTypography()"]
 
     private static let convertedWorkflowFiles = [
         "Cadence/iOS/iOSCreateTaskSheet.swift",
@@ -100,16 +120,20 @@ struct CadencePresentedTypographyBoundaryTests {
 
     /// **The "font grew, box did not" case, as arithmetic.**
     ///
-    /// Three boxes that were live at HEAD, each a literal read out of the file it is asserted
+    /// Two boxes in `iOSTaskTagPickerPopover`, each a literal read out of the file it is asserted
     /// against so this cannot drift into a restatement:
     ///
-    /// - `iOSTaskTagPickerPopover`'s create button, a `40 × 40` square holding a `.fieldLabel` glyph;
-    /// - its tag rows, `minHeight: 44` holding a `.rowTitle`;
-    /// - `CadenceFittedPopover`, a literal `width: 230` panel whose group headings are a
-    ///   `SectionEyebrowLabel` and whose rows are a fixed `.system(size: 14)`.
+    /// - its create button, a `40 × 40` square holding a `.fieldLabel` glyph;
+    /// - its tag rows, `minHeight: 44` holding a `.rowTitle`.
     ///
-    /// Under `.enabled` every one of them overflows at the accessibility sizes, which is what makes
-    /// the declaration load-bearing rather than tidy. Under `.fixed` none of them moves at all.
+    /// **This is now the price of the pin rather than the price of the leak** (T-1410). The other
+    /// panel this test used to measure — `CadenceFittedPopover`'s `width: 230` over rows at a fixed
+    /// 14 — is converted, so it is asserted in
+    /// `theCompactEyebrowNoLongerOutgrowsTheChoiceRowsUnderIt` and in
+    /// `CadenceChoicePopoverLargeTextLayoutTests` instead. What is left here is the panel that
+    /// stayed pinned, and the numbers below are what it would do if it were opted in before
+    /// `CadenceTagChip` grows with it: under `.enabled` both boxes overflow at the accessibility
+    /// sizes, under `.fixed` neither moves at all.
     @Test("The pinned pickers would overflow their literal boxes if they scaled")
     func theRigidPickerBoxesCannotHoldTheirTypeOnceItScales() throws {
         let read = CadenceSourceScan.strippedSourceReader()
@@ -142,28 +166,50 @@ struct CadencePresentedTypographyBoundaryTests {
                 "the default size must be unaffected or T-1364's conversion was never a refactor")
     }
 
-    /// The eyebrow is the component that actually leaked into every choice popover, so it gets its
-    /// own number: `SectionEyebrowLabel.compactFontSize` heading rows drawn at a fixed 14.
-    @Test("A scaling eyebrow outgrows the fixed rows it heads")
-    func theCompactEyebrowOutgrowsTheChoiceRowsUnderIt() throws {
+    /// **The leak T-1398 found, now closed by conversion rather than by pinning.**
+    ///
+    /// The group heading in `iOSContainerChoicePopover` is a `SectionEyebrowLabel`, which reads the
+    /// scaling environment; the rows under it were a fixed `.system(size: 14)`. At `accessibility5`
+    /// a 9pt eyebrow resolves to 28.06pt over rows that had not moved — a heading nearly twice the
+    /// size of what it heads.
+    ///
+    /// The row's title is `.rowTitle` now, so the two move together. That is the assertion: the
+    /// eyebrow is still **smaller** than the rows it heads at every size, which is the relationship
+    /// a heading of this tier is supposed to have and the one that broke when only one of them
+    /// could grow.
+    @Test("The group heading stays smaller than the rows it heads, at every text size")
+    func theCompactEyebrowNoLongerOutgrowsTheChoiceRowsUnderIt() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let picker = try read("Cadence/Shared/Components/CadenceChoicePicker.swift")
-        #expect(picker.contains("var width: CGFloat = 230"), "the panel's width stopped being a literal")
-        #expect(picker.contains(".font(.system(size: 14, weight: .medium))"),
-                "the choice row's title stopped being a fixed 14, so this comparison is stale")
+        // Non-vacuity: the base below is the one the panel actually draws.
+        #expect(picker.contains("static let titleSize: CGFloat = 14"),
+                "the choice row's title base moved, so this comparison is stale")
+        #expect(picker.contains(".cadenceFont(.rowTitle)"),
+                "the choice row's title stopped going through the adapter")
 
-        let choiceRowTitle: CGFloat = 14
         let eyebrowBase = SectionEyebrowLabel.compactFontSize
         #expect(eyebrowBase == 9)
 
-        let leaked = CadenceTypeScale.size(.sectionLabel, base: eyebrowBase, at: .accessibility5, scaling: .enabled)
-        #expect(leaked > choiceRowTitle,
-                "a group heading that stays smaller than its rows would not have been visible")
-        #expect(leaked > 2 * eyebrowBase)
+        var widerThanItsRows: [DynamicTypeSize] = []
+        for size in DynamicTypeSize.allCases {
+            let eyebrow = CadenceTypeScale.size(.sectionLabel, base: eyebrowBase, at: size, scaling: .enabled)
+            let rowTitle = CadenceTypeScale.size(
+                .rowTitle,
+                base: CadenceChoicePopoverMetrics.titleSize,
+                at: size,
+                scaling: .enabled
+            )
+            if eyebrow >= rowTitle { widerThanItsRows.append(size) }
+        }
+        #expect(widerThanItsRows.isEmpty,
+                "the heading outgrows its own rows at \(widerThanItsRows)")
 
-        let pinned = CadenceTypeScale.size(.sectionLabel, base: eyebrowBase, at: .accessibility5, scaling: .fixed)
-        #expect(pinned == eyebrowBase)
-        #expect(pinned < choiceRowTitle)
+        // And the pre-conversion comparison, kept so the number this closed is still on record: a
+        // row frozen at its base is what the eyebrow used to be measured against, and it lost.
+        let frozenRow = CadenceChoicePopoverMetrics.titleSize
+        let eyebrowAtMax = CadenceTypeScale.size(.sectionLabel, base: eyebrowBase, at: .accessibility5, scaling: .enabled)
+        #expect(eyebrowAtMax > frozenRow)
+        #expect(eyebrowAtMax > 2 * eyebrowBase)
     }
 
     // MARK: - The sweep
@@ -177,13 +223,21 @@ struct CadencePresentedTypographyBoundaryTests {
     @Test("Every picker presented from a converted workflow states its typography scaling")
     func everyPresentedPickerDeclaresItsOwnTypographyScaling() throws {
         let read = CadenceSourceScan.strippedSourceReader()
-        for (type, path) in Self.presentedPickers.sorted(by: { $0.key < $1.key }) {
-            let source = try read(path)
-            #expect(source.contains("struct \(type)"), "\(path) no longer declares \(type)")
-            #expect(source.contains(".cadenceFixedTypography()"),
-                    "\(type) inherits its scaling from whoever presents it (T-1398)")
+        for (type, panel) in Self.presentedPickers.sorted(by: { $0.key < $1.key }) {
+            let source = try read(panel.path)
+            #expect(source.contains("struct \(type)"), "\(panel.path) no longer declares \(type)")
+            #expect(source.contains(panel.scope),
+                    "\(type) does not declare \(panel.scope), so it inherits its scaling from whoever presents it (T-1398)")
+            // Exactly one answer per panel: a file carrying both says nothing.
+            let other = Self.scopeModifiers.first { $0 != panel.scope }
+            #expect(!source.contains(other ?? ""),
+                    "\(type) declares both scopes, so the panel states no answer")
         }
         #expect(Self.presentedPickers.count == 4)
+        // Both answers are represented, so a blanket flip in either direction fails here rather
+        // than reading as four panels agreeing.
+        let scopes = Set(Self.presentedPickers.values.map(\.scope))
+        #expect(scopes == Set(Self.scopeModifiers))
     }
 
     /// And the list above is the tree's, re-derived: no `.popover` in a converted workflow opens
@@ -225,15 +279,23 @@ struct CadencePresentedTypographyBoundaryTests {
         #expect(Set(found).count >= 4, "the sweep matched one type thirteen times, which proves nothing")
     }
 
-    /// The scaled scope is still declared in exactly the two places T-1364 left it, and a picker
-    /// declaring `.fixed` did not accidentally become a third root.
-    @Test("Pinning the pickers added no new scaled root")
-    func theFixedDeclarationsDidNotCreateAThirdScaledRoot() throws {
+    /// **A panel may only opt in in the same change that makes its geometry size-aware**, which is
+    /// the whole reason the scope is an environment value rather than a flag. So the two panels
+    /// that are still rigid must still say so.
+    ///
+    /// `CadenceQuickDatePopover` is 34pt day cells and a 256pt panel; `iOSTaskTagPickerPopover` is
+    /// a `260 × 340` frame around rows made of an unconverted `CadenceTagChip`. Neither may carry
+    /// `.cadenceScaledTypography()` while that is true, and `CadenceQuickDateGridScaleTests` /
+    /// `theRigidPickerBoxesCannotHoldTheirTypeOnceItScales` are what price each one.
+    @Test("The two panels that are still rigid did not opt themselves in")
+    func theStillRigidPanelsDidNotOptIn() throws {
         let read = CadenceSourceScan.strippedSourceReader()
-        for (_, path) in Self.presentedPickers {
-            let source = try read(path)
+        let pinned = Self.presentedPickers.filter { $0.value.scope == ".cadenceFixedTypography()" }
+        #expect(pinned.count == 2, "the set of pinned panels moved without this test being told")
+        for (type, panel) in pinned {
+            let source = try read(panel.path)
             #expect(!source.contains(".cadenceScaledTypography()"),
-                    "\(path) opted a rigid panel in instead of out")
+                    "\(type) opted a rigid panel in instead of out")
         }
     }
 }

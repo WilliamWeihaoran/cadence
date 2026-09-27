@@ -170,8 +170,15 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   custom environment value **crosses** `.sheet`/`.popover`/`.fullScreenCover` while
   `\.dynamicTypeSize` is re-read from the host window — measured on Xcode 27 / iOS 26.5 and recorded
   on `CadenceTypographyScaling`. CI runs Xcode 26, so the propagation itself may not be asserted;
-  stating the answer is what makes a panel render the same on both. The four rigid pickers T-1364's
-  sheets open are the current declarers; `CadencePresentedTypographyBoundaryTests` holds the rule.
+  stating the answer is what makes a panel render the same on both. The four pickers T-1364's sheets
+  open are the declarers, and **they do not all give the same answer** (T-1410):
+  `CadenceFittedPopover` and `EstimatePickerPopoverContent` are converted and say
+  `.cadenceScaledTypography()`, so their geometry names `.enabled` literally while their fonts read
+  it back from the scope they install; `CadenceQuickDatePopover` and `iOSTaskTagPickerPopover` stay
+  `.cadenceFixedTypography()` for reasons that are arithmetic, not appetite (a seven-column month
+  grid, and rows made of the unconverted `CadenceTagChip`). `CadencePresentedTypographyBoundaryTests`
+  holds which panel gives which answer and fails one that gives both or neither;
+  `CadencePickerLargeTextLayoutTests` prices each decision.
 
 ## Reference Sections
 

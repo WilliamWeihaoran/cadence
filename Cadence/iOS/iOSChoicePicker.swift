@@ -74,6 +74,15 @@ struct iOSContainerChoicePopover: View {
         self.select = select
     }
 
+    /// See `CadenceChoicePopoverList`'s copy of this: the grouped rows are built outside the
+    /// chrome's scope, so the numbers name `.enabled` while the fonts read it from the environment.
+    ///
+    /// **These rows carry no `minHeight` and that is deliberate, not an omission.** They are
+    /// already intrinsic — `.padding(.vertical, 8)` around one line — so they grow with their own
+    /// type without a floor to derive, and giving them one would be a touch-target decision this
+    /// conversion has no business making.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private var containerSelection: TaskContainerSelection {
         CadenceTaskComposerSupport.selection(fromToken: selection)
     }
@@ -93,7 +102,10 @@ struct iOSContainerChoicePopover: View {
     }
 
     var body: some View {
-        iOSFittedPopover(width: 250, maxHeight: 340) {
+        iOSFittedPopover(
+            width: CadenceChoicePopoverMetrics.containerWidth,
+            maxHeight: CadenceChoicePopoverMetrics.containerMaxHeight
+        ) {
             VStack(alignment: .leading, spacing: 10) {
                 choiceRow(title: "Inbox", tag: "inbox", systemImage: "tray.full.fill", color: Theme.blue)
 
@@ -153,17 +165,17 @@ struct iOSContainerChoicePopover: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: CadenceChoicePopoverMetrics.glyphSize, weight: .semibold)
                     .foregroundStyle(color)
-                    .frame(width: 18)
+                    .frame(width: CadenceChoicePopoverMetrics.glyphSlot(at: dynamicTypeSize, scaling: .enabled))
                 Text(title)
-                    .font(.system(size: 14, weight: .medium))
+                    .cadenceFont(.rowTitle)
                     .foregroundStyle(tag == selection ? Theme.text : Theme.muted)
-                    .lineLimit(1)
+                    .lineLimit(CadenceChoicePopoverMetrics.titleLineLimit(at: dynamicTypeSize, scaling: .enabled))
                 Spacer(minLength: 8)
                 if tag == selection {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: CadenceChoicePopoverMetrics.glyphSize, weight: .semibold)
                         .foregroundStyle(Theme.blue)
                 }
             }
