@@ -338,6 +338,38 @@ struct CadenceTagChipScaleTests {
     private func assertPageChromeCallerInventory(paths: [String], read: (String) throws -> String) throws {
         let families: [(pattern: String, fires: String, anchor: String, undeclared: Set<String>)] = [
             (
+                #"\bEmptyStateView\s*\("#,
+                "EmptyStateView(message: title, icon: icon)",
+                "Cadence/iOS/iOSTaskViews.swift",
+                [
+                    "Cadence/iOS/iOSAINoteActionsViews.swift",
+                    "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+                    "Cadence/iOS/iOSTaskViews.swift",
+                    "Cadence/macOS/Views/GoalTimelineView.swift",
+                    "Cadence/macOS/Views/GoalsView.swift",
+                    "Cadence/macOS/Views/HabitsView.swift",
+                    "Cadence/macOS/Views/LinksView.swift",
+                    "Cadence/macOS/Views/ListDetailComponents.swift",
+                    "Cadence/macOS/Views/ListDetailSupportViews.swift",
+                    "Cadence/macOS/Views/ListDetailView.swift",
+                    "Cadence/macOS/Views/ListNotesViewSupportViews.swift",
+                    "Cadence/macOS/Views/NoteActionReviewSheets.swift",
+                    "Cadence/macOS/Views/NotesView.swift",
+                    "Cadence/macOS/Views/TasksListView.swift",
+                    "Cadence/macOS/Views/TasksPanel.swift",
+                ]
+            ),
+            (
+                #"\b(?:CadenceTaskGroupHeading|CadenceTodayRolloverBanner|CadenceTodayOverdue(?:ListCard|SectionCard|SummaryHeading))\s*\("#,
+                "CadenceTodayRolloverBanner(tasks: tasks) { roll() }",
+                "Cadence/iOS/iOSTodayTaskSections.swift",
+                [
+                    "Cadence/iOS/iOSTaskGroupSection.swift",
+                    "Cadence/iOS/iOSTodayTaskSections.swift",
+                    "Cadence/macOS/Views/TasksPanel.swift",
+                ]
+            ),
+            (
                 #"\biOS(?:PageHeader|CompactPageHeader)\s*\("#,
                 "iOSPageHeader(title: name)",
                 "Cadence/iOS/iOSFeatureComponents.swift",
@@ -374,14 +406,14 @@ struct CadenceTagChipScaleTests {
             let instrument = try CadenceScanInstrument(
                 "shared page chrome caller",
                 fires: family.fires,
-                andNotOn: "// iOSPageHeader(title: title)\nlet prose = \"iOSSegmentedPill(title: title)\"",
+                andNotOn: "// \(family.fires)\nlet prose = \(String(reflecting: family.fires))",
                 by: { CadenceSourceScan.codeOnly($0).range(of: family.pattern, options: .regularExpression) != nil }
             )
             let sites = try instrument.sweep(paths, atLeast: 300, including: family.anchor, read: read)
-            #expect(Set(sites) == family.undeclared, "reclassify the new or removed chrome caller")
+            #expect(Set(sites) == family.undeclared, "\(family.pattern): reclassify the new or removed chrome caller")
             for path in sites {
                 #expect(!CadenceSourceScan.codeOnly(try read(path)).contains(".cadenceScaledTypography()"),
-                        "\(path) opted in; verify its whole page geometry and move it out of the undeclared inventory")
+                        "\(family.pattern): \(path) opted in; verify its whole page geometry and move it out of the undeclared inventory")
             }
         }
     }

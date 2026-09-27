@@ -669,7 +669,7 @@ struct CadenceSectionEyebrowConvergenceTests {
 
         let card = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift"))
         #expect(card.contains("struct CadenceTodayOverdueSummaryHeading"), "non-vacuity: still the heading's file")
-        #expect(card.contains("size: SectionEyebrowLabel.fontSize"))
+        #expect(card.contains(".cadenceFont(.sectionLabel, base: SectionEyebrowLabel.fontSize, weight: .semibold)"))
         // The file keeps a plain 11pt body line; what may not come back is an 11pt *eyebrow*.
         #expect(!card.contains("size: 11, weight: .semibold"), "the 11pt eyebrow tier is back")
     }

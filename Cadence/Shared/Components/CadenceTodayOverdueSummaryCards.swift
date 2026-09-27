@@ -1,5 +1,11 @@
 import SwiftUI
 
+nonisolated enum CadenceOverdueSummaryMetrics {
+    static func iconSide(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        CadenceTypeScale.height(30, holding: .controlLabel, at: size, scaling: scaling)
+    }
+}
+
 /// Today's two past-due summary cards — one view each, both platforms (T-195, second half).
 ///
 /// They were `TodayOverdueListCard` and `TodayOverdueSectionCard` under `macOS/Views/`. Nothing in
@@ -70,36 +76,72 @@ private struct CadenceOverdueSummaryHoverTracking: ViewModifier {
 
 /// The caption both cards share, so they cannot drift apart on how a past due date reads.
 struct CadenceOverdueSummaryCaption: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let line: CadenceOverdueSummaryLine
 
     var body: some View {
-        HStack(spacing: 0) {
-            if let leadingDetail = line.leadingDetail {
-                Text(leadingDetail).foregroundStyle(Theme.dim)
-                Text(CadenceOverdueSummaryLine.separator).foregroundStyle(Theme.dim)
-            }
-            Text(line.dateText).foregroundStyle(line.dateTint)
-            if let trailingDetail = line.trailingDetail {
-                Text(CadenceOverdueSummaryLine.separator).foregroundStyle(Theme.dim)
-                Text(trailingDetail).foregroundStyle(Theme.dim)
+        let wraps = scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
+        Group {
+            if wraps {
+                Text(Self.attributedCaption(line))
+            } else {
+                HStack(spacing: 0) {
+                    if let leadingDetail = line.leadingDetail {
+                        Text(leadingDetail).foregroundStyle(Theme.dim)
+                        Text(CadenceOverdueSummaryLine.separator).foregroundStyle(Theme.dim)
+                    }
+                    Text(line.dateText).foregroundStyle(line.dateTint)
+                    if let trailingDetail = line.trailingDetail {
+                        Text(CadenceOverdueSummaryLine.separator).foregroundStyle(Theme.dim)
+                        Text(trailingDetail).foregroundStyle(Theme.dim)
+                    }
+                }
             }
         }
-        .font(.system(size: 11))
-        .lineLimit(1)
+        .cadenceFont(.metadata, base: 11, weight: .regular)
+        .lineLimit(wraps ? nil : 1)
+        .fixedSize(horizontal: false, vertical: wraps)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(line.plainText)
+    }
+
+    /// One wrapping line, with only the deadline tinted; the fixed layout above stays unchanged.
+    static func attributedCaption(_ line: CadenceOverdueSummaryLine) -> AttributedString {
+        var result = AttributedString()
+        let segments: [(String?, Color)] = [
+            (line.leadingDetail, Theme.dim), (line.dateText, line.dateTint), (line.trailingDetail, Theme.dim)
+        ]
+        for (text, tint) in segments {
+            guard let text, !text.isEmpty else { continue }
+            if !result.characters.isEmpty {
+                var separator = AttributedString(CadenceOverdueSummaryLine.separator)
+                separator.foregroundColor = Theme.dim
+                result += separator
+            }
+            var segment = AttributedString(text)
+            segment.foregroundColor = tint
+            result += segment
+        }
+        return result
     }
 }
 
 /// The list's own `colorHex` icon stays coloured — that is identity the user chose, not state.
 /// State is carried by the date alone.
 struct CadenceTodayOverdueListCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let summary: CadenceTodayOverdueListSummary
     let action: () -> Void
 
     var body: some View {
+        let wraps = scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
+        let layout = wraps
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
         CadenceOverdueSummaryCard(action: action) {
-            HStack(spacing: 12) {
+            layout {
                 CadenceOverdueSummaryIconTile(
                     systemImage: summary.icon,
                     colorHex: summary.colorHex
@@ -107,9 +149,10 @@ struct CadenceTodayOverdueListCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(summary.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .cadenceFont(.controlLabel)
                         .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
                     // No "List" chip beside this: the card is already sitting under a heading
                     // reading PAST DUE LISTS, so the chip was the same fact a third time.
                     CadenceOverdueSummaryCaption(
@@ -122,19 +165,26 @@ struct CadenceTodayOverdueListCard: View {
                     )
                 }
 
-                Spacer()
+                if !wraps { Spacer() }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
 struct CadenceTodayOverdueSectionCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let summary: CadenceTodayOverdueSectionSummary
     let action: () -> Void
 
     var body: some View {
+        let wraps = scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
+        let layout = wraps
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
         CadenceOverdueSummaryCard(action: action) {
-            HStack(spacing: 12) {
+            layout {
                 CadenceOverdueSummaryIconTile(
                     systemImage: summary.parentIcon,
                     colorHex: summary.parentColorHex
@@ -142,9 +192,10 @@ struct CadenceTodayOverdueSectionCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(summary.sectionName)
-                        .font(.system(size: 13, weight: .semibold))
+                        .cadenceFont(.controlLabel)
                         .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
                     CadenceOverdueSummaryCaption(
                         line: CadenceOverdueSummaryPresentation.line(
                             dueDateKey: summary.dueDateKey,
@@ -153,19 +204,20 @@ struct CadenceTodayOverdueSectionCard: View {
                     )
                 }
 
-                Spacer()
+                if !wraps { Spacer() }
 
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: wraps ? .leading : .trailing, spacing: 2) {
                     Text("\(summary.openTaskCount) open")
-                        .font(.system(size: 10, weight: .semibold))
+                        .cadenceFont(.sectionLabel)
                         .foregroundStyle(Theme.text)
                     if summary.completedTaskCount > 0 {
                         Text("\(summary.completedTaskCount) done")
-                            .font(.system(size: 10))
+                            .cadenceFont(.sectionLabel, weight: .regular)
                             .foregroundStyle(Theme.dim)
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -173,6 +225,8 @@ struct CadenceTodayOverdueSectionCard: View {
 /// The list's glyph in the list's own colour. Not `CommitmentIconTile` / `iOSIconTile`: those are
 /// larger identity tiles for rows and pickers, and this is a 30pt badge sized to a two-line card.
 private struct CadenceOverdueSummaryIconTile: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let systemImage: String
     let colorHex: String
 
@@ -181,12 +235,13 @@ private struct CadenceOverdueSummaryIconTile: View {
     }
 
     var body: some View {
+        let side = CadenceOverdueSummaryMetrics.iconSide(at: dynamicTypeSize, scaling: scaling)
         RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
             .fill(tint.opacity(0.16))
-            .frame(width: 30, height: 30)
+            .frame(width: side, height: side)
             .overlay {
                 Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel)
                     .foregroundStyle(tint)
             }
     }
@@ -197,12 +252,16 @@ private struct CadenceOverdueSummaryIconTile: View {
 /// Neutral rather than `Theme.red`: it used to be the third telling of "late" over rows that
 /// already say so, above cards that said so twice more.
 struct CadenceTodayOverdueSummaryHeading: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     let count: Int
 
     var body: some View {
+        let wraps = scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
         HStack(spacing: 6) {
             SectionEyebrowLabel(text: title)
+                .fixedSize(horizontal: false, vertical: wraps)
 
             // The count is the eyebrow's own size, not a point larger. It used to inherit an 11pt
             // font applied to the whole `HStack` — the one place in the app where the eyebrow tier
@@ -212,8 +271,9 @@ struct CadenceTodayOverdueSummaryHeading: View {
             // bigger than the label it counts. No capsule here on purpose — this heading sits over
             // cards that already carry their own chrome.
             Text("\(count)")
-                .font(.system(size: SectionEyebrowLabel.fontSize, weight: .semibold))
+                .cadenceFont(.sectionLabel, base: SectionEyebrowLabel.fontSize, weight: .semibold)
                 .foregroundStyle(Theme.dim)
+                .fixedSize(horizontal: wraps, vertical: wraps)
         }
     }
 }
