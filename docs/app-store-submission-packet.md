@@ -92,7 +92,7 @@ Required notes:
 Use `docs/apple-release-readiness.md` as the privacy-label source of truth. The current App Store Connect privacy answers should include:
 
 - **Other user content, linked to the user, app functionality.** This is the only collected row, and it is earned by the optional AI action transmitting a note's title, body and list name to OpenAI — not by storage (T-1311).
-- **Name, email address and user ID are `Not Collected`.** Sign in with Apple writes them to local `UserDefaults` and nothing transmits them; the readiness doc names the evidence and the two things only the owner can confirm. The app's privacy manifest still lists all three and is knowingly out of step (T-1323).
+- **Name, email address and user ID are `Not Collected`.** Sign in with Apple writes them to local `UserDefaults` and nothing transmits them; the readiness doc names the evidence and the two things only the owner can confirm. The app's privacy manifest agrees since T-1323 — it declares `NSPrivacyCollectedDataTypeOtherUserContent` and nothing else. **Answering these three as not collected in App Store Connect is still a separate owner action**; the manifest is not read to produce the product page.
 - No data used to track the user.
 - No tracking domains.
 - Calendar access described as permission-gated app functionality: EventKit reads and writes stay on the device and in the user's own Apple Calendar.

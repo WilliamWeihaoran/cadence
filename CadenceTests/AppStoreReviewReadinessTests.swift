@@ -28,20 +28,96 @@ struct AppStoreReviewReadinessTests {
     /// and `AC6B.1` (the MDM managed-configuration keys, which Cadence never reads).
     static let approvedUserDefaultsReasons: Set<String> = ["CA92.1", "1C8F.1", "C56D.1", "AC6B.1"]
 
+    /// **A collected-data row is a claim about transmission, and this pins the exact set (T-1323).**
+    ///
+    /// Apple publishes **one** definition of the word, on *App privacy details on the App Store*
+    /// (`developer.apple.com/app-store/app-privacy-details/`, the "Data collection" section, read
+    /// 2026-09-27). The privacy-manifest documentation supplies no second one — *Describing data
+    /// use in privacy manifests* says only "Record the categories of data that your app or
+    /// third-party SDK collects", and points back at that same page for the sibling `Linked` key.
+    /// So this is the sentence the rows below are decided against:
+    ///
+    /// > "Collect" refers to transmitting data off the device in a way that allows you and/or your
+    /// > third-party partners to access it for a period longer than what is necessary to service
+    /// > the transmitted request in real time.
+    ///
+    /// It is a **transmission** test rather than a storage test, and the same page applies it to a
+    /// named row instead of leaving it abstract — Payment Info: *"If your app uses a payment
+    /// service, the payment information is entered outside your app, and you as the developer
+    /// never have access to the payment information, it is not collected and does not need to be
+    /// disclosed."* Data the developer cannot reach off the device is not collected, however local
+    /// and however identifying it is.
+    ///
+    /// **One row survives that test.** `OtherUserContent` is earned by the optional AI action,
+    /// which `POST`s the note's title, its full body and its container's name to a third-party
+    /// endpoint that holds them past the request ([[T-1311]], [[T-1322]]).
+    ///
+    /// **Three rows did not, and are gone (T-1323).** `Name`, `EmailAddress` and `UserID` came
+    /// from Sign in with Apple. They live in five local `UserDefaults` keys written by
+    /// `AppleAccountDefaultsStorage.saveProfile`, are read back only by `AppleAccountManager.init`,
+    /// and surface only in the macOS Settings Account card. Nothing transmits them — the premise
+    /// `theOnlyOutboundNetworkSurfaceIsTheAIProvider()` below pins — so declaring them told every
+    /// reader of the product page that this app collects identity data it does not. Over-declaring
+    /// is not an App Review rejection, but "You're responsible for keeping your responses accurate
+    /// and up to date" is the duty that same page states, and an inaccurate answer fails it in
+    /// either direction.
+    ///
+    /// **There is one manifest and it ships on both platforms.** `Cadence` is a single app target
+    /// with `SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx"`, and `Cadence/` is a
+    /// synchronized root group whose only membership exceptions are `Info.plist` and the
+    /// `AGENTS.md` files — so this file lands in the iOS bundle too, where `AppleAccountProfile`
+    /// does not even compile (`#if os(macOS)`). iOS was declaring identity collection for code it
+    /// does not contain. Removal is what makes one shared file true on both; there is no
+    /// per-platform manifest to diverge into and, after this, no reason to want one.
+    ///
+    /// **Equality, not `isSuperset(of:)`.** The superset form was the [[T-1309]] shape this suite
+    /// was corrected for once already: it pinned the hole, so silently re-adding the three rows
+    /// passed. The exact set fails in both directions — dropping the earned row, and re-declaring
+    /// an unearned one.
     @Test func appPrivacyManifestDeclaresExpectedDataAndAPIs() throws {
         let manifest = try plistDictionary(at: "Cadence/PrivacyInfo.xcprivacy")
         let userDefaultsReasons = apiReasons(for: "NSPrivacyAccessedAPICategoryUserDefaults", in: manifest)
 
         #expect(manifest["NSPrivacyTracking"] as? Bool == false)
-        #expect(collectedDataTypes(in: manifest).isSuperset(of: [
-            "NSPrivacyCollectedDataTypeName",
-            "NSPrivacyCollectedDataTypeEmailAddress",
-            "NSPrivacyCollectedDataTypeUserID",
-            "NSPrivacyCollectedDataTypeOtherUserContent",
-        ]))
+        #expect(collectedDataTypes(in: manifest) == ["NSPrivacyCollectedDataTypeOtherUserContent"])
         #expect(userDefaultsReasons.isSuperset(of: Self.requiredUserDefaultsReasons))
         #expect(userDefaultsReasons.isSubset(of: Self.approvedUserDefaultsReasons))
         #expect(apiReasons(for: "NSPrivacyAccessedAPICategoryFileTimestamp", in: manifest) == ["C617.1"])
+    }
+
+    /// **The identity rows are absent because nothing carries them off the device, and that is a
+    /// premise rather than a reading (T-1323).**
+    ///
+    /// `URLSession` is the app target's only door to the network: there is no `Network` framework
+    /// import, no `NSURLConnection`, and `appTargetDoesNotEmbedMCPServerOrMCPPackage()` holds that
+    /// the MCP server is not inside the submitted bundle. Exactly two files reach for one, both
+    /// under `Cadence/Services/AI/`, and the body they build is `AITextNoteContext` — title, note
+    /// body, container name — never an account field.
+    ///
+    /// Named occurrences, not a floor: the day a third file opens a session, the collected-data
+    /// rows above are a claim nobody has re-checked, and this fails naming that file rather than
+    /// letting a "no more than N" reading absorb it. The walk's witness is
+    /// `AppleAccountManager.swift` on purpose — it is the file whose three fields the removed rows
+    /// described, so a sweep that cannot see it cannot clear it.
+    @Test func theOnlyOutboundNetworkSurfaceIsTheAIProvider() throws {
+        let instrument = try CadenceScanInstrument(
+            "URLSession use",
+            fires: "    private let session: URLSession\n",
+            andNotOn: "    // the AI provider is the only holder of a URLSession\n",
+            by: { CadenceSourceScan.strippingComments($0).contains("URLSession") }
+        )
+
+        let sessionHolders = try instrument.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence"),
+            atLeast: 500,
+            including: "Cadence/macOS/Services/AppleAccountManager.swift",
+            read: CadenceSourceScan.strippedSourceReader()
+        )
+
+        #expect(sessionHolders == [
+            "Cadence/Services/AI/AIProvider.swift",
+            "Cadence/Services/AI/AISettingsManager.swift",
+        ])
     }
 
     @Test func widgetPrivacyManifestDeclaresSharedGroupDefaultsAndCollectsNothing() throws {
