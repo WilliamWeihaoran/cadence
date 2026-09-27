@@ -1217,6 +1217,109 @@ struct CadenceGuardScriptSelftestTests {
         )
     }
 
+    /// **T-1394. The ADD direction of [[T-984]]'s ambiguity, and the one half of it that CAN be
+    /// resolved.** `agent-commit.sh` commits through a private index so a landed commit never
+    /// writes the shared checkout ([[T-975]]), which means a file a commit ADDS can fail to reach
+    /// the checkout at all. Measured 2026-09-26: `1eddce0` created `docs/MODELS_AGENTS_REFERENCE.md`
+    /// and rewrote `Cadence/Models/AGENTS.md` to route to it in seven places, and all seven were
+    /// dangling the moment it landed. `worktree-drift.sh` could not restore it, because a
+    /// never-checked-out addition and a deliberate in-flight deletion are the same two facts —
+    /// tracked in HEAD, absent from disk — and at that exact moment
+    /// `CadenceTests/CadenceBlankingPassParityTests.swift` was the second kind.
+    ///
+    /// PROVENANCE separates them where content cannot: a path HEAD's own commit added had no local
+    /// content by construction. `scripts/replay-absent-addition-reading.sh` measures that rather
+    /// than asserting it — 206 of 206 additions restored and 0 deletions fought over the 372
+    /// commits since `agent-commit.sh` landed, against `add40` and `anyabsent` both DISQUALIFIED
+    /// for restoring the founding deletion. The add-then-delete-inside-one-batch shape that would
+    /// break it has happened once in 1225 commits (`c562834`/`1070e24`, 2026-04-28) and never in
+    /// the era where the drift exists.
+    ///
+    /// Both founding paths are named here, not just the one that had to be restored: T-1356's
+    /// `wholeactive` and T-1385's `openrecent` were each their ticket's preferred reading and each
+    /// was blind to the case that founded it, so a reading is only pinned once the case it must
+    /// LEAVE ALONE is pinned beside the case it must fix.
+    @Test func theDriftCheckTellsANeverCheckedOutAdditionFromADeletionInFlight() throws {
+        let root = CadenceSelftestRun.repositoryRoot()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("scripts/worktree-drift.sh"),
+            encoding: .utf8
+        )
+        guard let split = source.range(of: "\n# --- selftest") else {
+            Issue.record("scripts/worktree-drift.sh has no `# --- selftest` section to read")
+            return
+        }
+        let body = String(source[source.startIndex..<split.lowerBound])
+        let selftest = String(source[split.lowerBound...])
+
+        for reading in ["never-checked-out", "never checked out", "head_added_path", "staged_deletion", "T-1394"] {
+            #expect(body.contains(reading), "scripts/worktree-drift.sh no longer makes the reading \(reading)")
+        }
+        // The deletion half must still be left alone, and it is the half a widening would lose
+        // first — so the sentence that names it stays pinned too.
+        #expect(
+            body.contains("absent from the worktree -- a deletion in flight looks like this"),
+            "scripts/worktree-drift.sh no longer leaves a deletion in flight alone, which is what T-984 bought"
+        )
+        // `repair` has to restore the new kind, or the reading is a report nobody can act on.
+        #expect(
+            body.contains("\"never checked out\" ]]") || body.contains("== \"never checked out\""),
+            "scripts/worktree-drift.sh's repair no longer restores a never-checked-out addition"
+        )
+        for induced in [
+            "mode 6 (T-1394)",
+            "[never checked out]",
+            "STILL not restored",
+            "STAGED deletion of that same path withdraws the reading",
+        ] {
+            #expect(
+                selftest.contains(induced),
+                "scripts/worktree-drift.sh's selftest no longer induces T-1394's \(induced)"
+            )
+        }
+
+        let replay = root.appendingPathComponent("scripts/replay-absent-addition-reading.sh")
+        #expect(
+            FileManager.default.isExecutableFile(atPath: replay.path),
+            "scripts/replay-absent-addition-reading.sh is missing or not executable, so T-1394's number cannot be re-derived"
+        )
+        let replayText = try String(contentsOf: replay, encoding: .utf8)
+        for reading in ["today", "add1", "add3", "add10", "add40", "anyabsent", "guideonly"] {
+            #expect(
+                replayText.contains(reading),
+                "scripts/replay-absent-addition-reading.sh no longer measures the \(reading) candidate"
+            )
+        }
+        #expect(
+            replayText.contains("REPLAY-ADD-VACUOUS"),
+            "scripts/replay-absent-addition-reading.sh lost its floor, so a replay that read nothing reports a clean sweep"
+        )
+        // The floor with teeth, and the reason it is separate: with no path added AND later
+        // deleted, no must-not interval contains an addition and `add1` — the adopted reading — is
+        // never once judged by the column that exists to disqualify it.
+        #expect(
+            replayText.contains("MIN_ADD_THEN_DELETE"),
+            "scripts/replay-absent-addition-reading.sh lost the floor that makes its disqualifying column reach `add1`"
+        )
+        for founding in [
+            "docs/MODELS_AGENTS_REFERENCE.md",
+            "CadenceTests/CadenceBlankingPassParityTests.swift",
+            "1eddce0",
+            "52d727f",
+        ] {
+            #expect(
+                replayText.contains(founding),
+                "scripts/replay-absent-addition-reading.sh no longer checks the founding case \(founding) by name"
+            )
+        }
+        for refusal in ["REPLAY-ADD-FOUNDING-LOST", "REPLAY-ADD-ADOPTED-UNSOUND"] {
+            #expect(
+                replayText.contains(refusal),
+                "scripts/replay-absent-addition-reading.sh no longer refuses (\(refusal)) when its own reading stops holding"
+            )
+        }
+    }
+
     /// T-1340, first half. `scripts/prune-shared-derived-data.sh selftest` is the one guard in
     /// `scripts/` that this test target structurally cannot run: the entire trial is a heredoc fed
     /// to `$PYTHON_BIN`, and the App-Sandboxed host is refused by the `/usr/bin/python3` xcrun shim

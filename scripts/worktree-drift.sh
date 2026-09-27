@@ -4,6 +4,8 @@
 #   ./scripts/worktree-drift.sh check      # exit 3 while any tracked file is behind HEAD
 #   ./scripts/worktree-drift.sh report     # the same reading, always exit 0
 #   ./scripts/worktree-drift.sh repair     # restore the stale COPIES from HEAD (never the edits)
+#                                          # ...and the files HEAD's commit ADDED that never
+#                                          # reached the checkout at all (T-1394)
 #   ./scripts/worktree-drift.sh ids <path> # the comm -23 on `- [T-n]` id sets, on its own
 #   ./scripts/worktree-drift.sh base <path> [<rev>]   # the reading for ONE path, machine-readable
 #   ./scripts/worktree-drift.sh base-content <path> <content-file> [<rev>]   # ... for loose bytes
@@ -97,12 +99,16 @@
 #     diagnosis. Selftest mode 3(f) below pins the non-refusal so a later narrowing has to come
 #     here and argue with the paragraph above rather than quietly flip it.
 #
-# Two shapes of behind, and they are repaired differently, so they are named differently:
+# Three shapes of behind, and they are repaired differently, so they are named differently:
 #
-#   stale copy  the worktree blob IS R's blob, byte for byte. Nothing local is at risk and
-#               `repair` restores it from HEAD.
-#   stale base  R's lines plus local edits on top. `repair` will NOT touch it -- restoring would
-#               throw away the agent's own work. Rebase the edit onto `git show HEAD:<path>`.
+#   stale copy         the worktree blob IS R's blob, byte for byte. Nothing local is at risk and
+#                      `repair` restores it from HEAD.
+#   stale base         R's lines plus local edits on top. `repair` will NOT touch it -- restoring
+#                      would throw away the agent's own work. Rebuild on `git show HEAD:<path>`.
+#   never checked out  the path is not on disk at all, and HEAD'S OWN COMMIT added it, so there was
+#                      never any local content to lose (T-1394). `repair` restores it. This one is
+#                      told apart by PROVENANCE rather than by bytes -- see THE ADD DIRECTION OF
+#                      THE AMBIGUITY, further down beside the code that reads it.
 #
 # WHAT IT REFUSES
 #
@@ -114,7 +120,8 @@
 # WHAT IT DELIBERATELY DOES NOT REFUSE
 #
 #   * an untracked file, or one HEAD does not have -- there is no older revision to be behind
-#   * a tracked file deleted from the worktree -- a `git rm` in flight looks exactly like this
+#   * a tracked file deleted from the worktree -- a `git rm` in flight looks exactly like this,
+#     UNLESS HEAD's own commit added it, which nothing in flight can have been holding (T-1394)
 #   * a binary file -- line sets say nothing about one; `git diff --numstat` reports `-` and it is
 #     skipped by name in the output rather than silently
 #   * a file whose lines are only REORDERED or duplicated (Cadence.xcodeproj/project.pbxproj does
@@ -194,7 +201,7 @@ cmd_ids() {
 #
 # Sets, for $1 at revision $2, using $3 as scratch (reading $4's bytes as $1's content if given):
 #
-#   state_verdict  matches | inflight | cannot-tell | behind | skip
+#   state_verdict  matches | inflight | cannot-tell | behind | never-checked-out | skip
 #   state_kind     "stale copy" | "stale base"           (behind only)
 #   state_base     the revision this copy is built on    (behind only)
 #   state_detail   a sentence; for skip, the reason
@@ -206,6 +213,62 @@ cmd_ids() {
 
 typeset -g state_verdict state_kind state_base state_detail
 
+# --- THE ADD DIRECTION OF THE AMBIGUITY (T-1394) -------------------------------
+#
+# Everything above reads a file that is THERE. The one shape it could not read is a file that is
+# not: `docs/MODELS_AGENTS_REFERENCE.md` was created by `1eddce0`, which also rewrote
+# `Cadence/Models/AGENTS.md` to route to it in SEVEN places, and the shared checkout never received
+# it -- `git cat-file -e HEAD:<path>` succeeded and `ls` failed, so every one of those pointers was
+# dangling in an always-read guide with nothing to announce it. `report` printed it under
+# `not compared:` as *"absent from the worktree -- a deletion in flight looks like this"* and
+# `repair` left it, correctly by its own lights, because a never-checked-out ADDITION and a
+# deliberate in-flight DELETION are the same two facts: tracked in HEAD, absent from disk. At that
+# exact moment `CadenceTests/CadenceBlankingPassParityTests.swift` was BOTH of those things too and
+# was a real deletion by a running sibling, so this is not a hypothetical pair.
+#
+# THE SEPARATING EVIDENCE IS PROVENANCE, not content -- which is why it exists at all, where T-984's
+# modify-direction version has none. A path that HEAD'S OWN COMMIT added had no local content by
+# construction: there is nothing on disk to overwrite and nothing of anybody's to lose. Restoring it
+# writes bytes that HEAD already says belong there, into a path that is empty.
+#
+# WHAT IT COSTS IF IT IS WRONG, and the one shape that can make it wrong: a sibling adds a file and
+# deliberately deletes it INSIDE ONE BATCH, so the addition is in HEAD's own commit while the `rm`
+# is already on disk. `scripts/replay-absent-addition-reading.sh` measures that rather than assuming
+# it away, over every commit this repository has:
+#
+#   reading      newly restored   fights a deletion inside one batch
+#   today             0 of 206        0    restores nothing -- the gap
+#   add1  (adopted) 206 of 206        0    and it leaves the founding deletion alone
+#   add40           206 of 206        4    DISQUALIFIED -- it restores the founding deletion
+#   anyabsent       206 of 206       12    DISQUALIFIED
+#   guideonly        41 of 206        0    sound, and covers a fifth of the population
+#
+# Coverage SATURATES at a window of one, because a path is added by exactly one commit, so every
+# wider window is pure hazard for no gain and no threshold has to be calibrated to choose. Over all
+# 1225 commits the add-then-delete-in-one-batch shape has happened exactly ONCE -- `c562834` added
+# `Cadence/macOS/Views/ListPlanningDomain.swift` on 2026-04-28 and `1070e24` removed it the same
+# day -- and never once since `agent-commit.sh` landed, which is the only era in which an addition
+# can fail to reach the checkout at all. Even there the loss is a re-run `rm`, not content.
+#
+# THE NARROWING, which can only ever withdraw a restore: if the deletion is STAGED in the shared
+# index, somebody has declared the intent and the reading is withdrawn. `git diff --cached`
+# resolves HEAD itself rather than `$headref`, which is exact for the tree walk and approximate for
+# a caller-chosen revision -- acceptable in one direction only, and this is that direction.
+head_added_path() {
+    local p=$1 headref=$2 parent
+    parent=$(git rev-parse --verify --quiet "${headref}^" 2>/dev/null) \
+        || parent=$(git hash-object -t tree /dev/null 2>/dev/null) || return 1
+    # `-x`, so a path that git chooses to print quoted (it does that for non-ASCII) simply fails to
+    # match and the caller falls back to `skip`. That is the safe direction: a missed restore is the
+    # gap this closes one file at a time, a wrong one is a sibling's deletion undone.
+    git diff --diff-filter=A --name-only "$parent" "$headref" -- "$p" 2>/dev/null | grep -qxF -- "$p"
+}
+
+staged_deletion() {
+    local p=$1
+    [[ -n "$(git diff --cached --diff-filter=D --name-only -- "$p" 2>/dev/null)" ]]
+}
+
 read_path_state() {
     local p=$1 headref=$2 scratch=$3 content=${4:-}
     state_verdict=""; state_kind=""; state_base=""; state_detail=""
@@ -216,8 +279,18 @@ read_path_state() {
 
     git cat-file -e "$headref:$p" 2>/dev/null \
         || { state_verdict=skip; state_detail="not in $headlabel -- nothing to be behind"; return 0 }
-    [[ -f "$bytes" ]] \
-        || { state_verdict=skip; state_detail="absent from the worktree -- a deletion in flight looks like this"; return 0 }
+    # ABSENT FROM DISK, AND WHICH OF THE TWO IT IS (T-1394). Both a never-checked-out ADDITION and
+    # a deliberate in-flight DELETION are "tracked in HEAD, absent from disk", byte for byte, so
+    # this used to be one `skip` for both. PROVENANCE separates them, and only for the content
+    # form -- a content file that is not there is a bad argument, refused above, never this.
+    if [[ ! -f "$bytes" ]]; then
+        if [[ -z "$content" ]] && head_added_path "$p" "$headref" && ! staged_deletion "$p"; then
+            state_verdict=never-checked-out
+            state_detail="$headlabel's own commit ADDED this path and the checkout never received it (T-1394)"
+            return 0
+        fi
+        state_verdict=skip; state_detail="absent from the worktree -- a deletion in flight looks like this"; return 0
+    fi
     # `-` in either numstat column is git's own word for "binary". A content file is not in the
     # tree, so `git diff` cannot be asked about it; `grep -I` answers the same question directly.
     if [[ -n "$content" ]]; then
@@ -339,6 +412,10 @@ read_tree_state() {
         case "$state_verdict" in
             skip)        skipped+=("$p ($state_detail)") ;;
             cannot-tell) cannot_tell+=("$p") ;;
+            # T-1394. Carried in the same arrays as `behind`, deliberately: it IS behind HEAD, in
+            # the strongest form there is -- the file is not merely stale, it is not there -- and
+            # every caller of these arrays (the report, the refusal, the repair) wants it.
+            never-checked-out) behind_paths+=("$p"); behind_kind+=("never checked out"); behind_detail+=("$state_detail") ;;
             behind)      behind_paths+=("$p"); behind_kind+=("$state_kind"); behind_detail+=("$state_detail") ;;
             *)           inflight+=("$p") ;;
         esac
@@ -360,8 +437,13 @@ print_reading() {
             say "      ${behind_detail[i]}"
             # Ids, not just a line count. `docs/TODO.md` loses whole tickets inside a number large
             # enough to skim past, and an id is the thing somebody can act on.
-            gone=$(comm -23 <(git show "HEAD:$p" | ledger_ids) <(ledger_ids < "$p" 2>/dev/null))
-            [[ -n "$gone" ]] && say "      ticket ids HEAD has and this copy does not: $(print -r -- "$gone" | tr '\n' ' ')"
+            # Only for a path that is THERE: a never-checked-out file (T-1394) has no copy to
+            # compare, so this would print every id HEAD has as "missing" and bury the one line
+            # that matters under a ledger's worth of noise.
+            if [[ -f "$p" ]]; then
+                gone=$(comm -23 <(git show "HEAD:$p" | ledger_ids) <(ledger_ids < "$p" 2>/dev/null))
+                [[ -n "$gone" ]] && say "      ticket ids HEAD has and this copy does not: $(print -r -- "$gone" | tr '\n' ' ')"
+            fi
         done
     fi
     (( ${#inflight} )) && say "in-flight edits (built on HEAD, left alone): ${(j:, :)inflight}"
@@ -432,6 +514,9 @@ cmd_check() {
   This is T-975: agent-commit.sh commits through a private index, so a landed commit never writes
   the shared checkout, and \`git status\` shows a stale copy exactly as it shows real work.
   A [stale copy] has nothing local in it:  ./scripts/worktree-drift.sh repair
+  A [never checked out] path is not on disk at all and HEAD's own commit added it, so there is
+  nothing of anybody's to lose -- the same \`repair\` restores it (T-1394). Until it does, every
+  pointer to that file is dangling, and in an always-read guide nothing says so.
   A [stale base] has your edits on top of an old one -- do NOT restore it; rebuild the edit on
   \`git show HEAD:<path>\` instead, which is the rule this drift defeats every time it is skipped.
   To run anyway, knowing what drifted: CADENCE_ALLOW_DRIFTED_TREE=1"
@@ -443,7 +528,10 @@ cmd_repair() {
     local i p restored=0 refused_count=0
     for (( i = 1; i <= ${#behind_paths}; i++ )); do
         p="${behind_paths[i]}"
-        if [[ "${behind_kind[i]}" == "stale copy" ]]; then
+        # A stale COPY has nothing local in it, and a NEVER CHECKED OUT path has nothing at all
+        # (T-1394) -- for both, `git checkout HEAD --` writes over an absence. Only a stale BASE
+        # carries an agent's own edits, and that is the one this refuses.
+        if [[ "${behind_kind[i]}" == "stale copy" || "${behind_kind[i]}" == "never checked out" ]]; then
             git checkout HEAD -- "$p" && { say "restored from HEAD: $p"; (( restored++ )) }
         else
             say "NOT restored: $p [stale base] -- it has local edits on top of an old revision, and"
@@ -728,7 +816,54 @@ cmd_selftest() {
     ( cd "$ws" && rm -f recon-stale.swift recon-rewrite.swift recon-rw2.swift prev.swift headonly.txt )
 
     say ""
-    say " mode 6 (NOT-REPO-ROOT) -- paths are repo-relative, so anywhere else is a wrong answer"
+    say " mode 6 (T-1394) -- the ADD direction: a file HEAD's own commit added, absent from disk"
+    # THE FOUNDING PAIR, induced rather than described. Two paths, both "tracked in HEAD, absent
+    # from disk", byte-identical as facts, and opposite verdicts are required of them:
+    #
+    #   added.txt    HEAD's own commit created it and the checkout never got it -> RESTORE.
+    #   ordered.txt  tracked since v1, deleted by a sibling in flight            -> LEAVE.
+    #
+    # If a later narrowing makes the reading blind to either, one of the two checks below goes red,
+    # which is the whole reason they are induced together in one tree rather than one at a time.
+    ( cd "$ws" && print -rl -- "a reference a guide will route to" "with a second line of it" > added.txt \
+      && git add added.txt >/dev/null && git commit -qm "v3: adds a file the checkout never sees" \
+      && rm -f added.txt && rm -f ordered.txt )
+    out=$( cd "$ws" && zsh "$here" report 2>&1 ); rc=$?
+    check "a file HEAD's commit ADDED and the checkout lacks is reported, not skipped" \
+        $( [[ "$(print -r -- "$out" | grep 'added\.txt')" == *"[never checked out]"* ]] && print 1 || print 0 ) "$out"
+    check "and a tracked file deleted in flight beside it is still NOT reported" \
+        $( [[ "$out" == *"not compared"*ordered.txt* && "$(print -r -- "$out" | grep -c '^  ordered\.txt  \[')" == 0 ]] && print 1 || print 0 ) "$out"
+    # The control on the whole mode, and the sentence T-1394 was filed over: before this reading
+    # existed both paths landed in the same `not compared:` bucket, so the two had to be told apart
+    # by hand. If added.txt ever reappears there, the reading has been lost.
+    check "the two are no longer the same bucket, which is what made the founding case unreadable" \
+        $( [[ "$out" != *"not compared"*added.txt* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" check 2>&1 ); rc=$?
+    check "check REFUSES the tree while a pointer into that file would dangle" \
+        $( [[ $rc == 3 && "$out" == *WORKTREE-BEHIND-HEAD* && "$out" == *added.txt* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" repair 2>&1 ); rc=$?
+    check "repair restores the added file" \
+        $( [[ "$out" == *"restored from HEAD: added.txt"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it is HEAD's content, not an empty file" \
+        $( [[ "$( cd "$ws" && cat added.txt 2>/dev/null )" == "$( cd "$ws" && git show HEAD:added.txt )" ]] && print 1 || print 0 )
+    check "and the sibling's deletion of ordered.txt is STILL not restored" \
+        $( [[ ! -f "$ws/ordered.txt" ]] && print 1 || print 0 ) "repair put back a file somebody was deleting"
+    # The narrowing: a staged deletion is a declared intent, so the reading withdraws even though
+    # the provenance says HEAD added the path. It can only ever restore FEWER files, never more.
+    ( cd "$ws" && git checkout -q HEAD -- ordered.txt && rm -f added.txt && git rm -q --cached added.txt >/dev/null 2>&1 )
+    out=$( cd "$ws" && zsh "$here" report 2>&1 ); rc=$?
+    check "a STAGED deletion of that same path withdraws the reading" \
+        $( [[ "$out" != *"[never checked out]"* ]] && print 1 || print 0 ) "$out"
+    # ...and the control on that narrowing: unstage and the SAME bytes on disk read as before, so
+    # the withdrawal above is the staging and not some other difference the sub-case introduced.
+    ( cd "$ws" && git reset -q HEAD -- added.txt >/dev/null 2>&1 )
+    out=$( cd "$ws" && zsh "$here" report 2>&1 ); rc=$?
+    check "and unstaging it brings the reading straight back, so the narrowing is the staging" \
+        $( [[ "$(print -r -- "$out" | grep 'added\.txt')" == *"[never checked out]"* ]] && print 1 || print 0 ) "$out"
+    ( cd "$ws" && git checkout -q HEAD -- added.txt ordered.txt )
+
+    say ""
+    say " mode 7 (NOT-REPO-ROOT) -- paths are repo-relative, so anywhere else is a wrong answer"
     out=$( cd "$ws/.." && zsh "$here" check 2>&1 ); rc=$?
     check "running from outside the checkout root is refused" \
         $( [[ $rc == 3 && "$out" == *NOT-REPO-ROOT* ]] && print 1 || print 0 ) "exit $rc: $out"
