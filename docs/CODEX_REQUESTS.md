@@ -4287,3 +4287,58 @@ with refusal/success spies. Keep single-habit deletion's already-correct postcom
 test order](audits/2026-09-22/sync-rollback/rollback.md). Only documentation/audit artifacts changed.
 During this work `b358aa3` closed T-1329 with another agent's startup measurements and filed T-1341;
 R62 should consume that evidence rather than repeat it. R61's broader commit matrix remains queued.
+
+## R66 — STANDING: you can write code now, in your own worktree
+
+**This replaces "audit and write it up" as your default mode.** The owner's instruction, 2026-09-27:
+audits into an instruction file are too slow a loop. You now edit the repository directly.
+
+**Read `docs/CODEX_WORKTREE.md` before your first branch.** It is short and it is the protocol.
+The shape, so you know what you are reading toward:
+
+- Work in your own worktree (`~/.codex/worktrees/…`), on a branch named `codex/<topic>`, based on
+  `origin/main`. You already have that worktree; it was at `a775825` when this was written, which is
+  behind — rebase onto `origin/main` before starting.
+- **Commit with plain `git commit`.** Do *not* run `scripts/agent-commit.sh`: it enforces ledger
+  discipline that requires editing `docs/TODO.md`, which is the one file guaranteed to collide.
+- **Never touch `docs/TODO.md` or `docs/TODO_DONE.md`.** Append your ticket entries to
+  `docs/CODEX_LEDGER_INBOX.md` instead, newest last. Your reserved id range is **T-1440..T-1469**.
+- **Stay inside the lease** — the fenced ```lease block in `docs/CODEX_WORKTREE.md`. Anything
+  outside it is a path another writer may hold, and that collision does not announce itself.
+- The coordinator reviews with `./scripts/codex-land.sh review codex/<topic>` and lands your work
+  through `scripts/agent-commit.sh`, folding your inbox entries into the ledger in the same commit.
+
+**Why the lease and the inbox exist, measured rather than asserted.** `scripts/agent-commit.sh`
+stages **whole files**: when two writers edit one file, one commit silently carries the other's
+half-finished work — no refusal, no declined hunk, nothing wrong-looking in `git status`. That
+reddened CI on `d65d294`, where a commit swept in a sibling's in-progress block containing a forward
+reference to a declaration that was still uncommitted ([[T-1385]]). Separately, a commit lands
+through a private index and never writes the shared checkout, so that tree drifts behind HEAD and
+`[stale base]` / `[stale copy]` / `[never checked out]` are three different repairs where choosing
+wrong destroys work ([[T-975]], [[T-1394]]). A separate worktree removes the first entirely.
+
+**Run `./scripts/codex-land.sh review codex/<topic>` yourself before you hand anything over.** It
+refuses on a ledger edit, a lease violation, code with no inbox entry, an id the ledger already
+carries, and an empty branch. Its eight refusals have a selftest (`codex-land.sh selftest`); a
+refusal nobody has watched fire is one nobody knows still works.
+
+**The house rules still bind you**, and two of them have cost real CI time this week:
+`-only-testing:` takes `CadenceTests/<SuiteName>` — a **filename runs zero tests and exits 0**, and
+so does a nonexistent suite. Read the real `XCODEBUILD_EXIT=` line from `xcb.sh`'s result block,
+never `$?` after a pipe. Check `swift compile tasks:` is non-vacuous; a warm run printing
+`VACUOUS-COUNT` carries no warning evidence. Warning baseline is **zero**. Never a bare `xcodebuild`.
+
+**First assignment, and the lease is already set for it:** the typography surfaces the in-tree agents
+deliberately did not convert. [[T-1411]] (a task row is not a conversion unit — the page is) and
+[[T-1413]] (the month grid needs redesign, not conversion: a 34pt day cell becomes 59pt at
+`accessibility5` against the 49.6pt a 375pt phone can give seven of). Read [[T-1364]], [[T-1398]],
+[[T-1410]] and [[T-1412]] first — four agents built that mechanism over three days and the arguments
+are in the entries. The growth rule is **additive, not proportional**; proportional put a 230pt
+popover at 717pt on a 375pt phone.
+
+**Do not assert that the typography environment crosses a presentation.** It was measured on Xcode 27
+only and CI runs Xcode 26; T-1279 pinned 26 and went red locally, T-1296 pinned 27 and turned CI red.
+The design states the boundary as a rule instead: *a view that pins its own width or height declares
+its typography scaling.*
+
+No answer is needed to this request. Start when you have read the protocol.
