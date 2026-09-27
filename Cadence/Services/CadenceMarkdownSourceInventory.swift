@@ -28,22 +28,25 @@ import SwiftData
 /// (`NoteMigrationService` copies them into `Note` and never deletes the originals, so their bodies
 /// are still live text in the store), and why any failed fetch aborts the whole answer.
 ///
-/// **Not covered, and out of reach from a `ModelContext`:** note templates live in `UserDefaults`
-/// under `NoteTemplateLibrary.storageKey`, and the calendar sheets' notes editors write
-/// `EKEvent.notes` in EventKit. Both are markdown surfaces that can hold an image reference and
-/// neither is a row in this store.
+/// **Still not covered, and out of reach from a `ModelContext`:** the calendar sheets' notes
+/// editors write `EKEvent.notes` in EventKit. That is a markdown surface that can hold an image
+/// reference and is not a row in this store, and it had no second option at all: EventKit has no
+/// unbounded "every event" query, so reading the calendar store to answer a synchronous delete was
+/// never available.
 ///
-/// **Neither was closed by widening this scan.** For the template body it could have been —
-/// `UserDefaults` is one synchronous read — but the sweep's failure mode decided it: an asset this
-/// inventory cannot see is *deleted*, so the door that must shut is the one that lets the asset in.
-/// `EKEvent.notes` had no second option at all: EventKit has no unbounded "every event" query, so
-/// reading the calendar store to answer a synchronous delete was never available.
+/// **The note template body used to be the other one, and T-1346 moved it into reach.** The
+/// override map is now `NoteTemplatePreference.overridesRaw`, a synced row, so it is in the scan as
+/// `noteTemplateOverrides` — read as the stored JSON **and** as the bodies decoded out of it,
+/// because `JSONEncoder` escapes a forward slash and `cadence-image://` does not survive the trip
+/// in one piece. `templateTexts(in:)` carries that measurement.
+/// The device-local `UserDefaults` copy is that row's mirror, not a second source of text.
 ///
-/// Both are closed by `iOSMarkdownEditingSurface.allowsImageInsertion`, which is `false` at the
-/// three hosts whose text is not a row here — the note-template editor (T-421), and the two
-/// calendar sheets' Apple Calendar note (T-422). So this list is not "the fields we manage to
-/// read"; it is every field an image reference can reach. `CadenceMarkdownImageInsertionScopeTests`
-/// pins that relation from the other side.
+/// **That did not reopen the door.** `iOSMarkdownEditingSurface.allowsImageInsertion` is still
+/// `false` at the note-template editor (T-421) as well as at the two calendar sheets' Apple
+/// Calendar note (T-422) — a template is a stencil and must not mint rows, which is the same reason
+/// it refuses embedded task creation. So the template body is now guarded twice: no image can be
+/// inserted there, and one that reached the text by some other route would be seen anyway.
+/// `CadenceMarkdownImageInsertionScopeTests` pins the relation from the other side.
 ///
 /// **The asymmetry that picked the door over the scan.** Over-counting a reference leaves garbage
 /// for the next delete; under-counting one destroys `.externalStorage` bytes. A `UserDefaults` read
@@ -71,6 +74,11 @@ nonisolated enum CadenceMarkdownSourceInventory {
         case permNoteContent
         /// Legacy meeting note. Migrated into `Note`, original row retained.
         case eventNoteContent
+        /// The synced note-template override map (T-1346). The JSON holds the markdown bodies the
+        /// user typed over the built-in stencils; read whole rather than decoded, because the
+        /// question is "does any text in this store still name this asset" and the escaped body
+        /// answers it without a parse that could fail.
+        case noteTemplateOverrides
 
         /// The `@Model` type's name as `CadenceSchema` spells it.
         var entityName: String {
@@ -82,6 +90,7 @@ nonisolated enum CadenceMarkdownSourceInventory {
             case .weeklyNoteContent: "WeeklyNote"
             case .permNoteContent: "PermNote"
             case .eventNoteContent: "EventNote"
+            case .noteTemplateOverrides: "NoteTemplatePreference"
             }
         }
 
@@ -89,6 +98,7 @@ nonisolated enum CadenceMarkdownSourceInventory {
         var propertyName: String {
             switch self {
             case .taskNotes: "notes"
+            case .noteTemplateOverrides: "overridesRaw"
             case .noteContent, .documentContent, .dailyNoteContent,
                  .weeklyNoteContent, .permNoteContent, .eventNoteContent: "content"
             }
@@ -139,6 +149,32 @@ nonisolated enum CadenceMarkdownSourceInventory {
             texts(of: PermNote.self, in: context, at: \.content)
         case .eventNoteContent:
             texts(of: EventNote.self, in: context, at: \.content)
+        case .noteTemplateOverrides:
+            templateTexts(in: context)
+        }
+    }
+
+    /// The template override map, as both the JSON it is stored as **and** the markdown bodies
+    /// inside it.
+    ///
+    /// **Both, because neither alone is safe.** `JSONEncoder` escapes a forward slash, so a body
+    /// holding `cadence-image://<uuid>` is stored as `cadence-image:\/\/<uuid>` and the scanner —
+    /// which looks for the scheme, not for a bare UUID — sees nothing. Reading the raw string
+    /// alone would therefore have *under*-counted, which in this sweep means deleting the bytes.
+    /// Decoding alone would under-count too, in the other direction: `NoteTemplateLibrary`'s
+    /// decoder answers "no overrides" for a string it cannot parse, and a corrupt map would read as
+    /// an empty one rather than as an unknown one.
+    ///
+    /// So the raw text goes in as well as the decoded bodies. That is the "keep, not collect" bias
+    /// this file is built on, applied to the one source whose stored text is a *container* for
+    /// markdown rather than markdown itself.
+    private static func templateTexts(in context: ModelContext) -> [String]? {
+        guard let raws = texts(of: NoteTemplatePreference.self, in: context, at: \.overridesRaw) else {
+            return nil
+        }
+        return raws.flatMap { raw -> [String] in
+            let overrides = NoteTemplateLibrary.overrides(from: raw)
+            return [raw] + overrides.values.flatMap { [$0.title, $0.subtitle, $0.body] }
         }
     }
 

@@ -48,13 +48,15 @@ import SwiftData
 /// and this type follows it deliberately: same duplicate rule, same device-local fallback, same
 /// "a value this build cannot read is left alone rather than rewritten".
 ///
-/// ## Three strings, not twenty columns
+/// ## Pair maps, not twenty columns
 ///
 /// Sixteen separate columns for four surfaces × four settings would be sixteen CloudKit fields to
 /// deploy and sixteen more chances to need a seventeenth. `taskPresentationRaw` is instead a
 /// `key=value;key=value` map in the same spirit as `SidebarLayoutPreference`'s comma-separated
 /// lists — and it improves on them in one way that matters here: **a pair this build does not
-/// recognise is carried through a write untouched rather than dropped.** That is the whole answer
+/// recognise is carried through a write untouched rather than dropped.** `calendarPresentationRaw`
+/// (T-1347) is a second map in the same grammar, kept separate because its pairs are not task
+/// settings. That is the whole answer
 /// to "what happens when a device holds a value the other cannot represent": an
 /// `allTasks.showCompleted` written by an iPhone is, to the Mac, an unknown pair it re-emits
 /// verbatim. See `CadenceLookPreferenceStore`.
@@ -96,6 +98,23 @@ import SwiftData
     /// `CadenceLookPreferenceStore`, which also owns the rule that unknown pairs survive a write.
     var taskPresentationRaw: String = ""
 
+    /// `key=value` pairs in the same grammar as `taskPresentationRaw`, holding the calendar
+    /// surfaces' presentation — today, the work-hours window and nothing else (T-1347).
+    ///
+    /// **A second field rather than two more pairs in `taskPresentationRaw`.** The pair map above
+    /// is named for what it holds, and a `calendar.workHours.start` riding inside a column called
+    /// *task* presentation is a mislabelling that no doc comment repairs: names in a deployed
+    /// CloudKit schema can be deprecated and never removed. The cost of the separate column is
+    /// **nothing**, and that is measured rather than hoped — `CD_LookPreference` is undeployed in
+    /// its entirety, so a field added before the owner's single *Deploy Schema Changes* press is
+    /// part of that one press. It is not a second risk; it would only have become one after the
+    /// type had shipped.
+    ///
+    /// The grammar, the unknown-pair rule and the mirrors are the same machinery
+    /// `CadenceLookPreferenceStore` already owns, which is the whole reason work hours cost almost
+    /// nothing to sync once the templates had been dealt with.
+    var calendarPresentationRaw: String = ""
+
     var createdAt: Date = Date()
     /// The last edit on any device. The newest row wins when more than one exists.
     var updatedAt: Date = Date()
@@ -104,11 +123,13 @@ import SwiftData
         accentPaletteID: String = "",
         sidebarTabColorsRaw: String = "",
         taskPresentationRaw: String = "",
+        calendarPresentationRaw: String = "",
         updatedAt: Date = Date()
     ) {
         self.accentPaletteID = accentPaletteID
         self.sidebarTabColorsRaw = sidebarTabColorsRaw
         self.taskPresentationRaw = taskPresentationRaw
+        self.calendarPresentationRaw = calendarPresentationRaw
         self.createdAt = updatedAt
         self.updatedAt = updatedAt
     }

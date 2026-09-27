@@ -299,6 +299,17 @@ struct CadenceMarkdownSourceInventoryTests {
             let eventNote = EventNote(calendarEventID: "evt-1", eventTitle: "Standup")
             eventNote.content = body
             modelContext.insert(eventNote)
+        case .noteTemplateOverrides:
+            // The one source whose stored text is not a body but the JSON *around* several of
+            // them (T-1346). Seeded through `NoteTemplateLibrary` rather than by hand, so this
+            // row holds exactly what the Settings editor would have written — including the
+            // escaping, which is the thing the sweep has to see through.
+            let preference = NoteTemplatePreference(
+                overridesRaw: NoteTemplateLibrary.setOverride(
+                    for: "checklist", title: "Packing", subtitle: "", body: body, in: ""
+                )
+            )
+            modelContext.insert(preference)
         }
     }
 
@@ -443,7 +454,12 @@ struct CadenceMarkdownSourceInventoryTests {
         // An accent palette id, the sidebar tint string and a `key=value` pair map (T-1307).
         // None of the three is markdown: no editor binds to them, and each reader parses the
         // string into an enum case, a hex map or a pair map.
-        "LookPreference": ["accentPaletteID", "sidebarTabColorsRaw", "taskPresentationRaw"],
+        "LookPreference": [
+            "accentPaletteID", "sidebarTabColorsRaw", "taskPresentationRaw", "calendarPresentationRaw"
+        ],
+        // One JSON map of the titles, subtitles and markdown bodies the user typed over the
+        // built-in stencils (T-1346). **Markdown-bearing**, so it is in the inventory rather than
+        // here; this comment is the pointer for the next person who greps for the entity name.
         "Subtask": ["title"],
         "Tag": ["slug", "name", "desc", "colorHex"],
         "TaskBundle": ["title", "dateKey"],

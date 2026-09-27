@@ -194,6 +194,7 @@ struct CadenceLookPreferenceTests {
             accentPaletteID: "ember",
             sidebarTabColorsRaw: "today:#ff0000",
             taskPresentationRaw: "today.mode=doDate",
+            calendarPresentationRaw: "",
             records: [],
             in: context,
             now: Date(timeIntervalSince1970: 10)
@@ -214,6 +215,7 @@ struct CadenceLookPreferenceTests {
             accentPaletteID: "ember",
             sidebarTabColorsRaw: "",
             taskPresentationRaw: "",
+            calendarPresentationRaw: "",
             records: [],
             in: context,
             now: Date(timeIntervalSince1970: 10)
@@ -224,6 +226,7 @@ struct CadenceLookPreferenceTests {
             accentPaletteID: "glacier",
             sidebarTabColorsRaw: "",
             taskPresentationRaw: "today.mode=newest",
+            calendarPresentationRaw: "",
             records: first,
             in: context,
             now: Date(timeIntervalSince1970: 20)
@@ -247,6 +250,7 @@ struct CadenceLookPreferenceTests {
                 accentPaletteID: "ember",
                 sidebarTabColorsRaw: "",
                 taskPresentationRaw: "",
+                calendarPresentationRaw: "",
                 records: [],
                 in: context,
                 commit: { _ in throw Refused() }
@@ -258,6 +262,7 @@ struct CadenceLookPreferenceTests {
             accentPaletteID: "ember",
             sidebarTabColorsRaw: "",
             taskPresentationRaw: "",
+            calendarPresentationRaw: "",
             records: [],
             in: context,
             now: Date(timeIntervalSince1970: 10)
@@ -268,6 +273,7 @@ struct CadenceLookPreferenceTests {
                 accentPaletteID: "glacier",
                 sidebarTabColorsRaw: "changed",
                 taskPresentationRaw: "today.mode=newest",
+                calendarPresentationRaw: "",
                 records: rows,
                 in: context,
                 now: Date(timeIntervalSince1970: 20),
@@ -468,6 +474,7 @@ struct CadenceLookPreferenceTests {
             accentPaletteID: "ember",
             sidebarTabColorsRaw: "",
             taskPresentationRaw: "allTasks.mode=priority",
+            calendarPresentationRaw: "",
             records: [],
             in: ModelContext(container),
             now: Date(timeIntervalSince1970: 10)
@@ -497,6 +504,7 @@ struct CadenceLookPreferenceTests {
             accentPaletteID: "cadence",
             sidebarTabColorsRaw: "",
             taskPresentationRaw: "",
+            calendarPresentationRaw: "",
             records: arrived,
             in: context,
             now: Date(timeIntervalSince1970: 300)
@@ -515,5 +523,143 @@ struct CadenceLookPreferenceTests {
         #expect(bare.accentPaletteID.isEmpty)
         #expect(Store.mirrorWrites(forTaskPresentation: bare.taskPresentationRaw, on: .macOS).isEmpty)
         #expect(Store.mirrorWrites(forTaskPresentation: bare.taskPresentationRaw, on: .iOS).isEmpty)
+        #expect(Store.mirrorWrites(forCalendarPresentation: bare.calendarPresentationRaw).isEmpty)
+    }
+
+    // MARK: - T-1347: the work-hours window
+
+    /// The owner's sentence was *"all settings should sync too."* The window is two integers and
+    /// one vocabulary on all three devices, so it needs no codec and no platform switch — which is
+    /// the measurement, not an assumption: `CalendarWorkHoursPreferences` keys them `calendar.*`
+    /// rather than `macos.*` and both Settings sections write the same two keys.
+    @Test func bothPlatformsOwnTheSameTwoWorkHoursKeys() {
+        let mirrors = Store.calendarMirrors()
+        #expect(mirrors.map(\.defaultsKey) == [
+            CalendarWorkHoursPreferences.startMinuteKey,
+            CalendarWorkHoursPreferences.endMinuteKey
+        ])
+        #expect(mirrors.allSatisfy { $0.kind == .int })
+        // The two maps are disjoint, so a calendar pair cannot land in the task column or vice
+        // versa. This is the assertion behind the separate field.
+        let taskKeys = Set((Store.mirrors(on: .macOS) + Store.mirrors(on: .iOS)).map(\.recordKey))
+        #expect(taskKeys.intersection(Set(mirrors.map(\.recordKey))).isEmpty)
+    }
+
+    /// **The window must arrive as real `Int` defaults.** `@AppStorage(...) var startMinute = 540`
+    /// reads `integer(forKey:)`, and a string-shaped `"540"` reads back as unset — so a mirror that
+    /// wrote the record value verbatim would sync the setting and draw nine o'clock anyway.
+    @Test func adoptingTheWindowWritesIntegersTheTimelineCanRead() throws {
+        try withTemporaryDefaults("work-hours-adopt") { defaults in
+            try withTemporaryDefaults("work-hours-adopt-accent") { accents in
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+                let record = LookPreference(calendarPresentationRaw: "workHours.end=1230;workHours.start=450")
+
+                let changed = sync.adopt(records: [record], applyAccent: false)
+                #expect(changed.contains(CalendarWorkHoursPreferences.startMinuteKey))
+                #expect(changed.contains(CalendarWorkHoursPreferences.endMinuteKey))
+                #expect(defaults.integer(forKey: CalendarWorkHoursPreferences.startMinuteKey) == 450)
+                #expect(defaults.integer(forKey: CalendarWorkHoursPreferences.endMinuteKey) == 1230)
+                #expect(defaults.object(forKey: CalendarWorkHoursPreferences.startMinuteKey) is Int)
+
+                // A second adopt moves nothing, which is what stops the pair looping.
+                #expect(sync.adopt(records: [record], applyAccent: false).isEmpty)
+            }
+        }
+    }
+
+    /// A value this build cannot read as a minute is left alone rather than coerced to zero, which
+    /// would move the band to midnight on every device that read it.
+    @Test func anUnreadableMinuteLeavesTheWindowWhereItIs() throws {
+        try withTemporaryDefaults("work-hours-garbage") { defaults in
+            try withTemporaryDefaults("work-hours-garbage-accent") { accents in
+                defaults.set(9 * 60, forKey: CalendarWorkHoursPreferences.startMinuteKey)
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .iOS)
+
+                let changed = sync.adopt(
+                    records: [LookPreference(calendarPresentationRaw: "workHours.start=half past nine")],
+                    applyAccent: false
+                )
+                #expect(!changed.contains(CalendarWorkHoursPreferences.startMinuteKey))
+                #expect(defaults.integer(forKey: CalendarWorkHoursPreferences.startMinuteKey) == 9 * 60)
+            }
+        }
+    }
+
+    /// A device that has never opened the picker says nothing, so it cannot publish a compiled-in
+    /// nine-to-five over a window the owner set on another device.
+    @Test func aDeviceThatNeverChoseAWindowPublishesNothing() throws {
+        try withTemporaryDefaults("work-hours-unset") { defaults in
+            #expect(Store.currentCalendarMirrors(in: defaults).isEmpty)
+
+            let record = LookPreference(calendarPresentationRaw: "workHours.end=1230;workHours.start=450")
+            #expect(
+                Store.pendingWrite(
+                    accentPaletteID: "",
+                    sidebarTabColorsRaw: "",
+                    currentMirrors: [:],
+                    currentCalendarMirrors: Store.currentCalendarMirrors(in: defaults),
+                    record: record,
+                    on: .macOS
+                ) == nil,
+                "an unset picker proposed a write"
+            )
+        }
+    }
+
+    /// The round trip: a window chosen here is what the record carries, and a pair this build has
+    /// no mirror for rides through untouched — the same rule the task map already has.
+    @Test func aWindowChosenOnOneDeviceIsWhatTheRecordCarries() throws {
+        try withTemporaryDefaults("work-hours-publish") { defaults in
+            defaults.set(7 * 60 + 30, forKey: CalendarWorkHoursPreferences.startMinuteKey)
+            defaults.set(16 * 60, forKey: CalendarWorkHoursPreferences.endMinuteKey)
+
+            let record = LookPreference(calendarPresentationRaw: "workHours.start=540;weekStartsOn=monday")
+            let pending = try #require(
+                Store.pendingWrite(
+                    accentPaletteID: "",
+                    sidebarTabColorsRaw: "",
+                    currentMirrors: [:],
+                    currentCalendarMirrors: Store.currentCalendarMirrors(in: defaults),
+                    record: record,
+                    on: .macOS
+                )
+            )
+            let pairs = Store.pairs(fromRaw: pending.calendarPresentationRaw)
+            #expect(pairs["workHours.start"] == "450")
+            #expect(pairs["workHours.end"] == "960")
+            #expect(pairs["weekStartsOn"] == "monday", "a pair this build has no mirror for was dropped")
+            // And the task column is untouched by a calendar edit.
+            #expect(pending.taskPresentationRaw == record.taskPresentationRaw)
+        }
+    }
+
+    /// The whole window survives a store write and comes back out of the record on the other side.
+    @Test func theWindowSurvivesTheStore() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+
+        try Store.write(
+            accentPaletteID: "",
+            sidebarTabColorsRaw: "",
+            taskPresentationRaw: "",
+            calendarPresentationRaw: "workHours.end=1110;workHours.start=480",
+            records: [],
+            in: context,
+            now: Date(timeIntervalSince1970: 10)
+        )
+        let rows = try context.fetch(FetchDescriptor<LookPreference>())
+        #expect(rows.count == 1)
+
+        try withTemporaryDefaults("work-hours-store") { defaults in
+            try withTemporaryDefaults("work-hours-store-accent") { accents in
+                let other = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .iOS)
+                other.adopt(records: rows, applyAccent: false)
+                let range = CalendarWorkHoursPreferences.normalizedRange(
+                    startMinute: defaults.integer(forKey: CalendarWorkHoursPreferences.startMinuteKey),
+                    endMinute: defaults.integer(forKey: CalendarWorkHoursPreferences.endMinuteKey)
+                )
+                #expect(range == .init(startMinute: 480, endMinute: 1110))
+            }
+        }
     }
 }

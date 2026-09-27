@@ -43,7 +43,8 @@ additive optional property on an already-deployed model is **not** the safer rou
 
 **Schema first, then the writer.** Test the final additive model in Development → deploy its
 types, fields and indexes to Production → test there → *then* publish the build that writes it.
-`CD_SidebarLayoutPreference` and `CD_LookPreference` are undeployed today; record an owed deploy
+`CD_SidebarLayoutPreference`, `CD_LookPreference`, `CD_NoteTemplatePreference` and
+`CD_LookPreference.calendarPresentationRaw` are undeployed today; record an owed deploy
 in `docs/apple-release-readiness.md`, which is where the owner reads it. **Never take a model back
 out of `CadenceSchema` to quieten a red sync test** (T-1294 rejected that by name), and **degrade
 to a device-local fallback and add no notice** — nothing can tell "not deployed" from "no row has
@@ -77,9 +78,20 @@ readings: `../../docs/MODELS_AGENTS_REFERENCE.md`, "Why a new model type needs a
   alone rather than deleted), the device-local fallback, and the one-visible-row floor. A
   destination the stored strings never name keeps its declared slot and stays visible, so a future
   enum case needs no migration; an unrecognised token is dropped on read.
-- `LookPreference` - the **synced** accent palette, sidebar tints and each surface's sort, grouping
-  and show-completed (T-1307, [[T-1288]]). Read only via `CadenceLookPreferenceStore`: the record is
+- `LookPreference` - the **synced** accent palette, sidebar tints, each surface's sort, grouping
+  and show-completed (T-1307, [[T-1288]]), and since [[T-1347]] the work-hours window in a second
+  pair map, `calendarPresentationRaw`. Read only via `CadenceLookPreferenceStore`: the record is
   truth across devices, the local defaults its **mirrors** — how the widget reads the accent.
+- `NoteTemplatePreference` - the **synced** note-template overrides ([[T-1346]]: the owner decided a
+  template they wrote is content, like a note). One JSON map — the same string `NoteTemplateLibrary`
+  has always written to the `noteTemplateOverrides` default, which is now this record's mirror.
+  Read and written only through `CadenceNoteTemplatePreferenceStore` /
+  `CadenceNoteTemplatePreferenceSync`, which own the duplicate rule (newest `updatedAt` wins, `id`
+  breaks a tie), the canonical spelling of an override map, and the **one-shot first-run merge**
+  that carries a device's pre-sync templates into the shared row without overwriting another
+  device's. Steady state is whole-map last-writer-wins; a reset travels as `{}`, which is a value
+  here and not an absence. `overridesRaw` is markdown-bearing and is in
+  `CadenceMarkdownSourceInventory`.
 
 Non-`@Model` types that live in this folder: `TaskSectionConfig` / `TaskSectionDefaults`
 (in `AppTask.swift`) and `GoalContributionSummary`. Two more *files* here declare no type at all —

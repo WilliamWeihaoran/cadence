@@ -8,6 +8,13 @@ import Foundation
 /// iPad showed a flat, unemphasized 6–23 timeline and iOS Settings offered no way to discover or
 /// change a window the user had already set on the Mac — even though the defaults keys are
 /// `calendar.*`, not `macos.*`, and sync through the same store.
+///
+/// **Synced since T-1347.** The owner's sentence was *"all settings should sync too."* A window
+/// that says when this person works is about the person, not about the device in front of them —
+/// which is exactly the line R64 drew when it separated work hours from canvas geometry and left
+/// the decision open. The two keys are now mirrors of `LookPreference.calendarPresentationRaw`,
+/// carried by `CadenceLookPreferenceStore.calendarMirrors()`; every reader here and every
+/// `@AppStorage` above keeps reading the local default, and nothing in this file changed.
 enum CalendarWorkHoursPreferences {
     struct WorkHoursRange: Equatable {
         let startMinute: Int

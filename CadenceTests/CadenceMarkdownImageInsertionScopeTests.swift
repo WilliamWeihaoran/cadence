@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -7,11 +8,19 @@ import Testing
 /// `CadenceMarkdownSourceInventory` answers one question for the image sweep: does any *stored*
 /// markdown still reference this asset? T-411 widened it from `Note.content` to every markdown
 /// field in `CadenceSchema` after an image pasted into a task's notes was collected out from under
-/// a live task. Two markdown surfaces are still outside that scan and always will be:
+/// a live task. Two markdown surfaces were outside that scan when this suite was written:
 ///
-/// - the note **template** body, a JSON string in `UserDefaults` under
+/// - the note **template** body, then a JSON string in `UserDefaults` under
 ///   `NoteTemplateLibrary.storageKey`;
 /// - the calendar sheets' **Apple Calendar note**, which is `EKEvent.notes` in EventKit.
+///
+/// **T-1346 moved the first one into the store.** The override map is now
+/// `NoteTemplatePreference.overridesRaw`, so the templates the owner wrote follow them between
+/// devices, and `CadenceMarkdownSourceInventory.Source.noteTemplateOverrides` reads it. The door
+/// below did **not** reopen: a template is a stencil and must not mint rows, which is the same
+/// reason it refuses embedded task creation, and an editor whose text is a preference mirror is
+/// still the wrong place to create one. So the template body is guarded twice now, and the
+/// calendar note once.
 ///
 /// The direction of harm decides the fix. An asset the inventory over-counts is a *leak* — T-411
 /// chose that side deliberately — but an asset it cannot see at all is *deleted*, and the bytes are
@@ -22,7 +31,7 @@ import Testing
 ///
 /// `Cadence/iOS/` is not compiled by this macOS test target, so the editor assertions here are
 /// **source scans**, not behaviour. The non-vacuity test at the bottom is what makes them mean
-/// anything; `aTemplateBodyRoundTripsThroughAStringNotTheStore` is the one behavioural test, and it
+/// anything; `aTemplateBodyRoundTripsThroughTheOverrideMap` is the one behavioural test, and it
 /// pins the premise the refusal rests on.
 struct CadenceMarkdownImageInsertionScopeTests {
 
@@ -119,8 +128,9 @@ struct CadenceMarkdownImageInsertionScopeTests {
 
     // MARK: - The template editor is the host that needs it
 
-    /// The one host closed by T-421. Its `text` binding is a `UserDefaults` string, and it already
-    /// refuses embedded task creation for the neighbouring reason — a template is a stencil, not a
+    /// The one host closed by T-421. Its `text` binding is the override map — a `UserDefaults`
+    /// string mirroring the synced `NoteTemplatePreference` row since T-1346 — and it already
+    /// refuses embedded task creation for the neighbouring reason: a template is a stencil, not a
     /// document, and must not mint rows.
     @Test func theNoteTemplateEditorRefusesImageInsertion() throws {
         let code = try strippedSource("Cadence/iOS/iOSSettingsTemplateAndListSections.swift")
@@ -140,9 +150,11 @@ struct CadenceMarkdownImageInsertionScopeTests {
         #expect(tasksRefused == imagesRefused)
     }
 
-    /// The template body really is a `UserDefaults` string and not a row — the premise the refusal
-    /// rests on. This half is behavioural: `NoteTemplateLibrary` is shared code and compiles here.
-    @Test func aTemplateBodyRoundTripsThroughAStringNotTheStore() {
+    /// The template body really is one JSON string that round-trips through `NoteTemplateLibrary`
+    /// and nothing else — the premise the refusal rests on, and the half T-1346 deliberately left
+    /// alone when it gave that string a synced home. Behavioural: `NoteTemplateLibrary` is shared
+    /// code and compiles here.
+    @Test func aTemplateBodyRoundTripsThroughTheOverrideMap() {
         let raw = NoteTemplateLibrary.setOverride(
             for: "checklist",
             title: "Checklist",
@@ -154,8 +166,9 @@ struct CadenceMarkdownImageInsertionScopeTests {
         #expect(raw.contains("cadence-image"))
         #expect(NoteTemplateLibrary.storageKey == "noteTemplateOverrides")
 
-        // Whatever an image reference in a template body would be, it is this string — reachable
-        // only from `UserDefaults`, and so invisible to every `ModelContext` fetch the sweep makes.
+        // Whatever an image reference in a template body would be, it is this string — the one the
+        // `noteTemplateOverrides` default holds and `NoteTemplatePreference.overridesRaw` mirrors,
+        // which is why the sweep can see it at all since T-1346.
         let restored = NoteTemplateLibrary.editableTemplates(overridesRaw: raw)
         #expect(restored.contains { $0.id == "checklist" && $0.body.contains("cadence-image") })
     }
@@ -302,17 +315,28 @@ struct CadenceMarkdownImageInsertionScopeTests {
         #expect(CadenceSourceScan.matchCount("slashTemplates:", in: code) == 0)
     }
 
-    /// The premise both template refusals rest on, from the inventory's side.
+    /// The premise both template refusals rest on, from the inventory's side — **and T-1346 turned
+    /// it over.**
     ///
     /// The brief for T-442 asked whether the template body is one of the fields
-    /// `CadenceMarkdownSourceInventory` enumerates. **It is not, and cannot be:** every case is a
-    /// stored property on a `CadenceSchema` model reached by a `ModelContext` fetch, and a template
-    /// body is a JSON string in `UserDefaults`. The file says so in prose; this says it in a form
-    /// that fails if a case is ever added for it without the sweep being taught to read defaults.
-    @Test func noInventorySourceIsTheTemplateBody() {
+    /// `CadenceMarkdownSourceInventory` enumerates. It was not, and the reason given was that every
+    /// case is a stored property on a `CadenceSchema` model reached by a `ModelContext` fetch while
+    /// a template body is a JSON string in `UserDefaults`. That reason expired the day the override
+    /// map became `NoteTemplatePreference.overridesRaw` so the owner's templates could follow them
+    /// between devices. The sweep now reads it, decoding the bodies out of the JSON because
+    /// `JSONEncoder` escapes the slashes in `cadence-image://`.
+    ///
+    /// **The refusals did not expire with it**, and that is what this test now pins: the door is
+    /// shut for its own reason — a template is a stencil and must not mint rows — not because the
+    /// sweep was blind. The two claims were entangled and they are now separate.
+    @Test func theTemplateBodyIsNowInTheInventoryAndTheDoorIsStillShut() {
         let entities = Set(CadenceMarkdownSourceInventory.Source.allCases.map(\.entityName))
         #expect(entities.count == CadenceMarkdownSourceInventory.Source.allCases.count, "two cases name one entity")
-        #expect(entities.contains { $0.localizedCaseInsensitiveContains("template") } == false)
+        #expect(entities.contains("NoteTemplatePreference"))
+        #expect(CadenceMarkdownSourceInventory.Source.noteTemplateOverrides.propertyName == "overridesRaw")
+        // Every case still names a model the schema declares, which is the part of T-442's reason
+        // that did not expire.
+        #expect(entities.subtracting(CadenceSchema.schema.entities.map(\.name)).isEmpty)
 
         // Non-vacuity, and the shape of the thing that is in there: `Note.content` is a stored
         // property on a model in the schema.

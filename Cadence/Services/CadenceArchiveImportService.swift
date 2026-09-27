@@ -267,6 +267,10 @@ nonisolated enum CadenceArchiveImportService {
             archive.lookPreferenceRecords,
             table: "LookPreference"
         )
+        archiveIDs["NoteTemplatePreference"] = try uniqueIDs(
+            archive.noteTemplatePreferenceRecords,
+            table: "NoteTemplatePreference"
+        )
 
         let destinationIDs = destination.idsByEntityName
         var known: [String: Set<UUID>] = [:]
@@ -764,6 +768,23 @@ nonisolated enum CadenceArchiveImportService {
                 model.accentPaletteID = record.accentPaletteID
                 model.sidebarTabColorsRaw = record.sidebarTabColorsRaw
                 model.taskPresentationRaw = record.taskPresentationRaw
+                model.calendarPresentationRaw = record.calendarPresentation
+                model.createdAt = record.createdAt
+                model.updatedAt = record.updatedAt
+            }
+        )
+
+        // Nor here: the template overrides reference nothing but their own JSON, and a template id
+        // this build has no stencil for is carried verbatim rather than interpreted — the same rule
+        // `NoteTemplateLibrary.setOverride` applies on a live device, where it leaves keys it does
+        // not recognise alone.
+        _ = upsert(
+            archive.noteTemplatePreferenceRecords, into: &destination.noteTemplatePreferences,
+            mode: mode, tally: &tally, in: modelContext,
+            make: { _ in NoteTemplatePreference() },
+            fields: { record, model in
+                model.id = record.id
+                model.overridesRaw = record.overridesRaw
                 model.createdAt = record.createdAt
                 model.updatedAt = record.updatedAt
             }
@@ -1125,6 +1146,7 @@ nonisolated enum CadenceArchiveImportService {
         var legacyDocuments: [UUID: Document]
         var sidebarLayoutPreferences: [UUID: SidebarLayoutPreference]
         var lookPreferences: [UUID: LookPreference]
+        var noteTemplatePreferences: [UUID: NoteTemplatePreference]
 
         init(in modelContext: ModelContext) throws {
             contexts = try Self.index(Context.self, in: modelContext) { $0.id }
@@ -1150,6 +1172,7 @@ nonisolated enum CadenceArchiveImportService {
             legacyDocuments = try Self.index(Document.self, in: modelContext) { $0.id }
             sidebarLayoutPreferences = try Self.index(SidebarLayoutPreference.self, in: modelContext) { $0.id }
             lookPreferences = try Self.index(LookPreference.self, in: modelContext) { $0.id }
+            noteTemplatePreferences = try Self.index(NoteTemplatePreference.self, in: modelContext) { $0.id }
         }
 
         /// Keyed by the entity name `CadenceSchema` reports, so validation and the plan can talk
@@ -1179,6 +1202,7 @@ nonisolated enum CadenceArchiveImportService {
                 "Document": Set(legacyDocuments.keys),
                 "SidebarLayoutPreference": Set(sidebarLayoutPreferences.keys),
                 "LookPreference": Set(lookPreferences.keys),
+                "NoteTemplatePreference": Set(noteTemplatePreferences.keys),
             ]
         }
 

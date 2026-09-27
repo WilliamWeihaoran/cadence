@@ -1146,6 +1146,13 @@ struct CadencePrivacyDataResetSurfaceTests {
             probe { HabitCompletion(date: "2026-08-20") },
             probe { SidebarLayoutPreference(orderRaw: "today,calendar", hiddenRaw: "habits") },
             probe { LookPreference(accentPaletteID: "ember", taskPresentationRaw: "today.mode=doDate") },
+            probe {
+                NoteTemplatePreference(
+                    overridesRaw: NoteTemplateLibrary.setOverride(
+                        for: "checklist", title: "Packing", subtitle: "Trips", body: "# Packing\n", in: ""
+                    )
+                )
+            },
         ]
         return Dictionary(uniqueKeysWithValues: probes.map { ($0.name, $0) })
     }

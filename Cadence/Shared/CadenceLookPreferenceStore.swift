@@ -117,6 +117,11 @@ enum CadenceLookPreferenceStore {
         /// a real `Bool` — otherwise every `@AppStorage(…) var showCompleted = false` would read
         /// the record's value as unset.
         case bool
+        /// An `Int` default (T-1347). Read through `object(forKey:)` / `integer(forKey:)` and
+        /// written back as a real `Int` for exactly the reason `.bool` is: `string(forKey:)` does
+        /// not answer an `NSNumber`, and an `@AppStorage(...) var startMinute = 540` would read a
+        /// string-shaped `"540"` as unset and silently reset the window to nine o'clock.
+        case int
     }
 
     /// How a mirror's value relates to the record's.
@@ -186,6 +191,24 @@ enum CadenceLookPreferenceStore {
         }
     }
 
+    /// The calendar-surface mirrors, which are the same on both platforms (T-1347).
+    ///
+    /// Not a `switch` on `Platform` like `mirrors(on:)` above, and that is the point:
+    /// `CalendarWorkHoursPreferences` already keys these `calendar.workHours.*.v1` rather than
+    /// `macos.*` precisely because the Mac, the iPad and the iPhone read the same window, and the
+    /// two Settings sections write the same two keys. There is no second vocabulary to reconcile
+    /// and therefore no codec: a minute-of-day is a minute-of-day everywhere.
+    ///
+    /// **No clamping here.** An out-of-range minute arriving from another build is normalised by
+    /// `CalendarWorkHoursPreferences.normalizedRange` at every read, which is where that rule has
+    /// always lived; re-deciding it in the transport would be a second answer that could drift.
+    static func calendarMirrors() -> [MirroredSetting] {
+        [
+            MirroredSetting("workHours.start", CalendarWorkHoursPreferences.startMinuteKey, kind: .int),
+            MirroredSetting("workHours.end", CalendarWorkHoursPreferences.endMinuteKey, kind: .int),
+        ]
+    }
+
     // MARK: - The two vocabularies
 
     /// A mirror value as the record spells it.
@@ -229,8 +252,20 @@ enum CadenceLookPreferenceStore {
         forTaskPresentation raw: String,
         on platform: Platform = .current
     ) -> [String: String] {
+        mirrorWrites(forRaw: raw, mirrors: mirrors(on: platform))
+    }
+
+    /// The same, for the calendar map (T-1347). Same grammar, same absent-key rule.
+    static func mirrorWrites(forCalendarPresentation raw: String) -> [String: String] {
+        mirrorWrites(forRaw: raw, mirrors: calendarMirrors())
+    }
+
+    /// The one walk both of the above make. Split out rather than copied so the absent-key rule —
+    /// a record that has never carried a key leaves this device's value exactly as the person left
+    /// it — has one spelling rather than two that could drift.
+    static func mirrorWrites(forRaw raw: String, mirrors: [MirroredSetting]) -> [String: String] {
         let stored = pairs(fromRaw: raw)
-        return mirrors(on: platform).reduce(into: [String: String]()) { partial, mirror in
+        return mirrors.reduce(into: [String: String]()) { partial, mirror in
             guard let value = stored[mirror.recordKey],
                   let local = mirrorValue(fromRecord: value, codec: mirror.codec) else { return }
             partial[mirror.defaultsKey] = local
@@ -244,7 +279,23 @@ enum CadenceLookPreferenceStore {
         in defaults: UserDefaults,
         on platform: Platform = .current
     ) -> [String: String] {
-        mirrors(on: platform).reduce(into: [String: String]()) { partial, mirror in
+        currentMirrors(in: defaults, mirrors: mirrors(on: platform))
+    }
+
+    /// The same, for the calendar map (T-1347).
+    static func currentCalendarMirrors(in defaults: UserDefaults) -> [String: String] {
+        currentMirrors(in: defaults, mirrors: calendarMirrors())
+    }
+
+    /// The one read both of the above make. **An unset key is omitted rather than reported as its
+    /// default** — the third face of the "empty means never chosen here" rule this type carries in
+    /// three places, and what stops a device that has never opened the work-hours picker from
+    /// publishing nine-to-five over a window the owner set on another one.
+    static func currentMirrors(
+        in defaults: UserDefaults,
+        mirrors: [MirroredSetting]
+    ) -> [String: String] {
+        mirrors.reduce(into: [String: String]()) { partial, mirror in
             switch mirror.kind {
             case .string:
                 guard let value = defaults.string(forKey: mirror.defaultsKey) else { return }
@@ -252,6 +303,9 @@ enum CadenceLookPreferenceStore {
             case .bool:
                 guard defaults.object(forKey: mirror.defaultsKey) != nil else { return }
                 partial[mirror.defaultsKey] = defaults.bool(forKey: mirror.defaultsKey) ? "true" : "false"
+            case .int:
+                guard defaults.object(forKey: mirror.defaultsKey) != nil else { return }
+                partial[mirror.defaultsKey] = String(defaults.integer(forKey: mirror.defaultsKey))
             }
         }
     }
@@ -271,8 +325,25 @@ enum CadenceLookPreferenceStore {
         stored: [String: String],
         on platform: Platform = .current
     ) -> [String: String] {
+        publishedPairs(currentMirrors: currentMirrors, stored: stored, mirrors: mirrors(on: platform))
+    }
+
+    /// The same, for the calendar map (T-1347).
+    static func publishedCalendarPairs(
+        currentMirrors: [String: String],
+        stored: [String: String]
+    ) -> [String: String] {
+        publishedPairs(currentMirrors: currentMirrors, stored: stored, mirrors: calendarMirrors())
+    }
+
+    /// The one merge all of the above make.
+    static func publishedPairs(
+        currentMirrors: [String: String],
+        stored: [String: String],
+        mirrors: [MirroredSetting]
+    ) -> [String: String] {
         var result = stored
-        for mirror in mirrors(on: platform) {
+        for mirror in mirrors {
             guard let local = currentMirrors[mirror.defaultsKey] else { continue }
             if let storedValue = result[mirror.recordKey],
                mirrorValue(fromRecord: storedValue, codec: mirror.codec) == local {
@@ -295,12 +366,27 @@ enum CadenceLookPreferenceStore {
         accentPaletteID: String,
         sidebarTabColorsRaw: String,
         currentMirrors: [String: String],
+        currentCalendarMirrors: [String: String] = [:],
         record: LookPreference?,
         on platform: Platform = .current
-    ) -> (accentPaletteID: String, sidebarTabColorsRaw: String, taskPresentationRaw: String)? {
+    ) -> (
+        accentPaletteID: String,
+        sidebarTabColorsRaw: String,
+        taskPresentationRaw: String,
+        calendarPresentationRaw: String
+    )? {
         let storedPairs = pairs(fromRaw: record?.taskPresentationRaw ?? "")
         let taskPresentationRaw = raw(
             from: publishedPairs(currentMirrors: currentMirrors, stored: storedPairs, on: platform)
+        )
+        // Defaulted to `[:]` deliberately, and it is not a footgun: an empty current-mirror map is
+        // "this device says nothing about the calendar", which `publishedCalendarPairs` answers by
+        // keeping every stored pair. A caller that omits it cannot blank the window.
+        let calendarPresentationRaw = raw(
+            from: publishedCalendarPairs(
+                currentMirrors: currentCalendarMirrors,
+                stored: pairs(fromRaw: record?.calendarPresentationRaw ?? "")
+            )
         )
         // **An empty local value is "never chosen here", never "chosen to be nothing".** Without
         // this, a publish that ran before this launch's first adopt — any `UserDefaults` write
@@ -317,7 +403,8 @@ enum CadenceLookPreferenceStore {
             sidebarTabColorsRaw: sidebarTabColorsRaw.isEmpty
                 ? (record?.sidebarTabColorsRaw ?? "")
                 : sidebarTabColorsRaw,
-            taskPresentationRaw: taskPresentationRaw
+            taskPresentationRaw: taskPresentationRaw,
+            calendarPresentationRaw: calendarPresentationRaw
         )
         guard let record else {
             // Nothing stored yet. A record is worth minting only once this device actually holds
@@ -326,11 +413,13 @@ enum CadenceLookPreferenceStore {
             let isEmpty = candidate.accentPaletteID.isEmpty
                 && candidate.sidebarTabColorsRaw.isEmpty
                 && candidate.taskPresentationRaw.isEmpty
+                && candidate.calendarPresentationRaw.isEmpty
             return isEmpty ? nil : candidate
         }
         guard record.accentPaletteID != candidate.accentPaletteID
                 || record.sidebarTabColorsRaw != candidate.sidebarTabColorsRaw
-                || record.taskPresentationRaw != candidate.taskPresentationRaw else { return nil }
+                || record.taskPresentationRaw != candidate.taskPresentationRaw
+                || record.calendarPresentationRaw != candidate.calendarPresentationRaw else { return nil }
         return candidate
     }
 
@@ -347,6 +436,7 @@ enum CadenceLookPreferenceStore {
         accentPaletteID: String,
         sidebarTabColorsRaw: String,
         taskPresentationRaw: String,
+        calendarPresentationRaw: String,
         records: [LookPreference],
         in modelContext: ModelContext,
         now: Date = Date(),
@@ -357,6 +447,7 @@ enum CadenceLookPreferenceStore {
                 accentPaletteID: accentPaletteID,
                 sidebarTabColorsRaw: sidebarTabColorsRaw,
                 taskPresentationRaw: taskPresentationRaw,
+                calendarPresentationRaw: calendarPresentationRaw,
                 updatedAt: now
             )
             modelContext.insert(created)
@@ -367,15 +458,18 @@ enum CadenceLookPreferenceStore {
         let previousAccent = record.accentPaletteID
         let previousColors = record.sidebarTabColorsRaw
         let previousPresentation = record.taskPresentationRaw
+        let previousCalendar = record.calendarPresentationRaw
         let previousUpdatedAt = record.updatedAt
         record.accentPaletteID = accentPaletteID
         record.sidebarTabColorsRaw = sidebarTabColorsRaw
         record.taskPresentationRaw = taskPresentationRaw
+        record.calendarPresentationRaw = calendarPresentationRaw
         record.updatedAt = now
         try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
             record.accentPaletteID = previousAccent
             record.sidebarTabColorsRaw = previousColors
             record.taskPresentationRaw = previousPresentation
+            record.calendarPresentationRaw = previousCalendar
             record.updatedAt = previousUpdatedAt
         }
     }

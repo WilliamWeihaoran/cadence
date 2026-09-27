@@ -4,7 +4,8 @@ import SwiftData
 import SwiftUI
 
 /// The one thing that carries values between the synced `LookPreference` record and the
-/// device-local defaults every surface already reads (T-1307).
+/// device-local defaults every surface already reads (T-1307, and the work-hours window since
+/// T-1347).
 ///
 /// Two directions, and they are deliberately triggered by different things:
 ///
@@ -66,6 +67,13 @@ final class CadenceLookPreferenceSync {
             if write(value, forKey: key) { changed.insert(key) }
         }
 
+        // T-1347 — the work-hours window, which is the same two keys on all three devices.
+        for (key, value) in CadenceLookPreferenceStore.mirrorWrites(
+            forCalendarPresentation: record.calendarPresentationRaw
+        ) {
+            if write(value, forKey: key) { changed.insert(key) }
+        }
+
         // Only a record that actually names a tint set overwrites this device's. An empty string
         // is "never chosen", not "chosen to be empty" — the same reading `mirrorWrites` gives an
         // absent pair.
@@ -94,16 +102,31 @@ final class CadenceLookPreferenceSync {
     /// `true` when the default actually moved. An equal write is skipped so adopt cannot post a
     /// change notification that would send publish round again.
     private func write(_ value: String, forKey key: String) -> Bool {
-        if let mirror = CadenceLookPreferenceStore.mirrors(on: platform).first(where: { $0.defaultsKey == key }),
-           mirror.kind == .bool {
+        // Both tables, because a `.bool` or an `.int` written as a string reads back as unset and
+        // the surface silently falls to its compiled-in default. Searching only the task mirrors is
+        // how the work-hours window would have arrived as `"540"` and drawn nine o'clock.
+        let mirror = (CadenceLookPreferenceStore.mirrors(on: platform)
+            + CadenceLookPreferenceStore.calendarMirrors())
+            .first { $0.defaultsKey == key }
+
+        switch mirror?.kind {
+        case .bool:
             let wanted = value == "true"
             guard defaults.object(forKey: key) == nil || defaults.bool(forKey: key) != wanted else { return false }
             defaults.set(wanted, forKey: key)
             return true
+        case .int:
+            // A record value that is not an integer is left alone rather than coerced to zero,
+            // which would move the band to midnight on every device that read it.
+            guard let wanted = Int(value) else { return false }
+            guard defaults.object(forKey: key) == nil || defaults.integer(forKey: key) != wanted else { return false }
+            defaults.set(wanted, forKey: key)
+            return true
+        case .string, .none:
+            guard defaults.string(forKey: key) != value else { return false }
+            defaults.set(value, forKey: key)
+            return true
         }
-        guard defaults.string(forKey: key) != value else { return false }
-        defaults.set(value, forKey: key)
-        return true
     }
 
     // MARK: - Publish
@@ -119,6 +142,7 @@ final class CadenceLookPreferenceSync {
             accentPaletteID: accentDefaults.string(forKey: CadenceAccentPaletteStore.defaultsKey) ?? "",
             sidebarTabColorsRaw: defaults.string(forKey: CadencePreferenceKeys.sidebarTabColors) ?? "",
             currentMirrors: CadenceLookPreferenceStore.currentMirrors(in: defaults, on: platform),
+            currentCalendarMirrors: CadenceLookPreferenceStore.currentCalendarMirrors(in: defaults),
             record: record,
             on: platform
         ) else { return }
@@ -128,6 +152,7 @@ final class CadenceLookPreferenceSync {
                 accentPaletteID: pending.accentPaletteID,
                 sidebarTabColorsRaw: pending.sidebarTabColorsRaw,
                 taskPresentationRaw: pending.taskPresentationRaw,
+                calendarPresentationRaw: pending.calendarPresentationRaw,
                 records: records,
                 in: modelContext,
                 now: now

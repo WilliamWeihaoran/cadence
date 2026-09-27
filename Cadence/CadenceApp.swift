@@ -88,6 +88,12 @@ struct CadenceApp: App {
                     // T-1307 — the accent, the sidebar tints and every task surface's sort
                     // setting follow the owner between their three devices from here.
                     .cadenceSyncedLook()
+                    // T-1346 — and the templates the owner wrote follow them from here. A second
+                    // hidden host rather than a widening of the one above: the look is mirrored
+                    // into the app-group suite for the widget and is a bundle of small enum-ish
+                    // values, the templates are one markdown-bearing string the widget never
+                    // reads, and the two have different conflict rules.
+                    .cadenceSyncedNoteTemplates()
                     .modelContainer(sharedModelContainer)
 #else
                 iOSRootView()
@@ -104,6 +110,12 @@ struct CadenceApp: App {
                     // T-1307 — the accent, the sidebar tints and every task surface's sort
                     // setting follow the owner between their three devices from here.
                     .cadenceSyncedLook()
+                    // T-1346 — and the templates the owner wrote follow them from here. A second
+                    // hidden host rather than a widening of the one above: the look is mirrored
+                    // into the app-group suite for the widget and is a bundle of small enum-ish
+                    // values, the templates are one markdown-bearing string the widget never
+                    // reads, and the two have different conflict rules.
+                    .cadenceSyncedNoteTemplates()
                     .modelContainer(sharedModelContainer)
 #endif
             } else {

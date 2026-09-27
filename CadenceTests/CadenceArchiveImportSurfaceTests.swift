@@ -726,6 +726,76 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(outcome.insertedRecordCount == 1)
     }
 
+    /// The same hazard again, for T-1346's note-template table. Separate for the same reason: a
+    /// third ticket, a third table, and a reader deleting one must not silently lose another's
+    /// coverage.
+    @Test func anArchiveWrittenBeforeTheNoteTemplateTableStillDecodes() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(AppTask(title: "Buy milk"))
+        source.insert(NoteTemplatePreference(overridesRaw: "{}"))
+        try source.save()
+
+        let data = try CadenceDataExportService.encode(
+            try CadenceDataExportService.makeArchive(in: source)
+        )
+        var json = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        // Non-vacuity: the key is there to remove, so its absence below is this test's doing.
+        #expect(json["noteTemplatePreferences"] != nil)
+        json.removeValue(forKey: "noteTemplatePreferences")
+
+        let older = try CadenceDataExportService.decode(
+            try JSONSerialization.data(withJSONObject: json)
+        )
+        #expect(older.noteTemplatePreferenceRecords.isEmpty)
+        #expect(older.recordCount(forEntityNamed: "NoteTemplatePreference") == 0)
+        #expect(older.tasks.count == 1, "the rest of the document came back")
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        let outcome = try CadenceArchiveImportService.apply(older, in: destination)
+        #expect(outcome.insertedRecordCount == 1)
+    }
+
+    /// **The same hazard one level down: a missing *field* on a table that is present (T-1347).**
+    ///
+    /// `calendarPresentationRaw` was added to `CadenceArchiveLookPreference` after archives had
+    /// already been written, and a non-optional `String` there throws `keyNotFound` for every one
+    /// of them — the whole document, not just the look row. This deletes the field rather than the
+    /// table, which is what an archive written yesterday actually looks like.
+    @Test func aLookRowWrittenBeforeTheCalendarFieldStillDecodes() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(AppTask(title: "Buy milk"))
+        source.insert(LookPreference(
+            accentPaletteID: "glacier",
+            calendarPresentationRaw: "workHours.start=540"
+        ))
+        try source.save()
+
+        let data = try CadenceDataExportService.encode(
+            try CadenceDataExportService.makeArchive(in: source)
+        )
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var rows = try #require(json["lookPreferences"] as? [[String: Any]])
+        #expect(rows.count == 1)
+        #expect(rows[0]["calendarPresentationRaw"] != nil, "nothing to remove; this test proves nothing")
+        rows[0].removeValue(forKey: "calendarPresentationRaw")
+        json["lookPreferences"] = rows
+
+        let older = try CadenceDataExportService.decode(
+            try JSONSerialization.data(withJSONObject: json)
+        )
+        #expect(older.lookPreferenceRecords.count == 1, "the look row became unreadable")
+        #expect(older.lookPreferenceRecords[0].calendarPresentation.isEmpty)
+        #expect(older.tasks.count == 1, "the rest of the document came back")
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        let outcome = try CadenceArchiveImportService.apply(older, in: destination)
+        #expect(outcome.insertedRecordCount == 2)
+        let restored = try #require(try destination.fetch(FetchDescriptor<LookPreference>()).first)
+        #expect(restored.calendarPresentationRaw.isEmpty)
+    }
+
     /// The failure a user reads names the row. "The import failed" over a four-thousand-row
     /// document is not something anyone can act on.
     @Test func everyRefusalNamesTheRowItRefused() {
@@ -1310,10 +1380,18 @@ struct CadenceArchiveImportSurfaceTests {
         let look = LookPreference(
             accentPaletteID: "ember",
             sidebarTabColorsRaw: "today:#ff0000",
-            taskPresentationRaw: "allTasks.mode=dueDate;today.mode=doDate"
+            taskPresentationRaw: "allTasks.mode=dueDate;today.mode=doDate",
+            calendarPresentationRaw: "workHours.end=1020;workHours.start=540"
+        )
+        // T-1346's synced note templates, here for the same reason: it references nothing, and the
+        // archive carries it.
+        let templates = NoteTemplatePreference(
+            overridesRaw: NoteTemplateLibrary.setOverride(
+                for: "checklist", title: "Packing", subtitle: "Trips", body: "# Packing\n", in: ""
+            )
         )
 
-        for model in [context, area, project, pursuit, tag, goal, bundle, sidebarLayout, look] as [any PersistentModel] {
+        for model in [context, area, project, pursuit, tag, goal, bundle, sidebarLayout, look, templates] as [any PersistentModel] {
             modelContext.insert(model)
         }
         for model in [task, subtask, session, note, saved, asset, listLink, habit, completion] as [any PersistentModel] {

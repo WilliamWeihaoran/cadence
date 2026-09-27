@@ -35,9 +35,26 @@ nonisolated enum NoteTemplateLibrary {
     }
 
     static func overrides(from raw: String) -> [String: NoteTemplateOverride] {
-        guard let data = raw.data(using: .utf8),
+        decodedOverrides(from: raw) ?? [:]
+    }
+
+    /// The override map `raw` spells, or `nil` when it spells none — because it is the empty
+    /// "nothing has ever been written here" default, or because it is text this build cannot parse.
+    ///
+    /// **`overrides(from:)` collapses both of those to `[:]` and must keep doing so**: every
+    /// template surface asks "which templates are customised", and the answer for an unreadable
+    /// string is "none I can show you". The distinction exists for exactly one caller — the sync in
+    /// `CadenceNoteTemplatePreferenceStore`, which must never publish `[:]` *up* into the synced
+    /// record on the strength of a string it failed to read. Doing so would turn one device's
+    /// corrupt local default into every device's reset. A `nil` here means "say nothing"; `[:]`
+    /// from a parsed `{}` means "there are deliberately no overrides", and those are different
+    /// facts.
+    static func decodedOverrides(from raw: String) -> [String: NoteTemplateOverride]? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let data = trimmed.data(using: .utf8),
               let decoded = try? JSONDecoder().decode([String: NoteTemplateOverride].self, from: data) else {
-            return [:]
+            return nil
         }
         return decoded
     }

@@ -25,5 +25,6 @@ nonisolated enum CadenceSchema {
         HabitCompletion.self,
         SidebarLayoutPreference.self,
         LookPreference.self,
+        NoteTemplatePreference.self,
     ])
 }

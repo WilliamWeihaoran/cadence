@@ -137,7 +137,8 @@ nonisolated enum CadenceDataExportService {
             legacyEventNotes: try records(EventNote.self, in: modelContext, CadenceArchiveEventNote.init),
             legacyDocuments: try records(Document.self, in: modelContext, CadenceArchiveLegacyDocument.init),
             sidebarLayoutPreferences: try records(SidebarLayoutPreference.self, in: modelContext, CadenceArchiveSidebarLayoutPreference.init),
-            lookPreferences: try records(LookPreference.self, in: modelContext, CadenceArchiveLookPreference.init)
+            lookPreferences: try records(LookPreference.self, in: modelContext, CadenceArchiveLookPreference.init),
+            noteTemplatePreferences: try records(NoteTemplatePreference.self, in: modelContext, CadenceArchiveNoteTemplatePreference.init)
         )
     }
 
@@ -290,6 +291,25 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
         lookPreferences ?? []
     }
 
+    /// The synced note-template overrides (T-1346) — the titles, subtitles and markdown bodies the
+    /// user typed over the built-in stencils.
+    ///
+    /// **Optional for the same measured reason the two tables above are**, and it is not about the
+    /// data: an archive written before this table existed has no such key, and Swift's synthesized
+    /// `init(from:)` throws `keyNotFound` rather than falling back to a property's default. A
+    /// non-optional `= []` here makes every older backup unreadable.
+    /// `anArchiveWrittenBeforeTheNoteTemplateTableStillDecodes` pins it, and `formatVersion` is
+    /// deliberately not bumped: a reader that merely gains a table can still read everything it
+    /// could before.
+    ///
+    /// Read it through `noteTemplatePreferenceRecords`; nothing should branch on the `nil`.
+    var noteTemplatePreferences: [CadenceArchiveNoteTemplatePreference]?
+
+    /// The template rows this archive carries — none, for one written before the table existed.
+    var noteTemplatePreferenceRecords: [CadenceArchiveNoteTemplatePreference] {
+        noteTemplatePreferences ?? []
+    }
+
     /// Which table holds each `CadenceSchema` entity.
     ///
     /// Keyed by the entity name SwiftData reports, so a test can compare this table to
@@ -320,6 +340,7 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
         "Document": \.legacyDocuments.count,
         "SidebarLayoutPreference": \.sidebarLayoutPreferenceRecords.count,
         "LookPreference": \.lookPreferenceRecords.count,
+        "NoteTemplatePreference": \.noteTemplatePreferenceRecords.count,
     ]
 
     nonisolated func recordCount(forEntityNamed name: String) -> Int? {
@@ -695,14 +716,41 @@ nonisolated struct CadenceArchiveLookPreference: Codable, Equatable, Identifiabl
     var accentPaletteID: String
     var sidebarTabColorsRaw: String
     var taskPresentationRaw: String
+    /// T-1347's calendar pair map. **Optional**, for the same measured reason the tables above are:
+    /// an archive written before this field existed has no such key, and Swift's synthesized
+    /// `init(from:)` throws `keyNotFound` rather than falling back to a property's default. Read it
+    /// through `calendarPresentation`.
+    var calendarPresentationRaw: String?
     var createdAt: Date
     var updatedAt: Date
+
+    /// The calendar pairs this record carries — none, for one written before the field existed.
+    var calendarPresentation: String { calendarPresentationRaw ?? "" }
 
     init(_ model: LookPreference) {
         id = model.id
         accentPaletteID = model.accentPaletteID
         sidebarTabColorsRaw = model.sidebarTabColorsRaw
         taskPresentationRaw = model.taskPresentationRaw
+        calendarPresentationRaw = model.calendarPresentationRaw
+        createdAt = CadenceArchiveTimestamp.normalized(model.createdAt)
+        updatedAt = CadenceArchiveTimestamp.normalized(model.updatedAt)
+    }
+}
+
+/// The synced note-template overrides, as stored: one JSON map of template id to the title,
+/// subtitle and markdown body the user typed. Deliberately not expanded into one record per
+/// template — an archive is a copy of what the store holds, and splitting the map would make the
+/// importer decide what a template id this build has no stencil for means.
+nonisolated struct CadenceArchiveNoteTemplatePreference: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var overridesRaw: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(_ model: NoteTemplatePreference) {
+        id = model.id
+        overridesRaw = model.overridesRaw
         createdAt = CadenceArchiveTimestamp.normalized(model.createdAt)
         updatedAt = CadenceArchiveTimestamp.normalized(model.updatedAt)
     }
