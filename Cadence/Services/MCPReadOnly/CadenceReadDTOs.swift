@@ -228,6 +228,21 @@ nonisolated struct CadenceNoteSummary: Codable, Sendable {
     let title: String
     let key: String?
     let container: CadenceContainerRef?
+    /// The note's folder, for the one kind that has one ([[T-1122]]).
+    ///
+    /// **Absent rather than empty for every other kind**, the way `key` is absent for a note that
+    /// has no date or week key. `Note.folderPath` is non-optional and defaults to `""` on all five
+    /// kinds, but only `.list` notes are ever filed: nothing writes it on a daily, weekly, notepad
+    /// or event note and no surface reads it there, so a `""` on one of those would be reporting a
+    /// root folder that does not exist rather than an empty one. On a list note it is present and
+    /// **`""` means the root**, which is the convention's own sentinel and is what both `+` buttons
+    /// file into.
+    ///
+    /// It is here because `create_list_note` decides it and nothing on this surface could observe
+    /// it: an arm whose one placement argument is invisible in its own answer cannot be checked by
+    /// the caller that sent it. Normalized on the way in by `CadenceNoteFolderPath.normalized`, and
+    /// normalized again here, because a path can arrive raw from a merge or from CloudKit.
+    let folderPath: String?
     let updatedAt: String
     let excerpt: String
     let tags: [CadenceTagSummary]

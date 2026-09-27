@@ -22,9 +22,12 @@ green for all three, so `call_error` takes the expected text. Do not "simplify" 
 What is still not covered: **`list_task_bundles` alone** is dispatched and returns `[]`, because
 MCP has no tool that creates a bundle and a fresh fixture store therefore cannot hold one. That is
 now a *refusal with a measurement* rather than a gap — see [[T-1122]] — so the empty assertion is
-the honest end state until something changes on the app side, not a placeholder. `list_links` left
-the list with `create_link`, and `list_goals`, `get_goal` and `list_habits` left it with
-`create_goal`/`create_habit` ([[T-1122]] again): all four now run against rows the smoke test made,
+the honest end state until something changes on the app side, not a placeholder. **The measurement
+grew a second half on 2026-09-27**: no write arm can put a task *into* a bundle either, so even
+with the arm the fixture could only hold an empty block. `list_links` left
+the list with `create_link`, `list_goals`, `get_goal` and `list_habits` left it with
+`create_goal`/`create_habit`, and `list_notes` now runs over list notes `create_list_note` made
+([[T-1122]] throughout): all of them now run against rows the smoke test made,
 with their key sets compared at runtime. `get_goal` is the one worth naming — its only executions
 before were a missing-argument and a not-found error, so `CadenceGoalDetail`, its contribution
 block and its habit-momentum block had never been encoded at runtime at all. `list_tasks`,
@@ -58,7 +61,7 @@ too. The boundary's rules live in `CadenceMCPServer/AGENTS.md`.
 - Keep scripts deterministic and safe to run repeatedly.
 - Do not assume the macOS app is open unless the script explicitly checks/launches it.
 - Preserve command-line output that other agents or smoke tests parse.
-- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 38 tool
+- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 40 tool
   names are a contract in three places — the definitions, the router's `case` arms, and this
   smoke test — and the first two can disagree while compiling.
 - A new tool means a new dispatch here, not only a new name in `EXPECTED_TOOLS`. The coverage

@@ -438,6 +438,44 @@ nonisolated struct CadenceCreateTagOptions: Sendable {
     var unarchive: Bool = false
 }
 
+/// Everything `create_list_note` may set, and the body is deliberately not on the list
+/// ([[T-1122]], the fifth constructor outside the context/list/task triangle).
+///
+/// **Why this one stopped being refused.** The measurement in T-1122 was a file, not a rule:
+/// `CadenceListNoteFiling.createNote` is the app's one list-note constructor and it shared a file
+/// with the four SwiftUI rows that draw folders, so reaching it meant compiling SwiftUI and the
+/// whole `Theme` token file into a command-line tool. The named condition was that file splitting;
+/// `Cadence/Shared/CadenceListNoteFiling.swift` is the split, and this arm asks the same helper
+/// both `+` buttons ask rather than a sixth copy of the seed-and-file sentence.
+///
+/// **There is no `content`, and it is the scoped refusal `create_habit`'s missing
+/// `reminderMinuteOfDay` is.** A list note's `title` *is* the first `# H1` of its body:
+/// `MarkdownNoteTitleSync.apply` holds the two in step on every commit the app makes, and it is
+/// declared in `Cadence/Services/MarkdownNoteSupport.swift`, which is **not** in
+/// `CadenceMCPServer`'s Sources phase — `NoteKind.syncsTitleFromH1` is in `Note.swift` precisely
+/// because T-741 called across that line and broke this target. A caller-supplied body could
+/// therefore arrive carrying a different `# H1` than `title`, and nothing in this process could
+/// reconcile them: the next app launch would silently rename the note to whatever the body said.
+/// So the note is born in step — `seededContent(for:)` writes `# title` and nothing else — and
+/// filling the body is an app action. The same omission also keeps `tags:` frontmatter out, which
+/// would otherwise need `MarkdownMetadataSupport` to mint tags through a second door beside
+/// `create_task`'s own `tagNames`.
+///
+/// **`folderPath` is a string, not a folder id, because a folder is not a model.** It is a
+/// convention over `Note.folderPath` — `/`-separated, no leading or trailing separator, the root
+/// is `""` — and `CadenceNoteFolderPath.normalized` is its one normalizer, which is the other half
+/// of why that file had to come across. An empty or whitespace-only path files the note at the
+/// root, which is where both `+` buttons put one; a folder with nothing in it does not exist, so
+/// there is nothing to create first and nothing to delete afterwards.
+nonisolated struct CadenceCreateListNoteOptions: Sendable {
+    var containerKind: String
+    var containerId: String
+    var title: String
+    /// Optional `/`-separated folder path. Omitted, blank, or normalizing to nothing, the note is
+    /// filed at the list's root.
+    var folderPath: String? = nil
+}
+
 /// Every field `updateContainer` writes to an `Area` or a `Project`, captured before the write so
 /// a refused commit puts all of it back (T-1121).
 ///
@@ -646,6 +684,14 @@ private struct PendingAuditEntry {
     /// the day a second tag-writing arm exists. The summary already does today.
     static func tag(tool: String, id: UUID, summary: String) -> PendingAuditEntry {
         PendingAuditEntry(tool: tool, entityType: "tag", entityId: id.uuidString, summary: summary)
+    }
+
+    /// `entityType` is `note`, the same word `append_core_note` would have used had the core notes
+    /// not needed their own — `mcp-audit.log` reads by `tool`, and a list note and a daily note are
+    /// the same model with different kinds, so a second noun would be inventing a distinction the
+    /// store does not make.
+    static func listNote(id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: "create_list_note", entityType: "note", entityId: id.uuidString, summary: summary)
     }
 
     static func contextFields(id: UUID, summary: String) -> PendingAuditEntry {
@@ -1527,6 +1573,67 @@ final class CadenceWriteService {
             )
             return try readService.tagDetail(tagID: tag.id.uuidString)
         }
+    }
+
+    /// Mint a list note on an area or a project ([[T-1122]]).
+    ///
+    /// **The helper is asked, not re-spelled.** `CadenceListNoteFiling.createNote` owns three rules
+    /// a hand-rolled arm would each have to copy: the folder path is normalized on write by
+    /// `CadenceNoteFolderPath.normalized`, the note is attached through `CadenceListNoteSupport`
+    /// rather than by assigning `area`/`project` here, and the body is seeded `# title` so the note
+    /// is born in step with the `# H1` rule this process cannot run. What the arm decides on its own
+    /// is exactly one thing — which `order` the new note takes.
+    ///
+    /// **`commit: { _ in }`, as `createGoal` and `appendCoreNote` do.** `createNote` would otherwise
+    /// commit on its own behalf through `commitInsert`; the note travels to `saveNotifyAndAudit` in
+    /// this call's `inserted:` list instead, so there is one commit, one audit entry and one undo.
+    /// A create has nothing to put back, so there is no `undo`.
+    ///
+    /// **`order` is max-plus-one, where both `+` buttons pass `listNotes.count`.** They agree on
+    /// every list nothing has been deleted from, and `CadenceOrderAllocation.nextOrder` is what
+    /// T-329 exists to stop being retyped — a count over a list that has lost a note hands the new
+    /// row an order an existing one already holds. `CadenceNoteFolderGrouping.precedes` is total on
+    /// `order`, title and id, so the disagreement was only ever which of two notes drew first;
+    /// this end of it cannot collide at all.
+    func createListNote(options: CadenceCreateListNoteOptions) throws -> CadenceNoteDetail {
+        let kind = try normalizedContainerKind(options.containerKind)
+        guard let resolved = try resolveContainer(kind: kind, id: options.containerId) else {
+            throw CadenceWriteError.invalidCombination("containerId is required.")
+        }
+        let title = try normalizedRequiredText(options.title, emptyError: CadenceWriteError.emptyTitleFor("Note"))
+
+        // Read off the container's own notes edge rather than by filtering the whole table, which is
+        // `CadenceMCPServer/AGENTS.md`'s container-scoped-read rule, and through
+        // `CadenceListNoteSupport.notes(for:project:in:)` so the `.list` filter is the app's.
+        let area: Area?
+        let project: Project?
+        let siblings: [Note]
+        switch resolved {
+        case .area(let resolvedArea):
+            area = resolvedArea
+            project = nil
+            siblings = CadenceListNoteSupport.notes(for: resolvedArea, project: nil, in: resolvedArea.notes ?? [])
+        case .project(let resolvedProject):
+            area = nil
+            project = resolvedProject
+            siblings = CadenceListNoteSupport.notes(for: nil, project: resolvedProject, in: resolvedProject.notes ?? [])
+        }
+
+        let note = try CadenceListNoteFiling.createNote(
+            in: context,
+            area: area,
+            project: project,
+            title: title,
+            folderPath: options.folderPath ?? CadenceNoteFolderPath.root,
+            order: CadenceOrderAllocation.nextOrder(after: siblings, order: \.order),
+            commit: { _ in }
+        )
+
+        try saveNotifyAndAudit(
+            .listNote(id: note.id, summary: "Created list note on \(kind): \(title)"),
+            inserted: [note]
+        )
+        return try readService.getNote(noteID: note.id.uuidString)
     }
 
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {

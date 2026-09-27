@@ -370,6 +370,15 @@ struct CadenceMCPToolRouter {
                 unarchive: arguments.bool("unarchive") ?? false
             )))
 
+        case "create_list_note":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.createListNote(options: CadenceCreateListNoteOptions(
+                containerKind: try arguments.requiredString("containerKind"),
+                containerId: try arguments.requiredString("containerId"),
+                title: try arguments.requiredString("title"),
+                folderPath: arguments.string("folderPath")
+            )))
+
         case "append_core_note":
             let writeService = try requireWriteService(for: name)
             return try encode(writeService.appendCoreNote(

@@ -111,23 +111,36 @@ The framing T-1120 expected — no confirmation, no undo, `mcp-audit.log` for a 
 is *not* the binding constraint: `CadencePendingChangePersistence.commitCascade` is an undo for a
 delete, and the cascades already return `false` for the caller to roll back.
 
-## Why Two Kinds Have No Constructor (T-1122)
+## Why One Kind Has No Constructor (T-1122)
 
 Displaced from `CadenceMCPServer/AGENTS.md` when T-1122's second pass pushed it past its 200-line
-cap again. **It was three until [[T-1406]] built `create_tag`**; a list note and a task bundle are
-still each **refused with a measurement**, not left undecided, and both refusals share one shape:
-the app's only helper for that kind lives in a file this target cannot compile.
+cap again. **It was three until [[T-1406]] built `create_tag`, and two until T-1122's third pass
+built `create_list_note`**; the task bundle is still **refused with a measurement**, not left
+undecided.
 
-- **Task bundle.** `CadenceTaskMutationSupport` calls `NotificationManager`, which is
-  `import UserNotifications` — the same boundary that already makes `createTask` insert its
-  subtasks by hand, and the same one deletion is refused on. Re-measured 2026-09-26: the calls
-  have moved to lines 859 and 861 and `insertBundle` to 1129, and the dependency is unchanged.
-- **List note.** `CadenceNoteFolderSupport` owns both the folder-path rule and the seeded
-  `# Title`, and also declares four SwiftUI `View`s reading `Theme`. Compiling it here would drag
-  the theme layer into a command-line tool to reach two string rules. Re-measured 2026-09-26: the
-  file still opens `import SwiftUI` and still declares `NoteFolderSectionHeader`,
-  `NoteFolderGroupList`, `NoteFolderListRow` and `NoteFolderMoveMenu`, and `CadenceListNoteFiling`
-  is still inside it.
+- **Task bundle, still refused.** `CadenceTaskMutationSupport` calls `NotificationManager`, which
+  is `import UserNotifications` — the same boundary that already makes `createTask` insert its
+  subtasks by hand, and the same one deletion is refused on. Re-measured 2026-09-27: the calls are
+  at lines 859 and 861 and `insertBundle(title:…)` at 1197, and the dependency is unchanged. The
+  file cost is now the *smaller* half of the objection: **no arm on this surface can put a task
+  into a bundle**, so the only thing `create_task_bundle` could make is an empty block. The count
+  is checkable — `AppTask.bundle` is assigned in `CadenceWriteService.swift` zero times, and
+  neither `CadenceCreateTaskOptions` nor `CadenceUpdateTaskOptions` nor
+  `CadenceScheduleTaskOptions` carries a `bundleId`. T-1122's ledger entry has the full argument
+  and the condition that would lift it.
+- **List note, built.** The refusal was that `CadenceNoteFolderSupport` owned both the folder-path
+  rule and the seeded `# Title` *and* declared four SwiftUI `View`s reading `Theme`, so compiling
+  it here would have dragged the theme layer into a command-line tool to reach two string rules.
+  The named condition was that file splitting, and it has:
+  `Cadence/Shared/CadenceListNoteFiling.swift` now holds `CadenceNoteFolderPath`,
+  `CadenceListNoteFiling` and `CadenceListNoteSupport` on `Foundation`/`SwiftData` alone, and
+  `CadenceNoteFolderSupport.swift` keeps the grouping and the four rows. **The arm's own scoped
+  refusal is the body**: `MarkdownNoteTitleSync` — which holds `Note.title` equal to the first
+  `# H1` of the content on every app commit — is in `MarkdownNoteSupport.swift`, which this target
+  does not compile and cannot cheaply, since `NoteKind.syncsTitleFromH1` is declared on the model
+  precisely because T-741 called across that line. So `create_list_note` seeds `# title` and takes
+  no `content`; a caller-supplied body could arrive with a heading that disagrees with the title,
+  and the next app launch would silently rename the note to whatever the body said.
 
 **Why the tag refusal fell and these two did not.** The tag was always the odd one out: it cost
 **zero** new files, because `TagSupport` was already in the Sources phase, and what refused it was
@@ -138,8 +151,10 @@ the `.archived` branch whose app-side answer is a Restore button, is answered th
 answers a caller with no confirmation sheet: refuse by default, name the row in the refusal, and
 take the act only on an explicit `unarchive`. Refusing with no remedy would have been a dead end,
 because there is no `update_tag` arm to unarchive through; unarchiving silently would be a write
-nobody asked for. The two remaining refusals have no equivalent move available, because what
-blocks them is an `import`, and no argument on a tool changes what a Sources phase compiles.
+nobody asked for. The two refusals that remained after T-1406 had no equivalent move available, because what
+blocked them is an `import`, and no argument on a tool changes what a Sources phase compiles —
+which is why the list note needed a *file split* rather than an argument, and why the bundle would
+need the same before its own second objection could even be reached.
 
 **`create_task(tagNames:)` keeps its own rule, and that is not the third spelling T-1122 feared.**
 It asks `TagSupport.resolution`, which resolves by slug and inserts what it does not find — the
@@ -161,8 +176,11 @@ ledger entries.
 closure is the reason. `CadenceTrackingMutationSupport` owns `saveGoal`/`saveHabit` — both already
 take a `commit:`, so the deferred-commit shape `appendCoreNote` uses works unchanged — and it
 reaches `GoalAssignmentRules`, `CadenceOrderAllocation` and `CadencePluralization`. All four are
-`import Foundation`/`SwiftData` only, which is exactly what the three unbuilt kinds' helpers are
-not: that import list, not the file count, is what makes a helper eligible here.
+`import Foundation`/`SwiftData` only, which is exactly what the three unbuilt kinds' helpers were
+not: that import list, not the file count, is what makes a helper eligible here. T-1122's third
+pass took the same measurement one step further — a helper whose *own* imports are clean but whose
+*file's* are not can be made eligible by splitting the file, which is how `CadenceListNoteFiling`
+became the ninth `Shared/` member.
 
 ## Why Bulk Cancel Got A Cap And A Dry Run (T-1365)
 
@@ -336,12 +354,12 @@ measurement and the enumeration are here._
   destination bucket, not the stored number, and the arm renumbers that whole bucket densely;
   re-filing alone still renumbers nothing. `linkedCalendarID` stays refused, on T-390's opacity and
   the absence of any picker here; the reasoning is on `CadenceUpdateContainerOptions`.
-  **`create_link`, `create_goal`, `create_habit` and `create_tag` are the constructors outside the
-  context/list/task triangle; nothing creates a list note or a task bundle, and those two
-  are *refused with a measurement* rather than undecided ([[T-1122]]).** Both refusals share
-  one shape — no eligible owner this target can compile — and are above, "Why two
-  kinds have no constructor", together with why the tag refusal fell to [[T-1406]] and these did
-  not. Do not re-decide any of them from a summary.
+  **`create_link`, `create_goal`, `create_habit`, `create_tag` and `create_list_note` are the
+  constructors outside the context/list/task triangle; nothing creates a task bundle, and that one
+  is *refused with a measurement* rather than undecided ([[T-1122]]).** Every refusal in this
+  family shared one shape — no eligible owner this target can compile — and the section above,
+  "Why one kind has no constructor", records which fell, to what, and what the bundle's own second
+  objection is. Do not re-decide any of them from a summary.
   **Nothing deletes anything, and that is settled, not deferred.** Two measured reasons, either
   sufficient — the cascade is unreachable from this target, and `deleteContext` walks *local*
   relationship arrays so it could not honestly report what it removed — written out on
@@ -349,13 +367,13 @@ measurement and the enumeration are here._
   Archiving is offered instead: reversible from the same tool, destroys nothing, and it is
   `update_container_columns`' own argument about column removal one size up.
 
-## Why Eight Shared Files Joined The Sources Phase
+## Why Nine Shared Files Joined The Sources Phase
 
 _Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
 headroom left under its 199-line budget. The rule stays in the guide; the argument, the
 measurement and the enumeration are here._
 
-- **Eight `Cadence/Shared/` files have joined the Sources phase, and never for the obvious reason.**
+- **Nine `Cadence/Shared/` files have joined the Sources phase, and never for the obvious reason.**
   Three came with `update_container_columns` and not for the one T-1095 predicted — the merge's
   `base`/`edited`/`current` is *not* what earns them; `applySectionNameChanges` is (without it a
   rename strands every card on a name no column has), plus `mutateSectionConfigs`' T-915 guard and
@@ -363,6 +381,9 @@ measurement and the enumeration are here._
   persistence half it is named after — `saveNotifyAndAudit` owns the commit here — but for
   `CadenceSavedLinkURL.normalized`, T-509's case-insensitive scheme rule, which a third hand-rolled
   copy would re-break. The last four came with `create_goal`/`create_habit`; why that is four files
-  rather than one is in the reference, "Why the tracking helpers cost four files". Full reasoning
-  in T-1095's and T-1122's ledger entries. Adding a file here is still not casual: it is another
+  rather than one is in the reference, "Why the tracking helpers cost four files". The ninth came
+  with `create_list_note`, and it is the only one that cost a **split** rather than a file:
+  `CadenceListNoteFiling` carries `CadenceNoteFolderPath.normalized` and the seeded `# Title`, and
+  it had to be lifted out of a file declaring four SwiftUI views before it was eligible at all.
+  Full reasoning in T-1095's and T-1122's ledger entries. Adding a file here is still not casual: it is another
   path by which an app-side edit breaks a target no scheme builds.

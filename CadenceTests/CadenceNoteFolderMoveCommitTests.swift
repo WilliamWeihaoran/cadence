@@ -239,7 +239,7 @@ struct CadenceNoteFolderMoveCommitTests {
         // Non-vacuity: the declaration is where the sweep says it is, so a needle that matched
         // nothing anywhere cannot pass the exactness above by reading an empty tree.
         let helper = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceNoteFolderSupport.swift")
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceListNoteFiling.swift")
         )
         #expect(helper.contains("static func fileWithoutCommitting(_ note: Note, toFolder rawPath: String)"))
     }

@@ -1168,6 +1168,7 @@ final class CadenceReadService {
             title: note.displayTitle,
             key: noteKey(note),
             container: documentContainer(note),
+            folderPath: note.kind == .list ? CadenceNoteFolderPath.normalized(note.folderPath) : nil,
             updatedAt: format(note.updatedAt),
             excerpt: excerpt(note.content),
             tags: tagSummaries(note.sortedTags)

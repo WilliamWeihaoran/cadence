@@ -74,7 +74,16 @@ enum CadenceMCPToolDefinitions {
     // surface still cannot mint are a list note and a task bundle, each refused with a measurement
     // in `docs/TODO.md` rather than left undecided; "can this server mint a tag?" is a capability
     // question, and the version is the only thing a client can ask.
-    private static let serverVersion = "0.12.0"
+    // 0.13.0, and this one DOES add a response key, which is why it is worth reading rather than
+    // counting: `create_list_note` is the fifth constructor outside the context/list/task triangle
+    // ([[T-1122]]), and `CadenceNoteSummary` grows `folderPath` — optional, present only on a
+    // `.list` note — because the arm's one placement argument was otherwise invisible in every
+    // answer this surface gives. Additive: one tool, one optional key, nothing moved and nothing
+    // dropped, so a client reading by name is unaffected. The one model type this surface still
+    // cannot mint is a task bundle, refused with a measurement in `docs/TODO.md` rather than left
+    // undecided; "can this server file a note into a folder?" is a capability question, and the
+    // version is the only thing a client can ask.
+    private static let serverVersion = "0.13.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
@@ -93,6 +102,7 @@ enum CadenceMCPToolDefinitions {
         "create_goal",
         "create_habit",
         "create_tag",
+        "create_list_note",
     ]
 
     static var tools: [Tool] {
@@ -367,6 +377,12 @@ enum CadenceMCPToolDefinitions {
                 "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. Omitted, the model default is kept."),
                 "unarchive": booleanProperty("Restore the archived tag carrying this slug instead of being refused. Refused alongside description or colorHex: a restore does not re-colour or re-describe the tag it brings back. No effect when nothing archived carries the slug."),
             ], required: ["name"])),
+            Tool(name: "create_list_note", description: "Create a note on a Cadence area or project, optionally filed in a folder. Answers the same detail get_note returns. The note is created with its title as its only content: a body cannot be sent, because a list note's title IS the first heading of its body and the rule that keeps the two in step is not compiled into this server. Folders are a path convention, not records, so any path is accepted and an empty one files the note at the list's root. There is no deletion on this surface.", inputSchema: schema([
+                "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
+                "containerId": uuidProperty("Area/project UUID. A list note lives on a list; there is no unattached one."),
+                "title": stringProperty("Note title, which is also the note's seeded # heading.", minLength: 1),
+                "folderPath": stringProperty("Optional /-separated folder path such as Planning/Research. Trimmed per component, empty components dropped. Omitted or blank files the note at the list's root."),
+            ], required: ["containerKind", "containerId", "title"])),
             Tool(name: "append_core_note", description: "Append text to a daily, weekly, or permanent Cadence note, creating it if needed.", inputSchema: schema([
                 "kind": stringProperty("daily, weekly, or permanent.", enumValues: ["daily", "weekly", "permanent"]),
                 "content": stringProperty("Text to append.", minLength: 1),

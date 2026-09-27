@@ -1791,6 +1791,127 @@ struct CadenceWriteServiceTests {
         #expect(try fixture.modelContext.fetchCount(FetchDescriptor<SavedLink>()) == 0)
     }
 
+    // MARK: - T-1122: the list note, and the file split that let it exist
+
+    /// The three rules `CadenceListNoteFiling.createNote` owns, reached rather than re-spelled.
+    ///
+    /// This is what the file split bought. The helper was in a file that also declared four SwiftUI
+    /// `View`s, so `CadenceMCPServer` — which compiles files, not functions — could not reach it,
+    /// and the only alternative was a fifth copy of normalize-attach-and-seed inside
+    /// `CadenceWriteService`. Each `#expect` below is a rule that copy would have had to carry.
+    @Test func createListNoteFilesThroughTheSharedHelperAndIsBornInStepWithItsHeading() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        let detail = try fixture.writeService.createListNote(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            title: "  Research notes  ",
+            folderPath: "  /Planning//Research/  "
+        ))
+
+        #expect(detail.summary.title == "Research notes")
+        #expect(detail.summary.kind == "list")
+        #expect(detail.summary.container?.id == board.container.id)
+        // `CadenceNoteFolderPath.normalized`: no leading or trailing separator, no empty
+        // components, each component trimmed. A hand-rolled arm would have stored it as sent.
+        //
+        // **Asked of the STORED bytes, not of the response, and that distinction is the whole
+        // assertion.** `CadenceReadService.noteSummary` normalizes on read as well — deliberately,
+        // because a path can arrive raw from a merge or from CloudKit — so a `createNote` that
+        // stopped normalizing on *write* would answer this call with a tidy string over a row
+        // holding `  /Planning//Research/  `. Measured: the mutation that drops the write-side
+        // normalizer SURVIVES a check on `detail.summary.folderPath` and is killed by this one.
+        let stored = try #require(
+            try fixture.modelContext.fetch(FetchDescriptor<Note>()).first { $0.id.uuidString == detail.summary.id }
+        )
+        #expect(stored.folderPath == "Planning/Research")
+        #expect(detail.summary.folderPath == "Planning/Research")
+        // Born in step with the `# H1` rule this process cannot run: `MarkdownNoteTitleSync` lives
+        // in `MarkdownNoteSupport.swift`, which is not in the server target's Sources phase, which
+        // is why there is no `content` argument to disagree with the title in the first place.
+        #expect(detail.content == "# Research notes\n\n")
+
+        let second = try fixture.writeService.createListNote(options: .init(
+            containerKind: "project",
+            containerId: board.container.id,
+            title: "Second"
+        ))
+        // Anything that normalizes to nothing is the root, and the root is the empty string —
+        // not `nil`, not `"/"`, not the word the root group is *displayed* as.
+        #expect(second.summary.folderPath == "")
+        // Max-plus-one among the list's own notes, never `count`.
+        let allocated: [Int] = [detail.order, second.order]
+        #expect(allocated == [0, 1])
+    }
+
+    /// `folderPath` is absent on every kind that is never filed, rather than reported as a root
+    /// folder none of them has. `append_core_note`'s daily note is the one to check it on: it is
+    /// the only other note this surface can make.
+    @Test func onlyAListNoteReportsAFolderPath() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        _ = try fixture.writeService.appendCoreNote(kind: "daily", content: "Morning")
+        let listNote = try fixture.writeService.createListNote(options: .init(
+            containerKind: "project", containerId: board.container.id, title: "Filed"
+        ))
+
+        let rows = try fixture.readService.listNotes(options: .init(limit: 50)).items
+        let daily = try #require(rows.first { $0.kind == "daily" })
+        #expect(daily.folderPath == nil)
+        #expect(rows.first { $0.id == listNote.summary.id }?.folderPath == "")
+    }
+
+    @Test func createListNoteRefusesABlankTitleAndAContainerThatIsNotThere() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createListNote(options: .init(
+                containerKind: "project", containerId: board.container.id, title: "   "
+            ))
+        }
+        #expect(throws: CadenceReadError.self) {
+            try fixture.writeService.createListNote(options: .init(
+                containerKind: "project", containerId: UUID().uuidString, title: "Orphan"
+            ))
+        }
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<Note>()).isEmpty)
+    }
+
+    /// The T-1121 discipline again, and the reason the arm hands `createNote` a `commit: { _ in }`:
+    /// the helper would otherwise commit the note itself, and a refusal here could not take back a
+    /// row the store had already accepted.
+    @Test func aRefusedListNoteCreateLeavesNoRowForTheNextCallsSave() throws {
+        let fixture = try Fixture()
+        let board = try fixture.seedBoard()
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.createListNote(options: .init(
+                containerKind: "project", containerId: board.container.id, title: "Ghost"
+            ))
+        }
+
+        // **Read through a second context, BEFORE anything saves, because that is the only place
+        // the deferral is visible.** `commitInsert` deletes the row either way, so the primary
+        // context looks identical; what `commit: { _ in }` prevents is the note reaching the
+        // *store* at all. Hand `createNote` its own default commit instead and it writes the row,
+        // succeeds, and only then is the audit-and-notify commit refused — leaving a committed row
+        // whose deletion is merely pending, and which `mcp-audit.log` never heard of. Measured:
+        // dropping `commit: { _ in }` SURVIVES the assertion below and is killed by this one.
+        let onlooker = ModelContext(fixture.container)
+        #expect(try onlooker.fetch(FetchDescriptor<Note>()).isEmpty, "the refused note reached the store")
+
+        try fixture.modelContext.save()
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<Note>()).isEmpty)
+    }
+
     // MARK: - T-1121: a refused commit leaves nothing pending
 
     /// The failure this whole sweep is about. A refused *insert* used to stay pending on a

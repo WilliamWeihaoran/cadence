@@ -147,7 +147,7 @@ struct CadenceTagAndNoteCommitSurfaceTests {
     /// and is not, for the reason the file header gives: `addNote` is a `private func` on a
     /// SwiftUI `View`.
     @Test func bothNoteColumnsSelectANewNoteOnlyOnACommittedInsert() throws {
-        let filing = try scanned("Cadence/Shared/CadenceNoteFolderSupport.swift")
+        let filing = try scanned("Cadence/Shared/CadenceListNoteFiling.swift")
         let create = try declarationBody(named: "createNote", in: filing)
         #expect(create.contains("modelContext.insert(note)"))
         #expect(create.contains("CadencePendingChangePersistence.commitInsert(of: note, in: modelContext, commit: commit)"))
@@ -390,7 +390,7 @@ struct CadenceTagAndNoteCommitSurfaceTests {
     /// and each `== 0` needle matches the spelling it hunts.
     @Test func thesourceScanActuallyReadsTheseTagAndNoteSurfaces() throws {
         for (path, marker) in [
-            ("Cadence/Shared/CadenceNoteFolderSupport.swift", "enum CadenceListNoteFiling"),
+            ("Cadence/Shared/CadenceListNoteFiling.swift", "enum CadenceListNoteFiling"),
             ("Cadence/macOS/Views/ListNotesView.swift", "struct ListNotesView: View"),
             ("Cadence/iOS/iOSListNotesView.swift", "struct iOSListNotesView: View"),
             ("Cadence/macOS/Views/SettingsTagsSection.swift", "struct SettingsTagsSection: View"),

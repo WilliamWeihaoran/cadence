@@ -200,23 +200,6 @@ enum CadenceCoreNoteSupport {
     }
 }
 
-enum CadenceListNoteSupport {
-    static func notes(for area: Area?, project: Project?, in notes: [Note]) -> [Note] {
-        if let area {
-            return notes.filter { $0.kind == .list && $0.area?.id == area.id }
-        }
-        if let project {
-            return notes.filter { $0.kind == .list && $0.project?.id == project.id }
-        }
-        return []
-    }
-
-    static func attach(_ note: Note, to area: Area?, project: Project?) {
-        note.area = area
-        note.project = project
-    }
-}
-
 enum CadenceNoteTemplateInsertionSupport {
     static func contentByApplying(_ template: NoteTemplate, to currentContent: String) -> String {
         let trimmed = currentContent.trimmingCharacters(in: .whitespacesAndNewlines)

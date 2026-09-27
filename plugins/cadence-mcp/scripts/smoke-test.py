@@ -35,6 +35,7 @@ WRITE_TOOLS = {
     "create_goal",
     "create_habit",
     "create_tag",
+    "create_list_note",
 }
 EXPECTED_TOOLS = {
     "mcp_diagnostics",
@@ -86,8 +87,17 @@ TASK_DETAIL_KEYS = {
 TASK_DETAIL_OPTIONAL = {"completedAt"}
 TAG_SUMMARY_KEYS = {"id", "slug", "name", "colorHex", "description", "isArchived"}
 TAG_DETAIL_KEYS = {"summary", "taskCount", "noteCount", "createdAt", "updatedAt"}
-NOTE_SUMMARY_KEYS = {"id", "kind", "title", "key", "container", "updatedAt", "excerpt", "tags"}
-NOTE_SUMMARY_OPTIONAL = {"key", "container"}
+# `folderPath` since T-1122: present on a `.list` note (where `""` means the list's root) and
+# absent on every other kind, which is why it is optional here rather than merely new.
+NOTE_SUMMARY_KEYS = {"id", "kind", "title", "key", "container", "folderPath", "updatedAt", "excerpt", "tags"}
+NOTE_SUMMARY_OPTIONAL = {"key", "container", "folderPath"}
+# `CadenceNoteDetail`, which `get_note` has answered all along and `create_list_note` answers now.
+# Nothing here is optional: every field is a non-optional stored property, and the three arrays are
+# empty rather than absent on a note nothing links to.
+NOTE_DETAIL_KEYS = {
+    "summary", "content", "order", "createdAt", "updatedAt", "linkedNotes", "backlinks", "linkedTasks"
+}
+NOTE_DETAIL_OPTIONAL: set[str] = set()
 
 # T-799. `create_context` and `create_container` answer with the same DTOs `get_context_summary`
 # and `get_container_summary` do, which is what finally gives `CadenceContextRef` and
@@ -1217,6 +1227,65 @@ def main() -> int:
             raise AssertionError(f"expected both new links on the board, got {listed_links}")
         for row in listed_links:
             check_keys(row, SAVED_LINK_SUMMARY_KEYS, SAVED_LINK_SUMMARY_OPTIONAL, "list_links row")
+
+        # --- The first list note this surface can make (T-1122) ----------------------------
+        # The refusal this replaces was about a FILE, not a rule: `CadenceListNoteFiling.createNote`
+        # shared one with the four SwiftUI rows that draw folders, and a Sources phase compiles
+        # whole files. The split named in T-1122 is what lifted it, so the checks below are aimed
+        # at the two rules that came across with the helper and would otherwise have been
+        # hand-rolled here: the seeded `# heading`, and `CadenceNoteFolderPath.normalized`.
+        note = call_ok(150, "create_list_note", board_target | {
+            "title": "MCP smoke note",
+            "folderPath": "  /Planning//Research/  ",
+        })
+        check_keys(note, NOTE_DETAIL_KEYS, NOTE_DETAIL_OPTIONAL, "create_list_note detail")
+        check_keys(note["summary"], NOTE_SUMMARY_KEYS, NOTE_SUMMARY_OPTIONAL, "create_list_note summary")
+        # The normalizer, checked at runtime rather than by scan: leading/trailing separators gone,
+        # empty components dropped, each component trimmed, the `/` kept between the two that
+        # survive. A hand-rolled arm would have stored the string as sent.
+        if note["summary"]["folderPath"] != "Planning/Research":
+            raise AssertionError(f"expected the folder path normalized, got {note['summary']}")
+        if note["summary"]["container"]["id"] != board_id or note["summary"]["kind"] != "list":
+            raise AssertionError(f"expected a list note on the board, got {note['summary']}")
+        # Born in step: the body IS the title as an H1, because `MarkdownNoteTitleSync` — the rule
+        # that keeps the two equal on every app commit — is not compiled into this server, so a
+        # note created here must not be able to disagree with itself. There is no `content`
+        # argument for the same reason; the day someone adds one, this line is what asks whether
+        # the question was answered.
+        if note["content"] != "# MCP smoke note\n\n":
+            raise AssertionError(f"expected the body seeded from the title, got {note['content']!r}")
+        if note["summary"]["title"] != "MCP smoke note":
+            raise AssertionError(f"expected the title stored as sent, got {note['summary']}")
+
+        # The root is the empty string and not a `nil`, a `/` or the word "Notes": anything that
+        # normalizes to nothing files the note at the list's root, which is where both `+` buttons
+        # put one.
+        root_note = call_ok(151, "create_list_note", board_target | {
+            "title": "MCP smoke unfiled note",
+            "folderPath": "  //  ",
+        })
+        if root_note["summary"]["folderPath"] != "":
+            raise AssertionError(f"expected a path that normalizes to nothing to file at the root, got {root_note['summary']}")
+        if root_note["order"] <= note["order"]:
+            raise AssertionError(f"expected max-plus-one among the list's notes, got {root_note}")
+
+        call_error(152, "create_list_note", board_target, "a note with no title", "Missing required argument: title")
+        call_error(
+            153,
+            "create_list_note",
+            {"containerKind": "project", "containerId": MISSING_UUID, "title": "MCP smoke orphan"},
+            "a note on a list that does not exist",
+            f"No project found with id {MISSING_UUID}.",
+        )
+
+        listed_notes = page_items(
+            call_ok(154, "list_notes", board_target | {"kind": "list", "limit": 10}),
+            "list_notes after create_list_note",
+        )
+        if {row["id"] for row in listed_notes} != {note["summary"]["id"], root_note["summary"]["id"]}:
+            raise AssertionError(f"expected both new notes on the board, got {listed_notes}")
+        for row in listed_notes:
+            check_keys(row, NOTE_SUMMARY_KEYS, NOTE_SUMMARY_OPTIONAL, "list_notes list-note row")
 
         # --- The first goal and the first habit this surface can make (T-1122) -------------
         # `list_goals`, `get_goal` and `list_habits` were in the same position `list_links` was:

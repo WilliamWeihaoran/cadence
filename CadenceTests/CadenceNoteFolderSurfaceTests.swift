@@ -366,13 +366,16 @@ struct CadenceNoteFolderSurfaceTests {
         }
 
         #expect(offenders.sorted() == [
-            // `self.folderPath = folderPath` in the initializer.
-            "Cadence/Models/Note.swift:1",
             // Three since T-1093: `createNote`, `fileWithoutCommitting`, and the undo inside
             // `move(_:toFolder:in:commit:)` that puts the raw previous path back when the store
-            // refuses the commit. Still one file, which is the whole claim.
-            "Cadence/Shared/CadenceNoteFolderSupport.swift:3"
-        ])
+            // refuses the commit. Still one file, which is the whole claim — and since [[T-1122]]
+            // that file is `CadenceListNoteFiling.swift`, the SwiftUI-free half the MCP server
+            // compiles. The views that draw folders never write one, which is why the split could
+            // be made at all.
+            "Cadence/Shared/CadenceListNoteFiling.swift:3",
+            // `self.folderPath = folderPath` in the initializer.
+            "Cadence/Models/Note.swift:1"
+        ].sorted())
     }
 
     /// The assignment needle, against literals that must and must not match.
@@ -481,7 +484,14 @@ struct CadenceNoteFolderSurfaceTests {
     /// carried the `""`-is-root and `"__root__"`-is-its-id halves, is named here too: it is gone,
     /// and it must not come back.
     @Test func neitherPlatformDeclaresItsOwnCopyOfTheConvention() throws {
-        let allowed = "Cadence/Shared/CadenceNoteFolderSupport.swift"
+        // Two files since [[T-1122]], and the split is along one line: the path rule and the
+        // filing helper import no SwiftUI so `CadenceMCPServer` can compile them, the grouping and
+        // the four rows stay with the views. A third file declaring any of these is still the fork
+        // this test exists to refuse.
+        let allowed: Set<String> = [
+            "Cadence/Shared/CadenceNoteFolderSupport.swift",
+            "Cadence/Shared/CadenceListNoteFiling.swift"
+        ]
         let declarations = [
             "CadenceNoteFolderPath", "CadenceNoteFolderGroup", "CadenceNoteFolderGrouping",
             "CadenceListNoteFiling", "NoteFolderSectionHeader", "NoteFolderGroupList",
@@ -490,7 +500,7 @@ struct CadenceNoteFolderSurfaceTests {
             "ListNoteFolderGroup", "ListNoteFolderGroupView"
         ]
 
-        for path in try folderSwiftFiles(under: "Cadence") where path != allowed {
+        for path in try folderSwiftFiles(under: "Cadence") where !allowed.contains(path) {
             let code = try folderStrippingComments(folderSource(path))
             for name in declarations {
                 #expect(
@@ -500,14 +510,37 @@ struct CadenceNoteFolderSurfaceTests {
             }
         }
 
-        // And the home really does declare all eight.
-        let home = try folderStrippingComments(folderSource(allowed))
+        // And the two homes really do declare all eight between them, exactly once each — which
+        // is the half that makes the loop above a claim rather than a tautology over an empty set.
+        let homes = try allowed.sorted().map { try folderStrippingComments(folderSource($0)) }
         for name in declarations.prefix(8) {
-            #expect(
-                home.range(of: "(struct|enum)\\s+\(name)\\b", options: .regularExpression) != nil,
-                "\(allowed) does not declare \(name)"
-            )
+            let declaring = homes.filter {
+                $0.range(of: "(struct|enum)\\s+\(name)\\b", options: .regularExpression) != nil
+            }
+            #expect(declaring.count == 1, "\(name) is declared \(declaring.count) times across \(allowed.sorted())")
         }
+    }
+
+    /// **The split is only worth anything while the filing half imports nothing to draw with**
+    /// ([[T-1122]]). `Cadence/Shared/CadenceListNoteFiling.swift` is in `CadenceMCPServer`'s
+    /// explicit Sources phase, and that target is a command-line tool; an `import SwiftUI` added
+    /// here would **still compile** there — SwiftUI is available on macOS — so the build is not
+    /// the guard, and nothing else would notice until someone reached for `Theme` and put the
+    /// design-token file inside a headless process. That is the exact state the file was split
+    /// out of, so the import list is asserted rather than assumed.
+    @Test func theFilingHalfOfTheConventionImportsNothingItCouldDrawWith() throws {
+        let filing = try folderSource("Cadence/Shared/CadenceListNoteFiling.swift")
+        let imports = filing
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { $0.hasPrefix("import ") }
+            .map(String.init)
+        #expect(imports == ["import Foundation", "import SwiftData"], "imports read as \(imports)")
+
+        // Non-vacuity, and the contrast that makes the assertion mean something: the file it was
+        // split out of does import SwiftUI, and the reader really can see that.
+        let views = try folderSource("Cadence/Shared/CadenceNoteFolderSupport.swift")
+        #expect(views.contains("import SwiftUI"))
+        #expect(filing.contains("enum CadenceListNoteFiling"))
     }
 
     /// The iOS column reads the *existing* two-column floor rather than writing a seventh copy of
@@ -552,6 +585,7 @@ struct CadenceNoteFolderSurfaceTests {
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")
         #expect(files.contains("Cadence/Shared/CadenceNoteFolderSupport.swift"))
+        #expect(files.contains("Cadence/Shared/CadenceListNoteFiling.swift"))
         #expect(files.contains("Cadence/iOS/iOSListNotesView.swift"))
         #expect(files.contains("Cadence/iOS/iOSListDetailView.swift"))
         #expect(files.contains("Cadence/macOS/Views/ListNotesView.swift"))
