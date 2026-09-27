@@ -255,6 +255,13 @@ struct CadenceQuickDatePopover: View {
             }
         }
         .background(inlineStyle ? Color.clear : Theme.surfaceElevated)
+        // **T-1398.** Every size in this panel is a literal, down to the 34x34 day cells, and the
+        // create sheet's date tiles present it from inside a converted root. Nothing it draws reads
+        // the scaling environment *today* — so unlike the other three this is the rule being kept
+        // rather than a regression being closed, and it is the cheap half of the rule: the day a
+        // shared component in here is converted, this panel does not silently start growing inside
+        // 34pt cells.
+        .cadenceFixedTypography()
     }
 
     private var today: Date {

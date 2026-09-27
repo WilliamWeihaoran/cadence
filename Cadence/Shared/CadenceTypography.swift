@@ -131,6 +131,35 @@ nonisolated enum CadenceTypographyRole: String, CaseIterable, Sendable {
 /// scales, including shared components; every other surface is untouched, at the same numbers, with
 /// no second copy of anything. The migration finishes by flipping this default to `.enabled` and
 /// deleting the modifier, not by another sweep through the call sites.
+///
+/// **It crosses a `.sheet` / `.popover` / `.fullScreenCover`, and `\.dynamicTypeSize` does not —
+/// which is the asymmetry that makes an *inherited* boundary unsafe (T-1398).** T-1364 left this
+/// unverified in both directions. It was measured rather than reasoned about, with a standalone
+/// SwiftUI binary that installs a custom `EnvironmentKey` of this exact shape at a root and reads it
+/// back from presented content:
+///
+/// - **iOS 26.5 simulator, Xcode 27.0 (27A266a), system text size `accessibility-extra-extra-extra-large`:**
+///   the custom value reads `enabled` inside `.sheet`, `.popover` **and** `.fullScreenCover`, and
+///   `\.dynamicTypeSize` reads `accessibility5` in all three.
+/// - **macOS 27.0, same binary:** the custom value reads `enabled` inside `.sheet` and `.popover`.
+/// - **The half that surprises:** a root that says `.dynamicTypeSize(.accessibility3)` does **not**
+///   pass that override through. Presented content is reseeded from the host window's traits — it
+///   read `accessibility5` (the system setting) on iOS and `large` on macOS, never the root's `3`.
+///
+/// So the two halves of the pair arrive from different places across a presentation boundary: the
+/// migration flag is **inherited from the presenter** while the size that makes it bite is
+/// **re-read from the system**. That is the worst combination available, and it was live at HEAD:
+/// the pickers the converted create and detail sheets open are rigid — `CadenceFittedPopover` is a
+/// literal `width: 250`, `iOSTaskTagPickerPopover` a literal `260 × 340` — and each of them draws at
+/// least one converted component, so at an accessibility size their labels grew inside geometry that
+/// could not.
+///
+/// **Which is why a presented surface states its scaling instead of inheriting it.** Whether the
+/// framework propagates is a *toolchain* property — CI runs Xcode 26 and this was only observed on
+/// 27, and T-1279/T-1296 are what pinning either answer costs — so the fix may not depend on the
+/// answer. A view that pins its own width or height says `.cadenceFixedTypography()` or
+/// `.cadenceScaledTypography()` in its own body, and then it renders the same on both toolchains
+/// whichever way propagation goes. `CadencePresentedTypographyBoundaryTests` is what holds that.
 nonisolated enum CadenceTypographyScaling: String, CaseIterable, Sendable {
     /// Draw at the base size whatever the reader's text size is — the app's behaviour before
     /// T-1364, and still the behaviour of every surface that has not been converted and tested.
@@ -334,6 +363,12 @@ private struct CadenceScaledTypographyScope: ViewModifier {
     }
 }
 
+private struct CadenceFixedTypographyScope: ViewModifier {
+    func body(content: Content) -> some View {
+        content.environment(\.cadenceTypographyScaling, .fixed)
+    }
+}
+
 extension View {
 
     /// Fonts this view by role, at whatever size the reader's text setting calls for.
@@ -357,5 +392,23 @@ extension View {
     /// belongs in the same change that makes that screen's geometry size-aware.
     func cadenceScaledTypography() -> some View {
         modifier(CadenceScaledTypographyScope())
+    }
+
+    /// Marks everything below as **not** laid out for larger text, whatever the surface above said.
+    ///
+    /// **This is not the default wearing a name; it is the default made unconditional.** The
+    /// environment default is `.fixed`, so an ordinary unconverted screen needs nothing. What needs
+    /// this is a view that is *presented* from a converted one: T-1398 measured that a custom
+    /// environment value **does** cross `.sheet`, `.popover` and `.fullScreenCover`, while
+    /// `\.dynamicTypeSize` is reseeded from the host window rather than inherited. So a rigid picker
+    /// opened from the composer arrived carrying `.enabled` and met the reader's real text size on
+    /// the other side — the one combination that grows type inside geometry that cannot follow.
+    ///
+    /// The rule it exists to make statable: **a view that pins its own width or height declares its
+    /// typography scaling.** Declared rather than inherited, the answer no longer depends on how
+    /// this toolchain propagates environment across a presentation — which is the part that may not
+    /// be pinned, because CI and this Mac are on different Xcodes.
+    func cadenceFixedTypography() -> some View {
+        modifier(CadenceFixedTypographyScope())
     }
 }

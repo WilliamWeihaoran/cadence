@@ -165,6 +165,13 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
 - Habit detail chrome lives in `Components/HabitProgressViews.swift` and is shared.
 - `CadenceChoicePicker`, field rows, empty states, tag chips, value tiles, and today rollover/overdue
   components should be reused before introducing new row chrome.
+- **A view that pins its own width or height declares its typography scaling** (T-1398):
+  `.cadenceFixedTypography()` or `.cadenceScaledTypography()` in its own body, never inherited. A
+  custom environment value **crosses** `.sheet`/`.popover`/`.fullScreenCover` while
+  `\.dynamicTypeSize` is re-read from the host window — measured on Xcode 27 / iOS 26.5 and recorded
+  on `CadenceTypographyScaling`. CI runs Xcode 26, so the propagation itself may not be asserted;
+  stating the answer is what makes a panel render the same on both. The four rigid pickers T-1364's
+  sheets open are the current declarers; `CadencePresentedTypographyBoundaryTests` holds the rule.
 
 ## Reference Sections
 

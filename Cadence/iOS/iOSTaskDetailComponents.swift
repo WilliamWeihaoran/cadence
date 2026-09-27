@@ -619,6 +619,15 @@ struct iOSTaskTagPickerPopover: View {
         }
         .frame(width: 260, height: 340)
         .background(Theme.surfaceElevated)
+        // **T-1398, and this one was clipping.** The frame above is rigid in both axes, the rows
+        // are `minHeight: 44` and the create button is a 40x40 square — while the labels inside are
+        // already `.cadenceFont(...)`, converted with the detail sheet that presents them. A custom
+        // environment value crosses a `.popover` (measured; see `CadenceTypographyScaling`), so at
+        // `accessibility5` the `+` glyph resolved to ~38pt inside its 40pt box and the row titles
+        // to ~39pt inside 44. The fonts stay named — at `.fixed` a role resolves to exactly the
+        // literal it replaced — and the panel renders as it did before T-1364 until its geometry is
+        // derived from its type. That conversion is its own ticket.
+        .cadenceFixedTypography()
         .presentationCompactAdaptation(.popover)
     }
 

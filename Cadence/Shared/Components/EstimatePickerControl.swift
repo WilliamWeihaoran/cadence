@@ -158,6 +158,12 @@ struct EstimatePickerPopoverContent: View {
         .padding(10)
         .frame(width: 260)
         .background(Theme.surfaceElevated)
+        // **T-1398.** A literal 260pt panel over roller rows of a literal height, and its header
+        // draws a `SectionEyebrowLabel`, which reads the scaling environment. The task detail
+        // sheet presents it from inside `.cadenceScaledTypography()` and the value crosses the
+        // presentation, so the eyebrow was the one thing here that grew. It says `.fixed` until
+        // `EstimateRollerMetrics` grows with it.
+        .cadenceFixedTypography()
         .onAppear {
             seed(from: value)
             DispatchQueue.main.async { focusedColumn = .hours }

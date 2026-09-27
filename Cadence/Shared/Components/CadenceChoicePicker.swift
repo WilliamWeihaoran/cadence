@@ -92,6 +92,14 @@ struct CadenceFittedPopover<Content: View>: View {
         .frame(width: width)
         .frame(maxHeight: maxHeight)
         .background(Theme.surfaceElevated)
+        // **T-1398.** The width above is a literal and the rows under it are literals, so this
+        // panel states that it is not laid out for larger text rather than inheriting an answer
+        // from whoever opened it. Two of its three presenters are T-1364's converted sheets, and a
+        // custom environment value crosses a `.popover` — measured, see `CadenceTypographyScaling`
+        // — so without this the group eyebrows inside grew to ~28pt in a 230pt-wide panel whose
+        // every other row stayed at 14. Delete it in the same change that makes `width`,
+        // `maxHeight` and the rows size-aware, not before.
+        .cadenceFixedTypography()
         .modifier(CadencePopoverCompactAdaptation())
     }
 }
