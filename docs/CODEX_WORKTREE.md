@@ -69,6 +69,7 @@ CadenceTests/CadencePickerLargeTextLayoutTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceTagChipStyleTests.swift
+CadenceTests/CadenceSharedBoardChromeTests.swift
 ```
 
 ## The coordinator's side
@@ -103,6 +104,21 @@ and the MCP server, which is why `Cadence/Models/*` appears there by hand.
 Nothing in the typography work needs a second target. If Codex ever believes a new file does, that
 is the moment to stop and say so, because `project.pbxproj` is the single highest-collision file in
 the repository and a merge there is not reviewable.
+
+### A leased guard may be re-pointed, never weakened
+
+`CadenceTests/CadenceSharedBoardChromeTests.swift` is leased because converting
+`CadenceTodayOverdueSummaryCards.swift` invalidates a source-substring assertion in it
+(`:671`, `size: SectionEyebrowLabel.fontSize`), and the converter is the only party who knows what
+the call becomes. A guard edited at landing by someone reading a diff is a guard being rubber-stamped.
+
+The permission is narrow and it is a direction, not a budget. Re-point the assertion at the new
+call. Do **not** delete it, loosen it to a weaker predicate, or route around it — and keep the two
+assertions bracketing it, which are what stop it going vacuous: the non-vacuity check that the file
+is still the heading's file, and the negative control that an 11pt eyebrow tier has not come back.
+Note also that the three checks above them (`SectionEyebrowLabel.fontSize == 10` and the two
+`countSize ==` identities) are **model** assertions, not source reads, and a conversion should leave
+them alone.
 
 ## What Codex must not do
 
