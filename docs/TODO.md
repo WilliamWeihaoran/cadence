@@ -4220,7 +4220,50 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-551] **[[T-495]]'s verdict holds but one supporting clause did not reproduce — and it is the one that
+- [T-551] **CLOSED 2026-09-27 (agent `dragtypes`) — the clause is CONFIRMED, not false: in a real
+  `NSWindow` the `isEditable` toggle yields 22, AppKit's own 19 plus Cadence's 3, which is
+  [[T-495]]'s number to the digit. The offscreen 3 was the fixture, exactly as this entry
+  suspected, and [[T-511]] does not re-open.**
+  **What made `updateDragTypeRegistration` fire, and what did not.** The same fixture the batch-8 pass
+  used, put in a real `NSWindow(contentRect:styleMask:backing:defer:)` with `defer: true` and the text
+  view as `contentView`. Setting `contentView` is **not** enough — the list is still empty there.
+  `orderFront(nil)` is not enough either, still empty. **The `isEditable` toggle is the thing that
+  fires it**, and it fires whether or not the window was ever ordered on screen, which matches the
+  comment [[T-511]]'s own tests already carried. Measured 2026-09-27 on **Xcode 27.0 (26A428)**, both
+  arms in one run: offscreen 0 → **3** after `registerMarkdownDraggedTypes()` → 3 after the toggle → 3
+  after `isRichText = true` → 3 after `importsGraphics = true`, reproducing batch-8 exactly; in a
+  window 0 → **19** after the toggle → **22** after the markdown registration, and 22 through
+  `isRichText` and `importsGraphics` after that. A stock `NSTextView` beside it goes 0 → 19 the same
+  way, so none of this is `CadenceTextView`'s. AppKit's 19 are the legacy spellings —
+  `NSStringPboardType`, both RTF flavours, `NSFilenamesPboardType`, the URL and file-promise types,
+  `NeXT TIFF v4.0` and `Apple PNG` among them.
+  **What follows.** [[T-495]]'s closure stands and every clause under it has now reproduced; the
+  "unioning would undo half of [[T-478]]" argument is confirmed on-window too, because AppKit's own 19
+  carry the legacy bitmap names with `importsGraphics` off. The editor does **not** advertise 3 types
+  where AppKit would have offered 19 — it advertises both, 22 of them, and a plain-text drag is
+  advertised to it by AppKit's own registration rather than by anything Cadence does. [[T-511]] was
+  already closed on 2026-09-07 in `3eb023d` by driving the same question in a window; this supplies the
+  number that closure deliberately left as a bounded `count > 3`, so it stays closed rather than
+  reverting to a live question.
+  **Nothing here is pinned** ([[T-1279]], [[T-1296]]). 19, 22 and 3 are observations on one toolchain,
+  recorded in prose and in the new test's doc comment and asserted by neither.
+  `MarkdownImageDropAffordanceTests.theWindowIsWhatLetsAppKitRegisterItsOwnDragTypes` asserts only what
+  is Cadence's: the editor's own types are advertised in a window and out of one, the markdown
+  registration is additive from both sides, a windowed view never advertises less than the same view
+  offscreen, and — conditionally, where AppKit registered anything of its own — that what it brought
+  includes text. The floor that says AppKit contributes at all is the older
+  `appKitsOwnDragTypesSurviveTheMarkdownRegistration`, green in CI on **Xcode 26** since `3eb023d`,
+  which is what makes this framework behaviour rather than a 27 one. **M1, run**: making
+  `registerMarkdownDraggedTypes()` call `unregisterDraggedTypes()` first — the replace this whole line
+  of tickets was ever about — turns **4 tests red with 4 issues**, the new one on
+  `appKitsOwn.isSubset(of: windowedTypes)` and [[T-511]]'s three on their own subset and `.string`
+  assertions (`XCODEBUILD_EXIT=65`, compile errors 0, 371 compile tasks with
+  `MarkdownEditorInteractionSupport.swift` named in the log, so the mutation compiled). Restored and
+  `git status` clean.
+  **One residual, filed as [[T-1418]]**: at a refusing host in a window AppKit's own 19 already carry
+  the legacy bitmap names, so [[T-478]]'s narrowing holds for what *Cadence* advertises and not for the
+  view's whole list.
+  **Originally:** **[[T-495]]'s verdict holds but one supporting clause did not reproduce — and it is the one that
   made [[T-511]] look like a formality.** The batch-8 pass re-measured on a real offscreen
   `CadenceTextView` built by the suite's own fixture. **Reproduced exactly:** registration-never-called
   gives `registeredDraggedTypes == []` at every step, and `acceptableDragTypes` carries the legacy TIFF
@@ -4237,9 +4280,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-554] **R1 refused: the resolve-for-display / resolve-for-save split cannot be made unrepresentable
-  in Swift — the sweep holding it is derived instead.** Investigated 2026-08-31 as the first refactor
-  target, on the evidence of four independent bugs ([[T-446]], [[T-488]], [[T-514]], [[T-534]]).
+- [T-554] **CLOSED 2026-08-31 (`787f2b6`) — R1 refused: the resolve-for-display / resolve-for-save
+  split cannot be made unrepresentable in Swift, and the sweep holding it is derived instead.**
+  Investigated 2026-08-31 as the first refactor target, on the evidence of four independent bugs
+  ([[T-446]], [[T-488]], [[T-514]], [[T-534]]).
   **The abstraction would not have prevented three of them.** All three narrowed the array *at the call
   site*, before any helper was reached — and Swift cannot express "this array is the whole collection", so
   `Resolver(areas.filter(\.isActive), selectedID:)` **reproduces T-488 exactly and compiles**. Every
@@ -4251,6 +4295,14 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   picker-surface file set are derived from the tree now. Mutation A is the evidence: pre-filtering at a
   macOS call site kills **only** the new sweep while all four pinning tests stay green. **Recorded as a
   closed investigation so the abstraction is not proposed again without new evidence.**
+  **The closure was prose, not a closure run, until 2026-09-27 (dragtypes).** The first line stated the
+  verdict and the body said "recorded as a closed investigation", but neither introduced the token, so
+  `ledger-view.sh` and `ledger-lag-check.sh` both counted this entry OPEN — [[T-1358]]'s class exactly,
+  where an entry's own words are the only thing that says it is finished. **The date and sha are not
+  invented**: `787f2b6` is the commit that landed the derived sweeps and
+  `CadenceContainerPickerConsolidationTests`, and its author date, 2026-08-31, is the same date this
+  entry's own prose already gave for the investigation. Only the first line changed; no verdict was
+  revisited.
 
 - [T-710] **CLOSED 2026-09-07 (smallopen, landed by the coordinator) in `3eb023d` — measured rather than fixed, which is what it asked for.** `CadenceSeededSidebarTimingUITests` times the seeded rows, so the 5s figure stops being an assumption. **Originally:** **The seeded sidebar rows are sometimes not there 5s after launch, and nobody has timed them.**
   Found while measuring [[T-563]], and it is the *only* thing left in `CadenceUITests` that is
@@ -6410,6 +6462,26 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 - [T-1412] **`CadenceTagChip` is the last thing standing between `iOSTaskTagPickerPopover` and its conversion, and it is a twelve-surface component rather than a number.** Filed 2026-09-26 by agent `pickerscale` on landing [[T-1410]]. Every row of that picker is a chip, so converting the panel without the chip gives rows grown to ~69pt around a tag name still set at 12 — the mirror image of the defect [[T-1398]] closed, and the reason the panel stays `.fixed`. The chip's sizes all live on `CadenceTagChipStyle` (`fontSize` 12/10, `dotDiameter`, the paddings, `cornerRadius`, `maximumLabelWidth` 130/92, `removeControlSize`, and `chipHeight(hasRemoveControl:)` which is **already derived from `fontSize`**), so the cheapest honest shape is two stored properties — `dynamicTypeSize` and `scaling`, defaulting to `.large`/`.fixed` — rather than an `at:scaling:` variant of nine signatures; that also leaves `CadenceTagChipStyleTests`' existing constructions untouched. **Three judgements the conversion has to make rather than inherit:** the dot and the `x` are content and should scale *proportionally* while the paddings stay (a 6pt dot grown additively is a 27pt dot); `maximumLabelWidth` is a **cap** and growing it proportionally is 400pt at `accessibility5`, wider than a phone, so the truncation rule needs a real answer rather than a multiplier; and `editableStripSpacing`/`editableStripLineSpacing` are derived from `removeHitOverhang`, so they move with it and their three call sites have to pass the environment. The surfaces that would change are only the ones already inside a declared scope — the detail sheet's `iOSTaskTagStrip` (whose own `+` button is a rigid `30 × 26` around a `.cadenceFont(.controlLabel, base: 11)` glyph, i.e. a T-1364 residual to fix in the same change) and, once it is unpinned, the picker. The other ten draw sites stay `.fixed` and render identically. Finish by flipping `iOSTaskTagPickerPopover`'s `.cadenceFixedTypography()` to `.cadenceScaledTypography()` and deriving its `260 × 340` frame, `minHeight: 44` rows and `40 × 40` create button — its labels are already `.cadenceFont(...)`. `CadencePresentedTypographyBoundaryTests` and `CadenceTypographyScaleTests`' four-root list both move with it.
 
 - [T-1413] **The month grid is the one picker where the honest answer is that it does not scale, and the next move is a different date-entry shape rather than a bigger grid.** Filed 2026-09-26 by agent `pickerscale` on landing [[T-1410]], which priced it rather than guessed: a month is seven columns wide, and grown by this app's own additive rule a 34pt day cell is 59pt at `accessibility5` against the **49.6pt** widest column a 375pt phone can offer seven of inside `MonthCalendarPanel`'s own 8pt padding and 2pt gutters. The only arrangement that fits keeps the cell at its bare 44.4pt line box — which is the 19.6pt ring the cell is made of deleted, not scaled. `CadenceQuickDateGridScaleTests` holds that arithmetic and is what a future attempt has to argue with. The panel is pinned and correct today: nothing it draws reads the scaling environment, so `.cadenceFixedTypography()` there is [[T-1398]]'s rule being kept rather than a regression being closed. **What a real answer would look like**, none of it decided: the quick pills (`Today` / `Tomorrow` / `This Weekend`, 11pt in one `HStack`) need their own reflow either way; and at accessibility sizes the month grid could become a horizontally scrollable week strip, a list of dated rows, or the platform's own `DatePicker` — which is a **product** decision about what picking a date looks like for that reader, not a metrics change. Note it is `CadenceDatePicker`'s only popover and is also drawn `inlineStyle`, so whatever is chosen has to work in both.
+
+- [T-1418] **[[T-478]]'s "a dragged screenshot never reaches `draggingEntered`" is true of what *Cadence*
+  advertises and not of the view's whole list — in a window AppKit puts the legacy bitmap names back at
+  a refusing host.** Filed 2026-09-27 by agent `dragtypes` on closing [[T-551]], from a measurement
+  taken for that ticket rather than from a failure. Refusing host
+  (`allowsMarkdownImageInsertion == false`) in a real `NSWindow` on Xcode 27: the `isEditable` toggle
+  registers AppKit's own **19**, which include `NeXT TIFF v4.0 pasteboard type`, `Apple PNG pasteboard
+  type` and `Apple PDF pasteboard type`, and `registerMarkdownDraggedTypes()` then takes it to **20** by
+  adding `public.file-url` alone. **T-478's own half is intact** — Cadence adds no bitmap type at that
+  host and `MarkdownImageDropAffordanceTests.aRefusingHostRegistersNoBitmapDragTypes` still holds it —
+  but the sentence in that test's comment, *"a dragged screenshot never reaches `draggingEntered`"*, is
+  a claim about the *view's* advertised list and that list is not Cadence's alone. **What is not known
+  is what the pointer actually does.** A TIFF drag is advertised by AppKit, so `draggingEntered` is
+  reached, `markdownImageDropOperation(for:)` correctly returns `nil` there, and `super.draggingEntered`
+  decides; on a view whose `importsGraphics` is off it ought to refuse, and that was **not measured**.
+  It is not measurable the way the rest of this was: `NSDraggingInfo` is a protocol with a dozen members
+  a unit test cannot stand up, which is exactly why T-478 split the rule out in the first place.
+  **Settle it the way [[T-511]] was settled — drive it**, or by one manual drag of a screenshot onto the
+  note-template editor. If the cursor shows a copy badge there, T-478 is half-open again through a door
+  Cadence does not own, and the fix is in `draggingEntered` rather than in the registration.
 
 
 ## Done

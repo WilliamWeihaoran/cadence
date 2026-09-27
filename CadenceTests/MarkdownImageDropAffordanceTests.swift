@@ -254,6 +254,88 @@ struct MarkdownImageDropAffordanceTests {
         #expect(afterAppKit.isSubset(of: Set(textView.registeredDraggedTypes)))
     }
 
+    /// **The clause [[T-551]] could not settle, settled: the offscreen `3` was the fixture, not
+    /// the framework.**
+    ///
+    /// [[T-495]] closed on three measurements, and one of them —"AppKit's own re-registration
+    /// unions rather than replaces; toggling `isEditable` yields 22 types, `acceptableDragTypes`'
+    /// 19 plus Cadence's 3" — did not reproduce when T-551 re-measured it: **3** after the toggle,
+    /// **3** after `isRichText`, **3** after `importsGraphics`. T-551 filed that as *unverified*
+    /// rather than false on the suspicion that a view with no window never runs AppKit's
+    /// `updateDragTypeRegistration`, and the suspicion was right.
+    ///
+    /// **Measured 2026-09-27 on Xcode 27**, both arms in one run, the windowed one built exactly
+    /// as `makeWindowedTextView` builds it: offscreen stays at **3** through every step, and in a
+    /// window the `isEditable` toggle brings **19** of AppKit's own — `NSStringPboardType`, both
+    /// RTF flavours, the filenames and URL types — which the markdown registration then adds its
+    /// three to for **22**. The original number, to the digit, and a stock `NSTextView` beside it
+    /// behaves identically, so none of this is `CadenceTextView`'s. Setting `contentView` alone
+    /// does not fire it and `orderFront` does not either; the toggle is what does.
+    ///
+    /// **None of those counts is asserted, deliberately** (T-1279, T-1296, and the worked example
+    /// in `CadenceStartupRecoveryReasonTests`). CI runs Xcode 26 and this Mac runs 27, AppKit 27
+    /// moved `NSTextView` selection onto `NSTextSelectionManager`, and *what* stock `NSTextView`
+    /// registers for, and when, is AppKit's business in either. What is asserted is ours and holds
+    /// whatever the framework's list turns out to be: the editor's own three types are advertised
+    /// in a window and out of one, the markdown registration is additive from both sides, and a
+    /// window never advertises less than the same view offscreen. The floor that says AppKit
+    /// really did contribute is `appKitsOwnDragTypesSurviveTheMarkdownRegistration` above, which
+    /// has been green in CI on Xcode 26 since `3eb023d` — which is what makes this a framework
+    /// behaviour rather than a 27 one.
+    @Test func theWindowIsWhatLetsAppKitRegisterItsOwnDragTypes() {
+        let cadencesOwn: Set<NSPasteboard.PasteboardType> = [.fileURL, .tiff, .png]
+
+        let offscreen = makeTextView(allowsImages: true)
+        offscreen.isEditable = false
+        offscreen.isEditable = true
+        offscreen.registerMarkdownDraggedTypes()
+        let offscreenTypes = Set(offscreen.registeredDraggedTypes)
+
+        let (window, windowed) = makeWindowedTextView(allowsImages: true)
+        defer { window.contentView = nil }
+        windowed.isEditable = false
+        windowed.isEditable = true
+        let appKitsOwn = Set(windowed.registeredDraggedTypes)
+        windowed.registerMarkdownDraggedTypes()
+        let windowedTypes = Set(windowed.registeredDraggedTypes)
+
+        // Ours, and the same on both arms: the host's image policy decides what Cadence
+        // advertises, and a window has nothing to do with it.
+        #expect(cadencesOwn.isSubset(of: offscreenTypes))
+        #expect(cadencesOwn.isSubset(of: windowedTypes))
+
+        // Additive from both sides, which is the mechanism T-495 and T-511 both turn on.
+        #expect(appKitsOwn.isSubset(of: windowedTypes))
+        #expect(offscreenTypes.count <= windowedTypes.count)
+
+        // And the consequence, stated only where the framework did register for itself: whatever
+        // AppKit brings, it brings text. That is [[T-511]]'s question — whether a plain-text drag
+        // is advertised to the note editor at all — and the answer is yes, by AppKit's own
+        // registration rather than by anything Cadence does. Conditional because a runtime that
+        // registered nothing here would be a framework difference, not a defect in this app.
+        if !appKitsOwn.isEmpty {
+            #expect(
+                appKitsOwn.contains(where: Self.isTextDragType),
+                """
+                AppKit registered \(appKitsOwn.count) drag types of its own and not one of them \
+                was text: \(appKitsOwn.map(\.rawValue).sorted().joined(separator: ", "))
+                """
+            )
+        }
+    }
+
+    /// Text drag flavours under both their modern UTI names and the NeXT/Apple legacy ones AppKit
+    /// still registers — `registeredDraggedTypes` reports the legacy spellings, so
+    /// `contains(.string)` alone would read false over a list that plainly carries text.
+    private static func isTextDragType(_ type: NSPasteboard.PasteboardType) -> Bool {
+        [
+            "public.utf8-plain-text", "public.plain-text", "public.text",
+            "NSStringPboardType",
+            "public.rtf", "NeXT Rich Text Format v1.0 pasteboard type",
+            "public.rtfd", "NeXT RTFD pasteboard type"
+        ].contains(type.rawValue)
+    }
+
     // MARK: - The wire from the host down to the view
 
     /// `configure(_:context:)` is a `NSViewRepresentable` update pass; nothing headless can run it.
