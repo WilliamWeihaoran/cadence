@@ -378,19 +378,17 @@ struct CadenceTypographyConversionSweepTests {
         #expect(eyebrow.contains("CadenceTypeScale.multiplier(.sectionLabel, at: dynamicTypeSize, scaling: scaling)"))
     }
 
-    /// Where the scope begins, and that it begins in exactly four places.
+    /// The explicit inventory of converted workflows and independently sized panels.
     ///
-    /// The **list** is the assertion, not a count that a new file could satisfy by accident. A fifth
+    /// The **list** is the assertion, not a count that a new file could satisfy by accident. A new
     /// `.cadenceScaledTypography()` means a surface was opted in without its geometry being made
     /// size-aware, which is the failure mode the environment flag exists to make visible rather than
     /// the improvement it looks like.
     ///
-    /// Two of the five are T-1364's workflow roots — a create sheet and a detail sheet. The other
-    /// three are converted **panels**, which declare rather than inherit for the reason T-1398
-    /// measured: the flag crosses a `.popover` and `\.dynamicTypeSize` does not, so a panel that
-    /// took its answer from whoever opened it would render differently depending on the toolchain.
-    /// `CadencePresentedTypographyBoundaryTests` holds which panels, and which one is still
-    /// `.cadenceFixedTypography()`.
+    /// Two files hold T-1364's workflow roots. The others hold converted panels which declare
+    /// rather than inherit, so their geometry does not depend on toolchain-specific presentation
+    /// propagation. `CadencePresentedTypographyBoundaryTests` holds the four panel declarations;
+    /// the date picker also declares on its independently embeddable month panel.
     ///
     /// `iOSTaskDetailComponents.swift` is on the list twice over: it holds the detail sheet's tag
     /// strip **and** `iOSTaskTagPickerPopover`, which T-1412 converted once `CadenceTagChip` could
@@ -421,6 +419,7 @@ struct CadenceTypographyConversionSweepTests {
         )
         #expect(hits.sorted() == [
             "Cadence/Shared/Components/CadenceChoicePicker.swift",
+            "Cadence/Shared/Components/CadenceDatePicker.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
             "Cadence/iOS/iOSTaskDetailComponents.swift",

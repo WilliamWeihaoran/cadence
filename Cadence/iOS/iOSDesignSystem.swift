@@ -59,17 +59,22 @@ extension View {
 /// directly above a header that already named the page. `iOSHidesCompactNavigationBar()` drops that
 /// row and its one control moves down here, onto the header row that was already being drawn.
 struct iOSHeaderBackButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
+                .cadenceFont(.controlLabel, base: 17, weight: .semibold)
                 .foregroundStyle(Theme.blue)
                 // Small in layout so it neither pushes the title off a 6.1" screen nor makes the
                 // header row taller than the text in it, 44pt+ to a finger — the same trick
                 // `iOSIconButton` uses for its plate.
-                .frame(width: 30, height: 38)
+                .frame(
+                    width: iOSTaskPageTypographyMetrics.glyphFrame(30, glyph: 17, at: dynamicTypeSize, scaling: scaling),
+                    height: iOSTaskPageTypographyMetrics.glyphFrame(38, glyph: 17, at: dynamicTypeSize, scaling: scaling)
+                )
                 .contentShape(Rectangle())
                 .iOSExpandedHitArea(7)
         }
@@ -281,6 +286,8 @@ struct iOSActionButton: View {
 
 /// iOS counterpart of `CadenceIconButton`. Always 44pt of hit area, whatever the glyph's own size.
 struct iOSIconButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let systemImage: String
     let accessibilityLabel: String
     var tint: Color = Theme.text
@@ -301,18 +308,19 @@ struct iOSIconButton: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+        let side = iOSTaskPageTypographyMetrics.glyphFrame(plateSize, glyph: iconSize, at: dynamicTypeSize, scaling: scaling)
 
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: iconSize, weight: .semibold))
+                .cadenceFont(.controlLabel, base: iconSize, weight: .semibold)
                 .foregroundStyle(isSelected ? tint : Theme.muted)
-                .frame(width: plateSize, height: plateSize)
+                .frame(width: side, height: side)
                 .background(shape.fill(plateFill))
                 .overlay(shape.strokeBorder(plateBorder, lineWidth: 1))
                 // Hit area only. Growing the *frame* to 44 made a group of these 50pt tall next
                 // to a 44pt `iOSSegmentedPill` group in the same toolbar row.
                 .contentShape(Rectangle())
-                .iOSExpandedHitArea(max(0, (44 - plateSize) / 2))
+                .iOSExpandedHitArea(max(0, (44 - side) / 2))
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(accessibilityLabel)
@@ -332,10 +340,15 @@ struct iOSIconButton: View {
 /// iOS counterpart of `CommitmentFilterBar`: a recessed track holding one pill per option. Used for
 /// the calendar's view-mode switch, so the mode picker and macOS's read as one control family.
 struct iOSSegmentedPillGroup<Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        HStack(spacing: 3) {
+        let layout = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+            ? AnyLayout(VStackLayout(spacing: 3))
+            : AnyLayout(HStackLayout(spacing: 3))
+        layout {
             content()
         }
         .padding(3)
@@ -351,6 +364,8 @@ struct iOSSegmentedPillGroup<Content: View>: View {
 /// One pill inside an `iOSSegmentedPillGroup`. Mirrors `CadencePillButton`'s selected treatment
 /// (tint wash + tint hairline) at touch height.
 struct iOSSegmentedPill: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     var systemImage: String? = nil
     let isSelected: Bool
@@ -381,17 +396,18 @@ struct iOSSegmentedPill: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
+        let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
 
         Button(action: action) {
             HStack(spacing: 6) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 11, weight: .semibold))
+                        .cadenceFont(.metadata, base: 11, weight: .semibold)
                 }
                 Text(title)
-                    .font(.system(size: 12, weight: isSelected ? .bold : .semibold))
-                    .lineLimit(fillsWidth ? 2 : 1)
-                    .minimumScaleFactor(fillsWidth ? 0.75 : 1)
+                    .cadenceFont(.metadata, weight: isSelected ? .bold : .semibold)
+                    .lineLimit(stacks ? nil : (fillsWidth ? 2 : 1))
+                    .minimumScaleFactor(scaling == .enabled ? 1 : (fillsWidth ? 0.75 : 1))
                     .multilineTextAlignment(.center)
             }
             // `Theme.muted`, not `Theme.dim`: an unselected segment is a label you are meant to
@@ -402,10 +418,11 @@ struct iOSSegmentedPill: View {
             // content, and an unselected segment is not that.
             .foregroundStyle(isSelected ? tint : Theme.muted)
             .padding(.horizontal, 10)
+            .padding(.vertical, stacks ? 6 : 0)
             .frame(
                 minWidth: fillsWidth ? nil : minWidth,
-                maxWidth: fillsWidth ? .infinity : nil,
-                minHeight: fillsWidth ? 44 : 38
+                maxWidth: fillsWidth || stacks ? .infinity : nil,
+                minHeight: iOSTaskPageTypographyMetrics.segmentHeight(fillsWidth: fillsWidth, at: dynamicTypeSize, scaling: scaling)
             )
             .background(shape.fill(isSelected ? tint.opacity(0.14) : Color.clear))
             .overlay(shape.strokeBorder(isSelected ? tint.opacity(0.26) : Color.clear, lineWidth: 1))

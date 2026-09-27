@@ -247,6 +247,8 @@ struct iOSFeatureRowLink<Label: View, Destination: View>: View {
 /// the documented exceptions and none of them is a page header.
 struct iOSPageHeader<Trailing: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
 
     /// What this row is the top of. See `CadencePageHeaderRole`.
     var role: CadencePageHeaderRole = .page
@@ -283,35 +285,38 @@ struct iOSPageHeader<Trailing: View>: View {
             isRegularWidth: horizontalSizeClass == .regular
         )
 
-        HStack(alignment: .center, spacing: metrics.rowSpacing) {
-            if let onBack {
-                iOSHeaderBackButton(action: onBack)
-                    .padding(.leading, -8)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                if eyebrow != nil || eyebrowDetail != nil {
-                    eyebrowLine(metrics)
+        Group {
+            if stacksControls {
+                VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                    HStack(spacing: metrics.rowSpacing) {
+                        if let onBack {
+                            iOSHeaderBackButton(action: onBack)
+                                .padding(.leading, -8)
+                        }
+                        titleColumn(metrics)
+                    }
+                    HStack(spacing: metrics.rowSpacing) {
+                        if let count {
+                            iOSPageHeaderCountBadge(count: count, tint: color, metrics: metrics)
+                        }
+                        trailing()
+                    }
                 }
-
-                Text(title)
-                    .font(.system(size: metrics.titleSize, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+            } else {
+                HStack(alignment: .center, spacing: metrics.rowSpacing) {
+                    if let onBack {
+                        iOSHeaderBackButton(action: onBack)
+                            .padding(.leading, -8)
+                    }
+                    titleColumn(metrics)
+                    Spacer(minLength: 8)
+                    if let count {
+                        iOSPageHeaderCountBadge(count: count, tint: color, metrics: metrics)
+                    }
+                    trailing()
+                        .layoutPriority(1)
+                }
             }
-
-            Spacer(minLength: 8)
-
-            if let count {
-                iOSPageHeaderCountBadge(count: count, tint: color, metrics: metrics)
-            }
-
-            // Sized before the text column, so a narrow column truncates the title rather than
-            // squeezing a 44pt control. Priority, not `.fixedSize()`: at the bottom of the width
-            // range the chips still give ground instead of overflowing the row and being clipped.
-            trailing()
-                .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, padded ? metrics.horizontalPadding : 0)
@@ -319,19 +324,40 @@ struct iOSPageHeader<Trailing: View>: View {
         .padding(.bottom, padded ? metrics.bottomPadding : 0)
     }
 
+    private var stacksControls: Bool {
+        iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+    }
+
+    private func titleColumn(_ metrics: CadencePageHeaderMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if eyebrow != nil || eyebrowDetail != nil {
+                eyebrowLine(metrics)
+            }
+            Text(title)
+                .cadenceFont(.editorTitle, base: metrics.titleSize, weight: .bold)
+                .foregroundStyle(Theme.text)
+                .lineLimit(stacksControls ? nil : 1)
+                .minimumScaleFactor(scaling == .enabled ? 1 : 0.8)
+                .fixedSize(horizontal: false, vertical: stacksControls)
+        }
+    }
+
     private func eyebrowLine(_ metrics: CadencePageHeaderMetrics) -> some View {
-        HStack(spacing: 6) {
+        let layout = stacksControls
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(spacing: 6))
+        return layout {
             if let eyebrow {
                 SectionEyebrowLabel(text: eyebrow)
-                    .lineLimit(1)
+                    .lineLimit(stacksControls ? nil : 1)
                     .layoutPriority(1)
             }
 
             if let eyebrowDetail, !eyebrowDetail.isEmpty {
                 Text("· \(eyebrowDetail)")
-                    .font(.system(size: metrics.eyebrowSize, weight: .medium))
+                    .cadenceFont(.sectionLabel, base: metrics.eyebrowSize, weight: .medium)
                     .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
+                    .lineLimit(stacksControls ? nil : 1)
             }
         }
     }
@@ -376,7 +402,7 @@ private struct iOSPageHeaderCountBadge: View {
 
     var body: some View {
         Text("\(count)")
-            .font(.system(size: metrics.countSize, weight: .bold))
+            .cadenceFont(.metadata, base: metrics.countSize, weight: .bold)
             .foregroundStyle(tint)
             .monospacedDigit()
             .lineLimit(1)

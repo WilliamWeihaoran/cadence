@@ -329,6 +329,61 @@ struct CadenceTagChipScaleTests {
         #expect(!chipFile.contains(".cadenceFixedTypography()"))
         #expect(chipFile.contains("@Environment(\\.cadenceTypographyScaling)"),
                 "the chip stopped reading the boundary, so it cannot follow a converted surface")
+
+        try assertPageChromeCallerInventory(paths: paths, read: read)
+    }
+
+    /// Like the chip, these shared components are prepared before their pages opt in. This pins
+    /// direct callers, not transitive reachability or framework presentation propagation.
+    private func assertPageChromeCallerInventory(paths: [String], read: (String) throws -> String) throws {
+        let families: [(pattern: String, fires: String, anchor: String, undeclared: Set<String>)] = [
+            (
+                #"\biOS(?:PageHeader|CompactPageHeader)\s*\("#,
+                "iOSPageHeader(title: name)",
+                "Cadence/iOS/iOSFeatureComponents.swift",
+                [
+                    "Cadence/iOS/iOSFeatureComponents.swift",
+                    "Cadence/iOS/iOSFocusView.swift",
+                    "Cadence/iOS/iOSListDetailView.swift",
+                    "Cadence/iOS/iOSListSupportViews.swift",
+                    "Cadence/iOS/iOSSettingsComponents.swift",
+                    "Cadence/iOS/iOSTaskCollectionPage.swift",
+                    "Cadence/iOS/iOSTaskViews.swift",
+                    "Cadence/iOS/iOSTasksPageView.swift",
+                    "Cadence/iOS/iOSTasksTabView.swift",
+                    "Cadence/iOS/iOSTodayCompactViews.swift",
+                    "Cadence/iOS/iPadTodaySupportViews.swift",
+                ]
+            ),
+            (
+                #"\biOSSegmentedPill(?:Group)?\s*[({]"#,
+                "iOSSegmentedPillGroup { iOSSegmentedPill(title: title) }",
+                "Cadence/iOS/iOSDesignSystem.swift",
+                [
+                    "Cadence/iOS/iOSAINoteActionsViews.swift",
+                    "Cadence/iOS/iOSCalendarChromeViews.swift",
+                    "Cadence/iOS/iOSDesignSystem.swift",
+                    "Cadence/iOS/iOSSearchSupportViews.swift",
+                    "Cadence/iOS/iOSTasksPageView.swift",
+                    "Cadence/iOS/iOSTasksTabView.swift",
+                    "Cadence/iOS/iPadTodaySupportViews.swift",
+                ]
+            ),
+        ]
+        for family in families {
+            let instrument = try CadenceScanInstrument(
+                "shared page chrome caller",
+                fires: family.fires,
+                andNotOn: "// iOSPageHeader(title: title)\nlet prose = \"iOSSegmentedPill(title: title)\"",
+                by: { CadenceSourceScan.codeOnly($0).range(of: family.pattern, options: .regularExpression) != nil }
+            )
+            let sites = try instrument.sweep(paths, atLeast: 300, including: family.anchor, read: read)
+            #expect(Set(sites) == family.undeclared, "reclassify the new or removed chrome caller")
+            for path in sites {
+                #expect(!CadenceSourceScan.codeOnly(try read(path)).contains(".cadenceScaledTypography()"),
+                        "\(path) opted in; verify its whole page geometry and move it out of the undeclared inventory")
+            }
+        }
     }
 
     // MARK: - Judgement 1: the dot and the `x` are content
