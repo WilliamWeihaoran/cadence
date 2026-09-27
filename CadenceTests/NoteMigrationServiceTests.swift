@@ -851,4 +851,95 @@ struct NoteMigrationServiceTests {
         #expect(read.insertedDaily == 4)
         #expect(read.skippedCanonicalDuplicate == 0)
     }
+
+    /// **Which app files can put a legacy note row into a live store, and whether each one folds
+    /// it in the same frame ([[T-1352]]).**
+    ///
+    /// T-1352 was filed on the reading that this migration has *one* app call site, inside
+    /// `PersistenceController.performStartupMaintenance`, and therefore that a legacy row which
+    /// appears mid-session is invisible until the next launch. **The premise is wrong, and the
+    /// half it gets wrong is the half that decides the ticket.** There are three call sites, and
+    /// two of them are not launches: `CadenceArchiveImportService.apply` runs the migration over
+    /// the rows it has just imported, and `CadenceMCPStorePreparation.prepare` runs it from a
+    /// second process, on demand, against the same store. Archive import is also the **only**
+    /// thing in the app that constructs a legacy note row at all — the five legacy models have no
+    /// other initializer call in `Cadence/` — so the one local, mid-session source of legacy rows
+    /// already folds them before it returns, and what a remote-change hook would be left covering
+    /// is rows arriving from CloudKit and nothing else.
+    ///
+    /// This is the guard on that reading rather than a restatement of it. A second writer, added
+    /// to a file that does not also run the migration, re-opens T-1352 by going red here instead
+    /// of by a user noticing a note that never appeared.
+    ///
+    /// **Non-vacuity, per needle rather than in aggregate.** Each of the five models must be found
+    /// somewhere, so a renamed model or a needle that stopped matching fails on that model instead
+    /// of passing as a clean sweep over nothing. Scoped to `Cadence/` on purpose: `CadenceTests/`
+    /// builds legacy rows constantly, which is what it is for, and neither `CadenceWidgets/` nor
+    /// `CadenceMCPServer/` constructs one (measured, both empty).
+    @Test func everyAppFileThatWritesALegacyNoteRowAlsoRunsTheMigrationOverIt() throws {
+        let legacyModels = ["DailyNote", "WeeklyNote", "PermNote", "Document", "EventNote"]
+        var writers: [String: Set<String>] = [:]
+        var runners: Set<String> = []
+
+        let needles = legacyModels.map { "\($0)(" } + ["NoteMigrationService."]
+
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            // A cheap superset before the expensive pass. `codeOnly` walks every character of
+            // every file in `Cadence/`, and it only ever *blanks* — so a file whose raw text holds
+            // none of these substrings cannot hold one after stripping either, and skipping it
+            // cannot change an answer below. Measured on this Mac, same sweep either way:
+            // **3.80s** over the whole tree without this filter, **1.57s** with it.
+            guard needles.contains(where: { raw.contains($0) }) else { continue }
+            let code = CadenceSourceScan.codeOnly(raw)
+            if CadenceSourceScan.matchCount(
+                #"NoteMigrationService\.(migrateIfNeeded|migrateAndRecordFailure)\("#,
+                in: code
+            ) > 0 {
+                runners.insert(path)
+            }
+            for model in legacyModels {
+                // The lookbehind is what separates a construction from a longer name that ends in
+                // the same word: `Document(` is the legacy model, `CadenceArchiveDocument(` and
+                // `NoteExportDocument(` are not, and `EventNote(` is the model while
+                // `commitEventNote(` and `openEventNote(` are functions. A bare substring needle
+                // reports six files here, none of which writes a row.
+                let pattern = "(?<![A-Za-z0-9_])\(model)\\("
+                if CadenceSourceScan.matchCount(pattern, in: code) > 0 {
+                    writers[model, default: []].insert(path)
+                }
+            }
+        }
+
+        for model in legacyModels {
+            #expect(
+                !(writers[model] ?? []).isEmpty,
+                "no file in Cadence/ constructs \(model); the needle or the model was renamed, so this sweep is measuring nothing"
+            )
+        }
+
+        let importer = "Cadence/Services/CadenceArchiveImportService.swift"
+        for (model, paths) in writers {
+            for path in paths {
+                #expect(
+                    runners.contains(path),
+                    "\(path) constructs \(model) but never runs NoteMigrationService, so the rows it writes are invisible until the next launch — which is T-1352's latency, now reachable without CloudKit"
+                )
+            }
+            #expect(
+                paths.contains(importer),
+                "\(model) is no longer constructed by the archive importer; re-derive T-1352's population before trusting its refusal"
+            )
+        }
+
+        // The correction itself, pinned so "one call site" cannot be re-derived from a grep that
+        // stops at the launch path.
+        for path in [
+            "Cadence/Services/PersistenceController.swift",
+            importer,
+            "Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift"
+        ] {
+            #expect(runners.contains(path), "\(path) no longer runs the note migration")
+        }
+    }
 }
