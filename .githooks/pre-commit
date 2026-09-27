@@ -63,6 +63,8 @@ TMP_BASE="${TMPDIR:-/private/tmp/}"; [[ "$TMP_BASE" != */ ]] && TMP_BASE="$TMP_B
 # `/tmp/zsh` — not $TMPDIR, and never empty. An App-Sandboxed caller (the test host that runs
 # `selftest`) cannot write there, so every here-document in this file would fail for a reason that
 # reads nothing like "sandbox".
+# That the host cannot write /tmp is measured by `CadenceTestHostSandboxCapabilityTests`; that this
+# file's own `selftest` survives the repair is `CadenceGuardScriptSelftestTests`.
 export TMPPREFIX="${CADENCE_TMPPREFIX:-${TMP_BASE}zsh}"
 
 # `/usr/bin/git` is an xcrun shim and xcrun REFUSES to run inside an App Sandbox

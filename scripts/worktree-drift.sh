@@ -142,6 +142,8 @@ WALK_DEPTH="${CADENCE_DRIFT_DEPTH:-40}"
 # `/usr/bin/git` is an xcrun shim and xcrun refuses to run inside an App Sandbox, so every git call
 # fails with that on stderr and nothing else -- which reads like a broken repository. Same probe
 # agent-commit.sh uses, and for the same reason: this script is run from a sandboxed test host.
+# `CadenceTestHostSandboxCapabilityTests.theXcrunShimsRefuseButTheRealToolsSpawn` is where that is
+# measured, and `CadenceGuardScriptSelftestTests` is what runs this script in there (T-1380).
 if ! git --version >/dev/null 2>&1; then
     for _candidate in /Applications/Xcode.app/Contents/Developer/usr/bin /opt/homebrew/bin /usr/local/bin; do
         [[ -x "$_candidate/git" ]] || continue

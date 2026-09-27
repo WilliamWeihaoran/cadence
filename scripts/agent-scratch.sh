@@ -76,6 +76,8 @@ STAMP=".cadence-scratch"
 # `/tmp/zsh` -- never $TMPDIR, and never empty, so a `[[ -z $TMPPREFIX ]]` guard would never fire.
 # Under the App Sandbox the test host runs in, `/tmp` is not writable, and every heredoc in this
 # script then fails with nothing useful on stderr (T-719). Same line as mutate.sh and the hook.
+# That /tmp is unwritable from that host is measured by `CadenceTestHostSandboxCapabilityTests`;
+# `CadenceGuardScriptSelftestTests` is what runs a script of this family in there at all (T-1380).
 export TMPPREFIX="${CADENCE_TMPPREFIX:-${TMP_BASE}zsh}"
 
 if ! git --version >/dev/null 2>&1; then

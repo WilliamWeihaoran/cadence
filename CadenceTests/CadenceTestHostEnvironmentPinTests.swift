@@ -204,13 +204,12 @@ import Testing
     /// to, and the subagent runbook every batch is pointed at. A claim in one of them is what T-959
     /// became.
     ///
-    /// **The scripts are deliberately NOT in this corpus, and that is a measurement rather than an
-    /// oversight.** The same needles over `scripts/*.sh` and `.githooks/pre-commit` find 30 comment
-    /// blocks making environment claims, 23 of them uncited (measured 2026-09-25). Most are the
-    /// same four facts restated at each site that has to work around one — the `xcrun` shim, the
-    /// `$TMPPREFIX` here-document path, the setuid `ps`, the unexecutable freshly-written file —
-    /// and a rule that demanded a citation on every restatement would add 23 lines of the same
-    /// name to files nobody reads end to end. Filed as [[T-1380]] rather than absorbed here.
+    /// **The scripts are not in this corpus, and they are not unguarded either** — they are held
+    /// one fold coarser, by `everyScriptThatMakesAnEnvironmentClaimNamesAPinInOneOfThem` below.
+    /// T-1380 measured the alternatives rather than arguing them; the numbers are in that test's
+    /// own doc comment. A guide is read end to end by someone about to decide something, so every
+    /// block in it carries its own citation. A script is read at the function you are editing, and
+    /// most of its claims are the same four facts restated wherever a workaround sits.
     ///
     /// **T-1333 added the fifth, and it is the same inclusion as the second long reference.**
     /// Splitting `docs/SUBAGENT_RUNBOOK.md` moved three environment claims — the ledger's
@@ -382,5 +381,219 @@ import Testing
             #expect(declared.contains("struct \(suite)"),
                     "\(suite) is cited as a pin but declares no suite of that name")
         }
+    }
+
+    // MARK: - T-1380. The same rule over the scripts, folded per FILE rather than per block
+
+    /// Every file the script-side rule is judged over: the guard scripts plus the hook.
+    ///
+    /// Enumerated rather than listed, so a script added tomorrow is swept the day it lands. The
+    /// hook is in because it is the same kind of file and carries the same two claims twice over;
+    /// it is not under `scripts/`, so it is named.
+    static func claimCorpusPaths() throws -> [String] {
+        let scripts = try FileManager.default
+            .contentsOfDirectory(atPath: CadenceSourceScan.repositoryRoot().appendingPathComponent("scripts").path)
+            .filter { $0.hasSuffix(".sh") }
+            .map { "scripts/\($0)" }
+        return (scripts + [".githooks/pre-commit"]).sorted()
+    }
+
+    /// A shell file split into runs of consecutive comment lines.
+    ///
+    /// The shell analogue of `guideBlocks`, and deliberately not the same function: a markdown
+    /// paragraph is bounded by blank lines, a shell comment block is bounded by the first line
+    /// that is *code*. One blank line inside a comment run therefore ends the block here, which is
+    /// what a reader sees too — an unbroken column of `#` is one thought.
+    ///
+    /// The shebang joins the header block it sits above. That costs nothing under a per-file fold
+    /// and is worth having: `scripts/test-host-lock.sh` states its whole sandbox position in that
+    /// header, and a splitter that dropped line 1 would drop the claim with it.
+    static func shellCommentBlocks(_ source: String, file: String) -> [GuideBlock] {
+        var blocks: [GuideBlock] = []
+        var current: [String] = []
+        var start = 0
+
+        func flush() {
+            guard !current.isEmpty else { return }
+            blocks.append(GuideBlock(file: file, line: start, text: current.joined(separator: "\n")))
+            current = []
+        }
+
+        for (offset, raw) in source.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            let line = String(raw)
+            if line.drop(while: { $0 == " " || $0 == "\t" }).hasPrefix("#") {
+                if current.isEmpty { start = offset + 1 }
+                current.append(line)
+            } else {
+                flush()
+            }
+        }
+        flush()
+        return blocks
+    }
+
+    /// The per-file rule, as one predicate over one file's text, so `CadenceScanInstrument` can
+    /// hold it against a witness in each direction.
+    ///
+    /// **A citation only counts when it sits in a block that itself makes the claim, and that is
+    /// the whole difference between this rule and a rule that checks nothing.** Measured
+    /// 2026-09-26: under the looser reading — the suite name anywhere in the file — 9 of the 12
+    /// claiming files already passed, on sentences about the ledger's vocabulary, about
+    /// `agent-commit.sh`'s own diff rules, about a precheck. That reading costs 3 lines and
+    /// inspects 3 files. This one costs 5 and inspects 12.
+    static func fileMakesAnUncitedEnvironmentClaim(_ source: String, file: String = "") -> Bool {
+        let claims = shellCommentBlocks(source, file: file).filter { makesAnEnvironmentClaim($0.text) }
+        guard !claims.isEmpty else { return false }
+        return !claims.contains { citesAPin($0.text) }
+    }
+
+    /// The rule, over the real scripts.
+    ///
+    /// **T-1380 named two folds and this took the cheaper one, on numbers rather than taste.**
+    /// Measured 2026-09-26 over `scripts/*.sh` and `.githooks/pre-commit`, grouping consecutive
+    /// comment lines, with the eleven needles above:
+    ///
+    /// | fold | new citation lines | what it inspects |
+    /// | --- | --- | --- |
+    /// | per block, the guides' rule | **30** | every restatement |
+    /// | per file × fact family | **13** | each distinct fact, once per file |
+    /// | per file, citation inside a claim block — **this one** | **5** | each claiming file |
+    /// | per file, citation anywhere in the file | 3 | 3 of the 12 files |
+    ///
+    /// 38 claim blocks in 12 files, 8 cited, 30 not — and the ticket's own census a day earlier
+    /// was 30/7/23. **That drift is the argument.** The population grew by 8 blocks in a day while
+    /// [[T-1382]] and [[T-1384]] were landing, so the per-block fold does not cost 30 lines once,
+    /// it costs about 8 lines a day forever, every one of them the same name in a file nobody
+    /// reads end to end — the cure looking like the disease [[T-434]] is about. The per-file fold
+    /// costs 5 lines once and roughly nothing after, because a new claim in an already-citing file
+    /// needs no line at all.
+    ///
+    /// **What that buys and what it does not, stated rather than implied.** It buys: every file
+    /// that says something about this execution environment names, in a claiming comment, a suite
+    /// that measures it, and that suite must exist. It does not buy: that the *particular*
+    /// restatement you are reading is the one that was measured. `scripts/mutate.sh`'s comment —
+    /// where T-959's one fact was widened to "an unrecognised exec target", which [[T-959]] then
+    /// had to disprove — is the case that motivated the ticket, and it is already cited today. The
+    /// per-file fold would not have required that citation; the per-block fold would. That is the
+    /// honest cost of taking the cheap one, and the 13-line middle fold is where it is recoverable
+    /// if the widening happens again.
+    @Test func everyScriptThatMakesAnEnvironmentClaimNamesAPinInOneOfThem() throws {
+        let paths = try Self.claimCorpusPaths()
+
+        // The census first, so "no offenders" has something behind it. A needle list that stopped
+        // matching, or a splitter that returned nothing, both produce an empty offender list.
+        var blocks = 0
+        var claimingFiles: [String] = []
+        for path in paths {
+            let source = try CadenceSourceScan.sourceFile(path)
+            let claims = Self.shellCommentBlocks(source, file: path).filter { Self.makesAnEnvironmentClaim($0.text) }
+            blocks += claims.count
+            if !claims.isEmpty { claimingFiles.append(path) }
+        }
+        #expect(
+            blocks >= 30 && claimingFiles.count >= 10,
+            """
+            the script census found \(blocks) claim block(s) in \(claimingFiles.count) file(s). \
+            38 in 12 is what 2026-09-26 measured and 30 in 12 is the floor this asserts; below it \
+            the needles or the block splitter stopped matching, which is not the same as the \
+            scripts having stopped claiming.
+            """
+        )
+        #expect(
+            claimingFiles.contains("scripts/test-host-lock.sh") && claimingFiles.contains(".githooks/pre-commit"),
+            """
+            the two files this scan was built for — the lock, whose header states the whole sandbox \
+            position, and the hook, which restates the `$TMPPREFIX` and `xcrun` notes — no longer \
+            read as making a claim, so this sweep is pointed somewhere else than where it was aimed
+            """
+        )
+
+        let instrument = try CadenceScanInstrument(
+            "script file with an uncited environment claim",
+            fires: """
+            #!/bin/zsh
+            # `/usr/bin/git` is an xcrun shim and xcrun refuses to run inside an App Sandbox.
+            git --version
+            # A later, unrelated block that happens to name CadenceGuardScriptSelftestTests.
+            print done
+            """,
+            andNotOn: """
+            #!/bin/zsh
+            # `/usr/bin/git` is an xcrun shim and xcrun refuses to run inside an App Sandbox;
+            # CadenceTestHostSandboxCapabilityTests measures both spellings in that host.
+            git --version
+            # A later, unrelated block that happens to name CadenceGuardScriptSelftestTests.
+            print done
+            """,
+            by: { Self.fileMakesAnUncitedEnvironmentClaim($0) }
+        )
+
+        let offenders = try instrument.sweep(
+            paths,
+            atLeast: 20,
+            including: "scripts/test-host-lock.sh",
+            read: { try CadenceSourceScan.sourceFile($0) }
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders.count) script(s) say something about what this execution environment can \
+            do and name no test that holds any of it: \(offenders.joined(separator: ", ")). \
+            One citation per FILE is the whole rule (T-1380) — put \
+            \(Self.pinningSuites.joined(separator: " or ")) in one of that file's own claiming \
+            comment blocks, not in an unrelated one, or measure the claim there and add the case.
+            """
+        )
+    }
+
+    /// The script-side reader, proven in both directions on text built to break it — the half the
+    /// sweep above cannot show while it is green.
+    ///
+    /// `CadenceScanInstrument` already holds the file predicate against one witness each way. What
+    /// it cannot hold is the *splitter*, and the splitter is where this rule is won or lost: the
+    /// looser fold it replaces differs from this one by exactly the question "is the citation in a
+    /// block that claims anything", and a splitter that ran comment runs together would answer
+    /// that question wrong while still returning a non-empty list.
+    @Test func theShellBlockSplitterKeepsACitationOutOfABlockThatClaimsNothing() throws {
+        let script = """
+        #!/bin/zsh
+        # A header that mentions no mechanism at all.
+
+        # This block claims: the App-Sandboxed host is denied the process list.
+        # Its continuation line belongs to it.
+        pgrep -f cadence
+
+        # This block claims nothing, and names CadenceGuardScriptSelftestTests anyway.
+        print done
+        """
+        let blocks = Self.shellCommentBlocks(script, file: "fixture.sh")
+        #expect(blocks.count == 3, "got \(blocks.count) blocks: \(blocks.map(\.text))")
+        #expect(blocks[1].text.contains("continuation line"), "a comment run lost its second line")
+        #expect(blocks[0].text.hasPrefix("#!/bin/zsh"), "the shebang did not join the header block")
+
+        let claims = blocks.filter { Self.makesAnEnvironmentClaim($0.text) }
+        #expect(claims.count == 1, "the claiming block was not told from the two that claim nothing")
+
+        // The negative the looser fold gets wrong: a citation is present in the FILE, and the file
+        // still offends, because no block that claims anything carries it.
+        #expect(script.contains("CadenceGuardScriptSelftestTests"))
+        #expect(Self.fileMakesAnUncitedEnvironmentClaim(script, file: "fixture.sh"),
+                "a citation sitting in a block that claims nothing was accepted as a citation")
+
+        // And the positive: move the name into the claiming block and the file is clean.
+        let repaired = script.replacingOccurrences(
+            of: "# Its continuation line belongs to it.",
+            with: "# CadenceTestHostSandboxCapabilityTests measures that."
+        )
+        #expect(!Self.fileMakesAnUncitedEnvironmentClaim(repaired, file: "fixture.sh"),
+                "a citation in the claiming block was not accepted")
+
+        // A file that claims nothing is not an offender, or every script in the tree would be one.
+        #expect(!Self.fileMakesAnUncitedEnvironmentClaim("#!/bin/sh\n# nothing here\nprint x\n"))
+
+        // The corpus has to be a real walk, not a list that silently emptied.
+        let paths = try Self.claimCorpusPaths()
+        #expect(paths.count >= 20 && paths.contains(".githooks/pre-commit"),
+                "the corpus walk returned \(paths.count) path(s)")
     }
 }

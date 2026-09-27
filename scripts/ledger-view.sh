@@ -83,6 +83,9 @@ MIN_ENTRIES=${CADENCE_LEDGER_VIEW_MIN_ENTRIES:-300}
 # a fixture that exists and is blank. Measured 2026-09-23 under `zsh -f`: 8 passed, 33 failed, and
 # the refusal quotes the fixture's real path, which is what made it read as a sandbox write failure
 # rather than as a here-document one. Harmless under sh; the shell that needs it is the wrong one.
+# Both halves are pinned rather than argued: `CadenceTestHostSandboxCapabilityTests` measures that
+# the host writes only inside its own container, and `CadenceGuardScriptSelftestTests` runs this
+# selftest under `/bin/sh` -- the shell its shebang names -- and reads its tally (T-1380).
 _tmp_base="${TMPDIR:-/tmp/}"; case "$_tmp_base" in */) ;; *) _tmp_base="$_tmp_base/" ;; esac
 export TMPPREFIX="${CADENCE_TMPPREFIX:-${_tmp_base}zsh}"
 

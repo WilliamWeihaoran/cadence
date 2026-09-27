@@ -278,6 +278,10 @@ LEDGER="${CADENCE_DECLINED_LEDGER:-${TMP_BASE}cadence-declined-hunks}"
 # `/usr/bin/git` is an xcrun shim, and xcrun REFUSES to run inside an App Sandbox
 # ("xcrun: error: cannot be used within an App Sandbox"). Every git call then fails with that on
 # stderr and nothing else, which reads like a broken repository. Probe by running one.
+# Measured, not assumed: `theXcrunShimsRefuseButTheRealToolsSpawn` in
+# `CadenceTestHostSandboxCapabilityTests` runs both spellings in that host, and
+# `CadenceGuardScriptSelftestTests` runs this script's own `selftest` from inside it -- the run
+# this probe exists to keep alive (T-1380).
 if ! git --version >/dev/null 2>&1; then
     for _candidate in /Applications/Xcode.app/Contents/Developer/usr/bin /opt/homebrew/bin /usr/local/bin; do
         [[ -x "$_candidate/git" ]] || continue

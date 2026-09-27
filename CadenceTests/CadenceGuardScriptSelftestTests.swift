@@ -2260,6 +2260,331 @@ struct CadenceGuardScriptSelftestTests {
         }
     }
 
+
+    // MARK: - T-1396. One three-way probe rule, four copies of it
+
+    /// The four functions, named and located, so the reader below cannot quietly find three.
+    ///
+    /// `(file, function)`. Two shapes: a **count** probe that reads `pgrep`'s two signals, and a
+    /// **liveness** probe that reads one pid's command line out of `ps`.
+    static let threeWayProbeSites = [
+        ("scripts/test-host-lock.sh", "live_test_hosts"),
+        ("scripts/test-host-lock.sh", "waiter_alive"),
+        ("scripts/simulator-claim.sh", "live_simctl_for"),
+        ("scripts/simulator-claim.sh", "waiter_alive"),
+    ]
+
+    /// Every top-level function in a zsh guard script, as `(name, body)`.
+    ///
+    /// A definition starts at column zero and a column-zero `}` closes it. A brace counter is the
+    /// obvious alternative and is worse here: zsh writes `${x:-}`, `*(N.:t)` and `(( … ))` often
+    /// enough that counting braces means writing a zsh lexer to get it wrong in a new way.
+    ///
+    /// **Two lines of this are not tidiness, they are a blindness this reader already had.** A
+    /// first draft closed only on `^}` and `scripts/simulator-claim.sh` writes
+    /// `claim_field() { cat … }` on one line — so that function never closed, swallowed the four
+    /// hundred lines under it, and `live_simctl_for` was reported as a probe *named `claim_field`*
+    /// while the real one went missing. The census below is what caught it, which is the whole
+    /// reason the census is written before the comparison. So: a definition whose own line already
+    /// closes is complete on that line, and any later column-zero definition closes an open one.
+    static func topLevelShellFunctions(in source: String) -> [(name: String, body: String)] {
+        var found: [(name: String, body: String)] = []
+        var name: String?
+        var body: [String] = []
+
+        /// `(name, remainderAfterTheBrace)` when `line` opens a function at column zero.
+        func opener(_ line: String) -> (String, String)? {
+            let candidate = line.prefix(while: { $0.isLetter || $0.isNumber || $0 == "_" })
+            guard !candidate.isEmpty else { return nil }
+            var rest = Substring(line.dropFirst(candidate.count))
+            guard rest.hasPrefix("()") else { return nil }
+            rest = rest.dropFirst(2).drop(while: { $0 == " " || $0 == "\t" })
+            guard rest.hasPrefix("{") else { return nil }
+            return (String(candidate), String(rest.dropFirst()))
+        }
+
+        for raw in source.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(raw)
+            if let (candidate, rest) = opener(line) {
+                if let open = name { found.append((open, body.joined(separator: "\n"))) }
+                let tail = rest.trimmingCharacters(in: .whitespaces)
+                if tail.hasSuffix("}") && !tail.hasPrefix("#") {
+                    // A whole function on one line.
+                    found.append((candidate, String(tail.dropLast()).trimmingCharacters(in: .whitespaces)))
+                    name = nil
+                } else {
+                    name = candidate
+                    body = []
+                }
+            } else if name != nil, line == "}" {
+                found.append((name!, body.joined(separator: "\n")))
+                name = nil
+            } else if name != nil {
+                body.append(line)
+            }
+        }
+        if let open = name { found.append((open, body.joined(separator: "\n"))) }
+        return found
+    }
+
+    /// A probe body reduced to the rule it spells, with everything that is legitimately per-script
+    /// replaced by a placeholder.
+    ///
+    /// Derived by shape rather than by a table of the four names that exist today, so a fifth copy
+    /// under new names normalises too and is compared rather than skipped. What is erased:
+    ///
+    /// * the probe command array — `PS_CMD`, `SIM_PS_CMD`, `PGREP_CMD`, `SIM_PGREP_CMD`;
+    /// * the two output globals — `LIVE_HOSTS_COUNT` / `LIVE_SIMCTL_COUNT` and their `_WHY`;
+    /// * the pattern the probe is pointed at, which is a global in one copy and `$1` in the other;
+    /// * the marker a liveness probe matches its own script's name against;
+    /// * comments, and runs of whitespace.
+    ///
+    /// Everything left is the rule: which exit statuses mean what, which one is *cannot tell*, and
+    /// that an empty answer is never *dead*.
+    static func normalisedProbeBody(_ body: String) -> String {
+        var text = body
+        for (pattern, replacement) in [
+            ("^[ \\t]*#.*$", ""),
+            ("\\$\\{[A-Z][A-Z0-9_]*_CMD\\[[@*]\\]\\}", "${PROBE[@]}"),
+            ("[A-Z][A-Z0-9_]*_CMD", "PROBE"),
+            ("LIVE_[A-Z0-9_]*_COUNT", "LIVE_COUNT"),
+            ("LIVE_[A-Z0-9_]*_WHY", "LIVE_WHY"),
+            ("-f \"[^\"]*\"", "-f PATTERN"),
+            ("== \\*[A-Za-z0-9_-]+\\*", "== *MARKER*"),
+            ("[ \\t]+", " "),
+        ] {
+            text = text.replacingOccurrences(
+                of: pattern,
+                with: replacement,
+                options: [.regularExpression]
+            )
+        }
+        return text
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
+    /// The rule, over the real scripts.
+    ///
+    /// **[[T-1396]] asked for a decision between this and a sourced `scripts/lib/probe.zsh`, and
+    /// the library lost on measurement, not on taste.** Measured 2026-09-26:
+    ///
+    /// * The two count probes are **30 lines each and differ on 2 of them** after renaming — the
+    ///   trailing comment on the `()` line, and `-f "$HOST_PATTERN"` against `-f "simctl .*$1"`.
+    ///   The two `waiter_alive`s are 8 lines each and differ on 2. `prune_queue` — the function
+    ///   whose fall-through is the other half of [[T-1152]] — is **byte-identical** in both files.
+    /// * So a library would hold roughly 62 lines and remove roughly 62, plus a file header, plus
+    ///   two `source` lines, plus the parameterisation of the pattern and the self-marker. It does
+    ///   not shrink the repository; it moves the lines and adds a lookup.
+    /// * That lookup is not free here. Both scripts are exec'd by absolute path from four
+    ///   different roots — the user's checkout via `xcb.sh`, a scratch tree minted by
+    ///   `agent-scratch.sh new` (`git archive HEAD | tar -x`), a tree `mutate.sh` is mutating, and
+    ///   `/bin/zsh -f <repo>/scripts/<script> selftest` from inside the App-Sandboxed test host.
+    ///   A committed `scripts/lib/probe.zsh` does resolve in all four, so the library is not
+    ///   *unworkable*. But the two scripts already answer "where am I" two different ways —
+    ///   `SELF="${0:A}"` in the lock, `SELF="${ZSH_ARGZERO:-$0}"` in the claim script, and the lock
+    ///   also repoints `SELF` from `CADENCE_LOCK_SELFTEST_TARGET` — so a `source` relative to `$0`
+    ///   would be a third spelling of a thing these two files already disagree about.
+    ///
+    /// **The decisive asymmetry is what each one binds.** A library binds the files that opt into
+    /// it. The failure this ticket is filed against is the opposite: [[T-749]] ported the lock's
+    /// queue into `simulator-claim.sh` *wholesale*, [[T-1152]] then repaired one copy, and
+    /// [[T-1382]] found thirteen days later that the port had never received it — with [[T-1384]]
+    /// the same omission one function over, a day after that. A fifth copy written by the next
+    /// port would not source a library either, and nothing would notice. This test reads every
+    /// top-level function in every guard script — all 23, not the two that hold a probe today —
+    /// so a fifth copy is compared the moment it lands, whether or not its author knew there was
+    /// a rule. That is the one thing a library cannot do, and it is why this is the answer here.
+    ///
+    /// A library remains the right answer the day a probe needs a change neither script can make
+    /// alone. It is not the right answer for holding two copies of thirty lines in agreement.
+    @Test func everyThreeWayProbeInTheGuardScriptsSpellsOneRule() throws {
+        var counts: [(String, String)] = []     // (site, normalised body)
+        var liveness: [(String, String)] = []
+        var sites: [String] = []
+
+        // Every guard script, not the two that hold a probe today — see the doc comment: a fifth
+        // copy written by the next port is the failure this test is for, and it will not be in a
+        // file this list names. Measured 2026-09-26 over all 23 of them: exactly these four, no
+        // false positive.
+        let corpus = try CadenceTestHostEnvironmentPinTests.claimCorpusPaths()
+        #expect(corpus.count >= 20 && corpus.contains("scripts/test-host-lock.sh"),
+                "the probe sweep walked \(corpus.count) script(s), which is not a walk")
+        for path in corpus {
+            let source = try CadenceSourceScan.sourceFile(path)
+            for function in Self.topLevelShellFunctions(in: source) {
+                let normalised = Self.normalisedProbeBody(function.body)
+                let site = "\(path):\(function.name)"
+                if normalised.contains("-o command= -p") {
+                    liveness.append((site, normalised))
+                    sites.append(site)
+                } else if normalised.contains("2>&1); rc=$?") && normalised.contains("return 4") {
+                    counts.append((site, normalised))
+                    sites.append(site)
+                }
+            }
+        }
+
+        // The census, before anything is compared. Two identical readings is also what a reader
+        // that found ONE function returns, and a reader that found none returns "no divergence"
+        // most convincingly of all.
+        let expected = Self.threeWayProbeSites.map { "\($0.0):\($0.1)" }.sorted()
+        #expect(
+            sites.sorted() == expected,
+            """
+            the probe reader found \(sites.count) three-way probe(s): \
+            \(sites.sorted().joined(separator: ", ")). T-1396 names exactly four: \
+            \(expected.joined(separator: ", ")). A probe that vanished from this reading is a \
+            probe this test no longer holds — if one was deliberately renamed or removed, say so \
+            in `threeWayProbeSites`; if the reader stopped recognising it, that is the bug.
+            """
+        )
+        #expect(counts.count == 2 && liveness.count == 2,
+                "\(counts.count) count probe(s) and \(liveness.count) liveness probe(s), not 2 and 2")
+
+        for family in [counts, liveness] where family.count > 1 {
+            let (firstSite, reference) = family[0]
+            for (site, normalised) in family.dropFirst() where normalised != reference {
+                #expect(
+                    Bool(false),
+                    """
+                    \(site) and \(firstSite) no longer spell the same three-way probe. \
+                    Two copies of this reading disagreeing for thirteen days is T-1382, and one \
+                    function over is T-1384; the rule is 0 = yes / 1 = no / 2-or-4 = cannot tell, \
+                    and a blind probe is never an answer.
+                    ---- \(firstSite)
+                    \(reference)
+                    ---- \(site)
+                    \(normalised)
+                    """
+                )
+            }
+        }
+
+        // Said as the rule, not only as a diff — four identical copies of the WRONG reading would
+        // satisfy everything above. These are the three answers, spelled out.
+        for (site, normalised) in liveness {
+            #expect(normalised.contains("[[ -n \"$cmd\" ]] || return 2"),
+                    "\(site) does not read an empty command line as *cannot tell* (return 2)")
+            #expect(normalised.contains("kill -0 \"$pid\" 2>/dev/null || return 1"),
+                    "\(site) lost the kill -0 fast path that answers *gone* without a process list")
+        }
+        for (site, normalised) in counts {
+            #expect(
+                CadenceSourceScan.matchCount("return 4", in: normalised) >= 3,
+                """
+                \(site) has \(CadenceSourceScan.matchCount("return 4", in: normalised)) \
+                *cannot tell* exits, fewer than the three the rule needs: a noise line, an exit \
+                status of 2 or more, and a count that contradicts its own exit status
+                """
+            )
+            #expect(normalised.contains("LIVE_COUNT=0; LIVE_WHY=\"\""),
+                    "\(site) no longer clears its two output globals before reading")
+        }
+
+        // And `prune_queue`, the caller — the half of T-1152 that is NOT in `waiter_alive`. A
+        // three-way probe whose caller still prunes on 2 is the T-1382 defect exactly.
+        for path in ["scripts/test-host-lock.sh", "scripts/simulator-claim.sh"] {
+            let source = try CadenceSourceScan.sourceFile(path)
+            guard let prune = Self.topLevelShellFunctions(in: source).first(where: { $0.name == "prune_queue" })
+            else {
+                #expect(Bool(false), "\(path) declares no prune_queue for the probe to feed")
+                continue
+            }
+            #expect(
+                prune.body.contains("if (( wrc == 1 ))"),
+                """
+                \(path):prune_queue does not gate its `rm` on *gone* alone. Pruning on anything \
+                other than `wrc == 1` deletes every sibling's ticket the moment the probe goes \
+                blind, which is T-1382 in one line.
+                """
+            )
+        }
+    }
+
+    /// The probe reader, proven in both directions and proven to say so when it reads nothing.
+    ///
+    /// The sweep above is an equality between two strings. If `topLevelShellFunctions` returned
+    /// nothing, or `normalisedProbeBody` erased everything, the comparison would hold vacuously —
+    /// and the census assertion is what catches that in the real run. This is the same three
+    /// questions asked of fixtures: does the reader see agreement, does it see the one-token
+    /// divergence that was T-1382, and does it come back empty on a file with no probe in it.
+    @Test func theProbeReaderTellsAgreementFromDivergenceAndComesBackEmptyOnNeither() throws {
+        let agreeing = """
+        #!/bin/zsh
+        waiter_alive() {   # 0 = alive, 1 = gone, 2 = cannot tell
+          local pid="${1:-}" cmd
+          [[ -n "$pid" ]] || return 1
+          kill -0 "$pid" 2>/dev/null || return 1
+          cmd=$("${PS_CMD[@]}" -o command= -p "$pid" 2>/dev/null)
+          [[ -n "$cmd" ]] || return 2
+          [[ "$cmd" == *test-host-lock* ]]
+        }
+        other_alive() {   # a second copy under other names
+          local pid="${1:-}" cmd
+          [[ -n "$pid" ]] || return 1
+          kill -0 "$pid" 2>/dev/null || return 1
+          cmd=$("${SIM_PS_CMD[@]}" -o command= -p "$pid" 2>/dev/null)
+          [[ -n "$cmd" ]] || return 2
+          [[ "$cmd" == *simulator-claim* ]]
+        }
+        """
+        let functions = Self.topLevelShellFunctions(in: agreeing)
+        #expect(functions.map(\.name) == ["waiter_alive", "other_alive"],
+                "the function reader found \(functions.map(\.name))")
+
+        let normalised = functions.map { Self.normalisedProbeBody($0.body) }
+        #expect(!normalised[0].isEmpty, "normalisation erased the body it was meant to reduce")
+        #expect(
+            normalised[0] == normalised[1],
+            """
+            two copies that differ only in their command array and their own script's name did not \
+            normalise to one reading:
+            ---- \(normalised[0])
+            ---- \(normalised[1])
+            """
+        )
+
+        // The T-1382 divergence itself, one token wide: *cannot tell* written back as *dead*.
+        let diverging = agreeing.replacingOccurrences(
+            of: "[[ -n \"$cmd\" ]] || return 2\n  [[ \"$cmd\" == *simulator-claim* ]]",
+            with: "[[ -n \"$cmd\" ]] || return 1\n  [[ \"$cmd\" == *simulator-claim* ]]"
+        )
+        #expect(diverging != agreeing, "the divergence fixture did not actually change anything")
+        let divergent = Self.topLevelShellFunctions(in: diverging).map { Self.normalisedProbeBody($0.body) }
+        #expect(divergent[0] != divergent[1],
+                "the one-token T-1382 divergence normalised away, which is the reader going blind")
+
+        // Nested braces must not close a function early, and a file with no probe must read as no
+        // probe — an empty answer that the census in the real sweep is what turns into a failure.
+        let nested = """
+        #!/bin/zsh
+        one_liner() { cat "$1" 2>/dev/null }
+        spaced()   { print spaced }
+        outer() {
+          if true; then
+            print "{}"
+          fi
+          print tail
+        }
+        """
+        let nestedFunctions = Self.topLevelShellFunctions(in: nested)
+        #expect(
+            nestedFunctions.map(\.name) == ["one_liner", "spaced", "outer"],
+            """
+            the function reader found \(nestedFunctions.map(\.name)). A one-line definition that             never closes swallows every function under it — which is exactly how this reader first             reported `claim_field` as a three-way probe and lost `live_simctl_for` (T-1396).
+            """
+        )
+        #expect(nestedFunctions[2].body.contains("print tail"),
+                "a nested brace closed the multi-line function early")
+        #expect(nestedFunctions[0].body == "cat \"$1\" 2>/dev/null",
+                "the one-line body came back as \(nestedFunctions[0].body)")
+        #expect(!Self.normalisedProbeBody(nestedFunctions[2].body).contains("-o command= -p"),
+                "a function with no probe in it read as a probe")
+    }
+
 }
 
 /// Reads a zsh script for the T-1074 shape: a bare `local`/`typeset`/`declare` declaration that one
