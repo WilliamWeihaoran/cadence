@@ -58,6 +58,41 @@ nonisolated enum CadenceTagChipInput: Hashable, CaseIterable {
 /// label free to carry **state**. The archived chip therefore drops the tag colour entirely and
 /// goes neutral; that reads at a glance beside a live chip in a way a slightly lower opacity does
 /// not.
+///
+/// **T-1412: how this type answers the reader's text size, and why it is two stored properties
+/// rather than nine `at:scaling:` signatures.**
+///
+/// The chip is drawn by twelve surfaces across both platforms and **eleven of them are not
+/// converted**, so this conversion had to be safe to land ahead of its own call sites. It is, for
+/// exactly one reason: the two properties default to `.large` / `.fixed`, and
+/// `CadenceTypeScale.multiplier` returns `1` whenever scaling is `.fixed` — *at every one of the
+/// twelve `DynamicTypeSize` cases*, not only at the default. So an unconverted surface gets the
+/// literal it drew before, and the eleven that have no `.cadenceScaledTypography()` root above them
+/// render identically. `CadenceTagChipScaleTests.everyChipMetricIsItsOldLiteralUnderFixedScaling`
+/// is what holds that, over both chip sizes, both inputs and all twelve sizes.
+///
+/// **Three judgements this type makes rather than inherits**, each measured rather than assumed:
+///
+/// 1. **The dot and the `x` are content, so they scale *proportionally*; the paddings do not.**
+///    This is the one place the repo's additive rule is the wrong one, and the arithmetic says so:
+///    6pt of dot grown additively by what a 12pt label gains is a **27pt dot** beside 37pt of text,
+///    which is a bullet turned into a disc. A dot is a glyph the label's size chooses, the same way
+///    a `cadenceFont` glyph passes its companion label's role — so it takes the *multiplier*.
+///    `horizontalPadding`, `verticalPadding`, `contentSpacing` and `cornerRadius` stay literal,
+///    which is the additive rule in its usual form: a plate keeps its chrome and grows by its text.
+/// 2. **`maximumLabelWidth` is a cap, and a cap grows additively or not at all.** Proportional
+///    growth puts the regular cap at **400pt** at `accessibility5` — wider than the 375pt phone the
+///    chip has to fit on, so the "cap" would have stopped capping anything. Additive gives 155pt,
+///    and the honest consequence is stated rather than hidden: **a grown chip shows fewer
+///    characters than a small one does**, because the cap is a width and the text inside it tripled.
+///    That is the right trade for a *tag* — the dot carries identity, the full name is in
+///    `accessibilityLabel(for:)` and in `help`, and the alternative is a chip that eats the row it
+///    is metadata on. `CadenceTagPickerMetrics` is what proves the capped chip still fits its panel.
+/// 3. **The strip spacings fall out of `removeHitOverhang()` and therefore *shrink*.** They are not
+///    decoration: they exist because a 44pt touch target grown around a 22pt drawn control spills
+///    past the chip. Once the drawn control is itself bigger than 44 there is no spill left, so the
+///    overhang goes to zero and the spacing returns to its 6pt floor. A spacing that grew here
+///    would be paying twice for a target the chip already covers.
 nonisolated struct CadenceTagChipStyle: Equatable {
     /// Which colour the label takes. A `Theme` token, never the tag's own hex — see the type note.
     nonisolated enum LabelInk: Hashable, CaseIterable {
@@ -73,17 +108,27 @@ nonisolated struct CadenceTagChipStyle: Equatable {
     let selection: CadenceTagChipSelection
     let isArchived: Bool
     let input: CadenceTagChipInput
+    /// The reader's text size, as the chip's own drawing environment reported it.
+    let dynamicTypeSize: DynamicTypeSize
+    /// Whether the surface drawing this chip has been converted **and laid out** for larger text.
+    /// `.fixed` — the default, and the answer eleven of the twelve draw sites still give — puts
+    /// every metric below back on the literal it replaced.
+    let scaling: CadenceTypographyScaling
 
     init(
         size: CadenceTagChipSize = .regular,
         selection: CadenceTagChipSelection = .none,
         isArchived: Bool,
-        input: CadenceTagChipInput = .current
+        input: CadenceTagChipInput = .current,
+        dynamicTypeSize: DynamicTypeSize = .large,
+        scaling: CadenceTypographyScaling = .fixed
     ) {
         self.size = size
         self.selection = selection
         self.isArchived = isArchived
         self.input = input
+        self.dynamicTypeSize = dynamicTypeSize
+        self.scaling = scaling
     }
 
     // MARK: State → appearance
@@ -128,11 +173,35 @@ nonisolated struct CadenceTagChipStyle: Equatable {
 
     // MARK: Metrics
 
-    var fontSize: CGFloat {
+    /// **The role every figure in this type is derived from.** Both chip sizes are `metadata`'s
+    /// tier — 12 is the role's own default base and 10 is a base this site already owned — so they
+    /// are one role at two bases rather than two curves, and the compact chip stays smaller than
+    /// the regular one at every text size by construction.
+    static let labelRole: CadenceTypographyRole = .metadata
+
+    /// The label size before the reader's text size is applied: the literal the chip drew at
+    /// before T-1412, and the `base:` every derivation below passes.
+    var baseFontSize: CGFloat {
         switch size {
         case .regular: return 12
         case .compact: return 10
         }
+    }
+
+    var fontSize: CGFloat {
+        CadenceTypeScale.size(Self.labelRole, base: baseFontSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// What the label gained over its base. The additive term for anything that is a *box* around
+    /// the label rather than content beside it.
+    var labelGrowth: CGFloat {
+        CadenceTypeScale.growth(Self.labelRole, base: baseFontSize, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// What the label was multiplied by. The term for content that has to stay in proportion to
+    /// the text — see judgement 1 on this type.
+    var labelMultiplier: CGFloat {
+        CadenceTypeScale.multiplier(Self.labelRole, at: dynamicTypeSize, scaling: scaling)
     }
 
     var fontWeight: Font.Weight {
@@ -142,11 +211,19 @@ nonisolated struct CadenceTagChipStyle: Equatable {
         }
     }
 
-    var dotDiameter: CGFloat {
+    var baseDotDiameter: CGFloat {
         switch size {
         case .regular: return 6
         case .compact: return 5
         }
+    }
+
+    /// **Proportional, not additive** — the one figure here that is. The dot is the chip's identity
+    /// channel and is read *as a bullet beside the name*, so it has to stay in the name's
+    /// proportion; grown by the label's gain instead it would be a 27pt disc at `accessibility5`,
+    /// larger than the 18.5pt this produces and larger than half the line it sits on.
+    var dotDiameter: CGFloat {
+        baseDotDiameter * labelMultiplier
     }
 
     var contentSpacing: CGFloat {
@@ -181,19 +258,46 @@ nonisolated struct CadenceTagChipStyle: Equatable {
     /// rest of a row's metadata off the end — and on iOS, where these strips wrap rather than
     /// scroll, off the end means unreachable. Past this width the label truncates with a tail
     /// ellipsis and the chip stops growing.
-    var maximumLabelWidth: CGFloat {
+    var baseMaximumLabelWidth: CGFloat {
         switch size {
         case .regular: return 130
         case .compact: return 92
         }
     }
 
+    /// **A cap grows additively or it stops being a cap** (T-1412, judgement 2).
+    ///
+    /// Multiplying it is the obvious move and it is measured to be wrong: 130 × the `metadata`
+    /// multiplier is **400pt at `accessibility5`**, against the 375pt of the narrowest iPhone this
+    /// app runs on — so the cap would sit outside every container it is supposed to protect and the
+    /// truncation rule would be dead code at exactly the size a reader needs the rest of the row.
+    /// Additive gives 155, which is the chip growing by what its own text gained.
+    ///
+    /// **What that costs, said out loud:** the text tripled and the box it may occupy grew by a
+    /// fifth, so a grown chip truncates *sooner in characters* than a small one. That is the
+    /// intended trade rather than an oversight — the chip is metadata, the coloured dot carries the
+    /// identity, and `accessibilityLabel(for:)` and `help` both carry the untruncated name — and it
+    /// is what keeps the chip inside `CadenceTagPickerMetrics.width(at:scaling:)` at every size.
+    var maximumLabelWidth: CGFloat {
+        CadenceTypeScale.height(
+            baseMaximumLabelWidth,
+            holding: Self.labelRole,
+            textBase: baseFontSize,
+            at: dynamicTypeSize,
+            scaling: scaling
+        )
+    }
+
     // MARK: The remove control
 
-    /// The drawn size of the `x`. Larger under touch because a finger is not a pointer — that
-    /// *visual* difference is deliberate, and it is what keeps the expanded touch target from
-    /// having to reach past the chip and into its neighbour.
-    var removeControlSize: CGFloat {
+    /// A finger is 44pt, per the platform's own guidance. Stated once so the target, the inset and
+    /// the strip spacing derived from it cannot answer it separately.
+    static let touchTargetSize: CGFloat = 44
+
+    /// The drawn size of the `x` before the reader's text size is applied. Larger under touch
+    /// because a finger is not a pointer — that *visual* difference is deliberate, and it is what
+    /// keeps the expanded touch target from having to reach past the chip and into its neighbour.
+    var baseRemoveControlSize: CGFloat {
         switch (input, size) {
         case (.touch, .regular):   return 22
         case (.touch, .compact):   return 18
@@ -202,11 +306,22 @@ nonisolated struct CadenceTagChipStyle: Equatable {
         }
     }
 
-    /// What the remove control must measure *to the touch*. 44pt under touch, per the platform's
-    /// own guidance; under a pointer the drawn control already is the target.
+    /// **Proportional, like the dot and for the same reason** (T-1412, judgement 1): the `x` is a
+    /// glyph drawn *beside* the label, and the glyph inside it is already `removeControlSize × 0.42`
+    /// — so the control is content and takes the label's multiplier, not its gain.
+    var removeControlSize: CGFloat {
+        baseRemoveControlSize * labelMultiplier
+    }
+
+    /// What the remove control must measure *to the touch*: never less than 44pt under a finger,
+    /// and never less than what is drawn.
+    ///
+    /// The second half is what T-1412 added. Under a finger the drawn control passes 44 somewhere
+    /// around `accessibility1`, and a target frozen at 44 there would be *smaller* than the button
+    /// it is supposed to cover — the inset would go negative and the chip would clip its own `x`.
     var removeHitTargetSize: CGFloat {
         switch input {
-        case .touch:   return 44
+        case .touch:   return max(Self.touchTargetSize, removeControlSize)
         case .pointer: return removeControlSize
         }
     }
@@ -242,20 +357,40 @@ nonisolated struct CadenceTagChipStyle: Equatable {
     /// its neighbour's remove button. An expanded, filled shape quietly eating the tap next to it
     /// is a failure mode this repo has shipped before, so the numbers live beside the ones that
     /// cause them and `CadenceTagChipStyleTests` pins the relationship.
+    ///
+    /// **They take the environment because they are derived from `removeHitOverhang()`, and they
+    /// get *smaller* as the text grows** (T-1412, judgement 3). The spill exists only while the
+    /// 44pt target is bigger than the drawn control; once the reader's text size has pushed the
+    /// drawn `x` past 44 there is nothing spilling and both spacings return to
+    /// `stripSpacingFloor`. The two arguments default to an unconverted surface, which is what the
+    /// two macOS strips are and what keeps their call sites on the numbers they already drew.
+    /// The floor both spacings fall back to once there is no spill left to clear.
+    static let stripSpacingFloor: CGFloat = 6
+
     static func editableStripSpacing(
         for size: CadenceTagChipSize,
-        input: CadenceTagChipInput = .current
+        input: CadenceTagChipInput = .current,
+        at dynamicTypeSize: DynamicTypeSize = .large,
+        scaling: CadenceTypographyScaling = .fixed
     ) -> CGFloat {
-        let overhang = CadenceTagChipStyle(size: size, isArchived: false, input: input).removeHitOverhang()
-        return max(6, overhang.horizontal * 2)
+        let overhang = CadenceTagChipStyle(
+            size: size, isArchived: false, input: input,
+            dynamicTypeSize: dynamicTypeSize, scaling: scaling
+        ).removeHitOverhang()
+        return max(stripSpacingFloor, overhang.horizontal * 2)
     }
 
     static func editableStripLineSpacing(
         for size: CadenceTagChipSize,
-        input: CadenceTagChipInput = .current
+        input: CadenceTagChipInput = .current,
+        at dynamicTypeSize: DynamicTypeSize = .large,
+        scaling: CadenceTypographyScaling = .fixed
     ) -> CGFloat {
-        let overhang = CadenceTagChipStyle(size: size, isArchived: false, input: input).removeHitOverhang()
-        return max(6, overhang.vertical * 2)
+        let overhang = CadenceTagChipStyle(
+            size: size, isArchived: false, input: input,
+            dynamicTypeSize: dynamicTypeSize, scaling: scaling
+        ).removeHitOverhang()
+        return max(stripSpacingFloor, overhang.vertical * 2)
     }
 
     // MARK: Label
@@ -306,8 +441,22 @@ struct CadenceTagChip: View {
     /// button is not a thing either platform resolves the way a reader expects.
     var onRemove: (() -> Void)? = nil
 
+    /// **The chip reads both halves of the pair itself rather than taking a parameter** (T-1412).
+    /// Twelve surfaces draw it and eleven have no scaled root above them, so the environment's
+    /// `.fixed` default *is* their answer and none of them needed editing. The two converted
+    /// callers — the detail sheet's strip and `iOSTaskTagPickerPopover` — install `.enabled` above
+    /// this and the chip picks it up with them.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var typographyScaling
+
     private var style: CadenceTagChipStyle {
-        CadenceTagChipStyle(size: size, selection: selection, isArchived: tag.isArchived)
+        CadenceTagChipStyle(
+            size: size,
+            selection: selection,
+            isArchived: tag.isArchived,
+            dynamicTypeSize: dynamicTypeSize,
+            scaling: typographyScaling
+        )
     }
 
     private var tagColor: Color { Color(hex: tag.colorHex) }
@@ -337,7 +486,9 @@ struct CadenceTagChip: View {
                 .frame(width: style.dotDiameter, height: style.dotDiameter)
 
             Text(CadenceTagChipStyle.displayName(for: tag))
-                .font(.system(size: style.fontSize, weight: style.fontWeight))
+                // The same role and base `style.fontSize` resolves, so the label and every figure
+                // derived from it cannot disagree about what size the text is.
+                .cadenceFont(CadenceTagChipStyle.labelRole, base: style.baseFontSize, weight: style.fontWeight)
                 .foregroundStyle(labelColor)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -371,6 +522,9 @@ struct CadenceTagChip: View {
     private func removeButton(_ action: @escaping () -> Void) -> some View {
         let button = Button(action: action) {
             Image(systemName: "xmark")
+                // Not a literal and not a second curve: `removeControlSize` has already been
+                // scaled, and the glyph is a fixed fraction of the control it is centred in. A
+                // `cadenceFont` here would apply the reader's multiplier a second time.
                 .font(.system(size: (style.removeControlSize * 0.42).rounded(), weight: .bold))
                 .foregroundStyle(Theme.dim)
                 .frame(width: style.removeControlSize, height: style.removeControlSize)
@@ -461,17 +615,256 @@ struct CadenceTagOverflowBadge: View {
     let count: Int
     var size: CadenceTagChipSize = .regular
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var typographyScaling
+
     private var style: CadenceTagChipStyle {
-        CadenceTagChipStyle(size: size, isArchived: false)
+        CadenceTagChipStyle(
+            size: size,
+            isArchived: false,
+            dynamicTypeSize: dynamicTypeSize,
+            scaling: typographyScaling
+        )
     }
 
     var body: some View {
         Text("+\(count)")
-            .font(.system(size: style.fontSize, weight: .semibold))
+            // It sits in the same strip as the chips it stands in for, so it follows the same
+            // role at the same base or the badge stops matching the row it is in.
+            .cadenceFont(CadenceTagChipStyle.labelRole, base: style.baseFontSize, weight: .semibold)
             .foregroundStyle(Theme.dim)
             .padding(.horizontal, style.horizontalPadding)
             .padding(.vertical, style.verticalPadding)
             .background(Theme.surfaceElevated.opacity(0.75))
             .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+    }
+}
+
+// MARK: - The panel the chips are the rows of
+
+/// Every box `iOSTaskTagPickerPopover` draws, as arithmetic over the chip in it.
+///
+/// **Why this lives here and not in `Cadence/iOS/`.** The panel is iOS-only and sits inside
+/// `#if os(iOS)`, which `CadenceTests` — built for macOS — cannot see; and every figure below is
+/// the chip's own growth plus this panel's chrome, so stating it anywhere else would mean stating
+/// the chip's arithmetic twice. `iOSTaskInspectorMetrics` and `CadencePageHeaderMetrics` are
+/// deliberately outside the platform fence for the first reason; `CadenceChoicePopoverMetrics`
+/// lives beside the rows it measures for the second. This is both.
+///
+/// **The panel is the declaration** (T-1410's rule, kept): `iOSTaskTagPickerPopover` says
+/// `.cadenceScaledTypography()` in its own body, so the frame it draws names `.enabled` *literally*
+/// rather than reading the flag back out of an environment it is itself installing. The fonts
+/// inside it read the scope it installs, which is what makes the frame and the type agree. Nothing
+/// here asserts anything about whether the environment crosses the `.popover` — see
+/// `CadenceTypographyScaling` for why that may not be pinned.
+///
+/// **The touch floor is 44 on both build platforms**, unlike `CadenceSettingsRowMetrics.rowHeight`,
+/// because this panel only ever exists under a finger. A macOS-built test therefore reads the
+/// number the phone draws rather than the desktop's 34.
+nonisolated enum CadenceTagPickerMetrics {
+
+    // MARK: - The literals the panel drew before T-1412
+
+    /// The panel's width at the default text size.
+    static let width: CGFloat = 260
+    /// The panel's height at the default text size.
+    static let height: CGFloat = 340
+    /// Around the scrolling list of rows.
+    static let listPadding: CGFloat = 6
+    /// Inside a row, on each side.
+    static let rowHorizontalPadding: CGFloat = 10
+    /// Between a row's chip and its checkmark — a `Spacer(minLength:)`, so it is a floor.
+    static let rowContentSpacing: CGFloat = 8
+    /// Above and below a row's tallest content. The row was a bare `minHeight: 44` before, which
+    /// is 19pt of air around a 25pt chip; this is the share of it the chip may not eat.
+    static let rowVerticalPadding: CGFloat = 4
+    /// The hairline between the list and the create field.
+    static let dividerHeight: CGFloat = 1
+    /// Around the create row.
+    static let footerPadding: CGFloat = 10
+    /// The create field and the `+` beside it are the same square.
+    static let footerControlSide: CGFloat = 40
+    /// A finger. See the type note for why this is not `CadenceSettingsRowMetrics.rowHeight`.
+    static let touchTargetHeight: CGFloat = 44
+    /// A catalogue showing fewer than three rows is a label with a scrollbar.
+    static let minimumVisibleRows: Int = 3
+
+    /// The `+` in `iOSTaskTagStrip` that opens this panel — a T-1364 residual, since its glyph was
+    /// converted to `.controlLabel` while the box around it stayed `30 × 26`.
+    static let addButtonWidth: CGFloat = 30
+    static let addButtonHeight: CGFloat = 26
+    static let addButtonGlyphSize: CGFloat = 11
+
+    // MARK: - The chip, which is what a row is
+
+    /// `.touch` is stated rather than taken from `.current` because this panel is only ever drawn
+    /// on iOS; the input does not reach any figure below (a picker row's chip draws no remove
+    /// control), but taking the compile-time answer would make a macOS-built test measure a
+    /// pointer's chip for a panel no pointer can open.
+    static func chipStyle(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CadenceTagChipStyle {
+        CadenceTagChipStyle(
+            size: .regular,
+            isArchived: false,
+            input: .touch,
+            dynamicTypeSize: dynamicTypeSize,
+            scaling: scaling
+        )
+    }
+
+    /// The widest a row's chip can draw: its chrome, its dot, and the label cap it truncates at.
+    static func maximumChipWidth(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        let style = chipStyle(at: dynamicTypeSize, scaling: scaling)
+        return style.horizontalPadding * 2
+            + style.dotDiameter
+            + style.contentSpacing
+            + style.maximumLabelWidth
+    }
+
+    static func chipHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        chipStyle(at: dynamicTypeSize, scaling: scaling).chipHeight(hasRemoveControl: false)
+    }
+
+    /// The tick on a selected row. `.metadata`, the same role the chip's label reads.
+    static func checkmarkSize(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.size(CadenceTagChipStyle.labelRole, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    // MARK: - The row
+
+    /// The row's floor: a finger, the chip in it, or the empty state's label — whichever is
+    /// tallest.
+    ///
+    /// Three reasons rather than one, and which of them binds changes as the type grows. At the
+    /// sizes this panel was drawn at the finger wins and the row is the 44 it always was; past
+    /// roughly `accessibility1` the chip wins, which is the "font grew, box did not" case the
+    /// radius and metric sweeps stay green through.
+    static func rowMinHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        let emptyStateLine = CadenceTypeScale.lineHeight(.rowTitle, at: dynamicTypeSize, scaling: scaling)
+        return max(
+            touchTargetHeight,
+            max(
+                chipHeight(at: dynamicTypeSize, scaling: scaling),
+                emptyStateLine
+            ) + rowVerticalPadding * 2
+        )
+    }
+
+    /// What a fully occupied row measures across. The claim `width(at:scaling:)` has to beat.
+    static func rowContentWidth(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        rowHorizontalPadding * 2
+            + maximumChipWidth(at: dynamicTypeSize, scaling: scaling)
+            + rowContentSpacing
+            + checkmarkSize(at: dynamicTypeSize, scaling: scaling)
+    }
+
+    // MARK: - The panel
+
+    /// The panel widens by what a chip's label gained — **additively**, which is this app's rule
+    /// (T-1410): 260 multiplied would be 801pt at `accessibility5`, on a phone 375 wide.
+    static func width(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(
+            Self.width,
+            holding: CadenceTagChipStyle.labelRole,
+            at: dynamicTypeSize,
+            scaling: scaling
+        )
+    }
+
+    /// The create field, and the `+` square beside it.
+    static func footerControlSide(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(Self.footerControlSide, holding: .fieldLabel, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    static func footerHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        footerControlSide(at: dynamicTypeSize, scaling: scaling) + footerPadding * 2
+    }
+
+    /// The list's height at the default size, once the footer and the hairline have had theirs.
+    /// The block the panel keeps for rows, and the reason the panel's own height grows by the
+    /// footer alone: a list scrolls, so a taller row means fewer rows rather than a taller panel.
+    static var baseListInnerHeight: CGFloat {
+        Self.height - dividerHeight - (Self.footerControlSide + footerPadding * 2) - listPadding * 2
+    }
+
+    static func listInnerHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        max(
+            baseListInnerHeight,
+            CGFloat(minimumVisibleRows) * rowMinHeight(at: dynamicTypeSize, scaling: scaling)
+        )
+    }
+
+    /// How many whole rows the reader can see without scrolling.
+    static func visibleRows(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> Int {
+        Int(
+            (listInnerHeight(at: dynamicTypeSize, scaling: scaling)
+                / rowMinHeight(at: dynamicTypeSize, scaling: scaling)).rounded(.down)
+        )
+    }
+
+    /// The panel, block by block — which is what makes "does the tag catalogue still fit on a
+    /// phone" a unit test rather than a screenshot.
+    static func panelHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        listInnerHeight(at: dynamicTypeSize, scaling: scaling)
+            + listPadding * 2
+            + dividerHeight
+            + footerHeight(at: dynamicTypeSize, scaling: scaling)
+    }
+
+    // MARK: - The `+` that opens it
+
+    static func addButtonWidth(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(
+            Self.addButtonWidth, holding: .controlLabel, textBase: Self.addButtonGlyphSize,
+            at: dynamicTypeSize, scaling: scaling
+        )
+    }
+
+    static func addButtonHeight(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(
+            Self.addButtonHeight, holding: .controlLabel, textBase: Self.addButtonGlyphSize,
+            at: dynamicTypeSize, scaling: scaling
+        )
     }
 }

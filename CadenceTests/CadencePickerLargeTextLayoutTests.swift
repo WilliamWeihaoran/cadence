@@ -475,3 +475,190 @@ struct CadenceQuickDateGridScaleTests {
         }
     }
 }
+
+/// **T-1412: the third panel, and the one whose pin was a dependency rather than an argument.**
+///
+/// T-1398 pinned `iOSTaskTagPickerPopover` because it was the panel actually clipping; T-1410 kept
+/// the pin because every row of it is a `CadenceTagChip` and converting the panel alone would have
+/// grown ~69pt rows around a tag name still set at 12 — the mirror image of the defect the boundary
+/// was added to stop. The chip is converted now, so the panel is.
+///
+/// Everything below walks all twelve `DynamicTypeSize` cases and reads its bases back out of
+/// `CadenceTagPickerMetrics`, which is where the panel gets them. **Nothing here asserts that the
+/// scaling environment crosses the `.popover`** — the panel declares its own scope, which is a
+/// property of the source, and T-1398's measurement was Xcode 27 only.
+struct iOSTagPickerLargeTextLayoutTests {
+
+    private let everySize = DynamicTypeSize.allCases
+    private let path = "Cadence/iOS/iOSTaskDetailComponents.swift"
+
+    // MARK: - The panel declares, and its geometry says `.enabled` literally
+
+    @Test("The converted tag picker states its own scope and derives every box it draws")
+    func theTagPickerDeclaresItselfAndStoppedDrawingLiterals() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let source = try read(path)
+
+        #expect(source.contains(".cadenceScaledTypography()"),
+                "the panel no longer declares itself converted")
+        #expect(!source.contains(".cadenceFixedTypography()"),
+                "the panel declares both answers, so it states none")
+        #expect(!source.contains("minimumScaleFactor"),
+                "the panel shrinks its text to fit, which defeats the setting it is following")
+
+        // The four literals the panel used to carry, each replaced by the figure that derives it.
+        #expect(!source.contains(".frame(width: 260, height: 340)"),
+                "the panel is rigid in both axes again")
+        #expect(source.contains("CadenceTagPickerMetrics.width(at: dynamicTypeSize, scaling: .enabled)"))
+        #expect(source.contains("CadenceTagPickerMetrics.panelHeight(at: dynamicTypeSize, scaling: .enabled)"))
+        #expect(source.contains("CadenceTagPickerMetrics.rowMinHeight("))
+        #expect(source.contains("CadenceTagPickerMetrics.footerControlSide("))
+        // And the `+` that opens it, which T-1364 left as a box around a converted glyph.
+        #expect(source.contains("CadenceTagPickerMetrics.addButtonWidth("))
+        #expect(source.contains("CadenceTagPickerMetrics.addButtonHeight("))
+    }
+
+    /// The property that makes the conversion reviewable as a refactor, for this panel: at the
+    /// default text size every derived figure is the literal it replaced, and under `.fixed`
+    /// nothing moves at any size.
+    @Test("Every derived figure is the panel's old literal at the default size")
+    func theTagPickerIsUnchangedAtTheDefaultTextSize() {
+        #expect(CadenceTagPickerMetrics.width(at: .large, scaling: .enabled)
+            == CadenceTagPickerMetrics.width)
+        #expect(CadenceTagPickerMetrics.panelHeight(at: .large, scaling: .enabled)
+            == CadenceTagPickerMetrics.height)
+        #expect(CadenceTagPickerMetrics.rowMinHeight(at: .large, scaling: .enabled)
+            == CadenceTagPickerMetrics.touchTargetHeight)
+        #expect(CadenceTagPickerMetrics.footerControlSide(at: .large, scaling: .enabled)
+            == CadenceTagPickerMetrics.footerControlSide)
+        #expect(CadenceTagPickerMetrics.addButtonWidth(at: .large, scaling: .enabled)
+            == CadenceTagPickerMetrics.addButtonWidth)
+        #expect(CadenceTagPickerMetrics.addButtonHeight(at: .large, scaling: .enabled)
+            == CadenceTagPickerMetrics.addButtonHeight)
+
+        #expect(everySize.count == 12, "a shorter walk would prove less than it claims")
+        for size in everySize {
+            #expect(CadenceTagPickerMetrics.width(at: size, scaling: .fixed)
+                == CadenceTagPickerMetrics.width, "the unconverted panel widened at \(size)")
+            #expect(CadenceTagPickerMetrics.panelHeight(at: size, scaling: .fixed)
+                == CadenceTagPickerMetrics.height, "the unconverted panel grew at \(size)")
+            #expect(CadenceTagPickerMetrics.rowMinHeight(at: size, scaling: .fixed)
+                == CadenceTagPickerMetrics.touchTargetHeight)
+            #expect(CadenceTagPickerMetrics.addButtonHeight(at: size, scaling: .fixed)
+                == CadenceTagPickerMetrics.addButtonHeight)
+        }
+    }
+
+    // MARK: - Every box holds what is in it, at every size
+
+    /// The row reserves what it draws — a finger, the chip in it, or the empty state's label,
+    /// whichever is tallest — and the panel is wide enough for the widest row it can hold.
+    @Test("The tag row reserves room for its chip and the panel for the row, at all twelve sizes")
+    func everyTagPickerBoxHoldsItsContent() {
+        for size in everySize {
+            for scaling in CadenceTypographyScaling.allCases {
+                let row = CadenceTagPickerMetrics.rowMinHeight(at: size, scaling: scaling)
+                let chip = CadenceTagPickerMetrics.chipHeight(at: size, scaling: scaling)
+                #expect(row >= chip,
+                        "the row reserves \(row) for a \(chip) chip at \(size)/\(scaling)")
+                #expect(row >= CadenceTagPickerMetrics.touchTargetHeight,
+                        "the row fell under a finger at \(size)/\(scaling)")
+                let emptyStateLine = CadenceTypeScale.lineHeight(.rowTitle, at: size, scaling: scaling)
+                #expect(row >= emptyStateLine,
+                        "the empty state's label does not fit its row at \(size)/\(scaling)")
+
+                let width = CadenceTagPickerMetrics.width(at: size, scaling: scaling)
+                let content = CadenceTagPickerMetrics.rowContentWidth(at: size, scaling: scaling)
+                #expect(width >= content,
+                        "the panel is \(width) wide for \(content) of row at \(size)/\(scaling)")
+
+                // The create row's square holds the glyph in it.
+                let square = CadenceTagPickerMetrics.footerControlSide(at: size, scaling: scaling)
+                let glyphLine = CadenceTypeScale.lineHeight(.fieldLabel, at: size, scaling: scaling)
+                #expect(square >= glyphLine,
+                        "the create button is \(square) around \(glyphLine) of glyph at \(size)/\(scaling)")
+
+                // And the `+` that opens the panel holds its own glyph.
+                let addHeight = CadenceTagPickerMetrics.addButtonHeight(at: size, scaling: scaling)
+                let addLine = CadenceTypeScale.lineHeight(
+                    .controlLabel, base: CadenceTagPickerMetrics.addButtonGlyphSize,
+                    at: size, scaling: scaling
+                )
+                #expect(addHeight >= addLine,
+                        "the strip's + is \(addHeight) around \(addLine) of glyph at \(size)/\(scaling)")
+            }
+        }
+    }
+
+    // MARK: - The panel stays a panel on a phone
+
+    /// Additive in both axes, monotonic, and still inside the smallest iPhone this app runs on.
+    ///
+    /// 375 × 667 is an iPhone SE in portrait. A popover is inset from that by an amount only UIKit
+    /// knows, so the margins asserted are deliberately generous; what is pinned is that the panel
+    /// grows by tens of points rather than by a multiplier, and that a multiplied one would not
+    /// have fit.
+    @Test("The tag picker grows additively and still fits the smallest iPhone")
+    func theTagPickerStaysInsideAPhoneAtEverySize() {
+        let narrowestPhoneWidth: CGFloat = 375
+        let shortestPhoneHeight: CGFloat = 667
+
+        var previousWidth: CGFloat = 0
+        var previousHeight: CGFloat = 0
+        for size in everySize {
+            let width = CadenceTagPickerMetrics.width(at: size, scaling: .enabled)
+            let height = CadenceTagPickerMetrics.panelHeight(at: size, scaling: .enabled)
+            #expect(width >= previousWidth, "the panel narrowed at \(size)")
+            #expect(height >= previousHeight, "the panel got shorter at \(size)")
+            previousWidth = width
+            previousHeight = height
+            #expect(width < narrowestPhoneWidth,
+                    "the panel is \(width) wide at \(size), which is off a 375pt screen")
+            #expect(height < shortestPhoneHeight * 0.8,
+                    "the panel is \(height) tall at \(size), which does not leave a popover room")
+        }
+
+        let widest: CGFloat = CadenceTagPickerMetrics.width(at: .accessibility5, scaling: .enabled)
+        let gain: CGFloat = CadenceTypeScale.growth(
+            CadenceTagChipStyle.labelRole, at: .accessibility5, scaling: .enabled
+        )
+        #expect(widest == CadenceTagPickerMetrics.width + gain)
+        let proportionalWidth: CGFloat = CadenceTagPickerMetrics.width
+            * CadenceTypeScale.multiplier(CadenceTagChipStyle.labelRole, at: .accessibility5, scaling: .enabled)
+        #expect(widest < proportionalWidth)
+        #expect(proportionalWidth > narrowestPhoneWidth,
+                "proportional growth fits a phone after all, so the additive rule needs re-arguing")
+
+        let tallest: CGFloat = CadenceTagPickerMetrics.panelHeight(at: .accessibility5, scaling: .enabled)
+        #expect(tallest > CadenceTagPickerMetrics.height, "the panel does not follow the reader at all")
+        #expect(tallest < CadenceTagPickerMetrics.height * 1.5,
+                "the panel grew like a multiplier, which is the growth rule being rejected")
+    }
+
+    /// The list is a scroll, so a taller row buys fewer rows rather than a taller panel — and it
+    /// never buys so few that the catalogue stops reading as a list.
+    @Test("The catalogue shows fewer rows rather than growing the panel, never under three")
+    func theTagListTradesRowsForHeight() {
+        for size in everySize {
+            let rows = CadenceTagPickerMetrics.visibleRows(at: size, scaling: .enabled)
+            #expect(rows >= CadenceTagPickerMetrics.minimumVisibleRows,
+                    "the catalogue shows \(rows) rows at \(size)")
+            #expect(CadenceTagPickerMetrics.visibleRows(at: size, scaling: .fixed)
+                == CadenceTagPickerMetrics.visibleRows(at: .large, scaling: .enabled),
+                    "an unconverted reading of the list changed at \(size)")
+        }
+
+        let atDefault = CadenceTagPickerMetrics.visibleRows(at: .large, scaling: .enabled)
+        let atLargest = CadenceTagPickerMetrics.visibleRows(at: .accessibility5, scaling: .enabled)
+        #expect(atDefault > atLargest, "the rows grew and the count did not, so nothing was traded")
+
+        // The whole of the panel's own growth is the footer's, which is what "the list scrolls"
+        // means as arithmetic.
+        let heightGain: CGFloat = CadenceTagPickerMetrics.panelHeight(at: .accessibility5, scaling: .enabled)
+            - CadenceTagPickerMetrics.panelHeight(at: .large, scaling: .enabled)
+        let footerGain: CGFloat = CadenceTagPickerMetrics.footerHeight(at: .accessibility5, scaling: .enabled)
+            - CadenceTagPickerMetrics.footerHeight(at: .large, scaling: .enabled)
+        #expect(heightGain == footerGain)
+        #expect(footerGain > 0)
+    }
+}

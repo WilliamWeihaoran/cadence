@@ -38,9 +38,11 @@ struct CadencePresentedTypographyBoundaryTests {
     ///
     /// T-1398 put all four on `.fixed`, which was the regression being stopped rather than the
     /// question being answered. T-1410 answered it per panel, and the answers differ — which is the
-    /// finding, not an inconsistency. Two panels converted, because the shape they needed was the
-    /// shape they already had; two stayed pinned, each for a reason that is arithmetic rather than
-    /// appetite and each priced in its own test below.
+    /// finding, not an inconsistency. Two panels converted then, because the shape they needed was
+    /// the shape they already had; two stayed pinned, each for a reason that was arithmetic rather
+    /// than appetite. T-1412 converted a **third**: the tag picker's pin was a statement about
+    /// `CadenceTagChip`, so converting the chip retired it. One is still pinned, and its reason —
+    /// seven columns of a month grid — is not a dependency that can be discharged.
     ///
     /// Not a guess: `everyPopoverInAConvertedWorkflowOpensADeclaredPicker` re-derives the list out
     /// of the five workflow files and fails if a sixth appears.
@@ -58,9 +60,11 @@ struct CadencePresentedTypographyBoundaryTests {
         "CadenceQuickDatePopover": (
             "Cadence/Shared/Components/CadenceDatePicker.swift", ".cadenceFixedTypography()"
         ),
-        // Pinned: every row of it is a `CadenceTagChip`, which twelve surfaces draw.
+        // Converted by T-1412, which is the ticket the pin was waiting on: every row of this panel
+        // is a `CadenceTagChip`, twelve surfaces draw that chip, and it could only be converted
+        // ahead of eleven of them because a role under `.fixed` is its own literal at every size.
         "iOSTaskTagPickerPopover": (
-            "Cadence/iOS/iOSTaskDetailComponents.swift", ".cadenceFixedTypography()"
+            "Cadence/iOS/iOSTaskDetailComponents.swift", ".cadenceScaledTypography()"
         ),
     ]
 
@@ -126,44 +130,58 @@ struct CadencePresentedTypographyBoundaryTests {
     /// - its create button, a `40 × 40` square holding a `.fieldLabel` glyph;
     /// - its tag rows, `minHeight: 44` holding a `.rowTitle`.
     ///
-    /// **This is now the price of the pin rather than the price of the leak** (T-1410). The other
-    /// panel this test used to measure — `CadenceFittedPopover`'s `width: 230` over rows at a fixed
-    /// 14 — is converted, so it is asserted in
-    /// `theCompactEyebrowNoLongerOutgrowsTheChoiceRowsUnderIt` and in
-    /// `CadenceChoicePopoverLargeTextLayoutTests` instead. What is left here is the panel that
-    /// stayed pinned, and the numbers below are what it would do if it were opted in before
-    /// `CadenceTagChip` grows with it: under `.enabled` both boxes overflow at the accessibility
-    /// sizes, under `.fixed` neither moves at all.
-    @Test("The pinned pickers would overflow their literal boxes if they scaled")
+    /// **This is now the price of the *conversion*** (T-1412). T-1398 wrote it as the price of the
+    /// leak and T-1410 as the price of the pin; the panel is converted, so what is left to measure
+    /// is the two literals it used to carry against the derived figures that replaced them. The
+    /// bases are read back out of `CadenceTagPickerMetrics` so this cannot drift into restating
+    /// numbers the file no longer draws.
+    ///
+    /// Under `.enabled` both old boxes overflow at the accessibility sizes and the derived ones
+    /// cover every size that overflowed; under `.fixed` nothing moves at all, which is what makes
+    /// the eleven unconverted chip surfaces safe.
+    @Test("The tag picker's old literal boxes could not hold their type once it scales")
     func theRigidPickerBoxesCannotHoldTheirTypeOnceItScales() throws {
         let read = CadenceSourceScan.strippedSourceReader()
+        let metrics = try read("Cadence/Shared/Components/CadenceTagChip.swift")
+        // Non-vacuity: the two numbers below are the ones the panel drew before T-1412, still
+        // named as the bases the derivations start from.
+        #expect(metrics.contains("static let footerControlSide: CGFloat = 40"))
+        #expect(metrics.contains("static let touchTargetHeight: CGFloat = 44"))
         let tagPicker = try read("Cadence/iOS/iOSTaskDetailComponents.swift")
-        // Non-vacuity: the numbers below are these literals. If the geometry is ever made
-        // size-aware, this fails first and asks for the assertion to be rewritten rather than
-        // quietly measuring numbers the file no longer draws.
-        #expect(tagPicker.contains(".frame(width: 260, height: 340)"))
-        #expect(tagPicker.contains(".frame(width: 40, height: 40)"))
-        #expect(tagPicker.contains("minHeight: 44"))
+        #expect(tagPicker.contains("CadenceTagPickerMetrics.rowMinHeight("),
+                "the tag row stopped reading its derived floor")
+        #expect(tagPicker.contains("CadenceTagPickerMetrics.footerControlSide("),
+                "the create button stopped reading its derived square")
 
-        let plusButtonSide: CGFloat = 40
-        let tagRowHeight: CGFloat = 44
+        let plusButtonSide = CadenceTagPickerMetrics.footerControlSide
+        let tagRowHeight = CadenceTagPickerMetrics.touchTargetHeight
 
         var overflowingSizes: [DynamicTypeSize] = []
         for size in DynamicTypeSize.allCases {
-            let glyph = CadenceTypeScale.size(.fieldLabel, at: size, scaling: .enabled)
-            let rowLine = CadenceTypeScale.lineHeight(.rowTitle, at: size, scaling: .enabled)
-            if glyph > plusButtonSide || rowLine > tagRowHeight { overflowingSizes.append(size) }
+            // The glyph's *line box*, which is what a square has to hold — T-1398 measured the
+            // create button as "~38pt of glyph inside 40pt", i.e. already past useful.
+            let glyph = CadenceTypeScale.lineHeight(.fieldLabel, at: size, scaling: .enabled)
+            let chip = CadenceTagPickerMetrics.chipHeight(at: size, scaling: .enabled)
+            if glyph > plusButtonSide || chip > tagRowHeight { overflowingSizes.append(size) }
 
-            // The pinned answer, at the same size, for the same two boxes.
-            #expect(CadenceTypeScale.size(.fieldLabel, at: size, scaling: .fixed) < plusButtonSide)
-            #expect(CadenceTypeScale.lineHeight(.rowTitle, at: size, scaling: .fixed) < tagRowHeight)
+            // The unconverted reading, at the same size, for the same two boxes.
+            #expect(CadenceTypeScale.lineHeight(.fieldLabel, at: size, scaling: .fixed) < plusButtonSide)
+            #expect(CadenceTagPickerMetrics.chipHeight(at: size, scaling: .fixed) < tagRowHeight)
         }
 
         #expect(overflowingSizes.contains(.accessibility5))
         #expect(overflowingSizes.count >= 2,
-                "if only one size overflowed, the panel was close to fitting and the pin is cosmetic")
+                "if only one size overflowed, the panel was close to fitting and the conversion is cosmetic")
         #expect(!overflowingSizes.contains(.large),
                 "the default size must be unaffected or T-1364's conversion was never a refactor")
+
+        // And what replaced them covers every size that overflowed.
+        for size in overflowingSizes {
+            #expect(CadenceTagPickerMetrics.footerControlSide(at: size, scaling: .enabled) > plusButtonSide,
+                    "the create button did not grow at \(size)")
+            #expect(CadenceTagPickerMetrics.rowMinHeight(at: size, scaling: .enabled) > tagRowHeight,
+                    "the derived row floor did not grow at \(size)")
+        }
     }
 
     /// **The leak T-1398 found, now closed by conversion rather than by pinning.**
@@ -280,18 +298,17 @@ struct CadencePresentedTypographyBoundaryTests {
     }
 
     /// **A panel may only opt in in the same change that makes its geometry size-aware**, which is
-    /// the whole reason the scope is an environment value rather than a flag. So the two panels
-    /// that are still rigid must still say so.
+    /// the whole reason the scope is an environment value rather than a flag. So the panel that is
+    /// still rigid must still say so.
     ///
-    /// `CadenceQuickDatePopover` is 34pt day cells and a 256pt panel; `iOSTaskTagPickerPopover` is
-    /// a `260 × 340` frame around rows made of an unconverted `CadenceTagChip`. Neither may carry
-    /// `.cadenceScaledTypography()` while that is true, and `CadenceQuickDateGridScaleTests` /
-    /// `theRigidPickerBoxesCannotHoldTheirTypeOnceItScales` are what price each one.
-    @Test("The two panels that are still rigid did not opt themselves in")
+    /// One is left: `CadenceQuickDatePopover`, which is 34pt day cells in a seven-column month
+    /// grid, priced in `CadenceQuickDateGridScaleTests`. The tag picker was the other until T-1412
+    /// converted `CadenceTagChip`, which is the dependency its pin had always been about.
+    @Test("The panel that is still rigid did not opt itself in")
     func theStillRigidPanelsDidNotOptIn() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let pinned = Self.presentedPickers.filter { $0.value.scope == ".cadenceFixedTypography()" }
-        #expect(pinned.count == 2, "the set of pinned panels moved without this test being told")
+        #expect(pinned.count == 1, "the set of pinned panels moved without this test being told")
         for (type, panel) in pinned {
             let source = try read(panel.path)
             #expect(!source.contains(".cadenceScaledTypography()"),

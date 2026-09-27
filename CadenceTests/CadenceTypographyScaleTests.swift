@@ -118,6 +118,73 @@ struct CadenceTypographyScaleTests {
         #expect(CadenceTypeScale.isAccessibilitySize(.accessibility5))
     }
 
+    /// **T-1401, decided: the two title roles are two roles.**
+    ///
+    /// The question was real and the adapter's design invites it — a role owns a curve and a
+    /// *default* base, and `SectionEyebrowLabel.Size.compact` is 9pt precisely because a site with
+    /// its own named constant passes it in rather than earning a tenth role. So "20 and 22 are one
+    /// role at two bases" is the shape this repo would normally take, and converging two numbers
+    /// that are deliberately different is the regression the ticket warns about in the other
+    /// direction.
+    ///
+    /// What decides it is that the two differ in **three** things and the base is only one of them.
+    /// This test is the evidence, so a future merge has to argue with it: the ramp (Apple publishes
+    /// Title 2 at 22 and Title 3 at 20, and `textStyle` is chosen by size), the weight, and what
+    /// merging would resolve to at the largest size — a figure neither sheet chose.
+    @Test("The editor title and the composer title are two roles, not one role at two bases")
+    func theTwoTitleRolesAreTwoRolesAndNotOneRoleAtTwoBases() throws {
+        // Non-vacuity: the decision is recorded where it is made, and both cases still exist.
+        let read = CadenceSourceScan.strippedSourceReader()
+        let adapter = try read("Cadence/Shared/CadenceTypography.swift")
+        #expect(adapter.contains("case editorTitle"))
+        #expect(adapter.contains("case composerTitle"))
+        #expect(CadenceTypographyRole.allCases.count == 9,
+                "the role table changed size without this decision being revisited")
+
+        let editor = CadenceTypographyRole.editorTitle
+        let composer = CadenceTypographyRole.composerTitle
+
+        // 1. The ramp. Apple's published Large sizes for the two title styles are 22 and 20, and
+        //    each role's base already sits exactly on its own rung — two adjacent points on one
+        //    ladder rather than one decision spelled twice.
+        let publishedTitle2Size: CGFloat = 22
+        let publishedTitle3Size: CGFloat = 20
+        #expect(editor.baseSize == publishedTitle2Size)
+        #expect(composer.baseSize == publishedTitle3Size)
+        #expect(editor.textStyle == .title2)
+        #expect(composer.textStyle == .title3)
+        let title2Ceiling: CGFloat = 49 / publishedTitle2Size
+        let title3Ceiling: CGFloat = 47 / publishedTitle3Size
+        #expect(CadenceTypeScale.maximumGrowth(for: .title2) == title2Ceiling)
+        #expect(CadenceTypeScale.maximumGrowth(for: .title3) == title3Ceiling)
+        #expect(title3Ceiling > title2Ceiling,
+                "the smaller title is allowed to grow further; if that stops being true, re-argue this")
+
+        // 2. The weight. The `compact` eyebrow precedent passes a base and nothing else; merging
+        //    here would move the weight to the call site too.
+        #expect(editor.weight == .bold)
+        #expect(composer.weight == .semibold)
+        #expect(editor.weight != composer.weight)
+
+        // 3. What merging would cost, at the size where the two ramps have separated most.
+        let merged: CGFloat = CadenceTypeScale.size(
+            .editorTitle, base: composer.baseSize, at: .accessibility5, scaling: .enabled
+        )
+        let actual: CGFloat = CadenceTypeScale.size(.composerTitle, at: .accessibility5, scaling: .enabled)
+        #expect(actual > merged,
+                "the two roles resolve alike at the largest size, so the ramp argument is vacuous")
+        #expect(merged != actual)
+
+        // And the part that is *not* in dispute: at the default size they are the two numbers the
+        // tree already drew, two points apart, and under `.fixed` neither ever moves.
+        #expect(CadenceTypeScale.size(.editorTitle, at: .large, scaling: .enabled) == 22)
+        #expect(CadenceTypeScale.size(.composerTitle, at: .large, scaling: .enabled) == 20)
+        for size in everySize {
+            #expect(CadenceTypeScale.size(.composerTitle, at: size, scaling: .fixed) == 20)
+            #expect(CadenceTypeScale.size(.editorTitle, at: size, scaling: .fixed) == 22)
+        }
+    }
+
     @Test("One line-height ratio, and the inspector reads it rather than restating it")
     func theLineHeightRatioIsStatedOnce() {
         #expect(CadenceTypeScale.lineHeightRatio == 1.2)
@@ -318,13 +385,17 @@ struct CadenceTypographyConversionSweepTests {
     /// size-aware, which is the failure mode the environment flag exists to make visible rather than
     /// the improvement it looks like.
     ///
-    /// Two of the four are T-1364's workflow roots — a create sheet and a detail sheet. The other
-    /// two are T-1410's converted **panels**, which declare rather than inherit for the reason
-    /// T-1398 measured: the flag crosses a `.popover` and `\.dynamicTypeSize` does not, so a panel
-    /// that took its answer from whoever opened it would render differently depending on the
-    /// toolchain. `CadencePresentedTypographyBoundaryTests` holds which panels, and which two
-    /// stayed on `.cadenceFixedTypography()`.
-    @Test func exactlyTwoSurfacesDeclareThemselvesConverted() throws {
+    /// Two of the five are T-1364's workflow roots — a create sheet and a detail sheet. The other
+    /// three are converted **panels**, which declare rather than inherit for the reason T-1398
+    /// measured: the flag crosses a `.popover` and `\.dynamicTypeSize` does not, so a panel that
+    /// took its answer from whoever opened it would render differently depending on the toolchain.
+    /// `CadencePresentedTypographyBoundaryTests` holds which panels, and which one is still
+    /// `.cadenceFixedTypography()`.
+    ///
+    /// `iOSTaskDetailComponents.swift` is on the list twice over: it holds the detail sheet's tag
+    /// strip **and** `iOSTaskTagPickerPopover`, which T-1412 converted once `CadenceTagChip` could
+    /// follow the reader.
+    @Test func theDeclaredScaledRootsAreTheListAndNotACount() throws {
         let instrument = try CadenceScanInstrument(
             "scaled typography scope",
             fires: "NavigationStack { body }.cadenceScaledTypography().tint(Theme.blue)",
@@ -352,6 +423,7 @@ struct CadenceTypographyConversionSweepTests {
             "Cadence/Shared/Components/CadenceChoicePicker.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
+            "Cadence/iOS/iOSTaskDetailComponents.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
         ].sorted())
     }

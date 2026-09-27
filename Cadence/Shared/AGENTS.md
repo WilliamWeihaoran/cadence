@@ -171,14 +171,17 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   `\.dynamicTypeSize` is re-read from the host window — measured on Xcode 27 / iOS 26.5 and recorded
   on `CadenceTypographyScaling`. CI runs Xcode 26, so the propagation itself may not be asserted;
   stating the answer is what makes a panel render the same on both. The four pickers T-1364's sheets
-  open are the declarers, and **they do not all give the same answer** (T-1410):
-  `CadenceFittedPopover` and `EstimatePickerPopoverContent` are converted and say
-  `.cadenceScaledTypography()`, so their geometry names `.enabled` literally while their fonts read
-  it back from the scope they install; `CadenceQuickDatePopover` and `iOSTaskTagPickerPopover` stay
-  `.cadenceFixedTypography()` for reasons that are arithmetic, not appetite (a seven-column month
-  grid, and rows made of the unconverted `CadenceTagChip`). `CadencePresentedTypographyBoundaryTests`
-  holds which panel gives which answer and fails one that gives both or neither;
-  `CadencePickerLargeTextLayoutTests` prices each decision.
+  open are the declarers and **they do not all answer alike** (T-1410/T-1412): `CadenceFittedPopover`,
+  `EstimatePickerPopoverContent` and `iOSTaskTagPickerPopover` say `.cadenceScaledTypography()`, so
+  their geometry names `.enabled` literally while their fonts read the scope they install; only
+  `CadenceQuickDatePopover` stays pinned, because a month is seven columns wide.
+  `CadencePresentedTypographyBoundaryTests` holds which panel answers which; `CadencePickerLargeTextLayoutTests` prices each.
+- **A shared component converts ahead of its callers by taking `dynamicTypeSize`/`scaling` as
+  parameters defaulting to `.large`/`.fixed`** (T-1412) — a role at `.fixed` is its own literal at
+  **all twelve** sizes, so the eleven unconverted surfaces drawing `CadenceTagChip` are untouched.
+  Read `CadenceTagChipStyle`'s own note for the three judgements (content scales proportionally, a
+  cap grows additively, overhang-derived spacings shrink); `CadenceTagPickerMetrics` is beside it so
+  the macOS test target can read it. `CadenceTagChipScaleTests` holds both halves.
 
 ## Reference Sections
 

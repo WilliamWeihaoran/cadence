@@ -44,11 +44,40 @@ nonisolated enum CadenceTypographyRole: String, CaseIterable, Sendable {
     case editorTitle
     /// The one field the create sheet exists to fill in.
     ///
-    /// **A documented outlier, not a second opinion this ticket settled.** The composer draws its
-    /// title at 20/semibold while the three editor sheets draw theirs at 22/bold from one constant.
-    /// By this repo's own standard that is a fourth spelling, but changing it is a design decision
-    /// about how loud a draft title is, and T-1364 is about scaling. It is filed rather than
-    /// quietly converged; see `docs/TODO.md`.
+    /// **T-1401, decided: two roles, not one role at two bases.** T-1364 recorded this as a fourth
+    /// spelling of the editor-sheet title and deferred it, because changing a base mid-conversion
+    /// would have made the conversion unreviewable. The question it left was the right one — this
+    /// adapter's whole design is that *a role owns a curve and a default base, not the only base*,
+    /// so `SectionEyebrowLabel.Size.compact` stays 9pt by passing 9 to `sectionLabel` rather than
+    /// by becoming a tenth role. If 20 and 22 differed only in the number, that is what should
+    /// happen here too.
+    ///
+    /// **They differ in three things, and only one of them is the number.**
+    ///
+    /// 1. **The ramp.** `textStyle` is chosen *by size* — this type's own rule, three doc comments
+    ///    up. Apple publishes Title 2 at 22 and Title 3 at 20, so 22 and 20 are not one decision
+    ///    spelled twice; they are the two adjacent rungs of Apple's own title ladder, and each
+    ///    already sits exactly on its rung. Folding the composer into `editorTitle` at base 20
+    ///    would put a Title 3-sized field on Title 2's ceiling and resolve it to 44.5pt at
+    ///    `accessibility5` instead of 47 — a number nobody chose, arrived at by merging.
+    /// 2. **The weight.** `editorTitle` is `.bold`, this is `.semibold`. The `compact` eyebrow
+    ///    precedent passes a **base and nothing else**; merging here would push the weight to the
+    ///    call site as well, leaving the role owning only the ramp — and the ramp is the one of the
+    ///    three it would be getting wrong.
+    /// 3. **What the sheet is.** `editorTitle` is the title of a *form* — the inspector and the two
+    ///    calendar sheets each draw six groups under it. The composer is a one-field sheet whose
+    ///    title is the field, with nothing beneath it to out-shout.
+    ///
+    /// **The ticket's own framing did not survive being checked, and that is worth recording.** It
+    /// argued the split was draft-versus-existing; `iOSCalendarQuickCreateSheet` draws a **draft**
+    /// title at `iOSEditorSheetMetrics.titleSize`, so that line does not separate them. What
+    /// separates them is the ramp and the weight.
+    ///
+    /// The remaining option — converge the composer *to* 22/bold — is a visible design change to a
+    /// shipping screen, which is precisely what T-1364 refused to smuggle into a scaling ticket,
+    /// and it moves the composer's fold arithmetic (`CadenceTaskComposerLayout`) by ~2.4pt of line
+    /// at the default size. Both roles stay. `CadenceTypographyScaleTests.theTwoTitleRolesAreTwoRolesAndNotOneRoleAtTwoBases`
+    /// is what makes a future merge argue with the evidence rather than with the count.
     case composerTitle
     /// Prose: a notes field, a paragraph, anything read rather than scanned.
     case bodyText

@@ -412,6 +412,11 @@ struct iOSTaskTagStrip: View {
     let allTags: [Tag]
     @Binding var newTagName: String
     @Environment(\.modelContext) private var modelContext
+    /// The strip is inside `iOSTaskDetailSheet`, which is a declared scaled root, so both halves
+    /// of the pair are read here and handed to the two spacings that are derived from the chip's
+    /// remove-control overhang (T-1412).
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var typographyScaling
 
     @State private var showPicker = false
     /// **T-1070.** Set when the store refused a chip's `x`. The popover has its own copy for the
@@ -436,12 +441,17 @@ struct iOSTaskTagStrip: View {
 
     private var chips: some View {
         CadenceWrappingHStack(
-            spacing: CadenceTagChipStyle.editableStripSpacing(for: .regular),
+            spacing: CadenceTagChipStyle.editableStripSpacing(
+                for: .regular, at: dynamicTypeSize, scaling: typographyScaling
+            ),
             // Wider than it looks like it needs to be. The chip's remove control carries a 44pt
             // touch target grown past what is drawn, so these two numbers are the clearance that
             // keeps one chip's expanded hit area off the chip beside and below it — see
-            // `CadenceTagChipStyle.editableStripSpacing`.
-            lineSpacing: CadenceTagChipStyle.editableStripLineSpacing(for: .regular)
+            // `CadenceTagChipStyle.editableStripSpacing`. They *shrink* as the reader's text size
+            // grows, because past a point the drawn `x` is bigger than 44 and nothing spills.
+            lineSpacing: CadenceTagChipStyle.editableStripLineSpacing(
+                for: .regular, at: dynamicTypeSize, scaling: typographyScaling
+            )
         ) {
             // The `+` leads rather than trails. Trailing it — which is where macOS puts its
             // equivalent — meant the button moved every time a tag was added or removed, and a
@@ -451,9 +461,18 @@ struct iOSTaskTagStrip: View {
                 showPicker = true
             } label: {
                 Image(systemName: "plus")
-                    .cadenceFont(.controlLabel, base: 11, weight: .bold)
+                    .cadenceFont(.controlLabel, base: CadenceTagPickerMetrics.addButtonGlyphSize, weight: .bold)
                     .foregroundStyle(Theme.dim)
-                    .frame(width: 30, height: 26)
+                    // T-1364 converted the glyph and left the box around it a literal `30 × 26`,
+                    // which is the residual T-1412 closes: the box grows by what the glyph gained.
+                    .frame(
+                        width: CadenceTagPickerMetrics.addButtonWidth(
+                            at: dynamicTypeSize, scaling: typographyScaling
+                        ),
+                        height: CadenceTagPickerMetrics.addButtonHeight(
+                            at: dynamicTypeSize, scaling: typographyScaling
+                        )
+                    )
                     .background(Theme.surfaceElevated.opacity(0.62))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                     .contentShape(Rectangle())
@@ -542,6 +561,11 @@ struct iOSTaskTagPickerPopover: View {
     /// wants: the create sheet holds its array in `@State` and commits nothing until Add is tapped.
     var onCommit: ([Tag]) -> Bool = { _ in true }
     @Environment(\.modelContext) private var modelContext
+    /// **Only the size, not the flag** (T-1412). This panel *installs* `.enabled` below itself, so
+    /// every figure it draws names `.enabled` literally; reading the flag back out of an
+    /// environment it is itself setting would be inheriting the answer one level down, which is
+    /// the thing T-1398's rule exists to stop.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Set when the store refused the tag the field just tried to create. See `addTag()`.
     @State private var tagFailureNotice: String?
 
@@ -564,7 +588,13 @@ struct iOSTaskTagPickerPopover: View {
                             Text("Add Default Tags")
                                 .cadenceFont(.rowTitle)
                                 .foregroundStyle(Theme.blue)
-                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .frame(
+                                    maxWidth: .infinity,
+                                    minHeight: CadenceTagPickerMetrics.rowMinHeight(
+                                        at: dynamicTypeSize, scaling: .enabled
+                                    ),
+                                    alignment: .leading
+                                )
                                 .padding(.horizontal, 12)
                                 .contentShape(Rectangle())
                         }
@@ -575,7 +605,7 @@ struct iOSTaskTagPickerPopover: View {
                         }
                     }
                 }
-                .padding(6)
+                .padding(CadenceTagPickerMetrics.listPadding)
             }
 
             Rectangle()
@@ -588,7 +618,7 @@ struct iOSTaskTagPickerPopover: View {
                     .padding(.top, 8)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: CadenceTagPickerMetrics.rowContentSpacing) {
                 TextField("New tag", text: $newTagName)
                     .textFieldStyle(.plain)
                     .cadenceFont(.fieldLabel)
@@ -596,7 +626,9 @@ struct iOSTaskTagPickerPopover: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .padding(.horizontal, 10)
-                    .frame(minHeight: 40)
+                    .frame(minHeight: CadenceTagPickerMetrics.footerControlSide(
+                        at: dynamicTypeSize, scaling: .enabled
+                    ))
                     .background(Theme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                     .onSubmit(addTag)
@@ -605,7 +637,14 @@ struct iOSTaskTagPickerPopover: View {
                     Image(systemName: "plus")
                         .cadenceFont(.fieldLabel, weight: .bold)
                         .foregroundStyle(Theme.onColor(for: Theme.blue))
-                        .frame(width: 40, height: 40)
+                        .frame(
+                            width: CadenceTagPickerMetrics.footerControlSide(
+                                at: dynamicTypeSize, scaling: .enabled
+                            ),
+                            height: CadenceTagPickerMetrics.footerControlSide(
+                                at: dynamicTypeSize, scaling: .enabled
+                            )
+                        )
                         .background(trimmedNewTagName.isEmpty ? Theme.surface : Theme.blue)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                         .contentShape(Rectangle())
@@ -615,30 +654,32 @@ struct iOSTaskTagPickerPopover: View {
                 .disabled(trimmedNewTagName.isEmpty)
                 .accessibilityLabel("Create tag")
             }
-            .padding(10)
+            .padding(CadenceTagPickerMetrics.footerPadding)
         }
-        .frame(width: 260, height: 340)
+        .frame(
+            width: CadenceTagPickerMetrics.width(at: dynamicTypeSize, scaling: .enabled),
+            height: CadenceTagPickerMetrics.panelHeight(at: dynamicTypeSize, scaling: .enabled)
+        )
         .background(Theme.surfaceElevated)
-        // **T-1398 pinned this one because it was clipping; T-1410 looked at converting it and
-        // left the pin in place. The reason is a component, not a number.**
+        // **T-1398 pinned this panel because it was clipping, T-1410 left the pin in place because
+        // its rows are an unconverted component, and T-1412 converted that component — so this is
+        // the conversion the two of them were waiting for.**
         //
-        // The frame above is rigid in both axes, the rows are `minHeight: 44` and the create button
-        // is a 40x40 square, while the labels inside are already `.cadenceFont(...)` — converted
-        // with the detail sheet that presents them. A custom environment value crosses a `.popover`
-        // (measured; see `CadenceTypographyScaling`), so at `accessibility5` the `+` glyph resolved
-        // to ~38pt inside its 40pt box and the row titles to ~39pt inside 44. At `.fixed` a role
-        // resolves to exactly the literal it replaced, so the panel renders as it did before
-        // T-1364.
+        // The pin was never about this file. Every row here *is* a `CadenceTagChip`, whose size
+        // lives in `CadenceTagChipStyle` and which twelve surfaces across both platforms draw;
+        // converting the panel alone would have produced the other half of the defect T-1364
+        // names — a row grown to hold text that had not moved. The chip takes the reader's text
+        // size now, and it is safe for the eleven surfaces that have not been converted because a
+        // role under `.fixed` resolves to exactly the literal it replaced at every one of the
+        // twelve sizes.
         //
-        // **What stops the conversion is that every row of this list IS a `CadenceTagChip`**, whose
-        // size lives in `CadenceTagChipStyle` and which is drawn by twelve surfaces across both
-        // platforms — task rows, kanban and board cards, note rows, three editable strips and the
-        // macOS filter bar. Converting the chip is that component's ticket, and converting this
-        // panel without it produces the *other* half of the defect T-1364 names: rows growing to
-        // 69pt around a tag name still set at 12. The rule the two halves share is the one this
-        // pin is keeping — convert a panel completely or leave it pinned — so it stays pinned, and
-        // the chip is filed as [[T-1412]].
-        .cadenceFixedTypography()
+        // **The geometry above says `.enabled` literally, and that is the rule rather than a
+        // shortcut.** This panel installs the scope, so consulting `\.cadenceTypographyScaling`
+        // for its own frame would be reading back a value it is itself setting — inheriting the
+        // answer one level down, which is what T-1398 measured to be unsafe across a presentation.
+        // The fonts inside read the scope, the frame states it, and the two cannot disagree
+        // because both come from `CadenceTagPickerMetrics`.
+        .cadenceScaledTypography()
         .presentationCompactAdaptation(.popover)
     }
 
@@ -648,17 +689,21 @@ struct iOSTaskTagPickerPopover: View {
         return Button {
             toggle(tag)
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: CadenceTagPickerMetrics.rowContentSpacing) {
                 CadenceTagChip(tag: tag)
-                Spacer(minLength: 8)
+                Spacer(minLength: CadenceTagPickerMetrics.rowContentSpacing)
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .cadenceFont(.metadata, weight: .semibold)
+                        .cadenceFont(CadenceTagChipStyle.labelRole, weight: .semibold)
                         .foregroundStyle(Theme.blue)
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, CadenceTagPickerMetrics.rowHorizontalPadding)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: CadenceTagPickerMetrics.rowMinHeight(at: dynamicTypeSize, scaling: .enabled),
+                alignment: .leading
+            )
             .background(isSelected ? Theme.blue.opacity(0.12) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .contentShape(Rectangle())
