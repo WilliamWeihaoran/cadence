@@ -28,9 +28,19 @@ on:
       - 'README.md'
   workflow_dispatch:
 
+# Superseded pushes are cancelled on a pull request and NOT on `main` (T-1393). The comment here
+# used to read "cancelled rather than billed", and that premise is false for this repository:
+# `WilliamWeihaoran/cadence` is PUBLIC, and GitHub Actions is free for standard runners on public
+# repos. Measured 2026-09-27 via `/actions/runs/<id>/timing`: a 2,178,000 ms wall-clock run with
+# `macos-latest` jobs bills `MACOS=0ms, UBUNTU=0ms`. There is no bill for cancellation to protect.
+# What it DID cost is in T-1392: `CadenceTests` is the longest job and therefore the one a
+# superseded push kills, while the short jobs finish and make the run list read mostly green --
+# three consecutive pushes produced three `cancelled` outcomes for the only job that matters. On a
+# pull request cancellation still earns its place (a review force-pushes repeatedly and only the
+# last revision matters); on `main` every landing is a distinct revision nobody will push again.
 concurrency:
   group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # T-1332. There are TWO budgets here and the job reports both on every guide, passing or failing.

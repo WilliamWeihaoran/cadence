@@ -89,14 +89,13 @@ under the same bundle id as your debug build. Every rule in this section is abou
   symbol that will not exist in your commit and CI goes red on it. `CadenceTests/CadenceCommentSymbolClaimTests`
   is the cheap pre-commit check and it only fails in a full or targeted run — never in a scoped run
   of your own suites, which is the one run you were going to do. Run it before you commit.
-- **Never push while a CI run is in flight: one push per COMPLETED run** (T-1392). Both workflows
-  set `concurrency: cancel-in-progress: true`, so the next push cancels the run before it finishes,
-  and the job it kills is `CadenceTests`, the longest one. The short jobs finish every time, so
+- **Push promptly on `main`; do not hold a batch** ([[T-1362]]): a held push is a blind window, and
+  a red can sit at HEAD for commits while every scoped run reads green. `main` no longer cancels a
+  run in flight ([[T-1393]]), so a second push queues rather than killing `CadenceTests`. On a pull
+  request it still cancels, deliberately — push there only when the previous run may be discarded.
+  [[T-1392]] measured what the old rule was avoiding and that measurement stands — under
   three consecutive pushes read as mostly green while producing three `cancelled` outcomes for the
-  only job that matters. Holding the push is the other error ([[T-1362]]): a held push is a blind
-  window. Push, let that run complete, then push again. **Do not change the concurrency setting to
-  get around this** — the cancellation is a deliberate billing decision and that trade is the
-  owner's, not yours.
+  only job that matters. The workflow prevents it now, so the rule no longer has to.
 - **`-only-testing:` takes `CadenceTests/<SuiteName>`.** A filename runs zero tests and exits 0; so
   does a nonexistent suite, and so does `Suite/testName`. Verify every name against
   `./scripts/test-suite-index.sh` and **assert the log names the test you meant, by name** — for a
