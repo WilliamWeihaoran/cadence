@@ -375,7 +375,14 @@ struct AppStoreReviewReadinessTests {
                 contentsOf: productRoot.appendingPathComponent(relativePath),
                 encoding: .utf8
             )
-            if contents.contains("NSUbiquitousKeyValueStore") { ubiquitousUsers.append(relativePath) }
+            // T-1429: `codeOnly`, not the raw text. `Models/NoteTemplatePreference.swift` carries a
+            // doc comment headed "Why a new `@Model` and not `NSUbiquitousKeyValueStore`" — the
+            // reasoning for REJECTING the API — and a raw `contains` read that as adopting it, which
+            // turned this test red for recording a decision. The comment stripper exists for this
+            // exact shape (T-1270 fixed 54 copies of it); this scan was written without it.
+            if CadenceSourceScan.codeOnly(contents).contains("NSUbiquitousKeyValueStore") {
+                ubiquitousUsers.append(relativePath)
+            }
         }
         #expect(
             ubiquitousUsers.isEmpty,

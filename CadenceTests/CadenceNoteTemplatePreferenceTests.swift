@@ -71,7 +71,7 @@ struct CadenceNoteTemplatePreferenceTests {
     /// Two devices can each mint a row before either sees the other's; CloudKit forbids the unique
     /// constraint that would stop it. Newest edit wins, `id` breaks a tie, and every device picks
     /// the same one — otherwise each picks its own and they overwrite each other forever.
-    @Test func theNewestRowWinsAndTheIDBreaksATie() {
+    @Test func theNewestTemplateRowWinsAndTheIDBreaksATie() {
         let old = NoteTemplatePreference(overridesRaw: "{}", updatedAt: Date(timeIntervalSince1970: 100))
         let recent = NoteTemplatePreference(
             overridesRaw: customised("checklist", title: "Packing", body: "# Packing"),
@@ -326,7 +326,7 @@ struct CadenceNoteTemplatePreferenceTests {
     /// Adopt writes the local default only when the canonical forms differ, and publish commits
     /// only on a real diff. So a record read down leaves nothing for the publish it might trigger,
     /// which is what keeps the pair from ringing between the two layers forever.
-    @Test func adoptingLeavesNothingToPublish() throws {
+    @Test func adoptingATemplateRowLeavesNothingToPublish() throws {
         let container = try CadenceTestStore.container()
         let context = ModelContext(container)
         try Store.write(

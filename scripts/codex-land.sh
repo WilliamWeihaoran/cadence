@@ -16,9 +16,34 @@
 # means one commit silently carries the other's half-finished work -- no refusal, no declined hunk.
 # A separate worktree makes that impossible for files nobody shares; the lease is what keeps the
 # sharing from happening in the first place.
+#
+# GLOBBING IS OFF IN THIS SCRIPT, DELIBERATELY (T-1428). The lease is a list of shell globs, and
+# `for pat in $lease` performs PATHNAME EXPANSION on it before the pattern is ever used: with
+# three `iOSTaskCollection*.swift` files on disk, the lease line stopped being a pattern and became
+# those three literal names. The failure shape is the worst available -- a path that already exists
+# is inside its own expansion and passes, so the guard looks correct for every existing file and
+# refuses only a NEW one, which is exactly the case a lease exists to govern. It refused Codex's
+# first branch and read as Codex violating the protocol. `set -f` disables pathname expansion and
+# does NOT affect `case` pattern matching, which is what actually does the lease check.
+set -f
+
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+
+# `/usr/bin/git` is an xcrun shim and xcrun refuses to run inside an App Sandbox, so from the
+# sandboxed test host every git call fails with "cannot be used within an App Sandbox" on stderr
+# and nothing else -- which reads like a broken repository rather than a missing tool. Same probe
+# `scripts/worktree-drift.sh` and `scripts/agent-commit.sh` carry, for the same reason: this script
+# is run by `CadenceGuardScriptSelftestTests` from inside that host. Written with `[ ]` rather than
+# `[[ ]]` because this script is `#!/bin/sh`, unlike the zsh siblings it copies the probe from.
+if ! git --version >/dev/null 2>&1; then
+    for _candidate in /Applications/Xcode.app/Contents/Developer/usr/bin /opt/homebrew/bin /usr/local/bin; do
+        [ -x "$_candidate/git" ] || continue
+        "$_candidate/git" --version >/dev/null 2>&1 || continue
+        PATH="$_candidate:$PATH"; export PATH; break
+    done
+fi
 cd "$ROOT" || exit 2
 DOC=docs/CODEX_WORKTREE.md
 INBOX=docs/CODEX_LEDGER_INBOX.md
@@ -143,18 +168,35 @@ cmd_selftest() {
     ck() { if [ "$2" = "$3" ]; then pass=$((pass+1)); printf '  ok    %s\n' "$1";
            else fail=$((fail+1)); printf '  FAIL  %s (got %s, want %s)\n' "$1" "$2" "$3"; fi; }
 
-    tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-land-selftest-XXXXXX") || return 2
+    # A fixture that cannot be built must SAY SO. This block used to end every step with
+    # `|| return 2` and send git's stderr to /dev/null, so a host where the fixture could not be
+    # created reported a bare exit 2 and the Swift wrapper could only say "nothing says a check
+    # ran". That is the same silence T-1343 spent a day on. Each step now names itself and carries
+    # git's own words out, which is what turns "exited 2" into a diagnosis.
+    setup_fail() { printf 'SELFTEST FIXTURE FAILED at: %s\n' "$1" >&2; [ -n "$2" ] && printf '  %s\n' "$2" >&2; return 2; }
+
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-land-selftest-XXXXXX") \
+        || { setup_fail "mktemp -d under TMPDIR=${TMPDIR:-/tmp}"; return 2; }
     trap 'rm -rf "$tmp"' EXIT INT TERM
     ws="$tmp/repo"
-    git init -q "$ws" 2>/dev/null || return 2
-    ( cd "$ws" && git config user.email t@t && git config user.name t \
+    err=$(git init -q "$ws" 2>&1) || { setup_fail "git init $ws" "$err"; return 2; }
+    err=$( ( cd "$ws" && git config user.email t@t && git config user.name t \
       && mkdir -p docs scripts Cadence/iOS \
       && printf '# x\n\n```lease\nCadence/iOS/iOSTaskRow*.swift\n```\n' > docs/CODEX_WORKTREE.md \
       && printf 'seed\n' > docs/TODO.md && printf 'seed\n' > docs/TODO_DONE.md \
+      && printf 'x\n' > Cadence/iOS/iOSTaskRowExisting.swift \
       && cp "$ROOT/scripts/codex-land.sh" scripts/ && chmod +x scripts/codex-land.sh \
-      && git add -A && git commit -qm base && git branch -M main ) >/dev/null 2>&1 || return 2
+      && git add -A && git commit -qm base && git branch -M main ) 2>&1 ) \
+      || { setup_fail "seeding the fixture repo (ROOT=$ROOT)" "$err"; return 2; }
 
-    run() { ( cd "$ws" && ./scripts/codex-land.sh "$@" >/dev/null 2>&1; echo $? ); }
+    # Invoked through `sh`, not exec'd. The App-Sandboxed test host can WRITE the copy but not
+    # execute it -- every `./scripts/codex-land.sh` came back 126 ("found, not executable") once
+    # the git shim was solved, which looks nothing like a sandbox restriction in the output. This
+    # is the same workaround the Swift wrapper already uses on this script from the outside
+    # (`CadenceSelftestRun.of(..., interpreter: "/bin/sh")`); the fixture needed it on the inside
+    # too. The real script's executable bit is unaffected and is still pinned by
+    # `allGuardScriptsExistAndAreExecutable`.
+    run() { ( cd "$ws" && sh ./scripts/codex-land.sh "$@" >/dev/null 2>&1; echo $? ); }
 
     ck "a lease with patterns is readable" "$(run lease)" 0
 
@@ -185,6 +227,23 @@ cmd_selftest() {
       && printf -- '- [T-9002] **new**\n' > docs/CODEX_LEDGER_INBOX.md \
       && git add -A && git commit -qm t ) >/dev/null 2>&1
     ck "a branch inside the lease with an entry passes" "$(run review codex/good)" 0
+
+    # T-1428. The check above passes even with pathname expansion left on, because the fixture's
+    # lease glob matched nothing on disk and so stayed a pattern. This one is the real shape: a
+    # file matching the glob is ALREADY committed (iOSTaskRowExisting.swift), so `for pat in $lease`
+    # expands the lease line into that one literal name -- and a NEW sibling under the same glob
+    # falls outside its own lease. Existing files keep passing, which is why nothing noticed until
+    # Codex's first branch added a file. Without `set -f` at the top this returns 3, not 0.
+    ( cd "$ws" && git checkout -q main && git checkout -qb codex/newsibling \
+      && mkdir -p Cadence/iOS && printf 'x\n' > Cadence/iOS/iOSTaskRowNew.swift \
+      && printf -- '- [T-9003] **new sibling**\n' > docs/CODEX_LEDGER_INBOX.md \
+      && git add -A && git commit -qm t ) >/dev/null 2>&1
+    # ...and the review must run from `main`, which is where the coordinator actually stands. With
+    # the branch checked out the new file is on disk, so the lease glob expands to include IT too
+    # and the bug hides -- the first version of this check was green against the mutation for
+    # exactly that reason. Reviewing a branch means reviewing files you do NOT have.
+    ( cd "$ws" && git checkout -q main ) >/dev/null 2>&1
+    ck "a NEW file under a glob that also matches an existing file passes" "$(run review codex/newsibling)" 0
 
     ( cd "$ws" && git checkout -q main \
       && printf '# x\n\n```lease\n```\n' > docs/CODEX_WORKTREE.md \

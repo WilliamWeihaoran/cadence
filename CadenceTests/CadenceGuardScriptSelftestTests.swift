@@ -704,6 +704,44 @@ struct CadenceGuardScriptSelftestTests {
         #expect(complaints.isEmpty, "./scripts/codex-inbox.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
+    /// Every check `scripts/codex-land.sh`'s selftest names (T-1426). It is `#!/bin/sh` — not bash
+    /// like `codex-inbox.sh`, not zsh like the `agent-commit.sh` family — so it is run under
+    /// `/bin/sh` here, and `bash -n` on it proves nothing about the shell that will execute it.
+    ///
+    /// The last two are the ones to keep if the list ever has to shrink, and neither is decorative.
+    ///
+    /// "an empty lease refuses rather than allowing all" is the fail-open half: a lease block that
+    /// a parser change stops finding is indistinguishable, at the call site, from a branch that
+    /// touched nothing it should not have.
+    ///
+    /// "a NEW file under a glob that also matches an existing file passes" is T-1428, and it is
+    /// here because the guard was wrong in the one direction nobody checks. The lease is a list of
+    /// globs and `for pat in $lease` performed PATHNAME EXPANSION on it: with three
+    /// `iOSTaskCollection*.swift` files on disk the lease line stopped being a pattern and became
+    /// those three literal names. Every path that already existed was inside its own expansion and
+    /// passed, so the guard looked perfect — and it refused only a **new** file, which is precisely
+    /// what a lease is for. It fired on Codex's first branch and read as Codex breaking the
+    /// protocol. The fixture has to review from `main` for this to reproduce: with the branch
+    /// checked out the new file is on disk too, the glob expands to include it, and the check goes
+    /// green against the bug. The first draft of it did exactly that.
+    static let codexLandChecks = [
+        "a lease with patterns is readable",
+        "an empty branch is VACUOUS, not clean",
+        "editing the ledger is refused",
+        "a path outside the lease is refused",
+        "code with no inbox entry is refused",
+        "an id the ledger already has is refused",
+        "a branch inside the lease with an entry passes",
+        "a NEW file under a glob that also matches an existing file passes",
+        "an empty lease refuses rather than allowing all",
+    ]
+
+    @Test func theCodexLandGuardsOwnChecksStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/codex-land.sh", interpreter: "/bin/sh")
+        let complaints = run.complaints(requiring: Self.codexLandChecks)
+        #expect(complaints.isEmpty, "./scripts/codex-land.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
     /// T-780. Runs entirely inside a throwaway git repository under `$TMPDIR`, like the drift
     /// guard's: it arms `core.hooksPath` **there**, never here, so it says nothing about — and does
     /// nothing to — whether the real checkout has the hook installed. About a second.
@@ -2218,6 +2256,7 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/worktree-drift.sh",
             "scripts/ledger-lag-check.sh",
             "scripts/codex-inbox.sh",
+            "scripts/codex-land.sh",
             "scripts/xcb.sh",
             ".githooks/pre-commit",
             "scripts/ledger-view.sh",
