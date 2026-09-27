@@ -415,3 +415,23 @@ pins exactly two environments in that file.
   **layout** — sidebar and columns against a tab bar and one pane — and should not differ in how a
   row, a chip, a header or a picker looks or behaves. Default to one view parameterised by size
   class over an `iPhoneFoo` beside an `iPadFoo`.
+
+## Why A Sweep Needs Two Fixtures And A Floor
+
+Displaced from `Cadence/Shared/AGENTS.md` on 2026-09-27, when that guide reached its 199-line cap
+and the warning band fired on it. The guide keeps both rules; the arguments are here.
+
+**The reused-name half.** The test log prints the bare function name with no suite qualifier, so a
+survivor in your suite is masked by a pass in someone else's and reads as a kill — mutation
+evidence that is ambiguous without saying so. That is enforced now, which is why the guide states
+it as a fact rather than a habit: `everyTestFunctionNameInTheTargetIsUniqueAcrossSuites` fails on a
+repeated name, so `grep -c '✔ Test <name>()'` returning 1 is a property of the target rather than
+something to re-check by hand.
+
+**The instrument half.** `CadenceScanInstrument`'s initializer takes a positive and a negative
+fixture and runs the detector against both, so a detector that has stopped discriminating cannot be
+built. The failure it exists for is a real one: a blinded whole-file-fence detector once reported no
+offenders across a repository that was enforcing nothing. `sweep`'s `atLeast:` and `including:` are
+not defaulted for the same reason — a walk with no non-vacuity claim should be a compile failure,
+not a green run over zero files. Use **literal** fixtures rather than ones read out of the tree: a
+fixture read from the tree can be retuned by the very edit that breaks the rule it guards.

@@ -62,20 +62,14 @@ Rules:
   `-only-testing:.../ThatSuite` while still passing in a full run — so every mutation reads as
   a survivor. Check the scoped run's test count, and ask `scripts/test-suite-index.sh <name>` where
   the test actually landed rather than assuming it is where you typed it.
-- **A test name reused in another suite makes mutation evidence ambiguous**, because the log
-  prints the bare function name with no suite qualifier: a survivor in your suite is masked by a
-  pass in someone else's and reads as a kill. This is enforced now —
-  `CadenceTestTargetHygieneTests.everyTestFunctionNameInTheTargetIsUniqueAcrossSuites` fails on a
-  repeated name, so `grep -c '✔ Test <name>()'` returning 1 is a property of the target rather than
-  something to re-check by hand. When it does fail, `scripts/test-suite-index.sh <name>` prints the
-  suites involved.
-- **Write a sweep over a `CadenceScanInstrument`, not over a bare predicate.** Its initializer takes
-  a positive and a negative fixture and runs the detector against both, so a detector that has
-  stopped discriminating cannot be built — the failure a blinded whole-file-fence detector produced,
-  where the sweep reported no offenders across a repo that was enforcing nothing. `sweep`'s
-  `atLeast:` and `including:` arguments are not defaulted, so a walk with no non-vacuity claim is a
-  compile failure rather than a green run over zero files. Use literal fixtures: one read out of the
-  tree can be retuned by the same edit that breaks the rule.
+- **A test name reused in another suite makes mutation evidence ambiguous**, because the log prints
+  the bare name with no suite qualifier. Enforced by
+  `CadenceTestTargetHygieneTests.everyTestFunctionNameInTheTargetIsUniqueAcrossSuites`; when it
+  fails, `scripts/test-suite-index.sh <name>` prints the suites involved.
+- **Write a sweep over a `CadenceScanInstrument`, not over a bare predicate**, and give it literal
+  fixtures. `sweep`'s `atLeast:` and `including:` are not defaulted, so a walk with no non-vacuity
+  claim is a compile failure rather than a green run over zero files. Both arguments in full:
+  `../../docs/SHARED_AGENTS_REFERENCE.md`, "Why a sweep needs two fixtures and a floor".
 - **Read `CadenceSourceScan.codeOnly(_:)`, not raw text**, for anything structural. It blanks string
   literals as well as comments, in one linear pass, so a scan cannot count its own needles as code —
   and it keeps the source's length, so offsets still point where they did.
