@@ -424,6 +424,79 @@ struct MarkdownImageDropAffordanceTests {
         #expect(textView.draggingEntered(info) == .copy)
     }
 
+    /// **A drag is one gesture, so the editor must give it one answer** ([[T-1491]]).
+    ///
+    /// AppKit calls `draggingEntered` once, as the pointer crosses into the view, and
+    /// `draggingUpdated` on every movement after that. The badge the user actually watches while
+    /// they aim the drop is therefore the *second* one's, and until [[T-1491]] the editor
+    /// overrode only the first: Cadence's rule answered for one frame and `super` answered for the
+    /// rest of the drag. At a host that has declined images that is invisible, because the rule
+    /// answers `nil` there and `super` answers both calls; at a host that accepts them it reversed
+    /// [[T-478]] — `.copy` on entry, the no-drop cursor from the first movement on, over an editor
+    /// that would have taken the picture.
+    ///
+    /// **The assertion is that the editor's two answers agree, and nothing about what AppKit's
+    /// do** ([[T-1296]]). The payload is one the editor's own rule claims, so after the fix both
+    /// answers are Cadence's and `super` is consulted by neither — the equality holds by
+    /// construction on any toolchain. What `super` would have said is read into the failure
+    /// message, which is the only place a framework answer belongs.
+    @Test func theEditorsDragAnswerIsTheSameOnEntryAndOnEveryMoveAfterIt() {
+        let (window, textView) = makeWindowedTextViewAppKitHasRegisteredFor(allowsImages: true)
+        defer { window.contentView = nil }
+        let board = draggedBitmap("updated.accept")
+        let info = MarkdownDropInfo(pasteboard: board, window: window)
+
+        let entered = textView.draggingEntered(info)
+        let updated = textView.draggingUpdated(info)
+        let offered = board.availableType(from: textView.registeredDraggedTypes)?.rawValue ?? "nothing"
+
+        #expect(entered == .copy, "the accepting host stopped claiming a dragged bitmap on entry")
+        #expect(
+            updated == entered,
+            """
+            The editor claimed this drag as \(entered.rawValue) when the pointer entered and \
+            \(updated.rawValue) when it moved (AppKit offered the payload as: \(offered)). \
+            `draggingUpdated` draws the badge for all but the first frame of a drag, so the two \
+            overrides have to read the same rule — see `markdownImageDropOperation(for:)`.
+            """
+        )
+    }
+
+    /// And the refusing host is untouched by that: it claims neither call, so `super` still
+    /// answers both and [[T-1447]]'s deferral is exactly where it was.
+    ///
+    /// This asserts Cadence's decision — `markdownImageDropOperation(for:)` answers `nil` on both
+    /// paths — rather than `super`'s verdict, which is [[T-1418]]'s to observe and not to pin.
+    @Test func aRefusingHostStillDefersBothDragAnswersToAppKit() throws {
+        let (board, url) = try draggedImageFile("updated.refuse", filename: "drop-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let (window, textView) = makeWindowedTextViewAppKitHasRegisteredFor(allowsImages: false)
+        defer { window.contentView = nil }
+
+        #expect(textView.markdownImageDropOperation(for: board) == nil)
+        let info = MarkdownDropInfo(pasteboard: board, window: window)
+        #expect(textView.draggingUpdated(info) == textView.draggingEntered(info))
+    }
+
+    /// The wire, so neither override can quietly stop reading the rule the other one reads.
+    ///
+    /// Both of the above drive real methods; this is what stops a future edit satisfying them by
+    /// making `draggingUpdated` call `draggingEntered` — which would answer `super.draggingEntered`
+    /// on the fall-through, and so move the caret as though the pointer had just arrived on every
+    /// mouse movement of every text drag.
+    @Test func bothDragOverridesReadTheSameRuleAndFallThroughToTheirOwnSuper() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift")
+        )
+        let entered = try #require(CadenceSourceScan.functionBody(named: "draggingEntered", in: source))
+        let updated = try #require(CadenceSourceScan.functionBody(named: "draggingUpdated", in: source))
+        #expect(entered.contains("markdownImageDropOperation(for: sender.draggingPasteboard)"))
+        #expect(updated.contains("markdownImageDropOperation(for: sender.draggingPasteboard)"))
+        #expect(entered.contains("super.draggingEntered(sender)"))
+        #expect(updated.contains("super.draggingUpdated(sender)"))
+        #expect(updated.contains("super.draggingEntered") == false)
+    }
+
     /// **`importsGraphics` is what refuses the drop, so it is the one line that must never be
     /// written** ([[T-1418]]).
     ///

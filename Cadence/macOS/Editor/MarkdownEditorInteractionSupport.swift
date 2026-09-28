@@ -191,6 +191,34 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         markdownImageDropOperation(for: sender.draggingPasteboard) ?? super.draggingEntered(sender)
     }
 
+    /// **The same answer, for the rest of the drag** (T-1491).
+    ///
+    /// `draggingEntered` is called once, when the pointer crosses into the view; `draggingUpdated`
+    /// is called on every mouse-move after that, so it is what draws the badge for all but the
+    /// first frame of a drag and what AppKit reads before it offers `performDragOperation`. Until
+    /// this existed the editor overrode only the first of the two, so Cadence's rule was consulted
+    /// once and `super` answered for the remainder.
+    ///
+    /// That was invisible at a **refusing** host — `markdownImageDropOperation(for:)` answers `nil`
+    /// there and `super` answers both calls, identically — and wrong at an **accepting** one.
+    /// Measured 2026-09-28 on Xcode 27, one windowed view, one TIFF-only board: `draggingEntered`
+    /// gave `.copy` from Cadence's rule and `draggingUpdated` gave `[]` from `super`, because
+    /// `super` refuses a bitmap whenever `importsGraphics` is off and that property is off
+    /// deliberately (T-1418, `nothingInTheAppTurnsOnImportsGraphics`). So a screenshot dragged into
+    /// a note showed the copy badge for one frame and the no-drop cursor from the first movement
+    /// on, at the host whose whole job is to take it — [[T-478]]'s defect with its sign reversed.
+    ///
+    /// `super.draggingUpdated` and not `super.draggingEntered` on the fall-through: a drag Cadence
+    /// does not claim must reach the same `NSTextView` method AppKit would have called, which is
+    /// the one that moves the insertion-point caret under the pointer.
+    ///
+    /// **This is deliberately not a refusal.** [[T-1447]] asked whether a refusing host should
+    /// answer `[]` here for an image payload rather than defer; it should not, and the arithmetic
+    /// is in that entry. `nil` still means `super` decides, at both hosts, for every payload.
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        markdownImageDropOperation(for: sender.draggingPasteboard) ?? super.draggingUpdated(sender)
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingAreaForHover {
