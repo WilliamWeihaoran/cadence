@@ -587,15 +587,19 @@ struct CalDayColumn: View {
             showHalfHourMarks: showHalfHourMarks,
             showWorkHoursHighlight: true,
             usesTaskPanelForTaskCreation: false,
-            onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in
+            // This column's popover composes in place (`usesTaskPanelForTaskCreation: false`),
+            // so its Task tab has no date, time or priority field and the draft carries the slot
+            // it was seeded with. `createTask` writes through `SchedulingActions.insertTask`,
+            // which takes no priority — see T-1433's ledger line.
+            onCreateTask: { draft in
                 createTask(
-                    title: title,
-                    startMin: startMin,
-                    endMin: endMin,
-                    containerSelection: containerSelection,
-                    sectionName: sectionName,
-                    notes: notes,
-                    subtaskTitles: subtaskTitles
+                    title: draft.title,
+                    startMin: draft.startMin,
+                    endMin: draft.endMin,
+                    containerSelection: draft.container,
+                    sectionName: draft.sectionName,
+                    notes: draft.notes,
+                    subtaskTitles: draft.subtaskTitles
                 )
             },
             onCreateBundle: { title, startMin, endMin, selectedTasks in

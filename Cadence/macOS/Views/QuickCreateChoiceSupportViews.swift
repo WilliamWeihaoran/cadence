@@ -2,59 +2,112 @@
 import SwiftUI
 import EventKit
 
-struct QuickCreateTaskPanelHandoffView: View {
-    let dateKey: String
-    let startMin: Int
-    let endMin: Int
-    let containerName: String
+/// The Task tab's inspector when the popover hands the draft on to the task panel.
+///
+/// **T-1433, owner-reported.** This was `QuickCreateTaskPanelHandoffView`: a blue
+/// `rectangle.on.rectangle.angled` tile headed *"Use the task panel"*, a recessed card of three
+/// read-only `Text` rows — the date, the time range and the list name — and a tip explaining that
+/// typing `~` in the title was how you routed the task to a list *before opening the panel*.
+///
+/// The three rows described state the reader could not act on, and the blurb and the tip existed
+/// to say where to go and act on it. So the fields are editable here now, and the blurb and the
+/// tip are not deleted for tidiness: making the list editable and adding priority is what stops
+/// them being **true**. `~` routing itself is untouched — `TildeContainerPicker` still runs in the
+/// title field above; an editable List row is simply the discoverable form of the same thing.
+///
+/// Date and time lead, per the owner. Both are the app's existing controls rather than new ones:
+/// `CadenceDatePicker` and `CadenceStartTimeFieldRow`, which is also why the row idiom here is the
+/// shared `CadenceFieldRow` rather than this file's `QuickCreateDetailRow` — the start-time row
+/// brings its own label, and a card with two row shapes in it is the drift, not the fix.
+struct QuickCreateTaskSlotInspectorView: View {
+    @Binding var dateKey: String
+    @Binding var startMin: Int
+    @Binding var selectedContainer: TaskContainerSelection
+    @Binding var selectedSectionName: String
+    @Binding var priority: TaskPriority
+
+    let contexts: [Context]
+    let areas: [Area]
+    let projects: [Project]
+    let availableSections: [String]
+    let onContainerChanged: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "rectangle.on.rectangle.angled")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .frame(width: 34, height: 34)
-                    .background(Theme.blue.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Use the task panel")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Continue to the shared task creator with this slot prefilled.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        QuickCreateCompactSection {
+            CadenceFieldRow(label: "Date", systemImage: "calendar", color: Theme.blue) {
+                CadenceDatePicker(selection: dateSelection)
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                handoffDetail(icon: "calendar", text: DateFormatters.relativeDate(from: dateKey))
-                handoffDetail(icon: "clock", text: TimeFormatters.timeRange(startMin: startMin, endMin: endMin))
-                handoffDetail(icon: "tray", text: containerName)
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surfaceElevated.opacity(0.72))
-            .clipShape(RoundedRectangle(cornerRadius: 9))
+            CadenceStartTimeFieldRow(minutes: $startMin)
 
-            Text("Tip: type `~` in the title to route the task to a list before opening the panel.")
-                .font(.system(size: 10.5))
-                .foregroundStyle(Theme.dim.opacity(0.82))
+            CadenceFieldRow(label: "List", systemImage: "tray") {
+                QuickCreateContainerFieldControls(
+                    selection: $selectedContainer,
+                    sectionName: $selectedSectionName,
+                    contexts: contexts,
+                    areas: areas,
+                    projects: projects,
+                    availableSections: availableSections,
+                    onContainerChanged: onContainerChanged
+                )
+            }
+
+            // `exclamationmark.circle.fill`, not a flag: the iOS composer's priority tile already
+            // reads that glyph, and T-1278 recorded the owner choosing the mark language over a
+            // flag for priority across both platforms.
+            CadenceFieldRow(label: "Priority", systemImage: "exclamationmark.circle.fill") {
+                TaskPriorityPicker(selection: $priority, trigger: .value)
+            }
         }
     }
 
-    private func handoffDetail(icon: String, text: String) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: 13)
-            Text(text)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.muted)
-                .lineLimit(1)
+    /// The stored form is the repo's `yyyy-MM-dd` key; the picker speaks `Date`. Round-tripping
+    /// through `DateFormatters` in the binding is what keeps the key canonical no matter which
+    /// day the calendar popover lands on.
+    private var dateSelection: Binding<Date> {
+        Binding(
+            get: { DateFormatters.date(from: dateKey) ?? Date() },
+            set: { dateKey = DateFormatters.dateKey(from: $0) }
+        )
+    }
+}
+
+/// The List field's controls — the container chip, plus the section chip when the chosen list has
+/// sections. Shared by the two Task composers in this file so the pair cannot drift apart the way
+/// the handoff card's read-only `tray` row drifted from the editable one beside it.
+struct QuickCreateContainerFieldControls: View {
+    @Binding var selection: TaskContainerSelection
+    @Binding var sectionName: String
+
+    let contexts: [Context]
+    let areas: [Area]
+    let projects: [Project]
+    let availableSections: [String]
+    let onContainerChanged: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 6) {
+            ContainerPickerBadge(
+                selection: $selection,
+                contexts: contexts,
+                areas: areas,
+                projects: projects
+            )
+            .onChange(of: selection) { onContainerChanged() }
+
+            if showsSectionPicker {
+                TaskSectionPickerBadge(
+                    selection: $sectionName,
+                    sections: availableSections
+                )
+            }
+        }
+    }
+
+    private var showsSectionPicker: Bool {
+        switch selection {
+        case .inbox: return false
+        case .area, .project: return true
         }
     }
 }
@@ -81,22 +134,15 @@ struct QuickCreateTaskDetailsView: View {
 
             QuickCreateCompactSection {
                 QuickCreateDetailRow(title: "List", icon: "tray") {
-                    HStack(alignment: .center, spacing: 6) {
-                        ContainerPickerBadge(
-                            selection: $selectedContainer,
-                            contexts: contexts,
-                            areas: areas,
-                            projects: projects
-                        )
-                        .onChange(of: selectedContainer) { onContainerChanged() }
-
-                        if showsSectionPicker {
-                            TaskSectionPickerBadge(
-                                selection: $selectedSectionName,
-                                sections: availableSections
-                            )
-                        }
-                    }
+                    QuickCreateContainerFieldControls(
+                        selection: $selectedContainer,
+                        sectionName: $selectedSectionName,
+                        contexts: contexts,
+                        areas: areas,
+                        projects: projects,
+                        availableSections: availableSections,
+                        onContainerChanged: onContainerChanged
+                    )
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -135,13 +181,6 @@ struct QuickCreateTaskDetailsView: View {
             .padding(.vertical, 8)
             .background(Theme.surfaceElevated.opacity(0.72))
             .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-    }
-
-    private var showsSectionPicker: Bool {
-        switch selectedContainer {
-        case .inbox: return false
-        case .area, .project: return true
         }
     }
 

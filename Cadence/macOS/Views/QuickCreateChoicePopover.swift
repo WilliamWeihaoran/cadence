@@ -3,13 +3,43 @@ import SwiftUI
 import EventKit
 import SwiftData
 
+/// Everything the quick-create popover's Task tab decides, in one value.
+///
+/// **T-1433.** It used to hand back five loose arguments and let the canvas supply the slot from
+/// the ghost it had drawn, because the popover's date and time were `Text`. They are fields now —
+/// the owner asked for editable date and time at the top of the inspector — so the slot the user
+/// confirms is the popover's, not the drag's, and a sixth, seventh and eighth positional argument
+/// on a closure three hosts pass through is how call sites start transposing them.
+struct QuickCreateTaskDraft {
+    var title: String
+    /// `yyyy-MM-dd`, the repo's persisted form.
+    var dateKey: String
+    var startMin: Int
+    var endMin: Int
+    var container: TaskContainerSelection
+    var sectionName: String
+    var priority: TaskPriority
+    var notes: String
+    var subtaskTitles: [String]
+
+    /// Moving the start moves the whole slot: the end follows by the duration the drag drew,
+    /// rather than the block growing or shrinking behind a control that never named a duration.
+    ///
+    /// Clamped to the end of the day, because the time field offers every quarter hour up to
+    /// 23:45 and the drag it is seeded from cannot reach past midnight. Floored at five minutes
+    /// for the same reason `SchedulePanel` floors the estimate it derives from this.
+    static func endMinute(forStart start: Int, holdingDuration duration: Int) -> Int {
+        min(24 * 60, start + max(5, duration))
+    }
+}
+
 struct QuickCreateChoicePopover: View {
     enum Mode { case timeBlock, calendarEvent, bundle }
 
     let startMin: Int
     let endMin: Int
     let dateKey: String
-    let onCreateTask: (String, TaskContainerSelection, String, String, [String]) -> Void
+    let onCreateTask: (QuickCreateTaskDraft) -> Void
     let onCreateBundle: ((String, [AppTask]) -> Void)?
     let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
@@ -34,6 +64,12 @@ struct QuickCreateChoicePopover: View {
     @State private var subtaskDraft = ""
     @State private var subtaskTitles: [String] = []
     @State private var selectedContainer: TaskContainerSelection = .inbox
+    @State private var selectedPriority: TaskPriority = .none
+    /// The Task tab's own slot, seeded from the drag and editable from T-1433's inspector. The
+    /// Event and Block tabs still create the range the ghost drew: their hosts take the slot as
+    /// arguments the popover never sees.
+    @State private var draftDateKey: String
+    @State private var draftStartMin: Int
     @State private var selectedSectionName: String = TaskSectionDefaults.defaultName
     @State private var tildeMode: Bool = false
     @State private var tildeSearchQuery = ""
@@ -41,14 +77,22 @@ struct QuickCreateChoicePopover: View {
     @State private var selectedBundleTaskIDs: [UUID] = []
     @FocusState private var focused: Bool
 
-    private var usesCalendarCreationPanel: Bool {
-        !usesTaskPanelForTaskCreation
+    /// The length of the slot the drag drew, which the Task tab's start-time field moves rather
+    /// than resizes.
+    private var slotDurationMinutes: Int {
+        endMin - startMin
     }
 
+    private var draftEndMin: Int {
+        QuickCreateTaskDraft.endMinute(forStart: draftStartMin, holdingDuration: slotDurationMinutes)
+    }
+
+    /// One height for the Task tab now that both spellings of it compose rather than one of them
+    /// pointing elsewhere.
     private var modeFormMinHeight: CGFloat {
         switch mode {
         case .timeBlock:
-            return usesCalendarCreationPanel ? 246 : 188
+            return 246
         case .calendarEvent:
             return 232
         case .bundle:
@@ -57,15 +101,14 @@ struct QuickCreateChoicePopover: View {
     }
 
     private var popoverWidth: CGFloat {
-        if mode == .bundle { return 404 }
-        return usesCalendarCreationPanel ? 392 : 304
+        mode == .bundle ? 404 : 392
     }
 
     init(
         startMin: Int,
         endMin: Int,
         dateKey: String,
-        onCreateTask: @escaping (String, TaskContainerSelection, String, String, [String]) -> Void,
+        onCreateTask: @escaping (QuickCreateTaskDraft) -> Void,
         onCreateBundle: ((String, [AppTask]) -> Void)? = nil,
         onCreateEvent: ((String, String, String) -> Void)?,
         onCancel: @escaping () -> Void,
@@ -82,18 +125,21 @@ struct QuickCreateChoicePopover: View {
         self.onCancel = onCancel
         _createFailureNotice = createFailureNotice
         self.usesTaskPanelForTaskCreation = usesTaskPanelForTaskCreation
+        _draftDateKey = State(initialValue: dateKey)
+        _draftStartMin = State(initialValue: startMin)
         let initialMode: Mode = defaultsToCalendarEvent && onCreateEvent != nil ? .calendarEvent : .timeBlock
         _mode = State(initialValue: initialMode)
     }
 
+    /// **T-1433 deduped the time display.** This opened with a bare
+    /// `TimeFormatters.timeRange` above the Task/Event/Block control while every tab below it
+    /// drew the same range again — the handoff card's `clock` row, and `QuickCreateSlotSummary`
+    /// on the other two. The owner's instruction was to move the date and time to the top of the
+    /// inspector, and moving them under a header that already said one of them would have left
+    /// two time displays rather than one. The header's copy is the one that went: the tab owns
+    /// the slot, and on the Task tab it is now editable.
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !usesCalendarCreationPanel {
-                Text(TimeFormatters.timeRange(startMin: startMin, endMin: endMin))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-            }
-
             modeSelector
 
             VStack(alignment: .leading, spacing: 10) {
@@ -141,11 +187,17 @@ struct QuickCreateChoicePopover: View {
                 }
 
                 if mode == .timeBlock && usesTaskPanelForTaskCreation {
-                    QuickCreateTaskPanelHandoffView(
-                        dateKey: dateKey,
-                        startMin: startMin,
-                        endMin: endMin,
-                        containerName: selectedContainerName
+                    QuickCreateTaskSlotInspectorView(
+                        dateKey: $draftDateKey,
+                        startMin: $draftStartMin,
+                        selectedContainer: $selectedContainer,
+                        selectedSectionName: $selectedSectionName,
+                        priority: $selectedPriority,
+                        contexts: contexts,
+                        areas: areas,
+                        projects: projects,
+                        availableSections: availableSections,
+                        onContainerChanged: normalizeSelectedSection
                     )
                 } else if mode == .timeBlock {
                     QuickCreateTaskDetailsView(
@@ -231,7 +283,19 @@ struct QuickCreateChoicePopover: View {
         if mode == .timeBlock {
             let pendingSubtask = subtaskDraft.trimmingCharacters(in: .whitespacesAndNewlines)
             let resolvedSubtasks = pendingSubtask.isEmpty ? subtaskTitles : subtaskTitles + [pendingSubtask]
-            onCreateTask(title, selectedContainer, selectedSectionName, notes, resolvedSubtasks)
+            onCreateTask(
+                QuickCreateTaskDraft(
+                    title: title,
+                    dateKey: draftDateKey,
+                    startMin: draftStartMin,
+                    endMin: draftEndMin,
+                    container: selectedContainer,
+                    sectionName: selectedSectionName,
+                    priority: selectedPriority,
+                    notes: notes,
+                    subtaskTitles: resolvedSubtasks
+                )
+            )
         } else if mode == .bundle {
             onCreateBundle?(
                 TaskBundle.storedTitle(title),
@@ -252,17 +316,6 @@ struct QuickCreateChoicePopover: View {
 
     private var primaryActionTitle: String {
         mode == .timeBlock && usesTaskPanelForTaskCreation ? "Open Task Panel" : "Create"
-    }
-
-    private var selectedContainerName: String {
-        switch selectedContainer {
-        case .inbox:
-            return "Inbox"
-        case .area(let areaID):
-            return areas.first(where: { $0.id == areaID })?.name ?? "Selected list"
-        case .project(let projectID):
-            return projects.first(where: { $0.id == projectID })?.name ?? "Selected list"
-        }
     }
 
     private var selectedCalendar: EKCalendar? {

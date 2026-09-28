@@ -28,7 +28,6 @@ struct CreateTaskSheet: View {
     /// Why the sheet is still open. `nil` on every path that has not failed.
     @State private var actionError: String?
 
-    @State private var showPriorityPicker = false
     @State private var showDoPicker  = false
     @State private var showDuePicker = false
     // showLocalSuccessToast removed — global toast used instead
@@ -116,7 +115,7 @@ struct CreateTaskSheet: View {
 
     private var titleSection: some View {
         HStack(alignment: .center, spacing: 8) {
-            priorityMarkButton
+            TaskPriorityPicker(selection: $selectedPriority)
 
             TaskTitleEntryField(
                 title: $title,
@@ -294,52 +293,6 @@ struct CreateTaskSheet: View {
     private func addNextSubtask() {
         subtaskTitles.append("")
         focusedSubtask = subtaskTitles.count - 1
-    }
-
-    // MARK: - Priority chip
-
-    private var priorityMarkButton: some View {
-        Button { showPriorityPicker.toggle() } label: {
-            Image(systemName: "flag.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(selectedPriority == .none ? Theme.dim : Theme.priorityColor(selectedPriority))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-                .accessibilityLabel("Priority")
-        }
-        .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showPriorityPicker, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(TaskPriority.allCases, id: \.self) { p in
-                    Button {
-                        selectedPriority = p
-                        showPriorityPicker = false
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(TaskTitleSupport.priorityMark(for: p))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(p == .none ? Theme.dim : Theme.priorityColor(p))
-                                .frame(width: 24, alignment: .leading)
-                            Text(p.label).font(.system(size: 13)).foregroundStyle(Theme.text)
-                            Spacer()
-                            if selectedPriority == p {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                            }
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .background(selectedPriority == p ? Theme.blue.opacity(0.08) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.cadencePlain)
-                    .modifier(CreateTaskPickerHover())
-                }
-            }
-            .padding(.vertical, 6).frame(minWidth: 140).background(Theme.surfaceElevated)
-        }
     }
 
     // MARK: - Logic

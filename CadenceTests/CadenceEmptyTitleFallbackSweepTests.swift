@@ -173,9 +173,14 @@ struct CadenceEmptyTitleFallbackSweepTests {
         // The pre-T-688 spelling.
         #expect(code.contains("fallback: \"New Task\"") == false, "the quick create still stores \"New Task\"")
 
+        // **T-1433 renamed the argument, not the claim.** The quick-create popover's Task tab
+        // now hands back a `QuickCreateTaskDraft` rather than a loose `title`, because its date
+        // and time became editable fields and the slot the user confirms has to travel with the
+        // name. The needle follows `title` to `draft.title`; the count, the site and the shared
+        // fallback constant this test exists for are unchanged.
         #expect(
             CadenceSourceScan.matchCount(
-                "TaskTitleSupport\\.displayTitle\\(title, fallback: TaskTitleSupport\\.defaultDisplayTitle\\)",
+                "TaskTitleSupport\\.displayTitle\\(draft\\.title, fallback: TaskTitleSupport\\.defaultDisplayTitle\\)",
                 in: code
             ) == 1,
             "the quick create does not store the shared task placeholder"

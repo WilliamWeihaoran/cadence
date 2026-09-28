@@ -78,7 +78,7 @@ struct SchedulePanelTimelineViewport: View {
     let bundles: [TaskBundle]
     let todayKey: String
     let externalEventItems: [CalendarEventItem]
-    let onCreateTask: (String, Int, Int, TaskContainerSelection, String, String, [String]) -> Void
+    let onCreateTask: (QuickCreateTaskDraft) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void

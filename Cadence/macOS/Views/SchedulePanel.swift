@@ -129,16 +129,21 @@ struct SchedulePanel: View {
                             bundles: todayBundles,
                             todayKey: todayKey,
                             externalEventItems: externalEventItems,
-                            onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in
+                            // **T-1433.** `doDateKey` was pinned to `todayKey` because the
+                            // popover could not offer a date. It offers one now, and the seed
+                            // takes it: a slot dragged on this timeline and then moved to
+                            // tomorrow in the inspector must open the panel on tomorrow.
+                            onCreateTask: { draft in
                                 taskCreationManager.present(
-                                    title: title,
-                                    notes: notes,
-                                    doDateKey: todayKey,
-                                    scheduledStartMin: startMin,
-                                    estimatedMinutes: max(5, endMin - startMin),
-                                    container: containerSelection,
-                                    sectionName: sectionName,
-                                    subtaskTitles: subtaskTitles
+                                    title: draft.title,
+                                    notes: draft.notes,
+                                    doDateKey: draft.dateKey,
+                                    scheduledStartMin: draft.startMin,
+                                    estimatedMinutes: max(5, draft.endMin - draft.startMin),
+                                    priority: draft.priority,
+                                    container: draft.container,
+                                    sectionName: draft.sectionName,
+                                    subtaskTitles: draft.subtaskTitles
                                 )
                             },
                             onDropTaskAtMinute: { task, startMin in

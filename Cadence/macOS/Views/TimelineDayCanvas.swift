@@ -23,7 +23,7 @@ struct TimelineDayCanvas: View {
     var showHalfHourMarks: Bool = false
     var showWorkHoursHighlight = false
     var usesTaskPanelForTaskCreation = true
-    let onCreateTask: (String, Int, Int, TaskContainerSelection, String, String, [String]) -> Void
+    let onCreateTask: (QuickCreateTaskDraft) -> Void
     let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
@@ -269,9 +269,15 @@ struct TimelineDayCanvas: View {
         eventCreateFailureNotice = nil
     }
 
-    /// `start`/`end` are the range the ghost is drawing and the popover is anchored to. Every
-    /// closure below creates *that* range: they used to shadow these parameters and re-read
-    /// `pendingStartMin`/`pendingEndMin`, so the popover displayed one range and made another.
+    /// `start`/`end` are the range the ghost is drawing and the popover is anchored to. The Event
+    /// and Block closures below create *that* range: they used to shadow these parameters and
+    /// re-read `pendingStartMin`/`pendingEndMin`, so the popover displayed one range and made
+    /// another.
+    ///
+    /// **The Task closure no longer supplies the slot at all (T-1433).** Its tab seeds editable
+    /// date and start-time fields from this range and hands back what the user confirmed, so the
+    /// range in `QuickCreateTaskDraft` is the authority and reading `start`/`end` there would
+    /// reintroduce exactly the displays-one-makes-another split described above.
     private func quickCreatePopover(start: Int, end: Int) -> AnyView {
         AnyView(
             QuickCreateChoicePopover(
@@ -289,16 +295,10 @@ struct TimelineDayCanvas: View {
                 // shared task placeholder, the same word every other task surface shows.
                 // [[T-609]] left it deliberately, under a "route through the trim, change no copy"
                 // rule that has since expired.
-                onCreateTask: { title, containerSelection, sectionName, notes, subtaskTitles in
-                    onCreateTask(
-                        TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultDisplayTitle),
-                        start,
-                        end,
-                        containerSelection,
-                        sectionName,
-                        notes,
-                        subtaskTitles
-                    )
+                onCreateTask: { draft in
+                    var resolved = draft
+                    resolved.title = TaskTitleSupport.displayTitle(draft.title, fallback: TaskTitleSupport.defaultDisplayTitle)
+                    onCreateTask(resolved)
                     finishDraftCreation()
                 },
                 onCreateBundle: { title, selectedTasks in

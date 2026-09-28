@@ -33,6 +33,102 @@ struct CreateTaskPanelSurface: View {
     }
 }
 
+/// The one macOS priority control: the create sheet's flag chip and the calendar quick-create
+/// inspector's value row are the same popover behind two triggers.
+///
+/// **T-1433.** `CreateTaskSheet` owned this as a private `priorityMarkButton` plus its own
+/// `@State showPriorityPicker`, and the quick-create popover needed a priority field. Re-typing
+/// the list beside a second piece of presentation state is the drift [[T-1412]] spent a ticket
+/// undoing for the tag chip, so the sheet's control moved here and grew a second *trigger* rather
+/// than a second implementation. The menu below — mark, name, checkmark, hover — is the sheet's,
+/// unchanged.
+struct TaskPriorityPicker: View {
+    /// What the button looks like. The menu behind it is the same either way.
+    enum Trigger {
+        /// A bare flag glyph, sized for the create sheet's chip row beside the title field.
+        case markGlyph
+        /// The priority's name, for a labelled field row that already draws its own glyph.
+        case value
+    }
+
+    @Binding var selection: TaskPriority
+    var trigger: Trigger = .markGlyph
+
+    @State private var isOpen = false
+
+    var body: some View {
+        triggerButton
+            .popover(isPresented: $isOpen, arrowEdge: .top) { choices }
+    }
+
+    /// **The value trigger is `CadenceChoiceValueButton`, and its words are
+    /// `CadenceTaskComposerSupport.priorityValueLabel`.** Both are already decided elsewhere: the
+    /// button is the trigger `CadenceStartTimeFieldRow` uses one row above this one, and the
+    /// helper's own note records why a labelled priority field spells the word rather than showing
+    /// the `!!` mark — *"the tile is already captioned Priority, so the line under it answers"*.
+    /// The iOS composer's priority tile reads the same helper, so the two composers cannot come to
+    /// disagree about what "no priority" is called.
+    @ViewBuilder
+    private var triggerButton: some View {
+        switch trigger {
+        case .markGlyph:
+            Button { isOpen.toggle() } label: {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(valueColor)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+                    .accessibilityLabel("Priority")
+            }
+            .buttonStyle(.cadencePlain)
+        case .value:
+            CadenceChoiceValueButton(
+                title: CadenceTaskComposerSupport.priorityValueLabel(selection),
+                color: valueColor
+            ) {
+                isOpen = true
+            }
+        }
+    }
+
+    private var valueColor: Color {
+        selection == .none ? Theme.dim : Theme.priorityColor(selection)
+    }
+
+    private var choices: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(TaskPriority.allCases, id: \.self) { p in
+                Button {
+                    selection = p
+                    isOpen = false
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(TaskTitleSupport.priorityMark(for: p))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(p == .none ? Theme.dim : Theme.priorityColor(p))
+                            .frame(width: 24, alignment: .leading)
+                        Text(p.label).font(.system(size: 13)).foregroundStyle(Theme.text)
+                        Spacer()
+                        if selection == p {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.blue)
+                        }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .background(selection == p ? Theme.blue.opacity(0.08) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.cadencePlain)
+                .modifier(CreateTaskPickerHover())
+            }
+        }
+        .padding(.vertical, 6).frame(minWidth: 140).background(Theme.surfaceElevated)
+    }
+}
+
 struct TildeContainerPickerRow: View {
     let icon: String
     let name: String
