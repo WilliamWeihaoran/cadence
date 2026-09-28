@@ -57,8 +57,8 @@ struct CadenceCreateTaskSheetSurfaceTests {
         ] {
             #expect(
                 alpha(of: colour) == 1,
-                "Theme.\(name) resolves at alpha \(alpha(of: colour)); the create sheet is filled with it "
-                + "and would let the task list read through — re-read T-1449"
+                Comment(rawValue: "Theme.\(name) resolves at alpha \(alpha(of: colour)); the create sheet is "
+                    + "filled with it and would let the task list read through — re-read T-1449")
             )
         }
 
@@ -67,8 +67,8 @@ struct CadenceCreateTaskSheetSurfaceTests {
         let scrimAlpha = alpha(of: Theme.scrim)
         #expect(
             scrimAlpha > 0 && scrimAlpha < 1,
-            "Theme.scrim resolves at alpha \(scrimAlpha) — at 0 it dims nothing and the sheet stops "
-            + "reading as modal; at 1 it hides the page instead of dimming it"
+            Comment(rawValue: "Theme.scrim resolves at alpha \(scrimAlpha) — at 0 it dims nothing and the "
+                + "sheet stops reading as modal; at 1 it hides the page instead of dimming it")
         )
     }
 
@@ -101,9 +101,11 @@ struct CadenceCreateTaskSheetSurfaceTests {
         assertNoTranslucency(in: panelBody, named: "CreateTaskPanelSurface.body")
         #expect(
             panelBody.contains(".background(") == false,
-            "CreateTaskPanelSurface now carries a background of its own. The sheet inside it already "
-            + "has one, so this is either a duplicate or a cover over a translucency that is still "
-            + "there — T-1449 is explicit that the second is the trap"
+            """
+            CreateTaskPanelSurface now carries a background of its own. The sheet inside it already has \
+            one, so this is either a duplicate or a cover over a translucency that is still there — \
+            T-1449 is explicit that the second is the trap
+            """
         )
     }
 
@@ -125,8 +127,10 @@ struct CadenceCreateTaskSheetSurfaceTests {
         )
         let panel = try #require(
             layerBody.range(of: "CreateTaskPanelSurface"),
-            "non-vacuity: the layer no longer presents CreateTaskPanelSurface, so the ordering below "
-            + "is about something else"
+            """
+            non-vacuity: the layer no longer presents CreateTaskPanelSurface, so the ordering below is \
+            about something else
+            """
         )
         #expect(
             scrim.lowerBound < panel.lowerBound,
@@ -134,8 +138,10 @@ struct CadenceCreateTaskSheetSurfaceTests {
         )
         #expect(
             layerBody.contains(".ignoresSafeArea()"),
-            "the scrim stopped reaching past its container's safe area, so a band of the page stays "
-            + "undimmed"
+            """
+            the scrim stopped reaching past its container's safe area, so a band of the page stays \
+            undimmed
+            """
         )
     }
 
@@ -160,8 +166,8 @@ struct CadenceCreateTaskSheetSurfaceTests {
         for needle in ["Material", ".presentationBackground", ".blendMode("] {
             #expect(
                 body.contains(needle) == false,
-                "\(name) now contains `\(needle)`. The create sheet is a modal panel over the task "
-                + "list and its fill has to be opaque — re-read T-1449"
+                Comment(rawValue: "\(name) now contains `\(needle)`. The create sheet is a modal panel "
+                    + "over the task list and its fill has to be opaque — re-read T-1449")
             )
         }
     }
