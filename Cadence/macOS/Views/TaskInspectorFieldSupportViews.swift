@@ -1,6 +1,96 @@
 #if os(macOS)
 import SwiftUI
 
+/// The inspector popover's own box: how wide it is and how far its rows sit inside that width.
+///
+/// `TaskDetailPopover` used to carry both numbers as literals. They are here because the placement
+/// rule below is about them: whether a panel opened from one of the inspector's rows lands on top
+/// of the rows or clear of them is a question about this column, not about the panel.
+nonisolated enum TaskInspectorPopoverMetrics {
+    /// Both presentation modes share one width now that the field rows drive the layout.
+    static let width: CGFloat = 336
+    /// The inset between the popover's edge and its content.
+    static let contentInset: CGFloat = 14
+    /// The band the inspector actually draws rows in — what a child panel can slice.
+    static var contentColumnWidth: CGFloat { width - contentInset * 2 }
+}
+
+/// Where a panel opened from a row *inside* the task inspector is anchored.
+///
+/// **A macOS popover is its own `NSWindow`.** The inspector is one, and every picker it opens is a
+/// second one drawn over the first — nothing clips it to the inspector and nothing hides the
+/// inspector behind it. A child anchored on its row's **bottom** edge is centred on that row, and
+/// every panel the inspector opens is narrower than the inspector's content column, so the child
+/// lands *inside* the column: it covers the middle and leaves the inspector's own rows showing as
+/// a sliver down each margin. That is T-1480 — the reader sees the lower popover sliced rather
+/// than covered, with the Due row surviving as "Set", Repeat as "er", and the Subtasks and Notes
+/// headings as "SUB" and "NOT".
+///
+/// The arithmetic is the whole argument, and it is not about the panel being too tall: the date
+/// panel is `CadenceDateSelectionMetrics.width` wide against a `contentColumnWidth` column, so
+/// each surviving sliver is half the difference. Shrinking the panel *widens* the slivers.
+///
+/// `.besideInspector` anchors on the row's **trailing** edge instead. The rows span the content
+/// column exactly — they carry their own inner inset so a hover can wash the full width of the
+/// well — so the row's trailing edge is the column's trailing edge, and a panel hung off it opens
+/// clear of every row the inspector draws. The arrow still points at the row that opened it, which
+/// was never the part that was wrong.
+nonisolated enum TaskInspectorChildPopoverPlacement {
+    /// Centred under the anchor row. Right when the host is wider than the panel — the list
+    /// sheets present these same controls in a window that can absorb one — and wrong inside the
+    /// inspector, which cannot.
+    case belowRow
+    /// Hung off the anchor row's trailing edge, outside the inspector's content column.
+    case besideInspector
+
+    var arrowEdge: Edge {
+        switch self {
+        case .belowRow: .bottom
+        case .besideInspector: .trailing
+        }
+    }
+
+    /// Where a panel of `panelSize` lands when it is anchored on `row`, in the inspector's own
+    /// coordinate space. Flush against the anchor edge and centred on the other axis, which is how
+    /// `NSPopover` places a panel against its positioning rect; the arrow only pushes the panel
+    /// further from the row, so ignoring it never flatters a placement.
+    ///
+    /// **This reads `arrowEdge`, not `self`**, so the frame and the edge the view actually
+    /// presents on cannot drift apart. A second switch over the cases would let someone change
+    /// where the panel opens while this kept describing where it used to.
+    func panelFrame(anchoredTo row: CGRect, panelSize: CGSize) -> CGRect {
+        let origin: CGPoint = switch arrowEdge {
+        case .bottom: CGPoint(x: row.midX - panelSize.width / 2, y: row.maxY)
+        case .top: CGPoint(x: row.midX - panelSize.width / 2, y: row.minY - panelSize.height)
+        case .trailing: CGPoint(x: row.maxX, y: row.midY - panelSize.height / 2)
+        case .leading: CGPoint(x: row.minX - panelSize.width, y: row.midY - panelSize.height / 2)
+        }
+        return CGRect(origin: origin, size: panelSize)
+    }
+
+    /// What a panel does to the inspector's content column: nothing, covers it from an edge, or
+    /// strands a sliver of it on *both* sides. The third is the defect — "sliced rather than
+    /// covered" — and it is the one a reader cannot parse, because the fragments left behind are
+    /// the starts and ends of words belonging to rows the panel is otherwise hiding.
+    static func occlusion(ofColumn column: CGRect, byPanel panel: CGRect) -> InspectorColumnOcclusion {
+        guard column.intersects(panel) else { return .clear }
+        let sliverLeading = panel.minX > column.minX
+        let sliverTrailing = panel.maxX < column.maxX
+        return sliverLeading && sliverTrailing ? .sliced : .covered
+    }
+}
+
+/// See `TaskInspectorChildPopoverPlacement.occlusion(ofColumn:byPanel:)`.
+nonisolated enum InspectorColumnOcclusion: Equatable {
+    /// The panel does not touch the inspector's rows.
+    case clear
+    /// The panel overlaps the column but reaches at least one of its sides, so nothing of the
+    /// covered rows is stranded beside it.
+    case covered
+    /// The panel sits strictly inside the column and leaves a sliver of it showing on both sides.
+    case sliced
+}
+
 /// Shared metrics for the inspector's "icon / label left / value right" field list.
 enum TaskInspectorFieldRowMetrics {
     /// Each row carries its own horizontal inset rather than inheriting one from the recessed
@@ -199,6 +289,9 @@ struct TaskInspectorDateControl: View {
     var activeColor: Color = Theme.blue
     /// See `TaskInspectorFieldRow.reservesIconSlot`.
     var reservesIconSlot: Bool = true
+    /// Where the date panel opens relative to this row. The default suits a host wider than the
+    /// panel; the task inspector is not one and passes `.besideInspector` (T-1480).
+    var childPlacement: TaskInspectorChildPopoverPlacement = .belowRow
     @Binding var isOn: Bool
     @Binding var date: Date
 
@@ -225,7 +318,7 @@ struct TaskInspectorDateControl: View {
         ) {
             showPicker.toggle()
         }
-        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+        .popover(isPresented: $showPicker, arrowEdge: childPlacement.arrowEdge) {
             pickerPopover
         }
         .onAppear {

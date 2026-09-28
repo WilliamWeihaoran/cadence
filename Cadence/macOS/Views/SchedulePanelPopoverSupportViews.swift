@@ -155,6 +155,7 @@ struct TaskDetailScheduleGroupSection: View {
                 label: "Do",
                 icon: "calendar",
                 activeColor: Theme.blue,
+                childPlacement: .besideInspector,
                 isOn: Binding(
                     get: { !task.scheduledDate.isEmpty },
                     set: { isOn in
@@ -186,6 +187,7 @@ struct TaskDetailScheduleGroupSection: View {
                 // which uses the "!" marks.
                 icon: "flag.fill",
                 activeColor: Theme.red,
+                childPlacement: .besideInspector,
                 isOn: Binding(
                     get: { !task.dueDate.isEmpty },
                     set: { isOn in
@@ -211,7 +213,7 @@ struct TaskDetailScheduleGroupSection: View {
 
             TaskInspectorFieldDivider()
 
-            TaskInspectorRecurrenceControl(task: task)
+            TaskInspectorRecurrenceControl(task: task, childPlacement: .besideInspector)
         }
     }
 }

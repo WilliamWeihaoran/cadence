@@ -14,6 +14,10 @@ import SwiftData
 /// the workflow helpers do.
 struct TaskInspectorRecurrenceControl: View {
     @Bindable var task: AppTask
+    /// Where the recurrence panel opens relative to this row. Same rule as the Do/Due rows above
+    /// it, and for the same reason: the panel is narrower than the inspector's content column, so
+    /// anchored underneath it would slice the rows below rather than cover them (T-1480).
+    var childPlacement: TaskInspectorChildPopoverPlacement = .belowRow
     @Query private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
 
@@ -38,7 +42,7 @@ struct TaskInspectorRecurrenceControl: View {
         // Do/Due/Estimate rows sitting directly above it.
         .buttonStyle(.plain)
         .modifier(InspectorPickerHover(cornerRadius: TaskInspectorFieldRowMetrics.hoverCornerRadius))
-        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+        .popover(isPresented: $showPicker, arrowEdge: childPlacement.arrowEdge) {
             TaskRecurrencePickerPanel(
                 rule: task.recurrenceRule,
                 endMode: task.effectiveRecurrenceEndMode,

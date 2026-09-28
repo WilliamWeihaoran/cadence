@@ -133,10 +133,12 @@ struct TaskDetailPopover: View {
                     TaskDetailActionsSection(task: task)
                 }
             }
-            .padding(14)
+            .padding(TaskInspectorPopoverMetrics.contentInset)
         }
-        // Both presentation modes share one width now that the field rows drive the layout.
-        .frame(width: 336)
+        // Both presentation modes share one width now that the field rows drive the layout. The
+        // width and the inset are named constants because the child-popover placement rule reads
+        // them: see `TaskInspectorChildPopoverPlacement` (T-1480).
+        .frame(width: TaskInspectorPopoverMetrics.width)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Theme.surface)
