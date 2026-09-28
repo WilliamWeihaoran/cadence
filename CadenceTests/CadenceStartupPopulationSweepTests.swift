@@ -74,8 +74,13 @@ import Testing
 ///    That is this sweep's **negative control in the other direction**: a population that makes one
 ///    pass 43x more expensive and leaves the other exactly where it was, which is what
 ///    makes "the notes are what the tag sweep costs" mean something. It is also a real finding, and
-///    it is *not* optimised here: all twelve `RepairStore` fetches are read by the pass, so those
-///    rows are its irreducible population. Filed as [[T-1443]].
+///    it was *not* optimised here: filed as [[T-1443]], which **closed by refuting this
+///    paragraph's own reason for leaving it**. "All twelve `RepairStore` fetches are read by the
+///    pass" is true of the file and false of a **warm** launch, which is the launch the half-second
+///    is paid on: eight of the twelve tables are reached only from `mergeContext`, i.e. only when
+///    two active contexts share a name, and the ninth is read through a filter that discards every
+///    task that is not a spawned recurrence occurrence. The rows above are now 6.07 / 6.41 / 7.45ms
+///    — the population is gone rather than the answer.
 ///
 /// **The optimisation, and nothing else**: the two constant patterns are now stored properties, the
 /// spelling `nonProseRegex` in the same file has always had. After, per-note cost falls 93.5µs ->

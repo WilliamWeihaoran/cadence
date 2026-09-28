@@ -27,6 +27,16 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var movedGoalLinks: Int = 0
     var movedFocusSessions: Int = 0
 
+    /// **How many `AppTask` rows this repair actually materialised, and `nil` when it read none.**
+    ///
+    /// Not a counter of work done and deliberately not a term in `changed` below: it is the size of
+    /// the read, which is what [[T-1443]] is about. The nil/zero distinction is the one
+    /// `CadenceWidgetGenerationRecord.rowsFetched` and `NoteMigrationReport.noteTableScanned` already
+    /// draw — `nil` means no pass here reached the task table at all (a repair with no
+    /// `removingForkedOccurrences:` over a store with no duplicate container does not), and a
+    /// number means it did and that is how many rows came back.
+    var taskRowsFetched: Int?
+
     var changed: Bool {
         duplicateContextsMerged > 0 ||
             duplicateAreasMerged > 0 ||
@@ -109,6 +119,7 @@ nonisolated extension DataIntegrityRepairReport {
         movedLinks = try container.decodeIfPresent(Int.self, forKey: .movedLinks) ?? 0
         movedGoalLinks = try container.decodeIfPresent(Int.self, forKey: .movedGoalLinks) ?? 0
         movedFocusSessions = try container.decodeIfPresent(Int.self, forKey: .movedFocusSessions) ?? 0
+        taskRowsFetched = try container.decodeIfPresent(Int.self, forKey: .taskRowsFetched)
     }
 }
 
@@ -183,19 +194,87 @@ nonisolated enum DataIntegrityRepairService {
         var deletedNotes = Set<ObjectIdentifier>()
     }
 
+    /// **The four tables every repair reads, whatever the store holds.**
+    ///
+    /// `repairDuplicateNotes`, `repairDuplicateHabitCompletions`, `repairOutOfRangeHabitReminders`,
+    /// `repairStoredDefaultNoteTitles` and the duplicate-context grouping each read one of these
+    /// unconditionally, so fetching them unconditionally buys nothing that is not used.
+    ///
+    /// **The other eight moved to `ContainerMergeStore` ([[T-1443]]), and the boundary is which
+    /// pass can read them rather than which table is big.** Every single read of `areas`,
+    /// `projects`, `tasks`, `goals`, `documents`, `links`, `goalLinks` and `focusSessions` in this
+    /// file sits inside `mergeContext` / `mergeArea` / `mergeProject` / `rePointTasksAlreadyIn` or
+    /// one of the three `*Score` helpers those call — and every one of those is reached only from
+    /// the `group.count > 1` branch below, i.e. only when there is a duplicate container to merge.
+    /// A launch over a store with no duplicate container used to fetch all eight anyway and read
+    /// none of them. Splitting the type rather than making the fields optional is what makes that
+    /// unreadable-by-construction instead of a comment: a pass holding a `RepairStore` cannot spell
+    /// `store.tasks`.
     private struct RepairStore {
         var contexts: [Context]
-        var areas: [Area]
-        var projects: [Project]
-        var tasks: [AppTask]
-        var goals: [Goal]
         var habits: [Habit]
         var notes: [Note]
+        var habitCompletions: [HabitCompletion]
+    }
+
+    /// The tables a **container merge** reads, fetched only when there is a container to merge.
+    ///
+    /// It carries the always-read tables rather than replacing them, because `contextScore` reads
+    /// `habits` and `areaScore` / `projectScore` read `notes`: a merge needs both halves and there
+    /// is exactly one fetch of each per repair either way.
+    private struct ContainerMergeStore {
+        var base: RepairStore
+        var tasks: [AppTask]
+        var areas: [Area]
+        var projects: [Project]
+        var goals: [Goal]
         var documents: [Document]
         var links: [SavedLink]
         var goalLinks: [GoalListLink]
-        var habitCompletions: [HabitCompletion]
         var focusSessions: [FocusSessionLog]
+
+        var habits: [Habit] { base.habits }
+        var notes: [Note] { base.notes }
+
+        init(base: RepairStore, tasks: [AppTask], fetchedFrom context: ModelContext) throws {
+            self.base = base
+            self.tasks = tasks
+            areas = try context.fetch(FetchDescriptor<Area>())
+            projects = try context.fetch(FetchDescriptor<Project>())
+            goals = try context.fetch(FetchDescriptor<Goal>())
+            documents = try context.fetch(FetchDescriptor<Document>())
+            links = try context.fetch(FetchDescriptor<SavedLink>())
+            goalLinks = try context.fetch(FetchDescriptor<GoalListLink>())
+            focusSessions = try context.fetch(FetchDescriptor<FocusSessionLog>())
+        }
+    }
+
+    /// The spawned occurrences, and nothing else.
+    ///
+    /// Byte-for-byte the filter `CadenceTaskRecurrenceWorkflowSupport.duplicateOccurrenceGroups`
+    /// applies to whatever array it is handed — `!recurrenceSeriesIDRaw.isEmpty` there is
+    /// `!= ""` here because that is the spelling SwiftData can push into the store — so moving it
+    /// from the loop to the fetch cannot change which groups come out. A row with an empty series
+    /// id or occurrence index 0 was never in a group, and the rows that *are* excluded are excluded
+    /// by the predicate the pass would have applied to them anyway.
+    private static var spawnedOccurrenceDescriptor: FetchDescriptor<AppTask> {
+        FetchDescriptor<AppTask>(
+            predicate: #Predicate<AppTask> { task in
+                task.recurrenceSeriesIDRaw != "" && task.recurrenceOccurrenceIndex > 0
+            }
+        )
+    }
+
+    /// Every `AppTask` fetch this service takes goes through here, so `taskRowsFetched` is the
+    /// number of rows that were really materialised rather than a number kept in step by hand.
+    private static func fetchTasks(
+        _ descriptor: FetchDescriptor<AppTask>,
+        in context: ModelContext,
+        report: inout DataIntegrityRepairReport
+    ) throws -> [AppTask] {
+        let rows = try context.fetch(descriptor)
+        report.taskRowsFetched = (report.taskRowsFetched ?? 0) + rows.count
+        return rows
     }
 
     private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "DataIntegrity")
@@ -266,37 +345,38 @@ nonisolated enum DataIntegrityRepairService {
     ) throws {
         let store = try RepairStore(
             contexts: context.fetch(FetchDescriptor<Context>()),
-            areas: context.fetch(FetchDescriptor<Area>()),
-            projects: context.fetch(FetchDescriptor<Project>()),
-            tasks: context.fetch(FetchDescriptor<AppTask>()),
-            goals: context.fetch(FetchDescriptor<Goal>()),
             habits: context.fetch(FetchDescriptor<Habit>()),
             notes: context.fetch(FetchDescriptor<Note>()),
-            documents: context.fetch(FetchDescriptor<Document>()),
-            links: context.fetch(FetchDescriptor<SavedLink>()),
-            goalLinks: context.fetch(FetchDescriptor<GoalListLink>()),
-            habitCompletions: context.fetch(FetchDescriptor<HabitCompletion>()),
-            focusSessions: context.fetch(FetchDescriptor<FocusSessionLog>())
+            habitCompletions: context.fetch(FetchDescriptor<HabitCompletion>())
         )
         var state = RepairState()
 
         let activeContexts = store.contexts.filter { !$0.isArchived && !normalizedName($0).isEmpty }
-        let groups = Dictionary(grouping: activeContexts) { normalizedName($0) }
+        let duplicateContextGroups = Dictionary(grouping: activeContexts) { normalizedName($0) }
+            .values
+            .filter { $0.count > 1 }
 
-        for group in groups.values where group.count > 1 {
-            guard let canonical = group.max(by: { contextScore($0, in: store) < contextScore($1, in: store) }) else {
-                continue
-            }
+        // T-1443. The eight container tables are fetched here and nowhere else, because this branch
+        // is the only thing that reads them. The grouping above needs `contexts` alone, and the
+        // four passes below need none of the eight — so a store with no duplicate container never
+        // materialises its task table for this service at all.
+        if !duplicateContextGroups.isEmpty {
+            let tasks = try fetchTasks(FetchDescriptor<AppTask>(), in: context, report: &report)
+            let merging = try ContainerMergeStore(base: store, tasks: tasks, fetchedFrom: context)
+            for group in duplicateContextGroups {
+                guard let canonical = group.max(by: { contextScore($0, in: merging) < contextScore($1, in: merging) }) else {
+                    continue
+                }
 
-            for duplicate in group where duplicate !== canonical {
-                mergeContext(duplicate, into: canonical, in: store, modelContext: context, state: &state, report: &report)
+                for duplicate in group where duplicate !== canonical {
+                    mergeContext(duplicate, into: canonical, in: merging, modelContext: context, state: &state, report: &report)
+                }
             }
         }
 
         repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
         repairDuplicateHabitCompletions(in: store, modelContext: context, report: &report)
-        repairDuplicateRecurrenceOccurrences(
-            in: store,
+        try repairDuplicateRecurrenceOccurrences(
             modelContext: context,
             remove: remove,
             report: &report
@@ -508,13 +588,13 @@ nonisolated enum DataIntegrityRepairService {
     ///
     /// Deferred commit: `repairIfNeeded` saves once, after every pass, when anything changed.
     private static func repairDuplicateRecurrenceOccurrences(
-        in store: RepairStore,
         modelContext: ModelContext,
         remove: CadenceForkedOccurrenceRemoval?,
         report: inout DataIntegrityRepairReport
-    ) {
+    ) throws {
         guard let remove else { return }
-        let groups = CadenceTaskRecurrenceWorkflowSupport.duplicateOccurrenceGroups(among: store.tasks)
+        let spawned = try fetchTasks(Self.spawnedOccurrenceDescriptor, in: modelContext, report: &report)
+        let groups = CadenceTaskRecurrenceWorkflowSupport.duplicateOccurrenceGroups(among: spawned)
         var survivorByRemovedID: [UUID: UUID] = [:]
         for group in groups {
             guard let collapse = CadenceTaskRecurrenceWorkflowSupport
@@ -525,9 +605,15 @@ nonisolated enum DataIntegrityRepairService {
         }
         guard !survivorByRemovedID.isEmpty else { return }
 
+        // T-1443. The *whole* table, and it has to be: the predecessor holding the pointer at a
+        // removed branch is usually the series origin, whose `recurrenceOccurrenceIndex` is 0 and
+        // which the fetch above therefore never returns. This read is the one the answer needs, and
+        // it is taken only on a launch that found a fork to collapse — never on a warm one.
+        let everyTask = try fetchTasks(FetchDescriptor<AppTask>(), in: modelContext, report: &report)
+
         // Recorded before the delete, while the pointers still name the rows that are going.
         var rePointing: [(AppTask, UUID)] = []
-        for task in store.tasks where survivorByRemovedID[task.id] == nil {
+        for task in everyTask where survivorByRemovedID[task.id] == nil {
             guard let spawnedID = task.recurrenceSpawnedTaskID,
                   let survivorID = survivorByRemovedID[spawnedID] else { continue }
             rePointing.append((task, survivorID))
@@ -549,7 +635,7 @@ nonisolated enum DataIntegrityRepairService {
     private static func mergeContext(
         _ duplicate: Context,
         into canonical: Context,
-        in store: RepairStore,
+        in store: ContainerMergeStore,
         modelContext: ModelContext,
         state: inout RepairState,
         report: inout DataIntegrityRepairReport
@@ -586,7 +672,7 @@ nonisolated enum DataIntegrityRepairService {
     private static func mergeArea(
         _ source: Area,
         intoContext canonicalContext: Context,
-        in store: RepairStore,
+        in store: ContainerMergeStore,
         modelContext: ModelContext,
         state: inout RepairState,
         report: inout DataIntegrityRepairReport
@@ -657,7 +743,7 @@ nonisolated enum DataIntegrityRepairService {
         _ source: Project,
         intoContext canonicalContext: Context,
         preferredArea: Area?,
-        in store: RepairStore,
+        in store: ContainerMergeStore,
         modelContext: ModelContext,
         state: inout RepairState,
         report: inout DataIntegrityRepairReport
@@ -759,7 +845,7 @@ nonisolated enum DataIntegrityRepairService {
     /// `performStartupMaintenance` does not save.
     private static func rePointTasksAlreadyIn(
         _ project: Project,
-        in store: RepairStore,
+        in store: ContainerMergeStore,
         report: inout DataIntegrityRepairReport
     ) {
         let resolved = project.resolvedContext
@@ -770,7 +856,7 @@ nonisolated enum DataIntegrityRepairService {
         }
     }
 
-    private static func contextScore(_ context: Context, in store: RepairStore) -> Int {
+    private static func contextScore(_ context: Context, in store: ContainerMergeStore) -> Int {
         let areaCount = store.areas.filter { $0.context === context }.count
         let projectCount = store.projects.filter { $0.context === context }.count
         let taskCount = store.tasks.filter { $0.context === context }.count
@@ -779,7 +865,7 @@ nonisolated enum DataIntegrityRepairService {
         return areaCount * 25 + projectCount * 20 + taskCount + goalCount * 10 + habitCount * 10 - context.order
     }
 
-    private static func areaScore(_ area: Area, in store: RepairStore) -> Int {
+    private static func areaScore(_ area: Area, in store: ContainerMergeStore) -> Int {
         let taskCount = store.tasks.filter { $0.area === area }.count
         let projectCount = store.projects.filter { $0.area === area }.count
         let noteCount = store.notes.filter { $0.area === area }.count
@@ -787,7 +873,7 @@ nonisolated enum DataIntegrityRepairService {
         return taskCount + projectCount * 10 + noteCount * 5 + documentCount * 5
     }
 
-    private static func projectScore(_ project: Project, in store: RepairStore) -> Int {
+    private static func projectScore(_ project: Project, in store: ContainerMergeStore) -> Int {
         let taskCount = store.tasks.filter { $0.project === project }.count
         let noteCount = store.notes.filter { $0.project === project }.count
         let documentCount = store.documents.filter { $0.project === project }.count

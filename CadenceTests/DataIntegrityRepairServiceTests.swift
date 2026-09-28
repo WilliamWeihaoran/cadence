@@ -998,6 +998,152 @@ struct DataIntegrityRepairServiceTests {
         var higherID: UUID { higher.id }
     }
 
+    // MARK: - T-1443, the size of the read
+
+    /// **The bound this ticket is accountable to is a row count, not a duration**
+    /// ([[T-1279]]/[[T-1296]]): how many `AppTask` rows a *warm* repair materialises. It is the
+    /// number of spawned occurrences in the store, and it was every row in the table.
+    ///
+    /// [[T-1443]] measured `integrityRepair` at 13.1 / 146 / 565ms over 240 / 5,000 / 20,000 task
+    /// rows and said the population was irreducible because "all twelve `RepairStore` fetches are
+    /// read". That is true of the *file* and false of a **warm** launch, which is the launch the
+    /// half-second is paid on. Eight of the twelve tables — `areas`, `projects`, `tasks`, `goals`,
+    /// `documents`, `links`, `goalLinks`, `focusSessions` — are read only from `mergeContext` and
+    /// what it calls, and that is reached only when two active contexts share a normalised name.
+    /// The ninth, `tasks`, has exactly one unconditional reader:
+    /// `CadenceTaskRecurrenceWorkflowSupport.duplicateOccurrenceGroups`, whose first act is to
+    /// throw away every row with an empty series id or occurrence index 0.
+    ///
+    /// So the rows this no longer reads are the rows the answer discarded unread, and that is why
+    /// the answer cannot move: the filter did not change, it moved from the loop into the fetch.
+    /// `repairIsIdenticalWhicheverSideOfTheFetchTheOccurrenceFilterSitsOn` below is the oracle for
+    /// that, and the forked-series tests above are the ones that would red if the predicate
+    /// excluded a row a group needed.
+    ///
+    /// Non-vacuity is the ballast: 200 rows this does not read against the 6 it does.
+    @Test func aWarmRepairReadsOnlyTheSpawnedOccurrencesAndNotTheWholeTaskTable() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        for index in 0..<200 {
+            modelContext.insert(AppTask(title: "Ballast \(index)"))
+        }
+        for index in 1...6 {
+            _ = occurrence(seriesID: UUID(), index: index, in: modelContext)
+        }
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
+
+        #expect(!report.changed, "nothing in this fixture is repairable, so this is the warm case")
+        #expect(report.taskRowsFetched == 6)
+        #expect(
+            try modelContext.fetchCount(FetchDescriptor<AppTask>()) == 206,
+            "the fixture has to be big enough for 6 to mean something"
+        )
+    }
+
+    /// The other side of the same bound, and the one that keeps it from being bought with a wrong
+    /// answer: a store that **does** have a container to merge still reads every task row, because
+    /// `mergeContext` re-points tasks by identity and `contextScore` counts them.
+    ///
+    /// The total is the whole table (the merge's fetch) plus the spawned occurrences (the
+    /// recurrence pass's own, taken after it). Two fetches on a launch that found something to
+    /// repair is the trade: that launch is already paying for a save.
+    @Test func aRepairWithAContainerToMergeStillReadsEveryTaskRow() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let first = Context(name: "Work", colorHex: "#4ECB71", icon: "briefcase.fill")
+        let second = Context(name: "Work", colorHex: "#22c55e", icon: "briefcase.fill")
+        modelContext.insert(first)
+        modelContext.insert(second)
+        for index in 0..<20 {
+            let task = AppTask(title: "Ballast \(index)")
+            task.context = index.isMultiple(of: 2) ? first : second
+            modelContext.insert(task)
+        }
+        for index in 1...6 {
+            _ = occurrence(seriesID: UUID(), index: index, in: modelContext)
+        }
+        try modelContext.save()
+
+        let total = try modelContext.fetchCount(FetchDescriptor<AppTask>())
+        #expect(total == 26)
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
+
+        #expect(report.duplicateContextsMerged == 1)
+        #expect(report.movedTasks > 0, "the merge has to have re-pointed tasks for this to be the branch")
+        #expect(report.taskRowsFetched == total + 6)
+    }
+
+    /// `nil` is not `0`, and this is the case that makes the distinction worth keeping: the MCP
+    /// container factory calls this service with **no** forked-occurrence remover, so the recurrence
+    /// pass returns before it fetches anything, and a store with no duplicate container gives this
+    /// service no reason to look at the task table at all.
+    ///
+    /// The same distinction `CadenceWidgetGenerationRecord.rowsFetched` and
+    /// `NoteMigrationReport.noteTableScanned` draw: a pass that did not read is not a pass that read
+    /// nothing.
+    @Test func aRepairThatCannotCollapseForksNeverReadsTheTaskTableAtAll() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        for index in 0..<50 {
+            modelContext.insert(AppTask(title: "Ballast \(index)"))
+        }
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.taskRowsFetched == nil, "a pass that took no fetch reported a row count of zero")
+        #expect(try modelContext.fetchCount(FetchDescriptor<AppTask>()) == 50)
+    }
+
+    /// **The output-equivalence oracle.** The fetch predicate and the in-loop filter have to select
+    /// the same rows, and the way to say that without restating the predicate is to run the pass
+    /// over a store holding one row of every shape the filter distinguishes and require the same
+    /// collapse.
+    ///
+    /// The shapes: a fork whose rows qualify (collapsed), a non-recurring row with an empty series
+    /// id (never grouped), a series **origin** at occurrence index 0 whose series id is its own id
+    /// (excluded by the index, and the reason the re-pointing loop still fetches the whole table —
+    /// the origin is the row holding the pointer at the branch that goes), and a lone qualifying
+    /// occurrence in a series of its own (in the fetch, in no group).
+    @Test func repairIsIdenticalWhicheverSideOfTheFetchTheOccurrenceFilterSitsOn() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        modelContext.insert(AppTask(title: "Plain task"))
+        _ = occurrence(seriesID: UUID(), index: 4, in: modelContext)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
+
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 1)
+        let remaining = try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.id)
+        #expect(remaining.contains(fork.lowerID))
+        #expect(!remaining.contains(fork.higherID))
+        // The origin is index 0 and never came back from the filtered fetch, and its pointer was
+        // still re-pointed — which is the whole-table read the collapse branch keeps.
+        #expect(fork.origin.recurrenceSpawnedTaskID == fork.lowerID)
+        #expect(remaining.count == 4, "the origin, the survivor, the plain row and the lone occurrence")
+    }
+
     /// An origin plus the two successors two devices minted for occurrence 1.
     ///
     /// `createdAt` is seeded so the *higher*-id row is the older one, which is what makes
