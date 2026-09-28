@@ -260,7 +260,6 @@ nonisolated enum MarkdownMetadataParser {
         var tags: [String] = []
         var location = 0
         var inCodeFence = false
-        let regex = try? NSRegularExpression(pattern: #"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#)
 
         for line in content.components(separatedBy: "\n") {
             defer { location += (line as NSString).length + 1 }
@@ -280,7 +279,7 @@ nonisolated enum MarkdownMetadataParser {
 
             let scannable = maskingNonProse(in: line)
             let nsLine = scannable as NSString
-            regex?.enumerateMatches(in: scannable, range: NSRange(location: 0, length: nsLine.length)) { match, _, _ in
+            inlineTagRegex?.enumerateMatches(in: scannable, range: NSRange(location: 0, length: nsLine.length)) { match, _, _ in
                 guard let match, match.numberOfRanges > 1 else { return }
                 tags.append(nsLine.substring(with: match.range(at: 1)))
             }
@@ -288,6 +287,25 @@ nonisolated enum MarkdownMetadataParser {
 
         return tags
     }
+
+    /// **The inline-tag pattern, compiled once per process rather than once per note.**
+    ///
+    /// `nonProseRegex` below has been a stored `static let` since it was written; this one and
+    /// `headingPrefixRegex` were `try? NSRegularExpression(pattern:)` expressions *inside* the
+    /// functions that use them, so `inlineTags` rebuilt this pattern for every note it parsed and
+    /// `isMarkdownHeading` rebuilt its own for every line of every note. Nothing about either
+    /// pattern varies — they are string literals — so the rebuild was pure repetition.
+    ///
+    /// It was found by measurement, not by reading ([[T-1366]]): the launch's tag sweep costs
+    /// ~93µs per note on a store whose notes have **no tags and no body at all**, which is a
+    /// per-note constant that cannot be about tag bytes, and ~3.6µs per additional line at a fixed
+    /// note size. Compiling this pattern is ~100µs on the machine that measured it.
+    ///
+    /// `NSRegularExpression` is immutable once built and its matching methods are documented as
+    /// thread-safe, which is the same property `nonProseRegex` already relies on here.
+    nonisolated private static let inlineTagRegex = try? NSRegularExpression(
+        pattern: #"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#
+    )
 
     /// Link destinations, autolinks, raw HTML tags and inline code are not prose, so a `#` inside
     /// them is a URL fragment or a hex colour rather than a tag. Tag sync runs unattended at launch
@@ -329,8 +347,13 @@ nonisolated enum MarkdownMetadataParser {
         return result
     }
 
+    nonisolated private static let headingPrefixRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s+"#)
+
     nonisolated private static func isMarkdownHeading(_ line: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: #"^#{1,6}\s+"#) else { return false }
-        return regex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+        guard let headingPrefixRegex else { return false }
+        return headingPrefixRegex.firstMatch(
+            in: line,
+            range: NSRange(location: 0, length: (line as NSString).length)
+        ) != nil
     }
 }
