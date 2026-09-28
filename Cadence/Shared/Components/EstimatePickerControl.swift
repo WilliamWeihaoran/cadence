@@ -117,7 +117,9 @@ struct EstimatePickerPopoverContent: View {
         self.failureNotice = failureNotice
     }
 
-    private enum RollerColumn: Hashable { case hours, minutes }
+    /// One spelling of "which column", shared with the commit gate — `@FocusState` and the gate
+    /// were otherwise going to carry two enums naming the same two things.
+    private typealias RollerColumn = EstimateRollerCommitGate.Column
 
     @State private var hours = 0
     @State private var minutes = 0
@@ -130,6 +132,9 @@ struct EstimatePickerPopoverContent: View {
     /// `closeIfLanded()`, so a caller that presses Done a beat after a live scroll's own commit
     /// was refused still gets the refusal rather than a stale success.
     @State private var lastCommitLanded = true
+    /// **T-1431.** Holds the write back while a column is still moving. See the type for why a
+    /// roll used to perform one write per row it crossed.
+    @State private var commitGate = EstimateRollerCommitGate()
     @FocusState private var focusedColumn: RollerColumn?
 
     private static let hourValues = EstimateRollerMetrics.hourValues
@@ -179,8 +184,16 @@ struct EstimatePickerPopoverContent: View {
             try? await Task.sleep(for: .milliseconds(300))
             isSeeding = false
         }
-        .onChange(of: hours) { _, _ in commit() }
-        .onChange(of: minutes) { _, _ in commit() }
+        .onChange(of: hours) { _, _ in rollerChanged() }
+        .onChange(of: minutes) { _, _ in rollerChanged() }
+        // **T-1431.** A popover dismissed by a click outside it while a column is still
+        // decelerating would otherwise take the owed write with it: once the view is gone there is
+        // no settle left to redeem it on. Every other writer — ↑/↓, a preset, Clear, Done —
+        // commits through `commit(force:)` and has already cleared the debt by the time this runs.
+        .onDisappear {
+            guard commitGate.isWriteOwed else { return }
+            commit(force: true)
+        }
     }
 
     @ViewBuilder
@@ -236,7 +249,13 @@ struct EstimatePickerPopoverContent: View {
             values: values,
             unit: unit,
             selection: selection,
-            isFocused: focusedColumn == id
+            isFocused: focusedColumn == id,
+            // **T-1431.** The settle, from the scroll view itself rather than from a timer —
+            // same signal and the same reason as `CadenceCalendarAgendaSupport.recenterTiming`.
+            reportScrollPhase: { isScrolling in
+                guard commitGate.noteScrollPhaseChanged(id, isScrolling: isScrolling) else { return }
+                commit()
+            }
         )
         .focusable()
         // The column already says it has focus, with its own blue stroke. AppKit's ring is drawn
@@ -342,13 +361,25 @@ struct EstimatePickerPopoverContent: View {
 
     private func step(_ delta: Int, in values: [Int], selection: Binding<Int>) {
         isSeeding = false
-        withAnimation(.easeOut(duration: 0.12)) {
+        withAnimation(.easeOut(duration: EstimateRollerMetrics.rowTransitionDuration)) {
             selection.wrappedValue = EstimateRollerMetrics.stepped(
                 from: selection.wrappedValue,
                 in: values,
                 by: delta
             )
         }
+    }
+
+    /// A column reported a new centred row.
+    ///
+    /// **T-1431.** `scrollPosition(id:anchor:.center)` reports that *continuously*, so this runs
+    /// once for every value the centre band passes over. It writes only when nothing is moving;
+    /// during a gesture the write is owed and redeemed at the settle, so one roll is one write
+    /// rather than one per row it crossed.
+    private func rollerChanged() {
+        guard !isSeeding else { return }
+        guard commitGate.noteValueChanged() else { return }
+        commit()
     }
 
     /// Sets both columns from a total. Commits directly rather than relying on the column
@@ -366,6 +397,9 @@ struct EstimatePickerPopoverContent: View {
     @discardableResult
     private func commit(force: Bool = false) -> Bool {
         guard force || !isSeeding else { return true }
+        // Whatever the gesture owed, this answers for — including a `force` from Done, a preset or
+        // Clear, which is why the debt is cleared above the no-op guard rather than below it.
+        commitGate.noteWritePerformed()
         guard value != total else {
             lastCommitLanded = true
             return true
@@ -432,6 +466,15 @@ enum EstimateRollerMetrics {
     /// make the wheel two and a half times taller on a phone.
     static let rowHeight: CGFloat = 26
     static let visibleRows: CGFloat = 5
+
+    /// How long a row takes to become — or stop being — the chosen one.
+    ///
+    /// **T-1431, and it is one number because it used to be one path.** `withAnimation` appeared
+    /// exactly once in this file, on the ↑/↓ path in `step(_:in:selection:)`, so a keyboard step
+    /// eased and a scroll did not: the opacity ramp and the tint switched between discrete states
+    /// in a single frame as the centre band crossed a row. That is the "does not have any smooth
+    /// animation" half of the owner's report, and it is independent of the write rate above.
+    static let rowTransitionDuration: Double = 0.12
 
     // MARK: Geometry once the reader has a text size (T-1410)
     //
@@ -616,6 +659,70 @@ private extension View {
     }
 }
 
+/// **T-1431 — the write a roll used to perform once per row it crossed.**
+///
+/// `scrollPosition(id:anchor:.center)` reports the centred row *continuously*, so the panel's
+/// `onChange(of: hours)` / `onChange(of: minutes)` fired once for every value the centre band
+/// passed over and each one ran `commit()`. On the draft callers that assigns `value`, and the
+/// macOS inspector passes `$task.estimatedMinutes` straight into it — so a single fling performed
+/// one model write per row, each invalidating every view observing that task: the inspector, a
+/// Kanban card, a Today row. That is what the owner reported as the roller lagging while it is
+/// rolled.
+///
+/// So the write waits for the settle. Same shape as `CadenceCalendarAgendaSupport.recenterTiming`
+/// and for the reason stated there: the settle is the scroll view saying it has stopped
+/// (`ScrollPhase.isScrolling`), **not a timer guessing that it has** — a guessed 0.08s guard
+/// expired before the real settle arrived once already, and wrote garbage.
+///
+/// Both columns share one gate, because the value is `hours * 60 + minutes`: writing it while the
+/// other column is still moving is the same mid-gesture write from the other side.
+///
+/// It defers, it does not suppress. ↑/↓, a preset, Clear and Done all commit through
+/// `commit(force:)` and never consult this; a change still owed when the panel goes away is
+/// flushed by its `onDisappear`; and the value the settle writes is whatever the columns landed
+/// on, so nothing the user chose is dropped.
+///
+/// `nonisolated` for the same reason `CadenceCalendarAgendaSupport.RecenterTiming` is: this is the
+/// rule, not the view, and a test that replays a gesture transcript through it is not a main-actor
+/// caller.
+nonisolated struct EstimateRollerCommitGate: Equatable {
+    /// The panel's two roller columns.
+    enum Column: Hashable, CaseIterable { case hours, minutes }
+
+    private var rollingColumns: Set<Column> = []
+
+    /// A change was reported while a column was moving and has not reached the store yet.
+    private(set) var isWriteOwed = false
+
+    /// Whether either column's scroll view says it is moving.
+    var isRolling: Bool { !rollingColumns.isEmpty }
+
+    /// A column reported a new centred row. `true` to write it now, `false` to owe it.
+    mutating func noteValueChanged() -> Bool {
+        guard isRolling else { return true }
+        isWriteOwed = true
+        return false
+    }
+
+    /// A column's scroll phase moved. `true` when that leaves nothing moving and a write owed —
+    /// i.e. this is the settle the deferral was waiting for.
+    mutating func noteScrollPhaseChanged(_ column: Column, isScrolling: Bool) -> Bool {
+        if isScrolling {
+            rollingColumns.insert(column)
+        } else {
+            rollingColumns.remove(column)
+        }
+        guard !isRolling, isWriteOwed else { return false }
+        isWriteOwed = false
+        return true
+    }
+
+    /// Something wrote. Whatever was owed is owed no longer, whichever path wrote it.
+    mutating func noteWritePerformed() {
+        isWriteOwed = false
+    }
+}
+
 /// Caps how far one gesture can carry the roller, and lands it on a whole row.
 private struct EstimateRollerScrollBehavior: ScrollTargetBehavior {
     let rowHeight: CGFloat
@@ -637,6 +744,9 @@ private struct EstimateRollerColumn: View {
     let unit: String
     @Binding var selection: Int
     let isFocused: Bool
+    /// **T-1431.** `ScrollPhase.isScrolling`, forwarded up. The column decides nothing with it:
+    /// the panel owns the write and therefore owns when it happens.
+    let reportScrollPhase: (Bool) -> Void
 
     private static let cornerRadius: CGFloat = 8
 
@@ -671,6 +781,15 @@ private struct EstimateRollerColumn: View {
                         .foregroundStyle(item == selection ? Theme.text : Theme.muted)
                         .monospacedDigit()
                         .opacity(opacity(for: item))
+                        // **T-1431.** The ramp and the tint ease instead of switching in one
+                        // frame, which is what made a scroll feel stepped while ↑/↓ did not. The
+                        // `.semibold`/`.regular` swap above is a *font*, which SwiftUI cannot
+                        // interpolate: it snaps as it always did rather than paying to re-lay-out
+                        // the text on every row the centre crosses.
+                        .animation(
+                            .easeOut(duration: EstimateRollerMetrics.rowTransitionDuration),
+                            value: selection
+                        )
                         .frame(maxWidth: .infinity)
                         .frame(height: rowHeight)
                         .id(item)
@@ -688,6 +807,10 @@ private struct EstimateRollerColumn: View {
         // Lets the first and last rows reach the centre band instead of stopping at the edges.
         .contentMargins(.vertical, (viewportHeight - rowHeight) / 2, for: .scrollContent)
         .scrollPosition(id: centeredValue, anchor: .center)
+        // The settle, from the scroll view itself. See `EstimateRollerCommitGate`.
+        .onScrollPhaseChange { _, phase in
+            reportScrollPhase(phase.isScrolling)
+        }
         .frame(height: viewportHeight)
         .background(alignment: .center) {
             RoundedRectangle(cornerRadius: 6)
