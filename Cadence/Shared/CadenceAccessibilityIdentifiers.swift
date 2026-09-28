@@ -50,6 +50,31 @@ nonisolated enum CadenceAccessibilityIdentifiers {
         "today.task.row.\(slug(title))"
     }
 
+    /// The **title** of a task row, and the **due-date chip** beside it, by the task's title.
+    ///
+    /// **Spelled `task.row.` rather than `today.task.row.`, and the difference is not an
+    /// oversight.** `todayTaskRow(title:)` above is applied by Today's section view, so it is only
+    /// ever on a row Today drew. These two are applied inside `MacTaskRow` itself, which Today and
+    /// a list's detail pane both draw from one call site — naming them `today.` would be false on
+    /// half their occurrences. A test that means *Today's* copy scopes its query to the row
+    /// element, which is what `.accessibilityElement(children: .contain)` on that row is for.
+    ///
+    /// They exist because a row's title is **not addressable by its label when it matters**. The
+    /// defect these were added for ([[T-1432]]) is a title truncated to about ten characters, and a
+    /// test that looked the title up by its text would stop finding the element at exactly the
+    /// moment the defect appeared — reporting "no such element" where the finding is "it is 70pt
+    /// wide". An identifier survives truncation; the string it draws does not.
+    static func taskRowTitle(title: String) -> String {
+        "task.row.\(slug(title)).title"
+    }
+
+    /// The due-date chip on a task row. Its **height** is the reading T-1432 wanted: the chip that
+    /// filed that ticket had wrapped `51 days ago` onto three lines and taken the row's height with
+    /// it, and a chip's height is a fact about layout that no source scan can reach.
+    static func taskRowDueChip(title: String) -> String {
+        "task.row.\(slug(title)).due"
+    }
+
     /// Today's rollover banner — the offer to move yesterday's unfinished plans onto today.
     static let todayRolloverBanner = "today.rollover.banner"
 

@@ -28,6 +28,10 @@ enum CadenceUITestScenarioSeed {
     /// screen.
     enum Scenario: String {
         case todayGeometry = "today-geometry"
+        /// Two Today rows built to make the row's *horizontal* allocation measurable (T-1432): one
+        /// carrying the decoration the owner's screenshot had, one carrying none, and both titled
+        /// far too long to fit at any pane width this app is drawn at.
+        case todayRowCrush = "today-row-crush"
     }
 
     /// The alt text on the seeded picture, and the text of the paragraph under it. Both are read
@@ -53,6 +57,36 @@ enum CadenceUITestScenarioSeed {
         static let pastDoTaskNames = ["Rollover One", "Rollover Two", "Rollover Three"]
         static let overdueTaskNames = ["Overdue One", "Overdue Two"]
         static let todayTaskNames = ["Today One", "Today Two"]
+
+        // MARK: - today-row-crush (T-1432)
+
+        /// The tail both crush titles carry. Long enough that **neither title can fit at any pane
+        /// width this app is drawn at**, which is deliberate: the defect only exists in the state
+        /// where the row has less width than its children want, so a fixture that fits some of the
+        /// time would pass some of the time for the wrong reason.
+        static let crushTitleTail = " title that has to keep the majority of its own row, at a length no task pane on this machine can draw in full"
+
+        /// The row the owner photographed: an estimate chip, the focus control and an overdue
+        /// due-date chip, all trailing a title far too long for the space left.
+        static let crushedTitle = "Crushed" + crushTitleTail
+
+        /// The control, and it is what makes the reading a **comparison** rather than a threshold.
+        /// Same length, same font, same pane, same instant — and nothing trailing it. A title width
+        /// in points means nothing on its own; a title width next to the width the same title got
+        /// with no decoration beside it is the whole of T-1432 stated as a number.
+        ///
+        /// `Control` and `Crushed` are both seven characters so the two titles differ by a glyph or
+        /// two of advance width, not by a word.
+        static let bareTitle = "Control" + crushTitleTail
+
+        /// Days before today the crushed row's deadline sits. **51 is the figure in the screenshot
+        /// that filed T-1432** — `51 days ago` is three words, and three words is what wrapped onto
+        /// three lines.
+        static let crushedDueDaysAgo = 51
+
+        /// Minutes on the crushed row, so the estimate chip is drawn and the metadata strip has
+        /// something it can shed before it reaches the due chip.
+        static let crushedEstimateMinutes = 95
     }
 
     static var requestedScenario: Scenario? {
@@ -72,6 +106,8 @@ enum CadenceUITestScenarioSeed {
         switch scenario {
         case .todayGeometry:
             seedTodayGeometry(modelContext: modelContext)
+        case .todayRowCrush:
+            seedTodayRowCrush(modelContext: modelContext)
         }
     }
 
@@ -132,6 +168,64 @@ enum CadenceUITestScenarioSeed {
             try modelContext.save()
         } catch {
             print("[CadenceUITestScenarioSeed] the today-geometry seed could not be saved: \(error)")
+        }
+    }
+
+    /// **Two rows whose only difference is what trails the title** (T-1432).
+    ///
+    /// The row that filed the ticket had a title truncated to about ten characters beside a due
+    /// chip that had wrapped `51 days ago` onto three lines. Neither fact is reachable from a unit
+    /// test: SwiftUI publishes no seam saying which subview of an `HStack` won the width, and the
+    /// pin that shipped with the fix reads the *source* for `.layoutPriority(1)` — which can only
+    /// fail when someone deletes the modifier, never when the modifier is present and the layout
+    /// still comes out wrong.
+    ///
+    /// So the scenario plants the two rows a comparison needs and nothing else: no rollover banner,
+    /// no daily note, no second list. Fewer moving parts than `todayGeometry` on purpose — the only
+    /// figures the test reads are widths and heights of four elements, and anything else on screen
+    /// is a thing that can move them.
+    @MainActor
+    private static func seedTodayRowCrush(modelContext: ModelContext) {
+        let todayKey = DateFormatters.ymd.string(from: Date())
+        let dueKey = DateFormatters.ymd.string(
+            from: Calendar.current.date(byAdding: .day, value: -Fixture.crushedDueDaysAgo, to: Date()) ?? Date()
+        )
+
+        // Idempotent by the same test the stock seed and `todayGeometry` use.
+        let existingTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        guard existingTasks.isEmpty else { return }
+
+        let areas = (try? modelContext.fetch(FetchDescriptor<Area>())) ?? []
+        let host = areas.first { $0.name == "Alpha Area" } ?? areas.first
+
+        // Both are planned for **today**, so Today's section already states the day and the row
+        // drops its do-date pill (`MacTaskRow.statedDoDate`). That is what leaves the crushed row
+        // with exactly the trailing strip the screenshot had, and the bare row with none.
+        let crushed = AppTask(title: Fixture.crushedTitle)
+        crushed.scheduledDate = todayKey
+        crushed.dueDate = dueKey
+        crushed.estimatedMinutes = Fixture.crushedEstimateMinutes
+        crushed.order = 0
+        crushed.area = host
+        crushed.context = host?.context
+        modelContext.insert(crushed)
+
+        let bare = AppTask(title: Fixture.bareTitle)
+        bare.scheduledDate = todayKey
+        bare.dueDate = ""
+        bare.estimatedMinutes = 0
+        bare.order = 1
+        bare.area = host
+        bare.context = host?.context
+        modelContext.insert(bare)
+
+        // **Not `try?`** — an inserting function that swallows its commit is the shape
+        // `CadenceSaveCommitDisciplineTests` refuses, and a scenario that silently failed to seed
+        // is a UI test that silently asserts about an empty screen.
+        do {
+            try modelContext.save()
+        } catch {
+            print("[CadenceUITestScenarioSeed] the today-row-crush seed could not be saved: \(error)")
         }
     }
 

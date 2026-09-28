@@ -155,6 +155,7 @@ struct CadenceAgentDefaultsIsolationTests {
             "CadenceUITests/CadenceUITestsLaunchTests.swift",
             "CadenceUITests/CadenceTodayCompositionUITests.swift",
             "CadenceUITests/CadenceSeededSidebarTimingUITests.swift",
+            "CadenceUITests/CadenceTodayRowCrushUITests.swift",
         ]
         var constructions = 0
         var isolations = 0
@@ -167,7 +168,7 @@ struct CadenceAgentDefaultsIsolationTests {
                 "\(path) still sets the store id by hand, so its preferences suite is whatever it happens to be"
             )
         }
-        #expect(constructions == 4, "the UI target builds \(constructions) apps, not the 4 this reading was measured against")
+        #expect(constructions == 5, "the UI target builds \(constructions) apps, not the 5 this reading was measured against")
         #expect(isolations == constructions, "\(constructions) launch sites, \(isolations) of them isolated")
 
         // The helper lives in the UI-test target, which nothing here can import, so the two

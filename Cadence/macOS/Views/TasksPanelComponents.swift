@@ -80,6 +80,10 @@ struct MacTaskRow: View {
                 .strikethrough(task.isDone || task.isCancelled, color: Theme.dim)
                 .lineLimit(1)
                 .layoutPriority(1)
+                // Addressable by identifier because it is not addressable by its text: the defect
+                // above *is* a truncated title, and a lookup by label would stop resolving at the
+                // moment it appeared. `CadenceTodayRowCrushUITests` reads this element's width.
+                .accessibilityIdentifier(CadenceAccessibilityIdentifiers.taskRowTitle(title: task.title))
 
             // `CadenceTaskPresentationSupport.rowTagLimit`, not a local 2. iOS showed three tags
             // on the same row of the same task; `ViewThatFits` here already drops to one chip or
@@ -361,6 +365,9 @@ struct MacTaskRow: View {
         .padding(.trailing, metrics.contentSpacing)
         .accessibilityLabel(CadenceTaskControlAccessibility.dueDate)
         .accessibilityValue(DateFormatters.relativeDate(from: task.dueDate))
+        // The chip's *box*, so a UI test can read the height the wrap took. The label above names
+        // the control and the value reads the date; neither says how tall it came out.
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.taskRowDueChip(title: task.title))
         .onHover { hovering in
             guard isDueDateHovered != hovering else { return }
             isDueDateHovered = hovering
