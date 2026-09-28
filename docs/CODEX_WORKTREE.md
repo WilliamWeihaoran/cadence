@@ -57,7 +57,6 @@ Cadence/iOS/iOSTaskGroupSection.swift
 Cadence/iOS/iOSTasksPageView.swift
 Cadence/iOS/iOSTasksTabView.swift
 Cadence/iOS/iOSSwipeActionRow.swift
-Cadence/Shared/Components/CadenceDatePicker.swift
 Cadence/iOS/iOSFeatureComponents.swift
 Cadence/iOS/iOSDesignSystem.swift
 Cadence/Shared/Components/EmptyStateView.swift
