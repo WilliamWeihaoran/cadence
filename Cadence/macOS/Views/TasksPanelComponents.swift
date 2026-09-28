@@ -66,11 +66,20 @@ struct MacTaskRow: View {
                     .padding(.trailing, metrics.contentSpacing)
             }
 
+            // **`.layoutPriority(1)`, and it is the whole of T-1432(3).** Every flexible child of
+            // this `HStack` used to sit at the same priority, so the stack split the row between
+            // the title and each metadata `Text` in roughly equal shares — the owner photographed a
+            // row whose title had collapsed to `check fo…` while a due chip beside it wrapped onto
+            // three lines. The title is the only part of a row that identifies its task; the chips
+            // are decoration over information the row states again elsewhere. So the title is laid
+            // out first, and takes whatever it can use up to its full width; `metadataStrip`
+            // divides what is left and sheds chips rather than crushing it.
             Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                 .font(.system(size: metrics.titleFontSize))
                 .foregroundStyle(task.isDone || task.isCancelled ? Theme.dim : Theme.text)
                 .strikethrough(task.isDone || task.isCancelled, color: Theme.dim)
                 .lineLimit(1)
+                .layoutPriority(1)
 
             // `CadenceTaskPresentationSupport.rowTagLimit`, not a local 2. iOS showed three tags
             // on the same row of the same task; `ViewThatFits` here already drops to one chip or
@@ -98,19 +107,7 @@ struct MacTaskRow: View {
 
             Spacer(minLength: 4)
 
-            if task.estimatedMinutes > 0 {
-                MacTaskRowEstimateChip(task: task)
-            }
-
-            focusButtonSlot
-
-            if datePlan.drawsDueDateChip {
-                dueDateBadgeList
-            }
-
-            if let bundle = task.bundle {
-                taskBundleBadge(bundle)
-            }
+            metadataStrip
 
             if showsListContextChip {
                 ContainerPickerBadge(
@@ -207,6 +204,51 @@ struct MacTaskRow: View {
         hoveredEditableManager.endHovering(id: editableID)
     }
 
+    /// The trailing decoration — estimate, focus control, due date, block time — as **one child**
+    /// of the row's `HStack`, which is what lets it yield to the title (T-1432).
+    ///
+    /// Three variants, widest first, so `ViewThatFits` sheds rather than squeezes. The block's time
+    /// range goes first because it is the widest of the three and the one the row states least
+    /// usefully in a fragment — `6:10 AM…` names nothing — and the estimate goes second. The due
+    /// chip is in every variant: a red `51 days ago` is the most load-bearing thing on an overdue
+    /// row, and it is what wrapped onto three lines in the screenshot that filed this.
+    ///
+    /// Each variant is `.fixedSize(horizontal: true, vertical: false)` **on purpose**: without it
+    /// every variant "fits" by truncating its own text and the first one always wins, which is the
+    /// behaviour being fixed. With it, each variant reports the width it actually needs, so the
+    /// strip's own minimum is the last variant's — and that minimum is all the row reserves before
+    /// the title, at `.layoutPriority(1)`, is offered the rest.
+    ///
+    /// The focus control is inside the strip rather than beside it only because it sits between
+    /// the estimate and the due chip in the row's reading order; it is a fixed 26pt slot and is
+    /// present in every variant, so it never sheds.
+    private var metadataStrip: some View {
+        ViewThatFits(in: .horizontal) {
+            metadataRow(showsEstimate: true, showsBundle: true)
+            metadataRow(showsEstimate: true, showsBundle: false)
+            metadataRow(showsEstimate: false, showsBundle: false)
+        }
+    }
+
+    private func metadataRow(showsEstimate: Bool, showsBundle: Bool) -> some View {
+        HStack(alignment: .center, spacing: 0) {
+            if showsEstimate && task.estimatedMinutes > 0 {
+                MacTaskRowEstimateChip(task: task)
+            }
+
+            focusButtonSlot
+
+            if datePlan.drawsDueDateChip {
+                dueDateBadgeList
+            }
+
+            if showsBundle, let bundle = task.bundle {
+                taskBundleBadge(bundle)
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
     private var focusButtonSlot: some View {
         Group {
             // The shared predicate, not a second hand-written `!isDone && !isCancelled`. This row
@@ -300,9 +342,14 @@ struct MacTaskRow: View {
                 Image(systemName: "flag.fill")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
+                // `.lineLimit(1)`. The do-date pill beside it has never needed one — it reserves
+                // its width with a hidden `Text("Tomorrow")` and pins it with `.fixedSize` — and
+                // this chip had neither, so `51 days ago` wrapped onto three lines (`51` / `days` /
+                // `ago`) and took three lines of row height with it.
                 Text(DateFormatters.relativeDate(from: task.dueDate))
                     .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                     .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
+                    .lineLimit(1)
             }
             .underline(isDueDateHovered)
             .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)

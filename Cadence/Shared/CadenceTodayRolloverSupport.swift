@@ -25,29 +25,43 @@ enum CadenceTodayRolloverSupport {
     static let dismissedDateStorageKey = "todayRolloverNoticeDismissedDate"
 
     static let title = "Leftover tasks are rolling over to today"
-    static let message = "Review these tasks, then confirm to move them into today's groups."
     static let confirmActionTitle = "Roll Over"
 
-    /// The over-do bucket: open work planned for a day that has gone by, on which no *due* date has
-    /// a prior claim.
+    /// The over-do bucket: open work planned for a day that has gone by. **The do date is the
+    /// whole question; the due date is not asked about at all.**
     ///
-    /// A due date outranks a do date everywhere on Today — `CadenceTaskQuerySupport.todayRank`
-    /// hands overdue and due-today their tasks before `.pastDo` sees what is left — so a task that
-    /// is both due yesterday and planned for yesterday reads as overdue and is not something the
-    /// banner offers to reschedule.
+    /// It used to be asked. This built a `claimedByDueDate` set — every open task due today or
+    /// earlier — and subtracted it, on the reading that "a due date outranks a do date everywhere
+    /// on Today, so a task that is both due yesterday and planned for yesterday reads as overdue
+    /// and is not something the banner offers to reschedule". **T-1432 overturned that**, from the
+    /// owner's own rule over a screenshot of the macOS Today column: *"today = today and anything
+    /// before today. over do do date should be reschedule to today, but the overdue due date
+    /// should not be rescheduled"*. The two dates answer different questions — the do date is a
+    /// plan, and a plan that has gone by is exactly what wants moving; the due date is a promise,
+    /// and a promise that has gone by is a fact about the past that moving would erase. Excluding
+    /// on the due date entangled them, so a task planned 22 days ago that was *also* overdue was
+    /// never offered and its do date stayed 22 days stale forever. That row is what the owner
+    /// photographed: a sun reading `22 days ago` beside a flag reading `51 days ago`.
     ///
-    /// Safe to call with either the whole store or an already-Today-filtered array: the extra
-    /// filtering is idempotent, and the exclusion set is derived from the same array rather than
-    /// passed in.
+    /// **The roll still does not move a due date** — `CadenceTaskMutationSupport.rollOverTaskToToday`
+    /// writes `scheduledDate`, `scheduledStartMin` and `calendarEventID` and nothing else — so an
+    /// overdue task offered here is still overdue afterwards, still red, and still on Today. That
+    /// is the invariant this widening rests on; `CadenceTodayRolloverSurfaceTests` asserts it
+    /// directly rather than reading it off this comment.
+    ///
+    /// **Today's *ranking* is untouched and still puts the due date first.** `AppTask.todayStanding`
+    /// answers `.pastDue` before `.pastDo`, and `CadenceTaskQuerySupport.todayRank` sorts on it.
+    /// What the banner offers to reschedule and where a row sorts are separate concerns; only the
+    /// first one moved.
+    ///
+    /// Safe to call with either the whole store or an already-Today-filtered array: the filtering
+    /// is per-task and idempotent, which it is now more plainly than before — there is no longer a
+    /// set derived from the argument, so the answer for one task cannot depend on which other
+    /// tasks came with it.
     static func pastDoTasks(from tasks: [AppTask], todayKey: String) -> [AppTask] {
-        let open = tasks.filter { !$0.isDone && !$0.isCancelled }
-        let claimedByDueDate = Set(
-            open
-                .filter { $0.dueDate == todayKey || (!$0.dueDate.isEmpty && $0.dueDate < todayKey) }
-                .map(\.id)
-        )
-        return open.filter { task in
-            !claimedByDueDate.contains(task.id) &&
+        tasks.filter { task in
+            !task.isDone &&
+            !task.isCancelled &&
             !task.scheduledDate.isEmpty &&
             task.scheduledDate < todayKey
         }

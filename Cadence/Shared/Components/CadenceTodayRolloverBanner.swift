@@ -94,15 +94,20 @@ struct CadenceTodayRolloverBanner: View {
             .clipShape(Circle())
     }
 
+    /// The title, and nothing under it (T-1432). There was a subtitle — *"Review these tasks, then
+    /// confirm to move them into today's groups."* — which described the banner the reader was
+    /// already looking at: the rows under it *are* the tasks to review and the button beside it
+    /// *is* the confirmation. That is the page-header non-negotiable one level down, and the
+    /// constant went with the `Text` rather than being left for the next reader to redraw.
+    ///
+    /// Still a `VStack`, not a bare `Text`: the alignment and the caller's `HStack(alignment:
+    /// .top)` both address this as the copy block, and a second line here would be a new decision
+    /// rather than a revival of the old one.
     private var headerCopy: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(CadenceTodayRolloverSupport.title)
                 .cadenceFont(.controlLabel)
                 .foregroundStyle(Theme.text)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(CadenceTodayRolloverSupport.message)
-                .cadenceFont(.metadata, base: 11, weight: .regular)
-                .foregroundStyle(Theme.dim)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

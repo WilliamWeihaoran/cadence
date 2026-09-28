@@ -29,6 +29,65 @@ struct CadenceTasksPanelMetricsTests {
         )
     }
 
+    // MARK: - T-1432(3): the title outranks its own decoration
+
+    /// **The owner photographed a Today row whose title read `check fo…`** — about ten characters —
+    /// beside three metadata chips, one of which had wrapped onto three lines (`51` / `days` /
+    /// `ago`) while the two others were truncated mid-glyph. Every flexible child of the row's one
+    /// `HStack` sat at the same layout priority, so the stack divided the row between the title and
+    /// each chip's `Text` in roughly equal shares. The title is the only part of a row that
+    /// identifies its task.
+    ///
+    /// Three claims, and each one is a separate way the defect comes back:
+    ///
+    /// 1. the title carries `.layoutPriority(1)`, so it is laid out before the decoration;
+    /// 2. the trailing decoration is **one** child of the row's stack — a `ViewThatFits` — rather
+    ///    than four siblings, because four siblings cannot shed as a group;
+    /// 3. the due-date chip's `Text` is `.lineLimit(1)`, which is what makes wrapping impossible
+    ///    rather than merely unlikely.
+    ///
+    /// Source-scanned because SwiftUI's stack allocation is not reachable from a unit test: there
+    /// is no seam that reports which subview won the width.
+    @Test func theRowsTitleIsLaidOutBeforeItsMetadata() throws {
+        let row = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct MacTaskRow: View", in: row),
+            "non-vacuity: MacTaskRow is gone or its braces do not balance"
+        )
+
+        // 1. The title, and only the title, is promoted.
+        #expect(body.contains(".layoutPriority(1)"))
+        #expect(body.components(separatedBy: ".layoutPriority(").count - 1 == 1)
+        let title = try #require(body.range(of: "Text(TaskTitleSupport.displayTitle(task.title"))
+        #expect(
+            String(body[title.lowerBound...].prefix(400)).contains(".layoutPriority(1)"),
+            "the row's promoted subview is no longer its title"
+        )
+
+        // 2. The decoration is one shedding child, not four siblings.
+        #expect(body.contains("ViewThatFits(in: .horizontal)"))
+        #expect(body.contains("metadataStrip"))
+        // Two wide readings and one narrow one. Counted over the call spellings rather than the
+        // name, so the declaration itself is not one of the three.
+        #expect(
+            body.components(separatedBy: "metadataRow(showsEstimate: true").count - 1 == 2,
+            "the strip no longer offers two progressively narrower wide readings"
+        )
+        #expect(
+            body.components(separatedBy: "metadataRow(showsEstimate: false, showsBundle: false)").count - 1 == 1,
+            "the strip has no last-resort reading to shed down to"
+        )
+
+        // 3. The chip that wrapped cannot wrap.
+        let dueChip = try #require(
+            CadenceSourceScan.declarationBody("private var dueDateBadgeList: some View", in: row)
+        )
+        #expect(dueChip.contains("Text(DateFormatters.relativeDate(from: task.dueDate))"))
+        #expect(dueChip.contains(".lineLimit(1)"))
+    }
+
     // MARK: - The row's fifth chip
 
     /// The four chips this one sits beside all read the same two figures. `.desktop` exists so they

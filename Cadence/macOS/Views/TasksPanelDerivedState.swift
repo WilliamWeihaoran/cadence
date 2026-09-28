@@ -23,7 +23,14 @@ struct TasksPanelDerivedState {
         // The over-do bucket, from `CadenceTodayRolloverSupport` rather than re-spelled here: the
         // banner that offers to roll these is shared now (T-195), and a predicate the banner and
         // its contents disagreed about would show a notice over a list that did not match it.
-        // Same set as before — the exclusion set it derives is `scheduledExclusions`.
+        //
+        // **It is no longer `scheduledExclusions`' complement (T-1432).** It used to be — the
+        // shared predicate derived the same exclusion set and subtracted it — and that is exactly
+        // the defect the owner reported: a task overdue *and* planned for a day gone by was in
+        // `overdue` and in no rollover offer, so its do date never caught up. It is in both now,
+        // which is why `todayEligibleTasks` below de-duplicates rather than concatenating: this
+        // bucket and `overdue` legitimately overlap. Today's membership is unchanged by that;
+        // what changed is which rows the banner offers and therefore which it withholds.
         overdoTasks = CadenceTodayRolloverSupport.pastDoTasks(from: allTasks, todayKey: todayKey)
 
         // `byDoDateBaseTasks` and `byDoDateBaseSortedTasks` were derived here, unconditionally —

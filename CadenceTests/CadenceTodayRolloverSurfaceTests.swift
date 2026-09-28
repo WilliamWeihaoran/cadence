@@ -51,9 +51,15 @@ struct CadenceTodayRolloverSurfaceTests {
         #expect(rolled.map(\.title) == ["Still open"])
     }
 
-    /// A due date outranks a do date everywhere on Today, so a task the Overdue or Due Today group
-    /// already claims is not something the banner offers to reschedule.
-    @Test func pastDoTasksYieldToADueDateClaim() throws {
+    /// **A due date no longer withholds a past do date from the banner (T-1432).**
+    ///
+    /// This test asserted the opposite until the owner reported the consequence: a task planned
+    /// yesterday and *also* overdue was excluded here, so nothing ever offered to move its plan and
+    /// the do date went on ageing — `22 days ago` beside `51 days ago` in one row of the macOS
+    /// Today column. The owner's rule is that the two dates are separate: *"over do do date should
+    /// be reschedule to today, but the overdue due date should not be rescheduled"*. All three of
+    /// these are planned for a day that has gone by, so all three are offered.
+    @Test func pastDoTasksDoNotYieldToADueDateClaim() throws {
         let today = "2026-08-20"
         let alsoOverdue = task(title: "Overdue", scheduled: "2026-08-19", due: "2026-08-18")
         let alsoDueToday = task(title: "Due today", scheduled: "2026-08-19", due: today)
@@ -64,7 +70,98 @@ struct CadenceTodayRolloverSurfaceTests {
             todayKey: today
         )
 
-        #expect(rolled.map(\.title) == ["Due later"])
+        #expect(rolled.map(\.title) == ["Overdue", "Due today", "Due later"])
+    }
+
+    /// A do date that has *not* gone by is still not offered, whatever the due date says. The
+    /// widening in T-1432 was to stop asking about the due date, not to start offering every
+    /// overdue task: a task due last month but planned for today has nothing to reschedule.
+    @Test func pastDoTasksStillAskOnlyAboutTheDoDate() throws {
+        let today = "2026-08-20"
+        let overdueButPlannedToday = task(title: "Planned today", scheduled: today, due: "2026-07-20")
+        let overdueAndUnplanned = task(title: "Unplanned", due: "2026-07-20")
+        let overdueAndPlannedLater = task(title: "Planned tomorrow", scheduled: "2026-08-21", due: "2026-07-20")
+
+        let rolled = CadenceTodayRolloverSupport.pastDoTasks(
+            from: [overdueButPlannedToday, overdueAndUnplanned, overdueAndPlannedLater],
+            todayKey: today
+        )
+
+        #expect(rolled.isEmpty)
+    }
+
+    /// **The pair T-1432 turns on**, against a real store: the overdue task the banner now offers
+    /// really does roll its do date to today, and its due date is byte-identical afterwards — so it
+    /// is still overdue, still red, and still on Today. Rolling a due date would erase a missed
+    /// promise, which is exactly what the owner ruled out.
+    @Test func rollingAnOverdueTaskMovesItsDoDateAndLeavesItsDueDateAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let today = "2026-08-20"
+        let stale = AppTask(title: "check for the flight")
+        stale.scheduledDate = "2026-07-29"
+        stale.dueDate = "2026-06-30"
+        context.insert(stale)
+
+        // It is offered at all — the half that was false before this ticket.
+        let offered = CadenceTodayRolloverSupport.pastDoTasks(from: [stale], todayKey: today)
+        #expect(offered.map(\.id) == [stale.id])
+
+        try CadenceTodayRolloverSupport.rollOver(offered, todayKey: today, modelContext: context)
+
+        #expect(stale.scheduledDate == today)
+        #expect(stale.dueDate == "2026-06-30")
+        #expect(stale.isOverdue(todayKey: today))
+        #expect(stale.isTodayWork(todayKey: today))
+        // And it is not offered a second time: the plan has caught up even though the promise has not.
+        #expect(CadenceTodayRolloverSupport.pastDoTasks(from: [stale], todayKey: today).isEmpty)
+    }
+
+    /// No code path in the roll writes a due date — asserted over a whole batch, including one
+    /// with an empty due date that must stay empty rather than acquiring today's.
+    @Test func noRolledTaskEverAcquiresOrMovesADueDate() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let today = "2026-08-20"
+        let dueDates = ["2026-06-30", today, "2026-09-30", ""]
+        let batch = dueDates.enumerated().map { index, due -> AppTask in
+            let task = AppTask(title: "Task \(index)")
+            task.scheduledDate = "2026-08-01"
+            task.dueDate = due
+            context.insert(task)
+            return task
+        }
+
+        let offered = CadenceTodayRolloverSupport.pastDoTasks(from: batch, todayKey: today)
+        #expect(offered.count == 4, "every one of these is planned for a day that has gone by")
+
+        try CadenceTodayRolloverSupport.rollOver(offered, todayKey: today, modelContext: context)
+
+        #expect(batch.allSatisfy { $0.scheduledDate == today })
+        #expect(batch.map(\.dueDate) == dueDates)
+    }
+
+    /// The *ranking* is deliberately untouched (T-1432). What the banner offers and where a row
+    /// sorts on Today are separate questions; only the first one moved. A task both overdue and
+    /// past-do still ranks as `.pastDue`, ahead of a merely past-do one.
+    @Test func wideningTheBannerDidNotMoveTodaysRanking() {
+        let today = "2026-08-20"
+        let overdueAndPastDo = task(title: "Both", scheduled: "2026-08-19", due: "2026-08-18")
+        let merelyPastDo = task(title: "Past do", scheduled: "2026-08-19")
+
+        #expect(overdueAndPastDo.todayStanding(todayKey: today) == .pastDue)
+        #expect(merelyPastDo.todayStanding(todayKey: today) == .pastDo)
+        #expect(
+            CadenceTaskQuerySupport.todayRank(overdueAndPastDo, todayKey: today)
+                < CadenceTaskQuerySupport.todayRank(merelyPastDo, todayKey: today)
+        )
+        // ...and both are in the bucket the banner offers.
+        #expect(
+            Set(CadenceTodayRolloverSupport.pastDoTasks(
+                from: [overdueAndPastDo, merelyPastDo],
+                todayKey: today
+            ).map(\.id)) == Set([overdueAndPastDo.id, merelyPastDo.id])
+        )
     }
 
     /// Exactly the set the grouped list withholds while the banner is up. There is no "Past Do"
@@ -335,6 +432,38 @@ struct CadenceTodayRolloverSurfaceTests {
         }
     }
 
+    /// **T-1432(1): the banner makes its offer once.** It carried a subtitle — *"Review these
+    /// tasks, then confirm to move them into today's groups."* — under a title that already says
+    /// *"Leftover tasks are rolling over to today"*, over rows that **are** the tasks to review
+    /// and beside a button that **is** the confirmation. That is this repository's page-header
+    /// non-negotiable one level down, and the constant went with the `Text` rather than being left
+    /// to be redrawn.
+    ///
+    /// Comment-stripped on purpose: `CadenceTodayRolloverBanner` quotes the removed sentence in
+    /// prose explaining why it is removed, and that is the only place it may survive.
+    @Test func theBannerDoesNotDescribeTheBannerTheReaderIsLookingAt() throws {
+        let removed = "Review these tasks, then confirm to move them into today's groups."
+        var scanned = 0
+        for path in try swiftFiles(under: "Cadence") {
+            let source = try strippingComments(sourceFile(path))
+            scanned += 1
+            #expect(!source.contains(removed), "\(path) still draws the rollover banner's subtitle")
+        }
+        #expect(scanned > 300, "only \(scanned) files scanned — the enumerator read nothing")
+
+        // The constant itself is gone, not merely unread: a `static let message` left behind is an
+        // invitation to draw it again.
+        let owner = try strippingComments(sourceFile("Cadence/Shared/CadenceTodayRolloverSupport.swift"))
+        #expect(owner.contains("static let title ="), "non-vacuity: the copy block is still here")
+        #expect(!owner.contains("static let message"))
+
+        // And the copy block draws exactly one line.
+        let banner = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayRolloverBanner.swift"))
+        let headerCopy = try cadenceFunctionBody("private var headerCopy: some View", in: banner)
+        #expect(headerCopy.contains("CadenceTodayRolloverSupport.title"))
+        #expect(headerCopy.components(separatedBy: "Text(").count - 1 == 1)
+    }
+
     /// The comment stripper is load-bearing above — several of these files explain the rollover in
     /// prose that names the very strings being banned.
     @Test func theCommentStripperStripsInTodayRolloverSurface() throws {
@@ -346,11 +475,18 @@ struct CadenceTodayRolloverSurfaceTests {
 
     // MARK: - macOS behaviour preservation
 
-    /// Rewiring `TasksPanelDerivedState` to the shared predicate is a refactor of a **live**
-    /// surface, so this recomputes the two values it changed with the *old* inline expressions and
-    /// asserts the new ones are identical — order included, because both feed a sort whose
+    /// Rewiring `TasksPanelDerivedState` to the shared predicate was a refactor of a **live**
+    /// surface, so this recomputed the two values it changed with the *old* inline expressions and
+    /// asserted the new ones were identical — order included, because both feed a sort whose
     /// tie-break is total and a reordering would be visible.
-    @Test func theMacDerivedStateStillDerivesExactlyWhatItUsedToInTodayRolloverSurface() throws {
+    ///
+    /// **T-1432 deliberately broke that equality and this test now pins the difference.** The
+    /// inline expression subtracted `legacyExclusions` — everything overdue or due today — from the
+    /// over-do bucket; the shared predicate does not ask about the due date at all any more. The
+    /// two tasks the old expression dropped are named here, so a revert is a red test rather than a
+    /// silent narrowing. Everything else about the derivation is still asserted against the old
+    /// spelling, because nothing else about it changed.
+    @Test func theMacDerivedStateOffersTheOverdueRowsTheOldExclusionDropped() throws {
         let today = "2026-08-20"
         let allTasks = [
             task(title: "Past do", scheduled: "2026-08-19"),
@@ -375,10 +511,16 @@ struct CadenceTodayRolloverSurfaceTests {
             todayKey: today
         )
 
-        // The expression that used to be inline in `TasksPanelDerivedState.init`, verbatim.
+        // The expression that used to be inline in `TasksPanelDerivedState.init`, verbatim — still
+        // exactly what the two due-date buckets derive.
         let legacyOverdue = tasks.filter { !$0.isDone && !$0.isCancelled && !$0.dueDate.isEmpty && $0.dueDate < today }
         let legacyDueToday = tasks.filter { !$0.isDone && !$0.isCancelled && $0.dueDate == today }
         let legacyExclusions = Set(legacyOverdue.map(\.id)).union(legacyDueToday.map(\.id))
+        #expect(derived.overdue.map(\.id) == legacyOverdue.map(\.id))
+        #expect(derived.dueTodayTasks.map(\.id) == legacyDueToday.map(\.id))
+
+        // The over-do bucket, with the due-date exclusion the old expression carried and T-1432
+        // removed. It is the *narrower* answer now, and the two rows it dropped are the defect.
         let legacyOverdo = tasks.filter {
             !$0.isDone &&
             !$0.isCancelled &&
@@ -386,28 +528,43 @@ struct CadenceTodayRolloverSurfaceTests {
             $0.scheduledDate < today &&
             !legacyExclusions.contains($0.id)
         }
+        let currentOverdo = tasks.filter {
+            !$0.isDone && !$0.isCancelled && !$0.scheduledDate.isEmpty && $0.scheduledDate < today
+        }
 
-        #expect(derived.overdoTasks.map(\.id) == legacyOverdo.map(\.id))
+        #expect(derived.overdoTasks.map(\.id) == currentOverdo.map(\.id))
         #expect(!legacyOverdo.isEmpty, "fixture no longer exercises the over-do bucket")
+        #expect(
+            Set(currentOverdo.map(\.title)).subtracting(legacyOverdo.map(\.title))
+                == ["Overdue and past do", "Due today, planned yesterday"],
+            "the fixture must keep exercising both rows the old due-date exclusion dropped"
+        )
 
-        // And the expression that used to be inline in `todayGroupedTaskItems`, verbatim.
-        func legacyGrouped(showRolloverNotice: Bool) -> [AppTask] {
+        // And the expression that used to be inline in `todayGroupedTaskItems`, verbatim —
+        // unchanged, because `doTodayTasks` still yields to a due date and the *membership* of
+        // Today is the same set it always was.
+        func grouped(showRolloverNotice: Bool) -> [AppTask] {
             let legacyDoToday = tasks.filter {
                 !$0.isDone && !$0.isCancelled && $0.scheduledDate == today && !legacyExclusions.contains($0.id)
             }
-            let combined = showRolloverNotice
-                ? (legacyOverdue + legacyDueToday + legacyDoToday)
-                : (legacyOverdue + legacyOverdo + legacyDueToday + legacyDoToday)
+            let everything = legacyOverdue + currentOverdo + legacyDueToday + legacyDoToday
             var seen = Set<UUID>()
-            return combined.filter { seen.insert($0.id).inserted }
+            let unique = everything.filter { seen.insert($0.id).inserted }
+            guard showRolloverNotice else { return unique }
+            let withheld = Set(currentOverdo.map(\.id))
+            return unique.filter { !withheld.contains($0.id) }
         }
 
         #expect(Set(derived.todayGroupedTaskItems(showRolloverNotice: true).map(\.id))
-                == Set(legacyGrouped(showRolloverNotice: true).map(\.id)))
+                == Set(grouped(showRolloverNotice: true).map(\.id)))
         #expect(Set(derived.todayGroupedTaskItems(showRolloverNotice: false).map(\.id))
-                == Set(legacyGrouped(showRolloverNotice: false).map(\.id)))
+                == Set(grouped(showRolloverNotice: false).map(\.id)))
         #expect(derived.todayGroupedTaskItems(showRolloverNotice: true).count
-                == derived.todayGroupedTaskItems(showRolloverNotice: false).count - legacyOverdo.count)
+                == derived.todayGroupedTaskItems(showRolloverNotice: false).count - currentOverdo.count)
+        // Today's membership did not move: the wider banner withholds more rows while it is up,
+        // and the dismissed page still draws exactly the same tasks it drew before T-1432.
+        #expect(Set(derived.todayGroupedTaskItems(showRolloverNotice: false).map(\.id))
+                == Set(derived.todayEligibleTasks.map(\.id)))
     }
 
     // MARK: - T-635: the roll commits, and the dismissal follows the commit

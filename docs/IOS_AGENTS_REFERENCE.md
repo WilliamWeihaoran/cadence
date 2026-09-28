@@ -331,10 +331,16 @@ Four things about the iOS wiring that are easy to get wrong:
   `todayGroups` can legitimately return *nothing* on a day whose only open work is yesterday's.
   `iOSTodayTaskSections.isEmpty` therefore counts the notice as content; without that clause the
   list draws "nothing planned" directly under a banner listing four things to do.
-- **The banner's bucket yields to a due date.** `pastDoTasks` excludes anything Overdue or Due
-  Today already claims, because `CadenceTaskQuerySupport.todayGroups` hands those groups their
-  tasks before `.pastDo` sees what is left. A predicate that disagreed would put a task in the
-  banner and in a section under it at once.
+- **The banner's bucket asks about the do date and nothing else (T-1432).** `pastDoTasks` used to
+  subtract anything Overdue or Due Today already claimed, on the reading that a due date outranks a
+  do date. The owner overturned that: *"over do do date should be reschedule to today, but the
+  overdue due date should not be rescheduled"*. An overdue task planned for a day gone by is
+  offered, the roll moves only `scheduledDate`, and the task stays overdue on Today afterwards.
+  There is no double-listing, because `groupedTasks` withholds whatever the banner is offering —
+  the two read the same array.
+- **Today's *ranking* still puts the due date first.** `AppTask.todayStanding` answers `.pastDue`
+  before `.pastDo` and `CadenceTaskQuerySupport.todayRank` sorts on it. T-1432 did not touch it:
+  what the banner offers to reschedule and where a row sorts are separate questions.
 
 **T-195 is closed, both halves.** Sections-due-today shipped in `2dcc948`: the summaries are
 `CadenceTodayOverdueListSummary` / `CadenceTodayOverdueSectionSummary` in

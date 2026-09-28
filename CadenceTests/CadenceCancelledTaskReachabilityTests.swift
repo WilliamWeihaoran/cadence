@@ -600,7 +600,9 @@ struct CadenceCancelledTaskReachabilityTests {
     /// lives. This recomputes it with the code that used to be inline in
     /// `TasksPanelDerivedState.init`, verbatim, and asserts the new array is identical — order
     /// included, because the section renders this array directly. Same shape as
-    /// `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedToInTodayRolloverSurface`.
+    /// `CadenceTodayRolloverSurfaceTests.theMacDerivedStateOffersTheOverdueRowsTheOldExclusionDropped`,
+    /// which was this exact test for the over-do bucket until T-1432 made that one a *difference*
+    /// against the old inline expression rather than an equality with it.
     ///
     /// It ran over both modes until T-487, and over a one-case `TasksPanelMode` until T-564(a)
     /// collapsed the enum. `legacyDoneTasks` used to keep a `mode` parameter and a
