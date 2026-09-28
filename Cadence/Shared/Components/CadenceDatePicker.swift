@@ -323,6 +323,13 @@ struct CadenceQuickDatePopover: View {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) { quickActions }
                     .fixedSize(horizontal: true, vertical: false)
+                // T-1492. Without this middle candidate the row falls straight to three lines, and
+                // on an iPhone at the DEFAULT text size that is what rendered: the popover is
+                // `width(at:)` wide less 12pt of padding each side, and one row of all three pills
+                // needs a few points more than that. `ViewThatFits` was choosing correctly from two
+                // extremes; what it was given is what was wrong. Today + Tomorrow share a line with
+                // room to spare, so the near miss now costs one extra row rather than two.
+                VStack(spacing: 6) { quickActionRows }
                 VStack(spacing: 6) { quickActions }
             }
             .padding(.horizontal, 12)
@@ -367,6 +374,24 @@ struct CadenceQuickDatePopover: View {
     private var quickActions: some View {
         quickPill("Today", target: today)
         quickPill("Tomorrow", target: tomorrow)
+        if let weekend = thisWeekend {
+            quickPill("This Weekend", target: weekend)
+        }
+    }
+
+    /// The same three pills as `quickActions`, arranged two rows deep instead of one or three.
+    ///
+    /// The two short labels pair and the long one takes the second line, which is the arrangement
+    /// that fits whenever the single row does not. The inner row is `fixedSize` for the same reason
+    /// the single-row candidate is: `ViewThatFits` has to be told the row's ideal width, not a
+    /// compressed one, or it would accept a candidate that then squeezes its own pills.
+    @ViewBuilder
+    private var quickActionRows: some View {
+        HStack(spacing: 6) {
+            quickPill("Today", target: today)
+            quickPill("Tomorrow", target: tomorrow)
+        }
+        .fixedSize(horizontal: true, vertical: false)
         if let weekend = thisWeekend {
             quickPill("This Weekend", target: weekend)
         }
