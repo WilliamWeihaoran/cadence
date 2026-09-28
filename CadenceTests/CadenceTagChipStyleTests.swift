@@ -416,6 +416,63 @@ struct CadenceTagChipScaleTests {
                         "\(family.pattern): \(path) opted in; verify its whole page geometry and move it out of the undeclared inventory")
             }
         }
+
+        let controls = try CadenceScanInstrument(
+            "prepared icon, metadata and action control caller",
+            fires: "iOSActionButton(title: title) { save() }",
+            andNotOn: "// iOSIconTile(icon: name)\nlet prose = \"iOSMetaChip(text: title)\"",
+            by: { CadenceSourceScan.codeOnly($0).range(of: #"\biOS(?:IconTile|MetaChip|ActionButton)\s*\("#, options: .regularExpression) != nil }
+        )
+        let undeclaredControls: Set<String> = [
+            "Cadence/Shared/Components/HabitProgressViews.swift",
+            "Cadence/iOS/iOSAINoteActionsViews.swift",
+            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
+            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/iOS/iOSCalendarSettingsSection.swift",
+            "Cadence/iOS/iOSDataExportSettingsSection.swift",
+            "Cadence/iOS/iOSDataResetSettingsSection.swift",
+            "Cadence/iOS/iOSFeatureComponents.swift",
+            "Cadence/iOS/iOSFeatureDetailViews.swift",
+            "Cadence/iOS/iOSFocusView.swift",
+            "Cadence/iOS/iOSGoalAttachListsSheet.swift",
+            "Cadence/iOS/iOSInboxRemindersSection.swift",
+            "Cadence/iOS/iOSListDeletionSupport.swift",
+            "Cadence/iOS/iOSListEditorViews.swift",
+            "Cadence/iOS/iOSListNotesView.swift",
+            "Cadence/iOS/iOSListSupportViews.swift",
+            "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
+            "Cadence/iOS/iOSNoteDeletionSupport.swift",
+            "Cadence/iOS/iOSNoteExportMenu.swift",
+            "Cadence/iOS/iOSNotesView.swift",
+            "Cadence/iOS/iOSNotificationsSettingsSection.swift",
+            "Cadence/iOS/iOSRemindersSettingsSection.swift",
+            "Cadence/iOS/iOSRootSidebar.swift",
+            "Cadence/iOS/iOSSearchSupportViews.swift",
+            "Cadence/iOS/iOSSettingsComponents.swift",
+            "Cadence/iOS/iOSSettingsContextSection.swift",
+            "Cadence/iOS/iOSSettingsOverviewSections.swift",
+            "Cadence/iOS/iOSSettingsTagsSection.swift",
+            "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
+            "Cadence/iOS/iOSSettingsView.swift",
+            "Cadence/iOS/iOSSidebarLayoutSettingsSection.swift",
+            "Cadence/iOS/iOSTaskDetailSheetSections.swift",
+            "Cadence/iOS/iOSTodayCompactViews.swift",
+            "Cadence/iOS/iOSTodaySchedulePanel.swift",
+            "Cadence/iOS/iOSWindDownConfirmation.swift",
+        ]
+        let declaredControls: Set<String> = [
+            "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/iOS/iOSSearchView.swift",
+        ]
+        let controlSites = try controls.sweep(paths, atLeast: 300,
+                                             including: "Cadence/iOS/iOSTodayCompactViews.swift", read: read)
+        #expect(Set(controlSites) == undeclaredControls.union(declaredControls))
+        for path in controlSites {
+            #expect(CadenceSourceScan.codeOnly(try read(path)).contains(".cadenceScaledTypography()")
+                == declaredControls.contains(path), "reclassify the control caller only after its page is size-aware: \(path)")
+        }
     }
 
     // MARK: - Judgement 1: the dot and the `x` are content
