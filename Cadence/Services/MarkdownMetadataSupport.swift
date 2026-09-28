@@ -8,6 +8,34 @@ nonisolated struct MarkdownOutlineItem: Identifiable, Hashable {
 }
 
 nonisolated enum MarkdownOutlineParser {
+    /// **The outline heading pattern, compiled once per process rather than once per line.**
+    ///
+    /// It used to be a `try? NSRegularExpression(pattern:)` expression *inside* the `for line in`
+    /// loop below, so outlining an N-line note compiled the same unvarying literal N times. This is
+    /// the spelling `nonProseRegex`, `inlineTagRegex` and `headingPrefixRegex` further down this
+    /// file already use; the literal here is byte-identical to the one that sat in the loop, which
+    /// matters because the outline's `level` is `marker.count` and its `title` is capture 2 — a
+    /// character lost in the hoist changes which lines become rows and what they are called.
+    ///
+    /// Measured ([[T-1444]], Apple M3 Pro / Mac15,6, 11 cores, 18 GB, `-O`, medians of 101 calls per
+    /// point): the per-line cost of `items(in:)` is **3.15µs before and 0.66µs after**, flat from 3
+    /// to 1,000 lines in both, so a 400-line note's outline goes **1,276µs -> 264µs** and a
+    /// 1,000-line one 3,175µs -> 666µs. Spread is tight — p10/p90 at 400 lines are 1,258/1,355µs
+    /// before and 259/273µs after.
+    ///
+    /// The ~2.5µs a line that goes away is **not** the ~100µs a fresh compile cost in [[T-1366]]'s
+    /// sweep: `NSRegularExpression` caches compiled patterns internally, so after the first line
+    /// every rebuild of this one literal is a cache lookup rather than a parse. It is still
+    /// four-fifths of the pass, and the pass runs on the main actor 150ms after the user stops
+    /// typing (`MarkdownEditorSyncTiming.derivedStateRefreshDelay`), once per keystroke burst, in
+    /// both `NoteEditorPane` and `ListNotesSupportViews`.
+    ///
+    /// `NSRegularExpression` is immutable once built and its matching methods are documented as
+    /// thread-safe, which is the property the three stored patterns below already rely on.
+    nonisolated private static let outlineHeadingRegex = try? NSRegularExpression(
+        pattern: #"^(#{1,6})\s+(.+?)\s*$"#
+    )
+
     nonisolated static func items(in content: String) -> [MarkdownOutlineItem] {
         let nsContent = content as NSString
         var items: [MarkdownOutlineItem] = []
@@ -16,7 +44,7 @@ nonisolated enum MarkdownOutlineParser {
         for line in content.components(separatedBy: "\n") {
             defer { location += (line as NSString).length + 1 }
             let nsLine = line as NSString
-            guard let regex = try? NSRegularExpression(pattern: #"^(#{1,6})\s+(.+?)\s*$"#),
+            guard let regex = outlineHeadingRegex,
                   let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)),
                   match.numberOfRanges >= 3 else {
                 continue
