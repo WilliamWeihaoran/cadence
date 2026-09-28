@@ -733,6 +733,7 @@ struct CadenceGuardScriptSelftestTests {
         "an id the ledger already has is refused",
         "a branch inside the lease with an entry passes",
         "a NEW file under a glob that also matches an existing file passes",
+        "an inbox id the coordinator already folded is not a clash",
         "an empty lease refuses rather than allowing all",
     ]
 

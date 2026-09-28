@@ -72,6 +72,8 @@ CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceTagChipStyleTests.swift
 CadenceTests/CadenceSharedBoardChromeTests.swift
+CadenceTests/CadenceSharedTaskRowJobsTests.swift
+CadenceTests/CadenceTodayUnificationTests.swift
 ```
 
 ## The coordinator's side

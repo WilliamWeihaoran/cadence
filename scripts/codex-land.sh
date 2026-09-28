@@ -141,7 +141,15 @@ cmd_review() {
 
     # 4. an inbox id the ledger already carries
     if [ "$inbox_touched" -gt 0 ]; then
-        newids=$(git show "$ref:$INBOX" 2>/dev/null | grep -oE '^- \[T-[0-9]+\]' | sed 's/^- \[//;s/\]$//' | sort -u)
+        # Only the ids THIS BRANCH ADDED (T-1490). The inbox is append-only by design, so every id
+        # Codex has ever filed stays in it -- including the ones the coordinator has already folded
+        # into the ledger, which is exactly when a formal entry exists for them. Reading the whole
+        # file made the clash check fire on the protocol working correctly: Codex's second branch
+        # was refused for T-1440/T-1441/T-1442, all three landed by the coordinator from its FIRST
+        # branch. The question this check means to ask is "is this branch filing an id that is
+        # already filed", so it must read the lines the branch added, not the file it inherited.
+        newids=$(git diff "$base..$ref" -- "$INBOX" 2>/dev/null \
+            | grep -E '^\+' | grep -oE '^\+- \[T-[0-9]+\]' | sed 's/^+- \[//;s/\]$//' | sort -u)
         for id in $newids; do
             if grep -qE "^- \[$id\]" "$TODO" "$DONE" 2>/dev/null; then
                 printf 'REFUSED (CODEX-INBOX-ID-CLASH): %s already has a formal entry in the ledger.\n  Folding this in would give one id two entries, which is the shape T-1356 is about.\n' "$id" >&2
@@ -244,6 +252,22 @@ cmd_selftest() {
     # exactly that reason. Reviewing a branch means reviewing files you do NOT have.
     ( cd "$ws" && git checkout -q main ) >/dev/null 2>&1
     ck "a NEW file under a glob that also matches an existing file passes" "$(run review codex/newsibling)" 0
+
+    # T-1490, placed before the empty-lease fixture, which rewrites the lease in place. The inbox is
+    # append-only, so an id the coordinator has already folded into the ledger stays in it forever
+    # -- and at that moment a formal entry for it exists, which is precisely what the clash check
+    # looks for. Reading the whole inbox therefore refuses a branch for the protocol having worked.
+    # Reproducing it needs the id present at the MERGE-BASE, not added by the branch, which is why
+    # this fixture commits to main first. Without the `git diff base..ref` fix this returns 3.
+    ( cd "$ws" && git checkout -q main \
+      && printf -- '- [T-9100] **already folded**\n' > docs/CODEX_LEDGER_INBOX.md \
+      && printf -- '- [T-9100] **folded by the coordinator**\n' >> docs/TODO.md \
+      && git add -A && git commit -qm folded ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -qb codex/folded \
+      && mkdir -p Cadence/iOS && printf 'x\n' > Cadence/iOS/iOSTaskRowD.swift \
+      && printf -- '- [T-9101] **new work**\n' >> docs/CODEX_LEDGER_INBOX.md \
+      && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ck "an inbox id the coordinator already folded is not a clash" "$(run review codex/folded)" 0
 
     ( cd "$ws" && git checkout -q main \
       && printf '# x\n\n```lease\n```\n' > docs/CODEX_WORKTREE.md \
