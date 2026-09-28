@@ -2,6 +2,8 @@
 import SwiftUI
 
 struct TodayView: View {
+    @Environment(TaskCreationManager.self) private var taskCreationManager
+
     var body: some View {
         // The pane width read here is the guarantee; the three `minWidth`s below are wishes an
         // `HSplitView` will happily overflow rather than report upward. See
@@ -14,6 +16,21 @@ struct TodayView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Theme.bg)
+        // **The page's corner, not the task column's (T-1503).** The owner asked for the `+` "at
+        // the bottom right of the page", and this is the modifier every other macOS task page
+        // already captures through — `TasksPageView` and `ListTasksView` both take it. Nothing new
+        // was spelled for it: `iOSFloatingCreateTaskButton` is the iOS half of the same pair and
+        // cannot be reached from here (`#if os(iOS)`, and it carries drag-to-seed and
+        // hold-for-palette machinery macOS has no gesture for).
+        //
+        // It sits *below* the timeline's own export and zoom controls, which are that pane's
+        // top-trailing corner, so the two do not meet.
+        //
+        // The seed survives the move: this is the day's page, and the button it replaces already
+        // opened the composer with today's do date filled in.
+        .floatingNewTaskButton {
+            taskCreationManager.present(doDateKey: DateFormatters.todayKey())
+        }
         .accessibilityIdentifier("screen.today")
     }
 
@@ -37,9 +54,14 @@ struct TodayView: View {
                     .accessibilityIdentifier(CadenceAccessibilityIdentifiers.todayNotesPane)
             }
 
-            TasksPanel(enableControls: true, useStandardHeaderHeight: true)
-                .frame(minWidth: CadenceDesktopSplitLayout.todayTaskPaneMinWidth, idealWidth: 440)
-                .layoutPriority(0.43)
+            TasksPanel(
+                enableControls: true,
+                useStandardHeaderHeight: true,
+                // Only when this pane *is* the page. See `TasksPanel.bottomClearance`.
+                bottomClearance: layout == .tasksOnly ? FloatingNewTaskButton.scrollClearance : 0
+            )
+            .frame(minWidth: CadenceDesktopSplitLayout.todayTaskPaneMinWidth, idealWidth: 440)
+            .layoutPriority(0.43)
 
             if layout != .tasksOnly {
                 SchedulePanel(useStandardHeaderHeight: true)

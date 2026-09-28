@@ -214,6 +214,141 @@ struct CadenceTasksPanelMetricsTests {
         #expect(!mobile.contains("case .row: return 7"))
     }
 
+    // MARK: - T-1503: one header row, and the corner each control stands in
+
+    /// **The owner asked for three moves and they were one change.** Today's task column spent two
+    /// header rows — the day over `Today <n>` with the capture `+` floated trailing, and a second
+    /// row under it holding the Sort pill and nothing else. `todayPanelHeaderHeight` is the band
+    /// **all three** of Today's columns reserve so their dividers meet at one line, so that second
+    /// row was charged to the notes and timeline columns too, which had nothing to put in it. What
+    /// the owner photographed was the consequence in a pane with no sort pill at all: the dead gap
+    /// between the notes column's tab strip and its markdown toolbar.
+    ///
+    /// **It is one constant, not three** — that is the finding, and it is why the third part of the
+    /// ticket is a single line. Each panel is asserted to read the name exactly once, so a column
+    /// that goes back to typing its own figure fails here rather than quietly unaligning a divider.
+    ///
+    /// **80 is the notes column's measured header**, not a guess: `NSHostingView.fittingSize` at
+    /// both 300pt and 440pt gives notes 49 + a 30pt tab strip = 79, tasks 68 (pill or no pill), and
+    /// the timeline 49. One band has to be the tallest column's, and the tallest is now 79.
+    ///
+    /// Value and source both, for the reason at the top of this file: the value alone cannot see a
+    /// fourth column typing `100`, and the source alone cannot see the band retuned back up.
+    @Test func todaysThreeColumnsShareOneHeaderBandAndItIsTheShorterOne() throws {
+        #expect(todayPanelHeaderHeight == 80)
+
+        for path in [
+            "Cadence/macOS/Views/NotePanel.swift",
+            "Cadence/macOS/Views/TasksPanel.swift",
+            "Cadence/macOS/Views/SchedulePanel.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("useStandardHeaderHeight"), "non-vacuity: \(path) read as the wrong file")
+            #expect(
+                CadenceSourceScan.matchCount("todayPanelHeaderHeight", in: code) == 1,
+                "\(path) does not read the shared band exactly once"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"height: 100(?![0-9.])"#, in: code) == 0,
+                "\(path) types a header band of its own"
+            )
+        }
+    }
+
+    /// The pill took the corner the `+` vacated, and the row that carried the pill is gone rather
+    /// than merely emptied — an `HStack` left in place with its one child removed is how the band
+    /// would quietly need its 20pt back.
+    ///
+    /// **The chip is still built by the panel**, in the header's trailing slot rather than in a row
+    /// of its own. That is not incidental: `CadenceTodayUnificationTests` counts
+    /// `CadenceEnumPickerBadge(` in `TasksPanel.swift` to pin that Today offers one chip and has
+    /// not gone back to the retired `TaskSortField` vocabulary, and a header that *built* the chip
+    /// would have moved that call out from under the count. So `TasksPanelHeader` takes a slot.
+    ///
+    /// **The pill keeps its label.** A glyph-only sort control would have to be hovered to answer
+    /// the one question it exists to answer, and the width is there: the pill is ~90pt with its own
+    /// `minimumScaleFactor`, against the ~120pt `+ New Task` pill that was cut down to a glyph for
+    /// crowding the date at the task column's 300pt minimum.
+    @Test func todaysSortPillIsInTheHeadersTrailingSlotAndTheSecondRowIsGone() throws {
+        let panel = try Self.panelSource()
+        #expect(panel.contains("struct TasksPanel"), "non-vacuity: wrong file read")
+        #expect(
+            !panel.contains("private var controlsBar"),
+            "Today's header has a second row again, and all three columns are paying for it"
+        )
+        let header = try #require(
+            CadenceSourceScan.functionBody(named: "headerSection", in: panel),
+            "TasksPanel.headerSection moved or was renamed"
+        )
+        // In the header's trailing slot, and nowhere else in the panel: the second row is the one
+        // thing this whole change is for.
+        #expect(
+            header.contains(#"CadenceEnumPickerBadge(title: "Sort", selection: $localSortMode)"#),
+            "Today's Sort chip is not in its header's trailing slot"
+        )
+        #expect(header.contains("if enableControls, options.showsSort"))
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceEnumPickerBadge\("#, in: panel) == 1,
+            "the panel draws a second chip somewhere outside its header"
+        )
+
+        let support = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelSupportViews.swift")
+        )
+        let row = try #require(
+            CadenceSourceScan.declarationBody("struct TasksPanelHeader<Trailing: View>: View", in: support),
+            "non-vacuity: TasksPanelHeader is gone, un-slotted, or its braces do not balance"
+        )
+        #expect(row.contains("@ViewBuilder let trailing: Trailing"))
+        // The slot is forwarded, not decided here.
+        #expect(!row.contains("CadenceEnumPickerBadge"), "the header builds Today's chip itself")
+        // And the corner holds one control: the capture button left, and took its environment.
+        #expect(!row.contains("Image(systemName:"), "the header draws a glyph control of its own again")
+        #expect(!row.contains("TaskCreationManager"), "the header still reaches the composer directly")
+    }
+
+    /// **The `+` is the page's, and it is the macOS floating button that already existed.**
+    /// `FloatingNewTaskButton` is what `TasksPageView` and `ListTasksView` already capture through;
+    /// `iOSFloatingCreateTaskButton` is the same pair's iOS half and is unreachable from a
+    /// `#if os(macOS)` file. Nothing was invented for Today, which is the rule T-1412 spent a whole
+    /// ticket restoring for the tag chip.
+    ///
+    /// The seed is pinned too: the header button this replaces opened the composer with today's do
+    /// date filled in, and a move that dropped that would be a behaviour change wearing a layout
+    /// change's clothes.
+    @Test func todaysCaptureButtonIsThePagesFloatingOneAndNotASecondSpelling() throws {
+        let page = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TodayView.swift")
+        )
+        #expect(page.contains("struct TodayView: View"), "non-vacuity: wrong file read")
+        #expect(CadenceSourceScan.matchCount(#"\.floatingNewTaskButton \{"#, in: page) == 1)
+        #expect(page.contains("doDateKey: DateFormatters.todayKey()"), "the move dropped the day seed")
+        #expect(!page.contains("Image(systemName:"), "Today spells a second capture circle of its own")
+        #expect(
+            page.contains("bottomClearance: layout == .tasksOnly ? FloatingNewTaskButton.scrollClearance : 0"),
+            "the task column can be buried under the page's own button on the one layout where it is the page"
+        )
+
+        // The button states its own footprint rather than leaving the clearance to be guessed at.
+        #expect(
+            FloatingNewTaskButton.scrollClearance
+                == FloatingNewTaskButton.diameter + FloatingNewTaskButton.edgeInset
+        )
+        #expect(FloatingNewTaskButton.scrollClearance == 78)
+        let root = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/macOSRootSupportViews.swift")
+        )
+        let button = try #require(
+            CadenceSourceScan.declarationBody("struct FloatingNewTaskButton: View", in: root),
+            "non-vacuity: FloatingNewTaskButton is gone or its braces do not balance"
+        )
+        #expect(
+            !button.contains(".padding(.trailing, 24)"),
+            "the edge inset is typed again beside the constant that states it"
+        )
+        #expect(!button.contains("width: 54"), "the diameter is typed again beside the constant that states it")
+    }
+
     // MARK: - The panel's headings
 
     /// **Two adjacent headings, one point apart.** The intent groups closed at 5 and the Completed

@@ -15,23 +15,50 @@ import AppKit
 /// header; the user's call went the other way — drop them everywhere — so `DesktopPageHeader` and
 /// `iOSPageHeader` no longer draw one at all.
 ///
-/// The capture button stays in the trailing slot — Today's task column is the one macOS task
-/// surface with no floating `+` over it, so this is its affordance rather than a second one, and
-/// `CadenceTodayPresentationSupport.emptySubtitle` points at it by name.
+/// **The trailing slot holds the Sort pill now, not the capture `+` (T-1503).** Today's task
+/// column was the one macOS task surface with no floating `+` over it, so its capture affordance
+/// stood here — and the Sort pill it left no room for sat on a *second* header row underneath,
+/// alone. That second row is what cost all three of Today's columns their height: the shared
+/// `todayPanelHeaderHeight` band was sized for the one column that needed two rows, so the notes
+/// and timeline columns paid for it in dead space they had nothing to put in.
 ///
-/// **It is a glyph now, not a `+ New Task` pill.** Measured, not preferred: the task column's
-/// declared minimum is 300pt, and at that width the pill left ~150pt for an eyebrow that needs
-/// ~130 — so "THURSDAY, AUGUST 20" truncated to "THURSDAY, AUGU…" the moment the divider was
-/// dragged left. It is also the last survivor of the header pills `DesktopPrimaryActionButton`
-/// was deleted with; every other macOS task surface captures through a circular `+`.
+/// So the `+` went where every other macOS task page already puts it — `TodayView`'s page corner,
+/// through the existing `.floatingNewTaskButton()` — and the pill took the corner it vacated. One
+/// row, and `CadenceTodayPresentationSupport.emptySubtitle` still names a `+` that is on screen.
+///
+/// **The pill keeps its label — `⇅ Priority ⌄`, not a bare `⇅`.** It is the same width question
+/// the `+ New Task` pill lost here, and it comes out the other way. That pill was ~120pt of fixed
+/// text and left ~150pt for an eyebrow that needs ~130, so "THURSDAY, AUGUST 20" truncated the
+/// moment the divider was dragged to the task column's 300pt minimum. `CadenceEnumPickerBadge` is
+/// ~90pt, and unlike that pill it *gives*: its label is `.lineLimit(1)` with a 0.78
+/// `minimumScaleFactor`, and the eyebrow's own give-way half (`· 3 timed`) is built to go before
+/// the date does. A glyph-only sort control would have to be hovered to answer the one question it
+/// exists to answer, which is what the label is for. The chevron stays for the same reason: it is
+/// what says the pill opens a menu rather than toggling.
 ///
 /// It took a `mode` until T-487, and answered "By Do Date" over the eyebrow "Tasks" for the
 /// `.byDoDate` panel. That panel was unreachable, so this row has only ever rendered the day.
-struct TasksPanelHeader: View {
+struct TasksPanelHeader<Trailing: View>: View {
     /// The day's counts. Not optional: this header only exists on the day's page.
     let summary: CadenceTodaySummary
+    /// Whatever the host puts in the trailing slot, forwarded straight to `DesktopPageHeader`'s.
+    ///
+    /// A slot rather than a `sortMode` binding on purpose. **The panel owns Today's one chip** —
+    /// which mode it offers, whether it offers one at all (`enableControls`, `options.showsSort`),
+    /// and the `@AppStorage` behind it — and `CadenceTodayUnificationTests` pins that ownership by
+    /// counting `CadenceEnumPickerBadge(` in `TasksPanel.swift`, because the mapping tests beside
+    /// it would stay green if the panel quietly went back to the retired `TaskSortField`
+    /// vocabulary. A header that *built* the chip would move that call out from under the count.
+    /// This row decides where the trailing slot is, and nothing about what stands in it.
+    @ViewBuilder let trailing: Trailing
 
-    @Environment(TaskCreationManager.self) private var taskCreationManager
+    init(
+        summary: CadenceTodaySummary,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) {
+        self.summary = summary
+        self.trailing = trailing()
+    }
 
     private let title = "Today"
 
@@ -54,24 +81,8 @@ struct TasksPanelHeader: View {
             // The panel paints its own plate behind the header band.
             background: nil
         ) {
-            newTaskButton
+            trailing
         }
-    }
-
-    private var newTaskButton: some View {
-        Button {
-            taskCreationManager.present(doDateKey: DateFormatters.todayKey())
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Theme.onColor(for: Theme.blue))
-                .frame(width: 28, height: 28)
-                .background(Theme.blue)
-                .clipShape(Circle())
-        }
-        .buttonStyle(.cadencePlain)
-        .help("New task for today")
-        .accessibilityLabel("New task")
     }
 }
 

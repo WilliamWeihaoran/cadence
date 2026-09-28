@@ -282,19 +282,30 @@ struct CadenceQuietTabButton: View {
 struct FloatingNewTaskButton: View {
     let action: () -> Void
 
+    /// The circle, and the clearance from the page's trailing and bottom edges. Named rather than
+    /// typed a fourth time because `scrollClearance` below is derived from them and would go stale
+    /// the moment either changed. `iOSCircularAddButton` states the same two for the same reason.
+    static let diameter: CGFloat = 54
+    static let edgeInset: CGFloat = 24
+    /// What a scroll view under the button has to keep free so its last row is never buried. The
+    /// long-standing `72` at `TasksPageView` and `ListTasksView` is this figure rounded down by
+    /// six; both are left as they are, because retuning two shipped pages is not this constant's
+    /// job — it exists so the page that asks for it next asks for the real footprint.
+    static var scrollClearance: CGFloat { diameter + edgeInset }
+
     var body: some View {
         Button(action: action) {
             Image(systemName: "plus")
                 .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(Theme.onColor(for: Theme.blue))
-                .frame(width: 54, height: 54)
+                .frame(width: Self.diameter, height: Self.diameter)
                 .background(Theme.blue)
                 .clipShape(Circle())
                 .shadow(color: Theme.blue.opacity(0.32), radius: 18, x: 0, y: 8)
         }
         .buttonStyle(.cadencePlain)
-        .padding(.trailing, 24)
-        .padding(.bottom, 24)
+        .padding(.trailing, Self.edgeInset)
+        .padding(.bottom, Self.edgeInset)
         .accessibilityLabel("New Task")
     }
 }

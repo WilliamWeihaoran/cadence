@@ -76,8 +76,9 @@ enum CadenceTodayPresentationSupport {
     static let emptyTitle = "Nothing planned"
     /// It said "Add a task above…" while the field it pointed at no longer existed on any width:
     /// compact capture is the tab bar's centre `+`, the iPad's is the floating one on this page,
-    /// and macOS's is the `+ New Task` button on the task column's own header. A subtitle naming a
-    /// control that is not on screen is worse than none.
+    /// and macOS's is `TodayView`'s floating one — the page's bottom-trailing corner since T-1503,
+    /// the task column's own header before that. A subtitle naming a control that is not on screen
+    /// is worse than none; this one names a `+` and there has always been exactly one.
     static let emptySubtitle = "Add a task with +, or schedule one from Inbox."
 
     // `emptyScheduleHint` used to sit here (T-520). It ends "…tap an hour to schedule one", which

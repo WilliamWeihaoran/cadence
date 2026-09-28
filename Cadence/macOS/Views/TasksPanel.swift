@@ -15,6 +15,14 @@ struct TasksPanel: View {
     let sortMode: CadenceTaskSortMode
     let enableControls: Bool
     let useStandardHeaderHeight: Bool
+    /// How much of this panel's scrollable content the host's floating `+` stands on top of.
+    ///
+    /// Only `TodayView` passes anything, and only in the `.tasksOnly` layout, where this pane *is*
+    /// the page and the page's bottom-trailing corner is therefore its own. In the two- and
+    /// three-pane layouts the button stands over the timeline instead, whose grid the user scrolls
+    /// past rather than ending at — so the inset is asked for by the host that knows which pane it
+    /// covers, not assumed by the pane.
+    let bottomClearance: CGFloat
     @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
     /// Set when the roll was refused, and read by the banner, which is still on screen because the
     /// dismissal above was not written. Cleared by the next roll that lands.
@@ -40,12 +48,14 @@ struct TasksPanel: View {
         showsHeader: Bool = true,
         sortMode: CadenceTaskSortMode = .macOSTodayDefault,
         enableControls: Bool = false,
-        useStandardHeaderHeight: Bool = false
+        useStandardHeaderHeight: Bool = false,
+        bottomClearance: CGFloat = 0
     ) {
         self.showsHeader = showsHeader
         self.sortMode = sortMode
         self.enableControls = enableControls
         self.useStandardHeaderHeight = useStandardHeaderHeight
+        self.bottomClearance = bottomClearance
         _localSortMode = State(initialValue: Self.storedSortMode(in: CadenceDefaults.store, fallback: sortMode))
     }
 
@@ -212,18 +222,25 @@ struct TasksPanel: View {
                     emptyStateSection(derived: derived)
                 }
                 .padding(.top, showsHeader ? 12 : 0)
-                .padding(.bottom, 16)
+                // The floating `+`'s footprint, on the one Today layout where the page corner is
+                // this pane's corner. See `bottomClearance`.
+                .padding(.bottom, 16 + bottomClearance)
             }
             .cadenceSoftPageBounce()
         }
     }
 
+    /// One row, since T-1503: the Sort pill moved into the header's trailing slot, which the
+    /// capture `+` vacated for `TodayView`'s page corner. The `VStack` that used to stack this
+    /// header over a `controlsBar` holding nothing but that pill is gone with it — and with it the
+    /// only reason `todayPanelHeaderHeight` was as tall as it was.
     private func headerSection(derived: TasksPanelDerivedState) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                TasksPanelHeader(summary: todaySummary(derived: derived))
-                if enableControls {
-                    controlsBar
+            TasksPanelHeader(summary: todaySummary(derived: derived)) {
+                // Today's one chip, still built here — see `TasksPanelHeader.trailing` for why the
+                // header takes a slot rather than the binding.
+                if enableControls, options.showsSort {
+                    CadenceEnumPickerBadge(title: "Sort", selection: $localSortMode)
                 }
             }
             .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)
@@ -448,17 +465,9 @@ struct TasksPanel: View {
         }
     }
 
-    private var controlsBar: some View {
-        HStack(spacing: 8) {
-            if options.showsSort {
-                CadenceEnumPickerBadge(title: "Sort", selection: $localSortMode)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, TasksPanelMetrics.horizontalInset)
-        .padding(.bottom, 10)
-        .background(Theme.surface)
-    }
+    // `controlsBar` was here (T-1503): an `HStack` under the header holding the Sort pill and a
+    // `Spacer`, and nothing else. It is `TasksPanelHeader`'s trailing slot now, so the pill is
+    // still on the page and the row it needed is not.
 
     /// **Today ranks by urgency first, then by whatever the Sort chip says** — and the `!enableControls`
     /// half of this condition is gone (T-305).
