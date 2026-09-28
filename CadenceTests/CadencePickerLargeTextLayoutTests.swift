@@ -388,33 +388,31 @@ struct EstimatePickerLargeTextLayoutTests {
     }
 }
 
-/// **Why the month grid stays pinned, as arithmetic rather than as appetite.**
+/// **Why T-1413 needs date rows, not seven enlarged columns.**
 ///
 /// `CadenceQuickDatePopover` was the cheap half of T-1398's rule: nothing it draws reads the
 /// scaling environment, so the pin closed no regression and only stated the rule for the day a
 /// shared component in there is converted. T-1410 asked whether it could be converted with the
-/// other two, and the answer is no — not because of an unconverted dependency, but because a month
-/// is seven columns wide and that is not a layout decision.
+/// other two, and the answer was no: seven columns of grown cells do not fit. The panel now
+/// chooses a date list at accessibility sizes or whenever an inline grid cannot fit its width.
 struct CadenceQuickDateGridScaleTests {
 
     private let path = "Cadence/Shared/Components/CadenceDatePicker.swift"
 
-    /// The grid is still the literal grid this is an argument about.
-    @Test("The month grid still draws the seven fixed cells this pricing is about")
+    /// The ordinary grid keeps its baseline; large sizes now have a date-row alternative.
+    @Test("The month grid keeps seven columns without forcing them on large text")
     func theMonthGridIsStillSevenLiteralColumns() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let source = try read(path)
 
         #expect(source.contains("GridItem(.flexible(), spacing: 2), count: 7)"),
                 "the month grid stopped being seven flexible columns")
-        #expect(source.contains(".frame(width: 34, height: 34)"),
-                "the day cell stopped being a 34pt square")
-        #expect(source.contains(".font(.system(size: 12, weight: isSelected || isToday ? .semibold : .regular))"),
-                "the day numeral stopped being a fixed 12")
-        #expect(source.contains(".cadenceFixedTypography()"),
-                "the panel stopped declaring that it does not scale")
-        #expect(!source.contains(".cadenceScaledTypography()"),
-                "the month grid opted itself in without its geometry moving")
+        #expect(source.contains(".frame(width: cellSide, height: cellSide)"))
+        #expect(source.contains("if usesRows {"))
+        #expect(source.contains("CadenceDateSelectionMetrics.usesDateRows("))
+        #expect(source.contains(".cadenceScaledTypography()"))
+        #expect(CadenceDateSelectionMetrics.cellSide == 34)
+        #expect(CadenceDateSelectionMetrics.numeralSize == 12)
     }
 
     /// **Seven columns is what a month is, and seven grown cells do not fit a phone.**
@@ -427,7 +425,8 @@ struct CadenceQuickDateGridScaleTests {
     /// The only arrangement that keeps seven columns is a cell derived from the line box alone —
     /// which is the same as saying *delete the ring*, since a line box of 44.4 in a cell of 44.4
     /// leaves nothing around the numeral. That is a different control, not a scaled one, so it is a
-    /// redesign rather than a conversion and this panel honestly does not scale.
+    /// redesign rather than a conversion. The alternative is now pinned by
+    /// `CadenceCodexDateSelectionTests`.
     @Test("Seven day cells grown by this app's own rule do not fit the narrowest iPhone")
     func aGrownMonthGridIsWiderThanAPhone() {
         // From the file, and asserted to still be there by the test above.

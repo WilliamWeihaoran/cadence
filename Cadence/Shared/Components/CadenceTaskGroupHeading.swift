@@ -58,6 +58,8 @@ nonisolated struct CadenceTaskGroupHeadingMetrics: Equatable, Sendable {
 /// headings still share is `CadenceTaskGroupHeadingMetrics.showsCapsule`, the rule about when a
 /// count may be drawn at all — that one is not allowed to fork.
 struct CadenceTaskGroupHeading: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     let tint: Color
     /// `nil` suppresses the capsule entirely rather than drawing `0`. **T-264:** a group that
@@ -72,9 +74,11 @@ struct CadenceTaskGroupHeading: View {
     var spreads: Bool = true
 
     var body: some View {
+        let wraps = scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
         HStack(spacing: CadenceTaskGroupHeadingMetrics.spacing) {
             SectionEyebrowLabel(text: title, tint: tint)
-                .lineLimit(1)
+                .lineLimit(wraps ? nil : 1)
+                .fixedSize(horizontal: false, vertical: wraps)
 
             if spreads {
                 Spacer(minLength: CadenceTaskGroupHeadingMetrics.spacing)
@@ -86,13 +90,14 @@ struct CadenceTaskGroupHeading: View {
             // decision somewhere no test can reach except by reading this file as text.
             if CadenceTaskGroupHeadingMetrics.showsCapsule(for: count), let count {
                 countBadge(count)
+                    .fixedSize(horizontal: wraps, vertical: wraps)
             }
         }
     }
 
     private func countBadge(_ count: Int) -> some View {
         Text("\(count)")
-            .font(.system(size: CadenceTaskGroupHeadingMetrics.countSize, weight: .bold))
+            .cadenceFont(.sectionLabel, base: CadenceTaskGroupHeadingMetrics.countSize, weight: .bold)
             .monospacedDigit()
             .foregroundStyle(tint)
             .padding(.horizontal, CadenceTaskGroupHeadingMetrics.countPaddingH)

@@ -284,6 +284,8 @@ struct iOSTodayView: View {
         switch sidePanel {
         case .notes:
             iOSNotesView(showsTitle: false)
+                // Notes chrome is T-1400. Its UIKit markdown body already follows Dynamic Type.
+                .cadenceFixedTypography()
         case .timeline:
             iOSSchedulePanel()
         }

@@ -1,5 +1,18 @@
 import SwiftUI
 
+nonisolated enum CadenceTodayRolloverMetrics {
+    static func iconSide(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        max(
+            CadenceTypeScale.height(22, holding: .controlLabel, textBase: 14, at: size, scaling: scaling),
+            CadenceTypeScale.lineHeight(.controlLabel, base: 14, at: size, scaling: scaling) + 4
+        )
+    }
+
+    static func dotSide(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        6 * CadenceTypeScale.multiplier(.metadata, at: size, scaling: scaling)
+    }
+}
+
 /// How the rollover banner meets the surface under it. The *content* — icon, copy, button, rows —
 /// is the same on both platforms and is not parameterised; only the container is.
 enum CadenceTodayRolloverBannerStyle {
@@ -20,6 +33,8 @@ enum CadenceTodayRolloverBannerStyle {
 /// The copy is `CadenceTodayRolloverSupport`'s, so the two platforms cannot describe the same
 /// offer differently.
 struct CadenceTodayRolloverBanner: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let tasks: [AppTask]
     var style: CadenceTodayRolloverBannerStyle = .card
     /// `CadenceTodayRolloverSupport.rollFailureNotice` when the last roll was refused, `nil`
@@ -45,44 +60,68 @@ struct CadenceTodayRolloverBanner: View {
         .modifier(CadenceTodayRolloverBannerContainer(style: style))
     }
 
+    private var wraps: Bool {
+        scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
+    }
+
+    @ViewBuilder
     private var headerRow: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-                .frame(width: 22, height: 22)
-                .background(Theme.amber.opacity(0.16))
-                .clipShape(Circle())
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(CadenceTodayRolloverSupport.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(CadenceTodayRolloverSupport.message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
+        if wraps {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    headerIcon
+                    headerCopy
+                }
+                rollOverButton
             }
-
-            Spacer(minLength: 8)
-
-            // The pill's padding and fill live *inside* the button label. They used to be applied
-            // to the `Button` itself, which leaves the button's hit region at the bare text — the
-            // blue ring around "Roll Over" looked pressable and was inert.
-            Button(action: onRollOver) {
-                Text(CadenceTodayRolloverSupport.confirmActionTitle)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.onColor(for: Theme.blue))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
-                    .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                headerIcon
+                headerCopy
+                Spacer(minLength: 8)
+                rollOverButton
             }
-            .buttonStyle(.plain)
-            .fixedSize()
         }
+    }
+
+    private var headerIcon: some View {
+        let side = CadenceTodayRolloverMetrics.iconSide(at: dynamicTypeSize, scaling: scaling)
+        return Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+            .cadenceFont(.controlLabel, base: 14, weight: .semibold)
+            .foregroundStyle(Theme.amber)
+            .frame(width: side, height: side)
+            .background(Theme.amber.opacity(0.16))
+            .clipShape(Circle())
+    }
+
+    private var headerCopy: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(CadenceTodayRolloverSupport.title)
+                .cadenceFont(.controlLabel)
+                .foregroundStyle(Theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(CadenceTodayRolloverSupport.message)
+                .cadenceFont(.metadata, base: 11, weight: .regular)
+                .foregroundStyle(Theme.dim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var rollOverButton: some View {
+        // Keep padding inside the label so the whole visible button remains tappable.
+        Button(action: onRollOver) {
+            Text(CadenceTodayRolloverSupport.confirmActionTitle)
+                .cadenceFont(.metadata, base: 11, weight: .semibold)
+                .foregroundStyle(Theme.onColor(for: Theme.blue))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(minHeight: wraps ? 44 : nil)
+                .background(Theme.blue)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: !wraps, vertical: true)
     }
 
     /// The refusal, under the rows it failed to move. Nothing at all when the last roll landed —
@@ -92,7 +131,7 @@ struct CadenceTodayRolloverBanner: View {
     private var failureRow: some View {
         if let failureNotice {
             Text(failureNotice)
-                .font(.system(size: 11))
+                .cadenceFont(.metadata, base: 11, weight: .regular)
                 .foregroundStyle(Theme.red)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 10)
@@ -105,25 +144,55 @@ struct CadenceTodayRolloverBanner: View {
     private var taskRows: some View {
         VStack(spacing: 4) {
             ForEach(tasks) { task in
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(Color(hex: task.containerColor))
-                        .frame(width: 6, height: 6)
-                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    Spacer()
-                    if !task.containerName.isEmpty {
-                        Text(task.containerName)
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.dim)
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                taskRow(task)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func taskRow(_ task: AppTask) -> some View {
+        if wraps {
+            VStack(alignment: .leading, spacing: 4) {
+                taskTitle(task)
+                HStack(spacing: 8) {
+                    taskDot(task)
+                    containerName(task)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 8) {
+                taskDot(task)
+                taskTitle(task)
+                Spacer()
+                containerName(task)
+            }
+        }
+    }
+
+    private func taskDot(_ task: AppTask) -> some View {
+        let side = CadenceTodayRolloverMetrics.dotSide(at: dynamicTypeSize, scaling: scaling)
+        return Circle().fill(Color(hex: task.containerColor)).frame(width: side, height: side)
+    }
+
+    private func taskTitle(_ task: AppTask) -> some View {
+        Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+            .cadenceFont(.metadata)
+            .foregroundStyle(Theme.text)
+            .lineLimit(wraps ? nil : 1)
+            .fixedSize(horizontal: false, vertical: wraps)
+    }
+
+    @ViewBuilder
+    private func containerName(_ task: AppTask) -> some View {
+        if !task.containerName.isEmpty {
+            Text(task.containerName)
+                .cadenceFont(.metadata, base: 10, weight: .regular)
+                .foregroundStyle(Theme.dim)
+                .lineLimit(wraps ? nil : 1)
+                .fixedSize(horizontal: false, vertical: wraps)
         }
     }
 }

@@ -41,8 +41,8 @@ struct CadencePresentedTypographyBoundaryTests {
     /// finding, not an inconsistency. Two panels converted then, because the shape they needed was
     /// the shape they already had; two stayed pinned, each for a reason that was arithmetic rather
     /// than appetite. T-1412 converted a **third**: the tag picker's pin was a statement about
-    /// `CadenceTagChip`, so converting the chip retired it. One is still pinned, and its reason —
-    /// seven columns of a month grid — is not a dependency that can be discharged.
+    /// `CadenceTagChip`, so converting the chip retired it. T-1413 replaces the last panel's
+    /// seven-column arrangement with date rows where the enlarged cells cannot fit.
     ///
     /// Not a guess: `everyPopoverInAConvertedWorkflowOpensADeclaredPicker` re-derives the list out
     /// of the five workflow files and fails if a sixth appears.
@@ -56,9 +56,9 @@ struct CadencePresentedTypographyBoundaryTests {
         "EstimatePickerPopoverContent": (
             "Cadence/Shared/Components/EstimatePickerControl.swift", ".cadenceScaledTypography()"
         ),
-        // Pinned: seven columns of a month grid do not fit a phone once a day cell can grow.
+        // Converted: accessibility sizes use date rows, not seven enlarged columns.
         "CadenceQuickDatePopover": (
-            "Cadence/Shared/Components/CadenceDatePicker.swift", ".cadenceFixedTypography()"
+            "Cadence/Shared/Components/CadenceDatePicker.swift", ".cadenceScaledTypography()"
         ),
         // Converted by T-1412, which is the ticket the pin was waiting on: every row of this panel
         // is a `CadenceTagChip`, twelve surfaces draw that chip, and it could only be converted
@@ -252,10 +252,8 @@ struct CadencePresentedTypographyBoundaryTests {
                     "\(type) declares both scopes, so the panel states no answer")
         }
         #expect(Self.presentedPickers.count == 4)
-        // Both answers are represented, so a blanket flip in either direction fails here rather
-        // than reading as four panels agreeing.
         let scopes = Set(Self.presentedPickers.values.map(\.scope))
-        #expect(scopes == Set(Self.scopeModifiers))
+        #expect(scopes == [".cadenceScaledTypography()"])
     }
 
     /// And the list above is the tree's, re-derived: no `.popover` in a converted workflow opens
@@ -297,22 +295,14 @@ struct CadencePresentedTypographyBoundaryTests {
         #expect(Set(found).count >= 4, "the sweep matched one type thirteen times, which proves nothing")
     }
 
-    /// **A panel may only opt in in the same change that makes its geometry size-aware**, which is
-    /// the whole reason the scope is an environment value rather than a flag. So the panel that is
-    /// still rigid must still say so.
-    ///
-    /// One is left: `CadenceQuickDatePopover`, which is 34pt day cells in a seven-column month
-    /// grid, priced in `CadenceQuickDateGridScaleTests`. The tag picker was the other until T-1412
-    /// converted `CadenceTagChip`, which is the dependency its pin had always been about.
-    @Test("The panel that is still rigid did not opt itself in")
+    /// Historical test name retained: the last rigid panel now has a non-grid large-text route.
+    @Test("No presented picker still depends on a rigid large-text layout")
     func theStillRigidPanelsDidNotOptIn() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let pinned = Self.presentedPickers.filter { $0.value.scope == ".cadenceFixedTypography()" }
-        #expect(pinned.count == 1, "the set of pinned panels moved without this test being told")
-        for (type, panel) in pinned {
-            let source = try read(panel.path)
-            #expect(!source.contains(".cadenceScaledTypography()"),
-                    "\(type) opted a rigid panel in instead of out")
-        }
+        #expect(pinned.isEmpty)
+        let dateSource = try read("Cadence/Shared/Components/CadenceDatePicker.swift")
+        #expect(dateSource.contains("if usesRows {"))
+        #expect(dateSource.contains("dateRow(day)"))
     }
 }

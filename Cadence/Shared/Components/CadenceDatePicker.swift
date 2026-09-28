@@ -81,6 +81,47 @@ struct CadenceDatePicker: View {
     }
 }
 
+// MARK: - Date selection geometry
+
+nonisolated enum CadenceDateSelectionMetrics {
+    static let cellSide: CGFloat = 34
+    static let numeralSize: CGFloat = 12
+    static let gridPadding: CGFloat = 8
+    static let gridSpacing: CGFloat = 2
+
+    static func cellSide(at size: DynamicTypeSize) -> CGFloat {
+        CadenceTypeScale.height(cellSide, holding: .metadata, textBase: numeralSize, at: size, scaling: .enabled)
+    }
+
+    static func gridWidth(at size: DynamicTypeSize) -> CGFloat {
+        cellSide(at: size) * 7 + gridPadding * 2 + gridSpacing * 6
+    }
+
+    static func usesDateRows(at size: DynamicTypeSize, availableWidth: CGFloat) -> Bool {
+        CadenceTypeScale.isAccessibilitySize(size) || gridWidth(at: size) > availableWidth
+    }
+
+    static func width(at size: DynamicTypeSize) -> CGFloat {
+        if CadenceTypeScale.isAccessibilitySize(size) {
+            return CadenceTypeScale.height(256, holding: .metadata, at: size, scaling: .enabled)
+        }
+        return max(256, gridWidth(at: size))
+    }
+
+    static func dateRowHeight(at size: DynamicTypeSize) -> CGFloat {
+        max(44, CadenceTypeScale.lineHeight(.metadata, at: size, scaling: .enabled) + 16)
+    }
+
+    // A scroll viewport is a cap, not a text container. The quick actions get the freed space.
+    static func quickViewportHeight(at size: DynamicTypeSize, inlineStyle: Bool) -> CGFloat {
+        CadenceTypeScale.isAccessibilitySize(size) ? 180 : (inlineStyle ? 314 : 294)
+    }
+
+    static func quickActionHeight(at size: DynamicTypeSize) -> CGFloat {
+        CadenceTypeScale.lineHeight(.controlLabel, base: 11, at: size, scaling: .enabled) + 16
+    }
+}
+
 // MARK: - Month Calendar Panel
 
 struct MonthCalendarPanel: View {
@@ -88,6 +129,8 @@ struct MonthCalendarPanel: View {
     @Binding var viewMonth: Date
     @Binding var isOpen: Bool
     var inlineStyle: Bool = false
+    var viewportHeight: CGFloat? = nil
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let cal = Calendar.current
     // Was a hard-coded Sunday-first array, which disagreed with the iOS month grid's ordering in
@@ -98,18 +141,33 @@ struct MonthCalendarPanel: View {
     private let visibleMonthOffsets = Array(-24...24)
 
     var body: some View {
+        GeometryReader { geometry in
+            let usesRows = CadenceDateSelectionMetrics.usesDateRows(
+                at: dynamicTypeSize, availableWidth: geometry.size.width
+            )
+            calendarContent(usesRows: usesRows)
+        }
+        .frame(width: inlineStyle ? nil : CadenceDateSelectionMetrics.width(at: dynamicTypeSize))
+        .frame(maxWidth: inlineStyle ? .infinity : nil)
+        .frame(height: viewportHeight ?? (inlineStyle ? 314 : 294))
+        .background(inlineStyle ? Color.clear : Theme.surfaceElevated)
+        .cadenceScaledTypography()
+    }
+
+    private func calendarContent(usesRows: Bool) -> some View {
         VStack(spacing: 0) {
-            // Day names
-            HStack(spacing: 0) {
-                ForEach(dayNames, id: \.self) { name in
-                    Text(name)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .frame(maxWidth: .infinity)
+            if !usesRows {
+                HStack(spacing: 0) {
+                    ForEach(dayNames, id: \.self) { name in
+                        Text(name)
+                            .cadenceFont(.metadata, base: 10, weight: .medium)
+                            .foregroundStyle(Theme.dim)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 4)
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
@@ -118,57 +176,102 @@ struct MonthCalendarPanel: View {
                             let month = cal.date(byAdding: .month, value: offset, to: anchorMonth) ?? anchorMonth
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(DateFormatters.monthYear.string(from: month))
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .cadenceFont(.controlLabel)
                                     .foregroundStyle(Theme.text)
                                     .padding(.horizontal, 8)
                                     .padding(.top, 2)
 
                                 let days = calendarDays(for: month)
-                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
-                                    ForEach(days.indices, id: \.self) { i in
-                                        if let d = days[i] {
-                                            let isSelected = cal.isDate(d, inSameDayAs: selection)
-                                            let isToday = cal.isDateInToday(d)
-                                            Button {
-                                                selection = d
-                                                syncViewMonthToSelection()
-                                                isOpen = false
-                                            } label: {
-                                                ZStack {
-                                                    Circle()
-                                                        .fill(isSelected ? Theme.blue : (isToday ? Theme.blue.opacity(0.15) : Color.clear))
-
-                                                    Text("\(cal.component(.day, from: d))")
-                                                        .font(.system(size: 12, weight: isSelected || isToday ? .semibold : .regular))
-                                                        .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : (isToday ? Theme.blue : Theme.text))
-                                                }
-                                                .frame(width: 34, height: 34)
-                                                .contentShape(Circle())
-                                            }
-                                            .buttonStyle(.cadencePlain)
-                                            .modifier(PickerHoverHighlight(cornerRadius: 17))
-                                        } else {
-                                            Color.clear.frame(width: 34, height: 34)
+                                if usesRows {
+                                    LazyVStack(spacing: 2) {
+                                        ForEach(days.compactMap { $0 }, id: \.self) { day in
+                                            dateRow(day)
                                         }
                                     }
+                                    .padding(.horizontal, 8)
+                                } else {
+                                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
+                                        ForEach(days.indices, id: \.self) { i in
+                                            if let d = days[i] {
+                                                let isSelected = cal.isDate(d, inSameDayAs: selection)
+                                                let isToday = cal.isDateInToday(d)
+                                                Button {
+                                                    selection = d
+                                                    syncViewMonthToSelection()
+                                                    isOpen = false
+                                                } label: {
+                                                    ZStack {
+                                                        Circle()
+                                                            .fill(isSelected ? Theme.blue : (isToday ? Theme.blue.opacity(0.15) : Color.clear))
+
+                                                        Text("\(cal.component(.day, from: d))")
+                                                            .cadenceFont(.metadata, base: CadenceDateSelectionMetrics.numeralSize, weight: isSelected || isToday ? .semibold : .regular)
+                                                            .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : (isToday ? Theme.blue : Theme.text))
+                                                    }
+                                                    .frame(width: cellSide, height: cellSide)
+                                                    .contentShape(Circle())
+                                                }
+                                                .buttonStyle(.cadencePlain)
+                                                .accessibilityLabel(DateFormatters.longDate.string(from: d))
+                                                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                                                .modifier(PickerHoverHighlight(cornerRadius: cellSide / 2, padding: 0))
+                                            } else {
+                                                Color.clear.frame(width: cellSide, height: cellSide)
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 8)
                                 }
-                                .padding(.horizontal, 8)
                             }
                             .id(monthID(for: offset))
                         }
                     }
                 }
-                .frame(height: inlineStyle ? 314 : 294)
                 .onAppear {
                     DispatchQueue.main.async {
                         proxy.scrollTo(monthID(for: 0), anchor: .top)
                     }
                 }
+                .onChange(of: usesRows) {
+                    proxy.scrollTo(monthID(for: 0), anchor: .top)
+                }
             }
         }
-        .frame(width: inlineStyle ? nil : 256)
-        .frame(maxWidth: inlineStyle ? .infinity : nil, alignment: .leading)
-        .background(inlineStyle ? Color.clear : Theme.surfaceElevated)
+    }
+
+    private var cellSide: CGFloat {
+        CadenceDateSelectionMetrics.cellSide(at: dynamicTypeSize)
+    }
+
+    private func dateRow(_ day: Date) -> some View {
+        let isSelected = cal.isDate(day, inSameDayAs: selection)
+        let isToday = cal.isDateInToday(day)
+        return Button {
+            selection = day
+            syncViewMonthToSelection()
+            isOpen = false
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(DateFormatters.longDate.string(from: day))
+                    .cadenceFont(.metadata, weight: isSelected || isToday ? .semibold : .regular)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .cadenceFont(.metadata)
+                        .accessibilityHidden(true)
+                }
+            }
+            .foregroundStyle(isSelected || isToday ? Theme.blue : Theme.text)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: CadenceDateSelectionMetrics.dateRowHeight(at: dynamicTypeSize), alignment: .leading)
+            .background(isSelected ? Theme.blue.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.cadencePlain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var anchorMonth: Date {
@@ -211,17 +314,16 @@ struct CadenceQuickDatePopover: View {
     var showsClear: Bool = true
     var onClear: (() -> Void)? = nil
     var inlineStyle: Bool = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let cal = Calendar.current
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                quickPill("Today", target: today)
-                quickPill("Tomorrow", target: tomorrow)
-                if let weekend = thisWeekend {
-                    quickPill("This Weekend", target: weekend)
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { quickActions }
+                    .fixedSize(horizontal: true, vertical: false)
+                VStack(spacing: 6) { quickActions }
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -239,7 +341,8 @@ struct CadenceQuickDatePopover: View {
                 ),
                 viewMonth: $viewMonth,
                 isOpen: $isOpen,
-                inlineStyle: inlineStyle
+                inlineStyle: true,
+                viewportHeight: CadenceDateSelectionMetrics.quickViewportHeight(at: dynamicTypeSize, inlineStyle: inlineStyle)
             )
 
             if showsClear {
@@ -249,30 +352,24 @@ struct CadenceQuickDatePopover: View {
                     isOpen = false
                 }
                 .buttonStyle(.cadencePlain)
-                .font(.system(size: 11))
+                .cadenceFont(.controlLabel, base: 11, weight: .regular)
                 .foregroundStyle(Theme.red)
                 .padding(.vertical, 10)
             }
         }
+        .frame(width: inlineStyle ? nil : CadenceDateSelectionMetrics.width(at: dynamicTypeSize))
+        .frame(maxWidth: inlineStyle ? .infinity : nil)
         .background(inlineStyle ? Color.clear : Theme.surfaceElevated)
-        // **T-1398 kept the rule here; T-1410 measured whether it could be dropped and it cannot.**
-        //
-        // Every size in this panel is a literal, down to the 34x34 day cells, and the create
-        // sheet's date tiles present it from inside a converted root. Nothing it draws reads the
-        // scaling environment today, so the pin closed no regression — it stated the rule, so that
-        // the day a shared component in here is converted this panel does not silently start
-        // growing inside 34pt cells.
-        //
-        // **Why it stays fixed rather than being converted with the other panels.** A month is
-        // seven columns wide and that is not a layout choice, it is what a month is. A day cell
-        // has to hold two digits, so at `accessibility5` a 12pt numeral resolves to ~37pt and the
-        // cell it needs is ~46 — seven of those plus the grid's own gutters is wider than the
-        // 390pt a phone offers, before the popover's own insets. There is no arrangement of seven
-        // columns that fits, which makes this a redesign (a different date-entry shape at
-        // accessibility sizes, not a bigger grid) rather than a conversion. Priced in
-        // `CadenceQuickDateGridScaleTests` and filed as [[T-1413]]; until then the honest answer
-        // is the one the panel already gives, which is that it does not scale.
-        .cadenceFixedTypography()
+        .cadenceScaledTypography()
+    }
+
+    @ViewBuilder
+    private var quickActions: some View {
+        quickPill("Today", target: today)
+        quickPill("Tomorrow", target: tomorrow)
+        if let weekend = thisWeekend {
+            quickPill("This Weekend", target: weekend)
+        }
     }
 
     private var today: Date {
@@ -300,7 +397,7 @@ struct CadenceQuickDatePopover: View {
             isOpen = false
         } label: {
             Text(label)
-                .font(.system(size: 11, weight: .medium))
+                .cadenceFont(.controlLabel, base: 11, weight: .medium)
                 .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : Theme.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -314,11 +411,12 @@ struct CadenceQuickDatePopover: View {
 
 private struct PickerHoverHighlight: ViewModifier {
     let cornerRadius: CGFloat
+    var padding: CGFloat = 2
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
         content
-            .padding(2)
+            .padding(padding)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(isHovered ? Theme.blue.opacity(0.08) : Color.clear)

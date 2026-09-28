@@ -329,6 +329,93 @@ struct CadenceTagChipScaleTests {
         #expect(!chipFile.contains(".cadenceFixedTypography()"))
         #expect(chipFile.contains("@Environment(\\.cadenceTypographyScaling)"),
                 "the chip stopped reading the boundary, so it cannot follow a converted surface")
+
+        try assertPageChromeCallerInventory(paths: paths, read: read)
+    }
+
+    /// Like the chip, these shared components are prepared before their pages opt in. This pins
+    /// direct callers, not transitive reachability or framework presentation propagation.
+    private func assertPageChromeCallerInventory(paths: [String], read: (String) throws -> String) throws {
+        let families: [(pattern: String, fires: String, anchor: String, undeclared: Set<String>)] = [
+            (
+                #"\bEmptyStateView\s*\("#,
+                "EmptyStateView(message: title, icon: icon)",
+                "Cadence/iOS/iOSTaskViews.swift",
+                [
+                    "Cadence/iOS/iOSAINoteActionsViews.swift",
+                    "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+                    "Cadence/iOS/iOSTaskViews.swift",
+                    "Cadence/macOS/Views/GoalTimelineView.swift",
+                    "Cadence/macOS/Views/GoalsView.swift",
+                    "Cadence/macOS/Views/HabitsView.swift",
+                    "Cadence/macOS/Views/LinksView.swift",
+                    "Cadence/macOS/Views/ListDetailComponents.swift",
+                    "Cadence/macOS/Views/ListDetailSupportViews.swift",
+                    "Cadence/macOS/Views/ListDetailView.swift",
+                    "Cadence/macOS/Views/ListNotesViewSupportViews.swift",
+                    "Cadence/macOS/Views/NoteActionReviewSheets.swift",
+                    "Cadence/macOS/Views/NotesView.swift",
+                    "Cadence/macOS/Views/TasksListView.swift",
+                    "Cadence/macOS/Views/TasksPanel.swift",
+                ]
+            ),
+            (
+                #"\b(?:CadenceTaskGroupHeading|CadenceTodayRolloverBanner|CadenceTodayOverdue(?:ListCard|SectionCard|SummaryHeading))\s*\("#,
+                "CadenceTodayRolloverBanner(tasks: tasks) { roll() }",
+                "Cadence/iOS/iOSTodayTaskSections.swift",
+                [
+                    "Cadence/iOS/iOSTaskGroupSection.swift",
+                    "Cadence/iOS/iOSTodayTaskSections.swift",
+                    "Cadence/macOS/Views/TasksPanel.swift",
+                ]
+            ),
+            (
+                #"\biOS(?:PageHeader|CompactPageHeader)\s*\("#,
+                "iOSPageHeader(title: name)",
+                "Cadence/iOS/iOSFeatureComponents.swift",
+                [
+                    "Cadence/iOS/iOSFeatureComponents.swift",
+                    "Cadence/iOS/iOSFocusView.swift",
+                    "Cadence/iOS/iOSListDetailView.swift",
+                    "Cadence/iOS/iOSListSupportViews.swift",
+                    "Cadence/iOS/iOSSettingsComponents.swift",
+                    "Cadence/iOS/iOSTaskCollectionPage.swift",
+                    "Cadence/iOS/iOSTaskViews.swift",
+                    "Cadence/iOS/iOSTasksPageView.swift",
+                    "Cadence/iOS/iOSTasksTabView.swift",
+                    "Cadence/iOS/iOSTodayCompactViews.swift",
+                    "Cadence/iOS/iPadTodaySupportViews.swift",
+                ]
+            ),
+            (
+                #"\biOSSegmentedPill(?:Group)?\s*[({]"#,
+                "iOSSegmentedPillGroup { iOSSegmentedPill(title: title) }",
+                "Cadence/iOS/iOSDesignSystem.swift",
+                [
+                    "Cadence/iOS/iOSAINoteActionsViews.swift",
+                    "Cadence/iOS/iOSCalendarChromeViews.swift",
+                    "Cadence/iOS/iOSDesignSystem.swift",
+                    "Cadence/iOS/iOSSearchSupportViews.swift",
+                    "Cadence/iOS/iOSTasksPageView.swift",
+                    "Cadence/iOS/iOSTasksTabView.swift",
+                    "Cadence/iOS/iPadTodaySupportViews.swift",
+                ]
+            ),
+        ]
+        for family in families {
+            let instrument = try CadenceScanInstrument(
+                "shared page chrome caller",
+                fires: family.fires,
+                andNotOn: "// \(family.fires)\nlet prose = \(String(reflecting: family.fires))",
+                by: { CadenceSourceScan.codeOnly($0).range(of: family.pattern, options: .regularExpression) != nil }
+            )
+            let sites = try instrument.sweep(paths, atLeast: 300, including: family.anchor, read: read)
+            #expect(Set(sites) == family.undeclared, "\(family.pattern): reclassify the new or removed chrome caller")
+            for path in sites {
+                #expect(!CadenceSourceScan.codeOnly(try read(path)).contains(".cadenceScaledTypography()"),
+                        "\(family.pattern): \(path) opted in; verify its whole page geometry and move it out of the undeclared inventory")
+            }
+        }
     }
 
     // MARK: - Judgement 1: the dot and the `x` are content
