@@ -102,6 +102,15 @@
 # argument, the measurement and the three founding cases it must still refuse are at
 # `closed_in_own_ledger()` below and in `scripts/replay-reopen-reading.sh`.
 #
+# AND ONE MORE, WHICH IS THE SHARED INDEX RATHER THAN THE LEDGER (T-1434). `**PARTIAL` excuses the
+# commit whose own diff wrote it (T-1359) -- and whether a commit's diff wrote a `docs/TODO.md`
+# line is decided by `agent-commit.sh` staging WHOLE FILES (T-679), not by who typed it. Two agents
+# hit that in one run on 2026-09-27: each wrote a correct `**PARTIAL` line for its own ticket, each
+# had a sibling carry it away first, and each then landed code against a ledger path already clean.
+# So a `**PARTIAL` line that NAMES a commit's sha excuses that commit -- the same attribution a
+# closure has always carried, and narrower than what a closure buys. `partial_named_here()` below
+# and `scripts/replay-partial-provenance-reading.sh` hold the argument and the number.
+#
 # THE MIRROR DIRECTION, AND IT IS A NOTICE (T-1342)
 #
 # Everything above asks whether a commit that LANDS CODE closed anything. The other direction is an
@@ -270,6 +279,65 @@ partial_written_here() {  # $1 = sha, $2 = space-separated PARTIAL ids; 0 if thi
     return 1
 }
 
+# THE PROVENANCE ARM (T-1434), and it is the one place `partialhere` above cannot tell the truth.
+#
+# `partial_written_here` asks *did THIS commit's diff write the PARTIAL line*, and the answer is
+# produced by the SHARED INDEX rather than by the author. `scripts/agent-commit.sh` stages WHOLE
+# FILES ([[T-679]]) and `$TODO_PATH` is the one file every agent edits, so an in-flight ledger edit
+# lands under whoever commits that path NEXT. Measured twice in one run of this check on
+# 2026-09-27: `a4c12b09` (T-1366) and `3c9d28dd` (T-1122) each wrote a correct `**PARTIAL` line for
+# their own ticket, each had it carried away by a sibling's commit before their code commit ran,
+# and each then landed code against a ledger path that was already clean and could carry nothing.
+# Both were false positives of `partialhere`, and there was no remedy inside it: a follow-up ledger
+# commit is exactly what T-1359 refuses.
+#
+# THE READING: an id whose entry reads `**PARTIAL` at <rev> excuses a commit when that first line
+# NAMES THAT COMMIT'S SHA -- a backticked hex run of seven or more characters that is a PREFIX of
+# the commit's own sha. It is not a new convention: the refusal this script prints already asks for
+# ``- [T-n] **CLOSED <date> (`<sha>`) -- ...``, and a PARTIAL line carrying a sha is that same
+# attribution one step short of done. It is also strictly NARROWER than what `**CLOSED` buys, since
+# a closure at <rev> excuses every commit naming the id, sha or no sha.
+#
+# WHY IT IS NOT RIDEABLE, which is the objection T-1359 rejected the loose reading over. A rider
+# would have to be NAMED, by sha, on the line. A sha cannot be written before the commit it names
+# exists, it identifies exactly one commit, and writing one is a deliberate statement by a later
+# author about that specific commit -- not a state a commit can drift into by landing after
+# somebody else's PARTIAL. The loose reading needs no such statement, which is why it is the
+# control in the replay and why it is disqualified there.
+#
+# MEASURED, by `scripts/replay-partial-provenance-reading.sh`, over one verdict per (commit, push)
+# pair across all 1235 mainline pushes -- 3782 flagged verdicts, all 3782 of which recorded nothing
+# in their own diff:
+#
+#   reading         newly excused   ...ledger names NOBODY
+#   partialpush          0 of 3782           0        T-1434's candidate (a); NEVER REACHED
+#   partialnamed  <--    8 of 3782           0        this one
+#   partialany          10 of 3782           2        the control, DISQUALIFIED
+#
+# `partialpush` is the ticket's own first candidate -- accept a PARTIAL line written by any commit
+# in the same PUSH -- and the table is the argument against it: this repository pushes one commit
+# at a time, so the reading collapses into `partialhere` and excuses nothing at all. The eight
+# verdicts `partialnamed` newly excuses are `a4c12b09` at five pushes and `3c9d28dd` at three; the
+# two `partialany` excuses on top of those are the SAME two commits at the pushes BEFORE the ledger
+# named them, which is the rideable window and the reason the control is disqualified. T-1298's
+# three founding cases are refused by name there and here: `00d576f`, `e4719e3` and `44eced5` are
+# flagged at 26, 24 and 23 pushes and excused at none of them by any reading in the table.
+#
+# NO TIME BOUND, deliberately. The replay prints the retroactivity spread and both repairs landed
+# in the very next push, but a bound would be a new cliff protecting against an "amnesty" that
+# costs its author one deliberate sha per commit -- which is the same price, and the same
+# statement, that a `**CLOSED` line has always cost with no bound on it either.
+#
+# COST. Like the two probes above, this runs only for a CANDIDATE finding that names a PARTIAL id
+# -- zero commits on a green run -- and it reads `$tmp/todo.md`, which is already on disk.
+# The awk program is assigned next to `$OWN_LEDGER_AWK` below, because `$LEDGER_READING` it is
+# built from is defined there and a command substitution runs where it is written.
+partial_named_here() {  # $1 = sha, $2 = PARTIAL ids; 0 if one of their lines names THIS commit
+    _sha=$1; _ids=$2
+    [ -n "$_ids" ] || return 1
+    awk -v want="$_ids" -v sha="$_sha" "$PARTIAL_NAMED_AWK" "$tmp/todo.md"
+}
+
 # THE RE-OPEN ARM (T-1325), and the owner decided the question it was filed to ask.
 #
 # Everything above judges an examined commit against the ledger at <rev> -- HEAD, in CI -- while
@@ -323,6 +391,7 @@ second_pass() {  # $1 = the first pass's records
     _rev_short=$(git rev-parse --short "${rev:-HEAD}" 2>/dev/null || printf '%s' "${rev:-HEAD}")
     _findings=0
     _excused=0
+    _named=0
     _reopened=0
     _body=""
     _commits=0; _entries=0; _examined=0
@@ -335,6 +404,10 @@ second_pass() {  # $1 = the first pass's records
             F)
                 if partial_written_here "$_a" "$_e"; then
                     _excused=$((_excused + 1))
+                    continue
+                fi
+                if partial_named_here "$_a" "$_e"; then
+                    _named=$((_named + 1))
                     continue
                 fi
                 if closed_in_own_ledger "$_a" "$_c"; then
@@ -353,6 +426,9 @@ second_pass() {  # $1 = the first pass's records
         "$_commits" "$_entries" "$_examined" "$_findings"
     if [ "$_excused" -gt 0 ]; then
         printf ', %d excused by a **PARTIAL line the commit wrote itself' "$_excused"
+    fi
+    if [ "$_named" -gt 0 ]; then
+        printf ', %d by a **PARTIAL line that names the commit'"'"'s own sha' "$_named"
     fi
     if [ "$_reopened" -gt 0 ]; then
         printf ', %d excused by a closure their own ledger carried before the entry was re-opened' "$_reopened"
@@ -378,7 +454,7 @@ second_pass() {  # $1 = the first pass's records
     fi
 
     if [ "$_findings" -gt 0 ]; then
-        printf 'REFUSED (LEDGER-CLOSURE-LAGGED): %d commit(s) landed code under ticket ids and closed none of them in the ledger.\n  Every id each commit names is still open in %s. Either write the closure on the entry'"'"'s own\n  first line (`- [T-n] **CLOSED <date> (`<sha>`) -- ...`), or -- if the work is genuinely part-done --\n  a `- [T-n] **PARTIAL <date> (...) -- ...` first line IN THIS COMMIT, or, if the ticket is\n  legitimately still open, make the commit name an id it did close.\n' \
+        printf 'REFUSED (LEDGER-CLOSURE-LAGGED): %d commit(s) landed code under ticket ids and closed none of them in the ledger.\n  Every id each commit names is still open in %s. Either write the closure on the entry'"'"'s own\n  first line (`- [T-n] **CLOSED <date> (`<sha>`) -- ...`), or -- if the work is genuinely part-done --\n  a `- [T-n] **PARTIAL <date> (...) -- ...` first line IN THIS COMMIT, or, if the ticket is\n  legitimately still open, make the commit name an id it did close. And if you DID write that\n  **PARTIAL line and a sibling\047s commit carried it away before yours ran -- `agent-commit.sh`\n  stages whole files (T-679) -- rewrite the line to name this commit\047s sha, which is the same\n  attribution a closure carries and is the only thing that excuses a commit that wrote nothing (T-1434).\n' \
             "$_findings" "$TODO_PATH" >&2
         return 3
     fi
@@ -386,7 +462,7 @@ second_pass() {  # $1 = the first pass's records
 }
 
 # ---------------------------------------------------------------------------
-# THE LEDGER READING, spelled ONCE in this file and shared by the main pass below and by the two
+# THE LEDGER READING, spelled ONCE in this file and shared by the main pass below and by the three
 # second-pass probes above it. It used to be written out inside `AWK_PROG` alone; T-1325's probe
 # needs the same `first_line_closed` over a DIFFERENT revision of the ledger, and a second copy of
 # a rule this repository has already converged across three files (T-1335, T-1359) would be the
@@ -430,6 +506,25 @@ $2 !~ /^- \[T-[0-9]+\]/ { next }
 {
     if (!(entry_id($2) in need)) next
     if ($1 == "D" || sec ~ /^## (Done|Cancelled)/ || first_line_closed($2)) { found = 1; exit }
+}
+END { exit(found ? 0 : 1) }
+AWK
+)
+
+PARTIAL_NAMED_AWK=$LEDGER_READING$(cat <<'AWK'
+BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) need[w[i]] = 1; bq = sprintf("%c", 96) }
+$0 !~ /^- \[T-[0-9]+\]/ { next }
+{
+    if (!(entry_id($0) in need)) next
+    if (!first_line_partial($0)) next
+    # The backticked hex runs on the line, tested against the REAL sha rather than by shape, so an
+    # English word that happens to be hexadecimal cannot match anything. Seven characters minimum,
+    # written out rather than with an ERE interval, which is not portable across these awks.
+    rest = $0
+    while (match(rest, bq "[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*" bq)) {
+        if (index(sha, substr(rest, RSTART + 1, RLENGTH - 2)) == 1) { found = 1; exit }
+        rest = substr(rest, RSTART + RLENGTH)
+    }
 }
 END { exit(found ? 0 : 1) }
 AWK
@@ -937,6 +1032,124 @@ cmd_selftest() {
     land "docs: write the closures so the modes below start from a clean history" docs/DUP.md dup6
     out=$(run); rc=$?
     check "$rc" 0 "$out" "and the history goes quiet again once every entry carries its closure" 0 findings
+
+    # --- mode 2f: a **PARTIAL line that NAMES this commit's sha (T-1434) --------------------
+    # The state `partialhere` above cannot see, and it is produced by the SHARED INDEX rather than
+    # by the author. `agent-commit.sh` stages WHOLE FILES (T-679) and docs/TODO.md is the one file
+    # every agent edits, so an in-flight ledger edit lands under whoever commits that path NEXT:
+    # `a4c12b09` and `3c9d28dd` each wrote a correct **PARTIAL line for their own ticket on
+    # 2026-09-27, each had it carried away by a sibling, and each then landed code against a ledger
+    # path that was already clean. Both were false positives of T-1359's reading with no remedy
+    # inside it, because a follow-up ledger commit is exactly what mode 2d refuses.
+    #
+    # The first two checks are the pair that tells this reading from the loose one mode 2d refuses:
+    # the line has to name THIS commit, so the commit that did the work is excused and the next one
+    # riding on the same line is not. The last two are why the sha is tested against the real
+    # commit rather than by shape -- somebody else's sha excuses nothing, and a backticked English
+    # word that happens to be hexadecimal is not a sha at all.
+    echo; echo " mode 2f (T-1434) -- a **PARTIAL line that NAMES this commit's sha excuses it"
+    ledger_2f() { ledger '# ledger' '' '## Open — decided, not started' '' \
+        '- [T-10] **CLOSED 2026-09-19 (`0000000`) — fixed.**' \
+        '- [T-20] **CLOSED 2026-09-20 (`1111111`) — the fix landed with the closure.**' \
+        '- [T-30] **CLOSED 2026-09-21 (`3333333`) — the closure, written rather than quoted.**' \
+        '- [T-31] **A finding that was closed after the fact.** **CLOSED 2026-09-21 (`2222222`) — the closure written mid-line, after the original finding.**' \
+        '- [T-32] **CLOSED 2026-09-21 (`4444444`) — and this one too.**' \
+        '- [T-40] **CLOSED 2026-09-25 (`5555555`) — the remaining three landed.**' \
+        '- [T-41] **CLOSED 2026-09-25 (`6666666`) — and this one too.**' \
+        '- [T-42] **PARTIAL 2026-09-25 (agent `fixture`) — an unrelated part-done ticket.**' \
+        '- [T-43] **CLOSED 2026-09-25 (`7777777`) — closed so the modes below start clean.**' \
+        '- [T-60] **CLOSED 2026-09-27 (`aaaabbb`) — the remaining five sites landed.**' \
+        '- [T-61] **CLOSED 2026-09-27 (`ccccddd`) — closed so the modes below start clean.**' \
+        '- [T-62] **CLOSED 2026-09-27 (`9999999`) — an unrelated ticket, closed long before.**' \
+        "$@" \
+        '- [T-11] **Another open finding.**' \
+        '- [T-12] **CLOSED 2026-09-19 (`abc1234`) — done.**' \
+        '' '## Done' '' '- [T-13] **A done entry with no marker at all.**'; }
+
+    ledger_2f '- [T-70] **Open: the agent wrote its **PARTIAL line and a sibling committed the ledger first.**'
+    land "T-70: the work lands while the sibling still holds this agent's ledger edit" \
+        Cadence/S1.swift "let s1 = 1"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "the control: before anything names it, the commit is still a finding" \
+        LEDGER-CLOSURE-LAGGED T-70
+    s1_sha=$( cd "$repo" && git rev-parse --short=8 HEAD )
+
+    # THE REPAIR, in a ledger-only commit: the **PARTIAL line is rewritten to name the commit that
+    # did the work. This is the follow-up commit T-1359 refuses, made admissible by the sha.
+    ledger_2f "- [T-70] **PARTIAL 2026-09-27 (agent \`fixture\`, \`$s1_sha\`) — the sweep landed; the second half is refused with a measurement.**"
+    ( cd "$repo" && git add -A . && git commit -q -m "T-70 ledger: name the commit the sweep landed in" )
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "a **PARTIAL line naming this commit's sha excuses the commit that wrote no ledger" \
+        "0 findings" "names the commit's own sha"
+
+    land "T-70: a later commit lands more code under the same PARTIAL line" Cadence/S2.swift "let s2 = 2"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "and the NEXT commit cannot ride that line, because it is not the one named" \
+        LEDGER-CLOSURE-LAGGED T-70
+
+    # SOMEBODY ELSE'S SHA. The shape this repository's history has never produced -- the replay's
+    # `declined_othersha` column reads 0 over all 1235 pushes -- which is exactly why it is built
+    # here instead: a reading whose narrowness only history can exercise is untested until history
+    # happens to produce it.
+    ledger_2f '- [T-70] **CLOSED 2026-09-27 (`bbbbccc`) — the second half landed after all.**' \
+              "- [T-71] **PARTIAL 2026-09-27 (agent \`fixture\`, \`$s1_sha\`) — a part-done ticket whose line names a DIFFERENT commit.**"
+    # The ledger moves in its OWN commit, or `land` would stage it alongside the code and the
+    # commit below would be excused by mode 2d for having written the line itself.
+    ( cd "$repo" && git add -A . && git commit -q -m "docs: T-70 closes and T-71 opens part-done" )
+    land "T-71: code lands under an entry whose PARTIAL line names somebody else's commit" \
+        Cadence/S3.swift "let s3 = 3"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "a **PARTIAL line carrying somebody ELSE's sha excuses nothing" \
+        LEDGER-CLOSURE-LAGGED T-71
+
+    # AND A BACKTICKED WORD THAT IS MERELY HEXADECIMAL. `defaced` is seven characters of [0-9a-f]
+    # and is not a sha; the probe tests every candidate run against the commit's REAL sha rather
+    # than against the shape of one, so this cannot excuse anything either.
+    ledger_2f '- [T-70] **CLOSED 2026-09-27 (`bbbbccc`) — the second half landed after all.**' \
+              '- [T-71] **CLOSED 2026-09-27 (`dddd111`) — closed so the modes below start clean.**' \
+              '- [T-72] **PARTIAL 2026-09-27 (agent `fixture`) — a part-done ticket whose line backticks the word `defaced`.**'
+    ( cd "$repo" && git add -A . && git commit -q -m "docs: T-71 closes and T-72 opens part-done" )
+    land "T-72: code lands under an entry whose PARTIAL line backticks a hexadecimal WORD" \
+        Cadence/S4.swift "let s4 = 4"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "a backticked English word that happens to be hexadecimal is not a sha" \
+        LEDGER-CLOSURE-LAGGED T-72
+
+    # AND THE SHA HAS TO BE ON THE **PARTIAL LINE. The probe is only ever handed ids the first
+    # pass already read as PARTIAL, so its `first_line_partial` gate looks redundant -- and a
+    # mutation that deleted it survived the rest of this mode. It is not redundant for a
+    # DOUBLE-ALLOCATED id (the T-1303 shape mode 2b builds): one entry part-done and a second,
+    # plain-open entry for the same id, and this ledger's entries cite the commit they were filed
+    # out of constantly. Without the gate the sha on the OPEN twin excuses the commit, which is
+    # attribution the part-done statement never made.
+    ledger_2f '- [T-70] **CLOSED 2026-09-27 (`bbbbccc`) — the second half landed after all.**' \
+              '- [T-71] **CLOSED 2026-09-27 (`dddd111`) — closed so the modes below start clean.**' \
+              '- [T-72] **CLOSED 2026-09-27 (`eeee222`) — and this one too.**' \
+              '- [T-73] **PARTIAL 2026-09-27 (agent `fixture`) — the part-done half, and its line names nobody.**'
+    ( cd "$repo" && git add -A . && git commit -q -m "docs: T-72 closes and T-73 opens part-done" )
+    land "T-73: code lands under a part-done entry whose line names nobody" Cadence/S5.swift "let s5 = 5"
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "the control: a **PARTIAL line naming nobody excuses nobody" \
+        LEDGER-CLOSURE-LAGGED T-73
+    s5_sha=$( cd "$repo" && git rev-parse --short=8 HEAD )
+
+    ledger_2f '- [T-70] **CLOSED 2026-09-27 (`bbbbccc`) — the second half landed after all.**' \
+              '- [T-71] **CLOSED 2026-09-27 (`dddd111`) — closed so the modes below start clean.**' \
+              '- [T-72] **CLOSED 2026-09-27 (`eeee222`) — and this one too.**' \
+              '- [T-73] **PARTIAL 2026-09-27 (agent `fixture`) — the part-done half, and its line names nobody.**' \
+              "- [T-73] **A second entry two concurrent agents allocated for the same id, filed out of \`$s5_sha\` and still open.**"
+    ( cd "$repo" && git add -A . && git commit -q -m "docs: a second, open entry for T-73 that cites the commit above" )
+    out=$(run); rc=$?
+    check "$rc" 3 "$out" "a sha on an OPEN twin of the same id is not on the **PARTIAL line" \
+        LEDGER-CLOSURE-LAGGED T-73
+
+    ledger_2f '- [T-70] **CLOSED 2026-09-27 (`bbbbccc`) — the second half landed after all.**' \
+              '- [T-71] **CLOSED 2026-09-27 (`dddd111`) — closed so the modes below start clean.**' \
+              '- [T-72] **CLOSED 2026-09-27 (`eeee222`) — and this one too.**' \
+              '- [T-73] **CLOSED 2026-09-27 (`ffff333`) — the part-done half landed too.**'
+    land "docs: write the closures so the modes below start from a clean history" docs/DUP.md dup7
+    out=$(run); rc=$?
+    check "$rc" 0 "$out" "and the history goes quiet once every entry in this mode carries its closure" 0 findings
 
     # --- mode 3: the subject shapes this repository actually writes ---------
     echo; echo " mode 3 (subject shapes) -- ranges and separators are read, not just the bare prefix"

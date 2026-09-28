@@ -1067,6 +1067,23 @@ struct CadenceGuardScriptSelftestTests {
             selftest.contains("T-1325"),
             "scripts/ledger-lag-check.sh's selftest no longer induces T-1325's re-open reading"
         )
+        // T-1434's provenance arm is the same shape a fourth time, and it is the one that
+        // corrects `partialhere` rather than adding beside it. `agent-commit.sh` stages WHOLE
+        // FILES ([[T-679]]) and `docs/TODO.md` is the one file every agent edits, so "did THIS
+        // commit's diff write the **PARTIAL line" is answered by the shared index and not by the
+        // author: `a4c12b09` and `3c9d28dd` each wrote a correct line for their own ticket, each
+        // had a sibling's commit carry it away, and both were false positives in the same run.
+        // The clause that keeps `partial_named_here` from being rideable is that the line must
+        // name THAT COMMIT'S SHA — a rider would have to be written down, by sha, by a later
+        // author, which is the same deliberate statement a `**CLOSED` line has always carried.
+        for reading in ["T-1434", "partial_named_here", "PARTIAL_NAMED_AWK"] {
+            #expect(body.contains(reading), "scripts/ledger-lag-check.sh no longer makes the reading \(reading)")
+        }
+        #expect(
+            selftest.contains("T-1434"),
+            "scripts/ledger-lag-check.sh's selftest no longer induces T-1434's provenance reading"
+        )
+
         // The three copies the widening replaced with one. `LEDGER_READING` is the closure and
         // PARTIAL functions lifted out of `AWK_PROG` so the second-pass probe can share them
         // rather than carry a fourth spelling of a rule T-1335 and T-1359 already converged.
@@ -1125,6 +1142,65 @@ struct CadenceGuardScriptSelftestTests {
             #expect(
                 text.contains(floor),
                 "scripts/replay-reopen-reading.sh lost its \(floor) floor, so a run that read nothing reports a clean sweep"
+            )
+        }
+    }
+
+    /// **T-1434, and it is the half of [[T-1359]] the SHARED INDEX makes unanswerable.** That
+    /// ticket decided a `**PARTIAL` first line excuses only the commit whose own diff wrote it,
+    /// because the loose reading is rideable. What it could not know is that `agent-commit.sh`
+    /// stages WHOLE FILES ([[T-679]]) and `docs/TODO.md` is the one file every agent edits, so an
+    /// in-flight ledger edit lands under whoever commits that path NEXT. On 2026-09-27 that
+    /// produced two findings in one run: `a4c12b09` (T-1366) and `3c9d28dd` (T-1122) had each
+    /// written a correct `**PARTIAL` line for their own ticket, had it carried away by a sibling,
+    /// and then landed code against a ledger path that was already clean.
+    ///
+    /// The adopted repair is `partialnamed` — the line must NAME the commit's sha — and it is
+    /// pinned here for the same reason `replay-reopen-reading.sh` is: the number that justified
+    /// the widening stays in the tree to be re-run rather than quoted. `partialany` is named
+    /// explicitly because it is the table's CONTROL, T-1359's rejected loose reading, which the
+    /// replay expects to be DISQUALIFIED; a disqualifying column that never disqualifies anything
+    /// is indistinguishable from one that cannot reach the reading ([[T-1394]]). `partialpush` is
+    /// named because it is T-1434's own candidate (a) and the table is the argument against it:
+    /// this repository pushes one commit at a time, so it is NEVER REACHED and excuses nothing.
+    @Test func thePartialProvenanceReadingIsMeasuredAndItsFoundingCasesArePinned() throws {
+        let replay = CadenceSelftestRun.repositoryRoot()
+            .appendingPathComponent("scripts/replay-partial-provenance-reading.sh")
+        #expect(
+            FileManager.default.isExecutableFile(atPath: replay.path),
+            "scripts/replay-partial-provenance-reading.sh is missing or not executable, so T-1434's number cannot be re-derived"
+        )
+        let text = try String(contentsOf: replay, encoding: .utf8)
+        for reading in ["today", "partialpush", "partialnamed", "partialany"] {
+            #expect(
+                text.contains(reading),
+                "scripts/replay-partial-provenance-reading.sh no longer measures the \(reading) candidate"
+            )
+        }
+        // T-1298's three founding cases, by name. A reading that excuses one of them is not
+        // adoptable however good its coverage column looks, and the replay refuses over them.
+        for sha in ["00d576f", "e4719e3", "44eced5"] {
+            #expect(
+                text.contains(sha),
+                "scripts/replay-partial-provenance-reading.sh no longer checks T-1298's founding case \(sha)"
+            )
+        }
+        // And the positive half: the two commits whose PARTIAL line a sibling carried. Without
+        // them the adopted reading is never once evaluated by the cases that decide it.
+        for sha in ["a4c12b09", "3c9d28dd"] {
+            #expect(
+                text.contains(sha),
+                "scripts/replay-partial-provenance-reading.sh no longer checks the case T-1434 was filed for, \(sha)"
+            )
+        }
+        // `REPLAY-PROV-DISQUALIFIED` is the one a replay in this family has never had before, and
+        // it exists because this one printed `DISQUALIFIED` beside its own adopted reading and
+        // exited 0 under a mutation. A measurement nobody is obliged to act on is [[T-1343]]'s
+        // shape — evidence only failure produces — turned inside out.
+        for floor in ["REPLAY-PROV-VACUOUS", "REPLAY-PROV-FOUNDING-LOST", "REPLAY-PROV-DISQUALIFIED", "REFUSED RIDES"] {
+            #expect(
+                text.contains(floor),
+                "scripts/replay-partial-provenance-reading.sh lost its \(floor) floor, so a run that read nothing reports a clean sweep"
             )
         }
     }
