@@ -239,6 +239,22 @@ enum CadenceSidebarCountEmphasis: Equatable {
 struct CadenceSidebarCount: Equatable {
     let value: Int
     let emphasis: CadenceSidebarCountEmphasis
+    /// **What the number counts, in words** — "2 overdue", "7 open tasks" (T-1445).
+    ///
+    /// The sidebar's Today badge and the Today page's header badge are two different tallies of
+    /// the same day: this one is `overdueTaskCount`, the header's is
+    /// `TasksPanelDerivedState.todayEligibleTasks.count`. Both are right and they legitimately
+    /// disagree — 2 beside 7 on the screen that reported this — so the pair is only honest if the
+    /// reader can find out which is which. Colour and shape already differ (a bare `Theme.red`
+    /// digit here, an amber-filled capsule there) and say nothing about *what*; this is the half
+    /// that does, and it is carried on the value rather than derived at the row, because
+    /// `count(for:counts:)` is the only thing that knows what each tally means.
+    ///
+    /// Not a second rendering: the digits stay the whole of the visible badge. This is the row's
+    /// tooltip and its VoiceOver label — where, before this, the number was announced as nothing
+    /// at all (`CadenceSidebarCountLabel` is `accessibilityHidden` and the rows label themselves
+    /// with the bare destination name).
+    let description: String
 }
 
 /// The tallies a sidebar needs to decide its counts, as plain numbers so the rule is testable
@@ -263,21 +279,33 @@ extension CadenceSidebarLayout {
     ) -> CadenceSidebarCount? {
         switch destination {
         case .today:
-            return badge(counts.todayOverdueCount, emphasis: .urgent)
+            // "overdue" is an adjective and does not take a plural, which is why the phrase
+            // helper takes both forms rather than appending an "s".
+            return badge(counts.todayOverdueCount, emphasis: .urgent, singular: "overdue", plural: "overdue")
         case .allTasks:
-            return badge(counts.openTaskCount)
+            return badge(counts.openTaskCount, singular: "open task", plural: "open tasks")
         case .goals:
-            return badge(counts.activeGoalCount)
+            return badge(counts.activeGoalCount, singular: "active goal", plural: "active goals")
         case .habits:
-            return badge(counts.habitCount)
+            return badge(counts.habitCount, singular: "habit", plural: "habits")
         case .calendar, .notes, .focus, .inbox, .lists, .search, .settings:
             return nil
         }
     }
 
+    /// The row's own label with its count named after it — "Today, 2 overdue".
+    ///
+    /// One function for the tooltip and the VoiceOver label, on both platforms, so a row cannot
+    /// say one thing on hover and another to a screen reader. `label` alone when the row carries
+    /// no count, because ", 0" is the chrome `badge` already refuses to draw.
+    static func rowAccessibilityLabel(_ label: String, count: CadenceSidebarCount?) -> String {
+        guard let count else { return label }
+        return "\(label), \(count.description)"
+    }
+
     /// The count for one area/project row. Always neutral — a list is a place, not a deadline.
     static func listCount(openTaskCount: Int) -> CadenceSidebarCount? {
-        badge(openTaskCount)
+        badge(openTaskCount, singular: "open task", plural: "open tasks")
     }
 
     /// Open work whose deadline has already passed.
@@ -294,8 +322,15 @@ extension CadenceSidebarLayout {
 
     private static func badge(
         _ value: Int,
-        emphasis: CadenceSidebarCountEmphasis = .neutral
+        emphasis: CadenceSidebarCountEmphasis = .neutral,
+        singular: String,
+        plural: String
     ) -> CadenceSidebarCount? {
-        value > 0 ? CadenceSidebarCount(value: value, emphasis: emphasis) : nil
+        guard value > 0 else { return nil }
+        return CadenceSidebarCount(
+            value: value,
+            emphasis: emphasis,
+            description: "\(value) \(value == 1 ? singular : plural)"
+        )
     }
 }

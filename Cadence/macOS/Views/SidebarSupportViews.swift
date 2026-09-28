@@ -140,9 +140,13 @@ struct SidebarNavRow: View {
             )
         }
         .buttonStyle(.plain)
-        .help(label)
+        // T-1445: "Today, 2 overdue", not "Today". The sidebar's Today badge and the Today page's
+        // header badge are two different tallies of the same day and are *meant* to differ; the
+        // row is where the sidebar's one says which it is. `rowAccessibilityLabel` returns the
+        // bare label for a row with no count, so the rows that carry none read exactly as before.
+        .help(CadenceSidebarLayout.rowAccessibilityLabel(label, count: count))
         .accessibilityIdentifier(accessibilityID)
-        .accessibilityLabel(label)
+        .accessibilityLabel(CadenceSidebarLayout.rowAccessibilityLabel(label, count: count))
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeOut(duration: 0.12), value: isSelected)

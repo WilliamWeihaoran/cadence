@@ -112,10 +112,15 @@ struct HabitsView: View {
     }
 
     /// Whether the page is empty because the search field or the filter bar is narrowing it.
+    ///
+    /// T-1446: `habits` is the collection both controls narrow. With no habits at all the default
+    /// *Due Today* filter is hiding nothing, and "No matching habits / Try a different search or
+    /// filter." pointed a first reader at two controls they had not touched.
     private var isNarrowedToEmpty: Bool {
         CadenceEmptyStateCopy.isNarrowedToEmpty(
             searchText: searchText,
-            filterNarrows: filter.narrowsResults
+            filterNarrows: filter.narrowsResults,
+            hasCandidates: !habits.isEmpty
         )
     }
 

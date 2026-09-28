@@ -20,7 +20,7 @@ struct CadenceSidebarCountMetricsTests {
     /// A count is a bare number until it would start costing the name beside it.
     @Test func aCountUnderTheThresholdIsJustItsDigits() {
         for value in [1, 7, 42, 998, 999] {
-            let count = CadenceSidebarCount(value: value, emphasis: .neutral)
+            let count = CadenceSidebarCount(value: value, emphasis: .neutral, description: "test")
             #expect(CadenceSidebarCountMetrics.displayText(for: count) == "\(value)")
         }
     }
@@ -29,7 +29,7 @@ struct CadenceSidebarCountMetricsTests {
     /// would eat the list name it belongs to, and "how many over a thousand" is not actionable.
     @Test func aCountOverTheThresholdClampsInsteadOfWidening() {
         for value in [1000, 4_321, Int.max] {
-            let count = CadenceSidebarCount(value: value, emphasis: .neutral)
+            let count = CadenceSidebarCount(value: value, emphasis: .neutral, description: "test")
             #expect(CadenceSidebarCountMetrics.displayText(for: count) == "999+")
         }
     }
@@ -38,8 +38,8 @@ struct CadenceSidebarCountMetricsTests {
     /// it would in neutral, in red.
     @Test func emphasisDoesNotChangeTheText() {
         for value in [3, 1_500] {
-            let neutral = CadenceSidebarCount(value: value, emphasis: .neutral)
-            let urgent = CadenceSidebarCount(value: value, emphasis: .urgent)
+            let neutral = CadenceSidebarCount(value: value, emphasis: .neutral, description: "test")
+            let urgent = CadenceSidebarCount(value: value, emphasis: .urgent, description: "test")
 
             #expect(
                 CadenceSidebarCountMetrics.displayText(for: neutral)
@@ -51,11 +51,197 @@ struct CadenceSidebarCountMetricsTests {
     /// The threshold and the clamped string are one decision, so the label can never read "999+"
     /// for a count of 1000 while the rule says something else.
     @Test func theClampStringIsBuiltFromTheThreshold() {
-        let atThreshold = CadenceSidebarCount(value: CadenceSidebarCountMetrics.overflowThreshold, emphasis: .neutral)
-        let overThreshold = CadenceSidebarCount(value: CadenceSidebarCountMetrics.overflowThreshold + 1, emphasis: .neutral)
+        let atThreshold = CadenceSidebarCount(value: CadenceSidebarCountMetrics.overflowThreshold, emphasis: .neutral, description: "test")
+        let overThreshold = CadenceSidebarCount(value: CadenceSidebarCountMetrics.overflowThreshold + 1, emphasis: .neutral, description: "test")
 
         #expect(CadenceSidebarCountMetrics.displayText(for: atThreshold) == "\(CadenceSidebarCountMetrics.overflowThreshold)")
         #expect(CadenceSidebarCountMetrics.displayText(for: overThreshold) == "\(CadenceSidebarCountMetrics.overflowThreshold)+")
+    }
+}
+
+/// **T-1445: the sidebar's Today badge and the Today page's header badge are two different
+/// tallies of the same day, and the pair is only honest if the reader can tell which is which.**
+///
+/// Reported from three captures: the sidebar read **2** while the page header read **7**, and the
+/// header went to **8** when a task was added while the sidebar stayed at 2. Both numbers are
+/// right. `CadenceSidebarLayout.overdueTaskCount` counts open work whose *deadline* has passed —
+/// the one call to act in the column, and the only thing in it allowed to be red.
+/// `CadenceTodaySummary.activeCount` counts `TasksPanelDerivedState.todayEligibleTasks`, which is
+/// everything today has a claim on: overdue, past-do, due today and do today.
+///
+/// Making them agree is the fix that was **rejected**: there is exactly one `.urgent` emphasis in
+/// the sidebar and `count(for:counts:)` is the only thing that hands it out, so replacing Today's
+/// overdue tally with its membership count would turn the column's single deadline signal into the
+/// volume that the same function already refuses to give Calendar, Notes and Focus. What was
+/// missing is that neither number said what it was: the badge is `accessibilityHidden` and the
+/// rows labelled themselves with the bare destination name, so hovering said "Today" and VoiceOver
+/// said "Today" and read no number at all.
+struct CadenceSidebarTodayCountMeaningTests {
+    /// The reported picture, rebuilt from the two real derivations. This is the "does it
+    /// reproduce" half, and the answer is that it does — arithmetically, with both sides right.
+    @Test func theTwoTodayTalliesAnswerDifferentQuestionsAndLegitimatelyDisagree() {
+        let todayKey = "2026-09-28"
+        let yesterday = "2026-09-27"
+
+        // Two overdue, five more that today has a claim on by some other route.
+        var tasks: [AppTask] = []
+        for index in 0..<2 {
+            let overdue = AppTask(title: "overdue \(index)")
+            overdue.dueDate = yesterday
+            tasks.append(overdue)
+        }
+        for index in 0..<2 {
+            let dueToday = AppTask(title: "due today \(index)")
+            dueToday.dueDate = todayKey
+            tasks.append(dueToday)
+        }
+        for index in 0..<2 {
+            let doToday = AppTask(title: "do today \(index)")
+            doToday.scheduledDate = todayKey
+            tasks.append(doToday)
+        }
+        let pastDo = AppTask(title: "planned days ago")
+        pastDo.scheduledDate = "2026-09-06"
+        tasks.append(pastDo)
+
+        let sidebar = CadenceSidebarLayout.overdueTaskCount(from: tasks, todayKey: todayKey)
+        let header = TasksPanelDerivedState(allTasks: tasks, todayKey: todayKey)
+            .todayEligibleTasks
+            .count
+
+        #expect(sidebar == 2, "the sidebar's Today badge is not the overdue tally")
+        #expect(header == 7, "the page header is not the whole of today's eligible work")
+
+        // The second observation: one task added, the header moves, the sidebar does not. It is
+        // the behaviour that reads as a stale badge and is in fact both predicates working.
+        let added = AppTask(title: "just added")
+        added.scheduledDate = todayKey
+        let after = tasks + [added]
+
+        #expect(CadenceSidebarLayout.overdueTaskCount(from: after, todayKey: todayKey) == 2)
+        #expect(
+            TasksPanelDerivedState(allTasks: after, todayKey: todayKey).todayEligibleTasks.count == 8,
+            "the header did not move when a task was added to today"
+        )
+    }
+
+    /// **The filing's leading hypothesis is wrong, and the measurement is worth keeping.**
+    ///
+    /// T-1432 (`b3e1e605`) stopped `pastDoTasks` subtracting the tasks already claimed by a due
+    /// date, and the ticket reads that as having *widened* `todayEligibleTasks`. It did not.
+    /// Every task the old exclusion removed from `overdoTasks` was excluded precisely because its
+    /// due date was today or earlier — which puts it in `overdue` or in `dueTodayTasks`, both of
+    /// which are already in the union, and the union de-duplicates. The gap between 2 and 7
+    /// therefore predates T-1432 and is not a consequence of it.
+    @Test func wideningTheRolloverBucketDidNotWidenTodaysMembership() {
+        let todayKey = "2026-09-28"
+
+        // The exact task T-1432 changed the answer for: overdue *and* planned for a day gone by.
+        let both = AppTask(title: "overdue and stale")
+        both.dueDate = "2026-08-08"
+        both.scheduledDate = "2026-09-06"
+
+        let derived = TasksPanelDerivedState(allTasks: [both], todayKey: todayKey)
+
+        // It is in both buckets now — the overlap T-1432 created ...
+        #expect(derived.overdue.count == 1)
+        #expect(derived.overdoTasks.count == 1)
+        // ... and it is one row of Today either way, which is what makes the widening invisible
+        // to the header's count.
+        #expect(derived.todayEligibleTasks.count == 1)
+    }
+
+    /// Each count says what it counts, and Today's says "overdue".
+    @Test func everySidebarCountNamesWhatItIsCounting() {
+        let counts = CadenceSidebarCountInputs(
+            todayOverdueCount: 2,
+            openTaskCount: 7,
+            activeGoalCount: 3,
+            habitCount: 1
+        )
+
+        #expect(CadenceSidebarLayout.count(for: .today, counts: counts)?.description == "2 overdue")
+        #expect(CadenceSidebarLayout.count(for: .allTasks, counts: counts)?.description == "7 open tasks")
+        #expect(CadenceSidebarLayout.count(for: .goals, counts: counts)?.description == "3 active goals")
+        // Singular, because a row reading "1 habits" is the sort of thing a shared phrase exists
+        // to prevent.
+        #expect(CadenceSidebarLayout.count(for: .habits, counts: counts)?.description == "1 habit")
+        #expect(CadenceSidebarLayout.listCount(openTaskCount: 1)?.description == "1 open task")
+        #expect(CadenceSidebarLayout.listCount(openTaskCount: 4)?.description == "4 open tasks")
+
+        // "overdue" is an adjective and takes no plural at either end.
+        let one = CadenceSidebarCountInputs(todayOverdueCount: 1)
+        #expect(CadenceSidebarLayout.count(for: .today, counts: one)?.description == "1 overdue")
+    }
+
+    /// The row's label, which is what the tooltip and VoiceOver actually say.
+    @Test func aRowWithACountSaysWhatTheCountIs() {
+        let counts = CadenceSidebarCountInputs(todayOverdueCount: 2)
+        let today = CadenceSidebarLayout.count(for: .today, counts: counts)
+
+        #expect(CadenceSidebarLayout.rowAccessibilityLabel("Today", count: today) == "Today, 2 overdue")
+        // No count, no comma: a row that carries none reads exactly as it did.
+        #expect(CadenceSidebarLayout.rowAccessibilityLabel("Calendar", count: nil) == "Calendar")
+        #expect(CadenceSidebarLayout.count(for: .calendar, counts: counts) == nil)
+    }
+
+    /// Both sidebars read it. macOS is compiled by this target and iOS is not, so the phone's half
+    /// is a source read and says so — and the rail style is the one that needs it most, because
+    /// there the title is not drawn at all.
+    @Test func bothSidebarRowsReadTheSharedLabelRatherThanTheBareDestinationName() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarSupportViews.swift")
+        )
+        #expect(mac.contains("struct SidebarNavRow"), "non-vacuity: wrong file")
+        #expect(
+            mac.contains(".accessibilityLabel(CadenceSidebarLayout.rowAccessibilityLabel(label, count: count))"),
+            "the Mac's nav row is back to announcing the bare destination name"
+        )
+        #expect(
+            mac.contains(".help(CadenceSidebarLayout.rowAccessibilityLabel(label, count: count))"),
+            "the Mac's nav row tooltip no longer names the count"
+        )
+
+        let phone = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        #expect(phone.contains("CadenceSidebarCountLabel(count: count)"), "non-vacuity: wrong file")
+        #expect(
+            phone.contains(".accessibilityLabel(CadenceSidebarLayout.rowAccessibilityLabel(title, count: count))"),
+            "the phone's nav row is back to announcing the bare destination name"
+        )
+    }
+
+    /// The other half of "they must not look identical", which was already true and stays true:
+    /// Today's is the column's only urgent count, so it is the only one drawn in `Theme.red`,
+    /// against a page header badge that is an amber-filled capsule.
+    @Test func todaysCountIsStillTheOnlyUrgentOneInTheColumn() {
+        let counts = CadenceSidebarCountInputs(
+            todayOverdueCount: 2,
+            openTaskCount: 7,
+            activeGoalCount: 3,
+            habitCount: 1
+        )
+        for destination in CadenceFeatureDestination.allCases {
+            guard let count = CadenceSidebarLayout.count(for: destination, counts: counts) else { continue }
+            #expect(
+                isUrgent(count.emphasis) == (destination == .today),
+                "\(destination) carries the wrong emphasis"
+            )
+        }
+        #expect(CadenceSidebarLayout.listCount(openTaskCount: 3).map { isUrgent($0.emphasis) } == false)
+    }
+
+    /// Read with a `switch` rather than `== .urgent`, deliberately. The project sets
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so `CadenceSidebarCountEmphasis`'s synthesised
+    /// `Equatable` conformance is main-actor isolated, and comparing two cases inside `#expect` —
+    /// whose macro expansion is nonisolated — warns today and is an error under Swift 6. The
+    /// warning baseline here is zero, so the enum is destructured and only `Bool`s are compared.
+    private func isUrgent(_ emphasis: CadenceSidebarCountEmphasis) -> Bool {
+        switch emphasis {
+        case .urgent: return true
+        case .neutral: return false
+        }
     }
 }
 

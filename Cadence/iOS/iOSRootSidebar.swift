@@ -774,7 +774,12 @@ struct iOSSidebarButton: View {
             }
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel(title)
+        // T-1445, the same rule macOS's `SidebarNavRow` reads: the badge is drawn by the shared
+        // `CadenceSidebarCountLabel`, which is `accessibilityHidden`, so the row is the only place
+        // the number can be announced — and it has to say *what* it counts, because Today's is an
+        // overdue tally and the Today page's header badge is a different one. The rail style needs
+        // it more than the expanded one, not less: there the title is not drawn at all.
+        .accessibilityLabel(CadenceSidebarLayout.rowAccessibilityLabel(title, count: count))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

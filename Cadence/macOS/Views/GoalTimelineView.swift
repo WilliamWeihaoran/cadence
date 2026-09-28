@@ -60,6 +60,12 @@ struct GoalTimelineView: View {
     /// Opens the goal's inspector. See `GoalsView.content(groups:)` — the roadmap has no inspector
     /// column to select into, so this is its only route to Edit, Attach List and per-list detach.
     let onOpenGoal: (Goal) -> Void
+    /// Whether **any** goal exists, filters aside (T-1446).
+    ///
+    /// Passed in rather than derived: `groups` arrives already filtered, so from in here an empty
+    /// roadmap and a roadmap whose every goal the status filter is hiding are the same value.
+    /// `GoalsView` holds `allGoals` and is the only thing that can tell them apart.
+    let hasAnyGoal: Bool
 
     @State private var referenceDate = Date()
     @State private var showsFilter = false
@@ -85,7 +91,8 @@ struct GoalTimelineView: View {
     private var isNarrowedToEmpty: Bool {
         CadenceEmptyStateCopy.isNarrowedToEmpty(
             searchText: searchText,
-            filterNarrows: statusFilter.narrowsResults
+            filterNarrows: statusFilter.narrowsResults,
+            hasCandidates: hasAnyGoal
         )
     }
 

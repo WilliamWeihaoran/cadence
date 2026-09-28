@@ -193,8 +193,30 @@ nonisolated enum CadenceEmptyStateCopy {
     ///
     /// The search half is **trimmed**: a field holding only spaces narrows nothing, because the
     /// matchers trim before comparing, so it must not be reported as a filter that did.
-    static func isNarrowedToEmpty(searchText: String, filterNarrows: Bool) -> Bool {
-        filterNarrows || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    ///
+    /// **`hasCandidates` is the half T-1446 added, and it is the one the first reader hits.**
+    /// `filterNarrows` answers "is a narrowing filter *selected*", which is not the same question
+    /// as "is that filter hiding anything" — and on an empty store the two part company. Goals
+    /// defaults to *Active* and Habits to *Due Today*, so someone who has never made a goal or a
+    /// habit was told "No matching goals / Try a different search or status." on a page with no
+    /// search term typed and nothing whatever to match: sent to adjust a control they never
+    /// touched, away from the one thing there is to do. **Nothing can be narrowed out of an empty
+    /// collection**, so when the collection this page draws from is empty the answer is `false`
+    /// however the controls are set, and the first-run copy is what shows.
+    ///
+    /// The caller answers it, never this function: "the collection this page draws from" is a
+    /// different array on every surface (every goal, every habit, every list), and a filtered one
+    /// is always empty in exactly the state being asked about — which is why it cannot be inferred
+    /// here. Same shape, and the same reason, as `goalsTitle(isNarrowed:allComplete:)`'s
+    /// `allComplete`. Defaulted to `true` so a caller that has genuinely nothing to report — the
+    /// attach-lists sheet, whose `filterNarrows` is already a constant `false` — reads as it did.
+    static func isNarrowedToEmpty(
+        searchText: String,
+        filterNarrows: Bool,
+        hasCandidates: Bool = true
+    ) -> Bool {
+        guard hasCandidates else { return false }
+        return filterNarrows || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// **The Goals list and the Goals roadmap are one page in two view modes, so they get one

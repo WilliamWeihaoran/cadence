@@ -186,7 +186,8 @@ struct GoalsView: View {
                 searchText: $searchText,
                 statusFilter: $statusFilter,
                 onCreateGoal: { showCreateGoal = true },
-                onOpenGoal: { select($0, showsInspector: false) }
+                onOpenGoal: { select($0, showsInspector: false) },
+                hasAnyGoal: !allGoals.isEmpty
             )
         } else {
             missionContent(groups: groups)
@@ -277,10 +278,14 @@ struct GoalsView: View {
     }
 
     /// Whether the page is empty because the search field or the status bar is narrowing it.
+    ///
+    /// T-1446: `allGoals` is the collection the status bar and the search field narrow, so with it
+    /// empty neither can be hiding anything and this is a first run however they are set.
     private var isNarrowedToEmpty: Bool {
         CadenceEmptyStateCopy.isNarrowedToEmpty(
             searchText: searchText,
-            filterNarrows: statusFilter.narrowsResults
+            filterNarrows: statusFilter.narrowsResults,
+            hasCandidates: !allGoals.isEmpty
         )
     }
 

@@ -877,6 +877,87 @@ struct CadenceEmptyStateAuditTests {
         #expect(CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: "\n ", filterNarrows: false) == false)
     }
 
+    /// **An empty collection cannot be narrowed** (T-1446).
+    ///
+    /// The shape that was reported: Goals and Habits, with nothing in them and no search term
+    /// typed, both read "No matching … / Try a different search or filter." — sending a first
+    /// reader after a control they never touched. `filterNarrows` is true there because a
+    /// narrowing selection *is* the default on both pages (`everyDesktopFilterKnowsWhetherItHides
+    /// Anything` pins that), and it is the right answer to the question it asks: is a narrowing
+    /// filter selected. It is the wrong answer to the question the copy needs, which is whether
+    /// anything is being hidden — and on an empty store nothing can be.
+    ///
+    /// The third argument is what separates them, and it dominates both of the others: a typed
+    /// search over an empty collection is a first run too, because there was nothing there for it
+    /// to miss.
+    @Test func nothingCanBeFilteredOutOfAnEmptyCollection() {
+        #expect(
+            CadenceEmptyStateCopy.isNarrowedToEmpty(
+                searchText: "",
+                filterNarrows: true,
+                hasCandidates: false
+            ) == false,
+            "a default filter over an empty page is reported as a filter miss"
+        )
+        #expect(
+            CadenceEmptyStateCopy.isNarrowedToEmpty(
+                searchText: "roadmap",
+                filterNarrows: true,
+                hasCandidates: false
+            ) == false,
+            "a search over an empty page is reported as a search miss"
+        )
+
+        // And it changes nothing once there is something to hide — the whole existing truth table
+        // is preserved under `hasCandidates: true`, which is also the default.
+        for (search, filter) in [("", false), ("", true), ("roadmap", false), ("roadmap", true)] {
+            #expect(
+                CadenceEmptyStateCopy.isNarrowedToEmpty(
+                    searchText: search,
+                    filterNarrows: filter,
+                    hasCandidates: true
+                ) == CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: search, filterNarrows: filter),
+                "the default parted company with an explicit true"
+            )
+        }
+
+        // The words themselves, at both ends of the fix: this is the sentence the reader saw and
+        // the sentence they should have seen.
+        #expect(CadenceEmptyStateCopy.goalsTitle(isNarrowed: true) == "No matching goals")
+        #expect(CadenceEmptyStateCopy.goalsTitle(isNarrowed: false) == "No goals yet")
+        #expect(CadenceEmptyStateCopy.habitsTitle(isNarrowed: true) == "No matching habits")
+        #expect(CadenceEmptyStateCopy.habitsTitle(isNarrowed: false) == "No habits yet")
+    }
+
+    /// Each of the three pages answers the new question from its **unfiltered** collection.
+    ///
+    /// Source-shape, and it is the only reading available: all three compute it inside a private
+    /// computed property of a `View`. The specific thing a revert looks like is passing the
+    /// page's already-filtered array — `groups`, `habitGroups`, `visibleHabits` — which is empty
+    /// in exactly the state being asked about and would make the argument a tautology.
+    @Test func eachFilteredDesktopPageAnswersHasCandidatesFromItsWholeCollection() throws {
+        let expected = [
+            "Cadence/macOS/Views/GoalsView.swift": "hasCandidates: !allGoals.isEmpty",
+            "Cadence/macOS/Views/HabitsView.swift": "hasCandidates: !habits.isEmpty",
+            // The roadmap is handed `GoalsView`'s already-filtered `groups`, so it cannot answer
+            // this for itself — it takes the answer as a parameter, and `GoalsView` fills it in
+            // from the same `allGoals` its own call site reads.
+            "Cadence/macOS/Views/GoalTimelineView.swift": "hasCandidates: hasAnyGoal",
+        ]
+        for (path, needle) in expected {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains(needle), "\(path) does not answer hasCandidates: from its whole collection")
+        }
+
+        let goals = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalsView.swift")
+        )
+        #expect(
+            goals.contains("hasAnyGoal: !allGoals.isEmpty"),
+            "GoalsView stopped telling the roadmap whether any goal exists"
+        )
+    }
+
     /// Both desktop filter bars can hide a row that exists, and both say so — including in their
     /// **default** selection, which is what made this reachable without the reader touching
     /// anything. Goals opens on Active; Habits opens on Due Today.
