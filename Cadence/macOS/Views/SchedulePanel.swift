@@ -76,6 +76,11 @@ struct SchedulePanel: View {
     @AppStorage("scheduleRememberedScrollHour") private var rememberedScrollHour: Int = -1
     @State private var isRestoringScroll = true
     @State private var didRestoreScroll = false
+    /// The hour the last adopted scroll report named, and the debounced write it scheduled
+    /// (T-1498). A reference box rather than two `@State` values, for the reason
+    /// `SchedulePanelScrollPersistence` states: a `@State` write from a scroll report is the very
+    /// per-frame render this is here to stop.
+    @State private var scrollPersistence = SchedulePanelScrollPersistence()
     @State private var isFocusHighlighted = false
     @State private var exportDocument: PlainTextExportDocument?
     @State private var isExportingTimeline = false
@@ -163,13 +168,29 @@ struct SchedulePanel: View {
                             }
                         )
                     }
+                    // **T-1498.** The action below runs on every frame of a live scroll, because a
+                    // raw `contentOffset.y` changes on every frame, and it used to write
+                    // `rememberedScrollHour` from every one of them — 60 `UserDefaults` writes per
+                    // fling, where a settled gesture now lands exactly one.
+                    //
+                    // It was **not** 60 renders: a `UserDefaults` key does not notify when written
+                    // the value it already holds, measured at 1 notification for 60 identical
+                    // writes against 60 for 60 distinct ones, so the invalidations were already one
+                    // per hour crossed. Those are the expensive ones — each re-runs a body that
+                    // passes over every task in the store and fetches the day's events from
+                    // `EKEventStore` uncached — which is why the debounce matters more than the
+                    // guard and why both are here. The calendar page's host of the same
+                    // `TimelineDayCanvas` has had both since before this ticket.
+                    //
+                    // Keyed off a reference box, so the guard itself costs no render.
                     .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                         SchedulePanelInteractionSupport.persistRememberedHour(
                             yOffset: y,
                             geoHeight: geo.size.height,
                             zoomLevel: zoomLevel,
                             didRestoreScroll: didRestoreScroll,
-                            isRestoringScroll: isRestoringScroll
+                            isRestoringScroll: isRestoringScroll,
+                            state: scrollPersistence
                         ) {
                             rememberedScrollHour = $0
                         }
