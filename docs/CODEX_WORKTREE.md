@@ -64,6 +64,9 @@ Cadence/Shared/Components/EmptyStateView.swift
 Cadence/Shared/Components/CadenceTaskGroupHeading.swift
 Cadence/Shared/Components/CadenceTodayRolloverBanner.swift
 Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
+Cadence/Shared/CadenceTypography.swift
+Cadence/Shared/Components/CadenceTagChip.swift
+Cadence/iOS/iOSTaskInspectorMetrics.swift
 CadenceTests/CadenceCodex*.swift
 CadenceTests/CadencePickerLargeTextLayoutTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
