@@ -238,13 +238,22 @@ struct CadenceTodayUnificationTests {
         )
     }
 
-    /// **Today takes its two counts from the same two functions the other three surfaces call.**
+    /// **Today asks for no counts at all, and the surfaces that still show them share one pair.**
     ///
-    /// Not a fifth copy of "how many of these are late": `TasksPanelSupport.overdueCount` and
-    /// `.openCount` both exclude completed tasks, which is the drift `ListDetailComponents` was
-    /// caught in once already — a ticked-off task with a past due date counted as overdue on one
-    /// screen and not on the other two.
-    @Test func todaysGroupsSplitTheirCountsThroughTheSharedPair() throws {
+    /// Today used to take the split from `TasksPanelSupport.overdueCount` / `.openCount`. The owner
+    /// had both capsules removed from its list-group headings (T-1495) — *"remove these pills from
+    /// the section headings of lists in today's view"* — so the call sites here are gone.
+    ///
+    /// **The reason this test exists survives that, which is why it was re-pointed rather than
+    /// deleted.** The rule was never "Today must show a count"; it was that nobody grows a private
+    /// copy of "how many of these are late". Those two functions both exclude completed tasks,
+    /// which is the drift `ListDetailComponents` was caught in once already — a ticked-off task
+    /// with a past due date counted as overdue on one screen and not on the other two. So the pin
+    /// is now two-sided: **zero** call sites on Today, and exactly one each on the two surfaces
+    /// that do show the split. The second half is what stops the first from silently passing
+    /// because the shared pair was deleted outright, and the first is what fails if Today
+    /// re-acquires a count — through the shared pair or a local copy of it.
+    @Test func todaysGroupsAskForNoCountsWhileTheOthersShareTheOnePair() throws {
         let overdue = TasksPanelSupport.overdueCount(in: [], todayKey: "2026-08-31")
         #expect(overdue == nil, "an empty group must not claim to be zero days late")
         #expect(TasksPanelSupport.openCount(in: []) == 0)
@@ -253,12 +262,40 @@ struct CadenceTodayUnificationTests {
             sourceFile("Cadence/macOS/Views/TasksPanelSectionViews.swift")
         )
         #expect(sections.contains("struct TasksPanelIntentSectionView: View"), "non-vacuity")
-        #expect(sections.contains("TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)"))
-        #expect(sections.contains("TasksPanelSupport.openCount(in: tasks)"))
 
-        // The Completed group deliberately does **not** take the split: it counts open work, so on
-        // a group where every row is done it would report "0 tasks" over a list of finished ones.
-        // `count:` is the convenience init, and `TasksListCompletedSectionView` takes it too.
+        // How the capsules are suppressed: `overdueCount` is simply not passed (it defaults to
+        // `nil`) and `taskCount` is passed `nil`, which `TaskListGroupHeader` already understood.
+        // Pinned positively so that a revert to a count, or a restructuring of the component into
+        // something that draws `0`, is a red test rather than a silent one.
+        #expect(
+            occurrences(of: "taskCount: nil", in: sections) == 1,
+            "Today's list-group heading no longer suppresses its count capsule with taskCount: nil"
+        )
+        #expect(!sections.contains("overdueCount:"), "Today's list-group heading asks for the overdue flag again")
+
+        try expectCallSites(
+            of: "TasksPanelSupport.overdueCount(",
+            at: [
+                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
+                "Cadence/macOS/Views/TasksListView.swift": 1,
+                "Cadence/macOS/Views/ListDetailComponents.swift": 1,
+            ]
+        )
+        try expectCallSites(
+            of: "TasksPanelSupport.openCount(",
+            at: [
+                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
+                "Cadence/macOS/Views/TasksListView.swift": 1,
+                "Cadence/macOS/Views/ListDetailComponents.swift": 1,
+            ]
+        )
+
+        // Today's Completed group **keeps** its single number. T-1495 named "the section headings
+        // of lists"; Completed is not a list, so it was left alone and still heads itself with
+        // `count: tasks.count` — the convenience init, which `TasksListCompletedSectionView` on All
+        // Tasks takes too. It never took the split in the first place: the split counts *open*
+        // work, so on a group where every row is done it would report "0 tasks" over a list of
+        // finished ones. If the owner asks for this one off as well, this is the assertion to move.
         #expect(
             CadenceSourceScan.matchCount(#"count: tasks\.count"#, in: sections) == 1,
             "the Completed group no longer heads itself with a single number"

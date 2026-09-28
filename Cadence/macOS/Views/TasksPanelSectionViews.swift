@@ -111,7 +111,9 @@ struct TasksPanelIntentSectionView: View {
     let accent: Color
     let tasks: [AppTask]
     /// Today's own `yyyy-MM-dd`, handed down rather than recomputed per section, so every group on
-    /// the page splits its counts against one day.
+    /// the page measures against one day. It used to feed the header's overdue split as well; since
+    /// T-1495 took the count pills off these headings its one reader is the rows'
+    /// `dayAlreadyStatedBySurface`, which is still per-section and still must not be recomputed.
     let todayKey: String
     /// **`false` at the one call site**, and the header above these rows is why: it prints the
     /// list's name, so a chip under it is that name twice. It stays a parameter rather than becoming
@@ -191,22 +193,23 @@ struct TasksPanelIntentSectionView: View {
         }
     }
 
-    /// The two figures the other three macOS task surfaces already show, from the same two
-    /// functions they call — `TasksPanelSupport.overdueCount` / `.openCount`, which exclude
-    /// completed tasks so a ticked-off row with a past due date stops inflating either.
+    /// **No count capsules, by the owner's decision (T-1495):** *"remove these pills from the
+    /// section headings of lists in today's view"* — both the red overdue flag and the `n tasks`
+    /// capsule. It is done by asking `TaskListGroupHeader` for neither figure, not by restructuring
+    /// it: `overdueCount` defaults to `nil`, and `taskCount: nil` is the same suppression a group
+    /// standing for unread reminders already uses (`CadenceTaskGroupHeadingMetrics.showsCapsule`).
     ///
-    /// **They are independent questions now.** `openCount` used to be `regularCount` and subtracted
-    /// the flag's figure, so a group whose open work was all late read `0 tasks` over its own rows —
-    /// which the old "Overdue" section hit on every render, and which a *list* group hits the moment
-    /// every task it has left is past its date. That comment used to sit here calling the state
-    /// acceptable because All Tasks reached it too; All Tasks reaching a wrong number is not a
-    /// reason for Today to.
+    /// This file therefore no longer calls `TasksPanelSupport.overdueCount` / `.openCount`. Those
+    /// two are **not** dead and must not be deleted — All Tasks (`TasksListView`) and list detail
+    /// (`ListDetailComponents`) still show the split and still share the one pair, which is the
+    /// rule that stopped a fourth private copy of "how many of these are late". Today has simply
+    /// stopped asking the question; Today's *Completed* group below still shows its own plain
+    /// `count:`, which the owner's request did not name.
     private var header: some View {
         TaskListGroupHeader(
             title: title,
             isCollapsed: isCollapsed,
-            overdueCount: TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey),
-            taskCount: TasksPanelSupport.openCount(in: tasks),
+            taskCount: nil,
             accent: accent,
             onToggle: onToggle
         )
