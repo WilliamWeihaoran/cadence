@@ -10,7 +10,7 @@ Write an entry in the ledger's own shape — the id, a bold one-line headline, t
 A closure is written **as** a closure (`**CLOSED <date> (codex) — …`), never described as one, because
 every reading in this repository anchors on that run and a quoted token is not one ([[T-1335]]).
 
-**Reserved id range for Codex: T-1440 .. T-1469.** Do not use an id outside it. The coordinator
+**Reserved id range for Codex: T-1450 .. T-1479.** (Narrowed 2026-09-27: the range began at T-1440, and the coordinator then handed **T-1443..T-1449** to two of its own agents out of the middle of it — an allocation error, caught before either side spent an id there. T-1440..T-1442 are already filed by Codex and stand. Nothing below T-1450 is Codex's any more.) Do not use an id outside it. The coordinator
 widens the range here when it runs low.
 
 The protocol, the lease and the refusals are in `docs/CODEX_WORKTREE.md`; the coordinator checks a
