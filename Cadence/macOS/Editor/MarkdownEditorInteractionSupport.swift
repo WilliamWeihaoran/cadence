@@ -142,6 +142,13 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     /// `.fileURL` stays registered on both paths: it is not image-specific, and a file drop a
     /// refusing host does not want is answered by `super` below rather than by advertising a
     /// capability and then falling through.
+    ///
+    /// **This governs what *Cadence* advertises and not the view's whole list** (T-1418). In a
+    /// window AppKit runs its own `updateDragTypeRegistration` and unions its types in — measured
+    /// 2026-09-27 on Xcode 27, 19 of them at a refusing host, `NeXT TIFF v4.0 pasteboard type` and
+    /// `Apple PNG pasteboard type` among them. So narrowing here does **not** keep a dragged
+    /// screenshot away from `draggingEntered`, which is what T-478 was read as saying; what keeps
+    /// the copy badge off it is the refusal one layer in, below.
     func registerMarkdownDraggedTypes() {
         var types: [NSPasteboard.PasteboardType] = [.fileURL]
         if allowsMarkdownImageInsertion {
@@ -153,14 +160,33 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     /// The drag operation this view claims for `pasteboard`, or `nil` when the drag is not its to
     /// claim and `super` should answer.
     ///
-    /// Split out of `draggingEntered` so the rule can be exercised against a private pasteboard.
-    /// `NSDraggingInfo` is a protocol with a dozen members a test would have to stub, none of which
-    /// this decision reads.
+    /// Split out of `draggingEntered` so the rule can be exercised against a private pasteboard:
+    /// it reads nothing but the pasteboard, so nothing else has to be stood up to drive it.
+    ///
+    /// The `NSDraggingInfo` around it turned out to be standable after all (T-1418) — fourteen
+    /// required members, none of them hard — and `MarkdownDropInfo` in
+    /// `MarkdownImageDropAffordanceTests` now drives the override itself. The split still earns
+    /// its keep: this is the decision, and that is the plumbing.
     func markdownImageDropOperation(for pasteboard: NSPasteboard) -> NSDragOperation? {
         guard allowsMarkdownImageInsertion, hasImagePayload(pasteboard) else { return nil }
         return .copy
     }
 
+    /// **`nil` here means `super` decides, and at a refusing host `super` is what refuses the
+    /// screenshot** (T-1418).
+    ///
+    /// The bitmap does arrive — AppKit advertises its own legacy TIFF and PNG names whatever this
+    /// view registers — so the honest description of a refused image drop is not "the drag never
+    /// reaches this method" but "this method declines to claim it and `NSTextView` says no".
+    /// Measured 2026-09-27 on Xcode 27 on one view and one bitmap: `[]` back from `super`, and the
+    /// drop that follows inserts nothing.
+    ///
+    /// **That refusal rests on `importsGraphics` being off**, which nothing in this app sets and
+    /// nothing may: with it on, the same call answers `.copy` and the drop writes a U+FFFC
+    /// attachment into a text storage that holds markdown source and nothing else — the paste door
+    /// reached the same conclusion for its own reason, on
+    /// `MarkdownImageAssetService.readableImagePasteboardTypes`. Pinned by
+    /// `MarkdownImageDropAffordanceTests.nothingInTheAppTurnsOnImportsGraphics`.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         markdownImageDropOperation(for: sender.draggingPasteboard) ?? super.draggingEntered(sender)
     }

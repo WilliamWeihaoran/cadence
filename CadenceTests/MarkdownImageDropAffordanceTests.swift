@@ -15,11 +15,16 @@ import AppKit
 /// `.copy` for any image payload, so a host that had already declined images showed the copy badge
 /// right up until the drop did nothing.
 ///
-/// These exercise the decision, not the AppKit plumbing. `NSDraggingInfo` is a protocol with a
-/// dozen members none of which this rule reads, so the rule is split into
+/// Most of these exercise the decision, not the AppKit plumbing. `NSDraggingInfo` is a protocol
+/// with fourteen required members none of which this rule reads, so the rule is split into
 /// `markdownImageDropOperation(for:)` and driven with a **private** pasteboard — the same reason
 /// `MarkdownImagePasteTests` owns its boards rather than writing `NSPasteboard.general`, which
 /// would destroy whatever the person running the suite had copied.
+///
+/// The last section drives the real `draggingEntered` with a **stood-up `NSDraggingInfo`**
+/// ([[T-1418]]). That the protocol cannot be stood up from a unit-test seat is what T-478 and
+/// T-1418 both recorded, and it is not so; see `MarkdownDropInfo` at the foot of this file for
+/// what makes it a measurement rather than a stand-in.
 @MainActor
 struct MarkdownImageDropAffordanceTests {
 
@@ -143,9 +148,19 @@ struct MarkdownImageDropAffordanceTests {
         #expect(textView.registeredDraggedTypes.contains(.fileURL))
     }
 
-    /// The second half of the fix: a refusing host stops advertising the bitmap types at all, so a
-    /// dragged screenshot never reaches `draggingEntered` and the pointer shows the no-drop cursor
-    /// rather than a copy badge that gets withdrawn.
+    /// The second half of the fix: a refusing host stops advertising the bitmap types at all, so
+    /// nothing Cadence says about this view offers a screenshot to it.
+    ///
+    /// **This comment used to end "so a dragged screenshot never reaches `draggingEntered`", and
+    /// that clause was wrong** ([[T-1418]]). What Cadence registers is not the view's whole list:
+    /// in a window AppKit runs its own `updateDragTypeRegistration` and — measured 2026-09-27 on
+    /// Xcode 27, at this very host — brings `NeXT TIFF v4.0 pasteboard type` and `Apple PNG
+    /// pasteboard type` with it, `importsGraphics` off or not. The screenshot *does* reach
+    /// `draggingEntered`; what keeps the copy badge off it is `super` refusing the payload one
+    /// layer further in, which is measured by
+    /// `aRefusingHostDrawsNoCopyBadgeForADraggedBitmapAndTakesNothingFromIt` below. The assertions
+    /// here were always right about what they assert — only the consequence drawn from them was
+    /// overstated.
     ///
     /// `.fileURL` deliberately stays on both paths. It is not image-specific, and the operation
     /// rule above already answers for the file case.
@@ -336,6 +351,110 @@ struct MarkdownImageDropAffordanceTests {
         ].contains(type.rawValue)
     }
 
+    // MARK: - What `super` does with the drag Cadence declines (T-1418)
+
+    /// The editor's view in a window with AppKit's own registration already fired — the only
+    /// configuration in which a bitmap drag is offered to a **refusing** host at all, and so the
+    /// only one in which the question below exists.
+    private func makeWindowedTextViewAppKitHasRegisteredFor(
+        allowsImages: Bool
+    ) -> (NSWindow, CadenceTextView) {
+        let (window, textView) = makeWindowedTextView(allowsImages: allowsImages)
+        // The documented trigger for `updateDragTypeRegistration`, and — measured in
+        // `theWindowIsWhatLetsAppKitRegisterItsOwnDragTypes` above — the only thing that fires it.
+        textView.isEditable = false
+        textView.isEditable = true
+        textView.registerMarkdownDraggedTypes()
+        return (window, textView)
+    }
+
+    /// **The residual [[T-1418]] left open, measured: the screenshot reaches `draggingEntered` and
+    /// is refused there.**
+    ///
+    /// [[T-478]] closed on two halves — a refusing host claims no image payload, and it registers
+    /// no bitmap type — and the second half was read as meaning the drag never arrives. It does
+    /// arrive, by AppKit's own registration. `markdownImageDropOperation(for:)` correctly answers
+    /// `nil` (the drag is not Cadence's to claim), `super` answers, and `super` refuses: measured
+    /// `[]` here, because `importsGraphics` is off. The pointer therefore shows the no-drop cursor
+    /// and the drop takes nothing — T-478's conclusion, reached through a door it did not know
+    /// about.
+    ///
+    /// Both assertions fail only in the direction that is a defect: a `.copy` here is the badge
+    /// T-478 removed, and an insertion is a U+FFFC attachment in a text storage whose whole
+    /// invariant is that it holds markdown source (`MarkdownImageAssetService`
+    /// `.readableImagePasteboardTypes`).
+    @Test func aRefusingHostDrawsNoCopyBadgeForADraggedBitmapAndTakesNothingFromIt() {
+        let (window, textView) = makeWindowedTextViewAppKitHasRegisteredFor(allowsImages: false)
+        defer { window.contentView = nil }
+        let board = draggedBitmap("entered.refuse")
+        let info = MarkdownDropInfo(pasteboard: board, window: window)
+
+        // A bounded observation and deliberately not an assertion ([[T-1296]]): *whether* AppKit
+        // offers a bitmap to a refusing host is AppKit's, it differs between toolchains by
+        // construction, and both answers are safe. Measured 2026-09-27 on Xcode 27 it does, as
+        // `NeXT TIFF v4.0 pasteboard type` — which is what gives the two assertions below
+        // something to refuse. On a runtime that offered nothing, T-478's original sentence would
+        // be literally true and this test would be vacuous rather than wrong; the accepting-host
+        // test below is the non-vacuity that does not depend on the framework at all.
+        let offered = board.availableType(from: textView.registeredDraggedTypes)?.rawValue ?? "nothing"
+
+        #expect(
+            textView.draggingEntered(info).contains(.copy) == false,
+            """
+            A host that has already declined images claimed a dragged bitmap as a copy \
+            (AppKit offered it as: \(offered)). That is the badge [[T-478]] removed, back through \
+            a door Cadence does not own — the fix is in `draggingEntered`, refusing an image \
+            payload outright at a refusing host instead of deferring to `super`.
+            """
+        )
+        #expect(textView.performDragOperation(info) == false)
+        #expect(textView.string.isEmpty)
+    }
+
+    /// The same drag, the same override, at a host that allows images — and here Cadence's own
+    /// rule answers before `super` is ever consulted.
+    ///
+    /// This is the non-vacuity for the test above and it is entirely ours: if `MarkdownDropInfo`
+    /// were not really driving `draggingEntered`, or if `draggingEntered` were not really reading
+    /// the host's policy, the two hosts would agree.
+    @Test func anAcceptingHostClaimsTheSameDraggedBitmapThroughDraggingEntered() {
+        let (window, textView) = makeWindowedTextViewAppKitHasRegisteredFor(allowsImages: true)
+        defer { window.contentView = nil }
+        let info = MarkdownDropInfo(pasteboard: draggedBitmap("entered.accept"), window: window)
+        #expect(textView.draggingEntered(info) == .copy)
+    }
+
+    /// **`importsGraphics` is what refuses the drop, so it is the one line that must never be
+    /// written** ([[T-1418]]).
+    ///
+    /// Measured 2026-09-27 on Xcode 27, one view and one bitmap with that property the only
+    /// difference: `draggingEntered` answers `[]` with it off and `.copy` with it on, and the drop
+    /// that follows inserts a U+FFFC attachment. Turning it on would therefore re-open [[T-478]]
+    /// *and* break the storage invariant in the same line — which is the same conclusion
+    /// `MarkdownImageAssetService.readableImagePasteboardTypes` reached from the paste door, for
+    /// its own reason.
+    ///
+    /// The runtime half reads the default rather than pinning it; the sweep is the half that
+    /// holds, and it is ours and toolchain-independent. The reader blanks comments, so the doc
+    /// comments that name the property — there are four, and they are the reasoning — are not
+    /// hits; an assignment is.
+    @Test func nothingInTheAppTurnsOnImportsGraphics() throws {
+        let (window, textView) = makeWindowedTextViewAppKitHasRegisteredFor(allowsImages: false)
+        defer { window.contentView = nil }
+        #expect(
+            textView.importsGraphics == false,
+            "The editor's text view imports graphics: a refused image drop now inserts an attachment."
+        )
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            #expect(
+                try read(path).contains("importsGraphics") == false,
+                "\(path) touches `importsGraphics`; read T-1418 before it lands."
+            )
+        }
+    }
+
     // MARK: - The wire from the host down to the view
 
     /// `configure(_:context:)` is a `NSViewRepresentable` update pass; nothing headless can run it.
@@ -359,5 +478,57 @@ struct MarkdownImageDropAffordanceTests {
         )
         #expect(source.contains("allowsImageInsertion: allowsImageInsertion"))
     }
+}
+
+/// **A stood-up `NSDraggingInfo`** ([[T-1418]]).
+///
+/// [[T-478]] and [[T-1418]] both recorded this protocol as out of reach of a unit test — "a dozen
+/// members a test would have to stub", "a dozen members a unit test cannot stand up". It has
+/// fourteen required members and every one of them is a pasteboard, a window, a point, a number,
+/// or a call `NSTextView` does not make on this path.
+///
+/// What makes it a measurement rather than a stand-in is that AppKit **discriminates** against it:
+/// one view, one bitmap, `importsGraphics` the only difference, `draggingEntered` answers `[]` and
+/// `.copy` respectively (measured 2026-09-27 on Xcode 27). A framework that ignored this object
+/// could not tell those two runs apart.
+///
+/// It does not make `markdownImageDropOperation(for:)`'s split pointless. That rule reads nothing
+/// but the pasteboard, so the tests at the top of the suite still drive it directly; this exists
+/// for the half of the path that only `super` can answer.
+@MainActor
+private final class MarkdownDropInfo: NSObject, NSDraggingInfo {
+    private let pasteboard: NSPasteboard
+    private let window: NSWindow?
+
+    init(pasteboard: NSPasteboard, window: NSWindow?) {
+        self.pasteboard = pasteboard
+        self.window = window
+    }
+
+    var draggingDestinationWindow: NSWindow? { window }
+    /// Everything a real drag source could offer, so the answer under test is the destination's
+    /// and never a mask this object narrowed for it.
+    var draggingSourceOperationMask: NSDragOperation { [.copy, .move, .link, .generic] }
+    var draggingLocation: NSPoint { NSPoint(x: 100, y: 100) }
+    var draggedImageLocation: NSPoint { NSPoint(x: 100, y: 100) }
+    var draggedImage: NSImage? { nil }
+    var draggingPasteboard: NSPasteboard { pasteboard }
+    var draggingSource: Any? { nil }
+    var draggingSequenceNumber: Int { 1 }
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    override func namesOfPromisedFilesDropped(atDestination dropDestination: URL) -> [String]? { nil }
+    func resetSpringLoading() {}
+    func enumerateDraggingItems(
+        options enumOpts: NSDraggingItemEnumerationOptions,
+        for view: NSView?,
+        classes classArray: [AnyClass],
+        searchOptions: [NSPasteboard.ReadingOptionKey: Any],
+        using block: @escaping (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void
+    ) {}
 }
 #endif
