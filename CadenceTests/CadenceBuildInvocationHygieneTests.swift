@@ -333,6 +333,177 @@ struct CadenceBuildInvocationHygieneTests {
         )
     }
 
+    /// T-1516, and it is the same question a third time — does the counter *discriminate* — asked
+    /// of the category the T-1147 anchor could not reach. `SWIFT_WARNING_PATTERN` is right and is
+    /// deliberately not widened: the comment above it says the only way to lose the next
+    /// `ld: warning:` for good is to grep only for `.swift:`. The cost of that is a real compiler
+    /// warning raised inside a MACRO EXPANSION, which is attributed to the expansion buffer rather
+    /// than to a file and so carries no `.swift:N:C:` prefix at all. It was therefore swept into
+    /// the loose count and printed under a banner reading "not a compiler diagnostic", which was
+    /// false about it — and `#expect` is in ~5,200 tests here, so the blind spot was the suite.
+    ///
+    /// **Both directions, and both witnesses are real.** A fixture proving the new pattern matches
+    /// a string this test wrote itself would prove almost nothing; the whole defect was a pattern
+    /// that could not match a real line. Every witness below is verbatim from `build-for-testing`
+    /// logs of this repository captured 2026-09-29, with only absolute paths shortened. The macro
+    /// witness carries its **whole diagnostic block** — the continuation line, the `+---` expansion
+    /// banner and the `note:` line — because three of those say `warning:` or `macro expansion`
+    /// and exactly one is the diagnostic: a pattern that counts the block as three reports one
+    /// warning as three, which against a zero baseline is a different lie in the same place.
+    ///
+    /// **Two spellings exist**, and the ticket had only seen one. A freestanding macro names
+    /// itself `#expect`; an ATTACHED macro names itself `@ObservationTracked`. The pattern T-1516
+    /// proposed, `macro expansion [A-Za-z#]+:`, matches the first and misses every diagnostic from
+    /// `@Model`, `@Observable` and `@Test` — all of which this repository expands. `[^ :]+` is
+    /// name-agnostic without leaving the anchor, and is spelled in the POSIX-ERE/ICU intersection
+    /// for the reason the two tests above give: it is lifted out of `xcb.sh` and run here.
+    @Test func theRunnersMacroExpansionPatternCatchesTheWarningsWithNoSwiftPathPrefix() throws {
+        let runner = try CadenceSourceScan.sourceFile("scripts/xcb.sh")
+        let sourcePattern = try #require(
+            CadenceTestRunGuard.singleQuotedAssignment("SWIFT_WARNING_PATTERN", in: runner),
+            "scripts/xcb.sh declares no SWIFT_WARNING_PATTERN"
+        )
+        let macroPattern = try #require(
+            CadenceTestRunGuard.singleQuotedAssignment("MACRO_WARNING_PATTERN", in: runner),
+            "scripts/xcb.sh declares no MACRO_WARNING_PATTERN — T-1516's blind spot is back"
+        )
+
+        // The defect itself, restated as a measurement over the real line: the anchored source
+        // pattern scores ZERO on a log carrying a real Swift warning, which is how `warnings: 0`
+        // was printed over fourteen of them.
+        #expect(CadenceSourceScan.matchCount(sourcePattern, in: Self.macroExpansionWarningBlock) == 0)
+        #expect(CadenceSourceScan.matchCount(macroPattern, in: Self.macroExpansionWarningBlock) == 1)
+        // …and the block really is the shape that makes the count-once claim non-trivial.
+        #expect(Self.macroExpansionWarningBlock.contains("`- warning:"))
+        #expect(Self.macroExpansionWarningBlock.contains("+--- macro expansion #expect"))
+
+        // The second spelling. Attached macros print `@name`, not `#name`.
+        #expect(CadenceSourceScan.matchCount(macroPattern, in: Self.attachedMacroWarningLog) == 1)
+        #expect(Self.attachedMacroWarningLog.contains("macro expansion @"))
+
+        // The direction the anchor exists to protect, which is the reason the first pattern was
+        // not simply widened: every line below says `warning:` and none of them is a diagnostic.
+        #expect(CadenceSourceScan.matchCount(macroPattern, in: Self.appIntentsNoticeLog) == 0)
+        #expect(CadenceSourceScan.matchCount(macroPattern, in: Self.linkerAndAssetNoticeLog) == 0)
+        #expect(CadenceSourceScan.matchCount(sourcePattern, in: Self.linkerAndAssetNoticeLog) == 0)
+        #expect(Self.linkerAndAssetNoticeLog.contains("ld: warning:"))
+        #expect(Self.linkerAndAssetNoticeLog.contains("actool: warning:"))
+        // And the two patterns do not overlap: an ordinary file diagnostic is not relabelled.
+        #expect(CadenceSourceScan.matchCount(macroPattern, in: Self.realSwiftWarningLog) == 0)
+
+        // Counting it is half the ticket; GATING on it is the half that was missing. The number
+        // the banner prints and the gate reads must be the sum of the two patterns, and the
+        // refusal must quote the macro line or the reader is sent grepping for a path that is
+        // not in the log.
+        let commands = CadenceTestRunGuard.commandLines(runner)
+        #expect(
+            commands.contains("MACRO_WARNING_PATTERN"),
+            "scripts/xcb.sh declares the macro pattern and never counts with it (T-1516)"
+        )
+        #expect(
+            commands.contains("MACRO-EXPANSION-WARNING"),
+            "scripts/xcb.sh no longer says when a warning has no `.swift:N:C:` prefix to grep for"
+        )
+
+        // The load-bearing line, read rather than trusted: the gating total must be the SUM. A
+        // script that declares the second pattern, greps with it and prints the finding, while
+        // leaving `warnings=` reading the first count alone, passes every check above and gates on
+        // nothing — which is the state this ticket found, one pattern earlier. Neither variable
+        // name is pinned; they are recovered from the two grep lines and required in the sum.
+        let lines = commands.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        func assignee(countingWith pattern: String) -> String? {
+            guard let line = lines.first(where: { $0.contains("grep -cE \"$\(pattern)\"") }),
+                  let name = line.split(separator: "=").first, !name.isEmpty else { return nil }
+            return String(name)
+        }
+        let sourcedVariable = try #require(assignee(countingWith: "SWIFT_WARNING_PATTERN"),
+                                           "scripts/xcb.sh no longer counts with SWIFT_WARNING_PATTERN")
+        let macroVariable = try #require(assignee(countingWith: "MACRO_WARNING_PATTERN"),
+                                         "scripts/xcb.sh declares MACRO_WARNING_PATTERN but never counts with it")
+        #expect(sourcedVariable != macroVariable, "both counts land in one variable, so one of them is lost")
+        let total = try #require(lines.first(where: { $0.hasPrefix("warnings=") }),
+                                 "scripts/xcb.sh no longer assigns the warning total in one place")
+        #expect(
+            total.contains(sourcedVariable) && total.contains(macroVariable),
+            "the gating total `\(total)` does not add both counts — a macro-expansion warning is back to exiting 0 (T-1516)"
+        )
+    }
+
+    /// The other half of T-1516, and the generalised lesson it was closed under: a guard fixed in
+    /// the one place somebody could name is not a guard fixed. `.github/scripts/check-log.sh` is a
+    /// second, independent copy of this reading — it gates all three CI jobs `if: always()` — and
+    /// it had the identical blind spot for the identical reason. Measured 2026-09-29 against the
+    /// captured log: the pre-fix script exited **0** over three real macro-expansion warnings.
+    ///
+    /// This does not pin a spelling, because the two scripts are in different languages and one of
+    /// them may reasonably be written differently. It pins the PROPERTY, over the same real lines:
+    /// some warning pattern in the CI gate must see the macro-expansion diagnostic, and no warning
+    /// pattern in it may see a linker or asset notice.
+    @Test func theCIGateSeesTheSameWarningsTheLocalRunnerDoes() throws {
+        let ci = try CadenceSourceScan.sourceFile(".github/scripts/check-log.sh")
+        let patterns = CadenceTestRunGuard.singleQuotedGrepPatterns(ci).filter { $0.contains("warning:") }
+        #expect(patterns.count >= 2, ".github/scripts/check-log.sh greps for warnings with \(patterns.count) pattern(s); T-1516 needs the macro-expansion one as well")
+        #expect(
+            patterns.contains { CadenceSourceScan.matchCount($0, in: Self.macroExpansionWarningBlock) == 1 },
+            "no warning pattern in the CI gate matches a real macro-expansion diagnostic (T-1516): \(patterns)"
+        )
+        #expect(
+            patterns.allSatisfy { CadenceSourceScan.matchCount($0, in: Self.linkerAndAssetNoticeLog) == 0 },
+            "the CI gate now counts a linker/asset notice as a compiler warning: \(patterns)"
+        )
+        #expect(
+            patterns.allSatisfy { CadenceSourceScan.matchCount($0, in: Self.appIntentsNoticeLog) == 0 },
+            "the CI gate now counts the AppIntents notice as a compiler warning: \(patterns)"
+        )
+        // The control for the two lines above: those logs really do say `warning:`, which is why
+        // the loose reading counted them and why the anchor is not being widened.
+        #expect(Self.linkerAndAssetNoticeLog.contains("warning:"))
+        #expect(Self.appIntentsNoticeLog.contains("warning:"))
+    }
+
+    // MARK: - T-1516 witnesses
+
+    /// ONE real diagnostic, whole, out of a `build-for-testing` log of this repository captured
+    /// 2026-09-29 — the absolute source path is the only edit. The cause is the one T-1516
+    /// recorded: `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` on the app target plus the
+    /// `InferIsolatedConformances` upcoming feature make a synthesised `Equatable` conformance
+    /// main-actor isolated, while the `#expect` expansion that uses it is not.
+    ///
+    /// Four of its nine lines say `warning:` or `macro expansion`. Exactly one is the diagnostic.
+    private static let macroExpansionWarningBlock = """
+    SwiftCompile normal arm64 Compiling\\ ZZProbeMacroWarning.swift /repo/CadenceTests/ZZProbeMacroWarning.swift (in target 'CadenceTests' from project 'Cadence')
+    macro expansion #expect:1:39: warning: main actor-isolated conformance of \
+    'RemindersConnectionState' to 'Equatable' cannot be used in nonisolated context; this is an \
+    error in the Swift 6 language mode [#IsolatedConformances]
+    `- /repo/CadenceTests/ZZProbeMacroWarning.swift:8:24: note: expanded code originates here
+     8 |         #expect(a == b)
+       |         `- note: in expansion of macro 'expect' here
+       +--- macro expansion #expect ----------------------------------------
+       |1 | Testing.__checkBinaryOperation(a,{ $0 == $1() },b,expression: .__fromBinaryOperation(.__fromSyntaxNode("a"),"==",.__fromSyntaxNode("b")),comments: [],isRequired: false,sourceLocation: Testing.SourceLocation.__here()).__expected()
+       |  |                                       `- warning: main actor-isolated conformance of \
+    'RemindersConnectionState' to 'Equatable' cannot be used in nonisolated context; this is an \
+    error in the Swift 6 language mode [#IsolatedConformances]
+       +--------------------------------------------------------------------
+    """
+
+    /// The second spelling, from the same batch of logs: an ATTACHED macro names itself with `@`.
+    /// `@Observable` expands to `@ObservationTracked`, and a deprecation raised inside that
+    /// expansion is reported against the expansion, not against the property that caused it.
+    private static let attachedMacroWarningLog = """
+    SwiftCompile normal arm64 Compiling\\ ZZProbeMacroWarning.swift /repo/CadenceTests/ZZProbeMacroWarning.swift (in target 'CadenceTests' from project 'Cadence')
+    macro expansion @ObservationTracked:2:24: warning: 'ZZProbeDeprecated' is deprecated: probe [#DeprecatedDeclaration]
+    """
+
+    /// The two notices the `.swift:` anchor exists to exclude, in the canonical form the comment
+    /// above `SWIFT_WARNING_PATTERN` names them in. Unlike every other witness here these are NOT
+    /// captured from this tree — it emits neither today, which is precisely why they have to be
+    /// asserted rather than waited for: the failure they guard against is a later widening that
+    /// turns every link and asset notice into a red build.
+    private static let linkerAndAssetNoticeLog = """
+    ld: warning: ignoring duplicate libraries: '-lc++'
+    actool: warning: The app icon set "AppIcon" has an unassigned child.
+    """
+
     // MARK: - T-1147 witnesses
 
     /// One real Swift diagnostic, copied out of a build log of this repository on 2026-09-12.
@@ -651,6 +822,23 @@ enum CadenceTestRunGuard {
             return String(trimmed.dropFirst(prefix.count).dropLast())
         }
         return nil
+    }
+
+    /// Every single-quoted pattern the script hands to `grep -E` / `grep -cE`, in source order.
+    /// Comments are blanked first, so a pattern quoted in prose is not mistaken for one the gate
+    /// runs — which matters here, because `check-log.sh`'s own header quotes the pattern it uses.
+    static func singleQuotedGrepPatterns(_ shell: String) -> [String] {
+        var found: [String] = []
+        let text = commandLines(shell)
+        for opener in ["grep -cE '", "grep -E '", "grep -acE '", "grep -aE '"] {
+            var cursor = text.startIndex
+            while let start = text.range(of: opener, range: cursor..<text.endIndex) {
+                guard let end = text.range(of: "'", range: start.upperBound..<text.endIndex) else { break }
+                found.append(String(text[start.upperBound..<end.lowerBound]))
+                cursor = end.upperBound
+            }
+        }
+        return found
     }
 
     /// The script with whole-line `#` comments blanked, newlines kept. Deliberately crude: a

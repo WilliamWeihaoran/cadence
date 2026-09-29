@@ -597,6 +597,37 @@ The counter is now anchored (`\.swift:N:M: warning:`), tool notices are reported
 so a future real `ld:` or `actool: warning:` is not lost, and a run that compiled zero Swift files
 prints `!! VACUOUS-COUNT` rather than certifying a zero it cannot support.
 
+### The cost of that anchor, and the second pattern (T-1516, 2026-09-29)
+
+Anchoring on `.swift:` is right and was not widened. Its cost is a whole category: a warning raised
+inside a **macro expansion** is attributed to the expansion buffer rather than to a file, so its
+primary line carries no `.swift:N:C:` prefix at all and could not match. It was swept into the loose
+count and printed under a `tool notices:` banner whose own words — *"not a compiler diagnostic"* —
+were false about it. `#expect` is in ~5,200 tests here, so the blind spot was the whole suite, and
+it failed in the direction that reports success: fourteen real warnings, `warnings: 0`.
+
+Reproduced and captured 2026-09-29. Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` on the app
+target plus the `InferIsolatedConformances` upcoming feature, a synthesised `Equatable` conformance
+is main-actor isolated while the `#expect` expansion using it is not, so `#expect(a == b)` over an
+app-target enum raises `#IsolatedConformances` **inside the expansion**. One `build-for-testing`
+log: 3 such diagnostics, `\.swift:N:C: warning:` = **0**, `xcb.sh` exit **0**, `check-log.sh` exit
+**0**. With the second pattern: `warnings: 3`, exit **9** and exit **1**.
+
+**Two spellings exist, and only one was in the ticket.** A freestanding macro names itself `#expect`;
+an attached one names itself `@ObservationTracked` (from `@Observable`). The ticket proposed
+`macro expansion [A-Za-z#]+:`, which sees the first and misses every `@Model` / `@Observable` /
+`@Test` diagnostic in the project. The shipped pattern is
+`macro expansion [^ :]+:[0-9]+:[0-9]+: warning:` — name-agnostic, still anchored on the literal
+`macro expansion ` prefix, and spelled in the POSIX-ERE/ICU intersection because
+`CadenceBuildInvocationHygieneTests` lifts it out of the script and runs it with
+`NSRegularExpression`. Continuation lines of the same diagnostic (`` `- warning: ``) carry no
+`name:LINE:COL:` and are deliberately not matched, so the count stays one per diagnostic.
+
+The same second pattern is in `.github/scripts/check-log.sh` and `scripts/mutate.sh` (where it only
+reports — `mutate.sh` sets `CADENCE_ALLOW_WARNINGS=1` on purpose). `xcb.sh` prints
+`MACRO-EXPANSION-WARNING` when the second count is non-zero, because a reader who sees `warnings: 3`
+and greps the log for `\.swift.*warning:` finds nothing.
+
 ## Why the pre-commit hook ships inert (moved out of AGENTS.md, 2026-09-19)
 
 `.githooks/pre-commit` refuses a bare `git commit`, which is the point of it: this repository's

@@ -188,6 +188,14 @@ COMPILE_ERROR = re.compile(r"\.swift:[0-9]+:[0-9]+: error:")
 # `appintentsmetadataprocessor ... warning: Metadata extraction skipped`, which every clean build of
 # this project prints, and reports a zero-warning baseline as a regression.
 COMPILE_WARNING = re.compile(r"\.swift:[0-9]+:[0-9]+: warning:")
+# T-1516: the cost of that anchor. A warning raised inside a MACRO EXPANSION is attributed to the
+# expansion buffer, not to a file, so its primary line has no `.swift:N:C:` prefix at all --
+# `macro expansion #expect:1:39: warning: ...`, or `macro expansion @ObservationTracked:2:24:`
+# for an attached macro, which is why this names neither. This number never GATES here (mutate.sh
+# sets CADENCE_ALLOW_WARNINGS=1 on purpose, see the Runner docs below), but it is printed beside
+# every run and carried into the verdict, and a mutated tree full of `#expect` is exactly where a
+# blind category would go unnoticed.
+MACRO_WARNING = re.compile(r"macro expansion [^ :]+:[0-9]+:[0-9]+: warning:")
 
 # Verdicts an agent may quote. Everything else is a refusal.
 KILLED = "KILLED"
@@ -606,7 +614,7 @@ def classify_run(exit_code, log, suite=None, tests=(), labels=None, suite_labels
         label_to_func[label] = func
     lowered = log.lower()
     tests_ran = len(TEST_RESULT.findall(log))
-    warnings = len(COMPILE_WARNING.findall(log))
+    warnings = len(COMPILE_WARNING.findall(log)) + len(MACRO_WARNING.findall(log))
     compile_errors = len(COMPILE_ERROR.findall(log))
 
     if "please submit a bug report" in lowered:
@@ -1432,6 +1440,25 @@ def selftest():
               classify_run(0, noisy, None).warnings == 0)
         real = noisy + "/x/Foo.swift:3:9: warning: unused variable\n"
         check("a real Swift warning is", classify_run(0, real, None).warnings == 1)
+        # T-1516, and both lines below are verbatim from this repository's own build logs of
+        # 2026-09-29: a macro-expansion warning carries no `.swift:N:C:` prefix, and the two
+        # spellings differ in the character before the name (`#` freestanding, `@` attached).
+        macro = noisy + ("macro expansion #expect:1:39: warning: main actor-isolated conformance"
+                         " of 'RemindersConnectionState' to 'Equatable' cannot be used in"
+                         " nonisolated context; this is an error in the Swift 6 language mode"
+                         " [#IsolatedConformances]\n")
+        check("a macro-expansion warning is counted too, though it names no .swift file",
+              classify_run(0, macro, None).warnings == 1)
+        attached = noisy + ("macro expansion @ObservationTracked:2:24: warning: 'X' is"
+                            " deprecated: probe [#DeprecatedDeclaration]\n")
+        check("and so is the ATTACHED-macro spelling, which starts with @ rather than #",
+              classify_run(0, attached, None).warnings == 1)
+        # The control the two checks above are worth nothing without: widening the source pattern
+        # would have satisfied them and counted every linker and asset notice as a warning.
+        quiet = ("ld: warning: ignoring duplicate libraries: '-lc++'\n"
+                 "actool: warning: The app icon set \"AppIcon\" has an unassigned child.\n")
+        check("ld: and actool: notices are still not Swift warnings",
+              classify_run(0, quiet, None).warnings == 0)
 
         say("")
         say(" the earned verdicts must still be reachable")

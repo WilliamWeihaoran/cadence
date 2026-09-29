@@ -581,6 +581,22 @@ struct CadenceGuardScriptSelftestTests {
     /// section 7 of the selftest must still induce it over a fixture log carrying a real
     /// `\.swift:N:C: warning:` — a gate asserted only by a name in a list is a gate nobody has run.
     ///
+    /// T-1516 adds a sixth, and like `VACUOUS-COUNT` it is a notice rather than a refusal — the
+    /// refusal it decorates is still `WARNING-BASELINE`, whose exit code it now shares. What it
+    /// says is the thing a reader cannot work out from the count: that some of the warnings in it
+    /// carry **no `.swift:N:C:` prefix at all**, because they were raised inside a macro expansion
+    /// and are attributed to the expansion buffer. `#expect` is in ~5,200 tests here and its
+    /// diagnostics print as `macro expansion #expect:1:39: warning:`, so for a year the anchored
+    /// counter could not see them, swept them into `tool notices:` under a banner reading "not a
+    /// compiler diagnostic", and reported `warnings: 0` over fourteen real ones.
+    ///
+    /// It is pinned here for the same reason `VACUOUS-COUNT` is and with one addition: an agent
+    /// who reads `warnings: 3` and greps the log for `\.swift.*warning:` finds nothing and
+    /// concludes the banner is broken. Deleting the notice would leave the gate working and the
+    /// gate's output unreadable, which is the shape of a fix that gets reverted. Section 6 of the
+    /// selftest must still induce it over a fixture carrying a REAL `macro expansion …: warning:`
+    /// line, and section 7 must still show that line exiting 9 — a name in a list proves neither.
+    ///
     /// T-1282 adds a fifth, and it is `UNKNOWN-SUITE` asked one step earlier: `NO-SUCH-SIMULATOR`
     /// refuses an `-destination 'platform=iOS Simulator,name=…'` naming a device this Mac does not
     /// have. Measured 2026-09-18, that destination returns **exit 70 with `compile errors: 0` and
@@ -598,6 +614,7 @@ struct CadenceGuardScriptSelftestTests {
         "VACUOUS-COUNT",
         "WARNING-BASELINE",
         "NO-SUCH-SIMULATOR",
+        "MACRO-EXPANSION-WARNING",
     ]
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody

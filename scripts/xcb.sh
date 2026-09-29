@@ -234,6 +234,42 @@ empty_run_diagnostic() {
 # compiler diagnostic and must not be counted as one, but it is also not nothing -- the way to
 # lose the next `ld: warning:` or `actool: warning:` for good is to grep only for `.swift:`.
 #
+# --- the cost of that anchor, and the second pattern that pays it (T-1516) ----
+# The paragraph above is still right and is deliberately NOT widened. Its cost is a whole CATEGORY
+# of real compiler warning that carries no `.swift:N:C:` prefix at all: a diagnostic raised inside
+# a MACRO EXPANSION is attributed to the expansion buffer, not to a file, and its primary line
+# reads `macro expansion #expect:1:39: warning: ...`. It therefore could not match
+# `SWIFT_WARNING_PATTERN`, was swept into the loose count, and was printed under a `tool notices:`
+# banner whose own words -- "not a compiler diagnostic" -- were false about it. `#expect` is in
+# ~5,200 tests here, so the exposed surface was the whole suite, and the failure was silent in the
+# direction that reports success: an agent introduced fourteen of them and read `warnings: 0`.
+#
+# MEASURED 2026-09-29, in this repository, on real `build-for-testing` logs of a probe file:
+#
+#   `#expect(a == b)` over a main-actor-isolated synthesised `Equatable` conformance
+#     (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` on the app target + the
+#     `InferIsolatedConformances` upcoming feature, both live here) raises `#IsolatedConformances`
+#     inside the expansion. One log: 3 macro-expansion warnings, `SWIFT_WARNING_PATTERN` = 0.
+#
+# TWO SPELLINGS EXIST, not one, and the second is why this pattern does not name the macro:
+#
+#   macro expansion #expect:1:39: warning: main actor-isolated conformance of ...
+#   macro expansion @ObservationTracked:2:24: warning: 'X' is deprecated: ...
+#
+# A freestanding macro spells itself `#name`; an ATTACHED one spells itself `@name`. A pattern
+# written `[A-Za-z#]+` -- which is what T-1516 proposed from the one spelling it had seen -- misses
+# every attached-macro diagnostic in the project, and `@Model`, `@Observable` and `@Test` are all
+# attached macros this repository expands. `[^ :]+` covers any macro name without ever leaving the
+# anchor, because the anchor is the literal `macro expansion ` prefix plus `:LINE:COL: warning:`,
+# and neither `ld: warning:` nor `actool: warning:` nor the `appintentsmetadataprocessor` notice
+# can reach it. It is also the only form of the character class that means the same thing to grep
+# ERE and to ICU, which matters because `CadenceBuildInvocationHygieneTests` LIFTS this string out
+# of this file and runs it with `NSRegularExpression` against the same real log lines.
+#
+# The continuation lines of the same diagnostic (`   |  |    `- warning: ...`) say `warning:` too
+# and are deliberately NOT matched: they carry no `name:LINE:COL:`, so the count stays one per
+# diagnostic. On the captured log that is 3 matched out of 6 loose `warning:` lines.
+#
 # --- and whether the number is about anything ---------------------------------
 # The second half is the one AGENTS.md has been asking agents to do BY HAND: "a warning count from
 # a run that did not recompile the file is vacuous ... check the log for its SwiftCompile line
@@ -252,6 +288,7 @@ empty_run_diagnostic() {
 # lines so the drift is caught before anybody has to notice the noise.
 SWIFT_ERROR_PATTERN='\.swift:[0-9]+:[0-9]+: error:'
 SWIFT_WARNING_PATTERN='\.swift:[0-9]+:[0-9]+: warning:'
+MACRO_WARNING_PATTERN='macro expansion [^ :]+:[0-9]+:[0-9]+: warning:'
 SWIFT_COMPILE_TASK_PATTERN='^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources|CompileC) '
 
 # --- and whether anything ACTS on it (T-1149) --------------------------------
@@ -298,9 +335,14 @@ DIAG_WARNINGS=0
 DIAG_COMPILED=0
 diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline is broken.
   local log="$1"
-  local errors warnings loose compiled notices
+  local errors warnings sourced macroed loose compiled notices
   errors=$(grep -cE "$SWIFT_ERROR_PATTERN" "$log" 2>/dev/null | tr -d ' ')
-  warnings=$(grep -cE "$SWIFT_WARNING_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  sourced=$(grep -cE "$SWIFT_WARNING_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  macroed=$(grep -cE "$MACRO_WARNING_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  # T-1516: ONE gating total over TWO anchored patterns. A macro-expansion diagnostic is a compiler
+  # warning that happens to have no file to be attributed to; it belongs in this number and not in
+  # the tool-notice bucket, which is where the single-pattern reading put it.
+  warnings=$(( sourced + macroed ))
   loose=$(grep -c 'warning:' "$log" 2>/dev/null | tr -d ' ')
   compiled=$(grep -cE "$SWIFT_COMPILE_TASK_PATTERN" "$log" 2>/dev/null | tr -d ' ')
   notices=$(( loose - warnings ))
@@ -308,6 +350,12 @@ diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline 
   DIAG_COMPILED=$compiled
   say "  compile errors:  $errors"
   say "  warnings:        $warnings"
+  if (( macroed > 0 )); then
+    say "  !! MACRO-EXPANSION-WARNING: $macroed of those have NO \`.swift:N:C:\` prefix -- they were"
+    say "     raised inside a macro expansion and print as \`macro expansion #expect:1:39: warning:\`"
+    say "     or \`macro expansion @Observable:2:24: warning:\` (T-1516). Grepping this log for"
+    say "     \`\\.swift.*warning:\` will NOT find them; grep for \`macro expansion\`."
+  fi
   if (( notices > 0 )); then
     say "  tool notices:    $notices  (lines saying \`warning:\` that are not a compiler diagnostic;"
     say "                   the baseline of zero is about the line above. grep the log to read them.)"
@@ -329,7 +377,7 @@ diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline 
   say "!! WARNING-BASELINE: $warnings Swift warning(s) over $compiled compile task(s). The baseline"
   say "   is ZERO and any new warning is a regression (AGENTS.md). This run recompiled Swift, so"
   say "   the count is about something -- it is not the VACUOUS-COUNT case."
-  grep -E "$SWIFT_WARNING_PATTERN" "$log" 2>/dev/null | head -20 | sed 's/^/     /'
+  grep -E "$SWIFT_WARNING_PATTERN|$MACRO_WARNING_PATTERN" "$log" 2>/dev/null | head -20 | sed 's/^/     /'
   say "   Fix them, or set CADENCE_ALLOW_WARNINGS=1 if you are deliberately building a tree that"
   say "   is not the baseline (mutate.sh does exactly that)."
   return $WARNING_GATE_EXIT
@@ -884,6 +932,72 @@ selftest_only_testing() {
   check "a run that compiled nothing says VACUOUS-COUNT rather than certifying zero" \
     $( [[ "$dout" == *VACUOUS-COUNT* && "$dout" == *"warnings:        0"* ]] && print 1 || print 0 ) "$dout"
 
+  # --- T-1516: the category the `.swift:` anchor could not see -----------------
+  # EVERY LINE OF THESE THREE FIXTURES IS VERBATIM out of real `build-for-testing` logs of this
+  # repository captured 2026-09-29 (`cadence-xcb-warncountprobe` 113520 and 113642), with only the
+  # absolute source path shortened to `/repo/`. That is not a formality here: the whole defect was
+  # a pattern that could not match a real line, so a fixture written by hand from the ticket's
+  # description would have reproduced the ticket's own mistake -- it proposed `[A-Za-z#]+`, which
+  # the SECOND spelling below (an ATTACHED macro, `@`-prefixed) does not match.
+  #
+  # `macro.log` is a whole real diagnostic BLOCK, not just its first line, and that is the
+  # non-vacuity half: four of its lines say `warning:` or `macro expansion`, and exactly ONE is
+  # the diagnostic. The continuation line, the `+---` expansion banner and the `note:` line must
+  # all stay out of the count, or one warning is reported as three.
+  print -rl -- \
+    "SwiftCompile normal arm64 Compiling\\ ZZProbeMacroWarning.swift /repo/CadenceTests/ZZProbeMacroWarning.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "macro expansion #expect:1:39: warning: main actor-isolated conformance of 'RemindersConnectionState' to 'Equatable' cannot be used in nonisolated context; this is an error in the Swift 6 language mode [#IsolatedConformances]" \
+    '`- /repo/CadenceTests/ZZProbeMacroWarning.swift:8:24: note: expanded code originates here' \
+    ' 8 |         #expect(a == b)' \
+    '   |         `- note: in expansion of macro '"'"'expect'"'"' here' \
+    '   +--- macro expansion #expect ----------------------------------------' \
+    '   |1 | Testing.__checkBinaryOperation(a,{ $0 == $1() },b,expression: .__fromBinaryOperation(.__fromSyntaxNode("a"),"==",.__fromSyntaxNode("b")),comments: [],isRequired: false,sourceLocation: Testing.SourceLocation.__here()).__expected()' \
+    '   |  |                                       `- warning: main actor-isolated conformance of '"'"'RemindersConnectionState'"'"' to '"'"'Equatable'"'"' cannot be used in nonisolated context; this is an error in the Swift 6 language mode [#IsolatedConformances]' \
+    '   +--------------------------------------------------------------------' \
+    > "$ws/macro.log"
+  # The second spelling. `#expect` is freestanding and spells itself `#name`; `@ObservationTracked`
+  # is ATTACHED and spells itself `@name`. Both are real lines from the same batch of logs, and a
+  # pattern that names only letters and `#` sees one of them.
+  print -rl -- \
+    "SwiftCompile normal arm64 Compiling\\ ZZProbeMacroWarning.swift /repo/CadenceTests/ZZProbeMacroWarning.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "macro expansion @ObservationTracked:2:24: warning: 'ZZProbeDeprecated' is deprecated: probe [#DeprecatedDeclaration]" \
+    '   |  |                        `- warning: '"'"'ZZProbeDeprecated'"'"' is deprecated: probe [#DeprecatedDeclaration]' \
+    > "$ws/attached-macro.log"
+  # And the direction the anchor exists to protect, which is why the first pattern was not widened.
+  # The AppIntents line is verbatim from this repository's own logs (it is in EVERY honest run);
+  # the `ld:` and `actool:` lines are the two shapes the comment above SWIFT_WARNING_PATTERN names
+  # as the reason for the anchor, written in their canonical form -- this tree emits neither today,
+  # which is exactly why they have to be asserted rather than waited for.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "2026-09-12 04:37:24.072 appintentsmetadataprocessor[66824:4236838] warning: Metadata extraction skipped. No AppIntents.framework dependency found." \
+    "ld: warning: ignoring duplicate libraries: '-lc++'" \
+    "actool: warning: The app icon set \"AppIcon\" has an unassigned child." \
+    > "$ws/toolnoise.log"
+
+  run_counters "$ws/macro.log"
+  check "a real macro-expansion warning IS counted, though it has no \`.swift:N:C:\` prefix (T-1516)" \
+    $( [[ "$dout" == *"warnings:        1"* ]] && print 1 || print 0 ) "$dout"
+  check "…and the banner says so, rather than leaving the reader grepping for a path" \
+    $( [[ "$dout" == *MACRO-EXPANSION-WARNING* ]] && print 1 || print 0 ) "$dout"
+  check "…and the same diagnostic's continuation and \`+---\` lines are NOT counted again" \
+    $( [[ "$dout" != *"warnings:        2"* && "$dout" != *"warnings:        3"* ]] && print 1 || print 0 ) "$dout"
+  run_counters "$ws/attached-macro.log"
+  check "an ATTACHED macro spells itself \`@name\`, and that spelling is counted too" \
+    $( [[ "$dout" == *"warnings:        1"* ]] && print 1 || print 0 ) "$dout"
+  # The half that makes all of the above worth anything: widening the first pattern would have
+  # passed every check in this section and turned every link and asset notice into a red build.
+  run_counters "$ws/toolnoise.log"
+  check "ld:, actool: and the AppIntents notice are STILL not compiler warnings" \
+    $( [[ $drc == 0 && "$dout" == *"warnings:        0"* ]] && print 1 || print 0 ) "exit $drc: $dout"
+  check "…and all three are still reported as tool notices rather than dropped" \
+    $( [[ "$dout" == *"tool notices:    3"* ]] && print 1 || print 0 ) "$dout"
+  check "…and nothing in that log is called a macro expansion" \
+    $( [[ "$dout" != *MACRO-EXPANSION-WARNING* ]] && print 1 || print 0 ) "$dout"
+  run_counters "$ws/real.log"
+  check "an ordinary \`.swift:N:C:\` warning is not relabelled as a macro expansion" \
+    $( [[ "$dout" != *MACRO-EXPANSION-WARNING* ]] && print 1 || print 0 ) "$dout"
+
   say ""
   say " 7. the warning gate (T-1149)"
   # Section 6 proves the counters COUNT. This proves something acts on the number, which is the
@@ -899,6 +1013,17 @@ selftest_only_testing() {
   # the normal case, and T-986 is the record of what happens to those.
   check "the AppIntents tool notice alone does NOT trip the gate" \
     $( { run_counters "$ws/notice.log"; (( drc == 0 )) } && print 1 || print 0 ) "exit $drc: $dout"
+
+  # T-1516. Section 6 proves the macro-expansion warning is COUNTED; this is the only check that
+  # proves it GATES, which is the entire finding -- the old counter saw it, put it in the notice
+  # bucket, and exited 0 over fourteen real warnings.
+  run_counters "$ws/macro.log"
+  check "a macro-expansion warning on a run that compiled exits $WARNING_GATE_EXIT, not 0 (T-1516)" \
+    $( (( drc == WARNING_GATE_EXIT )) && print 1 || print 0 ) "exit $drc: $dout"
+  check "…and the refusal QUOTES the macro-expansion line, not only the count" \
+    $( [[ "$dout" == *WARNING-BASELINE* && "$dout" == *"macro expansion #expect:1:39"* ]] && print 1 || print 0 ) "$dout"
+  check "the link/asset/AppIntents notices together still do NOT trip it" \
+    $( { run_counters "$ws/toolnoise.log"; (( drc == 0 )) } && print 1 || print 0 ) "exit $drc: $dout"
 
   # A VACUOUS run carrying warnings. This is the case the gate must NOT fire on and the one a
   # naive `warnings > 0` would: the log holds a real anchored warning and no compile task at all,

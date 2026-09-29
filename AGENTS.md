@@ -168,6 +168,7 @@ Before treating a red run as a code regression, check:
 - **A count from a run that did not recompile is vacuous** — an incremental run reuses object files and
   returns 0 either way. `xcb.sh` prints `swift compile tasks: N`, says `!! VACUOUS-COUNT` at 0 (T-1147), and never gates on one.
 - **Count errors and warnings `grep -cE '\.swift:[0-9]+:[0-9]+: (error|warning):'`**, never loosely: the loose form over-counts. Why, and the T-1147 measurement, in `docs/AGENTS_REFERENCE.md`.
+- **Warnings need a SECOND anchored pattern, `grep -cE 'macro expansion [^ :]+:[0-9]+:[0-9]+: warning:'` (T-1516).** A warning raised inside a macro expansion — `#expect` is in ~5,200 tests here — is attributed to the expansion buffer and has **no `.swift:N:C:` prefix**, so the pattern above scores 0 on it. Both spellings count: freestanding macros print `#expect`, attached ones print `@ObservationTracked`. `xcb.sh` and `check-log.sh` gate on the sum and say `MACRO-EXPANSION-WARNING` when the second is non-zero; grepping a log by hand for warnings means grepping for both.
 - `sleep` is blocked in a **foreground** tool call (a poll loop there exits 0 having watched nothing);
   it works in a detached job or `Monitor` script, so `acquire` waits from a background runner.
 

@@ -13,6 +13,16 @@
 #    2026-08-31: any full `Cadence` build emits exactly one non-source line reading
 #    "appintentsmetadataprocessor[...] warning: Metadata extraction skipped. No AppIntents.framework
 #    dependency found." A zero-warning gate written the loose way is red on every single run.
+#  * ...and that anchor has a cost, so warnings are counted with a SECOND anchored pattern too
+#    (T-1516). A compiler warning raised inside a MACRO EXPANSION is attributed to the expansion
+#    buffer rather than to a file, so its primary line carries no `.swift:N:C:` prefix at all:
+#    `macro expansion #expect:1:39: warning: main actor-isolated conformance of ...`. Measured
+#    2026-09-29 on this repository's own logs, three of those in one `build-for-testing` scored
+#    `\.swift:N:C: warning:` = 0, so this gate passed a tree with three real warnings in it.
+#    `#expect` is in ~5,200 tests here. TWO spellings exist and both are counted: a freestanding
+#    macro prints `#name`, an attached one prints `@name` (`macro expansion @ObservationTracked:`),
+#    which is why the pattern names neither. Widening the FIRST pattern instead would gate on every
+#    `ld: warning:` and `actool: warning:` line, which is what the anchor is for.
 set -uo pipefail
 
 LOG="${1:?usage: check-log.sh <log> build|test}"
@@ -25,7 +35,9 @@ if [ ! -f "$LOG" ]; then
 fi
 
 errors=$(grep -cE '\.swift:[0-9]+:[0-9]+: error:' "$LOG" | tr -d ' ')
-warnings=$(grep -cE '\.swift:[0-9]+:[0-9]+: warning:' "$LOG" | tr -d ' ')
+source_warnings=$(grep -cE '\.swift:[0-9]+:[0-9]+: warning:' "$LOG" | tr -d ' ')
+macro_warnings=$(grep -cE 'macro expansion [^ :]+:[0-9]+:[0-9]+: warning:' "$LOG" | tr -d ' ')
+warnings=$((source_warnings + macro_warnings))
 crash=$(grep -ci 'please submit a bug report' "$LOG" | tr -d ' ')
 # `build-for-testing` prints "** TEST BUILD SUCCEEDED **", which a (BUILD|TEST) alternation does
 # not match -- so the naive pattern reports a clean build as bannerless. Measured 2026-08-31.
@@ -41,6 +53,9 @@ compiled=$(grep -cE '^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources
 echo "== gates =="
 echo "  compile errors (strict): $errors"
 echo "  swift warnings (strict): $warnings"
+if [ "$macro_warnings" -gt 0 ]; then
+  echo "    of which in a macro expansion: $macro_warnings  (no \`.swift:N:C:\` prefix; T-1516)"
+fi
 echo "  swift compile tasks:     $compiled"
 echo "  toolchain crash markers: $crash"
 echo "  SUCCEEDED banners:       $succeeded"
@@ -63,7 +78,7 @@ fi
 # now lives in scripts/xcb.sh, and the denominator below.
 if [ "$warnings" -gt 0 ]; then
   echo "::error::$warnings Swift warning(s); the baseline is zero and any new warning is a regression."
-  grep -E '\.swift:[0-9]+:[0-9]+: warning:' "$LOG" | head -40
+  grep -E '\.swift:[0-9]+:[0-9]+: warning:|macro expansion [^ :]+:[0-9]+:[0-9]+: warning:' "$LOG" | head -40
   rc=1
 fi
 
