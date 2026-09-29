@@ -332,10 +332,16 @@ struct CadenceTodayUnificationTests {
         try expectCallSites(
             of: "iOSTaskRowEstimateChip",
             at: [
-                "Cadence/iOS/iOSTaskViews.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 2,
                 "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
             ]
         )
+        let row = CadenceSourceScan.codeOnly(try sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        for condition in ["if task.estimatedMinutes > 0 && !wraps", "if task.estimatedMinutes > 0 && wraps"] {
+            let branch = try #require(CadenceSourceScan.declarationBody(condition, in: row))
+            #expect(CadenceSourceScan.matchCount(#"\biOSTaskRowEstimateChip\s*\("#, in: branch) == 1,
+                    "each mutually exclusive layout must draw exactly one estimate chip")
+        }
         try expectCallSites(
             of: "EstimatePickerPopoverContent",
             at: [

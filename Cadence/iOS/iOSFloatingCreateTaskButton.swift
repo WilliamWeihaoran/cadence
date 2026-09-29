@@ -100,6 +100,7 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
                         diameter: iOSCircularAddButton.floatingDiameter,
                         interaction: interaction
                     )
+                    .cadenceFixedTypography()
                     // The corner inset belongs to the placement, not to the button: the tab
                     // bar's copy is centred in a row and must not carry it.
                     .padding(.trailing, iOSCircularAddButton.edgeInset)
@@ -107,6 +108,8 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
                 }
             }
             .iOSCaptureHost(interaction, onCreated: onCreated)
+            // The page declares inside this wrapper; the capture palette and its presenters do not.
+            .cadenceFixedTypography()
     }
 }
 
@@ -134,22 +137,30 @@ extension View {
 /// why the *position* of this block promises nothing and the words have to carry the claim.
 private struct iOSNewTaskGhostRow: View {
     let caption: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
+    private var wraps: Bool {
+        iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+    }
 
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: "plus")
-                .font(.system(size: 12, weight: .bold))
+                .cadenceFont(.metadata, base: 12, weight: .bold)
                 .foregroundStyle(Theme.blue)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("New task")
-                    .font(.system(size: 14, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 14, weight: .semibold)
                     .foregroundStyle(Theme.blue)
+                    .fixedSize(horizontal: false, vertical: scaling == .enabled)
                 if !caption.isEmpty {
                     Text(caption)
-                        .font(.system(size: 11, weight: .medium))
+                        .cadenceFont(.metadata, base: 11, weight: .medium)
                         .foregroundStyle(Theme.subdued)
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: scaling == .enabled)
                         .truncationMode(.tail)
                 }
             }
@@ -157,7 +168,7 @@ private struct iOSNewTaskGhostRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .frame(minHeight: 44, alignment: .leading)
+        .frame(minHeight: CadenceTypeScale.height(44, holding: .rowTitle, at: dynamicTypeSize, scaling: scaling), alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .fill(Theme.blue.opacity(0.1))

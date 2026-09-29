@@ -244,6 +244,21 @@ struct iOSBoardTaskCard: View {
 
     @State private var isBundleFormingTargeted = false
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
+    private var wraps: Bool {
+        iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+    }
+
+    private var completionDiameter: CGFloat {
+        CadenceTypeScale.size(.rowTitle, base: 13, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    private var completionFrame: CGFloat {
+        CadenceTypeScale.height(30, holding: .rowTitle, textBase: 13, at: dynamicTypeSize, scaling: scaling)
+    }
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     // T-201: presented by the page's `iOSTaskInspectorHost`, not by this card. A board column is a
@@ -298,19 +313,19 @@ struct iOSBoardTaskCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 Button(action: toggleCompletion) {
-                    iOSTaskCompletionCircle(glyph: .resolve(task: task))
-                        .frame(width: 16, height: 16)
-                        .frame(width: 30, height: 30)
-                        .iOSExpandedHitArea()
+                    iOSTaskCompletionCircle(glyph: .resolve(task: task), diameter: completionDiameter)
+                        .frame(width: completionFrame, height: completionFrame)
+                        .iOSExpandedHitArea(max(0, (44 - completionFrame) / 2))
                 }
                 .buttonStyle(.iosPressable)
                 .accessibilityLabel(CadenceTaskQuerySupport.isFinishedTask(task) ? "Mark not done" : "Mark done")
 
                 Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                    .font(.system(size: isRegularWidth ? 15 : 14, weight: .medium))
+                    .cadenceFont(.rowTitle, base: isRegularWidth ? 15 : 14, weight: .medium)
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .strikethrough(task.isDone, color: Theme.dim)
-                    .lineLimit(2)
+                    .lineLimit(wraps ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: scaling == .enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -324,7 +339,7 @@ struct iOSBoardTaskCard: View {
             // its list chip, so an undated task on the list board has nothing to show, and an
             // unguarded `LazyVGrid` would still charge the `VStack` its 10pt of spacing.
             if !metadataChips.isEmpty {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: wraps ? 1 : 2), spacing: 6) {
                     ForEach(metadataChips, id: \.id) { chip in
                         CadenceBoardMetadataChip(
                             title: chip.title,
@@ -393,9 +408,10 @@ struct iOSBoardTaskCard: View {
 
                 if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
                     Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hidden))
-                        .font(.system(size: 12, weight: .medium))
+                        .cadenceFont(.metadata, base: 12, weight: .medium)
                         .foregroundStyle(Theme.dim)
-                        .frame(minHeight: 30)
+                        .fixedSize(horizontal: false, vertical: scaling == .enabled)
+                        .frame(minHeight: CadenceTypeScale.height(30, holding: .metadata, at: dynamicTypeSize, scaling: scaling))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }

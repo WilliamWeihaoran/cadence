@@ -423,8 +423,12 @@ struct CadenceTypographyConversionSweepTests {
             "Cadence/Shared/Components/EstimatePickerControl.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
             "Cadence/iOS/iOSSearchView.swift",
+            "Cadence/iOS/iOSTaskCollectionPage.swift",
             "Cadence/iOS/iOSTaskDetailComponents.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/iOS/iOSTasksPageView.swift",
+            "Cadence/iOS/iOSTasksTabView.swift",
+            "Cadence/iOS/iOSTodayView.swift",
         ].sorted())
     }
 }

@@ -336,7 +336,7 @@ struct CadenceTagChipScaleTests {
     /// Like the chip, these shared components are prepared before their pages opt in. This pins
     /// direct callers, not transitive reachability or framework presentation propagation.
     private func assertPageChromeCallerInventory(paths: [String], read: (String) throws -> String) throws {
-        let families: [(pattern: String, fires: String, anchor: String, undeclared: Set<String>)] = [
+        let families: [(pattern: String, fires: String, anchor: String, undeclared: Set<String>, declared: Set<String>)] = [
             (
                 #"\bEmptyStateView\s*\("#,
                 "EmptyStateView(message: title, icon: icon)",
@@ -357,7 +357,7 @@ struct CadenceTagChipScaleTests {
                     "Cadence/macOS/Views/NotesView.swift",
                     "Cadence/macOS/Views/TasksListView.swift",
                     "Cadence/macOS/Views/TasksPanel.swift",
-                ]
+                ], []
             ),
             (
                 #"\b(?:CadenceTaskGroupHeading|CadenceTodayRolloverBanner|CadenceTodayOverdue(?:ListCard|SectionCard|SummaryHeading))\s*\("#,
@@ -367,7 +367,7 @@ struct CadenceTagChipScaleTests {
                     "Cadence/iOS/iOSTaskGroupSection.swift",
                     "Cadence/iOS/iOSTodayTaskSections.swift",
                     "Cadence/macOS/Views/TasksPanel.swift",
-                ]
+                ], []
             ),
             (
                 #"\biOS(?:PageHeader|CompactPageHeader)\s*\("#,
@@ -379,12 +379,13 @@ struct CadenceTagChipScaleTests {
                     "Cadence/iOS/iOSListDetailView.swift",
                     "Cadence/iOS/iOSListSupportViews.swift",
                     "Cadence/iOS/iOSSettingsComponents.swift",
-                    "Cadence/iOS/iOSTaskCollectionPage.swift",
                     "Cadence/iOS/iOSTaskViews.swift",
-                    "Cadence/iOS/iOSTasksPageView.swift",
-                    "Cadence/iOS/iOSTasksTabView.swift",
                     "Cadence/iOS/iOSTodayCompactViews.swift",
                     "Cadence/iOS/iPadTodaySupportViews.swift",
+                ], [
+                    "Cadence/iOS/iOSTaskCollectionPage.swift",
+                    "Cadence/iOS/iOSTasksPageView.swift",
+                    "Cadence/iOS/iOSTasksTabView.swift",
                 ]
             ),
             (
@@ -396,10 +397,32 @@ struct CadenceTagChipScaleTests {
                     "Cadence/iOS/iOSCalendarChromeViews.swift",
                     "Cadence/iOS/iOSDesignSystem.swift",
                     "Cadence/iOS/iOSSearchSupportViews.swift",
+                    "Cadence/iOS/iPadTodaySupportViews.swift",
+                ], [
                     "Cadence/iOS/iOSTasksPageView.swift",
                     "Cadence/iOS/iOSTasksTabView.swift",
-                    "Cadence/iOS/iPadTodaySupportViews.swift",
                 ]
+            ),
+            (
+                #"\bCadenceBoardColumn(?:Header|TitleRow|DueDateLine)\s*\("#,
+                "CadenceBoardColumnHeader(dotColor: color, title: title, count: count)",
+                "Cadence/iOS/iOSListSupportViews.swift",
+                [
+                    "Cadence/Shared/Components/CadenceBoardColumnHeader.swift",
+                    "Cadence/iOS/iOSCalendarBoardView.swift",
+                    "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+                    "Cadence/iOS/iOSListSupportViews.swift",
+                    "Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift",
+                    "Cadence/macOS/Views/CalendarBoardRailSupportViews.swift",
+                    "Cadence/macOS/Views/KanbanColumnSupportViews.swift",
+                    "Cadence/macOS/Views/KanbanListColumnView.swift",
+                ], []
+            ),
+            (
+                #"\biOSBoardTaskCard\s*\("#,
+                "iOSBoardTaskCard(task: task)",
+                "Cadence/iOS/iOSListSupportViews.swift",
+                ["Cadence/iOS/iOSCalendarBoardView.swift", "Cadence/iOS/iOSListSupportViews.swift"], []
             ),
         ]
         for family in families {
@@ -410,10 +433,10 @@ struct CadenceTagChipScaleTests {
                 by: { CadenceSourceScan.codeOnly($0).range(of: family.pattern, options: .regularExpression) != nil }
             )
             let sites = try instrument.sweep(paths, atLeast: 300, including: family.anchor, read: read)
-            #expect(Set(sites) == family.undeclared, "\(family.pattern): reclassify the new or removed chrome caller")
+            #expect(Set(sites) == family.undeclared.union(family.declared), "\(family.pattern): reclassify the new or removed chrome caller")
             for path in sites {
-                #expect(!CadenceSourceScan.codeOnly(try read(path)).contains(".cadenceScaledTypography()"),
-                        "\(family.pattern): \(path) opted in; verify its whole page geometry and move it out of the undeclared inventory")
+                #expect(CadenceSourceScan.codeOnly(try read(path)).contains(".cadenceScaledTypography()") == family.declared.contains(path),
+                        "\(family.pattern): scope classification changed for \(path); verify whole-page geometry before changing the declared/undeclared inventory")
             }
         }
 

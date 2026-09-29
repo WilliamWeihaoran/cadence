@@ -204,6 +204,7 @@ struct iOSListDetailView: View {
         .iOSHidesCompactNavigationBar()
         .sheet(item: $editorMode) { mode in
             iOSListEditorSheet(mode: mode)
+                .cadenceFixedTypography()
         }
     }
 
@@ -236,6 +237,7 @@ struct iOSListDetailView: View {
             // filed into folders on a Mac, and the panel showed exactly one of them at the root of
             // a filing system it could not draw. See T-193 and `CadenceNoteFolderPath`.
             iOSListNotesView(area: area, project: project)
+                .cadenceFixedTypography()
         case .links:
             iOSListLinksPanel(area: area, project: project)
         case .completed:

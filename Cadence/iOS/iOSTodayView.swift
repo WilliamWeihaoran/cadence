@@ -209,6 +209,7 @@ struct iOSTodayView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .background(Theme.bg.ignoresSafeArea())
+        .cadenceScaledTypography()
         // Unseeded, like every other `+` in the app. It used to hand in today's do date, which is
         // what the "Add a task for today…" field it replaced did implicitly — T-337 takes that
         // back: standing on Today is not a statement that the task is for today. Dropping the
@@ -228,6 +229,7 @@ struct iOSTodayView: View {
         // `iOSTodayView` and not `CadenceTodayOverdueListCard`.
         .sheet(item: $pendingListOpen) { request in
             iOSTodayOverdueListSheet(request: request)
+                .cadenceFixedTypography()
         }
     }
 
@@ -288,6 +290,7 @@ struct iOSTodayView: View {
                 .cadenceFixedTypography()
         case .timeline:
             iOSSchedulePanel()
+                .cadenceFixedTypography()
         }
     }
 
