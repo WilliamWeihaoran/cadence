@@ -239,7 +239,7 @@ struct CadenceInboxRemindersSurfaceTests {
     }
 
     /// The empty state and the section are alternatives. macOS spells that as an extra clause on
-    /// `TasksListView.isEmpty`; iOS passes `hidesEmptyState:` into its sections view. Same
+    /// `TasksListView.isEmptyPage`; iOS passes `hidesEmptyState:` into its sections view. Same
     /// statement, so the two must stay each other's negation — which is what this pins on the one
     /// case that used to get it wrong: a cleared Inbox with open reminders under it.
     @Test func aClearedInboxWithOpenRemindersDoesNotAlsoAnnounceThatItIsClear() throws {

@@ -351,7 +351,10 @@ struct CadenceDesktopTaskSurfaceTests {
     /// own. `TasksListView` passing `.touch` is a one-word edit that no test could see.
     @Test func theMacsThreeLogbooksAskForTheDesktopTier() throws {
         let sites: [(path: String, declaration: String)] = [
-            ("Cadence/macOS/Views/TasksListView.swift", "private var completedTasks: [AppTask]"),
+            (
+                "Cadence/macOS/Views/TasksListView.swift",
+                "private func completedTasks(in universe: [AppTask]) -> [AppTask]"
+            ),
             ("Cadence/macOS/Views/ListDetailComponents.swift", "private var doneTasks: [AppTask]"),
             (
                 "Cadence/macOS/Views/TasksPanel.swift",

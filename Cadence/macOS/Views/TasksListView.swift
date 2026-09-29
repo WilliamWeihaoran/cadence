@@ -91,22 +91,28 @@ struct TasksListView: View {
         }
     }
 
-    private var naturalActiveTasks: [AppTask] {
-        CadenceTaskQuerySupport.openTasks(from: visibleTaskUniverse)
+    /// **Takes the universe rather than re-deriving it (T-1501).** This and the three derivations
+    /// below were computed properties reading `visibleTaskUniverse`, and a SwiftUI view's computed
+    /// property is recomputed at *every reference* — so one body evaluation made **seven** full
+    /// passes over every task in the store and **three** sorts of the whole open set, because the
+    /// body reached six of them and `isEmpty` re-reached two. The body binds the universe once and
+    /// threads it now; the census that counted the seven, with `CalendarPageView`'s one as the
+    /// control column, is `CadenceTests/TaskSurfaceRenderPassCensusTests`.
+    ///
+    /// `activeTasks` is gone rather than parameterised: it was `applyFrozenTaskOrder` over this,
+    /// one line, and keeping it as a property is how a second derivation gets reached twice again.
+    private func naturalActiveTasks(in universe: [AppTask]) -> [AppTask] {
+        CadenceTaskQuerySupport.openTasks(from: universe)
             .taskSorted(by: sortField, direction: sortDirection)
-    }
-
-    private var activeTasks: [AppTask] {
-        applyFrozenTaskOrder(naturalActiveTasks, frozen: frozenTaskOrder)
     }
 
     /// The logbook, through `CadenceTaskSurfaceOptions` on the **desktop** tier, which is uncapped.
     /// The value's own doc carries the argument; the short of it is that this section is the only
     /// place a Mac lists finished work, `completedTaskCount` beside it states the true total, and
     /// there is no "show more" to reach the rest behind a cap.
-    private var completedTasks: [AppTask] {
+    private func completedTasks(in universe: [AppTask]) -> [AppTask] {
         CadenceTaskSurfaceOptions.completedRows(
-            from: visibleTaskUniverse
+            from: universe
                 .filter { $0.isDone || $0.isCancelled }
                 .taskCompletionSorted(),
             tier: .desktop,
@@ -124,12 +130,12 @@ struct TasksListView: View {
     private var revealsCompletedSection: Bool {
         CadenceDeepLinkResolutionSupport.revealsCompletedSection(
             revealedTaskID: deepLinkManager.revealedCompletedTaskID,
-            completedTasks: completedTasks
+            completedTasks: completedTasks(in: visibleTaskUniverse)
         )
     }
 
-    private var completedTaskCount: Int {
-        visibleTaskUniverse.reduce(into: 0) { count, task in
+    private func completedTaskCount(in universe: [AppTask]) -> Int {
+        universe.reduce(into: 0) { count, task in
             if task.isDone || task.isCancelled { count += 1 }
         }
     }
@@ -146,6 +152,15 @@ struct TasksListView: View {
     /// bought: the decode is the lenient one (a bare UUID, as the kanban card and the month-grid
     /// chip emit), so a task from some other surface has to fail *some* check, and failing the
     /// membership lookup is a stronger check than the payload prefix was.
+    /// **Deliberately still a computed property over `visibleTaskUniverse`, and so still the
+    /// page's second derivation of the store per render (T-1501).** Parameterising it the way the
+    /// four derivations above were parameterised turns `body`'s reference from a property *access*
+    /// into a *call*, and `CadenceSaveCommitDisciplineTests`' half-2-one-frame-down sweep reads a
+    /// call that reaches a swallow inside a block that reports success — so the one-word change
+    /// reddens `noSuccessReportFollowsACommitSwallowedOneFrameDown` against `body`. The drop
+    /// handlers genuinely do reach `TasksPanelSupport.assignTask`, so that is a question about
+    /// this page worth answering rather than silencing, and it is filed as its own ticket rather
+    /// than settled here by an exemption. Seven derivations to two is this ticket's measured win.
     private var dropCoordinator: TasksPanelDropCoordinator {
         TasksPanelDropCoordinator(
             allTasks: visibleTaskUniverse,
@@ -170,8 +185,8 @@ struct TasksListView: View {
         )
     }
 
-    private var isEmpty: Bool {
-        guard activeTasks.isEmpty, completedTaskCount == 0 else { return false }
+    private func isEmptyPage(activeTasks: [AppTask], completedCount: Int) -> Bool {
+        guard activeTasks.isEmpty, completedCount == 0 else { return false }
         guard scope == .inbox else { return true }
         return remindersManager.reminders.isEmpty
             && remindersManager.isAuthorized
@@ -242,10 +257,17 @@ struct TasksListView: View {
     // MARK: - Body
 
     var body: some View {
-        let visibleTasks = activeTasks
-        let completedCount = completedTaskCount
-        let visibleCompletedTasks = isCompletedCollapsed ? [] : completedTasks
+        // **Two derivations of the store per render, not seven (T-1501).** Every name below used
+        // to be a computed property over `visibleTaskUniverse`, which is itself a computed
+        // property, so each reference re-ran `allTasks.filter` and three of them re-sorted. The
+        // second survivor is `dropCoordinator`, and its own doc says why it is still one.
+        let universe = visibleTaskUniverse
+        let naturalTasks = naturalActiveTasks(in: universe)
+        let visibleTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder)
+        let completedCount = completedTaskCount(in: universe)
+        let visibleCompletedTasks = isCompletedCollapsed ? [] : completedTasks(in: universe)
         let coordinator = dropCoordinator
+        let showsEmptyState = isEmptyPage(activeTasks: visibleTasks, completedCount: completedCount)
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -317,7 +339,7 @@ struct TasksListView: View {
                     )
                 }
 
-                if isEmpty {
+                if showsEmptyState {
                     emptyState
                 }
             }
@@ -359,7 +381,7 @@ struct TasksListView: View {
             TaskGroupFreezeObserver(
                 frozenOrder: $frozenTaskOrder,
                 frozenGroups: .constant(nil),
-                naturalTasks: naturalActiveTasks,
+                naturalTasks: naturalTasks,
                 groupSnapshot: []
             )
         }

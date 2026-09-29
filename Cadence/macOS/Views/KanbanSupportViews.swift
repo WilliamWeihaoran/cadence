@@ -14,13 +14,20 @@ struct TaskListsKanbanView: View {
 
     /// Kanban mode has no grouping picker — the board is always one column per list.
     var body: some View {
-        taskListColumnsBoard
+        // **The board derives its universe once per render, not once per column (T-1501).**
+        // `activeTasks` was a computed property — two full passes over every task in the store —
+        // and it was referenced *inside* the `ForEach` content closure, which is evaluated once
+        // per column. So this board's per-render cost was never a constant: it was one derivation
+        // plus one more per list, and adding a list added one. `TaskSurfaceUniversePassCensusTests`
+        // counts the two positions separately, which is the only way that slope is visible at all.
+        let activeTasks = KanbanBoardSupport.activeTasks(from: allTasks)
+        return taskListColumnsBoard(activeTasks: activeTasks)
     }
 
-    private var taskListColumnsBoard: some View {
+    private func taskListColumnsBoard(activeTasks: [AppTask]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 12) {
-                ForEach(listColumns) { column in
+                ForEach(listColumns(activeTasks: activeTasks)) { column in
                     TaskListKanbanColumn(
                         title: column.title,
                         color: column.color,
@@ -42,11 +49,7 @@ struct TaskListsKanbanView: View {
         .clipped()
     }
 
-    private var activeTasks: [AppTask] {
-        KanbanBoardSupport.activeTasks(from: allTasks)
-    }
-
-    private var listColumns: [KanbanListColumnModel] {
+    private func listColumns(activeTasks: [AppTask]) -> [KanbanListColumnModel] {
         KanbanBoardSupport.listColumns(
             areas: areas,
             projects: projects,
