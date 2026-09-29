@@ -97,11 +97,26 @@ nonisolated enum NoteReferenceParser {
     /// `matches(in:pattern:)` below took a `String` and built an `NSRegularExpression` from it on
     /// every call, and both call sites passed a literal that never varies — so parsing a note's
     /// references rebuilt them each time. Hoisted under [[T-1484]]; both literals are
-    /// byte-identical to the ones the call sites passed, and `wikiReferenceRegex` is the same 19
-    /// bytes `MarkdownReferenceDisplaySupport` holds. The duplicate across the two files stays,
-    /// and the reason is a target boundary rather than an oversight: `CadenceMCPServer` compiles
-    /// this file and not that one.
-    nonisolated private static let wikiReferenceRegex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#)
+    /// byte-identical to the ones the call sites passed.
+    ///
+    /// **The 19 bytes of `wikiReferencePattern` are the only spelling of them in the tree, and
+    /// this is the file that can own them** ([[T-1521]]). [[T-1484]] left the literal written three
+    /// times — here, in `MarkdownReferenceDisplaySupport` and in `MarkdownEditorSupport` — on the
+    /// reading that a target boundary forbade sharing it. The boundary is real and the conclusion
+    /// was wrong: it forbids the *display* file owning the constant, because `CadenceMCPServer`'s
+    /// Sources phase compiles `NoteReferenceSupport.swift` and not `MarkdownReferenceDisplaySupport.swift`.
+    /// It says nothing against the owner being **this** file, which both targets compile, and the
+    /// other two are app-target files that can read it. So the constant lives here and nothing was
+    /// moved between targets.
+    ///
+    /// It is the pattern, not the compiled object, that is shared: the three sites disagree about
+    /// what to do when it will not compile (`try?` here and in the display support, `try!` in the
+    /// editor, which enumerates it directly), and that is each site's own question. What they may
+    /// not disagree about is what `[[…]]` *is* — it decides what becomes a link in the renderer,
+    /// in the MCP read service and in the live editor at once.
+    nonisolated static let wikiReferencePattern = #"\[\[([^\[\]]+?)\]\]"#
+
+    nonisolated private static let wikiReferenceRegex = try? NSRegularExpression(pattern: wikiReferencePattern)
 
     nonisolated private static let taskReferenceRegex = try? NSRegularExpression(pattern: #"(?i)\[\[task:(.+?)\]\]"#)
 

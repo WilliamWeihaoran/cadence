@@ -15,6 +15,47 @@ enum ToolArgumentError: Error, LocalizedError {
     }
 }
 
+/// **The argument parser's constant patterns, compiled once per process.**
+///
+/// Every literal below was written inside the function that used it and rebuilt on each call —
+/// the shape [[T-1484]] closed in the markdown services and [[T-1520]] filed here. None varies
+/// with the argument being parsed, so none needs to be built per call.
+///
+/// **The reason is duplication and the one-spelling rule, not speed.** [[T-1484]] measured this
+/// exact shape at ~2µs a construction, because `NSRegularExpression` caches compiled patterns
+/// internally; it is not the ~100µs a genuinely cold construction costs, and an MCP tool call
+/// parses a handful of arguments. What the constants buy is that the pattern a caller's
+/// `"in 3 days"` is read by is spelled once, in one named place, rather than mid-`guard` where a
+/// second spelling can appear beside it without anything going red.
+///
+/// They live in an enum because the extension below is on `Dictionary`, and a generic type's
+/// extension cannot hold static stored properties.
+private enum CadenceMCPArgumentPatterns {
+    static let relativeDayIn = try? NSRegularExpression(pattern: #"^in\s+(\d+)\s+days?$"#)
+
+    static let relativeDayPlus = try? NSRegularExpression(pattern: #"^\+(\d+)\s+days?$"#)
+
+    /// The two forward forms, in the order the per-call loop tried them. A pattern that failed to
+    /// compile was skipped by that loop; `compactMap` drops it here for the same reason.
+    static let relativeDayAhead: [NSRegularExpression] = [relativeDayIn, relativeDayPlus].compactMap { $0 }
+
+    static let relativeDayAgo = try? NSRegularExpression(pattern: #"^(\d+)\s+days?\s+ago$"#)
+
+    static let compactMinutes = try? NSRegularExpression(pattern: #"^(\d+)(?:m|min|mins|minute|minutes)$"#)
+
+    static let compactHours = try? NSRegularExpression(pattern: #"^(\d+(?:\.\d+)?)(?:h|hr|hrs|hour|hours)$"#)
+
+    /// `units` was a local `let` sitting beside the pattern it is interpolated into, and keeps its
+    /// name here so the literal below is the one it replaced, character for character.
+    private static let units = #"hours?|hrs?|h|minutes?|mins?|m"#
+
+    static let wordDuration = try? NSRegularExpression(
+        pattern: #"^(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)(?: and a half)?\s+(\#(units))$"#
+    )
+
+    static let minuteOfDay = try? NSRegularExpression(pattern: #"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$"#)
+}
+
 extension Dictionary where Key == String, Value == MCP.Value {
     func string(_ key: String) -> String? {
         self[key]?.stringValue
@@ -189,13 +230,8 @@ extension Dictionary where Key == String, Value == MCP.Value {
     }
 
     private static func parseRelativeDay(_ value: String, calendar: Calendar, today: Date) -> Date? {
-        let patterns = [
-            #"^in\s+(\d+)\s+days?$"#,
-            #"^\+(\d+)\s+days?$"#,
-        ]
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                  let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
+        for regex in CadenceMCPArgumentPatterns.relativeDayAhead {
+            guard let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
                   let range = Range(match.range(at: 1), in: value),
                   let days = Int(value[range]) else {
                 continue
@@ -203,7 +239,7 @@ extension Dictionary where Key == String, Value == MCP.Value {
             return calendar.date(byAdding: .day, value: days, to: today)
         }
 
-        guard let regex = try? NSRegularExpression(pattern: #"^(\d+)\s+days?\s+ago$"#),
+        guard let regex = CadenceMCPArgumentPatterns.relativeDayAgo,
               let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
               let range = Range(match.range(at: 1), in: value),
               let days = Int(value[range]) else {
@@ -229,14 +265,14 @@ extension Dictionary where Key == String, Value == MCP.Value {
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
         let compact = spaced.replacingOccurrences(of: " ", with: "")
 
-        if let regex = try? NSRegularExpression(pattern: #"^(\d+)(?:m|min|mins|minute|minutes)$"#),
+        if let regex = CadenceMCPArgumentPatterns.compactMinutes,
            let match = regex.firstMatch(in: compact, range: NSRange(compact.startIndex..., in: compact)),
            let range = Range(match.range(at: 1), in: compact),
            let minutes = Int(compact[range]) {
             return minutes
         }
 
-        if let regex = try? NSRegularExpression(pattern: #"^(\d+(?:\.\d+)?)(?:h|hr|hrs|hour|hours)$"#),
+        if let regex = CadenceMCPArgumentPatterns.compactHours,
            let match = regex.firstMatch(in: compact, range: NSRange(compact.startIndex..., in: compact)),
            let range = Range(match.range(at: 1), in: compact),
            let hours = Double(compact[range]) {
@@ -267,9 +303,7 @@ extension Dictionary where Key == String, Value == MCP.Value {
             "eleven": 11,
             "twelve": 12,
         ]
-        let units = #"hours?|hrs?|h|minutes?|mins?|m"#
-        let pattern = #"^(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)(?: and a half)?\s+(\#(units))$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard let regex = CadenceMCPArgumentPatterns.wordDuration,
               let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
               let amountRange = Range(match.range(at: 1), in: value),
               let unitRange = Range(match.range(at: 2), in: value),
@@ -293,8 +327,7 @@ extension Dictionary where Key == String, Value == MCP.Value {
             .lowercased()
             .replacingOccurrences(of: ".", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let pattern = #"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard let regex = CadenceMCPArgumentPatterns.minuteOfDay,
               let match = regex.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)),
               let hourRange = Range(match.range(at: 1), in: normalized),
               let hour = Int(normalized[hourRange]) else {

@@ -133,12 +133,21 @@ nonisolated enum MarkdownInlineMarkerRanges {
     /// regex is how the styler and the sweep would come to disagree about what a reference is.
     static let inlineImageReferencePattern = MarkdownImageAssetService.referencePattern
 
+    /// The same reference, already compiled — `MarkdownImageAssetService.anyReferenceRegex`, not a
+    /// second `NSRegularExpression` built from the same string.
+    ///
+    /// `imageReferences` below and `MarkdownInlinePreviewSupport.imageMatches` both rebuilt it on
+    /// every call, which is what [[T-1520]] was filed about. The alias is deliberate and mirrors
+    /// `inlineImageReferencePattern` one line above: one spelling of the pattern, and now one
+    /// compiled form of it, shared by the styler, the inline preview and the lifecycle sweep.
+    static let inlineImageReferenceRegex = MarkdownImageAssetService.anyReferenceRegex
+
     static func hashtagRanges(in markdown: String) -> [NSRange] {
         matchRanges(of: hashtagPattern, in: markdown).map { $0.range }
     }
 
     static func imageReferences(in markdown: String) -> [MarkdownInlineImageReference] {
-        matchRanges(of: inlineImageReferencePattern, in: markdown).compactMap { match in
+        matchRanges(of: inlineImageReferenceRegex, in: markdown).compactMap { match in
             guard match.numberOfRanges >= 3 else { return nil }
             let full = match.range(at: 0)
             let label = match.range(at: 1)
@@ -191,7 +200,11 @@ nonisolated enum MarkdownInlineMarkerRanges {
 
     private static func matchRanges(of pattern: String, in text: String) -> [NSTextCheckingResult] {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        return regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length))
+        return matchRanges(of: regex, in: text)
+    }
+
+    private static func matchRanges(of regex: NSRegularExpression, in text: String) -> [NSTextCheckingResult] {
+        regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length))
     }
 }
 

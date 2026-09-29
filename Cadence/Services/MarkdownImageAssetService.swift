@@ -142,7 +142,13 @@ nonisolated enum MarkdownImageAssetService {
     /// reference *is*, even though they disagree about which ones become blocks.
     static let referencePattern = #"!\[("# + altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#
 
-    private static let anyReferenceRegex = try! NSRegularExpression(pattern: referencePattern)
+    /// The unanchored reference, compiled once per process.
+    ///
+    /// Not `private`: `MarkdownInlineMarkerRanges.inlineImageReferenceRegex` is this object, the
+    /// same way `inlineImageReferencePattern` is `referencePattern` — the styler, the inline
+    /// preview and the lifecycle sweep read one compiled regex rather than three built from one
+    /// string. [[T-1520]] took the third of those, which was compiling this pattern on every call.
+    static let anyReferenceRegex = try! NSRegularExpression(pattern: referencePattern)
 
     /// The same reference, alone on its line — the block form, and nothing else.
     private static let standaloneReferenceRegex = try! NSRegularExpression(pattern: #"(?m)^"# + referencePattern + #"\s*$"#)

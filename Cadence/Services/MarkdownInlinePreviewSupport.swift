@@ -178,9 +178,13 @@ nonisolated enum MarkdownInlinePreviewSupport {
         // `MarkdownInlineMarkerRanges`. It was written out here and there as two identical literals;
         // `MarkdownImageAssetService`'s own copy is deliberately *not* the same regex — it is line
         // anchored, because it matches the standalone-image block rather than an inline reference.
-        guard let regex = try? NSRegularExpression(
-            pattern: MarkdownInlineMarkerRanges.inlineImageReferencePattern
-        ) else { return [] }
+        //
+        // [[T-1520]]: this read `inlineImageReferencePattern` and compiled it on every call, once
+        // per inline string, although `MarkdownImageAssetService` had already compiled the same
+        // bytes into a stored property. The reason for the change is that duplication and the
+        // one-spelling rule — [[T-1484]] measured this shape at ~2µs a call, so the time is not
+        // the argument. `inlineImageReferenceRegex` **is** that stored object, not a copy.
+        let regex = MarkdownInlineMarkerRanges.inlineImageReferenceRegex
 
         let nsMarkdown = markdown as NSString
         return regex.matches(in: markdown, range: NSRange(location: 0, length: nsMarkdown.length)).compactMap { match in

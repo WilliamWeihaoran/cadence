@@ -55,11 +55,15 @@ struct CadenceMarkdownRegexHoistTests {
     /// these paths can observe an `NSRegularExpression` being built, so what is counted is the
     /// construction sites in the declarations the calls run through.
     ///
-    /// `MarkdownTaskEmbedParser` is the one entry whose expected in-body count is **1** and not 0,
-    /// and that is deliberate: `referenceTitleRanges(of:in:)` interpolates an escaped UUID into its
-    /// pattern, so it varies per call and cannot be hoisted to a stored `let` without a cache.
-    /// [[T-1484]] put that shape out of scope by name; asserting 1 rather than 0 records it instead
-    /// of letting a future hoist of it go unnoticed.
+    /// **Three entries expect an in-body count of 1 rather than 0, and each one is a recorded
+    /// exclusion rather than a miss.** `MarkdownTaskEmbedParser`'s `referenceTitleRanges(of:in:)`
+    /// interpolates an escaped UUID, so its pattern varies per call and cannot become a stored
+    /// `let` without a cache — [[T-1484]] put that shape out of scope by name.
+    /// `MarkdownInlinePreviewSupport`'s `regexMatches(pattern:…)` and `MarkdownInlineMarkerRanges`'s
+    /// `matchRanges(of pattern:in:)` are generic helpers their callers hand a literal to, so the
+    /// construction is not *one* constant pattern and hoisting them is a table refactor rather than
+    /// a `let`; [[T-1520]] scoped itself to the image reference and filed the rest as [[T-1660]].
+    /// Asserting 1 rather than 0 records all three instead of letting a future hoist go unnoticed.
     @Test func theMarkdownServicesCompileNoConstantPatternPerCall() throws {
         for expectation in Self.constructionCounts {
             let source = CadenceSourceScan.strippingComments(
@@ -180,6 +184,65 @@ struct CadenceMarkdownRegexHoistTests {
                 HoistedFunction(name: "headingPrefix", reads: "MarkdownMetadataParser.headingPrefixRegex"),
             ]
         ),
+        // [[T-1520]] from here down.
+        //
+        // `MarkdownInlinePreviewSupport`'s expected in-body count is **1 and not 0**, for the same
+        // reason `MarkdownTaskEmbedParser`'s is: `regexMatches(pattern:…)` is a generic helper that
+        // ten callers hand ten different literals, so the construction is not one constant pattern
+        // and hoisting it is a table refactor rather than a `let`. [[T-1520]] scoped itself to
+        // `imageMatches`, the one that read an already-shared constant; the ten are filed as
+        // [[T-1660]]. Asserting 1 records that rather than letting a hoist of it pass unnoticed.
+        ConstructionCount(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            declaration: "nonisolated enum MarkdownInlinePreviewSupport",
+            stored: 0,
+            inBody: 1,
+            functions: [
+                HoistedFunction(name: "imageMatches", reads: "MarkdownInlineMarkerRanges.inlineImageReferenceRegex"),
+            ]
+        ),
+        // Same shape, same reason: `matchRanges(of pattern:in:)` still serves `hashtagRanges`,
+        // whose pattern is a constant nobody has hoisted yet ([[T-1660]]).
+        ConstructionCount(
+            path: "Cadence/Services/MarkdownStyleRangeSupport.swift",
+            declaration: "nonisolated enum MarkdownInlineMarkerRanges",
+            stored: 0,
+            inBody: 1,
+            functions: [
+                HoistedFunction(name: "imageReferences", reads: "inlineImageReferenceRegex"),
+            ]
+        ),
+        ConstructionCount(
+            path: "Cadence/Services/MarkdownImageAssetService.swift",
+            declaration: "nonisolated enum MarkdownImageAssetService",
+            stored: 2,
+            inBody: 0,
+            functions: []
+        ),
+        // The MCP target. `CadenceTests` cannot *execute* anything under `CadenceMCPServer/` —
+        // none of those files is in the app target's Sources phase — so this scan and the literal
+        // table below are the whole of the guard here, and they are the reason both exist.
+        ConstructionCount(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            declaration: "private enum CadenceMCPArgumentPatterns",
+            stored: 7,
+            inBody: 0,
+            functions: []
+        ),
+        ConstructionCount(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            declaration: "extension Dictionary where Key == String, Value == MCP.Value",
+            stored: 0,
+            inBody: 0,
+            functions: [
+                HoistedFunction(name: "parseRelativeDay", reads: "CadenceMCPArgumentPatterns.relativeDayAhead"),
+                HoistedFunction(name: "parseRelativeDay", reads: "CadenceMCPArgumentPatterns.relativeDayAgo"),
+                HoistedFunction(name: "parseDuration", reads: "CadenceMCPArgumentPatterns.compactMinutes"),
+                HoistedFunction(name: "parseDuration", reads: "CadenceMCPArgumentPatterns.compactHours"),
+                HoistedFunction(name: "parseWordDuration", reads: "CadenceMCPArgumentPatterns.wordDuration"),
+                HoistedFunction(name: "parseMinuteOfDay", reads: "CadenceMCPArgumentPatterns.minuteOfDay"),
+            ]
+        ),
     ]
 
     // MARK: - The literals, byte for byte
@@ -252,12 +315,26 @@ struct CadenceMarkdownRegexHoistTests {
             path: "Cadence/Services/MarkdownTaskEmbedSupport.swift",
             literal: ##"#"^\s*\[\[task:[0-9A-Fa-f-]{36}\|([^\]\n]+)\]\]\s*$"#"##, bytes: 49, occurrences: 1
         ),
+        // [[T-1521]]'s dedup, as an absence. The 19 bytes left this file and the editor; the
+        // identical hash stays in `NoteReferenceSupport.swift`, which both the app and
+        // `CadenceMCPServer` compile, and both of the others now read it from there.
         LiteralExpectation(
             path: "Cadence/Services/MarkdownReferenceDisplaySupport.swift",
-            literal: ##"#"\[\[([^\[\]]+?)\]\]"#"##, bytes: 19, occurrences: 1
+            literal: ##"#"\[\[([^\[\]]+?)\]\]"#"##, bytes: 19, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
+            literal: ##"#"\[\[([^\[\]]+?)\]\]"#"##, bytes: 19, occurrences: 0
         ),
         LiteralExpectation(
             path: "Cadence/Services/MarkdownReferenceDisplaySupport.swift",
+            literal: ##"#"^\s*(?:task|note):(?:[^\|\]]*\|)?"#"##, bytes: 33, occurrences: 1
+        ),
+        // The *other* reference literal, still written twice — and, unlike the one above, with no
+        // target boundary anywhere near it: both files are app-target only. Pinned at 1 here so
+        // the duplication has a tripwire while [[T-1661]] is open, and so closing it is one row.
+        LiteralExpectation(
+            path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
             literal: ##"#"^\s*(?:task|note):(?:[^\|\]]*\|)?"#"##, bytes: 33, occurrences: 1
         ),
         LiteralExpectation(
@@ -276,6 +353,62 @@ struct CadenceMarkdownRegexHoistTests {
         LiteralExpectation(
             path: "Cadence/Services/MarkdownFormatCommandSupport.swift",
             literal: ##"#"^#{1,6}\s+"#"##, bytes: 10, occurrences: 0
+        ),
+
+        // MARK: [[T-1520]] — the image reference, and the MCP argument patterns
+
+        // The three pieces `MarkdownImageAssetService.referencePattern` is concatenated from.
+        // Nothing moved them; they are pinned because three readers now share the one compiled
+        // regex built from them — the lifecycle sweep, the styler and the inline preview — so a
+        // character lost here is lost in all three at once.
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownImageAssetService.swift",
+            literal: ##"#"(?:[^\]\n\\]|\\.)*\\?"#"##, bytes: 21, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownImageAssetService.swift",
+            literal: ##"#"!\[("#"##, bytes: 4, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownImageAssetService.swift",
+            literal: ##"#")\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#"##, bytes: 41, occurrences: 1
+        ),
+
+        // The seven MCP literals, each as `git show HEAD:` printed it before the hoist. The
+        // interpolated one keeps the local name `units` precisely so this row can be an identity
+        // rather than an equivalence: `\#(units)` is the same eight characters it was.
+        LiteralExpectation(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            literal: ##"#"^in\s+(\d+)\s+days?$"#"##, bytes: 20, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            literal: ##"#"^\+(\d+)\s+days?$"#"##, bytes: 17, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            literal: ##"#"^(\d+)\s+days?\s+ago$"#"##, bytes: 21, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            literal: ##"#"^(\d+)(?:m|min|mins|minute|minutes)$"#"##, bytes: 36, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            literal: ##"#"^(\d+(?:\.\d+)?)(?:h|hr|hrs|hour|hours)$"#"##, bytes: 40, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            literal: ##"#"hours?|hrs?|h|minutes?|mins?|m"#"##, bytes: 30, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            literal: ##"#"^(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)(?: and a half)?\s+(\#(units))$"#"##,
+            bytes: 101, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
+            literal: ##"#"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$"#"##, bytes: 34, occurrences: 1
         ),
     ]
 
@@ -320,6 +453,160 @@ struct CadenceMarkdownRegexHoistTests {
         #expect(produced.contains("\"# Title\"\t1\t0,2\t2,5\t\"Title\""))
         #expect(Self.producedAnswers().components(separatedBy: "\tnil").count - 1 > 10)
         #expect(!recorded.contains { $0.isEmpty })
+    }
+
+    // MARK: - [[T-1520]]: the image reference is one compiled object
+
+    /// **The inline preview, the styler and the image lifecycle read one `NSRegularExpression`.**
+    ///
+    /// `MarkdownInlinePreviewSupport.imageMatches` built its own from
+    /// `MarkdownInlineMarkerRanges.inlineImageReferencePattern` on every call, although
+    /// `MarkdownImageAssetService` had already compiled those same bytes into a stored property —
+    /// and `MarkdownInlineMarkerRanges.imageReferences` built a third through
+    /// `matchRanges(of:in:)`. [[T-1520]]'s reason for taking it is that duplication, not the time:
+    /// [[T-1484]] measured a construction of this shape at ~2µs, because `NSRegularExpression`
+    /// caches compiled patterns internally, and `imageMatches` runs once per inline string.
+    ///
+    /// **The first assertion is `===`, and it has to be.** A second object built from the same
+    /// string passes every behavioural row below, and a second object is exactly what was removed.
+    /// The rows then pin the property the sharing is *for*: the three readers disagree about what
+    /// to do with a reference — draw it, hide its markers, or decide whether the asset is still
+    /// alive and may be collected — and they may not disagree about what one **is**. Over-counting
+    /// defers garbage; under-counting deletes a picture.
+    @Test func theInlineImageReferenceRegexIsOneCompiledObjectThreeReadersShare() {
+        #expect(
+            MarkdownInlineMarkerRanges.inlineImageReferenceRegex === MarkdownImageAssetService.anyReferenceRegex,
+            "the styler alias is a second compiled copy again, not the lifecycle sweep's object"
+        )
+        #expect(
+            MarkdownInlineMarkerRanges.inlineImageReferencePattern == MarkdownImageAssetService.referencePattern
+        )
+        #expect(
+            MarkdownImageAssetService.anyReferenceRegex.pattern == MarkdownImageAssetService.referencePattern,
+            "the compiled object is no longer the pattern it is named for"
+        )
+
+        let first = "3F2504E0-4F89-11D3-9A0C-0305E82C3301"
+        let second = "A1B2C3D4-E5F6-4A5B-8C7D-9E0F1A2B3C4D"
+        let corpus: [(markdown: String, images: Int)] = [
+            ("![photo](cadence-image://\(first))", 1),
+            ("before ![a](cadence-image://\(first)) between ![b](cadence-image://\(second)) after", 2),
+            ("![](cadence-image://\(first))", 1),
+            // An escaped `]` inside the alt text: the widened label class is why this is one
+            // reference and not none, and all three readers have to agree that it is.
+            (#"![bracket\] label](cadence-image://\#(first))"#, 1),
+            ("plain prose with no picture in it", 0),
+            ("![alt](https://example.com/photo.png)", 0),
+            ("![alt](cadence-image://not-a-uuid)", 0),
+        ]
+
+        for row in corpus {
+            let styler = MarkdownInlineMarkerRanges.imageReferences(in: row.markdown)
+            let lifecycle = MarkdownImageAssetService.referencedIDs(in: row.markdown)
+            let preview = MarkdownInlinePreviewSupport.runs(in: row.markdown)
+                .filter { $0.traits.contains(.image) }
+
+            #expect(styler.count == row.images, "the styler saw \(styler.count) references in \(row.markdown.debugDescription)")
+            #expect(lifecycle.count == row.images, "the lifecycle sweep saw \(lifecycle.count) in \(row.markdown.debugDescription)")
+            #expect(preview.count == row.images, "the inline preview saw \(preview.count) in \(row.markdown.debugDescription)")
+            // Not just the same count: the same ids, so two readers cannot agree by arithmetic
+            // while pointing at different references.
+            let ns = row.markdown as NSString
+            let stylerIDs = Set(styler.compactMap { UUID(uuidString: ns.substring(with: $0.idRange)) })
+            #expect(
+                stylerIDs == lifecycle,
+                "the styler and the lifecycle sweep name different references in \(row.markdown.debugDescription)"
+            )
+        }
+
+        // One concrete answer, so the agreement above cannot be three readers agreeing on nothing.
+        let labelled = MarkdownInlinePreviewSupport.runs(in: "see ![photo](cadence-image://\(first)) here")
+        #expect(labelled.filter { $0.traits.contains(.image) }.map(\.text) == ["photo"])
+        #expect(MarkdownImageAssetService.referencedIDs(in: "see ![photo](cadence-image://\(first)) here")
+            == [UUID(uuidString: first)!])
+
+        // Non-vacuity: the corpus both finds and rejects.
+        #expect(corpus.contains { $0.images > 0 })
+        #expect(corpus.contains { $0.images == 0 })
+    }
+
+    // MARK: - [[T-1521]]: three spellings of `[[…]]`, and the boundary that did not forbid one
+
+    /// **`\[\[([^\[\]]+?)\]\]` is written once, in the file both targets compile.**
+    ///
+    /// [[T-1484]] left the 19 bytes in three files and [[T-1521]] recorded why: `CadenceMCPServer`
+    /// compiles `NoteReferenceSupport.swift` and **not** `MarkdownReferenceDisplaySupport.swift`,
+    /// so a constant declared in the display file would not link in that target. Both halves of
+    /// that are true, and the conclusion drawn from them — that the three cannot share a constant
+    /// without moving a file between targets — does not follow. It rules out one **owner**, not
+    /// every owner. `NoteReferenceSupport.swift` is in the MCP target's Sources phase *and* in the
+    /// app's synchronized folder; the other two are app-target files. So the constant lives there,
+    /// the other two read it, and no `project.pbxproj` edit was needed.
+    ///
+    /// The membership is read out of `project.pbxproj` rather than remembered, because it is the
+    /// whole of the argument. If the display file ever joins that target the arrangement could be
+    /// simplified — this goes red saying so rather than leaving a comment that quietly stops being
+    /// true.
+    ///
+    /// **What is shared is the pattern, not the compiled object**, and that is deliberate: the
+    /// three sites disagree about what to do when a pattern will not compile (`try?` twice, `try!`
+    /// in the editor, which enumerates it directly), which is each site's own question. What they
+    /// may not disagree about is what `[[…]]` *is* — it decides what becomes a link in the
+    /// renderer, in the MCP read service and in the live editor at once.
+    @Test func theWikiReferencePatternIsOneConstantAndTheTargetBoundaryAllowedIt() throws {
+        let mcp = try cadenceMCPServerMemberFiles()
+        #expect(mcp.count >= 50, "the MCP source list parsed as \(mcp.count) files, so this scan read nothing")
+        #expect(
+            mcp.contains("Cadence/Services/NoteReferenceSupport.swift"),
+            "the file that owns wikiReferencePattern is no longer in the MCP target"
+        )
+        #expect(
+            !mcp.contains("Cadence/Services/MarkdownReferenceDisplaySupport.swift"),
+            "the display file joined the MCP target, so T-1521's boundary is gone and the ownership could move"
+        )
+        #expect(!mcp.contains("Cadence/macOS/Editor/MarkdownEditorSupport.swift"))
+
+        #expect(NoteReferenceParser.wikiReferencePattern == ##"\[\[([^\[\]]+?)\]\]"##)
+        #expect(NoteReferenceParser.wikiReferencePattern.utf8.count == 19)
+
+        let readers: [(path: String, property: String)] = [
+            ("Cadence/Services/MarkdownReferenceDisplaySupport.swift", "wikiReferenceRegex"),
+            ("Cadence/macOS/Editor/MarkdownEditorSupport.swift", "wikiLinkRegex"),
+        ]
+        for reader in readers {
+            let source = CadenceSourceScan.strippingComments(
+                try CadenceSourceScan.sourceFile(reader.path)
+            )
+            let declarations = source
+                .components(separatedBy: "\n")
+                .filter { $0.contains("static let \(reader.property)") }
+            #expect(declarations.count == 1, "\(reader.path) declares \(reader.property) \(declarations.count) times")
+            let declaration = try #require(declarations.first)
+            #expect(
+                declaration.contains("NoteReferenceParser.wikiReferencePattern"),
+                "\(reader.property) spells the pattern out again instead of reading the shared constant"
+            )
+        }
+
+        // And the editor's styling pass reads that property rather than a copy beside it. The two
+        // display-side functions are covered by `constructionCounts` above; this is the third
+        // reader, the one no test in this target can execute.
+        let editor = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorSupport.swift")
+        )
+        let stylist = try #require(CadenceSourceScan.declarationBody("enum MarkdownStylist", in: editor))
+        let applyWikiLinks = try #require(CadenceSourceScan.functionBody(named: "applyWikiLinks", in: stylist))
+        #expect(!applyWikiLinks.contains("NSRegularExpression("))
+        #expect(applyWikiLinks.contains("wikiLinkRegex"))
+
+        // The behaviour the shared bytes decide, on the two readers this target can run. These
+        // rows are [[T-1484]]'s recorded ones: a nested reference yields the inner label, and a
+        // reference whose label is a single space is a reference.
+        #expect(NoteReferenceParser.noteReferences(in: "[[Alpha]] and [[Beta]]").map(\.fallbackTitle) == ["Alpha", "Beta"])
+        #expect(NoteReferenceParser.noteReferences(in: "[[nested [[inner]] ]]").map(\.fallbackTitle) == ["inner"])
+        #expect(NoteReferenceParser.noteReferences(in: "[[]]").isEmpty)
+        #expect(MarkdownReferenceDisplaySupport.referenceRanges(in: "[[Alpha]] and [[Beta]]").count == 2)
+        #expect(MarkdownReferenceDisplaySupport.referenceRanges(in: "nothing here").isEmpty)
     }
 
     // MARK: - The dump

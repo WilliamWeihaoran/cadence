@@ -82,11 +82,15 @@ nonisolated enum MarkdownReferenceDisplaySupport {
     /// rebuilt it and the two spellings could drift apart without anything going red — the second
     /// is what [[T-1484]] was really about. The literal is byte-identical to both of them.
     ///
-    /// `NoteReferenceParser` holds its own copy of the same bytes and deliberately still does:
-    /// `CadenceMCPServer` compiles `NoteReferenceSupport.swift` and does **not** compile this
-    /// file, so a shared constant here would not link there. One spelling per target is as far as
-    /// this goes without moving files between targets.
-    nonisolated private static let wikiReferenceRegex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#)
+    /// **The literal is gone from this file; the pattern is `NoteReferenceParser`'s** ([[T-1521]]).
+    /// [[T-1484]] left a second copy of the 19 bytes here on the reading that a target boundary
+    /// forbade sharing — `CadenceMCPServer` compiles `NoteReferenceSupport.swift` and not this
+    /// file, so a constant declared *here* would not link there. That is true, and it ruled out
+    /// this file as the owner rather than ruling out an owner: `NoteReferenceSupport.swift` is in
+    /// both targets' Sources phases, so it can hold the constant and this file can read it. No
+    /// file moved between targets. The compiled regex stays local because the `try?` and the
+    /// guards below it are this file's own answer to a pattern that will not compile.
+    nonisolated private static let wikiReferenceRegex = try? NSRegularExpression(pattern: NoteReferenceParser.wikiReferencePattern)
 
     /// The hidden `task:`/`note:` prefix inside a reference label, read once per label by
     /// `display(forWikiLabel:)` — so once per reference in a note, not once per note. Hoisted

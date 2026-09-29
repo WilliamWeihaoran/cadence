@@ -242,7 +242,10 @@ enum MarkdownStylist {
     private static let strikethroughRegex = try! NSRegularExpression(pattern: "~~(.+?)~~")
     private static let highlightRegex = try! NSRegularExpression(pattern: "==(.+?)==")
     private static let inlineCodeRegex = try! NSRegularExpression(pattern: "`([^`\n]+)`")
-    private static let wikiLinkRegex = try! NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#)
+    /// The pattern is `NoteReferenceParser.wikiReferencePattern`, not a third spelling of it
+    /// ([[T-1521]]): what `[[…]]` matches has to be the same question in the live editor, the
+    /// renderer and the MCP read service, and it was written out three times in three files.
+    private static let wikiLinkRegex = try! NSRegularExpression(pattern: NoteReferenceParser.wikiReferencePattern)
     private static let wikiLinkDisplayPrefixRegex = try! NSRegularExpression(pattern: #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#, options: [.caseInsensitive])
     private static let codeFenceRegex = try! NSRegularExpression(pattern: #"(?s)```([^\n`]*)\n(.*?)\n?```"#)
     private static let tablePipeRegex = try! NSRegularExpression(pattern: #"\|"#)
