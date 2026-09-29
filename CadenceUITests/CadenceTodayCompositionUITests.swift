@@ -419,9 +419,22 @@ final class CadenceTodayCompositionUITests: XCTestCase {
             block.bounds.height / max(block.bounds.width, 1), Fixture.imageAspect, accuracy: 0.05,
             "[\(state)] the picture's box is \(block.bounds) — the wrong shape for an 800×500 image"
         )
+        let foreign = CadenceUITestPixel.foreignPixelCount(in: bitmap, block: block)
+        if foreign != 0 {
+            // A pixel assertion that fails without showing what it saw costs its reader a whole
+            // run to find out, and this target's screen recording is of the **desktop** — the
+            // signed-in person's other windows included. So the evidence attached here is the
+            // window, scoped, and only on the failing path.
+            let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+            attachment.name = "foreign-pixels-over-the-picture-\(state)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         XCTAssertEqual(
-            CadenceUITestPixel.foreignPixelCount(in: bitmap, block: block), 0,
-            "[\(state)] something is drawn on top of the picture: pixels inside \(block.bounds) are not \(block.colour.description)"
+            foreign, 0,
+            "[\(state)] something is drawn on top of the picture: \(foreign) of "
+            + "\(Int(block.bounds.width * block.bounds.height)) pixels inside \(block.bounds) are not "
+            + "\(block.colour.description)"
         )
     }
 

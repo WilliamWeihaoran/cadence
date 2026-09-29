@@ -79,32 +79,45 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
         /// **The majority rule.** The decorated row's title must be more than this share of the
         /// width the *same* title got with nothing trailing it.
         ///
-        /// **Not measured on the running surface.** This target's rule is that a bound nobody has
-        /// timed says so rather than borrowing the credibility of one that has been
-        /// (`CadenceUITestBounds`), and the first run of this test could not be made: the Mac's
-        /// screen was locked, `scripts/xcb.sh` refused, and a bound is not something to invent a
-        /// number for afterwards. What *is* known is the reading the defect produced — the owner's
-        /// screenshot is a title of about ten characters against a pane that drew the same string
-        /// in full, so roughly **0.1** — and the reading the fix is arguing for, which is a title
-        /// that keeps everything the metadata strip does not need.
+        /// **Measured 2026-09-29** (T-1488), on the first three runs this test was ever able to
+        /// make — the screen was locked for the whole of the run that wrote it, so until then the
+        /// figure below did not exist. Three consecutive runs on this Mac, Xcode 27.0, default
+        /// window: **crushed 143pt / bare 232pt = 0.62**, in a 342pt row. Byte-identical all three
+        /// times; the variation across runs is zero, not small.
         ///
-        /// A half is therefore not a measurement rounded; it is the sentence *the decoration may
+        /// **The bound stays at 0.5, and the measurement is not a reason to move it.** What the
+        /// defect produced is the other end of this scale — the owner's screenshot is a title of
+        /// about ten characters against a pane that drew the same string in full, so roughly
+        /// **0.1**. A half is not a measurement rounded; it is the sentence *the decoration may
         /// cost the title some of its width and may not take most of it*, which is the smallest
-        /// claim that still refuses the screenshot. **Do not raise it to chase a red run**: a run
-        /// that comes in near 0.5 is a row whose decoration has grown, which is this defect
-        /// returning by a different route. The activity log prints the measured share on every
-        /// run, so the first green run is where the real figure gets written down.
+        /// claim that still refuses the screenshot. Raising it toward 0.62 would convert a
+        /// statement about the defect into a pin on today's chip inventory, and the next chip
+        /// added to the metadata strip would then fail this test for being a chip rather than for
+        /// crushing anything.
+        ///
+        /// **Do not raise it to chase a red run**, and read a future run that comes in near 0.5 as
+        /// the finding it is: the margin here is 0.12, so the strip would have to take roughly
+        /// another 28pt of a 342pt row before this fires. That is a row whose decoration has
+        /// grown, which is this defect returning by a different route.
         static let titleShareOfTheUndecoratedTitle: CGFloat = 0.5
 
         /// **The one-line rule.** The due chip's box, against one line of the title beside it.
         ///
-        /// **Not measured on the running surface either**, for the same reason. It does not need
-        /// to be, and that is the difference between this bound and the one above: the chip draws
-        /// at `CadenceTaskRowMetrics.desktop.secondaryFontSize` with
-        /// `CadenceTaskChipPadding.desktopVertical` either side of it, and the title line beside it
-        /// is `titleFontSize`, which is larger. One line of chip is therefore *below* one title
-        /// line whatever the fonts resolve to, and the wrap that filed this was three lines. Any
-        /// cut between 1 and 3 states the same fact; 2 is the middle of it.
+        /// **Measured 2026-09-29** (T-1488), same three runs: the chip's box came out **18pt
+        /// against a 19pt title line**, i.e. 0.95 title-lines, against a bound of 2. The two rows'
+        /// heights came out **36pt and 36pt** — identical, so the decorated row took *no* extra
+        /// height at all, where the companion assertion below allows it one title line (55pt).
+        ///
+        /// The measurement confirms the derivation rather than replacing it, and the bound was
+        /// never waiting on it: the chip draws at `CadenceTaskRowMetrics.desktop.secondaryFontSize`
+        /// with `CadenceTaskChipPadding.desktopVertical` either side of it, and the title line
+        /// beside it is `titleFontSize`, which is larger. One line of chip is therefore *below* one
+        /// title line whatever the fonts resolve to, and the wrap that filed this was three lines.
+        /// Any cut between 1 and 3 states the same fact; 2 is the middle of it.
+        ///
+        /// **Not lowered toward 0.95.** A cut just above the measurement would fire on a chip that
+        /// gained a point of padding, which is not this defect; the defect is a chip that wrapped,
+        /// and a wrap cannot land between 1 and 2 lines.
         ///
         /// Stated in title-lines rather than points so it survives a font, a display and an Xcode
         /// major — this project builds on two.
@@ -138,7 +151,7 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
         let bareRow = element(ID.row(Fixture.bareTitle))
         XCTAssertTrue(
             crushedRow.waitForExistence(timeout: CadenceUITestBounds.firstPaint),
-            "the decorated seeded row is not on Today"
+            "the decorated seeded row is not on Today. Rows Today is publishing: \(seededRowIdentifiers())"
         )
         XCTAssertTrue(bareRow.exists, "the undecorated control row is not on Today, so there is nothing to compare against")
 
@@ -251,14 +264,42 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
         )
     }
 
+    /// **Why this is a predicate and not a subscript.** `XCUIElementQuery`'s string subscript
+    /// refuses an identifier longer than 128 characters, and raises
+    /// `NSInternalInconsistencyException` — *"Invalid query - string identifier … exceeds maximum
+    /// length of 128 characters"* — rather than returning a query that does not match. Measured on
+    /// this test's first ever run, 2026-09-29 (T-1488): the fixture's crushed row resolves to a
+    /// 129-character identifier, because the slug is derived from a title that is deliberately
+    /// longer than any pane can draw.
+    ///
+    /// The length is the fixture's whole point, so the identifier is not what moves. The error
+    /// names its own workaround and this is it: match `identifier` through an `NSPredicate`, which
+    /// carries no such cap.
     private func element(_ identifier: String) -> XCUIElement {
-        app.descendants(matching: .any)[identifier]
+        app.descendants(matching: .any).matching(Self.identifying(identifier)).firstMatch
     }
 
     /// Scoped to the row on purpose. `MacTaskRow` is drawn by Today *and* by a list's detail pane
     /// from one call site, so `task.row.…` identifiers are not Today's alone; asking the row for
     /// them is what makes this a reading of Today.
     private func descendant(_ identifier: String, of row: XCUIElement) -> XCUIElement {
-        row.descendants(matching: .any)[identifier]
+        row.descendants(matching: .any).matching(Self.identifying(identifier)).firstMatch
+    }
+
+    private static func identifying(_ identifier: String) -> NSPredicate {
+        NSPredicate(format: "identifier == %@", identifier)
+    }
+
+    /// What Today is actually publishing, for the failure message above.
+    ///
+    /// "No such element" and "an element whose identifier is not the one this test computed" are
+    /// different findings with the same symptom, and a reader of a red run cannot tell them apart
+    /// from the absence alone. This prints the identifiers, with their lengths, so they can be.
+    private func seededRowIdentifiers() -> String {
+        let rows = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "today.task.row."))
+            .allElementsBoundByIndex
+        guard !rows.isEmpty else { return "none at all" }
+        return rows.map { "\($0.identifier) (\($0.identifier.count) chars)" }.joined(separator: " ;; ")
     }
 }
