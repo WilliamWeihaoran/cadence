@@ -62,9 +62,33 @@ enum CadenceCommentSymbolClaim {
     ///
     /// The walk is `CadenceSourceScan.codeOnly`'s, and its `code` half is pinned equal to that
     /// function on the fixtures that separate them — a raw literal holding a bare quote, a `//`
-    /// inside a string, a `"` inside a comment. One traversal rather than two passes, for the
-    /// reason recorded there: whichever pass runs second mishandles the delimiter the first one
-    /// already consumed.
+    /// inside a string, a `"` inside a comment, and an interpolated closure. One traversal rather
+    /// than two passes, for the reason recorded there: whichever pass runs second mishandles the
+    /// delimiter the first one already consumed.
+    ///
+    /// **It is `codeOnly`'s walk because it was copied from it, and for eight days it was a copy
+    /// of the wrong version ([[T-1571]]).** [[T-1328]] taught `codeOnly` to *parse* an
+    /// interpolation rather than skip to the next quote; this function kept the old single "next
+    /// unescaped quote" loop, and the sentence above went on claiming they were the same walk.
+    /// Only the four ASCII fixtures separated them, and none of them holds an interpolation, so
+    /// the pin was green over the divergence. What that cost, measured at the fix over all **977**
+    /// `.swift` files in the five roots: the two readings disagreed on **131 lines in 64 files**,
+    /// and on **one** of them — `Cadence/Services/MarkdownMetadataSupport.swift`, the one file in
+    /// the tree that writes
+    /// `"tags: [\(orderedUnique(tags).map { "\"\($0)\"" }.joined(separator: ", "))]"` — the
+    /// old walk ended the outer literal at the *inner* literal's opening quote, blanked the
+    /// closure's `{` and left its `}`. Brace depth came out **-1**, so `SymbolIndex.build` closed
+    /// `MarkdownMetadataParser` 237 lines early and indexed **24** of the 57 names inside it —
+    /// none of the thirteen members declared below that line, `headingPrefixRegex` among them.
+    /// The sweep then reported a correct comment naming one of them as resolving to nothing. The
+    /// other 63 files leaked a nested literal's *content* as apparent code, which feeds
+    /// `calledNames(inCode:)` names the tree never calls. After the fix all 977 balance and the
+    /// new reading is a strict **superset** on that type: 57 names, none lost.
+    ///
+    /// The lesson is the pin, not the lexer: a copy of a walk needs a fixture for every shape the
+    /// original was *fixed* for, or it silently reverts to the bug the original was fixed from.
+    /// `theCodeHalfOfThePartitionIsTheAuditedReader` now carries that shape, and
+    /// `theInterpolatedClosureDoesNotCloseTheTypeThatHoldsIt` reads it end to end.
     ///
     /// The `comments` half is the whole reason this exists. `codeOnly` blanks comments *and*
     /// literals, and `strippingComments` blanks only comments — neither hands back the prose, and a
@@ -75,87 +99,122 @@ enum CadenceCommentSymbolClaim {
         var kind = [Region](repeating: .code, count: count)
 
         func mark(_ range: Range<Int>, _ region: Region) {
-            for position in range { kind[position] = region }
+            for position in range where position < count { kind[position] = region }
         }
 
-        var index = 0
-        while index < count {
-            let character = characters[index]
+        // The length of the `#` run that opens a *raw* literal here, or `nil` when the run is
+        // something else entirely (`#if`, `#expect(`, `#filePath`).
+        func rawLiteralHashes(at position: Int) -> Int? {
+            var hashEnd = position
+            while hashEnd < count, characters[hashEnd] == "#" { hashEnd += 1 }
+            guard hashEnd < count, characters[hashEnd] == "\"" else { return nil }
+            return hashEnd - position
+        }
 
-            // A raw literal before an ordinary one: inside `#"..."#` a backslash is content.
-            if character == "#" {
-                var hashEnd = index
-                while hashEnd < count, characters[hashEnd] == "#" { hashEnd += 1 }
-                let hashes = hashEnd - index
-                if hashEnd < count, characters[hashEnd] == "\"" {
-                    let multiline = hashEnd + 2 < count
-                        && characters[hashEnd + 1] == "\""
-                        && characters[hashEnd + 2] == "\""
-                    let quotes = multiline ? 3 : 1
-                    var end = hashEnd + quotes
-                    var close = count
-                    while end < count {
-                        if characters[end] == "\"",
-                           end + quotes + hashes <= count,
-                           (end..<(end + quotes)).allSatisfy({ characters[$0] == "\"" }),
-                           ((end + quotes)..<(end + quotes + hashes)).allSatisfy({ characters[$0] == "#" }) {
-                            close = end + quotes + hashes
-                            break
+        /// Marks the literal opening at `start` — whose `#` run is `hashes` long — and returns the
+        /// index just past it. Interpolated code inside it is handed to `scanCode` so that its own
+        /// literals and comments are read properly, and is then marked `.string` **whole**, which
+        /// is what keeps this function's `code` half equal to `codeOnly`'s output.
+        func scanLiteral(from start: Int, hashes: Int) -> Int {
+            let quoteStart = start + hashes
+            let multiline = quoteStart + 2 < count
+                && characters[quoteStart + 1] == "\""
+                && characters[quoteStart + 2] == "\""
+            let quotes = multiline ? 3 : 1
+            var position = quoteStart + quotes
+            mark(start..<min(position, count), .string)
+
+            while position < count {
+                // The terminator carries the literal's own run of `#`.
+                if characters[position] == "\"",
+                   position + quotes + hashes <= count,
+                   (position..<(position + quotes)).allSatisfy({ characters[$0] == "\"" }),
+                   ((position + quotes)..<(position + quotes + hashes)).allSatisfy({ characters[$0] == "#" }) {
+                    let close = position + quotes + hashes
+                    mark(position..<close, .string)
+                    return close
+                }
+                // A single-line literal cannot span a newline; stopping here keeps an unterminated
+                // one from swallowing the rest of the file.
+                if !multiline, characters[position].isNewline {
+                    return position
+                }
+                // An escape, which in a raw literal is `\` followed by that literal's run of `#`
+                // — so a lone `\` inside `#"…"#` falls through to the content case below.
+                if characters[position] == "\\",
+                   position + 1 + hashes < count,
+                   ((position + 1)..<(position + 1 + hashes)).allSatisfy({ characters[$0] == "#" }) {
+                    let escaped = position + 1 + hashes
+                    if characters[escaped] == "(" {
+                        let terminator = scanCode(from: escaped + 1, stoppingAtUnmatchedCloseParen: true)
+                        let close = min(terminator + 1, count)
+                        mark(position..<close, .string)
+                        position = close
+                        continue
+                    }
+                    mark(position..<(escaped + 1), .string)
+                    position = escaped + 1
+                    continue
+                }
+                mark(position..<(position + 1), .string)
+                position += 1
+            }
+            return count
+        }
+
+        /// Marks literals and comments from `start` on. With `stoppingAtUnmatchedCloseParen` it
+        /// returns the index **of** the first `)` closing no `(` of its own — the end of the
+        /// interpolation that called it — for the caller to mark; otherwise it runs to the end.
+        func scanCode(from start: Int, stoppingAtUnmatchedCloseParen: Bool) -> Int {
+            var index = start
+            var parentheses = 0
+            while index < count {
+                let character = characters[index]
+
+                if character == "#", let hashes = rawLiteralHashes(at: index) {
+                    index = scanLiteral(from: index, hashes: hashes)
+                    continue
+                }
+                if character == "\"" {
+                    index = scanLiteral(from: index, hashes: 0)
+                    continue
+                }
+                if character == "/", index + 1 < count {
+                    if characters[index + 1] == "/" {
+                        var end = index
+                        while end < count, !characters[end].isNewline { end += 1 }
+                        mark(index..<end, .comment)
+                        index = end
+                        continue
+                    }
+                    if characters[index + 1] == "*" {
+                        var end = index + 2
+                        while end + 1 < count, !(characters[end] == "*" && characters[end + 1] == "/") {
+                            end += 1
                         }
-                        if !multiline, characters[end].isNewline { close = end; break }
-                        end += 1
+                        let close = end + 1 < count ? end + 2 : count
+                        mark(index..<close, .comment)
+                        index = close
+                        continue
                     }
-                    mark(index..<close, .string)
-                    index = close
-                    continue
                 }
-            }
-
-            if character == "\"" {
-                if index + 2 < count, characters[index + 1] == "\"", characters[index + 2] == "\"" {
-                    var end = index + 3
-                    while end + 2 < count,
-                          !(characters[end] == "\"" && characters[end + 1] == "\"" && characters[end + 2] == "\"") {
-                        end += 1
+                // Counted after the literal and comment branches, so a parenthesis inside either
+                // is never seen: those branches consume their whole span before this reads it.
+                if stoppingAtUnmatchedCloseParen {
+                    if character == "(" {
+                        parentheses += 1
+                    } else if character == ")" {
+                        if parentheses == 0 { return index }
+                        parentheses -= 1
                     }
-                    let close = end + 2 < count ? end + 3 : count
-                    mark(index..<close, .string)
-                    index = close
-                    continue
                 }
-                var end = index + 1
-                while end < count, characters[end] != "\"", !characters[end].isNewline {
-                    if characters[end] == "\\" { end += 1 }
-                    end += 1
-                }
-                let close = end < count && characters[end] == "\"" ? end + 1 : min(end, count)
-                mark(index..<close, .string)
-                index = close
-                continue
-            }
 
-            if character == "/", index + 1 < count {
-                if characters[index + 1] == "/" {
-                    var end = index
-                    while end < count, !characters[end].isNewline { end += 1 }
-                    mark(index..<end, .comment)
-                    index = end
-                    continue
-                }
-                if characters[index + 1] == "*" {
-                    var end = index + 2
-                    while end + 1 < count, !(characters[end] == "*" && characters[end + 1] == "/") {
-                        end += 1
-                    }
-                    let close = end + 1 < count ? end + 2 : count
-                    mark(index..<close, .comment)
-                    index = close
-                    continue
-                }
+                index += 1
             }
-
-            index += 1
+            return count
         }
+
+        _ = scanCode(from: 0, stoppingAtUnmatchedCloseParen: false)
 
         func extract(_ region: Region) -> String {
             String(characters.indices.map { position -> Character in
@@ -458,10 +517,24 @@ enum CadenceCommentSymbolClaim {
     }
     """
 
-    /// The nearest possible miss: the same sentence about the member that is actually there.
+    /// The nearest possible miss: the same sentence about the member that is actually there —
+    /// **declared below an interpolated closure** ([[T-1571]]).
+    ///
+    /// The second half is the lexer trap, and it is in the *negative* witness on purpose. A
+    /// `partition` that reverts to skipping an interpolation ends this type's body at the literal,
+    /// never indexes `title`, and therefore reports this correct sentence as an offender — which
+    /// `CadenceScanInstrument` turns into `Failure.overreaching` before the sweep runs at all.
+    /// That is a named failure at the instrument, rather than one unattributable ledger line
+    /// somewhere in the tree, which is exactly how [[T-1571]] presented itself.
+    ///
+    /// Measured on this fixture rather than assumed: the pre-fix walk left it at brace depth
+    /// **-1** and indexed 1 of its 2 members; the fixed walk leaves it at **0** and indexes both.
     static let negativeWitness = """
     /// The row draws through `CadenceCommentClaimWidgetFixture.title`.
     enum CadenceCommentClaimWidgetFixture {
+        static func tagLine(_ tags: [String]) -> String {
+            "tags: [\\(tags.map { "\\"\\($0)\\"" }.joined(separator: ", "))]"
+        }
         static let title = "Widget"
     }
     """
@@ -491,20 +564,92 @@ enum CadenceCommentSymbolClaim {
 
     // MARK: - The reader
 
-    /// The `code` half is `CadenceSourceScan.codeOnly`, character for character, on the four inputs
+    /// The `code` half is `CadenceSourceScan.codeOnly`, character for character, on the six inputs
     /// that separate a correct lexer from a plausible one.
+    ///
+    /// **The sixth was added by [[T-1571]], and its absence is the whole of why that ticket
+    /// existed.** The first four are ASCII and interpolation-free, so this pin stayed green for
+    /// eight days over a `partition` that had never learned what [[T-1328]] taught `codeOnly`.
+    /// An input list for a copied walk is a claim about which shapes the two agree on, not a
+    /// spot check.
     @Test func theCodeHalfOfThePartitionIsTheAuditedReader() {
         let inputs = [
             "let url = \"https://example.com\" // trailing\nlet x = 1\n",
             "let raw = #\"photo\\\"# // after\nlet y = 2\n",
             "/* a \" quote inside a block comment */ let z = 3\n",
             "let doc = \"\"\"\n// not a comment\n\"\"\"\nlet w = 4\n",
-            CadenceCommentSymbolClaim.positiveWitness
+            CadenceCommentSymbolClaim.positiveWitness,
+            // T-1571: the shape the two walks diverged on for eight days. Without it here, this
+            // pin is green over a `partition` that reverts to T-1328's bug.
+            CadenceCommentSymbolClaim.negativeWitness
         ]
         for input in inputs {
             let regions = CadenceCommentSymbolClaim.partition(input)
             #expect(regions.code == CadenceSourceScan.codeOnly(input), "diverged on: \(input)")
         }
+    }
+
+    /// **T-1571, end to end: an interpolated closure must not close the type that holds it.**
+    ///
+    /// `theCodeHalfOfThePartitionIsTheAuditedReader` compares two strings; this asserts the
+    /// *consequence* the comparison stands in for, because that is the sentence T-1571's three
+    /// filings all got wrong. The claim is not "the lexer is nicer" — it is that a member declared
+    /// below a line of this shape is **findable**, and it is made against the real file as well as
+    /// the fixture, so a future `partition` that passes the fixture and fails the tree is caught.
+    ///
+    /// The refuted leads are worth keeping written down, because two agents spent a run each on
+    /// them: it is **not** that the reader cannot see a `nonisolated static let` (`memberPattern`
+    /// matches `let headingPrefixRegex` fine), and **not** that a top-level `nonisolated enum`
+    /// fails `isTopLevelDeclaration` (`MarkdownMetadataParser.splitFrontmatter` is claimed in a
+    /// comment elsewhere in the tree and has always resolved). The defect was **positional**, and
+    /// position is what this test reads.
+    @Test func theInterpolatedClosureDoesNotCloseTheTypeThatHoldsIt() throws {
+        func braceDepth(_ code: String) -> Int {
+            code.reduce(into: 0) { depth, character in
+                if character == "{" { depth += 1 }
+                if character == "}" { depth -= 1 }
+            }
+        }
+
+        // The fixture first: the whole shape in seven lines.
+        let witness = CadenceCommentSymbolClaim.negativeWitness
+        #expect(witness.contains(".map { "), "non-vacuity: the witness lost the closure it exists for")
+        let witnessCode = CadenceCommentSymbolClaim.partition(witness).code
+        #expect(braceDepth(witnessCode) == 0)
+        let witnessIndex = CadenceCommentSymbolClaim.SymbolIndex.build(
+            from: [(path: "Witness.swift", code: witnessCode)]
+        )
+        #expect(
+            witnessIndex.membersByType["CadenceCommentClaimWidgetFixture"]?.contains("title") == true,
+            "the member below the interpolated literal was not indexed"
+        )
+
+        // Then the file the sweep actually accused, read by literal path rather than walked.
+        let path = "Cadence/Services/MarkdownMetadataSupport.swift"
+        let source = try CadenceSourceScan.sourceFile(path)
+        #expect(
+            source.contains("let tagLine = \"tags: [\\(orderedUnique(tags).map {"),
+            "non-vacuity: \(path) no longer writes the line this test is about"
+        )
+        let code = CadenceCommentSymbolClaim.partition(source).code
+        #expect(braceDepth(code) == 0, "\(path) does not balance after partitioning")
+
+        let index = CadenceCommentSymbolClaim.SymbolIndex.build(from: [(path: path, code: code)])
+        let members = index.membersByType["MarkdownMetadataParser"] ?? []
+        // One declared before the bad line and one after it, so a reader that indexes nothing and
+        // a reader that stops at the literal both fail, and for different reasons.
+        #expect(members.contains("splitFrontmatter"))
+        #expect(members.contains("headingPrefixRegex"),
+                "the members below the interpolated literal are invisible to the sweep again")
+
+        // And the accusation itself: the comment that was reported is clean against that index.
+        let claimant = try CadenceSourceScan.sourceFile("Cadence/Services/MarkdownFormatCommandSupport.swift")
+        #expect(claimant.contains("`MarkdownMetadataParser.headingPrefixRegex`"),
+                "non-vacuity: the comment T-1571 was filed about is gone")
+        #expect(
+            CadenceCommentSymbolClaim.offendingSpans(in: claimant, against: index)
+                .contains("MarkdownMetadataParser.headingPrefixRegex") == false
+        )
     }
 
     /// The three halves reconstruct the file: every non-blank character belongs to exactly one of
@@ -655,13 +800,21 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `CadenceListNoteSupport.firstOrCreateNote`",
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `ListNotesView.normalizedFolderPath`",
         "CadenceTests/CadenceNoteTitleSyncSurfaceTests.swift `NoteEditorPane.syncTitleFromH1IfNeeded`",
-        // T-1091. Both are named as *examples of the defect being fixed* — declarations the old
-        // filing attributed to the last type declared above them rather than the type containing
-        // them. The second entry below is the measured case: that method belongs to the
-        // migration service, while the type it is credited to is a private struct declared ten
-        // lines above it. Written unqualified on purpose — spelling it as a qualified claim here
-        // would make this comment an unresolvable claim, which the rule would then flag.
-        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `MarkdownMetadataParser.parseFrontmatter`",
+        // T-1091. Named as an *example of the defect being fixed* — a declaration the old filing
+        // attributed to the last type declared above it rather than the type containing it: that
+        // method belongs to the migration service, while the type it is credited to is a private
+        // struct declared ten lines above it. Written unqualified on purpose — spelling it as a
+        // qualified claim here would make this comment an unresolvable claim, which the rule
+        // would then flag.
+        //
+        // **A second line stood here and was never a finding ([[T-1571]]).** The same comment
+        // names `MarkdownMetadataParser.parseFrontmatter`, and that resolves: `membersByType` is
+        // a deliberate superset with no access filter, so a `private` member of an indexed type
+        // has always been findable. It was ledgered because `partition` closed that type 237
+        // lines early on an interpolated literal, which is [[T-1328]]'s bug surviving in this
+        // file's copy of the walk. Removing the line is the whole of the change; nothing about
+        // the comment or the declaration moved. The irony is on the record: the sentence that
+        // entry accused is the one explaining that T-1328 fixed this exact shape in `codeOnly`.
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `MigrationTracking.migrateIfNeeded`",
         "CadenceTests/CadenceTasksPanelMetricsTests.swift `TasksPanelCompletedSectionView.allTasks`",
         "CadenceTests/CadenceTodayUnificationTests.swift `CadenceTodayPresentationSupport.overdueSectionTitle`",
@@ -761,7 +914,9 @@ enum CadenceCommentSymbolClaim {
         #expect(Set(tombstones).isDisjoint(with: Set(stale)))
         #expect(tombstones == tombstones.sorted())
         #expect(stale == stale.sorted())
-        #expect(tombstones.count == 38)   // 36 before T-1091 ledgered its two examples
+        // 36 before T-1091 ledgered its two examples; 37 since [[T-1571]] removed the one of
+        // those two that was never a finding, only a member the reader could not reach.
+        #expect(tombstones.count == 37)
         #expect(stale.count == 0)
     }
 

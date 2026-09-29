@@ -276,6 +276,40 @@ struct CadenceEmptyTitleFallbackSweepTests {
         )
     }
 
+    /// **T-1582: the narrowing is a needle change, so it is pinned from both sides.**
+    ///
+    /// A needle that stops firing is how a sweep goes green over a live defect, and `(?!nil\b)` is
+    /// exactly the kind of edit that could do it silently. So this asserts the three cases that
+    /// separate "reads a placeholder" from "reads an absent value", and then asserts the *subject*
+    /// of the whole family — a title of spaces — is really handled at the site the narrowing let
+    /// through, rather than merely no longer reported.
+    @Test func theConstantNeedleReadsAPlaceholderAndNotAnAbsentValue() throws {
+        let instrument = try Self.constantTitleFallbackInstrument()
+
+        // Still fires on a real constant fallback: the narrowing did not blind it.
+        #expect(instrument.fires(
+            on: "Text(goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title)"
+        ))
+        // `nil` is an absent value, not a placeholder.
+        #expect(!instrument.fires(on: "return title.isEmpty ? nil : title"))
+        // `\b` blocks the bare keyword only — a placeholder whose name merely starts with it stays a hit.
+        #expect(instrument.fires(on: "Text(goal.title.isEmpty ? nilTitlePlaceholder : goal.title)"))
+
+        // The site that forced the narrowing, read rather than remembered.
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/MarkdownTaskEmbedSupport.swift")
+        )
+        #expect(source.contains("trimmingCharacters(in: .whitespacesAndNewlines)"),
+                "non-vacuity: the trim the narrowing relies on is gone")
+        #expect(source.contains("return title.isEmpty ? nil : title"))
+
+        // And the defect this family exists for, asserted behaviourally at that site: a draft
+        // marker whose title is nothing but spaces yields no title at all, not three spaces.
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "( ) Buy milk") == "Buy milk")
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "( )    ") == nil)
+        #expect(MarkdownTaskEmbedParser.draftTitle(in: "( )   Standup   ") == "Standup")
+    }
+
     /// The exemption, exact and named line by line rather than counted.
     ///
     /// `MarkdownNoteSupport.resolved(_:with:)` merges a note-template **override** into its
@@ -443,9 +477,21 @@ struct CadenceEmptyTitleFallbackSweepTests {
     /// The negative witness is the T-609 spelling with a literal, which the other instrument owns:
     /// a detector matching both would report T-609's sweep as this one's and make either result
     /// unattributable.
+    ///
+    /// **`nil` is excluded from the fallback operand ([[T-1582]]).** `(?!nil\b)` is not a
+    /// convenience: this needle's subject is a **placeholder substituted for a title**, and `nil`
+    /// is the opposite of one — it says the value is absent, so there is no placeholder to route
+    /// through `CadenceTitleNormalization` and no label that could draw as three spaces. The site
+    /// that forced this is `MarkdownTaskEmbedParser.draftTitle(in:)`, whose
+    /// `title.isEmpty ? nil : title` tests a `title` the line above already trimmed — character for
+    /// character the spelling `trimmedTestUntrimmedReturnInstrument` holds up as its **negative**
+    /// witness. Exempting the file would have filed a correct site as a known offender and, being
+    /// file-level, would have absorbed the next real hit in it. `nilTitle` and friends still match:
+    /// `\b` only blocks the bare keyword. Pinned by
+    /// `theConstantNeedleReadsAPlaceholderAndNotAnAbsentValue`.
     static func constantTitleFallbackInstrument() throws -> CadenceScanInstrument {
         let pattern = try NSRegularExpression(
-            pattern: "([A-Za-z0-9_.]*[Tt]itle)\\.isEmpty \\? ([A-Za-z_][A-Za-z0-9_.]*) : \\1(?![A-Za-z0-9_])"
+            pattern: "([A-Za-z0-9_.]*[Tt]itle)\\.isEmpty \\? (?!nil\\b)([A-Za-z_][A-Za-z0-9_.]*) : \\1(?![A-Za-z0-9_])"
         )
         return try CadenceScanInstrument(
             "constant empty-title fallback",
