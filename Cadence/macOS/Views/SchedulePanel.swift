@@ -81,6 +81,10 @@ struct SchedulePanel: View {
     /// `SchedulePanelScrollPersistence` states: a `@State` write from a scroll report is the very
     /// per-frame render this is here to stop.
     @State private var scrollPersistence = SchedulePanelScrollPersistence()
+    /// Today's events, memoised for the panel's lifetime (T-1499). The same type, held the same
+    /// way, as `CalendarPageView.calendarEventDayCache` — one day's key rather than a window's,
+    /// because this panel draws exactly one day.
+    @State private var eventCache = CalendarEventDayCache()
     @State private var isFocusHighlighted = false
     @State private var exportDocument: PlainTextExportDocument?
     @State private var isExportingTimeline = false
@@ -99,11 +103,18 @@ struct SchedulePanel: View {
     }
 
     /// iCal events for today. Raw tasks are never treated as event attachments.
+    ///
+    /// **T-1499.** Served from `eventCache`, keyed by today's `yyyy-MM-dd`, so the body evaluations
+    /// this panel does on every task change and every zoom step no longer each run an
+    /// `EKEventStore` query. The `storeVersion` read below is still the subscription — and it is
+    /// also what invalidates the cache, since `CalendarEventDayCache` drops everything when that
+    /// number moves.
     private var externalEventItems: [CalendarEventItem] {
         let _ = calendarManager.storeVersion  // subscribe to store change refreshes
         return SchedulePanelDataSupport.externalEventItems(
             calendarManager: calendarManager,
-            date: Date()
+            date: Date(),
+            cache: eventCache
         )
     }
 

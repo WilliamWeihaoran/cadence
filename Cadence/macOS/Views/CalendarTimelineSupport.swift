@@ -92,6 +92,29 @@ final class CalendarTimelineScrollState {
     }
 }
 
+/// What `CalendarEventDayCache` needs from `CalendarManager`, and nothing else.
+///
+/// **A seam, filed as one (T-1499).** The cache existed and was correct, but nothing could prove a
+/// consumer went through it: the test host is not calendar-authorised, so the real
+/// `CalendarManager` answers `[]` from the `isAuthorized` guard before it ever builds a predicate.
+/// A fetch-count assertion against it would read zero whether the cache worked, whether the caller
+/// bypassed it, or whether the reading was simply unreachable — the three states this repository
+/// keeps finding indistinguishable. With the four members the cache actually touches named here, a
+/// test substitutes a source that *is* authorised, returns events, and counts how often it was
+/// asked.
+///
+/// Deliberately not the whole of `CalendarManager`: a seam that restates the class teaches a fake
+/// to lie about everything. These four are the cache's entire surface.
+protocol CalendarEventDaySource: AnyObject {
+    var isAuthorized: Bool { get }
+    /// Bumped on `EKEventStoreChanged`; the cache drops everything when it moves.
+    var storeVersion: Int { get }
+    func fetchEvents(for date: Date) -> [EKEvent]
+    func fetchAllDayEvents(for date: Date) -> [EKEvent]
+}
+
+extension CalendarManager: CalendarEventDaySource {}
+
 final class CalendarEventDayCache {
     /// Sized for the *month grid*, which is the largest consumer: a realized month block is 42
     /// cells and two or three blocks can be alive in the lazy stack at once. At the old bound of
@@ -104,7 +127,7 @@ final class CalendarEventDayCache {
     private var allDayEventsByDate: [String: [EKEvent]] = [:]
     private var recentlyAccessedDateKeys: [String] = []
 
-    func timedEvents(for date: Date, calendarManager: CalendarManager) -> [EKEvent] {
+    func timedEvents(for date: Date, calendarManager: any CalendarEventDaySource) -> [EKEvent] {
         guard calendarManager.isAuthorized else {
             clear()
             return []
@@ -119,7 +142,7 @@ final class CalendarEventDayCache {
         return events
     }
 
-    func allDayEvents(for date: Date, calendarManager: CalendarManager) -> [EKEvent] {
+    func allDayEvents(for date: Date, calendarManager: any CalendarEventDaySource) -> [EKEvent] {
         guard calendarManager.isAuthorized else {
             clear()
             return []
