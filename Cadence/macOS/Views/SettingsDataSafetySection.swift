@@ -10,6 +10,10 @@ struct SettingsDataSafetySection: View {
     @Environment(AppleAccountManager.self) private var appleAccountManager
     @State private var backups: [StoreBackupSnapshot] = []
 
+    /// The `Cadence Store Backups` folders beside store directories Cadence no longer uses
+    /// ([[T-1532]]). Shown, never touched — see `UnmanagedBackupDirectory`.
+    @State private var unmanagedBackupDirectories: [UnmanagedBackupDirectory] = []
+
     /// The outcome of the **export** and of the **reset**, shown under the reset card.
     ///
     /// Sharing one line between those two is deliberate — see `SettingsDataExportCard` — because
@@ -133,6 +137,43 @@ struct SettingsDataSafetySection: View {
                     }
                 }
             }
+
+            // **T-1532 — the 86 MB this screen used to answer for and could not see.** The list
+            // above is `listBackups()`, which resolves the live store directory, and it was the
+            // screen's whole answer to "what copies does Cadence keep". On the owner's Mac on
+            // 2026-09-29 that was 10 folders / 145 MB out of four directories holding 231 MB: the
+            // rest sat beside store locations the app had moved on from, reachable by nothing,
+            // newest entry four months old.
+            //
+            // It is a list and not a control on purpose. These are under paths the app no longer
+            // owns, and one of them holds the only copies of pre-app-group state on the machine —
+            // a "Clean" or "Clear" button that reached them would make this screen delete data on
+            // the strength of a path it inferred, which is a worse failure than the silence it
+            // replaces. Reveal only; the rest is Finder's and the user's.
+            if !unmanagedBackupDirectories.isEmpty {
+                VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                    SettingsSectionLabel(text: "Other Backup Folders")
+                    SettingsCard {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Earlier versions of Cadence kept the store somewhere else and left these copies behind. Cadence does not add to them, thin them, or delete them — not even when you delete all Cadence data. Remove them in Finder if you want the space back.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.bottom, 12)
+
+                            ForEach(Array(unmanagedBackupDirectories.enumerated()), id: \.element.id) { index, directory in
+                                UnmanagedBackupDirectoryRow(
+                                    directory: directory,
+                                    onReveal: { NSWorkspace.shared.activateFileViewerSelecting([directory.url]) }
+                                )
+                                if index < unmanagedBackupDirectories.count - 1 {
+                                    CadenceRowDivider(leadingInset: 42)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         .onAppear(perform: refreshBackups)
         .fileExporter(
@@ -185,6 +226,9 @@ struct SettingsDataSafetySection: View {
 
     private func refreshBackups() {
         backups = StoreBackupManager.listBackups()
+        // Read-only, and the only call on this screen that reaches a path outside the live store
+        // directory. `unmanagedBackupDirectories` lists and sizes; nothing here can write.
+        unmanagedBackupDirectories = StoreBackupManager.unmanagedBackupDirectories()
     }
 
     /// Builds the archive, then hands it to the system save panel. Encoding happens *before* the
@@ -483,6 +527,51 @@ private struct SettingsDataResetConfirmationSheet: View {
         .frame(width: 460)
         .background(Theme.surface)
         .onAppear { isPhraseFocused = true }
+    }
+}
+
+/// One folder of backups Cadence left behind, with the path that makes it findable.
+///
+/// **The row has one button and it opens Finder ([[T-1532]]).** No reveal-and-delete pair, no
+/// destructive tone: `UnmanagedBackupDirectory` says why, and the shape of this view is where that
+/// rule is actually enforced — a row that cannot be handed a delete action cannot grow one by
+/// accident.
+private struct UnmanagedBackupDirectoryRow: View {
+    let directory: UnmanagedBackupDirectory
+    let onReveal: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: Theme.radiusControl)
+                .fill(Theme.dim.opacity(0.14))
+                .frame(width: 32, height: 32)
+                .overlay {
+                    Image(systemName: "folder.badge.questionmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                }
+
+            VStack(alignment: .leading, spacing: 3) {
+                // The path in full, because it is the only thing that makes the folder findable
+                // and the whole complaint T-1532 records is that the screen never said where.
+                Text(directory.url.path)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.text)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(directory.displayCount) • \(directory.displaySize) • not managed by Cadence")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            Spacer(minLength: 8)
+
+            SettingsActionButton(tone: .tinted(Theme.blue), action: onReveal) {
+                Text("Reveal")
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 2)
     }
 }
 

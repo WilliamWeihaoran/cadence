@@ -340,11 +340,176 @@ struct CadenceAgentDefaultsIsolationTests {
             "defaultStoreDirectoryURL went back to answering the app-group store unconditionally"
         )
 
-        // Counted rather than named: a ninth no-argument entry point added later still has to go
-        // through `defaultStoreDirectoryURL`, and a count is the only reading that notices. Nine
-        // spellings, eight of them calls and one the declaration above (measured 2026-09-28).
-        let mentions = CadenceSourceScan.matchCount("defaultStoreDirectoryURL\\(\\)", in: source)
-        #expect(mentions == 9, "\(mentions) spellings of defaultStoreDirectoryURL(), not the 9 measured for T-1448")
+        // Counted rather than named: a tenth no-argument entry point added later still has to go
+        // through `defaultStoreDirectoryURL`, and a count is the only reading that notices. Was
+        // nine for T-1448 (eight calls and the declaration); [[T-1532]] added the ninth call,
+        // `unmanagedBackupDirectories()`, which needs the live directory in order to *exclude* it.
+        //
+        // Over the stripped source, because T-1532 also wrote the name into a doc comment — and a
+        // tripwire that a paragraph can trip is one that gets edited until it stops complaining.
+        let code = CadenceSourceScan.strippingComments(source)
+        let mentions = CadenceSourceScan.matchCount("defaultStoreDirectoryURL\\(\\)", in: code)
+        #expect(mentions == 10, "\(mentions) spellings of defaultStoreDirectoryURL(), not the 10 measured for T-1532")
+    }
+
+    // MARK: - T-1530: the test host's backups follow the test host's store
+
+    /// **The redirect made provable, from inside the process it is about.**
+    ///
+    /// [[T-1530]] recorded the residue [[T-1448]] left: `storeDirectoryURL(in:)` honoured
+    /// `CADENCE_UI_TEST_STORE_ID` and not the separate `isRunningTests` redirect, and a plain
+    /// `xcodebuild test` sets no store id — so every no-argument entry point on
+    /// `StoreBackupManager` resolved the signed-in person's app-group directory while this test
+    /// host had a throwaway store open. That nothing reached it was an *assertion about the suite*,
+    /// one `try StoreBackupManager.deleteAllBackups()` away from being false.
+    ///
+    /// This drives the real no-argument property, in this process, against this process's real
+    /// environment — which is the only reading that can tell the guarantee from the coincidence.
+    @Test func theTestHostsBackupsAreItsOwnAndNotTheSignedInPersons() throws {
+        let production = try CadenceStoreSupport.primaryStoreDirectoryURL()
+        let productionRoot = production
+            .appendingPathComponent("Cadence Store Backups", isDirectory: true)
+        // Built here from `FileManager.default.temporaryDirectory` — the same default the resolver
+        // takes, spelled independently of it. Nothing below is planted under the value under test,
+        // so a regression that answered the app-group path leaves this assertion red and their
+        // directory untouched. Same rule, same reason, as `…FollowsTheStoreTheLaunchActuallyOpens`.
+        let hostRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CadenceTestsHostStore", isDirectory: true)
+            .appendingPathComponent("Cadence Store Backups", isDirectory: true)
+
+        #expect(
+            StoreBackupManager.backupRootURL.standardizedFileURL == hostRoot.standardizedFileURL,
+            "the no-argument backup root is \(StoreBackupManager.backupRootURL.path)"
+        )
+        #expect(
+            StoreBackupManager.backupRootURL.standardizedFileURL != productionRoot.standardizedFileURL,
+            "a unit test's backup entry points still resolve the signed-in person's real backups"
+        )
+
+        // The path is only half of it: `listBackups()` has to *read* through the resolution, or
+        // this is a tested property beside an untouched defect. Planted in the host's own folder
+        // and removed again; the owner's directory is only listed.
+        let plantedID = "20260929-000000-manual-t1530-\(UUID().uuidString.prefix(8))"
+        let plantedURL = hostRoot.appendingPathComponent(plantedID, isDirectory: true)
+        try FileManager.default.createDirectory(at: plantedURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: plantedURL) }
+
+        #expect(
+            StoreBackupManager.listBackups().map(\.id).contains(plantedID),
+            "listBackups() does not read the directory the test host's store lives in"
+        )
+        #expect(
+            !StoreBackupManager.listBackups(storeDirectoryURL: production).map(\.id).contains(plantedID),
+            "the two directories are the same one, so nothing above was isolated"
+        )
+    }
+
+    /// Both directions, injected — because the half that matters most is the one no test host can
+    /// exhibit: **an environment naming neither redirect still resolves exactly the production
+    /// path**, which is the shipping app's.
+    @Test func theTestHostRedirectIsGuardedInBothDirections() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CadenceT1530-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+        let production = try CadenceStoreSupport.primaryStoreDirectoryURL()
+
+        // (1) Nothing named, and the near-misses. Asserted against `CadenceStoreSupport` rather
+        //     than a literal so a later move of the app-group store cannot make this pass by
+        //     drifting with it.
+        let unredirected: [[String: String]] = [
+            [:],
+            ["CADENCE_LOCAL_STORE_ONLY": "1"],
+            ["CADENCE_UI_TEST_MODE": "0"],
+            ["CADENCE_UI_TEST_STORE_ID": ""],
+            ["XCTestConfigurationFilePathButNotReally": "/tmp/x"],
+        ]
+        for environment in unredirected {
+            #expect(
+                CadenceUITestStoreDirectory.redirectedStoreDirectory(
+                    in: environment,
+                    temporaryDirectory: temporaryDirectory
+                ) == nil,
+                "\(environment) redirected the shipping app away from its own store"
+            )
+            #expect(
+                try StoreBackupManager.storeDirectoryURL(
+                    in: environment,
+                    temporaryDirectory: temporaryDirectory
+                ) == production,
+                "\(environment) no longer resolves the app-group backups directory"
+            )
+        }
+
+        // (2) Each spelling of "this process is a test host", one at a time. `XCTestSessionIdentifier`
+        //     is not decoration: a `swift test`-shaped run sets it without the configuration path.
+        let testHost = temporaryDirectory
+            .appendingPathComponent("CadenceTestsHostStore", isDirectory: true)
+        let testHostEnvironments: [[String: String]] = [
+            ["XCTestConfigurationFilePath": "/tmp/whatever.xctestconfiguration"],
+            ["XCTestSessionIdentifier": "9E1C-T1530"],
+            ["CADENCE_UI_TEST_MODE": "1"],
+        ]
+        for environment in testHostEnvironments {
+            let resolved = try StoreBackupManager.storeDirectoryURL(
+                in: environment,
+                temporaryDirectory: temporaryDirectory
+            )
+            #expect(resolved == testHost, "\(environment) resolved \(resolved.path)")
+            #expect(resolved != production, "\(environment) still resolves the signed-in person's store")
+        }
+
+        // (3) A `CadenceUITests` launch sets **both**, and the per-launch private store has to win:
+        //     that directory is the one the sweep owns by `.owner` lock and the one
+        //     `run-macos-app.sh stop` removes whole. Diverting it into the shared test-host folder
+        //     would put two concurrent launches back in one store.
+        let uiLaunch = ["CADENCE_UI_TEST_MODE": "1", "CADENCE_UI_TEST_STORE_ID": "t1530-ui"]
+        #expect(
+            try StoreBackupManager.storeDirectoryURL(
+                in: uiLaunch,
+                temporaryDirectory: temporaryDirectory
+            ) == CadenceUITestStoreDirectory.rootDirectory(in: temporaryDirectory)
+                .appendingPathComponent("t1530-ui", isDirectory: true),
+            "a UI-test launch was diverted into the shared test-host store"
+        )
+    }
+
+    /// The store and its backups have to ask **one** resolver, because two copies of the question
+    /// is how they came to disagree in the first place.
+    @Test func theStoreAndItsBackupsAskOneResolver() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+
+        let storeResolver = try #require(
+            CadenceSourceScan.declarationBody("private static func resolvedStoreURL(", in: source),
+            "PersistenceController.resolvedStoreURL did not read as itself"
+        )
+        #expect(
+            storeResolver.contains("CadenceUITestStoreDirectory.redirectedStoreDirectory()"),
+            "the store resolver spells its own redirects again"
+        )
+
+        let backupResolver = try #require(
+            CadenceSourceScan.declarationBody("static func storeDirectoryURL(", in: source),
+            "StoreBackupManager.storeDirectoryURL did not read as itself"
+        )
+        #expect(
+            backupResolver.contains("CadenceUITestStoreDirectory.redirectedStoreDirectory("),
+            "the backup resolver is back to asking only about CADENCE_UI_TEST_STORE_ID"
+        )
+
+        // The literal is the tell. While the test-host directory name was written out in
+        // `PersistenceController.swift`, only the store knew about it. Over the stripped source:
+        // the prose above `storeDirectoryURL(in:)` names it, and naming it is the point.
+        #expect(
+            CadenceSourceScan.matchCount("CadenceTestsHostStore", in: CadenceSourceScan.strippingComments(source)) == 0,
+            "the test-host path is spelled in PersistenceController again, so the two can drift apart"
+        )
+        let directorySource = try CadenceSourceScan.sourceFile(
+            "Cadence/Services/CadenceUITestStoreDirectory.swift"
+        )
+        #expect(
+            directorySource.contains("static let testHostDirectoryName = \"CadenceTestsHostStore\""),
+            "the one definition of the test-host directory name moved or was renamed"
+        )
     }
 
     /// The write half. `PersistenceController.init` took `primaryStoreDirectoryURL()` and handed it

@@ -744,8 +744,10 @@ struct SettingsSevenPaneVocabularyTests {
                 // outcome this count exists to keep true rather than a number to chase.
                 "Cadence/macOS/Views/SettingsListManagementSections.swift": 8,
                 // 1 before T-575; the second is the footer hairline in the Mac's typed-phrase
-                // reset confirmation, which is in this file and therefore in this sweep.
-                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 2,
+                // reset confirmation, which is in this file and therefore in this sweep. The
+                // third is [[T-1532]]'s "Other Backup Folders" list, which separates the backups
+                // directories beside store locations the app has left behind.
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 3,
                 "Cadence/macOS/Views/SettingsSectionViews.swift": 4
             ]
         )

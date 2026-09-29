@@ -627,11 +627,11 @@ struct PersistenceController {
             ProcessInfo.processInfo.environment["CADENCE_UI_TEST_MODE"] == "1"
     }
 
+    /// [[T-1530]]: the answer now comes from `CadenceUITestStoreDirectory`, which is where
+    /// `StoreBackupManager` reads it too. A second hand-rolled copy here is how the store and its
+    /// backups came to disagree about which process they were running in.
     private static var isRunningTests: Bool {
-        let environment = ProcessInfo.processInfo.environment
-        return environment["XCTestConfigurationFilePath"] != nil ||
-            environment["XCTestSessionIdentifier"] != nil ||
-            environment["CADENCE_UI_TEST_MODE"] == "1"
+        CadenceUITestStoreDirectory.isRunningTests(in: ProcessInfo.processInfo.environment)
     }
 
     private static var shouldResetStoreOnLaunch: Bool {
@@ -652,20 +652,17 @@ struct PersistenceController {
         CadenceUITestStoreDirectory.claimAndSweep(id: id, in: CadenceUITestStoreDirectory.rootDirectory())
     }
 
+    /// **[[T-1530]]: one resolver, asked by the store and by its backups.** The two redirects —
+    /// `CADENCE_UI_TEST_STORE_ID` and the test host's `<tmp>/CadenceTestsHostStore` — used to be
+    /// spelled out here, and `StoreBackupManager.storeDirectoryURL(in:)` honoured only the first of
+    /// them. `CadenceUITestStoreDirectory.redirectedStoreDirectory` is now the only place either
+    /// question is answered, so the backups cannot go to a store this launch does not have open.
     private static func resolvedStoreURL() throws -> URL {
-        if let storeDirectoryURL = CadenceUITestStoreDirectory.privateStoreDirectory() {
-            try FileManager.default.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
-            return storeDirectoryURL.appendingPathComponent("default.store")
+        guard let storeDirectoryURL = CadenceUITestStoreDirectory.redirectedStoreDirectory() else {
+            return try CadenceStoreSupport.primaryStoreURL()
         }
-
-        if isRunningTests {
-            let testStoreDirectoryURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("CadenceTestsHostStore", isDirectory: true)
-            try FileManager.default.createDirectory(at: testStoreDirectoryURL, withIntermediateDirectories: true)
-            return testStoreDirectoryURL.appendingPathComponent("default.store")
-        }
-
-        return try CadenceStoreSupport.primaryStoreURL()
+        try FileManager.default.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
+        return storeDirectoryURL.appendingPathComponent("default.store")
     }
 
     private static func deleteResolvedStoreDirectory() {
@@ -697,6 +694,37 @@ struct StoreBackupSnapshot: Identifiable, Hashable {
 
     var displaySize: String {
         ByteCountFormatter.string(fromByteCount: sizeBytes, countStyle: .file)
+    }
+}
+
+/// A `Cadence Store Backups` folder that exists on disk beside a store directory Cadence **used
+/// to** keep its store in, and therefore one nothing in the app reads, writes, thins or deletes.
+///
+/// **[[T-1532]].** Four of these were on the owner's Mac on 2026-09-29 and Settings → Data Safety
+/// showed one: `listBackups()` resolves `defaultStoreDirectoryURL()`, which is the live store, and
+/// `CadenceStoreSupport.legacyStoreCandidateDirectories()` names the old *store* directories, not a
+/// backups folder beside them — so the migration never touched these and never will. The screen
+/// exists to answer "what copies of my data does Cadence keep and where", and answering it for one
+/// of four directories is worse than saying nothing, because the user reads the silence as zero.
+///
+/// **It carries no delete.** These sit under paths the app no longer owns — one of them holds the
+/// only copies of pre-app-group state on that machine — and a "Clear backups" button that reached
+/// one would be this screen destroying data on the strength of a path it inferred. `url` is shown
+/// in full and revealed in Finder; what happens next is the user's.
+struct UnmanagedBackupDirectory: Identifiable, Hashable {
+    var id: String { url.path }
+    let url: URL
+    /// How many backup folders are in it. Counted, not estimated — an empty leftover folder is not
+    /// worth a row and is filtered out before it becomes one.
+    let backupCount: Int
+    let sizeBytes: Int64
+
+    var displaySize: String {
+        ByteCountFormatter.string(fromByteCount: sizeBytes, countStyle: .file)
+    }
+
+    var displayCount: String {
+        "\(backupCount) backup\(backupCount == 1 ? "" : "s")"
     }
 }
 
@@ -908,6 +936,83 @@ enum StoreBackupManager {
             )
         }
         .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    // MARK: - The backups this app does not manage ([[T-1532]])
+
+    /// Every directory a `Cadence Store Backups` folder could be sitting beside, live one first.
+    ///
+    /// Derived rather than listed, because a list is what missed one. Backups are always a child
+    /// of the store directory (`backupRootURL(for:)`), so the candidates are exactly the store
+    /// directories this app has used — and **their parents**, because two of the four folders
+    /// found on 2026-09-29 sit directly under `Application Support`, from before the store moved
+    /// into its own `Cadence/` subdirectory. The ticket itself counted three and the parent rule is
+    /// what turned up the fourth: `…/Containers/com.haoranwei.Cadence/Data/Library/Application
+    /// Support/Cadence/Cadence Store Backups`, 16 MB, six entries, newest 2026-05-28.
+    ///
+    /// Order is stable and de-duplicated by standardized path; a candidate that does not exist is
+    /// not an error, it is the ordinary case on a machine that never had that layout.
+    static func backupDirectoryCandidates(
+        liveStoreDirectoryURL: URL?,
+        legacyStoreDirectories: [URL] = CadenceStoreSupport.legacyStoreCandidateDirectories()
+    ) -> [URL] {
+        var storeDirectories: [URL] = []
+        if let liveStoreDirectoryURL { storeDirectories.append(liveStoreDirectoryURL) }
+        storeDirectories.append(contentsOf: legacyStoreDirectories)
+        storeDirectories.append(contentsOf: storeDirectories.map { $0.deletingLastPathComponent() })
+
+        var seenPaths: Set<String> = []
+        return storeDirectories
+            // A closure and not `.map(backupRootURL(for:))`: under this target's
+            // `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, an unapplied method reference does not
+            // inherit the enclosing isolation the way a non-`Sendable` closure does, and the
+            // shorter spelling is an `#ActorIsolatedCall` warning against a zero baseline.
+            .map { backupRootURL(for: $0) }
+            .filter { seenPaths.insert($0.standardizedFileURL.path).inserted }
+    }
+
+    /// The candidates that exist, hold at least one backup, and are **not** the live directory.
+    ///
+    /// Read-only from end to end: `contentsOfDirectory`, `resourceValues` and the size walk, and
+    /// nothing that creates, moves or removes. That is a property of this function rather than of
+    /// its callers — it is the one thing that reaches paths the app has no business writing to.
+    /// - Note: a `CadenceTests` process asks this with the **test host's** live directory, so the
+    ///   owner's real app-group folder comes back as one of the unmanaged ones. That is the honest
+    ///   answer for that process and it is why this whole path is read-only: after [[T-1530]] the
+    ///   test host's store is `<tmp>/CadenceTestsHostStore`, and their app-group backups really are
+    ///   a directory it does not manage. Tests inject rather than relying on it.
+    static func unmanagedBackupDirectories() -> [UnmanagedBackupDirectory] {
+        unmanagedBackupDirectories(liveStoreDirectoryURL: try? defaultStoreDirectoryURL())
+    }
+
+    static func unmanagedBackupDirectories(
+        liveStoreDirectoryURL: URL?,
+        legacyStoreDirectories: [URL] = CadenceStoreSupport.legacyStoreCandidateDirectories(),
+        fileManager: FileManager = .default
+    ) -> [UnmanagedBackupDirectory] {
+        let liveRootPath = liveStoreDirectoryURL
+            .map { backupRootURL(for: $0).standardizedFileURL.path }
+
+        return backupDirectoryCandidates(
+            liveStoreDirectoryURL: liveStoreDirectoryURL,
+            legacyStoreDirectories: legacyStoreDirectories
+        )
+        .filter { $0.standardizedFileURL.path != liveRootPath }
+        .compactMap { rootURL in
+            // `deletingLastPathComponent()` is the exact inverse of the `backupRootURL(for:)` the
+            // candidate was built with, so this reads the candidate itself rather than guessing at
+            // a second path from it.
+            let backups = listBackups(
+                storeDirectoryURL: rootURL.deletingLastPathComponent(),
+                fileManager: fileManager
+            )
+            guard !backups.isEmpty else { return nil }
+            return UnmanagedBackupDirectory(
+                url: rootURL,
+                backupCount: backups.count,
+                sizeBytes: backups.reduce(into: Int64(0)) { $0 += $1.sizeBytes }
+            )
+        }
     }
 
     @discardableResult
@@ -1345,19 +1450,27 @@ enum StoreBackupManager {
     /// The resolution itself, with its inputs injected so a test can drive **both** halves — the
     /// redirected one and, more importantly, the unset one, which has to keep answering exactly
     /// the production path or this change reaches the shipping app.
+    ///
+    /// **[[T-1530]] widened "redirected" to include the test host.** It asked
+    /// `privateStoreDirectory` and therefore only about `CADENCE_UI_TEST_STORE_ID`, which a plain
+    /// `xcodebuild test` never sets — so inside `CadenceTests` every no-argument entry point above
+    /// resolved the signed-in person's app-group directory while the app under test had a
+    /// throwaway store open. It now asks `redirectedStoreDirectory`, the same one
+    /// `PersistenceController.resolvedStoreURL()` asks. The unset case is unchanged and is
+    /// asserted in both directions, because it is the shipping app's.
     static func storeDirectoryURL(
         in environment: [String: String],
         temporaryDirectory: URL = FileManager.default.temporaryDirectory,
         fileManager: FileManager = .default
     ) throws -> URL {
-        guard let privateStoreDirectoryURL = CadenceUITestStoreDirectory.privateStoreDirectory(
+        guard let redirectedStoreDirectoryURL = CadenceUITestStoreDirectory.redirectedStoreDirectory(
             in: environment,
             temporaryDirectory: temporaryDirectory
         ) else {
             return try CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
         }
-        try fileManager.createDirectory(at: privateStoreDirectoryURL, withIntermediateDirectories: true)
-        return privateStoreDirectoryURL
+        try fileManager.createDirectory(at: redirectedStoreDirectoryURL, withIntermediateDirectories: true)
+        return redirectedStoreDirectoryURL
     }
 
     private static func existingStoreItems(in storeDirectoryURL: URL, fileManager: FileManager = .default) -> [URL] {

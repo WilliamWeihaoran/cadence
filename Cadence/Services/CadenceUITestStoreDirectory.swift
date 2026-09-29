@@ -133,6 +133,52 @@ enum CadenceUITestStoreDirectory {
         return rootDirectory(in: temporaryDirectory).appendingPathComponent(id, isDirectory: true)
     }
 
+    /// The directory the **test host's** throwaway store lives in, under the app's temporary
+    /// directory. A sibling of `rootDirectoryName` rather than a child: a `CadenceTests` run has no
+    /// launch id, so it has nothing to name a subdirectory with, and `sweep` must not take a view
+    /// on a directory no `.owner` file protects.
+    static let testHostDirectoryName = "CadenceTestsHostStore"
+
+    /// Whether this process is a test host rather than the shipping app.
+    ///
+    /// **One definition, read by both resolvers ([[T-1530]]).** `PersistenceController` kept this
+    /// question privately and only `resolvedStoreURL()` asked it, so the store went to
+    /// `<tmp>/CadenceTestsHostStore` under `CadenceTests` while `StoreBackupManager` — which asked
+    /// only about `CADENCE_UI_TEST_STORE_ID`, and a plain `xcodebuild test` sets none — went on
+    /// answering the signed-in person's app-group directory. Nothing in the suite reached the
+    /// destructive no-argument entry points, which is why it cost nothing; `deleteAllBackups()`
+    /// written in a unit test was one line away from deleting their real backups.
+    static func isRunningTests(in environment: [String: String]) -> Bool {
+        environment["XCTestConfigurationFilePath"] != nil ||
+            environment["XCTestSessionIdentifier"] != nil ||
+            environment["CADENCE_UI_TEST_MODE"] == "1"
+    }
+
+    /// The store directory this launch must use **instead of** the app group's, or `nil` when it
+    /// is the shipping app and must use the app group's.
+    ///
+    /// `nil` for an environment that names no id and is not a test host is the whole of the
+    /// shipping behaviour, and is the property every caller's fallback depends on — assert it in
+    /// both directions rather than in one ([[T-1448]], [[T-1530]]).
+    ///
+    /// The private store wins over the test host when both apply, which is what a `CadenceUITests`
+    /// launch looks like: `CADENCE_UI_TEST_MODE=1` *and* a per-launch id. Its own directory is the
+    /// one the sweep owns and `run-macos-app.sh stop` removes whole, so a UI launch must not be
+    /// diverted into the shared `CadenceTestsHostStore`.
+    static func redirectedStoreDirectory(
+        in environment: [String: String] = ProcessInfo.processInfo.environment,
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+    ) -> URL? {
+        if let privateStoreDirectoryURL = privateStoreDirectory(
+            in: environment,
+            temporaryDirectory: temporaryDirectory
+        ) {
+            return privateStoreDirectoryURL
+        }
+        guard isRunningTests(in: environment) else { return nil }
+        return temporaryDirectory.appendingPathComponent(testHostDirectoryName, isDirectory: true)
+    }
+
     /// The id whose launch also claims and sweeps — **`CadenceUITests` only**.
     ///
     /// The redirect is wider than the cleanup on purpose. `run-macos-app.sh` sets the store id and

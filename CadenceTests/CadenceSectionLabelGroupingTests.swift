@@ -114,7 +114,9 @@ struct CadenceSectionLabelGroupingTests {
         let panes: [(declaration: String, code: String, eyebrows: Int)] = [
             ("struct SettingsCalendarSection: View", listManagement, 3),
             ("struct SettingsListsSection: View", listManagement, 7),
-            ("struct SettingsDataSafetySection: View", dataSafety, 1),
+            // 2 since [[T-1532]]: "Available Backups" and "Other Backup Folders", the second of
+            // which lists the backups directories beside store locations the app has left behind.
+            ("struct SettingsDataSafetySection: View", dataSafety, 2),
             ("struct SettingsAboutSection: View", about, 2)
         ]
 
