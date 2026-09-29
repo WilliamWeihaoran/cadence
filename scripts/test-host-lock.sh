@@ -604,10 +604,50 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
     #    served first -- deterministically, which is why this discriminates where
     #    a trial of evenly staggered waiters does not. With the queue w4 files its
     #    ticket behind three older ones and is served last.
+    #
+    # T-1430: THIS FIXTURE USED TO BE A DURATION COMPARISON WEARING AN ORDERING ASSERTION'S
+    # CLOTHES, and it gave three different answers on three hosts for three reasons, none of them
+    # about the FIFO. The handoff above took ~3.6s of wall clock (three spawns, `sleep 1.2` apart)
+    # while the selftest's lease is 4s, so the whole property lived inside a 0.4-second margin. Past
+    # it, the head of the queue reaches the reclaim branch, and what happens there depends on
+    # something this mode was never about -- whether the caller can read the process list:
+    #
+    #   * From a shell, `pgrep` answers, no real `xcodebuild test` is running, and the head
+    #     RECLAIMS the lock out from under a holder that still has it. Measured 2026-09-29 with the
+    #     holder held 9s: `lease expired after 5s (limit 4s), no live test host; reclaiming from
+    #     holder` -- and the order file still read `w1 w2 w3 w4`, so the mode printed PASS having
+    #     just watched the mutex broken. A guard that reports success for the wrong reason.
+    #   * Inside the App-Sandboxed CadenceTests host, `live_test_hosts` cannot answer (M2), the head
+    #     REFUSES (exit 2) and leaves the queue, so a waiter goes MISSING from the order file. That
+    #     is CI's `FAIL ordering: got 'w1 w3 w4'` -- w2 absent, not late.
+    #   * On this Mac inside the sandbox the handoff happened to finish inside the 4s, so the branch
+    #     was never reached at all and the mode passed for a third reason. Hence green here, red
+    #     there, from one fixture and one script.
+    #
+    # Measured over the blind-probe leg, holder held N seconds: N=0 `w1 w2 w3 w4`, N=1 `w4`,
+    # N=1.5 `w1 w2 w3 w4`, N=2 `w4`. NON-MONOTONE IN LOAD -- a coin flip on where the handoff lands
+    # relative to an integer-second lease boundary. Widening the lease or the timeout would only
+    # move the boundary, which is [[T-1279]]/[[T-1296]]'s mistake in a shell.
+    #
+    # THE FIX HOLDS THE RECLAIM DECISION CONSTANT AND MAKES THE FIXTURE MONOTONE. A fake live test
+    # host is registered for the duration of this mode, through the same `CADENCE_LOCK_PGREP_CMD`
+    # stand-in T-1381 built and on the argument it records: what is proved here is the lock's
+    # DECISION given what the probe said, so a probe this fixture controls proves exactly as much.
+    # The holder then deliberately holds PAST the lease, so every head meets the expired lease, sees
+    # a live host, and defers -- and more load can only add deferrals, never change the answer.
+    # The assertions are a RELATION and two COUNTS, never a duration: the four waiters came out in
+    # arrival order, NOBODY reclaimed, and at least one waiter did meet the expired lease (without
+    # that last count a future shortening of the hold would quietly restore the lucky-timing regime
+    # and the property would go back to proving nothing about a slow handoff).
+    export CADENCE_LOCK_PGREP="$root/orderhost"
+    export CADENCE_LOCK_PGREP_CMD="$FAKE_PGREP"
+    print -r -- 'sleep 90' > "$root/orderhost"; zsh "$root/orderhost" & ohost=$!
+    fake_proc_add $ohost "zsh $root/orderhost"
+    wlogs="$root/orderlogs"; mkdir -p "$wlogs"
     waiter() {
       # `; :` keeps zsh from exec'ing the acquire in place of the subshell, so the
       # waiter is a grandchild with a parent to be cleaned up through.
-      ( "$SELF" acquire 90 "$1" >/dev/null 2>&1 \
+      ( "$SELF" acquire 90 "$1" >"$wlogs/$1" 2>&1 \
         && print -r -- "$1" >> "$order" \
         && "$SELF" release "$1" >/dev/null 2>&1; : ) &
       kids+=($!)
@@ -615,12 +655,25 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
     "$SELF" acquire 30 holder >/dev/null || { print -r -- "selftest: could not take the lock"; exit 2; }
     order="$root/order"; : > "$order"
     for w in w1 w2 w3; do waiter "$w"; sleep 1.2; done
+    # Derived from the lease rather than a magic number, and on the slow side of it: with POLL=1s
+    # the head meets the expired lease at least three times before the holder lets go.
+    sleep $(( CADENCE_LOCK_LEASE + 3 ))
     "$SELF" release holder >/dev/null
     waiter w4
     for _ in {1..90}; do (( $(wc -l < "$order") >= 4 )) && break; sleep 1; done
     got="$(tr '\n' ' ' < "$order")"
-    if [[ "${got% }" == "w1 w2 w3 w4" ]]; then print -r -- "PASS ordering: $got"
-    else print -r -- "FAIL ordering: got '${got% }', wanted 'w1 w2 w3 w4'"; (( fails++ )); fi
+    # `; reclaiming from` and `NOT reclaiming` are disjoint by construction: the reclaim line ends
+    # `...no live test host; reclaiming from <id>`, the deferral ends `...still running; NOT
+    # reclaiming`. A bare `reclaiming` would match both and count every deferral as a reclaim.
+    reclaimed=$(grep -l '; reclaiming from' "$wlogs"/*(N.) 2>/dev/null </dev/null | wc -l | tr -d ' ')
+    deferred=$(grep -l 'NOT reclaiming' "$wlogs"/*(N.) 2>/dev/null </dev/null | wc -l | tr -d ' ')
+    refused=$(grep -l 'REFUSING to reclaim' "$wlogs"/*(N.) 2>/dev/null </dev/null | wc -l | tr -d ' ')
+    if [[ "${got% }" == "w1 w2 w3 w4" ]] && (( reclaimed == 0 )) && (( deferred > 0 )); then
+      print -r -- "PASS ordering: $got -- four served in arrival order across a handoff ${CADENCE_LOCK_LEASE}s+ longer than the lease; ${deferred} waiter(s) met the expired lease and deferred to the live host, ${reclaimed} reclaimed, ${refused} refused"
+    else print -r -- "FAIL ordering: got '${got% }', wanted 'w1 w2 w3 w4'; reclaimed=${reclaimed} (wanted 0), deferred=${deferred} (wanted > 0), refused=${refused}"; (( fails++ )); fi
+    pkill -P $ohost 2>/dev/null; kill $ohost 2>/dev/null; wait $ohost 2>/dev/null
+    fake_proc_del $ohost
+    unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
     # The two properties below are statements about THIS implementation -- one of

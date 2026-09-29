@@ -38,6 +38,9 @@ on:
 # three consecutive pushes produced three `cancelled` outcomes for the only job that matters. On a
 # pull request cancellation still earns its place (a review force-pushes repeatedly and only the
 # last revision matters); on `main` every landing is a distinct revision nobody will push again.
+#
+# T-1489: the one-pending-run-per-group rule holds for this group too, and so does the decision to
+# leave the setting alone; the reasoning is written out at ci.yml's `concurrency` block.
 concurrency:
   group: docs-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

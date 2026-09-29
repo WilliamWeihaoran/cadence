@@ -112,6 +112,19 @@ on:
 # three consecutive pushes produced three `cancelled` outcomes for the only job that matters. On a
 # pull request cancellation still earns its place (a review force-pushes repeatedly and only the
 # last revision matters); on `main` every landing is a distinct revision nobody will push again.
+#
+# T-1489: this protects the run IN FLIGHT, not a merely PENDING one -- GitHub keeps exactly one run
+# pending per group, and a newly queued run cancels it. Measured 2026-09-28: `1cc26f6a` queued
+# 10:01:39 and was cancelled 10:25:07, one second after `8d5ee828` queued. LEFT AS IT IS,
+# deliberately: what a dropped pending run costs is BISECT PRECISION, not coverage -- `main` is
+# linear, so the next run to complete covers the skipped commit's tree. Every remedy costs more.
+# Batching pushes reinstates T-1362's blind window (a red sat at HEAD for four commits). Grouping
+# per-sha instead runs every superseded revision and delivers the TIP's verdict last, which is the
+# only verdict anybody acts on. Separating the docs jobs is already done and buys nothing here:
+# `paths-ignore` above is docs.yml's `paths`, so a docs-only push never starts this workflow -- and
+# an agent commit lands code and `docs/TODO.md` together anyway. The remedy still worth having is
+# outside the workflow: the heartbeat should NOTICE a cancelled run, which today is indistinguish-
+# able from a commit that was never pushed.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

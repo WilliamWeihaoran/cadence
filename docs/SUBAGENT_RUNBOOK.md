@@ -90,12 +90,12 @@ under the same bundle id as your debug build. Every rule in this section is abou
   is the cheap pre-commit check and it only fails in a full or targeted run — never in a scoped run
   of your own suites, which is the one run you were going to do. Run it before you commit.
 - **Push promptly on `main`; do not hold a batch** ([[T-1362]]): a held push is a blind window, and
-  a red can sit at HEAD for commits while every scoped run reads green. `main` no longer cancels a
-  run in flight ([[T-1393]]), so a second push queues rather than killing `CadenceTests`. On a pull
-  request it still cancels, deliberately — push there only when the previous run may be discarded.
-  [[T-1392]] measured what the old rule was avoiding and that measurement stands — under
-  three consecutive pushes read as mostly green while producing three `cancelled` outcomes for the
-  only job that matters. The workflow prevents it now, so the rule no longer has to.
+  a red can sit at HEAD for commits while every scoped run reads green. `main` protects the run
+  **in flight** ([[T-1393]]; observed still `in_progress` 66 minutes on with two pushes landed over
+  it) — but GitHub keeps only ONE run *pending* per concurrency group, so a third push inside one
+  run's window cancels the second's pending run ([[T-1489]]). **That costs bisect precision, not
+  coverage**: `main` is linear, so the next run to complete covers the skipped commit's tree too.
+  Read a red as *one of these commits*, never as *this one*. Pull requests still cancel in flight.
 - **`-only-testing:` takes `CadenceTests/<SuiteName>`.** A filename runs zero tests and exits 0; so
   does a nonexistent suite, and so does `Suite/testName`. Verify every name against
   `./scripts/test-suite-index.sh` and **assert the log names the test you meant, by name** — for a

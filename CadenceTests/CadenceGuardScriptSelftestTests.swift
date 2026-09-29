@@ -443,6 +443,19 @@ struct CadenceGuardScriptSelftestTests {
     /// thirteen days — because nothing read `passed ∩ tolerating`. That is now a complaint
     /// (`staleTolerations`), which is how this line came to be written.
     ///
+    /// **AND IT WAS PROVABLE HERE WHILE FAILING ON CI, WHICH IS [[T-1430]] — the asymmetry, not
+    /// the red.** `ordering` was a duration comparison wearing an ordering assertion's clothes:
+    /// mode 1's handoff took ~3.6s of wall clock against a 4s selftest lease, so past that margin
+    /// the head of the queue reached the RECLAIM branch, and what happens there is decided by
+    /// something the mode was never about — whether the caller can read the process list. From a
+    /// shell the head reclaims the holder's lock and the mode prints PASS anyway; in here it cannot
+    /// ask (M2), refuses, exits 2 and leaves the queue, so a waiter goes MISSING — CI's
+    /// `got 'w1 w3 w4'`. Measured over the blind leg with the holder held N seconds: `w1 w2 w3 w4`
+    /// at N=0 and N=1.5, `w4` at N=1 and N=2. NON-MONOTONE IN LOAD. The fixture registers a fake
+    /// live test host for mode 1 now and holds PAST the lease deliberately, so every head defers
+    /// and more load can only add deferrals; it asserts the order plus two counts — nobody
+    /// reclaimed, and somebody did meet the expired lease. The argument is at the mode itself.
+    ///
     /// So all five survivors of T-1161 were **M2 alone**, and the asymmetry looked like the useful
     /// part: this host can prove anything the lock decides from its own files, and nothing it
     /// decides by asking the kernel who else is running. That reading was right about the
