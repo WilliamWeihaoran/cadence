@@ -60,17 +60,42 @@ struct PersistenceController {
 
         var failedRestore: StoreBackupManager.FailedRestoreRecord?
         do {
-            let storeDirectoryURL = try CadenceStoreSupport.primaryStoreDirectoryURL()
-            _ = try CadenceStoreSupport.migrateLegacyStoreIfNeeded(
-                appGroupDirectoryURL: storeDirectoryURL,
-                candidateLegacyDirectories: CadenceStoreSupport.legacyStoreCandidateDirectories(),
-                backupHandler: { legacyDirectory in
-                    _ = try StoreBackupManager.createBackupIfStoreExists(
-                        reason: .preRestore,
-                        storeDirectoryURL: legacyDirectory
-                    )
-                }
-            )
+            // **T-1448: every step below acts on the store directory THIS launch opens.** It used
+            // to be `CadenceStoreSupport.primaryStoreDirectoryURL()` unconditionally, which is the
+            // signed-in person's app-group store no matter what `CADENCE_UI_TEST_STORE_ID` said —
+            // so an agent launch through `scripts/run-macos-app.sh` opened a private store and then
+            // ran this whole preflight against *theirs*. It is not a read: `createBackupIfStoreExists`
+            // below copied ~16 MB of their store into their backups folder on every agent launch
+            // (four `…-startup` folders on 2026-09-28, one at 14:39:41 matching that run's log),
+            // `purgeAutomaticBackups` then applied their retention policy to the rest, and a
+            // restore they had staged would have been *applied* by the agent's process.
+            let privateStoreDirectoryURL = CadenceUITestStoreDirectory.privateStoreDirectory()
+            let storeDirectoryURL: URL
+            if let privateStoreDirectoryURL {
+                try FileManager.default.createDirectory(
+                    at: privateStoreDirectoryURL,
+                    withIntermediateDirectories: true
+                )
+                storeDirectoryURL = privateStoreDirectoryURL
+            } else {
+                storeDirectoryURL = try CadenceStoreSupport.primaryStoreDirectoryURL()
+                // The legacy migration is the one step that must NOT follow the redirect, and the
+                // reason is the shape of `migrateLegacyStoreIfNeeded`: it copies a pre-app-group
+                // store into a target that has no store items yet. A private store directory is
+                // always empty on its first launch, so pointing it there would *import* the
+                // person's real data into the throwaway store and write a pre-restore backup
+                // beside their legacy copy on the way. A private store has no predecessor.
+                _ = try CadenceStoreSupport.migrateLegacyStoreIfNeeded(
+                    appGroupDirectoryURL: storeDirectoryURL,
+                    candidateLegacyDirectories: CadenceStoreSupport.legacyStoreCandidateDirectories(),
+                    backupHandler: { legacyDirectory in
+                        _ = try StoreBackupManager.createBackupIfStoreExists(
+                            reason: .preRestore,
+                            storeDirectoryURL: legacyDirectory
+                        )
+                    }
+                )
+            }
             // T-326: a restore that fails no longer takes the launch down with it. The staged
             // restore leaves the existing store untouched when it throws, so the right move is to
             // open that store normally and say what happened — not to fall through to a recovery
@@ -628,9 +653,7 @@ struct PersistenceController {
     }
 
     private static func resolvedStoreURL() throws -> URL {
-        if let safeID = CadenceUITestStoreDirectory.directoryID(in: ProcessInfo.processInfo.environment) {
-            let storeDirectoryURL = CadenceUITestStoreDirectory.rootDirectory()
-                .appendingPathComponent(safeID, isDirectory: true)
+        if let storeDirectoryURL = CadenceUITestStoreDirectory.privateStoreDirectory() {
             try FileManager.default.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
             return storeDirectoryURL.appendingPathComponent("default.store")
         }
@@ -1304,8 +1327,37 @@ enum StoreBackupManager {
         return (attributes?[.size] as? NSNumber)?.int64Value
     }
 
+    /// Where every entry point on this type that was not handed a directory looks — eight of them:
+    /// `backupRootURL`, `createBackupIfStoreExists(reason:)`, `listBackups()`,
+    /// `cleanUpAutomaticBackups()`, `deleteAllBackups()`, `deleteRetainedUnrestoredOriginals()`,
+    /// `setSharedRestorePendingMarker` and `performPendingRestoreIfNeeded()`.
+    ///
+    /// **T-1448.** This was `CadenceStoreSupport.primaryStoreDirectoryURL()`, which answers the
+    /// app-group store and nothing else — so on a launch redirected by `CADENCE_UI_TEST_STORE_ID`
+    /// the backups this type managed were the signed-in person's while the store the app had open
+    /// was private. Backups are siblings of the store items (`backupRootURL(for:)`), so the two
+    /// disagreeing is not a matter of taste: it is this type operating on a store the app is not
+    /// using.
     private static func defaultStoreDirectoryURL() throws -> URL {
-        try CadenceStoreSupport.primaryStoreDirectoryURL()
+        try storeDirectoryURL(in: ProcessInfo.processInfo.environment)
+    }
+
+    /// The resolution itself, with its inputs injected so a test can drive **both** halves — the
+    /// redirected one and, more importantly, the unset one, which has to keep answering exactly
+    /// the production path or this change reaches the shipping app.
+    static func storeDirectoryURL(
+        in environment: [String: String],
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default
+    ) throws -> URL {
+        guard let privateStoreDirectoryURL = CadenceUITestStoreDirectory.privateStoreDirectory(
+            in: environment,
+            temporaryDirectory: temporaryDirectory
+        ) else {
+            return try CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
+        }
+        try fileManager.createDirectory(at: privateStoreDirectoryURL, withIntermediateDirectories: true)
+        return privateStoreDirectoryURL
     }
 
     private static func existingStoreItems(in storeDirectoryURL: URL, fileManager: FileManager = .default) -> [URL] {

@@ -240,4 +240,147 @@ struct CadenceAgentDefaultsIsolationTests {
             )
         }
     }
+
+    // MARK: - The backups beside the store, which followed neither (T-1448)
+
+    /// **The store redirect moved the store and left everything beside it behind.**
+    ///
+    /// `StoreBackupManager` resolved `CadenceStoreSupport.primaryStoreDirectoryURL()` directly, so
+    /// on a launch redirected by `CADENCE_UI_TEST_STORE_ID` it managed the signed-in person's
+    /// backups while the app had a private store open. T-1448 was filed over the *visible* half —
+    /// an agent saw their two real backups listed in Settings → Data Safety. The half measured
+    /// while closing it is that the same directory was written: `PersistenceController.init` ran
+    /// its preflight against the app-group path unconditionally, so every agent launch copied
+    /// ~16 MB of their store into their backups folder and then purged the rest under their
+    /// retention policy.
+    ///
+    /// Driven rather than launched, and driven at the resolution the product actually calls: the
+    /// environment is an argument here only because a test process cannot be two launches at once.
+    @Test func theBackupsDirectoryFollowsTheStoreTheLaunchActuallyOpens() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CadenceT1448-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        // **The unset case first, because it is the one that reaches the shipping app.** No id in
+        // the environment has to keep answering the production path exactly, and "exactly" is
+        // asserted against `CadenceStoreSupport` rather than against a literal, so a later change
+        // to where the app-group store lives cannot make this pass by drifting with it.
+        let production = try CadenceStoreSupport.primaryStoreDirectoryURL()
+        let unset = try StoreBackupManager.storeDirectoryURL(
+            in: [:],
+            temporaryDirectory: temporaryDirectory
+        )
+        #expect(
+            unset == production,
+            "an unredirected launch no longer resolves its backups to the app-group store"
+        )
+        let localStoreOnly = try StoreBackupManager.storeDirectoryURL(
+            in: ["CADENCE_LOCAL_STORE_ONLY": "1"],
+            temporaryDirectory: temporaryDirectory
+        )
+        #expect(
+            localStoreOnly == production,
+            "CADENCE_LOCAL_STORE_ONLY alone never redirected the store and must not redirect backups"
+        )
+
+        // ...and now the redirected one.
+        let environment = ["CADENCE_UI_TEST_STORE_ID": "t1448-agent"]
+        let redirected = try StoreBackupManager.storeDirectoryURL(
+            in: environment,
+            temporaryDirectory: temporaryDirectory
+        )
+        let expected = CadenceUITestStoreDirectory.rootDirectory(in: temporaryDirectory)
+            .appendingPathComponent("t1448-agent", isDirectory: true)
+        #expect(redirected != production, "the redirect resolved to the person's own store directory")
+        #expect(redirected == expected, "the backups directory is not beside the store this launch opens")
+
+        // The resolution is only worth something if `listBackups` reads through it, so the claim is
+        // finished at the level that renders: a backup planted beside the private store is listed
+        // from the resolved directory, and is **not** among what the production directory reports.
+        //
+        // **Planted under `expected`, never under `redirected`**, and that is a safety property of
+        // this test rather than a style choice. `expected` is built from this test's own temporary
+        // directory, so it cannot name a real store; `redirected` is the value under test, and a
+        // regression that made it answer the app-group path would have this line create a folder
+        // inside the signed-in person's real backups directory — writing into exactly the place
+        // T-1448 exists to keep an agent out of. Planting in the known-private path leaves the
+        // assertion below just as red and leaves their directory untouched. The one call that does
+        // touch it, the last `#expect`, only lists it.
+        let plantedID = "20260928-000000-startup"
+        let plantedURL = expected
+            .appendingPathComponent("Cadence Store Backups", isDirectory: true)
+            .appendingPathComponent(plantedID, isDirectory: true)
+        try FileManager.default.createDirectory(at: plantedURL, withIntermediateDirectories: true)
+
+        let redirectedIDs = StoreBackupManager.listBackups(storeDirectoryURL: redirected).map(\.id)
+        #expect(redirectedIDs == [plantedID], "the redirected directory listed \(redirectedIDs)")
+        #expect(
+            !StoreBackupManager.listBackups(storeDirectoryURL: production).map(\.id).contains(plantedID),
+            "the two directories are the same one, so nothing above was isolated"
+        )
+    }
+
+    /// **The no-argument entry points are the ones the product calls**, so the resolution proved
+    /// above has to be the resolution they reach — otherwise this is a tested helper beside an
+    /// untouched defect.
+    @Test func everyNoArgumentBackupEntryPointResolvesThroughTheRedirect() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        #expect(source.contains("enum StoreBackupManager {"), "PersistenceController.swift did not read as itself")
+
+        let resolver = try #require(
+            CadenceSourceScan.declarationBody("private static func defaultStoreDirectoryURL(", in: source),
+            "the no-argument entry points no longer share one resolver"
+        )
+        #expect(
+            resolver.contains("storeDirectoryURL(in: ProcessInfo.processInfo.environment)"),
+            "defaultStoreDirectoryURL does not ask the environment, so nothing the launch sets reaches it"
+        )
+        #expect(
+            !resolver.contains("CadenceStoreSupport.primaryStoreDirectoryURL()"),
+            "defaultStoreDirectoryURL went back to answering the app-group store unconditionally"
+        )
+
+        // Counted rather than named: a ninth no-argument entry point added later still has to go
+        // through `defaultStoreDirectoryURL`, and a count is the only reading that notices. Nine
+        // spellings, eight of them calls and one the declaration above (measured 2026-09-28).
+        let mentions = CadenceSourceScan.matchCount("defaultStoreDirectoryURL\\(\\)", in: source)
+        #expect(mentions == 9, "\(mentions) spellings of defaultStoreDirectoryURL(), not the 9 measured for T-1448")
+    }
+
+    /// The write half. `PersistenceController.init` took `primaryStoreDirectoryURL()` and handed it
+    /// to `performPendingRestoreIfNeeded` and `createBackupIfStoreExists` — a restore and a ~16 MB
+    /// copy, both against the signed-in person's store, on a launch that had opened a private one.
+    @Test func theStartupPreflightBacksUpTheStoreThisLaunchOpened() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        let body = CadenceSourceScan.strippingComments(try #require(
+            // `"init()"`, not `"init() {"`. `declarationBody` resumes at the end of a prefix whose
+            // parentheses are already closed and then takes the **next** `{` — so the longer
+            // spelling hands back the body of `if Self.shouldResetStoreOnLaunch {`, four lines that
+            // contain none of the four things asserted below and fail every one of them.
+            CadenceSourceScan.declarationBody("init()", in: source),
+            "PersistenceController.init did not read as itself"
+        ))
+        #expect(
+            body.contains("CadenceUITestStoreDirectory.privateStoreDirectory()"),
+            "the startup preflight never asks which store this launch opens"
+        )
+        #expect(
+            body.contains("StoreBackupManager.createBackupIfStoreExists("),
+            "the preflight no longer takes a startup backup, so this test is about nothing"
+        )
+
+        // The legacy migration is the deliberate exception and stays on the app-group path: it
+        // copies into a target with no store items, and a private store directory is always empty,
+        // so following the redirect would import the person's real data into the throwaway store.
+        #expect(
+            body.contains("appGroupDirectoryURL: storeDirectoryURL"),
+            "the legacy migration no longer reads as itself"
+        )
+        let migrationIndex = try #require(body.range(of: "migrateLegacyStoreIfNeeded")?.lowerBound)
+        let guardIndex = try #require(body.range(of: "if let privateStoreDirectoryURL {")?.lowerBound)
+        #expect(
+            guardIndex < migrationIndex,
+            "the legacy migration runs before the launch knows whether it has a private store"
+        )
+    }
 }

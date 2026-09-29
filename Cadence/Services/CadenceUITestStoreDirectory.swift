@@ -107,6 +107,32 @@ enum CadenceUITestStoreDirectory {
         return raw.replacingOccurrences(of: "/", with: "-")
     }
 
+    /// The directory this launch's store lives in, or `nil` when it has no private store — the one
+    /// place that turns `CADENCE_UI_TEST_STORE_ID` into a path.
+    ///
+    /// **[[T-1448]] — it is a function because more than one caller has to ask the question.**
+    /// Until 2026-09-28 only `PersistenceController.resolvedStoreURL()` consulted the environment.
+    /// Everything *around* the store — the startup backup, the pending restore, the list under
+    /// Settings → Data Safety — went through `StoreBackupManager`, which resolved
+    /// `CadenceStoreSupport.primaryStoreDirectoryURL()` directly and therefore never learned that
+    /// this launch had been redirected. So an agent launch opened a private store and backed up,
+    /// listed, purged and could have restored the *signed-in person's* one. The ticket recorded
+    /// the listing, which is the visible half; the writing half was measured while closing it —
+    /// four `…-startup` folders under their real backups directory on 2026-09-28, one of them
+    /// `20260928-143941-startup` against a `run-macos-app.sh` log written the same minute, each a
+    /// ~16 MB copy of their store, with `purgeAutomaticBackups` applying their retention policy
+    /// to the rest.
+    ///
+    /// Returning `nil` when the environment names no id is the whole of the shipping behaviour:
+    /// every caller falls back to the app-group path it used before.
+    static func privateStoreDirectory(
+        in environment: [String: String] = ProcessInfo.processInfo.environment,
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+    ) -> URL? {
+        guard let id = directoryID(in: environment) else { return nil }
+        return rootDirectory(in: temporaryDirectory).appendingPathComponent(id, isDirectory: true)
+    }
+
     /// The id whose launch also claims and sweeps — **`CadenceUITests` only**.
     ///
     /// The redirect is wider than the cleanup on purpose. `run-macos-app.sh` sets the store id and

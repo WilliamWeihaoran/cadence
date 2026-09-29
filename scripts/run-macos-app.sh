@@ -13,8 +13,24 @@
 #                                registerForRemoteNotifications()
 #   CADENCE_UI_TEST_STORE_ID=..  store redirected to
 #                                <app tmp>/CadenceUITestStores/<id>/default.store
+#                                -- and, since T-1448, the BACKUPS beside it: the startup
+#                                backup, the pending restore, the automatic-backup purge and
+#                                the list under Settings > Data Safety all now resolve
+#                                <that same directory>/Cadence Store Backups
 #   -CadenceSuiteName <id>       preferences redirected to the private suite
 #                                com.haoranwei.Cadence.agent.<id>   (T-1157)
+#
+# THE BACKUPS HALF IS NEW TOO, AND THE STORE REDIRECT NEVER IMPLIED IT (T-1448). `StoreBackupManager`
+# resolved `CadenceStoreSupport.primaryStoreDirectoryURL()` directly, so it never learned this launch
+# had been redirected. T-1448 was filed over a read -- an agent saw the owner's two real backups
+# listed in Settings > Data Safety -- but the same path was written, not only read:
+# `PersistenceController.init` ran its whole preflight against the app-group directory, so every
+# agent launch copied ~16 MB of the OWNER'S store into the OWNER'S backups folder and then applied
+# their retention policy to the rest. Four such `...-startup` folders existed for 2026-09-28 alone,
+# one of them `20260928-143941-startup` against a log in this script's own run directory written the
+# same minute. A pending restore of theirs would likewise have been APPLIED by the agent's process.
+# Nothing here has to clean the new path up separately: it is inside <app tmp>/CadenceUITestStores/<id>,
+# which `stop` already removes whole.
 #
 # THE THIRD LINE IS NEW AND THE FIRST TWO NEVER IMPLIED IT. This header used to say the two
 # environment variables meant "the launched app cannot see or touch the user's data", and that
@@ -29,6 +45,12 @@
 # widget is a separate process and the accent id and the reload state are what the two must agree
 # about. A launched agent app can therefore still change the accent colour the user's widget
 # draws. That is the residue, and it is named rather than assumed away.
+#
+# Also still shared: the LEGACY-STORE MIGRATION's source directories, which is a deliberate
+# exception rather than an oversight (T-1448). `migrateLegacyStoreIfNeeded` copies a pre-app-group
+# store into a target that has no store items yet, and a private store directory is empty on its
+# first launch -- so following the redirect would have IMPORTED the owner's real data into the
+# agent's throwaway store. A launch with a private store now skips that step outright instead.
 #
 # `<app tmp>` is NOT this shell's $TMPDIR. `PersistenceController.resolvedStoreURL()`
 # builds the path from `FileManager.default.temporaryDirectory`, and Cadence.app is
