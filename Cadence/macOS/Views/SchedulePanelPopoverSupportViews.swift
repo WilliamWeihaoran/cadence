@@ -32,6 +32,16 @@ struct TaskDetailHeaderSection: View {
     private static let titleRowSpacing: CGFloat = 10
     private static var titleColumnInset: CGFloat { tileSize + titleRowSpacing }
 
+    /// **T-1510.** The title row's two pickers are the inspector's only controls that do not span
+    /// its content column, so neither can take the Schedule well's `.besideInspector` answer on
+    /// faith. The tile is the row's *leading* element, pinned at `contentInset`, so its panel has
+    /// to leave by the column's leading edge; the chip is the *trailing*-most element, so its
+    /// panel leaves by the trailing one. Derived rather than asserted: see
+    /// `TaskInspectorChildPopoverPlacement.columnEnd(ofAnchor:in:)`, which
+    /// `CadenceInspectorChildPopoverPlacementTests` runs over both anchors.
+    private static let priorityPlacement = TaskInspectorChildPopoverPlacement.besideInspector(.leading)
+    private static let estimatePlacement = TaskInspectorChildPopoverPlacement.besideInspector(.trailing)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: Self.titleRowSpacing) {
@@ -46,7 +56,7 @@ struct TaskDetailHeaderSection: View {
                 .accessibilityLabel("Priority")
                 .accessibilityValue(task.priority.label)
                 .help("Priority")
-                .popover(isPresented: $showPriorityPicker, arrowEdge: .bottom) {
+                .popover(isPresented: $showPriorityPicker, arrowEdge: Self.priorityPlacement.arrowEdge) {
                     TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
                 }
 
@@ -73,7 +83,10 @@ struct TaskDetailHeaderSection: View {
                 // the estimate chip is fixed-size, so a long title wraps instead of squeezing it.
                 .frame(maxWidth: .infinity, minHeight: Self.tileSize, alignment: .leading)
 
-                TaskInspectorEstimateChip(value: $task.estimatedMinutes)
+                TaskInspectorEstimateChip(
+                    value: $task.estimatedMinutes,
+                    childPlacement: Self.estimatePlacement
+                )
             }
 
             VStack(alignment: .leading, spacing: 6) {
