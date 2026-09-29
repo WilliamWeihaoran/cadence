@@ -6,7 +6,6 @@ import SwiftData
 
 struct TasksPanel: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(TaskCreationManager.self) private var taskCreationManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]

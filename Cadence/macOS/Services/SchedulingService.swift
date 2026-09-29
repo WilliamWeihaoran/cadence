@@ -129,6 +129,17 @@ enum SchedulingActions {
     /// cascade, so un-inserting only the task would leave those rows in the context attached to
     /// nothing.
     ///
+    /// **T-1436.** `priority` defaults to `.none` because this is also the plain drag-out entry
+    /// point — a drag that never named a priority has none to state — but it is a parameter now
+    /// rather than a literal. The literal was what made the Calendar page's quick-create tab the
+    /// one macOS Task composer with no priority row: the tab could have drawn one, and
+    /// `QuickCreateTaskDraft` has carried `priority` since [[T-1433]], but this write path had
+    /// nowhere to put it, so the call site dropped the field under a comment saying so.
+    ///
+    /// Whatever is passed here still loses to a `!`/`!!` shortcut typed into the title, because
+    /// `TaskCreationDraft.resolvedPriority` is what applies it — the picker is the slower spelling
+    /// of the same field, not a second one.
+    ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
     static func insertTask(
@@ -138,6 +149,7 @@ enum SchedulingActions {
         endMin: Int,
         containerSelection: TaskContainerSelection,
         sectionName: String,
+        priority: TaskPriority = .none,
         notes: String = "",
         subtaskTitles: [String] = [],
         areas: [Area],
@@ -148,7 +160,7 @@ enum SchedulingActions {
         let draft = TaskCreationDraft(
             title: title,
             notes: notes,
-            priority: .none,
+            priority: priority,
             container: containerSelection,
             sectionName: sectionName,
             dueDateKey: "",

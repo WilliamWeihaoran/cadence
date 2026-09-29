@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -22,6 +23,8 @@ struct CadenceQuickCreateTaskInspectorTests {
     private static let createSheetPath = "Cadence/macOS/Sheets/CreateTaskSheet.swift"
     private static let createSheetSupportPath = "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift"
     private static let tildePickerPath = "Cadence/macOS/Views/TildeContainerPicker.swift"
+    private static let monthGridPath = "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"
+    private static let schedulingPath = "Cadence/macOS/Services/SchedulingService.swift"
 
     private func code(_ path: String) throws -> String {
         let raw = try cadenceTestSource(path)
@@ -171,12 +174,18 @@ struct CadenceQuickCreateTaskInspectorTests {
             ) == 1,
             "the shared priority picker is not declared where the create sheet's spellings live"
         )
-        for path in [Self.createSheetPath, Self.supportPath] {
-            #expect(
-                CadenceSourceScan.matchCount(#"TaskPriorityPicker\("#, in: try code(path)) == 1,
-                "\(path) does not build the shared priority picker"
-            )
-        }
+        // The create sheet builds it once; the support file builds it once per Task composer,
+        // which is twice since T-1436 gave the in-place spelling its own Priority row. What the
+        // count guards is that none of them is a *private* copy — the declaration above is still
+        // the only one in the app.
+        #expect(
+            CadenceSourceScan.matchCount(#"TaskPriorityPicker\("#, in: try code(Self.createSheetPath)) == 1,
+            "the create sheet does not build the shared priority picker"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"TaskPriorityPicker\("#, in: try code(Self.supportPath)) == 2,
+            "the two quick-create Task composers do not each build the shared priority picker"
+        )
         #expect(
             CadenceSourceScan.matchCount(#"priorityMarkButton"#, in: try code(Self.createSheetPath)) == 0,
             "the create sheet still carries its private priority button"
@@ -204,6 +213,149 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(
             CadenceSourceScan.matchCount(#"TimeFormatters\.timeRange\("#, in: try code(Self.supportPath)) == 1,
             "the quick-create tabs no longer draw the time range exactly once"
+        )
+    }
+
+    // MARK: - T-1436: the third composer can set a priority
+
+    /// **Behavioural, through the real write path.** The Calendar page's day column is the one
+    /// macOS Task composer that creates in place, and it writes through
+    /// `SchedulingActions.insertTask` — which hardcoded `priority: .none` into the draft it built,
+    /// so `QuickCreateTaskDraft.priority` was dropped on the floor no matter what the tab drew.
+    ///
+    /// Read back through a **second** context, so the creating context's own memory cannot satisfy
+    /// it: the priority the composer names is the priority in the store.
+    @Test func thePriorityTheCalendarQuickCreateNamesReachesTheStoredTask() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let created = try SchedulingActions.insertTask(
+            title: "Dragged out and marked",
+            dateKey: "2026-05-01",
+            startMin: 600,
+            endMin: 660,
+            containerSelection: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            priority: .high,
+            areas: [],
+            projects: [],
+            in: context
+        )
+
+        // Unwrapped, not `created?.priority == .high`: a nil subject must fail this rather than
+        // be compared away. Every optional in this file's model tests is unwrapped for that
+        // reason — an insert that returned nothing is the loudest way for this to break.
+        let createdTask = try #require(created)
+        #expect(createdTask.priority == TaskPriority.high)
+        let reader = ModelContext(container)
+        let stored = try #require(try reader.fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.priority == .high)
+    }
+
+    /// The other half of the same relation, and the reason the parameter has a default: a drag that
+    /// never named a priority still creates a task with none. Asserted as a *relation* between the
+    /// two calls rather than as a pinned enum case on one of them, so a future default that is not
+    /// `.none` fails here rather than passing on a coincidence.
+    @Test func adragThatNamesNoPriorityDiffersFromOneThatDoes() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let unmarked = try SchedulingActions.insertTask(
+            title: "Dragged out, unmarked",
+            dateKey: "2026-05-01",
+            startMin: 600,
+            endMin: 660,
+            containerSelection: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            areas: [],
+            projects: [],
+            in: context
+        )
+        let marked = try SchedulingActions.insertTask(
+            title: "Dragged out, marked",
+            dateKey: "2026-05-01",
+            startMin: 660,
+            endMin: 720,
+            containerSelection: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            priority: .medium,
+            areas: [],
+            projects: [],
+            in: context
+        )
+
+        let unmarkedTask = try #require(unmarked)
+        let markedTask = try #require(marked)
+        // `TaskPriority.none` qualified: bare `.none` against an `Optional<TaskPriority>` means
+        // *nil*, which is a different question and one the compiler only warns about.
+        #expect(unmarkedTask.priority == TaskPriority.none)
+        #expect(markedTask.priority != unmarkedTask.priority)
+    }
+
+    /// The typed shortcut still outranks the picker, which is why the picker could be added without
+    /// arguing about precedence: `TaskCreationDraft.resolvedPriority` applies `!!` over whatever the
+    /// caller passed, and `insertTask` routes through the same draft every other composer does.
+    @Test func atypedPriorityShortcutStillOutranksTheComposersPicker() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let created = try SchedulingActions.insertTask(
+            title: "Dragged out !!",
+            dateKey: "2026-05-01",
+            startMin: 600,
+            endMin: 660,
+            containerSelection: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            priority: .low,
+            areas: [],
+            projects: [],
+            in: context
+        )
+
+        // `created?.priority != .low` would have passed on a nil insert, which is the vacuous
+        // shape this repository keeps rediscovering: the inequality is *satisfied* by nothing
+        // having been created at all.
+        let createdTask = try #require(created)
+        #expect(createdTask.priority != TaskPriority.low, "the picker's value survived a typed shortcut")
+    }
+
+    /// The source half: the tab draws the row, and the host forwards the field. Either alone goes
+    /// quietly green — a picker whose value is dropped at the call site looks like a working
+    /// control, and a forwarded field with no control to set it is unreachable.
+    @Test func theInPlaceTaskComposerDrawsThePriorityRowAndItsHostForwardsIt() throws {
+        let inPlaceComposer = try #require(
+            CadenceSourceScan.declarationBody(
+                "struct QuickCreateTaskDetailsView: View",
+                in: try code(Self.supportPath)
+            )
+        )
+        #expect(
+            inPlaceComposer.contains("TaskPriorityPicker(selection: $priority, trigger: .value)"),
+            "the in-place Task composer draws no priority control"
+        )
+        #expect(
+            inPlaceComposer.contains("@Binding var priority: TaskPriority"),
+            "the in-place Task composer cannot write a priority back to the popover"
+        )
+
+        let host = try code(Self.monthGridPath)
+        let forwarded = try #require(CadenceSourceScan.functionBody(named: "createTask", in: host))
+        #expect(
+            forwarded.contains("priority: priority"),
+            "the calendar day column drops the priority again on the way to the store"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"priority: draft\.priority"#, in: host) == 1,
+            "the popover's draft priority never reaches the column's createTask"
+        )
+
+        // And the write path itself takes one rather than writing the literal back in.
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"priority: TaskPriority = \.none"#,
+                in: try code(Self.schedulingPath)
+            ) == 1,
+            "SchedulingActions.insertTask no longer takes a priority"
         )
     }
 

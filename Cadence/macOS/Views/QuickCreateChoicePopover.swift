@@ -206,6 +206,7 @@ struct QuickCreateChoicePopover: View {
                         endMin: endMin,
                         selectedContainer: $selectedContainer,
                         selectedSectionName: $selectedSectionName,
+                        priority: $selectedPriority,
                         notes: $notes,
                         subtaskDraft: $subtaskDraft,
                         subtaskTitles: $subtaskTitles,

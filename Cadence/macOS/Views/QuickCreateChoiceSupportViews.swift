@@ -112,12 +112,26 @@ struct QuickCreateContainerFieldControls: View {
     }
 }
 
+/// The Task tab's inspector when the popover creates the task itself — the Calendar page's day
+/// column, `usesTaskPanelForTaskCreation: false`.
+///
+/// **T-1436 closed the one gap that made this the lesser composer.** The slot stays read-only here
+/// on purpose: this host has no task panel behind it, so the drag is the only thing that ever
+/// named the range and re-stating it as a field would invite the user to edit a value the drag
+/// would redraw. Priority was not that kind of difference — `QuickCreateTaskDraft` has carried it
+/// since [[T-1433]] and this tab simply threw it away, because `SchedulingActions.insertTask` had
+/// no parameter for it. Both halves moved together; the picker is the same
+/// `TaskPriorityPicker(trigger: .value)` the sibling above draws.
+///
+/// What still separates the two is notes and subtasks, which only this one carries, against the
+/// editable date and time only the sibling carries. See T-1435 for the measurement.
 struct QuickCreateTaskDetailsView: View {
     let dateKey: String
     let startMin: Int
     let endMin: Int
     @Binding var selectedContainer: TaskContainerSelection
     @Binding var selectedSectionName: String
+    @Binding var priority: TaskPriority
     @Binding var notes: String
     @Binding var subtaskDraft: String
     @Binding var subtaskTitles: [String]
@@ -144,6 +158,15 @@ struct QuickCreateTaskDetailsView: View {
                         onContainerChanged: onContainerChanged
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // Same glyph and same picker as the sibling composer's Priority row; only the row
+                // idiom differs, because this composer's rows are `QuickCreateDetailRow` and the
+                // sibling's are `CadenceFieldRow` (the start-time control there brings its own
+                // label). Mixing the two inside one card is the drift, not the fix.
+                QuickCreateDetailRow(title: "Priority", icon: "exclamationmark.circle.fill") {
+                    TaskPriorityPicker(selection: $priority, trigger: .value)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 

@@ -451,6 +451,44 @@ struct CadenceTasksPanelMetricsTests {
         )
     }
 
+    // MARK: - T-1504: an environment value nobody reads
+
+    /// **`TasksPanel` held `@Environment(TaskCreationManager.self)` and no line of it read the
+    /// value.** Swift does not warn on an unread stored property, so nothing but a source scan can
+    /// see it. It does not crash — an `@Environment` value that is never read is never resolved —
+    /// which is exactly why it survived: it costs nothing at runtime and states a dependency the
+    /// panel does not have, so every host of it reads as needing a create manager installed. Same
+    /// shape as the dead `allTasks` parameter above.
+    ///
+    /// The relation, not just the deletion: Today's `+` is the page's, not the panel's
+    /// (`todaysCaptureButtonIsThePagesFloatingOneAndNotASecondSpelling`), so the frame that
+    /// presents the create sheet is `TodayView` — it must still declare the value **and call it**.
+    /// Deleting the line from the wrong file of the two leaves this red.
+    @Test func thePanelDoesNotHoldTheCreateManagerItNeverAsksAnythingOf() throws {
+        let panel = try Self.panelSource()
+        #expect(panel.contains("struct TasksPanel: View"), "non-vacuity: wrong file read")
+        #expect(
+            CadenceSourceScan.matchCount(#"TaskCreationManager"#, in: panel) == 0,
+            "TasksPanel still reaches for a create manager no line of it uses"
+        )
+
+        let today = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TodayView.swift")
+        )
+        #expect(today.contains("struct TodayView"), "non-vacuity: wrong file read")
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"@Environment\(TaskCreationManager\.self\)"#,
+                in: today
+            ) == 1,
+            "Today no longer declares the create manager its floating + presents through"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"taskCreationManager\.present\("#, in: today) == 1,
+            "Today declares the create manager without calling it — the defect, moved one file over"
+        )
+    }
+
     /// The same defect, two more sites in the list detail page: `ListTasksGroupSectionView` and
     /// `ListTasksCompletedSectionView` both carried an `allTasks` no body read. Removing the
     /// parameter also retired `ListTasksView`'s `@Query private var allTasks` in

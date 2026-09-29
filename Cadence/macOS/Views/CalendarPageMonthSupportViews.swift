@@ -588,9 +588,10 @@ struct CalDayColumn: View {
             showWorkHoursHighlight: true,
             usesTaskPanelForTaskCreation: false,
             // This column's popover composes in place (`usesTaskPanelForTaskCreation: false`),
-            // so its Task tab has no date, time or priority field and the draft carries the slot
-            // it was seeded with. `createTask` writes through `SchedulingActions.insertTask`,
-            // which takes no priority — see T-1433's ledger line.
+            // so its Task tab has no date or time *field* and the draft carries the slot it was
+            // seeded with — on this host the drag is the authority for when. Priority is no longer
+            // in that list (T-1436): the tab draws the row, and `createTask` forwards it through
+            // `SchedulingActions.insertTask`, which takes one now.
             onCreateTask: { draft in
                 createTask(
                     title: draft.title,
@@ -598,6 +599,7 @@ struct CalDayColumn: View {
                     endMin: draft.endMin,
                     containerSelection: draft.container,
                     sectionName: draft.sectionName,
+                    priority: draft.priority,
                     notes: draft.notes,
                     subtaskTitles: draft.subtaskTitles
                 )
@@ -660,6 +662,7 @@ struct CalDayColumn: View {
         endMin: Int,
         containerSelection: TaskContainerSelection,
         sectionName: String,
+        priority: TaskPriority,
         notes: String,
         subtaskTitles: [String]
     ) {
@@ -671,6 +674,7 @@ struct CalDayColumn: View {
                 endMin: endMin,
                 containerSelection: containerSelection,
                 sectionName: sectionName,
+                priority: priority,
                 notes: notes,
                 subtaskTitles: subtaskTitles,
                 areas: areas,
