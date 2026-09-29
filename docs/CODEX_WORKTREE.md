@@ -57,6 +57,9 @@ Cadence/iOS/iOSTaskGroupSection.swift
 Cadence/iOS/iOSTasksPageView.swift
 Cadence/iOS/iOSTasksTabView.swift
 Cadence/iOS/iOSSwipeActionRow.swift
+Cadence/iOS/iOSFloatingCreateTaskButton.swift
+Cadence/iOS/iOSBoardCards.swift
+Cadence/Shared/Components/CadenceBoardColumnHeader.swift
 Cadence/iOS/iOSFeatureComponents.swift
 Cadence/iOS/iOSDesignSystem.swift
 Cadence/Shared/Components/EmptyStateView.swift
@@ -97,6 +100,36 @@ So, while a lease is in force:
 - **The coordinator narrows the lease when the assignment ends**, rather than letting it accumulate.
   A lease granting paths nobody is working on is a lease that will eventually be believed.
 
+### The four paths T-1451 asked for, and the two embedded surfaces
+
+Three of the four are granted above. The fourth was already granted and Codex could not see it:
+`CadenceTests/CadenceSharedTaskRowJobsTests.swift` and `CadenceTests/CadenceTodayUnificationTests.swift`
+entered the lease **after** `codex/task-page-typography-finish` branched from `4e6f4feb`, so the
+branch's own copy of this file does not list them. Re-point `:675`'s three-read count as T-1451
+proposes — the narrow permission in the section above applies to it word for word: re-point, never
+delete, loosen or route around, and do not add production reads whose only purpose is to satisfy the
+old count. Read the lease from `origin/main`, not from the branch, when in doubt.
+
+`Cadence/Shared/Components/CadenceBoardColumnHeader.swift` is the one grant here that is **not**
+iOS-only: `Cadence/macOS/Views/KanbanColumnSupportViews.swift` and the two Calendar views draw it
+too. The constraint is the one T-1451 proposed itself — prepare it with fixed-mode preservation and
+an explicit caller inventory, and do not opt the macOS or Calendar callers in. There are open
+scrolling-performance tickets against the macOS Kanban board; if one of them needs this file, the
+lease comes back before that fix goes out, the same way [[T-1492]] took `CadenceDatePicker.swift`.
+
+**Both embedded surfaces: the proposal in T-1451 is accepted.** Today `.timeline` and Lists
+`.documents` get explicitly fixed Cadence chrome on the embedding, matching Today's agreed Notes
+boundary, and the Calendar and Notes conversions behind them stay separate work. No new lease is
+needed for it: `iOSTodayView.swift`, `iOSTodaySchedulePanel.swift`, `iOSListDetailView.swift` and
+`iOSListNotesView.swift` all already match `iOSToday*.swift` and `iOSList*.swift`.
+
+`Cadence/Shared/Components/CadenceDatePicker.swift` does **not** return, and the commit that removed
+it said it would. It is already a declared scaled root in the inventory at
+`CadenceTests/CadenceTypographyScaleTests.swift:422`, and T-1451's own remaining patch order does not
+name it, so returning it would grant a path nobody is working on — which this file's own rule says is
+the kind of lease that eventually gets believed. It comes back the moment an assignment needs it; say
+so rather than working around it.
+
 ## Do not edit `Cadence.xcodeproj/project.pbxproj`
 
 `Cadence/` and `CadenceTests/` are `PBXFileSystemSynchronizedRootGroup`s, so a new file under either
@@ -122,6 +155,25 @@ is still the heading's file, and the negative control that an 11pt eyebrow tier 
 Note also that the three checks above them (`SectionEyebrowLabel.fontSize == 10` and the two
 `countSize ==` identities) are **model** assertions, not source reads, and a conversion should leave
 them alone.
+
+### A new test that reads the real product tree is not green until the manifest is regenerated
+
+`CadenceTests/CadenceRealTreeSweepManifest.txt` is the exact list of every `@Test` that sweeps the
+real product tree, and two suites compare the committed file against a fresh derivation:
+`CadenceTestTargetHygieneTests.theRealTreeSweepManifestIsExactlyWhatTheScanFinds` and
+`CadenceGuardScriptSelftestTests.theCheapPrecheckStillAnswersWhatTheAuthoritativeScanAnswers`. A new
+sweep that is not listed fails both, and neither is reachable from a scoped run of the suites a
+ticket touches — which is how `codexChipAndInspectorReadTheOneLineHeightRatio` arrived at landing
+with a cold green, a 193-test run and a named known red, and still reddened the full suite.
+
+**Codex does not regenerate the manifest and the file is not leased.** Every writer in the repository
+adds sweeps, the file is derived rather than typed, and a branch that regenerates it conflicts with a
+main that also did. Instead: **say in the inbox entry that the ticket adds a real-tree sweep, and
+name the tests.** The coordinator runs `scripts/real-tree-sweep-manifest.sh <id> --write` at landing,
+where it is one derivation against one tree.
+
+So those two suites being red on the branch is expected when a sweep was added, and is not something
+to chase. Every *other* red still is.
 
 ## What Codex must not do
 

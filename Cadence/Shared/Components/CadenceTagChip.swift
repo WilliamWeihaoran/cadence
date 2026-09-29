@@ -334,7 +334,7 @@ nonisolated struct CadenceTagChipStyle: Equatable {
 
     /// Height of the chip, given its tallest piece of content.
     func chipHeight(hasRemoveControl: Bool) -> CGFloat {
-        let labelHeight = ceil(fontSize * 1.25)
+        let labelHeight = ceil(fontSize * CadenceTypeScale.lineHeightRatio)
         let content = hasRemoveControl ? max(labelHeight, removeControlSize) : labelHeight
         return content + verticalPadding * 2
     }
