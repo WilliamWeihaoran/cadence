@@ -1,6 +1,24 @@
 #!/bin/zsh
 # One agent per simulator device, and a private store even so.
 #
+# THE TWO STANDING DEVICES -- CLAIM THESE, NEVER CREATE OR DELETE ONE (T-1704).
+#
+#   iPhone  Cadence-iPhone15        CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0   393x852
+#   iPad    iPad Pro 11-inch (M5)   53EC6A90-D767-45DE-8EAC-53B8E1673B1D   834x1210 portrait
+#
+# Both match the target devices in docs/TODO.md's table. They are kept booted on purpose.
+#
+# NEVER touch iPhone 17 Pro, 7B642065-86FC-4987-8674-22066D32878C -- that is the owner's own
+# device, and a build aimed at it was refused by the permission classifier with "Interfere With
+# Workloads", which is the correct refusal.
+#
+# Why this paragraph exists: on 2026-09-29 two agents were briefed to create a device per task and
+# delete it when done. They did, correctly. The owner was then left staring at simulator panels
+# reading "No simulator with UDID 0A20B3BE-..." and repeated "Attach a simulator" prompts, because
+# a panel outlives the device it was attached to. The churn was the coordinator's instruction, not
+# an agent's mistake. This script has no `create` subcommand by design (pool bloat); the standing
+# pair above is what that design assumed all along, and it was never written down.
+#
 # THE FAILURE THIS EXISTS FOR (docs/TODO.md T-225): two agents share one booted
 # simulator. Agent A boots an iPad and seeds state; agent B lists devices, sees it
 # booted, and installs its own build to it -- wiping A's data mid-run. Nothing in
