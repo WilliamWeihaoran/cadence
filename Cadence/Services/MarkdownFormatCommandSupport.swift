@@ -376,9 +376,16 @@ nonisolated enum MarkdownFormatCommandSupport {
         return indentation + "> " + content
     }
 
+    /// **There is one ATX heading-prefix pattern and it lives on `MarkdownMetadataParser`.**
+    ///
+    /// This built its own `#"^#{1,6}\s+"#` on every call — the same ten bytes, character for
+    /// character, that `MarkdownMetadataParser.headingPrefixRegex` has held as a stored property
+    /// since [[T-1366]], four files away. Two declarations of one rule can be edited apart without
+    /// anything going red, and here that would mean the format bar and the tag sweep disagreeing
+    /// about what a heading is. [[T-1484]] deleted this copy rather than storing a second one.
     private static func headingPrefix(in line: String) -> (level: Int, prefixLength: Int)? {
         let nsLine = line as NSString
-        guard let regex = try? NSRegularExpression(pattern: #"^#{1,6}\s+"#),
+        guard let regex = MarkdownMetadataParser.headingPrefixRegex,
               let match = regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)) else {
             return nil
         }

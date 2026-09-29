@@ -20,10 +20,37 @@ nonisolated struct MarkdownFencedCodeBlock: Equatable {
 }
 
 nonisolated enum MarkdownBlockSupport {
+    /// **The ATX heading pattern, compiled once per process rather than once per line.**
+    ///
+    /// The same hoist [[T-1444]] made in `MarkdownOutlineParser`, in the file the *rendered* path
+    /// reads: `MarkdownPreviewParser.blocks` calls `headingLineInfo` once per line of the note, so
+    /// this literal was rebuilt once per line of every preview, excerpt and note-index row.
+    ///
+    /// **What it is worth, measured before it was changed** (Apple M3 Pro / Mac15,6, 11 cores,
+    /// 18 GB, this file plus the rest of the preview path compiled standalone with `swiftc -O`,
+    /// medians of 101 `blocks(in:)` calls per point after 5 warm-ups, before and after interleaved
+    /// in one sitting): `blocks(in:)` cost **6.87µs per line before and 2.83µs after**, flat from
+    /// 200 to 800 lines in both, so a 400-line note's preview parse goes **2,765µs -> 1,133µs**.
+    /// Two per-line compiles came off, this one and
+    /// `MarkdownTaskEmbedParser.standaloneTaskReferenceRegex`; ~2µs each, which is [[T-1444]]'s
+    /// ~2.5µs and **not** the ~100µs a cold construction costs, because `NSRegularExpression`
+    /// caches compiled patterns internally.
+    ///
+    /// So the honest reason this was taken is **not** the microseconds: it is that the literal was
+    /// one of ten constant patterns the markdown services rebuilt per call, and heading syntax has
+    /// one spelling here ([[T-1484]]). The literal is byte-identical to the one that stood inside
+    /// the function — which matters, because `level` is the marker length and `content` is capture
+    /// 2, so a character lost in the hoist changes what renders as a heading.
+    ///
+    /// `NSRegularExpression` is immutable once built and its matching methods are documented as
+    /// thread-safe, which is the property `MarkdownMetadataSupport`'s four stored patterns already
+    /// rely on.
+    nonisolated private static let headingLineRegex = try? NSRegularExpression(pattern: #"^(#{1,6})\s+(.+)$"#)
+
     static func headingLineInfo(in line: String) -> MarkdownHeadingLine? {
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)
-        guard let regex = try? NSRegularExpression(pattern: #"^(#{1,6})\s+(.+)$"#),
+        guard let regex = headingLineRegex,
               let match = regex.firstMatch(in: line, range: fullRange),
               match.numberOfRanges >= 3 else {
             return nil

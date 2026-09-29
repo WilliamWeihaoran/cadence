@@ -75,8 +75,30 @@ nonisolated struct MarkdownReferenceDisplayRange: Equatable {
 /// not at all. It wants a `resolving(_:titles:)` call where its markdown enters the view, the same
 /// one line the note-index rows use.
 nonisolated enum MarkdownReferenceDisplaySupport {
+    /// **The `[[…]]` pattern, written once and compiled once per process.**
+    ///
+    /// It stood inside `referenceRanges` and again inside `inlineSegments` as two separate
+    /// `try? NSRegularExpression(pattern:)` expressions spelling the same literal, so every call
+    /// rebuilt it and the two spellings could drift apart without anything going red — the second
+    /// is what [[T-1484]] was really about. The literal is byte-identical to both of them.
+    ///
+    /// `NoteReferenceParser` holds its own copy of the same bytes and deliberately still does:
+    /// `CadenceMCPServer` compiles `NoteReferenceSupport.swift` and does **not** compile this
+    /// file, so a shared constant here would not link there. One spelling per target is as far as
+    /// this goes without moving files between targets.
+    nonisolated private static let wikiReferenceRegex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#)
+
+    /// The hidden `task:`/`note:` prefix inside a reference label, read once per label by
+    /// `display(forWikiLabel:)` — so once per reference in a note, not once per note. Hoisted
+    /// with the two above; `.caseInsensitive` is carried across unchanged, and without it
+    /// `[[Task:…]]` would stop hiding its prefix.
+    nonisolated private static let referencePrefixRegex = try? NSRegularExpression(
+        pattern: #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#,
+        options: [.caseInsensitive]
+    )
+
     nonisolated static func referenceRanges(in markdown: String) -> [MarkdownReferenceDisplayRange] {
-        guard let regex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#) else {
+        guard let regex = wikiReferenceRegex else {
             return []
         }
 
@@ -135,7 +157,7 @@ nonisolated enum MarkdownReferenceDisplaySupport {
     }
 
     nonisolated static func inlineSegments(in markdown: String) -> [MarkdownReferenceInlineSegment] {
-        guard let regex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#) else {
+        guard let regex = wikiReferenceRegex else {
             return [MarkdownReferenceInlineSegment(text: markdown, target: nil)]
         }
         let nsMarkdown = markdown as NSString
@@ -239,11 +261,8 @@ nonisolated enum MarkdownReferenceDisplaySupport {
     nonisolated private static func referencePrefixLength(in label: String) -> Int {
         let nsLabel = label as NSString
         let fullRange = NSRange(location: 0, length: nsLabel.length)
-        guard let regex = try? NSRegularExpression(
-            pattern: #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#,
-            options: [.caseInsensitive]
-        ),
-            let match = regex.firstMatch(in: label, range: fullRange) else {
+        guard let regex = referencePrefixRegex,
+              let match = regex.firstMatch(in: label, range: fullRange) else {
             return 0
         }
         return match.range.length

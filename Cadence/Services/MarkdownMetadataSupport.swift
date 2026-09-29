@@ -375,7 +375,12 @@ nonisolated enum MarkdownMetadataParser {
         return result
     }
 
-    nonisolated private static let headingPrefixRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s+"#)
+    /// **The one `^#{1,6}\s+` in the app target.** `private` until [[T-1484]], which found
+    /// `MarkdownFormatCommandSupport.headingPrefix(in:)` building the same ten bytes per call four
+    /// files away; that call site reads this now. Kept here rather than moved because this is
+    /// where it already was and because `MarkdownMetadataSupport.swift` is one of the few files
+    /// `CadenceMCPServer` also compiles, so a new home would have to be in that target too.
+    nonisolated static let headingPrefixRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s+"#)
 
     nonisolated private static func isMarkdownHeading(_ line: String) -> Bool {
         guard let headingPrefixRegex else { return false }

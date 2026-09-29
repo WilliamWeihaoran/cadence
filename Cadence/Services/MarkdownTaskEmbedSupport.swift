@@ -145,24 +145,56 @@ nonisolated struct MarkdownTaskEmbedReference: Hashable {
     let range: NSRange
 }
 
+/// **The four embed patterns, compiled once per process rather than once per call.**
+///
+/// All four are string literals that never vary, and `standaloneTaskReferenceRegex` is read once
+/// per line of every rendered note — `MarkdownPreviewParser.blocks` tries a standalone embed on
+/// each line before anything else can claim it. Hoisted under [[T-1484]] together with
+/// `MarkdownBlockSupport.headingLineRegex`, the preview loop's other per-line compile; the two
+/// together took `blocks(in:)` from 6.87µs per line to 2.83µs (measured first, see
+/// `MarkdownBlockSupport.headingLineRegex` for the numbers and for why the microseconds are not
+/// the reason).
+///
+/// Each literal is byte-identical to the one that stood inside its function. `draftTitleRegex`
+/// kept the `\s+` before the capture and `untitledDraftRegex` the `\s*`, which is the whole
+/// difference between "a marker with a title" and "a bare marker"; the two standalone patterns
+/// differ only in whether the UUID is captured, and both are kept rather than merged because
+/// `referenceTitleRange` numbers its capture from 1.
+///
+/// The one construction left inside a function body in this file is
+/// `referenceTitleRanges(of:in:)`, whose pattern interpolates an escaped UUID and so varies per
+/// call. That is out of [[T-1484]]'s scope by its own terms: a per-call pattern cannot be hoisted
+/// to a stored `let` without a cache.
 nonisolated enum MarkdownTaskEmbedParser {
+    nonisolated private static let draftTitleRegex = try? NSRegularExpression(pattern: #"^\s*\(\s*\)\s+(.+)$"#)
+
+    nonisolated private static let untitledDraftRegex = try? NSRegularExpression(pattern: #"^\s*\(\s*\)\s*$"#)
+
+    nonisolated private static let standaloneTaskReferenceRegex = try? NSRegularExpression(
+        pattern: #"^\s*\[\[task:([0-9A-Fa-f-]{36})\|([^\]\n]+)\]\]\s*$"#
+    )
+
+    nonisolated private static let referenceTitleRangeRegex = try? NSRegularExpression(
+        pattern: #"^\s*\[\[task:[0-9A-Fa-f-]{36}\|([^\]\n]+)\]\]\s*$"#
+    )
+
+    /// The `patterns` array this loop used to walk held exactly one literal, so the loop could
+    /// only ever run once; it is a `guard` now that the pattern is stored. Same answers: a line
+    /// the pattern misses, and a line whose captured title trims to nothing, both still return
+    /// nil.
     nonisolated static func draftTitle(in line: String) -> String? {
         let nsLine = line as NSString
         let fullRange = NSRange(location: 0, length: nsLine.length)
-        let patterns = [
-            #"^\s*\(\s*\)\s+(.+)$"#
-        ]
 
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                  let match = regex.firstMatch(in: line, range: fullRange),
-                  match.numberOfRanges > 1,
-                  match.range(at: 1).location != NSNotFound else { continue }
-
-            let title = nsLine.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !title.isEmpty { return title }
+        guard let regex = draftTitleRegex,
+              let match = regex.firstMatch(in: line, range: fullRange),
+              match.numberOfRanges > 1,
+              match.range(at: 1).location != NSNotFound else {
+            return nil
         }
-        return nil
+
+        let title = nsLine.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? nil : title
     }
 
     /// True for a bare `( )` / `()` draft line — the marker typed, no title yet.
@@ -178,13 +210,13 @@ nonisolated enum MarkdownTaskEmbedParser {
     /// The untitled placeholder itself is deliberately not returned from here: it lives on
     /// `MarkdownTaskEmbedRenderInfo`, which is main-actor isolated, and this parser is `nonisolated`.
     nonisolated static func isUntitledDraftLine(_ line: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: #"^\s*\(\s*\)\s*$"#) else { return false }
+        guard let regex = untitledDraftRegex else { return false }
         let nsLine = line as NSString
         return regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length)) != nil
     }
 
     nonisolated static func standaloneTaskReference(in line: String, lineStart: Int = 0) -> MarkdownTaskEmbedReference? {
-        guard let regex = try? NSRegularExpression(pattern: #"^\s*\[\[task:([0-9A-Fa-f-]{36})\|([^\]\n]+)\]\]\s*$"#) else {
+        guard let regex = standaloneTaskReferenceRegex else {
             return nil
         }
         let nsLine = line as NSString
@@ -286,7 +318,7 @@ nonisolated enum MarkdownTaskEmbedParser {
     }
 
     nonisolated static func referenceTitleRange(in markdown: String, lineStart: Int = 0) -> NSRange? {
-        guard let regex = try? NSRegularExpression(pattern: #"^\s*\[\[task:[0-9A-Fa-f-]{36}\|([^\]\n]+)\]\]\s*$"#) else {
+        guard let regex = referenceTitleRangeRegex else {
             return nil
         }
         let nsMarkdown = markdown as NSString

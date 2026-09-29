@@ -92,8 +92,21 @@ nonisolated enum NoteReferenceParser {
     // stable `noteID` above all — not a bare title, which is what made the title-only form the
     // wrong thing to hand anyone in the first place.
 
+    /// **The two reference patterns, compiled once per process rather than once per call.**
+    ///
+    /// `matches(in:pattern:)` below took a `String` and built an `NSRegularExpression` from it on
+    /// every call, and both call sites passed a literal that never varies — so parsing a note's
+    /// references rebuilt them each time. Hoisted under [[T-1484]]; both literals are
+    /// byte-identical to the ones the call sites passed, and `wikiReferenceRegex` is the same 19
+    /// bytes `MarkdownReferenceDisplaySupport` holds. The duplicate across the two files stays,
+    /// and the reason is a target boundary rather than an oversight: `CadenceMCPServer` compiles
+    /// this file and not that one.
+    nonisolated private static let wikiReferenceRegex = try? NSRegularExpression(pattern: #"\[\[([^\[\]]+?)\]\]"#)
+
+    nonisolated private static let taskReferenceRegex = try? NSRegularExpression(pattern: #"(?i)\[\[task:(.+?)\]\]"#)
+
     nonisolated static func noteReferences(in content: String) -> [NoteLinkReference] {
-        matches(in: content, pattern: #"\[\[([^\[\]]+?)\]\]"#)
+        matches(in: content, using: wikiReferenceRegex)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && !isTaskReferencePayload($0) }
             .map(parseNoteReference)
@@ -104,7 +117,7 @@ nonisolated enum NoteReferenceParser {
         // Case-insensitive to match the renderer and the link target, both of which lowercase the
         // prefix — otherwise "[[Task:…]]" draws and navigates as a task but never reaches linked
         // tasks or backlinks.
-        matches(in: content, pattern: #"(?i)\[\[task:(.+?)\]\]"#)
+        matches(in: content, using: taskReferenceRegex)
             .map(parseTaskReference)
             .filter { !$0.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
@@ -164,8 +177,8 @@ nonisolated enum NoteReferenceParser {
             .hasPrefix("task:")
     }
 
-    nonisolated private static func matches(in content: String, pattern: String) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    nonisolated private static func matches(in content: String, using regex: NSRegularExpression?) -> [String] {
+        guard let regex else { return [] }
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
         return regex.matches(in: content, range: range).compactMap { match in
