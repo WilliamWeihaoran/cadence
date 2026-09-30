@@ -265,23 +265,37 @@ struct CadenceAgentDefaultsIsolationTests {
         // the environment has to keep answering the production path exactly, and "exactly" is
         // asserted against `CadenceStoreSupport` rather than against a literal, so a later change
         // to where the app-group store lives cannot make this pass by drifting with it.
-        let production = try CadenceStoreSupport.primaryStoreDirectoryURL()
-        let unset = try StoreBackupManager.storeDirectoryURL(
-            in: [:],
-            temporaryDirectory: temporaryDirectory
-        )
-        #expect(
-            unset == production,
-            "an unredirected launch no longer resolves its backups to the app-group store"
-        )
-        let localStoreOnly = try StoreBackupManager.storeDirectoryURL(
-            in: ["CADENCE_LOCAL_STORE_ONLY": "1"],
-            temporaryDirectory: temporaryDirectory
-        )
-        #expect(
-            localStoreOnly == production,
-            "CADENCE_LOCAL_STORE_ONLY alone never redirected the store and must not redirect backups"
-        )
+        //
+        // **[[T-1850]] made "exactly" mean something on a host with no app group.** This was
+        // `try CadenceStoreSupport.primaryStoreDirectoryURL()` on one line, and on a hosted CI
+        // runner that `try` throws — `NSCocoaErrorDomain` 513 over `NSPOSIXErrorDomain` 1, from the
+        // `createDirectory` inside `sharedStoreDirectoryURL` and **not** from a nil container: the
+        // lookup answers `/Users/runner/Library/Group Containers/…` and the directory under it
+        // cannot be made, because `.github/ci.entitlements` grants only `get-task-allow` and a
+        // hosted runner has no provisioning profile to carry an app group. So the assertion was
+        // never reached at all. The claim is *agreement with `CadenceStoreSupport`*, not "a path
+        // came back", and it is now driven on every floor: this host's container, an injected
+        // stand-in that always resolves, an injected container that is answered and cannot be
+        // written — CI's, exactly — and an injected absence. The exact path is still pinned, on
+        // every host, by the stand-in.
+        for floor in CadenceAppGroupFloor.all(in: temporaryDirectory) {
+            expectResolvesLikeTheAppGroupStore(
+                { try StoreBackupManager.storeDirectoryURL(in: [:], temporaryDirectory: temporaryDirectory, fileManager: $0) },
+                on: floor,
+                "an unredirected launch no longer resolves its backups to the app-group store"
+            )
+            expectResolvesLikeTheAppGroupStore(
+                {
+                    try StoreBackupManager.storeDirectoryURL(
+                        in: ["CADENCE_LOCAL_STORE_ONLY": "1"],
+                        temporaryDirectory: temporaryDirectory,
+                        fileManager: $0
+                    )
+                },
+                on: floor,
+                "CADENCE_LOCAL_STORE_ONLY alone never redirected the store and must not redirect backups"
+            )
+        }
 
         // ...and now the redirected one.
         let environment = ["CADENCE_UI_TEST_STORE_ID": "t1448-agent"]
@@ -291,7 +305,13 @@ struct CadenceAgentDefaultsIsolationTests {
         )
         let expected = CadenceUITestStoreDirectory.rootDirectory(in: temporaryDirectory)
             .appendingPathComponent("t1448-agent", isDirectory: true)
-        #expect(redirected != production, "the redirect resolved to the person's own store directory")
+        for floor in CadenceAppGroupFloor.all(in: temporaryDirectory) {
+            expectDiffersFromTheAppGroupStore(
+                redirected,
+                on: floor,
+                "the redirect resolved to the person's own store directory"
+            )
+        }
         #expect(redirected == expected, "the backups directory is not beside the store this launch opens")
 
         // The resolution is only worth something if `listBackups` reads through it, so the claim is
@@ -314,10 +334,19 @@ struct CadenceAgentDefaultsIsolationTests {
 
         let redirectedIDs = StoreBackupManager.listBackups(storeDirectoryURL: redirected).map(\.id)
         #expect(redirectedIDs == [plantedID], "the redirected directory listed \(redirectedIDs)")
-        #expect(
-            !StoreBackupManager.listBackups(storeDirectoryURL: production).map(\.id).contains(plantedID),
-            "the two directories are the same one, so nothing above was isolated"
-        )
+
+        // Over the floors whose app group *exists* — never empty, because the stand-in always does,
+        // so this loop cannot quietly become a loop over nothing on a runner. Listing only; the one
+        // of these that may be the owner's real directory is the one this test has never written to.
+        let resolvable = CadenceAppGroupFloor.resolvable(in: temporaryDirectory)
+        #expect(!resolvable.isEmpty, "no floor resolved an app-group store, so the check below is vacuous")
+        for floor in resolvable {
+            let appGroupStore = try #require(floor.reference.url)
+            #expect(
+                !StoreBackupManager.listBackups(storeDirectoryURL: appGroupStore).map(\.id).contains(plantedID),
+                "[\(floor.name)] the two directories are the same one, so nothing above was isolated"
+            )
+        }
     }
 
     /// **The no-argument entry points are the ones the product calls**, so the resolution proved
@@ -369,25 +398,41 @@ struct CadenceAgentDefaultsIsolationTests {
     /// This drives the real no-argument property, in this process, against this process's real
     /// environment — which is the only reading that can tell the guarantee from the coincidence.
     @Test func theTestHostsBackupsAreItsOwnAndNotTheSignedInPersons() throws {
-        let production = try CadenceStoreSupport.primaryStoreDirectoryURL()
-        let productionRoot = production
-            .appendingPathComponent("Cadence Store Backups", isDirectory: true)
-        // Built here from `FileManager.default.temporaryDirectory` — the same default the resolver
-        // takes, spelled independently of it. Nothing below is planted under the value under test,
-        // so a regression that answered the app-group path leaves this assertion red and their
-        // directory untouched. Same rule, same reason, as `…FollowsTheStoreTheLaunchActuallyOpens`.
+        // This one is about the **real process environment**, so `backupRootURL` cannot be injected
+        // into — and does not need to be. Built here from `FileManager.default.temporaryDirectory`
+        // — the same default the resolver takes, spelled independently of it. Nothing below is
+        // planted under the value under test, so a regression that answered the app-group path
+        // leaves this assertion red and their directory untouched. Same rule, same reason, as
+        // `…FollowsTheStoreTheLaunchActuallyOpens`.
         let hostRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("CadenceTestsHostStore", isDirectory: true)
             .appendingPathComponent("Cadence Store Backups", isDirectory: true)
 
+        // The load-bearing claim, and it is **exact and unconditional on every host**: the
+        // no-argument backup root is the test host's own. It names no app group, so it is the same
+        // assertion on a Mac with a container and on a runner without one.
         #expect(
             StoreBackupManager.backupRootURL.standardizedFileURL == hostRoot.standardizedFileURL,
             "the no-argument backup root is \(StoreBackupManager.backupRootURL.path)"
         )
-        #expect(
-            StoreBackupManager.backupRootURL.standardizedFileURL != productionRoot.standardizedFileURL,
-            "a unit test's backup entry points still resolve the signed-in person's real backups"
-        )
+
+        // The corollary, stated per floor because [[T-1850]]: `try CadenceStoreSupport
+        // .primaryStoreDirectoryURL()` on the first line of this test threw on CI, where there is no
+        // app-group container, and took the assertion above down with it before it ran. A refusal is
+        // a value here, and a directory is never equal to one — so "the test host's backups are not
+        // the owner's" is decidable on a host that cannot reach the owner's at all.
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CadenceT1530Floors-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+        for floor in CadenceAppGroupFloor.all(in: temporaryDirectory) {
+            let appGroupBackupRoot = floor.reference.appending("Cadence Store Backups")
+            #expect(
+                CadenceAppGroupStoreOutcome.directory(
+                    StoreBackupManager.backupRootURL.standardizedFileURL.path
+                ) != appGroupBackupRoot,
+                "[\(floor.name)] a unit test's backup entry points still resolve the signed-in person's real backups"
+            )
+        }
 
         // The path is only half of it: `listBackups()` has to *read* through the resolution, or
         // this is a tested property beside an untouched defect. Planted in the host's own folder
@@ -401,10 +446,15 @@ struct CadenceAgentDefaultsIsolationTests {
             StoreBackupManager.listBackups().map(\.id).contains(plantedID),
             "listBackups() does not read the directory the test host's store lives in"
         )
-        #expect(
-            !StoreBackupManager.listBackups(storeDirectoryURL: production).map(\.id).contains(plantedID),
-            "the two directories are the same one, so nothing above was isolated"
-        )
+        let resolvable = CadenceAppGroupFloor.resolvable(in: temporaryDirectory)
+        #expect(!resolvable.isEmpty, "no floor resolved an app-group store, so the check below is vacuous")
+        for floor in resolvable {
+            let appGroupStore = try #require(floor.reference.url)
+            #expect(
+                !StoreBackupManager.listBackups(storeDirectoryURL: appGroupStore).map(\.id).contains(plantedID),
+                "[\(floor.name)] the two directories are the same one, so nothing above was isolated"
+            )
+        }
     }
 
     /// Both directions, injected — because the half that matters most is the one no test host can
@@ -414,7 +464,13 @@ struct CadenceAgentDefaultsIsolationTests {
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("CadenceT1530-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
-        let production = try CadenceStoreSupport.primaryStoreDirectoryURL()
+
+        // The three readings of "where is this process's app group" — [[T-1850]]. This was one
+        // `try CadenceStoreSupport.primaryStoreDirectoryURL()`, which is a *refusal* on a hosted
+        // runner with no provisioning profile, so the whole test stopped at this line on CI. The
+        // claim below is agreement with `CadenceStoreSupport`, floor by floor, which is decidable
+        // on a host that has no app group and still pins the exact path on one that does.
+        let floors = CadenceAppGroupFloor.all(in: temporaryDirectory)
 
         // (1) Nothing named, and the near-misses. Asserted against `CadenceStoreSupport` rather
         //     than a literal so a later move of the app-group store cannot make this pass by
@@ -434,13 +490,19 @@ struct CadenceAgentDefaultsIsolationTests {
                 ) == nil,
                 "\(environment) redirected the shipping app away from its own store"
             )
-            #expect(
-                try StoreBackupManager.storeDirectoryURL(
-                    in: environment,
-                    temporaryDirectory: temporaryDirectory
-                ) == production,
-                "\(environment) no longer resolves the app-group backups directory"
-            )
+            for floor in floors {
+                expectResolvesLikeTheAppGroupStore(
+                    {
+                        try StoreBackupManager.storeDirectoryURL(
+                            in: environment,
+                            temporaryDirectory: temporaryDirectory,
+                            fileManager: $0
+                        )
+                    },
+                    on: floor,
+                    "\(environment) no longer resolves the app-group backups directory"
+                )
+            }
         }
 
         // (2) Each spelling of "this process is a test host", one at a time. `XCTestSessionIdentifier`
@@ -458,7 +520,13 @@ struct CadenceAgentDefaultsIsolationTests {
                 temporaryDirectory: temporaryDirectory
             )
             #expect(resolved == testHost, "\(environment) resolved \(resolved.path)")
-            #expect(resolved != production, "\(environment) still resolves the signed-in person's store")
+            for floor in floors {
+                expectDiffersFromTheAppGroupStore(
+                    resolved,
+                    on: floor,
+                    "\(environment) still resolves the signed-in person's store"
+                )
+            }
         }
 
         // (3) A `CadenceUITests` launch sets **both**, and the per-launch private store has to win:

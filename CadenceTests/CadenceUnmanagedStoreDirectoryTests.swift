@@ -242,41 +242,72 @@ struct CadenceUnmanagedStoreDirectoryTests {
         let temporaryDirectory = makeRoot()
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
-        let production = try CadenceStoreSupport.primaryStoreDirectoryURL()
-            .appendingPathComponent("Recovery", isDirectory: true)
-            .standardizedFileURL.path
-
-        // Unset: the shipping app, and the app-group path exactly.
-        let unset = PersistenceController.recoveryStoreDirectoryCandidates(
-            in: [:],
-            temporaryDirectory: temporaryDirectory
-        )
-        #expect(
-            unset.first?.standardizedFileURL.path == production,
-            "an environment naming nothing resolved \(unset.first?.path ?? "nil") instead of the app-group Recovery folder"
-        )
-
-        // Redirected: the launch's own private store, and the production path nowhere in the list.
-        let redirected = PersistenceController.recoveryStoreDirectoryCandidates(
-            in: ["CADENCE_UI_TEST_STORE_ID": "t1680"],
-            temporaryDirectory: temporaryDirectory
-        )
+        // **[[T-1850]]: driven on all three app-group floors instead of on this Mac's.** The first
+        // line of this test used to be `try CadenceStoreSupport.primaryStoreDirectoryURL()`, which
+        // *throws* on a hosted runner — no provisioning profile, so `.github/ci.entitlements`
+        // carries no app group — and took every assertion below down with it the first time CI ran
+        // this suite. The candidate list is built from `CadenceStoreSupport`, so what has to be
+        // asserted is that it *agrees* with it: the app-group Recovery folder where there is an app
+        // group, and the documented `Application Support` fallback where there is none. Both are
+        // exact; neither is skipped.
         let expected = CadenceUITestStoreDirectory
             .rootDirectory(in: temporaryDirectory)
             .appendingPathComponent("t1680", isDirectory: true)
             .appendingPathComponent("Recovery", isDirectory: true)
-        #expect(
-            redirected.first?.standardizedFileURL.path == expected.standardizedFileURL.path,
-            "a redirected launch resolved \(redirected.first?.path ?? "nil") instead of its private Recovery folder"
-        )
-        #expect(
-            !redirected.map(\.standardizedFileURL.path).contains(production),
-            "a redirected launch can still create a recovery store in the app-group container"
-        )
-        #expect(
-            unset.first?.standardizedFileURL.path != redirected.first?.standardizedFileURL.path,
-            "the redirect makes no difference, so it is not a redirect"
-        )
+
+        for floor in CadenceAppGroupFloor.all(in: temporaryDirectory) {
+            // Unset: the shipping app, and the app-group path exactly.
+            let unset = PersistenceController.recoveryStoreDirectoryCandidates(
+                in: [:],
+                temporaryDirectory: temporaryDirectory,
+                fileManager: floor.fileManager
+            )
+            let firstUnset = unset.first?.standardizedFileURL.path
+            switch floor.reference {
+            case .directory:
+                #expect(
+                    firstUnset == floor.reference.appending("Recovery").url?.standardizedFileURL.path,
+                    "[\(floor.name)] an environment naming nothing resolved \(firstUnset ?? "nil") instead of the app-group Recovery folder"
+                )
+            case .refused:
+                // No reachable app group. The resolver must fall through to the *second* candidate
+                // `CadenceStoreSupport` defines — `Application Support/Cadence/Recovery` — and not
+                // to something it invented. Asserted against the same `FileManager` the resolver
+                // asked, so this is still a relation and not a literal path.
+                let applicationSupport = try #require(
+                    floor.fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                )
+                #expect(
+                    firstUnset == applicationSupport
+                        .appendingPathComponent("Cadence", isDirectory: true)
+                        .appendingPathComponent("Recovery", isDirectory: true)
+                        .standardizedFileURL.path,
+                    "[\(floor.name)] with no app group the recovery store resolved \(firstUnset ?? "nil") instead of the Application Support fallback"
+                )
+            }
+
+            // Redirected: the launch's own private store, and the production path nowhere in the list.
+            let redirected = PersistenceController.recoveryStoreDirectoryCandidates(
+                in: ["CADENCE_UI_TEST_STORE_ID": "t1680"],
+                temporaryDirectory: temporaryDirectory,
+                fileManager: floor.fileManager
+            )
+            #expect(
+                redirected.first?.standardizedFileURL.path == expected.standardizedFileURL.path,
+                "[\(floor.name)] a redirected launch resolved \(redirected.first?.path ?? "nil") instead of its private Recovery folder"
+            )
+            let appGroupRecovery = floor.reference.appending("Recovery")
+            #expect(
+                !redirected.contains {
+                    CadenceAppGroupStoreOutcome.directory($0.standardizedFileURL.path) == appGroupRecovery
+                },
+                "[\(floor.name)] a redirected launch can still create a recovery store in the app-group container"
+            )
+            #expect(
+                firstUnset != redirected.first?.standardizedFileURL.path,
+                "[\(floor.name)] the redirect makes no difference, so it is not a redirect"
+            )
+        }
 
         // Resolving is not creating: neither answer may exist merely because it was asked for.
         #expect(!FileManager.default.fileExists(atPath: expected.path), "asking created the private Recovery folder")

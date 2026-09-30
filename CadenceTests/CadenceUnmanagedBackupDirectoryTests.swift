@@ -131,38 +131,57 @@ struct CadenceUnmanagedBackupDirectoryTests {
     /// directly under `Application Support`, from before the store moved into its own `Cadence/`
     /// folder, so a candidate set built only from `legacyStoreCandidateDirectories()` — which is
     /// what the ticket described — misses them.
+    /// **[[T-1850]] made "the real paths" a set of readings rather than this Mac's.** The live
+    /// directory used to be one `try CadenceStoreSupport.primaryStoreDirectoryURL()`, and that
+    /// throws on a hosted runner, where `.github/ci.entitlements` grants only `get-task-allow`
+    /// because there is no provisioning profile to carry an app group. The shape asserted below
+    /// never needed the owner's container — it needs *an* app-group store directory — so it is
+    /// driven over every floor whose app group resolves, which is at least the injected stand-in on
+    /// every host and this Mac's real one here.
     @Test func theCandidatesIncludeEachStoreDirectoryAndItsParent() throws {
-        let live = try CadenceStoreSupport.primaryStoreDirectoryURL()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CadenceT1850-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
         let legacy = CadenceStoreSupport.legacyStoreCandidateDirectories()
         #expect(!legacy.isEmpty, "there are no legacy store candidates, so this test is about nothing")
 
-        let candidates = Set(
-            StoreBackupManager
-                .backupDirectoryCandidates(liveStoreDirectoryURL: live, legacyStoreDirectories: legacy)
-                .map(\.standardizedFileURL.path)
-        )
+        let floors = CadenceAppGroupFloor.resolvable(in: root)
+        #expect(!floors.isEmpty, "no floor resolved an app-group store, so this test is about nothing")
 
-        for storeDirectoryURL in [live] + legacy {
-            let own = storeDirectoryURL
-                .appendingPathComponent("Cadence Store Backups", isDirectory: true)
-            let besideIt = storeDirectoryURL.deletingLastPathComponent()
-                .appendingPathComponent("Cadence Store Backups", isDirectory: true)
-            #expect(candidates.contains(own.standardizedFileURL.path), "no candidate inside \(storeDirectoryURL.path)")
+        for floor in floors {
+            let live = try #require(floor.reference.url)
+            let candidates = Set(
+                StoreBackupManager
+                    .backupDirectoryCandidates(liveStoreDirectoryURL: live, legacyStoreDirectories: legacy)
+                    .map(\.standardizedFileURL.path)
+            )
+
+            for storeDirectoryURL in [live] + legacy {
+                let own = storeDirectoryURL
+                    .appendingPathComponent("Cadence Store Backups", isDirectory: true)
+                let besideIt = storeDirectoryURL.deletingLastPathComponent()
+                    .appendingPathComponent("Cadence Store Backups", isDirectory: true)
+                #expect(
+                    candidates.contains(own.standardizedFileURL.path),
+                    "[\(floor.name)] no candidate inside \(storeDirectoryURL.path)"
+                )
+                #expect(
+                    candidates.contains(besideIt.standardizedFileURL.path),
+                    "[\(floor.name)] no candidate beside \(storeDirectoryURL.path) — the layout before the store moved into Cadence/"
+                )
+            }
+
+            // The app-group root is the one the live store's parent rule is *for*, so name it.
             #expect(
-                candidates.contains(besideIt.standardizedFileURL.path),
-                "no candidate beside \(storeDirectoryURL.path) — the layout before the store moved into Cadence/"
+                candidates.contains(
+                    live.deletingLastPathComponent()
+                        .appendingPathComponent("Cadence Store Backups", isDirectory: true)
+                        .standardizedFileURL.path
+                ),
+                "[\(floor.name)] the app-group root, where 3 backups and 14 MB were on 2026-09-29, is not a candidate"
             )
         }
-
-        // The app-group root is the one the live store's parent rule is *for*, so name it.
-        #expect(
-            candidates.contains(
-                live.deletingLastPathComponent()
-                    .appendingPathComponent("Cadence Store Backups", isDirectory: true)
-                    .standardizedFileURL.path
-            ),
-            "the app-group root, where 3 backups and 14 MB were on 2026-09-29, is not a candidate"
-        )
     }
 
     // MARK: - It cannot touch them
