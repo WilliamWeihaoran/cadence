@@ -98,6 +98,11 @@ Long references, searchable only when needed:
   `HEAD-MOVED` (T-974) means a sibling landed while you were validating — nothing was committed;
   re-read `git show HEAD:<path>` and rerun. `agent-commit.sh check` must exit 0 before a batch
   closes (T-781).
+- **Write your `docs/TODO.md` line AT COMMIT TIME, rebuilt on `git show HEAD:docs/TODO.md`** (T-679,
+  T-1783). Not merely sequencing: that file is staged whole-file, so a sibling committing it will
+  **silently revert prose you wrote early** — `git status` clean, your text simply gone, and
+  *nothing in the declined-hunk ledger*. Measured 2026-09-30. There is no signal; only rewriting
+  immediately before the commit is safe.
 - **`.githooks/pre-commit` is not yours to arm** (T-780). Never run `git config core.hooksPath`, or
   teach a script to. Why, and why an armed hook still lets `agent-commit.sh` through:
   `docs/AGENTS_REFERENCE.md`, "Why the pre-commit hook ships inert".
