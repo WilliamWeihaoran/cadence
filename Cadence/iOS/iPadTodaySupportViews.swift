@@ -58,13 +58,30 @@ struct iPadTodayTaskHeader: View {
         CadenceTaskSurfaceOptions.options(for: .today)
     }
 
+    /// The same day as `eyebrow`, spelled short, for the middle rung of the header's narrowing
+    /// ladder — "Tue, Sep 29" against "Tuesday, September 29".
+    ///
+    /// **Derived here rather than taken from the caller, and that is a lease boundary rather than a
+    /// design (T-1702).** `iOSTodayView.todayTaskColumn` builds `eyebrow` as
+    /// `DateFormatters.longDate.string(from: Date())`, so the two spellings read `Date()` a few
+    /// microseconds apart in the same body evaluation instead of sharing one value; the file that
+    /// would let them share it was under another agent's lease when this landed. [[T-1880]] takes
+    /// the day itself as one parameter and deletes this. The failure mode it leaves open is one
+    /// frame straddling midnight, which the call site already has on its own.
+    private var compactEyebrow: String {
+        DateFormatters.compactLongDate.string(from: Date())
+    }
+
     var body: some View {
         iOSPageHeader(
             role: .pane,
             eyebrow: eyebrow,
             // The half that gives way: `iOSPageHeader` gives the eyebrow proper the layout
-            // priority, so a squeezed header truncates "· 3 timed" before "SUNDAY, AUGUST 17".
+            // priority, so a squeezed header narrows "· 3 timed" before "SUNDAY, AUGUST 17" —
+            // and since T-1702 it narrows rather than truncating, because the summary this line
+            // carries is the only place on the page the day's counts appear.
             eyebrowDetail: summary.line,
+            eyebrowCompact: compactEyebrow,
             title: title,
             color: Theme.amber,
             count: summary.activeCount

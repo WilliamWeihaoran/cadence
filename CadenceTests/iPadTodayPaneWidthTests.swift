@@ -1,4 +1,6 @@
+import AppKit
 import CoreGraphics
+import CoreText
 import Foundation
 import Testing
 @testable import Cadence
@@ -35,7 +37,7 @@ struct iPadTodayPaneWidthTests {
     /// The unlovely ones are the boundaries of the two bands where `available` is the binding clamp
     /// and the missing divider therefore showed: [761, 841) and [900, 928). 840 and 927 are the last
     /// widths that overflowed; 841 and 928 are the first that did not.
-    private static let panes: [CGFloat] = [
+    fileprivate static let panes: [CGFloat] = [
         761,   // twoPaneMinimumWidth — the narrowest pane this layout renders in at all
         795,   // 2/3 Split View, landscape, sidebar folded
         834,   // iPad Pro 11" portrait, full screen, sidebar folded
@@ -344,5 +346,336 @@ struct iPadTodayRailSurfaceTests {
             notes.contains("if showsHeaderTemplateMenu, let coreTab = activeTab.coreTab, let note = selectedNote {"),
             "the header template menu changed gate; recheck it against the editor's format row"
         )
+    }
+}
+
+/// **T-1702: what the Today header's eyebrow line is actually given, against what it is asked to
+/// draw.**
+///
+/// The owner photographed an iPad Pro 11" in portrait (834×1210) with the shell sidebar folded.
+/// Unfolded the pane is 646pt, Today is one full-width column, and the header reads `TUESDAY,
+/// SEPTEMBER 29 · 3 timed · 1 done` in full. Folded, the detail gets the whole 834pt window, the
+/// layout turns two-pane, and the same header clips to `TUESDAY, SEPTEMBER 29 · 3 ti…` — dropping
+/// the only statement of the day's counts anywhere on the page.
+///
+/// **The budget is not the pane, and it is not the column either.** `iOSPageHeader` at
+/// `role: .pane` is one `HStack`: title column, `Spacer(minLength: 8)`, count capsule, then
+/// `trailing()` carrying `.layoutPriority(1)` — on Today, `iOSTaskViewOptionsBar`'s two chips. The
+/// eyebrow receives what is left *after* those have taken their intrinsic widths. At 834 the column
+/// is 513pt and the eyebrow line gets about 160 of it, against roughly 250 for the full line. So a
+/// width-driven rule in `CadenceTodayLayoutSupport` would have been keyed on the wrong number;
+/// `CadencePageHeaderEyebrow` takes no width at all and lets `ViewThatFits` do the measuring.
+///
+/// **What is asserted is a relation, never a point figure** (T-1279/T-1296: CI runs Xcode 26 and
+/// this Mac 27.0, and system font advances are not a constant to pin). Every term is read from the
+/// metrics types — `CadencePageHeaderMetrics`, `SectionEyebrowLabel`, `CadenceTodayLayoutSupport`,
+/// `CadenceTaskSortMode` — except the three figures `iOSTaskViewOptionsBar` keeps `private` behind
+/// `#if os(iOS)`, which are restated here and pinned against that source below.
+@MainActor
+struct iPadTodayHeaderEyebrowBudgetTests {
+
+    // MARK: - The three restated figures
+
+    /// `iOSTaskViewOptionsBar.fontSize`. Private, and behind `#if os(iOS)`, so this target cannot
+    /// read it; `theRestatedOptionsBarFiguresStillMatchTheSource` is what stops the copy drifting.
+    private static let optionsChipFontSize: CGFloat = 13
+    /// `iOSTaskViewOptionsBar.horizontalPadding`, per side.
+    private static let optionsChipHorizontalPadding: CGFloat = 12
+    /// The bar's own `HStack(spacing:)` between its two chips.
+    private static let optionsChipSpacing: CGFloat = 10
+    /// The gap SwiftUI's own `Label` leaves between its icon and its title. Not a Cadence figure
+    /// and not readable from one, so it is an allowance — deliberately generous, since overstating
+    /// the trailing controls understates the budget and can only make the relation below harder.
+    private static let labelIconGap: CGFloat = 6
+
+    // MARK: - Measurement
+
+    private static func width(_ text: String, size: CGFloat, weight: NSFont.Weight, kerning: CGFloat = 0) -> CGFloat {
+        var attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: weight)]
+        if kerning != 0 { attributes[.kern] = kerning }
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+        return CTLineGetTypographicBounds(line, nil, nil, nil)
+    }
+
+    /// `SectionEyebrowLabel` uppercases its own text and tracks it by the one ratio.
+    private static func eyebrowWidth(_ text: String, _ metrics: CadencePageHeaderMetrics) -> CGFloat {
+        width(
+            text.uppercased(),
+            size: metrics.eyebrowSize,
+            weight: .semibold,
+            kerning: metrics.eyebrowSize * SectionEyebrowLabel.kerningRatio
+        )
+    }
+
+    /// The detail clause, drawn as the view draws it — with the middle dot the view prepends.
+    private static func detailWidth(_ text: String, _ metrics: CadencePageHeaderMetrics) -> CGFloat {
+        width("· \(text)", size: metrics.eyebrowSize, weight: .medium)
+    }
+
+    /// The widest run a wrapping `Text` cannot break, which is what the stacked rung actually needs.
+    private static func longestDetailRun(_ text: String, _ metrics: CadencePageHeaderMetrics) -> CGFloat {
+        ("· " + text)
+            .split(separator: " ")
+            .map { width(String($0), size: metrics.eyebrowSize, weight: .medium) }
+            .max() ?? 0
+    }
+
+    private static func countCapsuleWidth(_ count: Int, _ metrics: CadencePageHeaderMetrics) -> CGFloat {
+        width("\(count)", size: metrics.countSize, weight: .bold) + metrics.countPaddingH * 2
+    }
+
+    /// `iOSTaskViewOptionsBar(spreads: false)`: a sort chip carrying a `Label`, then the completed
+    /// chip. The sort title is whichever the user last chose, so the widest one is the honest term.
+    private static func optionsBarWidth(completedCount: Int) -> CGFloat {
+        let widestSortTitle = CadenceTaskSortMode.allCases
+            .map { width($0.title, size: optionsChipFontSize, weight: .semibold) }
+            .max() ?? 0
+        let glyph = NSImage(systemSymbolName: "arrow.up.arrow.down", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: optionsChipFontSize, weight: .semibold))?
+            .size.width ?? 0
+        let sortChip = widestSortTitle + glyph + labelIconGap + optionsChipHorizontalPadding * 2
+        let completedLabel = completedCount > 0 ? "Completed \(completedCount)" : "Completed"
+        let completedChip = width(completedLabel, size: optionsChipFontSize, weight: .semibold)
+            + optionsChipHorizontalPadding * 2
+        return sortChip + optionsChipSpacing + completedChip
+    }
+
+    /// Everything the `.pane` header's row spends before the eyebrow is measured, subtracted from
+    /// the column `CadenceTodayLayoutSupport` hands it. Four children, so three `rowSpacing` gaps,
+    /// plus the `Spacer`'s own declared minimum.
+    private static func eyebrowBudget(paneWidth: CGFloat, summary: CadenceTodaySummary) -> CGFloat {
+        let metrics = CadencePageHeaderMetrics.metrics(role: .pane, isRegularWidth: true)
+        return CadenceTodayLayoutSupport.taskPaneWidth(forPaneWidth: paneWidth)
+            - metrics.horizontalPadding * 2
+            - metrics.rowSpacing * 3
+            - 8
+            - countCapsuleWidth(summary.activeCount, metrics)
+            - optionsBarWidth(completedCount: summary.completedCount)
+    }
+
+    private static func rungWidth(_ rung: CadencePageHeaderEyebrowCandidate, _ metrics: CadencePageHeaderMetrics) -> CGFloat {
+        let eyebrow = rung.eyebrow.map { eyebrowWidth($0, metrics) } ?? 0
+        guard let detail = rung.detail else { return eyebrow }
+        if rung.stacks {
+            // The stacked rung is the one `ViewThatFits` renders whether it fits or not, so its
+            // detail wraps rather than clipping: what it needs is the widest unbreakable run.
+            return max(eyebrow, longestDetailRun(detail, metrics))
+        }
+        return eyebrow + CadencePageHeaderEyebrow.spacing + detailWidth(detail, metrics)
+    }
+
+    // MARK: - The content the relation is asserted over
+
+    /// The longest spelling of a weekday-plus-date in a year, in both forms. The eyebrow is today's
+    /// date and nobody chooses it, so the guard takes the worst day rather than a convenient one.
+    private static func worstDates() -> (long: String, compact: String) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        let metrics = CadencePageHeaderMetrics.metrics(role: .pane, isRegularWidth: true)
+        var start = DateComponents()
+        start.year = 2_026
+        start.month = 1
+        start.day = 1
+        guard let first = calendar.date(from: start) else { return ("Wednesday, September 30", "Wed, Sep 30") }
+        var long = ("", CGFloat(0))
+        var compact = ("", CGFloat(0))
+        for offset in 0..<365 {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: first) else { continue }
+            let l = DateFormatters.longDate.string(from: day)
+            let c = DateFormatters.compactLongDate.string(from: day)
+            if eyebrowWidth(l, metrics) > long.1 { long = (l, eyebrowWidth(l, metrics)) }
+            if eyebrowWidth(c, metrics) > compact.1 { compact = (c, eyebrowWidth(c, metrics)) }
+        }
+        return (long.0, compact.0)
+    }
+
+    /// Days the header has to be able to state. The first is the one the owner photographed; the
+    /// rest carry the two-digit counts that make the line longest and the capsule and chip beside
+    /// it wider at the same time.
+    private static let summaries: [CadenceTodaySummary] = [
+        CadenceTodaySummary(activeCount: 3, timedCount: 3, completedCount: 1),
+        CadenceTodaySummary(activeCount: 12, timedCount: 12, completedCount: 34),
+        CadenceTodaySummary(activeCount: 24, timedCount: 24, completedCount: 18),
+        CadenceTodaySummary(activeCount: 7, timedCount: 0, completedCount: 0),
+        CadenceTodaySummary(activeCount: 0, timedCount: 0, completedCount: 0),
+    ]
+
+    // MARK: - The guard
+
+    /// **The relation.** At every pane width the two-pane layout renders at, some rung of the
+    /// header's ladder fits the width the row actually leaves the eyebrow — so the day and its
+    /// summary are both stated, in one spelling or another, rather than clipped.
+    ///
+    /// Red before the `ViewThatFits` landed: with only the full single-line spelling to offer, the
+    /// ladder's every rung was 250-odd points against a budget of about 160 at 834.
+    @Test
+    func everyTwoPaneWidthCanStateTheDayAndItsSummaryInFull() {
+        let metrics = CadencePageHeaderMetrics.metrics(role: .pane, isRegularWidth: true)
+        let dates = Self.worstDates()
+        for summary in Self.summaries {
+            let ladder = CadencePageHeaderEyebrow.ladder(
+                eyebrow: dates.long,
+                compactEyebrow: dates.compact,
+                detail: summary.line
+            )
+            for pane in iPadTodayPaneWidthTests.panes {
+                let budget = Self.eyebrowBudget(paneWidth: pane, summary: summary)
+                let best = ladder.rungs.map { Self.rungWidth($0, metrics) }.min() ?? .infinity
+                #expect(
+                    best <= budget,
+                    """
+                    pane \(pane): the narrowest spelling of "\(dates.long) · \(summary.line ?? "")" \
+                    needs \(best) and the row leaves \(budget)
+                    """
+                )
+            }
+        }
+    }
+
+    /// **Non-vacuity, and the defect itself.** The relation above is worth nothing if the full
+    /// single-line spelling already fitted everywhere — it would then pass over a ladder that never
+    /// narrows. It does not fit in the band the owner photographed, and it does fit once the pane
+    /// is wide enough, which is the other half: the header must not abbreviate a date it has room
+    /// to spell.
+    @Test
+    func theFullSpellingOverflowsTheFoldedPortraitBandAndNotTheWideOne() {
+        let metrics = CadencePageHeaderMetrics.metrics(role: .pane, isRegularWidth: true)
+        let dates = Self.worstDates()
+        let reported = CadenceTodaySummary(activeCount: 3, timedCount: 3, completedCount: 1)
+        let ladder = CadencePageHeaderEyebrow.ladder(
+            eyebrow: dates.long,
+            compactEyebrow: dates.compact,
+            detail: reported.line
+        )
+        let widest = Self.rungWidth(ladder.widest, metrics)
+        let middle = Self.rungWidth(ladder.middle, metrics)
+
+        // 834pt of pane, sidebar folded — the device and orientation in the report.
+        let narrowBand = Self.eyebrowBudget(paneWidth: 834, summary: reported)
+        #expect(widest > narrowBand, "the full line fits at 834 and there is nothing to fix")
+        #expect(middle <= narrowBand, "the middle rung does not answer the width it was written for")
+
+        // 1210pt — the same device in landscape with the sidebar folded, the widest pane there is.
+        let wideBand = Self.eyebrowBudget(paneWidth: 1_210, summary: reported)
+        #expect(widest <= wideBand, "the header would abbreviate a date it has room to spell")
+    }
+
+    /// The ladder narrows monotonically. A middle rung wider than the one above it would make
+    /// `ViewThatFits` skip it, which is the shape [[T-1492]] found in `CadenceQuickDatePopover`.
+    @Test
+    func eachRungAsksForNoMoreThanTheOneAboveIt() {
+        let metrics = CadencePageHeaderMetrics.metrics(role: .pane, isRegularWidth: true)
+        let dates = Self.worstDates()
+        for summary in Self.summaries {
+            let ladder = CadencePageHeaderEyebrow.ladder(
+                eyebrow: dates.long,
+                compactEyebrow: dates.compact,
+                detail: summary.line
+            )
+            let widths = ladder.rungs.map { Self.rungWidth($0, metrics) }
+            #expect(widths[1] <= widths[0], "the middle rung is wider than the full spelling")
+            #expect(widths[2] <= widths[1], "the stacked rung is wider than the middle one")
+        }
+    }
+
+    /// **No rung drops the day's counts.** The summary appears nowhere else on the page, so the
+    /// ladder may respell it and may move it onto its own line; it may not give it up. This is the
+    /// assertion that stops a later "fix" from simply deleting the clause at narrow widths.
+    @Test
+    func noRungOfTheLadderGivesUpTheSummary() {
+        let ladder = CadencePageHeaderEyebrow.ladder(
+            eyebrow: "Tuesday, September 29",
+            compactEyebrow: "Tue, Sep 29",
+            detail: "3 timed · 1 done"
+        )
+        #expect(ladder.rungs.count == 3)
+        for rung in ladder.rungs {
+            #expect(rung.detail == "3 timed · 1 done")
+            #expect(rung.eyebrow != nil)
+        }
+        #expect(ladder.widest.eyebrow == "Tuesday, September 29")
+        #expect(ladder.middle.eyebrow == "Tue, Sep 29")
+        #expect(ladder.narrowest.eyebrow == "Tue, Sep 29")
+        #expect(ladder.widest.stacks == false)
+        #expect(ladder.middle.stacks == false)
+        #expect(ladder.narrowest.stacks, "the fallback rung clips instead of wrapping")
+    }
+
+    /// A header with no second spelling — "SETTINGS" does not abbreviate — still gets three rungs,
+    /// because a `ViewThatFits` builder with a conditional candidate produces an **empty** one, and
+    /// an empty candidate fits every width and draws nothing.
+    @Test
+    func aHeaderWithoutAnAbbreviationStillGetsThreeRungs() {
+        let ladder = CadencePageHeaderEyebrow.ladder(eyebrow: "Settings", compactEyebrow: nil, detail: nil)
+        #expect(ladder.rungs.count == 3)
+        for rung in ladder.rungs {
+            #expect(rung.eyebrow == "Settings")
+            #expect(rung.detail == nil)
+        }
+        // Whitespace is absence said twice, on both halves.
+        let blank = CadencePageHeaderEyebrow.ladder(eyebrow: "Settings", compactEyebrow: "   ", detail: "  ")
+        #expect(blank.middle.eyebrow == "Settings")
+        #expect(blank.widest.detail == nil)
+    }
+
+    /// The abbreviated spelling is `longDate`'s, and the two must name the same day.
+    @Test
+    func theCompactFormatterIsTheLongOneAbbreviated() {
+        var components = DateComponents()
+        components.year = 2_026
+        components.month = 9
+        components.day = 29
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        let day = calendar.date(from: components)
+        #expect(day != nil)
+        guard let day else { return }
+        #expect(DateFormatters.longDate.string(from: day) == "Tuesday, September 29")
+        #expect(DateFormatters.compactLongDate.string(from: day) == "Tue, Sep 29")
+        #expect(DateFormatters.compactLongDate.locale.identifier == "en_US_POSIX")
+    }
+
+    // MARK: - Non-vacuity of the restated figures
+
+    /// The three `iOSTaskViewOptionsBar` figures the budget restates, checked against the file that
+    /// declares them. This target builds for macOS and the bar is behind `#if os(iOS)`, so a scan
+    /// is the only reach there is — and without it the budget above would be three numbers nobody
+    /// would notice going stale.
+    @Test
+    func theRestatedOptionsBarFiguresStillMatchTheSource() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift")
+        #expect(source.contains("struct iOSTaskViewOptionsBar: View {"), "non-vacuity: wrong file read")
+        #expect(
+            source.contains("private static let fontSize: CGFloat = \(Int(Self.optionsChipFontSize))"),
+            "iOSTaskViewOptionsBar.fontSize moved off \(Self.optionsChipFontSize)"
+        )
+        #expect(
+            source.contains("private static let horizontalPadding: CGFloat = \(Int(Self.optionsChipHorizontalPadding))"),
+            "iOSTaskViewOptionsBar.horizontalPadding moved off \(Self.optionsChipHorizontalPadding)"
+        )
+        #expect(
+            source.contains("AnyLayout(HStackLayout(spacing: \(Int(Self.optionsChipSpacing))))"),
+            "the options bar's chip spacing moved off \(Self.optionsChipSpacing)"
+        )
+        // And the half of the budget that is a layout fact rather than a figure: the trailing
+        // control takes its intrinsic width before the eyebrow is measured at all.
+        let header = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureComponents.swift")
+        #expect(header.contains(".layoutPriority(1)"))
+        #expect(header.contains("Spacer(minLength: 8)"))
+        #expect(header.contains("ViewThatFits(in: .horizontal)"), "the eyebrow ladder is gone (T-1702)")
+    }
+
+    /// The measuring itself has to produce numbers, or every relation above is `0 <= something`.
+    @Test
+    func theTextMeasurementActuallyMeasures() {
+        let metrics = CadencePageHeaderMetrics.metrics(role: .pane, isRegularWidth: true)
+        let long = Self.eyebrowWidth("Tuesday, September 29", metrics)
+        let short = Self.eyebrowWidth("Tue, Sep 29", metrics)
+        #expect(long > short)
+        #expect(short > 0)
+        #expect(Self.detailWidth("3 timed · 1 done", metrics) > 0)
+        #expect(Self.optionsBarWidth(completedCount: 1) > Self.optionsBarWidth(completedCount: 0))
+        #expect(Self.eyebrowBudget(paneWidth: 1_210, summary: Self.summaries[0])
+            > Self.eyebrowBudget(paneWidth: 834, summary: Self.summaries[0]))
     }
 }

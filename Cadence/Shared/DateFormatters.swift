@@ -95,6 +95,29 @@ nonisolated enum DateFormatters {
         return f
     }()
 
+    /// `EEE, MMM d` — "Tue, Sep 29". **`longDate`'s abbreviated spelling, and only that.**
+    ///
+    /// It exists because a page header's eyebrow has to be able to say the same day in less room
+    /// (T-1702). On an iPad Pro 11" in portrait with the shell sidebar folded, Today is two panes
+    /// and its task column is 513pt — of which the eyebrow line receives about 160 after the count
+    /// capsule and the sort/completed bar beside it have taken their intrinsic widths. "TUESDAY,
+    /// SEPTEMBER 29 · 3 timed · 1 done" needs about 250, so the owner saw the day's summary clipped
+    /// to "· 3 ti…" — the one place on the page that summary appears.
+    ///
+    /// **There was no abbreviated weekday-plus-date formatter before this**, which is why the
+    /// header had nothing narrower to fall back to: the list was `EEEE, MMMM d`, `MMM d`, `EEE`,
+    /// `d` and `MMM`, so the day and the date could each be abbreviated alone but not together.
+    ///
+    /// Locale-pinned for this file's standing reason, and specifically so the pair cannot diverge:
+    /// a header that read "Tuesday, September 29" at one width and "mar., 29 sept." at another
+    /// would be two dates rather than two spellings of one.
+    static let compactLongDate: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEE, MMM d"
+        return f
+    }()
+
     /// `MMMM yyyy` — "March 2026"
     ///
     /// Locale-pinned like `ymd`, and for the same reason this repo pins every fixed-format

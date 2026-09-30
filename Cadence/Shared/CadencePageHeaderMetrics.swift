@@ -192,3 +192,94 @@ nonisolated struct CadencePageHeaderMetrics: Equatable, Sendable {
         }
     }
 }
+
+/// One drawable spelling of a page header's eyebrow line.
+///
+/// See `CadencePageHeaderEyebrow.ladder(eyebrow:compactEyebrow:detail:)` for why there are three of
+/// these and what each is for. Nothing here draws; the view builds a row from it.
+nonisolated struct CadencePageHeaderEyebrowCandidate: Equatable, Sendable {
+    /// The uppercase kerned label. `nil` only where the header states no eyebrow at all.
+    let eyebrow: String?
+    /// The sentence-case clause after the middle dot, empties already normalised to `nil`.
+    let detail: String?
+    /// `true` where the detail sits on its own line under the eyebrow rather than beside it, and
+    /// may wrap there rather than truncating.
+    let stacks: Bool
+}
+
+/// The three spellings a `.pane` header's eyebrow line narrows through, widest first.
+///
+/// **The middle rung is the fix, and that is T-1492's lesson stated in a type.** A `ViewThatFits`
+/// whose candidates are only the two extremes chooses correctly and still renders badly: it picks
+/// the wide one until it cannot, then drops straight to the one that has given everything up.
+/// `CadenceQuickDatePopover` learned this and `TasksPanelComponents.metadataStrip` was written with
+/// three from the start. Naming the rungs rather than indexing an array is so that a later edit
+/// cannot quietly delete the middle one.
+nonisolated struct CadencePageHeaderEyebrowLadder: Equatable, Sendable {
+    /// The full spelling of both halves, on one line. What every header drew before T-1702.
+    let widest: CadencePageHeaderEyebrowCandidate
+    /// The abbreviated eyebrow with the detail **kept**, still on one line.
+    let middle: CadencePageHeaderEyebrowCandidate
+    /// The abbreviated eyebrow with the detail moved under it. The floor, and the rung that must
+    /// never lose a character — a `ViewThatFits` renders its last candidate whether it fits or not,
+    /// so this is the one that has to be able to wrap instead of clip.
+    let narrowest: CadencePageHeaderEyebrowCandidate
+
+    var rungs: [CadencePageHeaderEyebrowCandidate] { [widest, middle, narrowest] }
+}
+
+/// How a page header's eyebrow line gives way when the row cannot pay for it.
+///
+/// **The budget is not the column, which is the finding this type exists to record (T-1702).** An
+/// `iOSPageHeader` at `role: .pane` is one `HStack` — title column, `Spacer(minLength: 8)`, count
+/// capsule, then the trailing control at `.layoutPriority(1)` — so the eyebrow receives what is
+/// left *after two chips have taken their intrinsic width*, not the pane and not the column. On the
+/// 834pt folded-sidebar iPad the column is 513pt and the eyebrow line gets roughly 160 of it. Any
+/// rule keyed on the pane width is therefore keyed on the wrong number, which is why this lives
+/// beside the header's own metrics rather than in `CadenceTodayLayoutSupport`, and why it is not on
+/// `CadenceRegularPaneLayout`'s register: it takes no width at all.
+nonisolated enum CadencePageHeaderEyebrow {
+    /// The gap between the eyebrow and its detail — beside it on the two one-line rungs, under it
+    /// on the stacked one. One figure so the two directions cannot drift apart.
+    static let spacing: CGFloat = 6
+
+    /// Empty and whitespace-only strings are the same thing as absent, said twice.
+    static func normalized(_ value: String?) -> String? {
+        guard let value, !value.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return value
+    }
+
+    /// The ladder for one header's content.
+    ///
+    /// `compactEyebrow` is optional because most headers have no second spelling of their eyebrow —
+    /// "SETTINGS" does not abbreviate. Where it is absent, or identical to the full one, the middle
+    /// rung collapses onto the widest and the ladder still has three rungs: a `ViewThatFits`
+    /// builder needs a fixed number of candidates, and an `if` inside one produces an *empty*
+    /// candidate that fits everything and renders nothing.
+    static func ladder(
+        eyebrow: String?,
+        compactEyebrow: String?,
+        detail: String?
+    ) -> CadencePageHeaderEyebrowLadder {
+        let long = normalized(eyebrow)
+        let clause = normalized(detail)
+        let short = normalized(compactEyebrow).flatMap { $0 == long ? nil : $0 } ?? long
+        return CadencePageHeaderEyebrowLadder(
+            widest: CadencePageHeaderEyebrowCandidate(eyebrow: long, detail: clause, stacks: false),
+            middle: CadencePageHeaderEyebrowCandidate(eyebrow: short, detail: clause, stacks: false),
+            narrowest: CadencePageHeaderEyebrowCandidate(eyebrow: short, detail: clause, stacks: true)
+        )
+    }
+
+    /// The spelling a header already stacked for another reason draws — an accessibility text size,
+    /// where `iOSPageHeader.stacksControls` has taken the whole row vertical. Nothing is abbreviated
+    /// there: the row has given itself the height, so the full eyebrow fits and the narrowing
+    /// ladder above is not consulted at all.
+    static func stacked(eyebrow: String?, detail: String?) -> CadencePageHeaderEyebrowCandidate {
+        CadencePageHeaderEyebrowCandidate(
+            eyebrow: normalized(eyebrow),
+            detail: normalized(detail),
+            stacks: true
+        )
+    }
+}

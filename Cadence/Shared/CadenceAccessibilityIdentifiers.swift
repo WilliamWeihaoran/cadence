@@ -129,4 +129,13 @@ nonisolated enum CadenceAccessibilityIdentifiers {
     /// nothing at a width where the column is not drawn, and "the picture is missing" and "the
     /// column is missing" are different findings.
     static let todayNotesPane = "today.notes.pane"
+
+    /// A page header's eyebrow line — the uppercase date and the clause after it.
+    ///
+    /// Added for [[T-1702]], and for `taskRowTitle(title:)`'s reason one ticket further along: the
+    /// defect there *is* a truncated string, so the element cannot be looked up by the text it
+    /// draws. "TUESDAY, SEPTEMBER 29 · 3 ti…" is not findable by either half of what it was asked
+    /// to say. There is no width in the name because this is one row per screen and the reading a
+    /// test wants from it is exactly that width.
+    static let pageHeaderEyebrow = "page.header.eyebrow"
 }

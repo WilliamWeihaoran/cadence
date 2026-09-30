@@ -257,8 +257,18 @@ struct iOSPageHeader<Trailing: View>: View {
     var eyebrow: String? = nil
     /// A second, sentence-case clause after the eyebrow, separated by a middle dot. Today's day
     /// summary is the one caller: it gives way first when the row is squeezed, so a narrow task
-    /// column truncates "· 3 timed" rather than the date.
+    /// column narrows "· 3 timed" rather than the date.
     var eyebrowDetail: String? = nil
+    /// The same eyebrow, spelled short — "Tue, Sep 29" for "Tuesday, September 29".
+    ///
+    /// **It is what stops the row losing content rather than a nicety (T-1702).** The owner
+    /// photographed an iPad Pro 11" in portrait with the sidebar folded, where Today is two panes
+    /// and this header's column is 513pt: the eyebrow line gets what is left after the count
+    /// capsule and `iOSTaskViewOptionsBar` have taken theirs, about 160pt, and the full line needs
+    /// about 250 — so the day's summary, which appears nowhere else on the page, read "· 3 ti…".
+    /// Supplying this gives `eyebrowLine` a middle rung to stand on. Headers whose eyebrow does not
+    /// abbreviate leave it `nil` and keep exactly the behaviour they had.
+    var eyebrowCompact: String? = nil
     let title: String
     /// The header's accent. **The count capsule is its only renderer** now that the identity tile
     /// is gone — and it renders it at all only because this parameter was otherwise about to become
@@ -342,22 +352,75 @@ struct iOSPageHeader<Trailing: View>: View {
         }
     }
 
+    /// **The header's one line of metadata, and the one thing on this row that was losing
+    /// characters (T-1702).**
+    ///
+    /// The row around it spends most of its width before this is asked to draw: two 20pt gutters,
+    /// three `rowSpacing` gaps, the count capsule, and `trailing()` at `.layoutPriority(1)` — which
+    /// on Today is a two-chip options bar. So the budget here is neither the pane nor the column,
+    /// and a rule keyed on either would be keyed on the wrong number. What is keyed on the right
+    /// one is the container that measures: `ViewThatFits` proposes each rung the width that is
+    /// actually left and takes the first that fits.
+    ///
+    /// The ladder is three rungs deep for `CadenceQuickDatePopover`'s reason ([[T-1492]]) — two
+    /// extremes choose correctly and still render badly — and the last rung stacks rather than
+    /// dropping the detail, because `ViewThatFits` renders its final candidate whether it fits or
+    /// not and a clipped fragment is the defect, not the fallback.
+    ///
+    /// Tuned at the **default** text size on purpose: at an accessibility size `stacksControls` has
+    /// already taken the whole row vertical and freed the horizontal room, so that arm keeps the
+    /// full spelling and is not narrowed here.
     private func eyebrowLine(_ metrics: CadencePageHeaderMetrics) -> some View {
-        let layout = stacksControls
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
-            : AnyLayout(HStackLayout(spacing: 6))
-        return layout {
-            if let eyebrow {
+        Group {
+            if stacksControls {
+                eyebrowRow(
+                    CadencePageHeaderEyebrow.stacked(eyebrow: eyebrow, detail: eyebrowDetail),
+                    metrics,
+                    clips: false
+                )
+            } else {
+                let ladder = CadencePageHeaderEyebrow.ladder(
+                    eyebrow: eyebrow,
+                    compactEyebrow: eyebrowCompact,
+                    detail: eyebrowDetail
+                )
+                ViewThatFits(in: .horizontal) {
+                    eyebrowRow(ladder.widest, metrics, clips: true)
+                        .fixedSize(horizontal: true, vertical: false)
+                    eyebrowRow(ladder.middle, metrics, clips: true)
+                        .fixedSize(horizontal: true, vertical: false)
+                    // No `fixedSize`: this is the rung `ViewThatFits` falls back to, so it has to be
+                    // allowed to use the width it is given rather than overflow it.
+                    eyebrowRow(ladder.narrowest, metrics, clips: false)
+                }
+            }
+        }
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.pageHeaderEyebrow)
+    }
+
+    /// One rung, drawn. `clips` is false on the rungs that are allowed to wrap instead of
+    /// truncating — the stacked fallback, and the accessibility arm that was already wrapping.
+    @ViewBuilder
+    private func eyebrowRow(
+        _ candidate: CadencePageHeaderEyebrowCandidate,
+        _ metrics: CadencePageHeaderMetrics,
+        clips: Bool
+    ) -> some View {
+        let layout = candidate.stacks
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: CadencePageHeaderEyebrow.spacing))
+            : AnyLayout(HStackLayout(spacing: CadencePageHeaderEyebrow.spacing))
+        layout {
+            if let eyebrow = candidate.eyebrow {
                 SectionEyebrowLabel(text: eyebrow)
                     .lineLimit(stacksControls ? nil : 1)
                     .layoutPriority(1)
             }
 
-            if let eyebrowDetail, !eyebrowDetail.isEmpty {
+            if let eyebrowDetail = candidate.detail {
                 Text("· \(eyebrowDetail)")
                     .cadenceFont(.sectionLabel, base: metrics.eyebrowSize, weight: .medium)
                     .foregroundStyle(Theme.dim)
-                    .lineLimit(stacksControls ? nil : 1)
+                    .lineLimit(clips ? 1 : nil)
             }
         }
     }
@@ -368,6 +431,7 @@ extension iOSPageHeader where Trailing == EmptyView {
         role: CadencePageHeaderRole = .page,
         eyebrow: String? = nil,
         eyebrowDetail: String? = nil,
+        eyebrowCompact: String? = nil,
         title: String,
         color: Color = Theme.blue,
         count: Int? = nil,
@@ -378,6 +442,7 @@ extension iOSPageHeader where Trailing == EmptyView {
             role: role,
             eyebrow: eyebrow,
             eyebrowDetail: eyebrowDetail,
+            eyebrowCompact: eyebrowCompact,
             title: title,
             color: color,
             count: count,
