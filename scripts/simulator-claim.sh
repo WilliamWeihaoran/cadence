@@ -4,7 +4,14 @@
 # THE TWO STANDING DEVICES -- CLAIM THESE, NEVER CREATE OR DELETE ONE (T-1704).
 #
 #   iPhone  Cadence-iPhone15        CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0   393x852
-#   iPad    iPad Pro 11-inch (M5)   53EC6A90-D767-45DE-8EAC-53B8E1673B1D   834x1210 portrait
+#   iPad    Cadence-iPadPro11       630EA883-AA8E-4290-9E37-C616B58D40BD   834x1210 portrait
+#
+# The previous standing iPad, 53EC6A90-D767-45DE-8EAC-53B8E1673B1D, is BOOTED AND BLIND
+# (T-1882): `simctl io <udid> screenshot` answers "Device does not have a 'default' display
+# port", the MCP panel attaches to the right 834x1210 space and then fails with
+# mainScreenSurfaceNotFound, and a launch of a cleanly installed app produced nothing for
+# eleven minutes. Its SpringBoard crashed earlier the same day. It is left alone rather than
+# erased -- it was not created by this project -- and replaced above.
 #
 # Both match the target devices in docs/TODO.md's table. They are kept booted on purpose.
 #
@@ -163,6 +170,7 @@ say() { print -r -- "$@" }
 # re-finding. This is the enforcement.
 CADENCE_SIM_DENY_UDIDS=(
   7B642065-86FC-4987-8674-22066D32878C   # the owner's iPhone 17 Pro -- never
+  53EC6A90-D767-45DE-8EAC-53B8E1673B1D   # booted but blind, T-1882 -- replaced by Cadence-iPadPro11
 )
 # ADDITIVE only, and deliberately so: the selftest needs a denied device it can invent,
 # but a hook that could REMOVE an entry would be a way to hand out the owner's device by
@@ -184,7 +192,7 @@ booted_udids() {
 cadence_standing_udid() {
   case "$1" in
     iphone|iPhone|phone) print -r -- CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0 ;;
-    ipad|iPad|pad)       print -r -- 53EC6A90-D767-45DE-8EAC-53B8E1673B1D ;;
+    ipad|iPad|pad)       print -r -- 630EA883-AA8E-4290-9E37-C616B58D40BD ;;
     *) return 1 ;;
   esac
 }
@@ -489,6 +497,20 @@ case "$CMD" in
         prune_queue
       fi
       local -a udids; udids=($(booted_udids))
+      # T-1881: narrow to the requested device. T-1780 resolved $WANT and checked it against
+      # the deny list and then THREW IT AWAY -- the loop below was still `for u in $udids`, so
+      # `claim <id> <t> ipad` handed back whatever was free first. My own probe of it passed
+      # because an earlier probe still held the iPhone, so the loop skipped to the iPad for a
+      # reason that had nothing to do with the argument. A test that passes for the wrong
+      # reason is the thing this script keeps being audited for.
+      if [[ -n "$WANT" ]]; then
+        if (( ${udids[(Ie)$WANT]} )); then
+          udids=("$WANT")
+        else
+          print -r -- "simulator-claim: $WANT is not booted; booted and allowed: ${udids[*]:-<none>}" >&2
+          exit 2
+        fi
+      fi
       if (( ${#udids} == 0 )); then
         say "no booted simulator. This script will NOT create one."
         say "  $SELF boot --apply     # boots one stock device, under a lock"
@@ -653,12 +675,17 @@ case "$CMD" in
     # fixture with one device cannot reproduce it -- the allocator never had a choice to get
     # wrong. Listing the denied one first is the whole fixture.
     FAKE_DENIED_UDID="99999999-8888-7777-6666-555555555555"
+    # A second ALLOCATABLE fake, listed last (T-1881). Without it, "ask for device X and get X"
+    # is indistinguishable from "take the first free device" -- which is exactly how T-1780's
+    # selector shipped broken and how my own probe of it passed.
+    FAKE_SECOND_UDID="77777777-6666-5555-4444-333333333333"
     cat > "$root/fake-simctl" <<FAKESIMCTL
 #!/bin/zsh
 if [[ "\$1 \$2 \$3" == "list devices booted" ]]; then
   print -r -- "-- iOS 18.0 --"
   print -r -- "    iPhone SelftestOwner (${FAKE_DENIED_UDID}) (Booted)"
   print -r -- "    iPhone SelftestFake (${FAKE_UDID}) (Booted)"
+  print -r -- "    iPad SelftestSecond (${FAKE_SECOND_UDID}) (Booted)"
 fi
 exit 0
 FAKESIMCTL
@@ -748,7 +775,18 @@ FAKESIMCTL
     alloc_udid=$("$SELF" claim selftest-allow 5 2>/dev/null | sed -n 's/^UDID=//p')
     "$SELF" release selftest-allow >/dev/null 2>&1
     if (( deny_rc == 2 )) && [[ "$alloc_udid" == "$FAKE_UDID" ]]; then
-      print -r -- "PASS deny-list-enforced: the denied device leads the booted list and the allocator still answered $FAKE_UDID; asking for it by name exits 2"
+      # T-1881: and the selector must actually narrow. FAKE_SECOND is allocatable and is NOT
+      # what an unqualified claim returns, so "asked for it and got it" cannot be satisfied by
+      # taking the first free device.
+      sel_udid=$("$SELF" claim selftest-select 5 "$FAKE_SECOND_UDID" 2>/dev/null | sed -n 's/^UDID=//p')
+      "$SELF" release selftest-select >/dev/null 2>&1
+      "$SELF" claim selftest-absent 5 "00000000-0000-0000-0000-000000000000" >/dev/null 2>&1
+      absent_rc=$?
+      if [[ "$sel_udid" == "$FAKE_SECOND_UDID" ]] && (( absent_rc == 2 )); then
+        print -r -- "PASS deny-list-enforced: the denied device leads the booted list and the allocator still answered $FAKE_UDID; asking for it by name exits 2; asking for $FAKE_SECOND_UDID returns it and not the first free device; a device that is not booted exits 2"
+      else
+        print -r -- "FAIL deny-list-enforced: selector returned '${sel_udid:-<nothing>}' (wanted $FAKE_SECOND_UDID, NOT $FAKE_UDID); not-booted rc=$absent_rc (wanted 2)"; (( fails++ )); fi
+    elif false; then :
     else
       print -r -- "FAIL deny-list-enforced: explicit request rc=$deny_rc (wanted 2); unqualified claim answered '${alloc_udid:-<nothing>}' (wanted $FAKE_UDID, NOT $FAKE_DENIED_UDID)"; (( fails++ ))
     fi
@@ -770,6 +808,11 @@ FAKESIMCTL
     print -r -- '#!/bin/zsh
 exit 0' > "$root/blindps"; chmod +x "$root/blindps"
     "$SELF" claim holder3 30 >/dev/null || { print -r -- "selftest: could not retake the fake device (blind-ps)"; exit 2; }
+    # T-1881 added a SECOND allocatable fake so the selector property has something to
+    # discriminate against. This property needs waiters to actually QUEUE, which they only do
+    # when no device is free -- so hold that one too, or the waiters get served and the fixture
+    # reports "queue has 0" instead of testing anything.
+    "$SELF" claim holder3b 30 "$FAKE_SECOND_UDID" >/dev/null || { print -r -- "selftest: could not hold the second fake device"; exit 2; }
     for w in q1 q2 q3; do waiter "$w"; sleep 0.4; done
     for _ in {1..20}; do (( $(queue_names | wc -l) >= 3 )) && break; sleep 0.5; done
     before_q=$(queue_names | wc -l | tr -d ' ')
@@ -794,6 +837,7 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
       print -r -- "FAIL cannot-tell-keeps-queue: fixture did not set up (queue has $before_q)"; (( fails++ ))
     fi
     "$SELF" release holder3 >/dev/null
+    "$SELF" release holder3b >/dev/null
     cleanup_kids; rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"
 
     # 4. A `pgrep` THAT CANNOT ANSWER MUST NOT RECLAIM SOMEBODY ELSE'S DEVICE (T-1384). Mode 3 is
