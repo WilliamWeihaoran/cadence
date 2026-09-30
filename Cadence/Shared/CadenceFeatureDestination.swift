@@ -118,6 +118,13 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         }
     }
 
+    /// **What you go here to do.** The standing gloss under a destination's name, on the iPhone
+    /// More list and on a search row's second line.
+    ///
+    /// It is the pair to `searchSummary`, which names what is *in* the page rather than what the
+    /// page is for; the two are drawn on consecutive lines of the same search row, so a
+    /// destination that answers both questions with one sentence prints it twice.
+    /// `CadenceFeatureDestinationCopyTests` holds them apart.
     var subtitle: String {
         switch self {
         case .today: return "Plan the current day"
@@ -134,16 +141,23 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         }
     }
 
+    /// **What is in here.** The third line of an iOS search Pages row, under `title` and
+    /// `subtitle`, and one of the fields the query is matched against.
+    ///
+    /// It names contents where the subtitle names the activity — "Run focused sessions" /
+    /// "Timer and current work" — or, where the subtitle is already a contents line, it is the
+    /// fuller enumeration: "Daily and permanent notes" / "Daily, weekly, and permanent notes".
+    /// Either way it has to say something the subtitle does not, because both are drawn.
     var searchSummary: String {
         switch self {
         case .today: return "Tasks, notes, and schedule"
         case .allTasks: return "Full task index"
         case .focus: return "Timer and current work"
-        case .inbox: return "Capture and triage"
+        case .inbox: return "Unsorted capture tasks"
         case .calendar: return "Timeline, month, and board"
         case .notes: return "Daily, weekly, and permanent notes"
-        case .lists: return "Areas, projects, and lists"
-        case .goals: return "Directions and milestones"
+        case .lists: return "Active and archived lists"
+        case .goals: return "Directions, milestones, and progress"
         case .habits: return "Repeating commitments"
         case .search: return "Find anything in Cadence"
         case .settings: return "Preferences and diagnostics"

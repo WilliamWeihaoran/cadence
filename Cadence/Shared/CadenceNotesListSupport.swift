@@ -904,25 +904,31 @@ enum NoteRowText {
         )
     }
 
-    /// First line with anything on it, or `nil` for a note that is still blank. Measured against
-    /// the body: previewing the raw content would show `---` for every tagged note.
+    /// The note's opening line, or `nil` for a note that is still blank.
+    ///
+    /// **Measured against the body**, not the raw content: previewing the raw content would show
+    /// `---` for every tagged note. `previewBody` is what holds that property — the frontmatter
+    /// never reaches the markdown reader — so this stays true of anything built on top of it.
+    ///
+    /// Markers are resolved rather than drawn: a note opening `## Level two` reads "Level two"
+    /// here, the same string search already showed for it (T-1700). It is the first **block**, not
+    /// the first line, so a paragraph that soft-wraps across three source lines fills the row
+    /// instead of stopping at the first newline — and it is the first block rather than the whole
+    /// document because two of this helper's four callers feed a row *title*.
     static func preview(_ note: Note) -> String? {
-        NotesListVisibility.previewBody(note)
-            .components(separatedBy: "\n")
-            .lazy
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first(where: { !$0.isEmpty })
+        CadenceMarkdownPresentationSupport.plainRowExcerpt(
+            from: NotesListVisibility.previewBody(note)
+        )
     }
 
     /// Preview for a note whose title is carried by a `# Heading` at the top of its own body.
     /// `preview` would return that heading, so the row would print the same string twice — once as
     /// its title and once as its detail.
     static func previewBelowTitleHeading(_ note: Note) -> String? {
-        NotesListVisibility.previewBody(note)
-            .components(separatedBy: "\n")
-            .lazy
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { !$0.isEmpty && $0 != "# \(note.displayTitle)" }
+        CadenceMarkdownPresentationSupport.plainRowExcerpt(
+            from: NotesListVisibility.previewBody(note),
+            belowTitleHeading: note.displayTitle
+        )
     }
 
     static func dayLabel(forDateKey key: String, fallback: Date) -> String {
