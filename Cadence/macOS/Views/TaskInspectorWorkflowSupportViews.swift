@@ -42,6 +42,7 @@ struct TaskInspectorRecurrenceControl: View {
         // Do/Due/Estimate rows sitting directly above it.
         .buttonStyle(.plain)
         .modifier(InspectorPickerHover(cornerRadius: TaskInspectorFieldRowMetrics.hoverCornerRadius))
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.inspectorPanelControl("Repeat"))
         .popover(isPresented: $showPicker, arrowEdge: childPlacement.arrowEdge) {
             TaskRecurrencePickerPanel(
                 rule: task.recurrenceRule,

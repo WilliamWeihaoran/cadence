@@ -25,20 +25,26 @@ import Testing
 /// the screenshot caught. Each opens a panel narrower than the same column, off a row with the
 /// same bounds, so they are one defect and take one rule.
 ///
-/// **[[T-1510]] added the inspector's two *header* controls**, which T-1480 deliberately left out
-/// because the same `.trailing` answer is right for one and wrong for the other: their anchors are
-/// a 28pt tile pinned to the column's leading edge and a chip pinned to its trailing one, and
-/// neither spans the column the way a field row does. The `MARK: - The header controls` section
-/// below is that half. It also **corrects the ticket's arithmetic**: T-1510 estimated the priority
-/// panel stranding "74pt per side" and the roller 24, which are `(column - panel) / 2` for a panel
-/// centred *in the column*. Neither anchor is centred in the column, so neither header picker was
-/// ever the two-sided `.sliced` case — each covers the column from the end its anchor sits on.
-/// `belowRowCoversAHeaderControlsEndOfTheColumnRatherThanSlicingIt` is that correction, asserted.
+/// **[[T-1722]] — what this file is NOT evidence about, stated before anything below is read.**
+/// Every assertion here runs `TaskInspectorChildPopoverPlacement`'s own arithmetic. That is worth
+/// having and it is not a reading of the running app: on a real Mac the side a popover opens on is
+/// `NSPopover`'s choice, and this suite was green — 14 tests — for the whole of the time the
+/// estimate chip's roller was opening across four of the inspector's rows. T-1510 closed on it.
+/// The reading of the surface is `CadenceInspectorHeaderPanelPlacementUITests`, which takes the
+/// frames off `app.popovers` after a real click, and **that** is the guard for where a panel lands.
 ///
-/// **Failing-first.** Flipping `TaskInspectorChildPopoverPlacement.besideInspector.arrowEdge` back
-/// to `.bottom` turns `theShippedPlacementLeavesTheInspectorsRowsIntact` red, and dropping
+/// So the claims below were rewritten to be ones a model can honestly make. The old header section
+/// asserted that a panel leaves by the end its anchor is pinned to; measured, it does not, and the
+/// per-anchor end it asserted no longer exists. What is left is the condition that made the
+/// Schedule rows right all along and the header controls wrong: **a column-spanning anchor clears
+/// the column at either end, and a pinned one does not.**
+///
+/// **Failing-first.** Flipping `TaskInspectorChildPopoverPlacement.besideInspector.arrowEdge` to
+/// `.bottom` turns `aColumnSpanningAnchorClearsTheColumnAtEitherEnd`'s companion
+/// `theShippedPlacementLeavesTheInspectorsRowsIntact` red; dropping
 /// `childPlacement: .besideInspector` from any call site turns
-/// `everyRowInTheScheduleWellAsksForTheBesideInspectorPlacement` red.
+/// `everyRowInTheScheduleWellAsksForTheBesideInspectorPlacement` red; and presenting either header
+/// panel from its own control again turns `theHeaderPanelsArePresentedFromTheTitleRow` red.
 struct CadenceInspectorChildPopoverPlacementTests {
 
     // MARK: - Fixtures
@@ -104,15 +110,44 @@ struct CadenceInspectorChildPopoverPlacementTests {
         #expect(Self.occlusion(.belowRow) == .sliced)
     }
 
-    /// The fix. Hung off the row's trailing edge — which is the content column's trailing edge —
-    /// the panel opens clear of every row the inspector draws.
+    /// The fix, on the edge the placement asks for. Hung off the row's trailing edge — which is
+    /// the content column's trailing edge — the panel opens clear of every row the inspector
+    /// draws.
     ///
     /// This reads `besideInspector`'s own `arrowEdge` through `panelFrame`, so it is the shipped
-    /// placement being asserted and not a restatement of it.
+    /// request being asserted and not a restatement of it. What it is **not** is a statement about
+    /// which edge the panel actually leaves by — see `aColumnSpanningAnchorClearsTheColumnAtEitherEnd`
+    /// for the claim that does not depend on that, and the UI suite for the reading.
     @Test
     func theShippedPlacementLeavesTheInspectorsRowsIntact() {
         #expect(Self.occlusion(.besideInspector) == .clear)
         #expect(TaskInspectorChildPopoverPlacement.besideInspector.arrowEdge == .trailing)
+    }
+
+    /// **The T-1722 rule.** A field row spans the content column, so *both* of its ends are the
+    /// column's ends and a panel hung off either one lands outside every row — whichever end
+    /// `NSPopover` picks, and whatever the panel measures.
+    ///
+    /// This is the assertion the three Schedule rows were always relying on without naming it, and
+    /// it is why they survived an inversion that put both header panels over the rows. Swept over
+    /// panel widths either side of the column so it is not an artefact of the date panel's.
+    @Test
+    func aColumnSpanningAnchorClearsTheColumnAtEitherEnd() {
+        let row = Self.anchorRow
+        for panelWidth in Self.headerPanelWidths {
+            let panelSize = CGSize(width: panelWidth, height: Self.datePanelSize.height)
+            let column = Self.contentColumn(below: row, panelHeight: panelSize.height)
+            #expect(TaskInspectorChildPopoverPlacement.anchorSpansColumn(row, in: column))
+
+            for edge in [Edge.leading, .trailing] {
+                let panel = TaskInspectorChildPopoverPlacement
+                    .panelFrame(anchoredTo: row, panelSize: panelSize, leavingBy: edge)
+                #expect(
+                    TaskInspectorChildPopoverPlacement.occlusion(ofColumn: column, byPanel: panel) == .clear,
+                    "a \(panelWidth)pt panel leaving a column-spanning row by its \(edge) end still reaches the inspector's rows"
+                )
+            }
+        }
     }
 
     /// **The ticket's central claim, as arithmetic.** A narrower panel does not help: the stranded
@@ -221,11 +256,12 @@ struct CadenceInspectorChildPopoverPlacementTests {
         }
     }
 
-    // MARK: - The header controls (T-1510)
+    // MARK: - The header controls (T-1510, corrected by T-1722)
 
     /// A header anchor's *outer* edge is the column's; its inner edge is not. That asymmetry is
-    /// the whole of T-1510 — it is what stops the T-1480 rule above from simply applying — so it
-    /// is asserted before anything is derived from it.
+    /// why the two header controls could not present their own panels (T-1722): with only one end
+    /// safe, the placement depended on a choice the platform makes and the platform chose the
+    /// other one. It is asserted before anything is derived from it.
     private static let headerAnchorHeight: CGFloat = 28
 
     /// The priority tile: the **leading** element of the title row, pinned at the content inset,
@@ -278,7 +314,7 @@ struct CadenceInspectorChildPopoverPlacementTests {
 
     private static let headerPanelHeight: CGFloat = 200
 
-    /// The precondition that makes T-1510 a separate ticket from T-1480: neither header control
+    /// The precondition, and after T-1722 the reason the anchor moved: neither header control
     /// spans the content column. The tile reaches the column's leading edge and stops short of its
     /// trailing one; the chip does the reverse.
     @Test
@@ -289,11 +325,92 @@ struct CadenceInspectorChildPopoverPlacementTests {
             let tile = Self.priorityTile(width: width)
             #expect(tile.minX == column.minX)
             #expect(tile.maxX < column.maxX)
+            #expect(!TaskInspectorChildPopoverPlacement.anchorSpansColumn(tile, in: column))
 
             let chip = Self.estimateChip(width: width)
             #expect(chip.maxX == column.maxX)
             #expect(chip.minX > column.minX)
+            #expect(!TaskInspectorChildPopoverPlacement.anchorSpansColumn(chip, in: column))
         }
+    }
+
+    /// **Why a header control cannot present its own panel, stated without naming a side.** For
+    /// each of the two anchors there is an end that opens back across the inspector's rows. Which
+    /// end that is, and which end a running `NSPopover` picks, are different questions — the whole
+    /// of T-1722 is that the app does not get to answer the second one — so the claim asserted
+    /// here is only that a bad end exists. That is enough to disqualify the anchor.
+    @Test
+    func eachHeaderControlHasAnEndThatOpensBackAcrossTheRows() {
+        let panelHeight = Self.headerPanelHeight
+        let column = Self.headerColumn(panelHeight: panelHeight)
+
+        for anchorWidth in Self.headerAnchorWidths {
+            for panelWidth in Self.headerPanelWidths {
+                let panelSize = CGSize(width: panelWidth, height: panelHeight)
+
+                for anchor in [Self.priorityTile(width: anchorWidth), Self.estimateChip(width: anchorWidth)] {
+                    let occlusions = [Edge.leading, .trailing].map { edge in
+                        TaskInspectorChildPopoverPlacement.occlusion(
+                            ofColumn: column,
+                            byPanel: TaskInspectorChildPopoverPlacement
+                                .panelFrame(anchoredTo: anchor, panelSize: panelSize, leavingBy: edge)
+                        )
+                    }
+                    #expect(
+                        occlusions.contains(where: { $0 != .clear }),
+                        "a \(panelWidth)pt panel off a \(anchorWidth)pt header control clears the column at BOTH ends, which would mean the control was a safe anchor after all"
+                    )
+                }
+            }
+        }
+    }
+
+    /// The fix's call sites. Both header panels are presented from `TaskDetailHeaderSection`'s
+    /// title row, on one placement, and neither control presents one of its own — a `.popover` back
+    /// on the tile or the chip is the defect returning, because those anchors are the ones the test
+    /// above disqualifies.
+    @Test
+    func theHeaderPanelsArePresentedFromTheTitleRow() throws {
+        let headerSource = try CadenceCommitSurfaceScan.scanned(
+            "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift"
+        )
+        let header = try #require(
+            CadenceSourceScan.declarationBody("struct TaskDetailHeaderSection: View", in: headerSource),
+            "TaskDetailHeaderSection no longer reads as a declaration this scan can scope to"
+        )
+
+        #expect(
+            CadenceSourceScan.matchCount(#"\.popover\("#, in: header) == 1,
+            "TaskDetailHeaderSection no longer presents its header panels from exactly one anchor. Two .popover modifiers on one row do not both present — measured, the second one showed nothing — and a panel presented anywhere else is anchored on a control that does not span the content column (T-1722)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.popover\(item: presentedPanel"#, in: header) == 1,
+            "the header panels no longer share one optional state, so the two can race for the row's anchor again (T-1722)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"arrowEdge:\s*Self\.headerPanelPlacement\.arrowEdge"#, in: header) == 1,
+            "the header panel no longer opens on the section's one placement (T-1722)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"arrowEdge:\s*\.[a-z]"#, in: header) == 0,
+            "a header picker hand-types an arrow edge again (T-1510)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.besideInspector\("#, in: headerSource) == 0,
+            "a call site picks the end a panel leaves by again — measured, the platform ignores it (T-1722)"
+        )
+
+        let chipSource = try CadenceCommitSurfaceScan.scanned(
+            "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift"
+        )
+        let chip = try #require(
+            CadenceSourceScan.declarationBody("struct TaskInspectorEstimateChip: View", in: chipSource),
+            "TaskInspectorEstimateChip no longer reads as a declaration this scan can scope to"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.popover\("#, in: chip) == 0,
+            "TaskInspectorEstimateChip presents a panel off its own bounds again, and its own bounds are the anchor T-1722 measured opening across four of the inspector's rows"
+        )
     }
 
     /// **The ticket's correction, as arithmetic.** T-1510 described both header pickers as
@@ -323,137 +440,5 @@ struct CadenceInspectorChildPopoverPlacementTests {
         }
     }
 
-    /// The rule itself: the end a panel leaves by is read off the anchor, not chosen at the call
-    /// site. The leading control resolves to `.leading` and the trailing one to `.trailing` at
-    /// every width either could take.
-    @Test
-    func theColumnEndIsDerivedFromWhereTheAnchorSits() {
-        let column = Self.headerColumn(panelHeight: Self.headerPanelHeight)
-
-        for width in Self.headerAnchorWidths {
-            #expect(
-                TaskInspectorChildPopoverPlacement
-                    .columnEnd(ofAnchor: Self.priorityTile(width: width), in: column) == .leading
-            )
-            #expect(
-                TaskInspectorChildPopoverPlacement
-                    .columnEnd(ofAnchor: Self.estimateChip(width: width), in: column) == .trailing
-            )
-        }
-    }
-
-    /// The fix. On the end its own anchor sits at, a header panel clears the content column
-    /// entirely — **at every panel width**, including ones wider than the column, because the
-    /// panel's inner edge lands exactly on the column's edge rather than somewhere inside it.
-    ///
-    /// This reads the derived placement through `panelFrame`, which reads `arrowEdge`, so it is
-    /// the edge the views actually present on that is being asserted.
-    @Test
-    func aHeaderPanelOnItsOwnEndClearsTheContentColumn() {
-        let panelHeight = Self.headerPanelHeight
-        let column = Self.headerColumn(panelHeight: panelHeight)
-
-        for anchorWidth in Self.headerAnchorWidths {
-            for panelWidth in Self.headerPanelWidths {
-                let panelSize = CGSize(width: panelWidth, height: panelHeight)
-
-                for anchor in [Self.priorityTile(width: anchorWidth), Self.estimateChip(width: anchorWidth)] {
-                    let placement = TaskInspectorChildPopoverPlacement
-                        .besideInspector(forAnchor: anchor, in: column)
-                    let panel = placement.panelFrame(anchoredTo: anchor, panelSize: panelSize)
-                    #expect(
-                        TaskInspectorChildPopoverPlacement.occlusion(ofColumn: column, byPanel: panel) == .clear,
-                        "a \(panelWidth)pt panel on the derived end of a \(anchorWidth)pt header control still reaches the inspector's rows"
-                    )
-                }
-            }
-        }
-    }
-
-    /// **Why the priority tile could not simply take T-1480's answer.** Handed the *other* end, a
-    /// header panel opens back across the column: never clear, and — whenever it is narrow enough
-    /// to fit between the anchor and the far side — the two-sided `.sliced` defect T-1480 was
-    /// filed about, now on the control that did not have it. The `.sliced` half is guarded by the
-    /// relation that produces it rather than by a fixed width.
-    @Test
-    func theWrongEndOpensBackAcrossTheInspectorsRows() {
-        let panelHeight = Self.headerPanelHeight
-        let column = Self.headerColumn(panelHeight: panelHeight)
-
-        for anchorWidth in Self.headerAnchorWidths {
-            for panelWidth in Self.headerPanelWidths {
-                let panelSize = CGSize(width: panelWidth, height: panelHeight)
-
-                let tile = Self.priorityTile(width: anchorWidth)
-                let tilePanel = TaskInspectorChildPopoverPlacement.besideInspector(.trailing)
-                    .panelFrame(anchoredTo: tile, panelSize: panelSize)
-                let tileOcclusion = TaskInspectorChildPopoverPlacement
-                    .occlusion(ofColumn: column, byPanel: tilePanel)
-                #expect(tileOcclusion != .clear)
-                if tile.maxX + panelWidth < column.maxX {
-                    #expect(
-                        tileOcclusion == .sliced,
-                        "the priority panel hung off the tile's trailing edge should strand a sliver of row on both sides"
-                    )
-                }
-
-                let chip = Self.estimateChip(width: anchorWidth)
-                let chipPanel = TaskInspectorChildPopoverPlacement.besideInspector(.leading)
-                    .panelFrame(anchoredTo: chip, panelSize: panelSize)
-                #expect(
-                    TaskInspectorChildPopoverPlacement.occlusion(ofColumn: column, byPanel: chipPanel) != .clear
-                )
-            }
-        }
-    }
-
-    /// The two header call sites ask for opposite ends, and neither hand-types an arrow edge. A
-    /// literal there would make `columnEnd` decorative and every assertion above vacuous.
-    @Test
-    func theHeaderPickersAskForOppositeEndsAndTypeNoArrowEdge() throws {
-        let source = try CadenceCommitSurfaceScan.scanned(
-            "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift"
-        )
-        let body = try #require(
-            CadenceSourceScan.declarationBody("struct TaskDetailHeaderSection: View", in: source),
-            "TaskDetailHeaderSection no longer reads as a declaration this scan can scope to"
-        )
-
-        #expect(
-            CadenceSourceScan.matchCount(#"\.besideInspector\(\.leading\)"#, in: body) == 1,
-            "the priority tile no longer opens off the column's leading end, so its panel reopens over the inspector's rows (T-1510)"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"\.besideInspector\(\.trailing\)"#, in: body) == 1,
-            "the estimate chip no longer opens off the column's trailing end (T-1510)"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"arrowEdge:\s*\.[a-z]"#, in: body) == 0,
-            "a header picker hand-types an arrow edge again, so the placement no longer decides where its panel lands (T-1510)"
-        )
-    }
-
-    /// The estimate chip presents on the placement it was handed, the same way the Schedule
-    /// controls do. Held separately from `theScheduleControlsPresentOnThePlacementTheyWereHanded`
-    /// because the chip lives in a different declaration and took the parameter later.
-    @Test
-    func theEstimateChipPresentsOnThePlacementItWasHanded() throws {
-        let source = try CadenceCommitSurfaceScan.scanned(
-            "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift"
-        )
-        let body = try #require(
-            CadenceSourceScan.declarationBody("struct TaskInspectorEstimateChip: View", in: source),
-            "TaskInspectorEstimateChip no longer reads as a declaration this scan can scope to"
-        )
-
-        #expect(
-            CadenceSourceScan.matchCount(#"arrowEdge:\s*childPlacement\.arrowEdge"#, in: body) == 1,
-            "TaskInspectorEstimateChip no longer presents its roller on the placement it was handed (T-1510)"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"arrowEdge:\s*\.[a-z]"#, in: body) == 0,
-            "TaskInspectorEstimateChip hand-types an arrow edge again (T-1510)"
-        )
-    }
 }
 #endif

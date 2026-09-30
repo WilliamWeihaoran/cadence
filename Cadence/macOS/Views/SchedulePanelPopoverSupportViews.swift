@@ -17,6 +17,9 @@ enum TaskDetailPresentationMode {
 struct TaskDetailHeaderSection: View {
     @Bindable var task: AppTask
     @Binding var showPriorityPicker: Bool
+    /// Local, unlike `showPriorityPicker`: nothing outside the inspector opens the roller, and the
+    /// priority flag is a binding only because the inspector's own keyboard shortcut sets it.
+    @State private var showEstimatePicker = false
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -32,15 +35,52 @@ struct TaskDetailHeaderSection: View {
     private static let titleRowSpacing: CGFloat = 10
     private static var titleColumnInset: CGFloat { tileSize + titleRowSpacing }
 
-    /// **T-1510.** The title row's two pickers are the inspector's only controls that do not span
-    /// its content column, so neither can take the Schedule well's `.besideInspector` answer on
-    /// faith. The tile is the row's *leading* element, pinned at `contentInset`, so its panel has
-    /// to leave by the column's leading edge; the chip is the *trailing*-most element, so its
-    /// panel leaves by the trailing one. Derived rather than asserted: see
-    /// `TaskInspectorChildPopoverPlacement.columnEnd(ofAnchor:in:)`, which
-    /// `CadenceInspectorChildPopoverPlacementTests` runs over both anchors.
-    private static let priorityPlacement = TaskInspectorChildPopoverPlacement.besideInspector(.leading)
-    private static let estimatePlacement = TaskInspectorChildPopoverPlacement.besideInspector(.trailing)
+    /// **T-1722. Both header panels are presented from the title ROW, not from the two controls
+    /// that open them**, and that is the fix rather than a tidy-up.
+    ///
+    /// T-1510 gave each control the end of the content column its own anchor sits at. Measured on
+    /// the running app, neither panel left by the end it was given: the tile's opened flush against
+    /// the tile's *trailing* edge, inside the column, and the chip's flush against the chip's
+    /// *leading* edge, across four rows. SwiftUI's horizontal `arrowEdge:` is not honoured as
+    /// documented, so no call site can pick an end (see
+    /// `TaskInspectorChildPopoverPlacement`'s comment for the frames).
+    ///
+    /// What is left is the anchor. The tile is 28pt at one end of the column and the chip is
+    /// fixed-size at the other, so for either of them one end is safe and the other is the defect.
+    /// **The row spans the column**, so both of its ends are the column's ends and a panel hung off
+    /// either clears every row — which is the property T-1480's field rows have had all along and
+    /// the reason those three survived the same inversion. One placement, no end to choose.
+    private static let headerPanelPlacement = TaskInspectorChildPopoverPlacement.besideInspector
+
+    /// Which of the two header panels is open.
+    ///
+    /// **One `.popover` modifier, not two.** Both panels hang off the same row now, and two
+    /// `.popover`s chained onto one anchor do not both work: measured on the running app, the
+    /// priority panel opened and the estimate roller then presented nothing at all. They are
+    /// alternatives in any case — opening one closes the other, which is what a reader of a single
+    /// row of controls expects — so they are one optional state rather than two booleans racing
+    /// for one anchor.
+    private enum HeaderPanel: String, Identifiable {
+        case priority
+        case estimate
+        var id: String { rawValue }
+    }
+
+    /// The two flags read as one. `showPriorityPicker` stays a `Binding` because the inspector's
+    /// own shortcut sets it from outside; this only projects the pair onto the anchor.
+    private var presentedPanel: Binding<HeaderPanel?> {
+        Binding(
+            get: {
+                if showPriorityPicker { return .priority }
+                if showEstimatePicker { return .estimate }
+                return nil
+            },
+            set: { panel in
+                showPriorityPicker = panel == .priority
+                showEstimatePicker = panel == .estimate
+            }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -53,12 +93,10 @@ struct TaskDetailHeaderSection: View {
                 }
                 .buttonStyle(.cadencePlain)
                 .fixedSize()
+                .accessibilityIdentifier(CadenceAccessibilityIdentifiers.inspectorPanelControl("Priority"))
                 .accessibilityLabel("Priority")
                 .accessibilityValue(task.priority.label)
                 .help("Priority")
-                .popover(isPresented: $showPriorityPicker, arrowEdge: Self.priorityPlacement.arrowEdge) {
-                    TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
-                }
 
                 TaskTitleEntryField(
                     title: $task.title,
@@ -85,8 +123,22 @@ struct TaskDetailHeaderSection: View {
 
                 TaskInspectorEstimateChip(
                     value: $task.estimatedMinutes,
-                    childPlacement: Self.estimatePlacement
+                    isPickerPresented: $showEstimatePicker
                 )
+            }
+            // Both panels hang off this row, which is the whole of T-1722's fix. The arrow points
+            // at the row rather than at the control that opened it — the same trade T-1480 made
+            // for the Schedule well, and the same reason: the arrow was never the part that was
+            // wrong.
+            .popover(item: presentedPanel, arrowEdge: Self.headerPanelPlacement.arrowEdge) { panel in
+                switch panel {
+                case .priority:
+                    TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
+                case .estimate:
+                    EstimatePickerPopoverContent(value: $task.estimatedMinutes) {
+                        showEstimatePicker = false
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {

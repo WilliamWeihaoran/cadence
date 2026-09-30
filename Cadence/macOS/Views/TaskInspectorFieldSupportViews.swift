@@ -36,89 +36,94 @@ nonisolated enum TaskInspectorPopoverMetrics {
 /// clear of every row the inspector draws. The arrow still points at the row that opened it, which
 /// was never the part that was wrong.
 ///
-/// **T-1510 — the two header controls, and why `.trailing` is right for only one of them.** The
-/// argument above turns on a field row *spanning* the column, so that "off the row's trailing
-/// edge" and "off the column's trailing edge" are the same place. Neither header control spans it.
-/// Both are pinned to one **end** of the column and sized by their own content, so the end a panel
-/// has to leave by is a fact about the anchor, which is why the placement now carries it rather
-/// than assuming trailing. Worked against the real metrics — a 308pt column at x ∈ [14, 322]:
+/// **T-1722 — the declared edge is not what AppKit does, so the rule cannot be about the edge.**
+/// T-1480 and T-1510 both chose an *end* for the panel to leave by and both closed on arithmetic;
+/// the first direct reading of the running surface refutes the mechanism they assumed. Measured
+/// through `app.popovers` on this Mac, inspector content column x ∈ [1111, 1419]:
 ///
-/// - **The priority tile** is the *leading* element of the title row, a 28pt square at
-///   `contentInset`, so `tile.minX` **is** the column's leading edge. Anchored `.bottom` its 160pt
-///   panel is centred on x = 28, landing at [-52, 108]: it overhangs the column's leading edge by
-///   66pt and covers the leading **94pt** of every row it reaches. That is not the two-sided slice
-///   [[T-1510]] estimated at "74pt per side" — 74 is `(308 - 160) / 2`, the sliver you get from a
-///   panel centred *in the column*, and this one is centred on a tile 28pt wide at the very edge
-///   of it. Anchored `.trailing` it would open at [42, 202], strictly inside the column, and
-///   strand 28pt of row on the leading side and 120pt on the trailing one — a real slice, worse
-///   than what ships. Anchored `.leading` it opens at [-146, 14]: its trailing edge is exactly the
-///   column's leading edge, so it touches no row at all.
-/// - **The estimate chip** is the *trailing*-most element of the same row, so `chip.maxX` **is**
-///   the column's trailing edge. Anchored `.bottom` its 260pt panel covers `130 + chipWidth / 2`
-///   points of every row it reaches — about 156 at the "Est" chip's width — again from one side,
-///   not the 24pt-per-side slice the ticket estimated. Anchored `.trailing` it opens at
-///   `chip.maxX`, which is the column's own maxX, so it is clear for **any** panel width and any
-///   chip width.
+/// - The **priority tile**, at x ∈ [1111, 1139], declaring `.besideInspector(.leading)`, opened its
+///   186pt panel at x ∈ [**1139**, 1325] — flush against the tile's *trailing* edge, strictly
+///   inside the column, over every row beneath it.
+/// - The **estimate chip**, at x ∈ [1345, 1419], declaring `.besideInspector(.trailing)`, opened
+///   its 286pt roller at x ∈ [**1059**, 1345] — flush against the chip's *leading* edge,
+///   overhanging the column by 25pt and covering the title row, the list row, Do and Due.
 ///
-/// Neither header picker was ever the two-sided `.sliced` case, then; both simply covered the rows
-/// from one end. The fix is the same one either way, and it is the end — not the width — that has
-/// to be chosen per anchor.
+/// Both are the exact opposite of what was declared, and **available space does not explain it**:
+/// the tile's declared leading side would have put its panel at x ∈ [925, 1111] on a 1512pt
+/// display, which fits. The vertical axis is not affected — `.bottom` is honoured as documented,
+/// which is why `.belowRow` still means what its name says and why the defect T-1480 photographed
+/// was a panel *below* a row. So on the horizontal axis SwiftUI's `arrowEdge:` reaches `NSPopover`
+/// inverted, and an API that promises which end a panel leaves by is promising something this
+/// repository does not control.
+///
+/// **What survives is a condition on the ANCHOR, not on the edge.** If the anchor *spans* the
+/// content column then both of its ends are the column's ends, so a panel hung off either one
+/// clears every row — and it no longer matters which end AppKit picks, or why. A field row spans
+/// the column by construction, which is why T-1480's three Schedule rows were right for a reason
+/// their own argument did not name and stayed right through the inversion. The two header
+/// controls do not span it: a 28pt tile and a fixed-size chip sit at its two ends, and *that* is
+/// what had to change. They are presented from the title **row** now, which does span the column,
+/// so there is one placement again and no end to choose. `anchorSpansColumn(_:in:)` is that
+/// condition, and `CadenceInspectorHeaderPanelPlacementUITests` reads the resulting frames off the
+/// running app rather than off this file.
 nonisolated enum TaskInspectorChildPopoverPlacement {
     /// Centred under the anchor row. Right when the host is wider than the panel — the list
     /// sheets present these same controls in a window that can absorb one — and wrong inside the
     /// inspector, which cannot.
     case belowRow
-    /// Hung off the end of the content column the anchor is already pinned to, so the panel
-    /// leaves the inspector by the nearest side instead of opening over its rows.
-    case besideInspector(TaskInspectorColumnEnd)
+    /// Hung off an end of the inspector's content column, so the panel leaves the inspector
+    /// instead of opening over its rows.
+    ///
+    /// **No end, deliberately** — it used to carry one (T-1510) and the running app ignored it.
+    /// The case is only correct for an anchor that spans the column, because that is the condition
+    /// under which *both* ends are the column's ends; `anchorSpansColumn(_:in:)` states it and
+    /// every call site now satisfies it.
+    case besideInspector
 
-    /// The spelling a **field row** uses. A row spans the column, so both of its ends are the
-    /// column's ends and the choice is free; trailing is the reading direction, and it is the one
-    /// T-1480 shipped. Written as a static so the three Schedule call sites still read
-    /// `.besideInspector` — they are not making the T-1510 decision and should not look as if
-    /// they were.
-    static var besideInspector: Self { .besideInspector(.trailing) }
-
+    /// The edge the view asks `NSPopover` for. A *request*: see the type's own comment for the
+    /// measurement showing that the horizontal ones arrive inverted.
     var arrowEdge: Edge {
         switch self {
         case .belowRow: .bottom
-        case .besideInspector(let end): end.arrowEdge
+        case .besideInspector: .trailing
         }
     }
 
-    /// Which end of `column` an anchor is pinned to, from the anchor's own bounds.
+    /// Whether `anchor` reaches both ends of `column` — the whole of the T-1722 rule.
     ///
-    /// This is the T-1510 rule as arithmetic rather than as a per-call-site opinion: a header
-    /// control sits against one end of the column, and the panel has to leave by *that* end, or it
-    /// opens back across the rows. Measured from the anchor's centre so a control that is wide
-    /// relative to the column still resolves to the end it is closer to.
-    static func columnEnd(ofAnchor anchor: CGRect, in column: CGRect) -> TaskInspectorColumnEnd {
-        (anchor.midX - column.minX) <= (column.maxX - anchor.midX) ? .leading : .trailing
+    /// When it does, a panel hung off either end lands outside the column and the rows are clear
+    /// whichever end the platform picks. When it does not, one of the two ends opens back across
+    /// the rows, and which one that is is not something a SwiftUI call site can decide.
+    ///
+    /// The tolerance is a point: a row and the column it spans are laid out from the same inset,
+    /// so they agree exactly in the model and to within rounding on a real surface.
+    static func anchorSpansColumn(_ anchor: CGRect, in column: CGRect, tolerance: CGFloat = 1) -> Bool {
+        anchor.minX <= column.minX + tolerance && anchor.maxX >= column.maxX - tolerance
     }
 
-    /// The placement a control anchored at `anchor` wants inside `column`. `columnEnd`, wrapped —
-    /// the derivation lives in one place so a call site cannot pick an end the geometry disagrees
-    /// with.
-    static func besideInspector(forAnchor anchor: CGRect, in column: CGRect) -> Self {
-        .besideInspector(columnEnd(ofAnchor: anchor, in: column))
-    }
-
-    /// Where a panel of `panelSize` lands when it is anchored on `row`, in the inspector's own
-    /// coordinate space. Flush against the anchor edge and centred on the other axis, which is how
+    /// Where a panel of `panelSize` lands when it leaves `row` by `edge`, in the inspector's own
+    /// coordinate space. Flush against that edge and centred on the other axis, which is how
     /// `NSPopover` places a panel against its positioning rect; the arrow only pushes the panel
     /// further from the row, so ignoring it never flatters a placement.
     ///
-    /// **This reads `arrowEdge`, not `self`**, so the frame and the edge the view actually
-    /// presents on cannot drift apart. A second switch over the cases would let someone change
-    /// where the panel opens while this kept describing where it used to.
-    func panelFrame(anchoredTo row: CGRect, panelSize: CGSize) -> CGRect {
-        let origin: CGPoint = switch arrowEdge {
+    /// **Takes the edge rather than reading one**, because the point of T-1722 is that the app
+    /// does not get to know which end the panel will leave by: the useful question is what happens
+    /// at *each* end, and a caller that can only ask about the declared one cannot ask it.
+    static func panelFrame(anchoredTo row: CGRect, panelSize: CGSize, leavingBy edge: Edge) -> CGRect {
+        let origin: CGPoint = switch edge {
         case .bottom: CGPoint(x: row.midX - panelSize.width / 2, y: row.maxY)
         case .top: CGPoint(x: row.midX - panelSize.width / 2, y: row.minY - panelSize.height)
         case .trailing: CGPoint(x: row.maxX, y: row.midY - panelSize.height / 2)
         case .leading: CGPoint(x: row.minX - panelSize.width, y: row.midY - panelSize.height / 2)
         }
         return CGRect(origin: origin, size: panelSize)
+    }
+
+    /// The frame for the edge this placement *asks* for. Kept because `.belowRow` is honoured as
+    /// declared and is still a claim worth asserting; read `panelFrame(anchoredTo:panelSize:
+    /// leavingBy:)` directly for anything horizontal.
+    func panelFrame(anchoredTo row: CGRect, panelSize: CGSize) -> CGRect {
+        Self.panelFrame(anchoredTo: row, panelSize: panelSize, leavingBy: arrowEdge)
     }
 
     /// What a panel does to the inspector's content column: nothing, covers it from an edge, or
@@ -130,23 +135,6 @@ nonisolated enum TaskInspectorChildPopoverPlacement {
         let sliverLeading = panel.minX > column.minX
         let sliverTrailing = panel.maxX < column.maxX
         return sliverLeading && sliverTrailing ? .sliced : .covered
-    }
-}
-
-/// Which end of the inspector's content column a child panel leaves by.
-///
-/// Deliberately two cases rather than a bare `Edge`: `.besideInspector(.top)` is not a thing the
-/// inspector can mean, and the whole point of T-1510 is that the choice is horizontal and is made
-/// by where the anchor sits.
-nonisolated enum TaskInspectorColumnEnd: Equatable {
-    case leading
-    case trailing
-
-    var arrowEdge: Edge {
-        switch self {
-        case .leading: .leading
-        case .trailing: .trailing
-        }
     }
 }
 
@@ -388,6 +376,7 @@ struct TaskInspectorDateControl: View {
         ) {
             showPicker.toggle()
         }
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.inspectorPanelControl(label))
         .popover(isPresented: $showPicker, arrowEdge: childPlacement.arrowEdge) {
             pickerPopover
         }
@@ -525,14 +514,14 @@ struct InspectorPickerHover: ViewModifier {
 /// tile — the two things you set while naming the task. Same roller popover either way.
 struct TaskInspectorEstimateChip: View {
     @Binding var value: Int
-    /// Uppercase heading for the roller panel.
-    var title: String = "ESTIMATE"
-    /// Where the roller opens relative to this chip. The default suits a host wider than the
-    /// panel; the task inspector is not one and passes `.besideInspector(.trailing)` (T-1510) —
-    /// the chip is the trailing-most thing on the title row, so its trailing edge is the content
-    /// column's and a panel hung off it clears every row.
-    var childPlacement: TaskInspectorChildPopoverPlacement = .belowRow
-    @State private var showPicker = false
+    /// The host's flag for the roller — **the chip does not present it, and that is T-1722.**
+    ///
+    /// It used to, off its own bounds, and its own bounds are the wrong anchor: the chip sits at
+    /// one end of the inspector's content column and does not span it, so one of the two ends a
+    /// panel can leave by opens back across the inspector's rows — which is the end the running
+    /// app picked. The title row *does* span the column, so `TaskDetailHeaderSection` presents the
+    /// roller from there and this stays a button.
+    @Binding var isPickerPresented: Bool
 
     private var isSet: Bool { value > 0 }
 
@@ -543,7 +532,7 @@ struct TaskInspectorEstimateChip: View {
     }
 
     var body: some View {
-        Button { showPicker.toggle() } label: {
+        Button { isPickerPresented.toggle() } label: {
             HStack(spacing: 4) {
                 Image(systemName: "timer")
                     .font(.system(size: 10, weight: .semibold))
@@ -572,14 +561,12 @@ struct TaskInspectorEstimateChip: View {
         // Buttons take key focus under Full Keyboard Access; leaving the chip out of the focus
         // ring means clicking it cannot pull the caret out of a title being typed.
         .focusable(false)
+        .accessibilityIdentifier(
+            CadenceAccessibilityIdentifiers.inspectorPanelControl(CadenceTaskControlAccessibility.estimate)
+        )
         .accessibilityLabel(CadenceTaskControlAccessibility.estimate)
         .accessibilityValue(isSet ? estimateText : "None")
         .help("Estimate")
-        .popover(isPresented: $showPicker, arrowEdge: childPlacement.arrowEdge) {
-            EstimatePickerPopoverContent(value: $value, title: title) {
-                showPicker = false
-            }
-        }
     }
 }
 

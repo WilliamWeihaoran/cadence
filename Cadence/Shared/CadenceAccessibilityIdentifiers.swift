@@ -75,6 +75,22 @@ nonisolated enum CadenceAccessibilityIdentifiers {
         "task.row.\(slug(title)).due"
     }
 
+    /// One of the task inspector's **panel-opening** controls, named by the field it edits:
+    /// Priority, Estimate, Do, Due, Repeat.
+    ///
+    /// These five exist so a UI test can read where the panel each one opens actually lands
+    /// (T-1722). They are not addressable any other way: four of the five are composed rows whose
+    /// accessibility label is assembled from a field name *and its current value* — "Do" and "Due"
+    /// share a prefix, and a row's value changes the moment the panel under test sets it — so a
+    /// query by label is a query that stops matching for reasons that are not the defect.
+    ///
+    /// Applied at the control, not at the well, because the reading is about the **anchor**: the
+    /// whole of T-1722 is that a 28pt tile at one end of the column and a full-width field row
+    /// spanning it are different anchors and were assumed to behave the same way.
+    static func inspectorPanelControl(_ field: String) -> String {
+        "inspector.control.\(slug(field))"
+    }
+
     /// Today's rollover banner — the offer to move yesterday's unfinished plans onto today.
     static let todayRolloverBanner = "today.rollover.banner"
 
