@@ -32,6 +32,12 @@ enum CadenceUITestScenarioSeed {
         /// carrying the decoration the owner's screenshot had, one carrying none, and both titled
         /// far too long to fit at any pane width this app is drawn at.
         case todayRowCrush = "today-row-crush"
+        /// One board card carrying **every chip that opens a popover of its own** (T-1740), on a
+        /// day the Calendar Board draws: a scheduled start (so the schedule top row and its
+        /// duration badge exist), a list, a tag and a deadline. Plus a block on the same day, for
+        /// `CalendarBoardBundleCard`. The point is that all five of the board's `arrowEdge:
+        /// .trailing` anchors are on screen in ONE window, so their frames are comparable.
+        case popoverAnchors = "popover-anchors"
     }
 
     /// The alt text on the seeded picture, and the text of the paragraph under it. Both are read
@@ -87,6 +93,27 @@ enum CadenceUITestScenarioSeed {
         /// Minutes on the crushed row, so the estimate chip is drawn and the metadata strip has
         /// something it can shed before it reaches the due chip.
         static let crushedEstimateMinutes = 95
+
+        // MARK: - popover-anchors (T-1740)
+
+        /// The one board card the sweep reads. Named rather than titled "Task" because the test
+        /// addresses it by an identifier derived from this string.
+        static let boardCardTitle = "Board Anchor Card"
+
+        /// The tag on it. `KanbanCardTagStrip` renders **nothing** for a task with no tags, so
+        /// without this the tag anchor would silently not exist and the sweep would report four
+        /// readings where it meant five — the exact reporting failure T-1722 was written against.
+        static let boardCardTagName = "Anchor"
+
+        /// The block on the same day, which is what puts a `CalendarBoardBundleCard` in the
+        /// column beside the card.
+        static let boardBundleTitle = "Anchor Block"
+
+        /// 9:00. Any scheduled start does; `KanbanCard.hasScheduleTopRow` is `scheduledStartMin >= 0`.
+        static let boardCardStartMinute = 9 * 60
+
+        /// Minutes, so the duration badge reads a real value rather than the em dash placeholder.
+        static let boardCardEstimateMinutes = 90
     }
 
     static var requestedScenario: Scenario? {
@@ -108,6 +135,8 @@ enum CadenceUITestScenarioSeed {
             seedTodayGeometry(modelContext: modelContext)
         case .todayRowCrush:
             seedTodayRowCrush(modelContext: modelContext)
+        case .popoverAnchors:
+            seedPopoverAnchors(modelContext: modelContext)
         }
     }
 
@@ -226,6 +255,78 @@ enum CadenceUITestScenarioSeed {
             try modelContext.save()
         } catch {
             print("[CadenceUITestScenarioSeed] the today-row-crush seed could not be saved: \(error)")
+        }
+    }
+
+    /// **One card with every popover-bearing chip on it, and a block beside it** (T-1740).
+    ///
+    /// The board's five `arrowEdge: .trailing` anchors are opened by a list chip, a tag strip, a
+    /// duration badge, the card itself and a block card beside it — and three of those only exist
+    /// when the task carries the field behind them. A task with no tags draws no tag strip; a task
+    /// with no scheduled start draws no schedule top row and therefore no duration badge; a card
+    /// asked not to show a container chip draws none. So the fixture sets all of them, on
+    /// **today**, which is the column the Calendar Board opens on.
+    ///
+    /// Deliberately **one** card. Two would put a second copy of every identifier on screen and the
+    /// sweep's queries would each match two elements.
+    @MainActor
+    private static func seedPopoverAnchors(modelContext: ModelContext) {
+        let todayKey = DateFormatters.ymd.string(from: Date())
+        // **Tomorrow, not today, and it was an attempt to narrow the list chip that did not work.**
+        // The Calendar Board passes each column's own day as `dayAlreadyStatedBySurface` and
+        // `CadenceBoardCardMetadata` drops a date chip that would only repeat it, so a card due
+        // today draws one metadata chip and the list chip has the row to itself — which would have
+        // made the list picker's measured clearance an accident of the fixture. A deadline on
+        // another day was meant to put a second chip beside it.
+        //
+        // **It does not, and the reason is better than the fixture.** Measured 2026-09-30: the card
+        // was unchanged, 146pt tall with content still ending at x = 830, because
+        // `KanbanCard.metadataRows` appends the list chip **alone on its own row** whatever else is
+        // on the card. The list chip spans the content column structurally, not by luck, and no
+        // fixture can make it not. The deadline stays: it is what puts a due chip on the *Today*
+        // row, which is what extended that row's content to x = 1106 and produced the 10pt reading
+        // filed as T-1845.
+        let tomorrowKey = DateFormatters.ymd.string(
+            from: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        )
+
+        // Idempotent by the same test the stock seed and the other two scenarios use.
+        let existingTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        guard existingTasks.isEmpty else { return }
+
+        let areas = (try? modelContext.fetch(FetchDescriptor<Area>())) ?? []
+        let host = areas.first { $0.name == "Alpha Area" } ?? areas.first
+
+        let tag = Tag(name: Fixture.boardCardTagName, colorHex: "#5AA2FF", order: 0)
+        modelContext.insert(tag)
+
+        let card = AppTask(title: Fixture.boardCardTitle)
+        card.scheduledDate = todayKey
+        card.scheduledStartMin = Fixture.boardCardStartMinute
+        card.estimatedMinutes = Fixture.boardCardEstimateMinutes
+        card.dueDate = tomorrowKey
+        card.order = 0
+        card.area = host
+        card.context = host?.context
+        // A to-many CloudKit relationship is an optional array and is appended to by assigning a
+        // new one, never by mutating in place.
+        card.tags = [tag]
+        modelContext.insert(card)
+
+        let bundle = TaskBundle(
+            title: Fixture.boardBundleTitle,
+            dateKey: todayKey,
+            startMin: Fixture.boardCardStartMinute + 240,
+            durationMinutes: 60
+        )
+        modelContext.insert(bundle)
+
+        // **Not `try?`**, for the reason the two scenarios above state: a scenario that silently
+        // failed to seed is a UI test that silently asserts about an empty screen.
+        do {
+            try modelContext.save()
+        } catch {
+            print("[CadenceUITestScenarioSeed] the popover-anchors seed could not be saved: \(error)")
         }
     }
 

@@ -48,7 +48,11 @@ struct KanbanCard: View {
                         duration: estimateLabel,
                         onDurationTap: openDurationPicker,
                         isDurationFocused: showDurationPicker,
-                        onDurationHoverChanged: setAttributeFocused
+                        onDurationHoverChanged: setAttributeFocused,
+                        durationAccessibilityIdentifier: CadenceAccessibilityIdentifiers.boardCardControl(
+                            title: task.title,
+                            field: CadenceTaskControlAccessibility.estimate
+                        )
                     )
                 }
 
@@ -56,7 +60,7 @@ struct KanbanCard: View {
 
                 KanbanCardTagStrip(
                     task: task,
-                    isPresented: $showTagPicker,
+                    isPresented: showTagPicker,
                     onOpen: openTagPicker,
                     onHoverChanged: setAttributeFocused
                 )
@@ -126,8 +130,36 @@ struct KanbanCard: View {
                 syncInteractiveHoverState()
             }
         }
+        // **`.contain`, so the card becomes one element without swallowing its chips.** T-1740
+        // measures where the three popovers below land, and all three are anchored to
+        // `.rect(.bounds)` — the card's own box — so a test needs that box as an element and not
+        // merely a point inside it. `.combine` would take the list chip, the tag strip and the
+        // duration badge with it, and the first of those is a popover anchor of its own.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.boardCard(title: task.title))
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
+        }
+        // **The tag picker is presented here, from the card, and not from the strip that opens it**
+        // (T-1740). Measured on this Mac at Xcode 27.0: presented from the strip — 57pt wide at the
+        // leading end of the card — the picker opened at x ∈ [636, 902] against card content of
+        // [578, 830] and covered 194pt of the card. It went to the side its `arrowEdge: .trailing`
+        // asked for; the side was never the problem. An anchor that **spans** the content is, as
+        // T-1722 established for the inspector, the only shape whose placement does not depend on
+        // a choice this repository does not make: when both of an anchor's ends are the content's
+        // ends, either end the platform picks is clear of it. The card's `.rect(.bounds)` is that
+        // anchor, and the inspector above and the roller below already use it.
+        //
+        // **Three chained `.popover` modifiers on one view, and all three present.** That is worth
+        // stating, because T-1722 measured the opposite on the inspector's title row: two chained
+        // there and only the first ever opened, which is why its two header panels were folded
+        // into one `.popover(item:)`. Measured here 2026-09-30, in one run, from one card: the
+        // inspector at (846, 33, 362, 523), this picker at (846, 209, 266, 111) and the roller at
+        // (846, 121, 286, 286) — three distinct frames, each opened by its own control. Whatever
+        // the inspector ran into, it is not a flat rule about chaining, and this card is evidence
+        // against reading it as one.
+        .popover(isPresented: $showTagPicker, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            KanbanTagPickerPopover(task: task)
         }
         .popover(isPresented: $showDurationPicker, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             // The same roller the inspector uses. A card and an inspector editing one field

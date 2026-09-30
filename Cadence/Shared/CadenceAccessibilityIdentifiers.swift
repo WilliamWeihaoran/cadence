@@ -91,6 +91,35 @@ nonisolated enum CadenceAccessibilityIdentifiers {
         "inspector.control.\(slug(field))"
     }
 
+    /// A **board card** — the one `KanbanCard` type both the list Kanban and the Calendar Board
+    /// draw — by the task's title.
+    ///
+    /// The card is itself the `attachmentAnchor: .rect(.bounds)` of three of the app's
+    /// `arrowEdge: .trailing` popovers, so a UI test measuring where those land needs the card's
+    /// own frame and not merely a point inside it (T-1740).
+    static func boardCard(title: String) -> String {
+        "board.card.\(slug(title))"
+    }
+
+    /// One of a board card's **popover-opening** chips, named by the field it edits. Three carry
+    /// one today — the list chip, the tag strip and the duration badge — because those are the
+    /// three the T-1740 sweep clicks; the do and due chips take one the same way if anyone needs
+    /// to read where their pickers land.
+    ///
+    /// Same reason as `inspectorPanelControl(_:)` and it is not a coincidence: every one of these
+    /// carries the field's current **value** in its accessibility value, and two of them (the list
+    /// chip and the tag strip) draw the value as their only text. A query by label is a query that
+    /// stops matching when the panel under test changes the field.
+    static func boardCardControl(title: String, field: String) -> String {
+        "\(boardCard(title: title)).control.\(slug(field))"
+    }
+
+    /// A **block** card on the Calendar Board, by the block's title. The card is the whole anchor
+    /// of its own detail popover, so the test reads its frame the same way it reads a task card's.
+    static func boardBundleCard(title: String) -> String {
+        "board.bundle.\(slug(title))"
+    }
+
     /// Today's rollover banner — the offer to move yesterday's unfinished plans onto today.
     static let todayRolloverBanner = "today.rollover.banner"
 

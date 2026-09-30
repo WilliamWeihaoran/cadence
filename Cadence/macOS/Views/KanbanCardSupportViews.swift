@@ -165,6 +165,9 @@ struct KanbanCardScheduleTopRow: View {
     let onDurationTap: (() -> Void)?
     var isDurationFocused = false
     var onDurationHoverChanged: (Bool) -> Void = { _ in }
+    /// Passed through to the duration badge, which is the only thing in this row a test clicks.
+    /// Defaulted, so the row keeps its existing call signature. See `KanbanDurationBadge`.
+    var durationAccessibilityIdentifier: String? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 6) {
@@ -181,7 +184,8 @@ struct KanbanCardScheduleTopRow: View {
                 duration: duration,
                 onTap: onDurationTap,
                 isFocused: isDurationFocused,
-                onHoverChanged: onDurationHoverChanged
+                onHoverChanged: onDurationHoverChanged,
+                accessibilityIdentifier: durationAccessibilityIdentifier
             )
         }
         .frame(height: 14)
@@ -193,6 +197,12 @@ struct KanbanDurationBadge: View {
     var onTap: (() -> Void)?
     var isFocused = false
     var onHoverChanged: (Bool) -> Void = { _ in }
+    /// **Why not a label query** (T-1740): this badge already has an accessibility label and it is
+    /// the field's *name*, but the badge sits on a card that draws a second estimate badge in its
+    /// header when there is no scheduled start (`KanbanCard.headerDurationBadge`), so "the button
+    /// called Estimate on this card" is not a unique address. An identifier carrying the task's
+    /// title is.
+    var accessibilityIdentifier: String? = nil
     @State private var isHovered = false
 
     var body: some View {
@@ -210,6 +220,10 @@ struct KanbanDurationBadge: View {
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        // `accessibilityIdentifier(_:)` takes a non-optional, and an empty string is not the same
+        // as no identifier — it would replace whatever the element inherits. So the modifier is
+        // applied only when there is one to apply.
+        .modifier(CadenceOptionalAccessibilityIdentifier(identifier: accessibilityIdentifier))
         .onHover { hovering in
             isHovered = hovering
             onHoverChanged(hovering)
@@ -338,6 +352,25 @@ struct KanbanCardBackground: View {
                         .fill(Theme.bg.opacity(0.28))
                 }
             }
+    }
+}
+
+/// Apply an accessibility identifier **only when there is one**.
+///
+/// `accessibilityIdentifier(_:)` takes a non-optional `String`, and passing `""` is a real
+/// assignment rather than a no-op — it clears whatever the element would otherwise publish. A
+/// control that takes its identifier from a caller that may not have one therefore needs the
+/// modifier to be absent, not empty, and a `ViewModifier` is the only way to say that without
+/// erasing the view through `AnyView`.
+private struct CadenceOptionalAccessibilityIdentifier: ViewModifier {
+    let identifier: String?
+
+    func body(content: Content) -> some View {
+        if let identifier {
+            content.accessibilityIdentifier(identifier)
+        } else {
+            content
+        }
     }
 }
 #endif

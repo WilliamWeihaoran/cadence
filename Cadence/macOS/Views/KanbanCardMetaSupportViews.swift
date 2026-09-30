@@ -43,6 +43,12 @@ struct KanbanContainerMetaButton: View {
         .buttonStyle(.cadencePlain)
         .accessibilityLabel(CadenceTaskControlAccessibility.list)
         .accessibilityValue(item.text)
+        .accessibilityIdentifier(
+            CadenceAccessibilityIdentifiers.boardCardControl(
+                title: task.title,
+                field: CadenceTaskControlAccessibility.list
+            )
+        )
         .help("Move to another list")
         .popover(isPresented: $isPresented, arrowEdge: .trailing) {
             KanbanContainerPickerPopover(task: task, isPresented: $isPresented)
@@ -125,9 +131,20 @@ struct KanbanContainerPickerPopover: View {
 ///
 /// As with the list chip, the `allTags` query is inside the popover content so an untouched
 /// card costs no fetch.
+///
+/// **It opens the picker; it does not present it** (T-1740). The strip is 57pt wide at the
+/// leading end of a 252pt card, and a panel hung off a 57pt anchor lands wherever the platform
+/// has room for it — measured 2026-09-30 on this Mac at Xcode 27.0, the picker came out at
+/// x ∈ [636, 902] against card content of [578, 830] and covered **194pt of the card it was
+/// opened from**: its own title, its date chips and the strip below it. Nothing about that is a
+/// wrong `arrowEdge:`; the panel went to the side it asked for. The anchor was the wrong shape.
+/// `KanbanCard` presents it from the card's own bounds instead, which span that content, so
+/// either end the platform picks is outside it.
 struct KanbanCardTagStrip: View {
     let task: AppTask
-    @Binding var isPresented: Bool
+    /// Drawn state only — whether the strip reads as focused while its picker is up. The picker
+    /// itself is `KanbanCard`'s to present.
+    let isPresented: Bool
     let onOpen: () -> Void
     let onHoverChanged: (Bool) -> Void
 
@@ -145,11 +162,11 @@ struct KanbanCardTagStrip: View {
             .buttonStyle(.cadencePlain)
             .accessibilityLabel("Edit tags")
             .accessibilityValue(tags.map { CadenceTagChipStyle.displayName(for: $0) }.joined(separator: ", "))
+            .accessibilityIdentifier(
+                CadenceAccessibilityIdentifiers.boardCardControl(title: task.title, field: "Tags")
+            )
             .help("Edit tags")
             .onHover { onHoverChanged($0) }
-            .popover(isPresented: $isPresented, arrowEdge: .trailing) {
-                KanbanTagPickerPopover(task: task)
-            }
         }
     }
 }

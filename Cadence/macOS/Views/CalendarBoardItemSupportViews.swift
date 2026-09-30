@@ -36,6 +36,10 @@ struct CalendarBoardBundleCard: View {
         } isTargeted: { targeted in
             isTargeted = targeted
         }
+        // T-1740: the card is its own popover's `.rect(.bounds)` anchor, so the test that reads
+        // where that popover lands needs the card's box. Same `.contain` reasoning as `KanbanCard`.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.boardBundleCard(title: bundle.displayTitle))
         .popover(isPresented: $showPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             bundleDetailPopover
         }
