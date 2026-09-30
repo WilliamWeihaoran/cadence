@@ -149,9 +149,44 @@ SELF="${ZSH_ARGZERO:-$0}"
 
 say() { print -r -- "$@" }
 
+# Devices this script will NEVER hand out, however booted they are (T-1780).
+#
+# The header above has said "never erase, boot or shut down a simulator you did not
+# create" since this file existed, and named the owner's iPhone 17 Pro. It was a
+# sentence to READ, not a rule the allocator applied: `booted_udids` returned every
+# booted device in simctl's own order, and the owner's device is FIRST in that order,
+# so `claim` handed out exactly the device the header forbids. Measured twice on
+# 2026-09-30: `claim padwidth 2700` answered `DEVICE=iPhone 17 Pro`. An agent that
+# obeyed the header then had no way to get a device at all, which is how it was found.
+#
+# A prose rule that the code does not enforce is the shape this repository keeps
+# re-finding. This is the enforcement.
+CADENCE_SIM_DENY_UDIDS=(
+  7B642065-86FC-4987-8674-22066D32878C   # the owner's iPhone 17 Pro -- never
+)
+# ADDITIVE only, and deliberately so: the selftest needs a denied device it can invent,
+# but a hook that could REMOVE an entry would be a way to hand out the owner's device by
+# setting an environment variable. Appending can only ever make this stricter.
+CADENCE_SIM_DENY_UDIDS+=(${=CADENCE_SIM_DENY_EXTRA:-})
+
 booted_udids() {
+  local u
   ${=SIMCTL} list devices booted 2>/dev/null \
-    | sed -n 's/.*(\([0-9A-Fa-f-]\{8\}-[0-9A-Fa-f-]*\)) (Booted).*/\1/p'
+    | sed -n 's/.*(\([0-9A-Fa-f-]\{8\}-[0-9A-Fa-f-]*\)) (Booted).*/\1/p' \
+    | while read -r u; do
+        if (( ${CADENCE_SIM_DENY_UDIDS[(Ie)$u]} )); then continue; fi
+        print -r -- "$u"
+      done
+}
+
+# The standing devices, in the order `claim` should prefer them (T-1704).
+# Named so a caller can ask for one by shape instead of taking whatever is first.
+cadence_standing_udid() {
+  case "$1" in
+    iphone|iPhone|phone) print -r -- CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0 ;;
+    ipad|iPad|pad)       print -r -- 53EC6A90-D767-45DE-8EAC-53B8E1673B1D ;;
+    *) return 1 ;;
+  esac
 }
 device_name() {
   ${=SIMCTL} list devices booted 2>/dev/null | grep -- "$1" \
@@ -417,6 +452,18 @@ case "$CMD" in
 
   claim)
     ID="${POS[1]:-agent-$PPID}"; TIMEOUT="${POS[2]:-1800}"; waited=0
+    # Optional third argument: which device to ask for (T-1780). `iphone` / `ipad`
+    # resolve through the standing pair; a bare UDID is taken as-is. Omitted, the
+    # allocator behaves as it always did and takes the first free device -- minus
+    # anything in CADENCE_SIM_DENY_UDIDS, which is the half that was missing.
+    WANT="${POS[3]:-}"
+    if [[ -n "$WANT" ]]; then
+      if resolved=$(cadence_standing_udid "$WANT"); then WANT="$resolved"; fi
+      if (( ${CADENCE_SIM_DENY_UDIDS[(Ie)$WANT]} )); then
+        print -r -- "simulator-claim: REFUSING $WANT -- it is on the deny list (T-1780)." >&2
+        exit 2
+      fi
+    fi
     # Re-entrant on purpose. An agent gets one process per command, so `claim`
     # is routinely re-run across calls in one session; without this it would
     # take a SECOND device each time and starve the fleet it is protecting.
@@ -601,10 +648,16 @@ case "$CMD" in
     # may have sibling agents on it while this is worth running.
     root=$(mktemp -d "${TMPDIR:-/tmp}/cadence-sim-claim-selftest.XXXXXX") || exit 2
     FAKE_UDID="11111111-2222-3333-4444-555555555555"
+    # A SECOND fake, listed FIRST, standing in for the owner's device (T-1780). The bug was
+    # that `booted_udids` returned simctl's own order and the forbidden device leads it, so a
+    # fixture with one device cannot reproduce it -- the allocator never had a choice to get
+    # wrong. Listing the denied one first is the whole fixture.
+    FAKE_DENIED_UDID="99999999-8888-7777-6666-555555555555"
     cat > "$root/fake-simctl" <<FAKESIMCTL
 #!/bin/zsh
 if [[ "\$1 \$2 \$3" == "list devices booted" ]]; then
   print -r -- "-- iOS 18.0 --"
+  print -r -- "    iPhone SelftestOwner (${FAKE_DENIED_UDID}) (Booted)"
   print -r -- "    iPhone SelftestFake (${FAKE_UDID}) (Booted)"
 fi
 exit 0
@@ -617,6 +670,7 @@ FAKESIMCTL
     # Measured 2026-09-04 inside CadenceGuardScriptSelftestTests: the bare-path form died with
     # "could not claim the fake device" and nothing else, before `booted_udids` ever saw a device.
     export CADENCE_SIM_CLAIM_TESTING=1 CADENCE_SIM_CLAIMS_DIR CADENCE_SIMCTL="/bin/zsh $root/fake-simctl"
+    export CADENCE_SIM_DENY_EXTRA="$FAKE_DENIED_UDID"
     export CADENCE_SIM_LEASE=4 CADENCE_SIM_CLAIM_POLL=1 CADENCE_SIM_CLAIM_TICKET_STALE=10
     # THIS PROCESS's own $CLAIMS and $QUEUE were fixed at startup, from an environment that did not
     # yet have the overrides just exported -- so they still name the REAL claim store that sibling
@@ -682,6 +736,23 @@ FAKESIMCTL
     if [[ -s "$survivor" ]]; then print -r -- "PASS killed-waiter: the waiter behind a SIGKILLed one still got the device"
     else print -r -- "FAIL killed-waiter: queue stalled behind the dead ticket"; (( fails++ )); fi
     cleanup_kids; rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"; mkdir -p "$CADENCE_SIM_CLAIMS_DIR"
+
+    # 2b. THE DENY LIST IS ENFORCED, NOT JUST DOCUMENTED (T-1780). The header has named the
+    #     owner's device since this file existed and the allocator never read it: `booted_udids`
+    #     returned simctl's order and that device is first, so `claim` handed out precisely what
+    #     the prose forbade. Two polarities, because either alone is satisfiable by a broken
+    #     allocator -- one that returns nothing passes the refusal half, and one that ignores the
+    #     list passes the still-allocates half.
+    "$SELF" claim selftest-deny 5 "$FAKE_DENIED_UDID" >/dev/null 2>&1
+    deny_rc=$?
+    alloc_udid=$("$SELF" claim selftest-allow 5 2>/dev/null | sed -n 's/^UDID=//p')
+    "$SELF" release selftest-allow >/dev/null 2>&1
+    if (( deny_rc == 2 )) && [[ "$alloc_udid" == "$FAKE_UDID" ]]; then
+      print -r -- "PASS deny-list-enforced: the denied device leads the booted list and the allocator still answered $FAKE_UDID; asking for it by name exits 2"
+    else
+      print -r -- "FAIL deny-list-enforced: explicit request rc=$deny_rc (wanted 2); unqualified claim answered '${alloc_udid:-<nothing>}' (wanted $FAKE_UDID, NOT $FAKE_DENIED_UDID)"; (( fails++ ))
+    fi
+    rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"; mkdir -p "$CADENCE_SIM_CLAIMS_DIR"
 
     # 3. A `ps` THAT CANNOT ANSWER MUST NOT EMPTY THE QUEUE (T-1382). Property 2 above proves the
     #    queue drops a ticket whose waiter is genuinely gone. This is the case underneath it, and
