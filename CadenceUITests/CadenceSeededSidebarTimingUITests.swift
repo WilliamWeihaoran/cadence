@@ -132,7 +132,10 @@ final class CadenceSeededSidebarTimingUITests: XCTestCase {
     /// Polls rather than using `waitForExistence`, because the answer wanted is *when*, and a
     /// `waitForExistence` that returns `true` says only "sometime before the timeout".
     private func firstSeen(_ identifier: String, after origin: Date) -> TimeInterval? {
-        let element = app.buttons[identifier]
+        // Predicate rather than subscript (T-1725): the subscript raises past 128 characters, and
+        // this takes its identifier as a parameter — the next caller's may be a slugged title.
+        // Still scoped to `.buttons`, because what this measures is when a *sidebar row* appears.
+        let element = app.buttons.matching(CadenceUITestQuery.identifying(identifier)).firstMatch
         let deadline = origin.addingTimeInterval(Self.observationWindow)
         while Date() < deadline {
             if element.exists { return Date().timeIntervalSince(origin) }

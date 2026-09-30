@@ -608,6 +608,27 @@ struct CadenceGuardScriptSelftestTests {
     /// that does not rot — a device name written into a guide was correct until an Xcode update
     /// dropped the device, which is exactly how `iPhone 15` came to be typed, so the guard reads
     /// `simctl` live and the selftest drives it through a fixture in that format.
+    /// T-1741 adds a seventh, and like `PARTIAL-SCOPE` it is a notice rather than a refusal — for
+    /// the same reason, which is why pinning it here is the only thing that keeps it.
+    ///
+    /// `INTERACTIVE-SKIPPED` is what the runner says when a test run skipped tests that the build
+    /// produced. `CadenceUITests` gates every pointer-taking test behind a marker file in the
+    /// runner's container, correctly: they take over the Mac's pointer and keyboard, one of them
+    /// right-clicks a sidebar, and nothing unattended exists here to run them on — CI does not run
+    /// that target at all (T-531: macOS UI testing needs a one-time authorisation granted at a GUI
+    /// prompt with the user's password, and a hosted runner has nobody to grant it). So the gate
+    /// stays and the **silence** was the defect: a default `-only-testing:CadenceUITests` run
+    /// skipped four geometry guards — the only tests in this repository that can see where a
+    /// popover actually lands — and printed `** TEST SUCCEEDED **`.
+    ///
+    /// That is the shape this repository keeps rediscovering: T-1516's warning counter reporting
+    /// zero over fourteen real warnings, T-535's release gate that never compiled iOS, and
+    /// T-1724's opt-in that no channel could set. The notice does not gate, deliberately — the
+    /// ordinary correct daily invocation is the one that skips these — and a notice that does not
+    /// gate is exactly the kind a later edit calls noise and deletes. Section 9a of the selftest
+    /// must still induce it over a fixture log in XCTest's real skip shape, and must still show
+    /// the run in which everything executed staying **silent**: a banner that printed on every run
+    /// would be scrolled past within a week and would then be worth nothing.
     static let buildRunnerRefusals = [
         "UNKNOWN-SUITE",
         "PARTIAL-SCOPE",
@@ -615,6 +636,7 @@ struct CadenceGuardScriptSelftestTests {
         "WARNING-BASELINE",
         "NO-SUCH-SIMULATOR",
         "MACRO-EXPANSION-WARNING",
+        "INTERACTIVE-SKIPPED",
     ]
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody

@@ -79,6 +79,12 @@ import XCTest
 /// more to dismiss each panel. So it takes the pointer, and it is gated like every other test in
 /// this target that does (`CadenceUITestEnvironment.requireInteractiveUITests` — the marker-file
 /// channel, since the environment variable cannot reach the runner; T-1724).
+///
+/// [[T-1741]] asked whether that is a schedule at all and settled it: the gate **stays**, because
+/// there is no unattended Mac here and CI does not run this target (T-531); the SILENCE goes.
+/// `scripts/xcb.sh` now ends any run that skipped tests with `INTERACTIVE-SKIPPED`, naming them
+/// and naming the `touch` that enables them, so a green default run no longer reads as though
+/// these assertions were made.
 @MainActor
 final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
 
@@ -147,12 +153,12 @@ final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
         launchApp()
 
         XCTAssertTrue(
-            app.buttons[ID.seededAreaRow].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            app.buttons.element(identified: ID.seededAreaRow).waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
             "the stock seed's sidebar lists never appeared, so the scenario seed cannot be trusted either"
         )
 
         let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == %@", ID.todayRow))
+            .matching(CadenceUITestQuery.identifying(ID.todayRow))
             .firstMatch
         XCTAssertTrue(
             row.waitForExistence(timeout: CadenceUITestBounds.firstPaint),
@@ -267,7 +273,7 @@ final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
 
     private func control(_ field: String, in inspector: XCUIElement) -> XCUIElement {
         inspector.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == %@", ID.control(field)))
+            .matching(CadenceUITestQuery.identifying(ID.control(field)))
             .firstMatch
     }
 
@@ -388,7 +394,7 @@ final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
     /// with the same symptom.
     private func inspectorControlIdentifiers(in inspector: XCUIElement) -> String {
         let found = inspector.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "inspector.control."))
+            .matching(CadenceUITestQuery.identifiers(beginningWith: "inspector.control."))
             .allElementsBoundByIndex
             .map(\.identifier)
         return found.isEmpty ? "none at all" : found.joined(separator: " ;; ")

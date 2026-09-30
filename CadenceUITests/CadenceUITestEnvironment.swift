@@ -186,3 +186,81 @@ enum CadenceUITestBounds {
     /// terminated app to stop running. Neither has ever been seen to fire.
     static let settle: TimeInterval = 5
 }
+
+/// **How this target addresses an element by identifier, and why it is never a string subscript.**
+///
+/// `XCUIElementQuery`'s string subscript — `app.buttons["some.identifier"]` — **caps the identifier
+/// at 128 characters, and raises rather than failing to match**:
+///
+///     NSInternalInconsistencyException: Invalid query - string identifier "…" exceeds maximum
+///     length of 128 characters
+///
+/// attributed to the line that asked. Not an unmatched query, not a nil element: an exception,
+/// from a lookup. Measured 2026-09-29 (T-1488/T-1725) on `CadenceTodayRowCrushUITests`' first ever
+/// run, where the fixture's row identifier comes out at **129** characters because the slug is
+/// derived from a title deliberately longer than any pane can draw.
+///
+/// That makes the subscript unusable for any identifier this repository *generates*, and it
+/// generates most of them: `CadenceAccessibilityIdentifiers` slugs a task's **title** into its row,
+/// title and due-chip identifiers, so the cap is a property of the user's data, not of the test.
+/// The length is not the thing to fix — in that fixture the length is the point — so the lookup is.
+///
+/// `NSPredicate` matching on `identifier` carries no such cap, and is what every call site here
+/// uses. The rule is pinned from **outside** this target, by `CadenceUITestIdentifierLookupTests`
+/// in `CadenceTests`, which refuses a subscript over a computed identifier anywhere in this
+/// directory. Outside, because this target is opt-in and CI does not run it at all (T-531): a
+/// guard living here would be a rule nobody executes. And a rule rather than three conversions,
+/// because the site that matters is the one that will be written by someone who has not read
+/// this comment.
+enum CadenceUITestQuery {
+
+    /// The cap the subscript raises past. Named so the guard test can quote a number rather than
+    /// a sentence, and so a reader meeting a 130-character identifier knows what it collided with.
+    static let stringSubscriptIdentifierCap = 128
+
+    /// `identifier == …`, the cap-free form of `query[identifier]`.
+    static func identifying(_ identifier: String) -> NSPredicate {
+        NSPredicate(format: "identifier == %@", identifier)
+    }
+
+    /// `identifier BEGINSWITH …`, for the "what IS on screen" diagnostics a red run needs.
+    static func identifiers(beginningWith prefix: String) -> NSPredicate {
+        NSPredicate(format: "identifier BEGINSWITH %@", prefix)
+    }
+}
+
+extension XCUIElementQuery {
+
+    /// `self[identifier]` without the cap: the element of this query whose identifier is
+    /// `identifier`.
+    ///
+    /// Used where the element TYPE is part of the question — `app.buttons.element(identified:)` is
+    /// a reading of a button and `app.descendant(identified:)` is a reading of anything.
+    func element(identified identifier: String) -> XCUIElement {
+        matching(CadenceUITestQuery.identifying(identifier)).firstMatch
+    }
+}
+
+extension XCUIElement {
+
+    /// The element with this identifier, looked for anywhere under the receiver.
+    ///
+    /// `XCUIApplication` is an `XCUIElement`, so this is both the app-wide lookup and the
+    /// scoped-to-a-row one; scoping matters where an identifier is not unique on screen — a
+    /// `task.row.…` identifier is published by Today *and* by a list's detail pane from one call
+    /// site.
+    func descendant(identified identifier: String) -> XCUIElement {
+        descendants(matching: .any).matching(CadenceUITestQuery.identifying(identifier)).firstMatch
+    }
+
+    /// Every identifier under the receiver that starts with `prefix`, with its length — the
+    /// diagnostic a red lookup needs, because *no such element* and *an element whose identifier is
+    /// not the one this test computed* have the same symptom and different fixes.
+    func identifiers(beginningWith prefix: String) -> String {
+        let found = descendants(matching: .any)
+            .matching(CadenceUITestQuery.identifiers(beginningWith: prefix))
+            .allElementsBoundByIndex
+        guard !found.isEmpty else { return "none at all" }
+        return found.map { "\($0.identifier) (\($0.identifier.count) chars)" }.joined(separator: " ;; ")
+    }
+}

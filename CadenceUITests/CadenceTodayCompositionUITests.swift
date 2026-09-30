@@ -112,7 +112,10 @@ final class CadenceTodayCompositionUITests: XCTestCase {
     }
 
     func testTodayHoldsItsGeometryAndItsPictureAcrossFullScreenAndHover() throws {
-        try requireInteractiveUITestsEnabled()
+        // The shared gate, spelled at the call site (T-1724). A privately named wrapper is how
+        // `CadenceUITests` came to carry a copy that read only the undeliverable environment
+        // variable, and two of its tests never ran once.
+        try CadenceUITestEnvironment.requireInteractiveUITests()
 
         // ── GROUP 1: PROCESS START ────────────────────────────────────────────────────────────
         // Precondition, not a finding. Everything below is void if this fails, which is why it is
@@ -130,17 +133,17 @@ final class CadenceTodayCompositionUITests: XCTestCase {
         // deliberately separate from geometry: an element can exist at a nonsense position.
         XCTContext.runActivity(named: "group 2 — surface existence") { _ in
             XCTAssertTrue(
-                app.buttons[ID.seededAreaRow].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+                app.buttons.element(identified: ID.seededAreaRow).waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
                 "the stock seed's sidebar lists never appeared, so the scenario seed cannot be trusted either"
             )
-            app.buttons[ID.todayDestination].click()
+            app.buttons.element(identified: ID.todayDestination).click()
             // Today is identified by what it *draws*, not by `TodayView`'s own
             // `accessibilityIdentifier("screen.today")`. That identifier produces no element:
             // measured 2026-09-06 against a full tree dump, nothing in the app answers to it,
             // because it sits on a `GeometryReader` that is not itself an accessibility element.
             // Filed under [[T-1068]].
             XCTAssertTrue(
-                app.descendants(matching: .any)[ID.rolloverBanner].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+                app.descendant(identified: ID.rolloverBanner).waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
                 "the rollover banner is absent, so the seeded past-do tasks did not reach Today"
             )
             for name in Fixture.overdueTaskNames + Fixture.todayTaskNames {
@@ -311,8 +314,8 @@ final class CadenceTodayCompositionUITests: XCTestCase {
         }
 
         return Geometry(
-            banner: app.descendants(matching: .any)[ID.rolloverBanner].exists
-                ? app.descendants(matching: .any)[ID.rolloverBanner].frame
+            banner: app.descendant(identified: ID.rolloverBanner).exists
+                ? app.descendant(identified: ID.rolloverBanner).frame
                 : .null,
             firstSectionHeader: header.frame,
             rows: rows
@@ -419,8 +422,23 @@ final class CadenceTodayCompositionUITests: XCTestCase {
             block.bounds.height / max(block.bounds.width, 1), Fixture.imageAspect, accuracy: 0.05,
             "[\(state)] the picture's box is \(block.bounds) — the wrong shape for an 800×500 image"
         )
-        let foreign = CadenceUITestPixel.foreignPixelCount(in: bitmap, block: block)
-        if foreign != 0 {
+        // **The allowance is a PLACE, not a number** — `CadenceUITestPixel.BadgeAllowance` argues
+        // it in full. The markdown editor draws a small rounded image-edit badge over the
+        // picture's bottom-right corner, so "every pixel inside the box is that colour" was false
+        // by design (T-1723); outside that one corner it still holds, at zero.
+        let verdict = CadenceUITestPixel.overdraw(in: bitmap, block: block)
+
+        // What was tolerated, in the log of a GREEN run, so nobody has to read this source to find
+        // out that the assertion has a hole in it.
+        XCTContext.runActivity(
+            named: "[\(state)] picture \(describe(block.bounds)) \(block.colour.description); "
+            + "badge allowance \(describe(verdict.allowance)) "
+            + "(\(String(format: "%.1f%%", verdict.allowanceShareOfThePicture * 100)) of the picture) "
+            + "held \(verdict.insideAllowance) foreign px of \(verdict.maximumInsideTheAllowance) allowed; "
+            + "outside it \(verdict.outsideAllowance)"
+        ) { _ in }
+
+        if !verdict.isClean {
             // A pixel assertion that fails without showing what it saw costs its reader a whole
             // run to find out, and this target's screen recording is of the **desktop** — the
             // signed-in person's other windows included. So the evidence attached here is the
@@ -430,17 +448,42 @@ final class CadenceTodayCompositionUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+
+        // A guard on the guard, first: the hole must stay small enough that the assertion outside
+        // it is still about the picture. Asserted rather than trusted, because the allowance is
+        // derived from a block measured at run time.
+        XCTAssertFalse(
+            verdict.theAllowanceHasGrownTooLarge,
+            "[\(state)] the badge allowance has grown to "
+            + "\(String(format: "%.1f%%", verdict.allowanceShareOfThePicture * 100)) of the picture — at that "
+            + "size this assertion no longer refuses a real overdraw"
+        )
+
+        // ── THE ASSERTION ────────────────────────────────────────────────────────────────────
+        // Outside the badge's corner, unchanged and unweakened: not one pixel.
         XCTAssertEqual(
-            foreign, 0,
-            "[\(state)] something is drawn on top of the picture: \(foreign) of "
-            + "\(Int(block.bounds.width * block.bounds.height)) pixels inside \(block.bounds) are not "
-            + "\(block.colour.description)"
+            verdict.outsideAllowance, 0,
+            "[\(state)] something is drawn on top of the picture: \(verdict.outsideAllowance) of "
+            + "\(Int(block.bounds.width * block.bounds.height)) pixels inside \(describe(block.bounds)) are not "
+            + "\(block.colour.description), and they are not the image-edit badge — they span "
+            + "\(describe(verdict.outsideBounds)), outside the \(describe(verdict.allowance)) allowance"
+        )
+
+        // And the corner is an allowance for a BADGE, not for a filled corner. Without this a
+        // defect that happened to land entirely in the tolerated square would pass, which is the
+        // failure mode a tolerance is always one step away from.
+        XCTAssertFalse(
+            verdict.theAllowanceIsFilledRatherThanBadged,
+            "[\(state)] \(verdict.insideAllowance) of the \(Int(verdict.allowance.width * verdict.allowance.height)) "
+            + "pixels in the badge allowance are not \(block.colour.description), against "
+            + "\(verdict.maximumInsideTheAllowance) allowed — the corner is filled, not badged, and this "
+            + "allowance was argued for a badge"
         )
     }
 
     /// Whether Today is wide enough to be drawing its notes column at this moment.
     private var notesPaneIsDrawn: Bool {
-        app.descendants(matching: .any)[ID.notesPane].exists
+        app.descendant(identified: ID.notesPane).exists
     }
 
     /// The picture assertion at a width where the notes column may legitimately be absent.
@@ -558,7 +601,7 @@ final class CadenceTodayCompositionUITests: XCTestCase {
     /// has no inverse. The sidebar's search field is used because it is a long way from the task
     /// pane and does not itself change on hover.
     private func releaseHover() {
-        let neutral = app.descendants(matching: .any)["sidebar.search"]
+        let neutral = app.descendant(identified: "sidebar.search")
         if neutral.exists {
             neutral.hover()
         } else {
@@ -568,21 +611,30 @@ final class CadenceTodayCompositionUITests: XCTestCase {
 
     // MARK: - Small helpers
 
+    /// **Predicate, not subscript** (T-1725). Both identifiers below are *generated* — slugged from
+    /// a task title and a section title — and `XCUIElementQuery`'s string subscript raises
+    /// `NSInternalInconsistencyException` past 128 characters rather than returning an unmatched
+    /// query. This fixture's names are short today, which is exactly why the subscript here was a
+    /// trap and not a bug: it would have gone off the first time someone seeded a realistic title.
+    /// `CadenceUITestQuery` carries the argument.
     private func row(_ name: String) -> XCUIElement {
-        app.descendants(matching: .any)[ID.row(name)]
+        app.descendant(identified: ID.row(name))
     }
 
     private func sectionHeader(_ title: String) -> XCUIElement {
-        app.descendants(matching: .any)[ID.section(title)]
+        app.descendant(identified: ID.section(title))
+    }
+
+    /// A rectangle in the one spelling every failure message in this file uses. `.null` says so
+    /// rather than printing the infinities `CGRect.null` is actually made of.
+    private func describe(_ rect: CGRect) -> String {
+        guard !rect.isNull else { return "(nothing)" }
+        return "(\(Int(rect.minX)), \(Int(rect.minY)), \(Int(rect.width)), \(Int(rect.height)))"
     }
 
     /// `RunLoop`, not `sleep`: this process is driving a UI and must keep servicing its own
     /// run loop while it waits.
     private func settle(_ seconds: TimeInterval) {
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
-    }
-
-    private func requireInteractiveUITestsEnabled() throws {
-        try CadenceUITestEnvironment.requireInteractiveUITests()
     }
 }

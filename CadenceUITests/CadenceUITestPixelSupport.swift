@@ -165,23 +165,189 @@ enum CadenceUITestPixel {
         )
     }
 
+    /// Where the pixels inside `block` that are not the block's colour actually **are**, not just
+    /// how many there are.
+    ///
+    /// The count alone was this reading's whole vocabulary until T-1723, and it could not tell the
+    /// two findings apart that matter here: *the editor drew its image-edit badge on one corner*
+    /// and *something is drawn across the picture*. Both are "1228 pixels are not magenta". A
+    /// caller that knows where they landed can refuse the second while tolerating the first without
+    /// widening its tolerance to a number that would swallow the defect too.
+    ///
+    /// `examined` is reported rather than re-derived by the caller because the inset that clears
+    /// the block's own antialiased edge belongs to this function, and an allowance measured against
+    /// the wrong rectangle is an allowance of the wrong size.
+    struct ForeignPixels {
+        let count: Int
+        /// Bounding box of every foreign pixel, in the bitmap's **pixels**. `.null` when there are
+        /// none — which is a different fact from a zero-sized box at the origin.
+        let bounds: CGRect
+        /// The region actually looked at: `block.bounds` inset on all four sides.
+        let examined: CGRect
+
+        var isEmpty: Bool { count == 0 }
+    }
+
     /// Pixels inside `block`, inset to clear its own antialiased edge, that are not the block's
-    /// colour. **Zero is the assertion**: anything drawn over the picture lands here.
-    static func foreignPixelCount(in bitmap: Bitmap, block: Block, inset: Int = 3, tolerance: Int = 12) -> Int {
+    /// colour, and where they are. **Zero is the assertion** everywhere except the one corner
+    /// `CadenceTodayCompositionUITests` argues for explicitly.
+    ///
+    /// `excluding` is subtracted from the region examined, in bitmap pixels. The caller passes the
+    /// region it has stated a reason to tolerate; this function does not know of any.
+    static func foreignPixels(
+        in bitmap: Bitmap,
+        block: Block,
+        inset: Int = 3,
+        tolerance: Int = 12,
+        excluding excluded: CGRect = .null
+    ) -> ForeignPixels {
         let x0 = Int(block.bounds.minX) + inset
         let x1 = Int(block.bounds.maxX) - inset
         let y0 = Int(block.bounds.minY) + inset
         let y1 = Int(block.bounds.maxY) - inset
-        guard x0 <= x1, y0 <= y1 else { return 0 }
+        let examined = CGRect(x: x0, y: y0, width: max(0, x1 - x0 + 1), height: max(0, y1 - y0 + 1))
+        guard x0 <= x1, y0 <= y1 else {
+            return ForeignPixels(count: 0, bounds: .null, examined: examined)
+        }
 
         var foreign = 0
+        var bounds = CGRect.null
         for y in y0...y1 {
             for x in x0...x1 {
+                if !excluded.isNull, excluded.contains(CGPoint(x: CGFloat(x), y: CGFloat(y))) { continue }
                 guard let colour = bitmap.colour(x: x, y: y) else { continue }
-                if colour.distance(to: block.colour) > tolerance { foreign += 1 }
+                if colour.distance(to: block.colour) > tolerance {
+                    foreign += 1
+                    bounds = bounds.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
             }
         }
-        return foreign
+        return ForeignPixels(count: foreign, bounds: bounds, examined: examined)
+    }
+
+    /// The count alone, for callers that only ever wanted the number.
+    static func foreignPixelCount(in bitmap: Bitmap, block: Block, inset: Int = 3, tolerance: Int = 12) -> Int {
+        foreignPixels(in: bitmap, block: block, inset: inset, tolerance: tolerance).count
+    }
+
+    // MARK: - The one thing the product is allowed to draw on the picture (T-1723)
+
+    /// **The allowance is a PLACE, not a number**, and that distinction is the whole of T-1723.
+    ///
+    /// `assertFixtureImageIsUndrawnOver` went red on its first ever execution — *1228 pixels
+    /// inside (584, 500, 640, 400) are not rgb(255,0,255)* — and the window attached to that
+    /// failure showed what they were: the markdown editor's small rounded **image-edit badge**, on
+    /// the bottom-right corner of the picture. A product affordance. So the sentence the assertion
+    /// was making, *every pixel inside the box is that colour*, was false by design and always had
+    /// been.
+    ///
+    /// The obvious repair — raise a tolerance until 1228 pixels pass — **swallows the defect the
+    /// assertion exists to catch**: text drawn over a picture is a few hundred pixels too. So
+    /// nothing here is a count the picture as a whole is measured against. The allowance is one
+    /// square at the corner the badge is drawn in; outside it the original assertion stands at
+    /// zero, and the defect that motivated the reading — text across the picture — lands outside
+    /// it by construction, because text spans the width it is drawn at.
+    ///
+    /// Two further bounds keep the hole from becoming the assertion:
+    ///
+    /// - the square may not exceed `maximumShareOfThePicture` of the block, so a mis-measured
+    ///   block cannot quietly widen it, and
+    /// - the badge may fill only `maximumFillOfTheAllowance` of the square, which is the cut
+    ///   between *a badge sits in this corner* and *this corner has been painted over*.
+    ///
+    /// Every figure is argued from the measurement rather than being the measurement rounded: the
+    /// badge measured 1228 px in a 640×400 block, about 35 px on a side, 0.5% of the picture.
+    struct BadgeAllowance {
+
+        /// The square's side, as a share of the picture's **shorter** side.
+        ///
+        /// 0.15 of the 400px-tall block measured is 60px against a ~35px badge. The multiple is
+        /// deliberate: the badge draws at a fixed point size while the picture's pixel size moves
+        /// with the window and the display, so a share that only just covered today's ratio would
+        /// fail on a narrower pane for being narrow. A share rather than a pixel count for the
+        /// reason every bound in `CadenceTodayRowCrushUITests` is a comparison — a pixel figure
+        /// survives neither a display nor an Xcode major.
+        let sideShareOfTheShorterSide: CGFloat
+
+        /// And whatever that works out to, the hole may not exceed this share of the picture.
+        /// 0.15² is 2.25% of a square block and less of an oblong one.
+        let maximumShareOfThePicture: CGFloat
+
+        /// How much of the square the badge may actually fill. The badge measured 1228 of the
+        /// ~3600 px such a square holds — 34%. 0.7 is twice that.
+        let maximumFillOfTheAllowance: CGFloat
+
+        static let imageEditBadge = BadgeAllowance(
+            sideShareOfTheShorterSide: 0.15,
+            maximumShareOfThePicture: 0.03,
+            maximumFillOfTheAllowance: 0.7
+        )
+
+        /// The square, at the **bottom-right** corner of the region examined. In the bitmap's
+        /// pixels, whose origin is top-left, so that is max-x / max-y.
+        func rect(over examined: CGRect) -> CGRect {
+            guard examined.width > 0, examined.height > 0 else { return .null }
+            let side = (min(examined.width, examined.height) * sideShareOfTheShorterSide).rounded()
+            guard side > 0 else { return .null }
+            return CGRect(x: examined.maxX - side, y: examined.maxY - side, width: side, height: side)
+        }
+
+        func maximumForeignPixels(in allowance: CGRect) -> Int {
+            guard !allowance.isNull else { return 0 }
+            return Int((allowance.width * allowance.height * maximumFillOfTheAllowance).rounded())
+        }
+    }
+
+    /// What was drawn on the picture, where, and whether any of it is allowed.
+    ///
+    /// A verdict rather than three loose numbers at the call site, so the same decision can be put
+    /// to a **synthetic** bitmap — one this target builds itself, with a badge placed deliberately
+    /// — and shown to still refuse an overdraw. A tolerance whose discrimination has never been
+    /// demonstrated is a tolerance nobody should believe, and the live surface this reading is
+    /// taken from cannot be asked on demand.
+    struct OverdrawVerdict {
+        let allowance: CGRect
+        let allowanceShareOfThePicture: CGFloat
+        let insideAllowance: Int
+        let outsideAllowance: Int
+        /// Where the pixels outside the allowance are. `.null` when there are none.
+        let outsideBounds: CGRect
+        let maximumInsideTheAllowance: Int
+
+        var somethingIsDrawnOutsideTheAllowance: Bool { outsideAllowance > 0 }
+        var theAllowanceIsFilledRatherThanBadged: Bool { insideAllowance > maximumInsideTheAllowance }
+        var theAllowanceHasGrownTooLarge: Bool { allowanceShareOfThePicture > allowanceCap }
+        var isClean: Bool {
+            !somethingIsDrawnOutsideTheAllowance
+                && !theAllowanceIsFilledRatherThanBadged
+                && !theAllowanceHasGrownTooLarge
+        }
+
+        fileprivate let allowanceCap: CGFloat
+    }
+
+    static func overdraw(
+        in bitmap: Bitmap,
+        block: Block,
+        tolerating badge: BadgeAllowance = .imageEditBadge,
+        inset: Int = 3,
+        tolerance: Int = 12
+    ) -> OverdrawVerdict {
+        let all = foreignPixels(in: bitmap, block: block, inset: inset, tolerance: tolerance)
+        let allowance = badge.rect(over: all.examined)
+        let outside = foreignPixels(
+            in: bitmap, block: block, inset: inset, tolerance: tolerance, excluding: allowance
+        )
+        let area = allowance.isNull ? 0 : allowance.width * allowance.height
+        return OverdrawVerdict(
+            allowance: allowance,
+            allowanceShareOfThePicture: area / max(block.bounds.width * block.bounds.height, 1),
+            insideAllowance: all.count - outside.count,
+            outsideAllowance: outside.count,
+            outsideBounds: outside.bounds,
+            maximumInsideTheAllowance: badge.maximumForeignPixels(in: allowance),
+            allowanceCap: badge.maximumShareOfThePicture
+        )
     }
 
     /// The same question asked of one rectangle of the shot rather than the whole of it, in

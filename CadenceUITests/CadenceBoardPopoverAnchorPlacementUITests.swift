@@ -75,9 +75,11 @@ import XCTest
 ///
 /// It clicks. So it is gated like every other test in this target that takes the pointer
 /// (`CadenceUITestEnvironment.requireInteractiveUITests` — the marker-file channel, since the
-/// environment variable cannot reach the runner; T-1724). That gate is [[T-1741]]'s subject and is
-/// not solved here: a default `-only-testing:CadenceUITests` run skips these two tests exactly as
-/// it skips the inspector sweep.
+/// environment variable cannot reach the runner; T-1724). That gate is [[T-1741]]'s subject, and
+/// T-1741 settled it: the gate **stays** — there is no unattended Mac to move it to, and CI does
+/// not run this target at all (T-531) — and what goes is the silence. A default
+/// `-only-testing:CadenceUITests` run still skips these two tests, and `scripts/xcb.sh` now says
+/// so by name in its postflight (`INTERACTIVE-SKIPPED`), with the `touch` that turns them on.
 @MainActor
 final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
 
@@ -476,10 +478,10 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
 
     // MARK: - Small helpers
 
+    /// Predicate-backed, via `CadenceUITestQuery` (T-1725): `ID.boardCard` and friends are slugged
+    /// from titles, and the string subscript raises past 128 characters instead of not matching.
     private func element(_ identifier: String) -> XCUIElement {
-        app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == %@", identifier))
-            .firstMatch
+        app.descendant(identified: identifier)
     }
 
     private func spans(_ anchor: CGRect, _ container: CGRect) -> Bool {
@@ -512,11 +514,7 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
     /// element whose identifier is not the one this test computed" are different findings with the
     /// same symptom.
     private func identifiers(beginningWith prefix: String) -> String {
-        let found = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix))
-            .allElementsBoundByIndex
-            .map(\.identifier)
-        return found.isEmpty ? "none at all" : found.joined(separator: " ;; ")
+        app.identifiers(beginningWith: prefix)
     }
 
     private func buttonLabels() -> String {

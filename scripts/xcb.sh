@@ -613,6 +613,91 @@ resolve_only_testing() {
 }
 
 
+# --- the interactive UI-test skip report (T-1741) ----------------------------
+# EVERY GUARD IN THIS FILE SO FAR ANSWERS "DID THE RUN EXECUTE ANYTHING". This one answers the
+# question one notch quieter: did the run execute everything it BUILT.
+#
+# `CadenceUITests` gates every pointer-taking test behind `CadenceUITestEnvironment
+# .requireInteractiveUITests()`, which is right -- those tests take over the pointer and keyboard
+# of whatever Mac they run on, and one of them right-clicks a sidebar. The channel is a marker file
+# inside the runner's own container, because the environment variable provably cannot reach the
+# sandboxed macOS UI-test process (T-1724). The consequence was not right: a default
+# `-only-testing:CadenceUITests` run SKIPS four geometry guards -- the only two suites in this
+# repository that can see where a popover actually lands -- prints `** TEST SUCCEEDED **`, and
+# reads exactly like a run that checked them.
+#
+# THE DECISION (T-1741), and what it is NOT. It is not "run them in CI": `.github/workflows/ci.yml`
+# does not run this target at all and says why -- macOS UI testing needs a one-time system
+# authorisation granted with the user's password at a GUI prompt (T-531), and a hosted runner has
+# nobody to grant it, so the stage would fail at launch on EVERY run rather than intermittently.
+# It is not "run them in a nightly" either: there is no unattended Mac here, and a nightly on the
+# owner's own machine would seize their pointer at 3am. And it is not "ungate them": a test that
+# right-clicks while somebody is typing is a defect in the harness, not coverage.
+#
+# So the gate stays and THE SILENCE GOES. That is the whole of what was wrong: a skipped test that
+# reports success is the same failure shape as T-1516's warning counter reading zero over fourteen
+# real warnings, and as T-535's release gate that never compiled iOS. The count below is printed on
+# every test run that skipped anything, it names the tests, and it names the one command that turns
+# them on -- so "I did not run the geometry guards" becomes something the reader of a green run is
+# told rather than something they have to know to ask.
+#
+# IT REPORTS AND IT DOES NOT GATE, for the reason PARTIAL-SCOPE does not: the ordinary, correct,
+# daily invocation is the one that skips these, and a guard that fails the ordinary case is a guard
+# that gets switched off. `$STATUS` is never touched here.
+#
+# AND IT COUNTS ITS OWN LINES. It does NOT add a number beside `.github/scripts/check-log.sh`'s
+# executed-test counter, which [[T-1851]] measured as wrong twice over -- blind to the 133
+# `@Test("a sentence")` cases, so it reports 5,242 where swift-testing says 5,374, and double
+# counting a failing test, so 5 failures print as "tests failed: 10". A skip count placed next to
+# a total that is already 133 short would read as a reconciliation and be neither. The two are
+# also separate questions: `check-log.sh` is the CI gate, and CI does not run this target at all.
+# T-1851 is left to be taken on its own rather than half-fixed from here.
+INTERACTIVE_SKIP_MARKER="$HOME/Library/Containers/com.haoranwei.Cadence.CadenceUITests.xctrunner/Data/tmp/cadence-run-interactive-ui-tests"
+
+# The skip's own message, which `CadenceUITestEnvironment.requireInteractiveUITests` writes and
+# XCTest copies into the log verbatim. Keyed on the message rather than on the suite names so a
+# suite added to the target is covered the day it is written, and so a skip for the OTHER reason
+# this target skips -- a locked screen -- is counted separately rather than folded in.
+INTERACTIVE_SKIP_PATTERN='Interactive UI tests are opt-in'
+# XCTest's per-test skip line. `[Cc]ase` for the same reason TEST_RESULT_PATTERN has it: Xcode
+# writes `Test case` lowercase in a parallel run and `Test Case` serially.
+SKIPPED_CASE_PATTERN="Test [Cc]ase '[^']*' skipped"
+
+interactive_skip_report() {
+  local log="$1"
+  [[ -r "$log" ]] || return 0
+  local -i skipped interactive
+  skipped=$(grep -cE "$SKIPPED_CASE_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  interactive=$(grep -cF "$INTERACTIVE_SKIP_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  (( skipped > 0 || interactive > 0 )) || return 0
+
+  # The names, from the skip lines, so the report is checkable rather than a number.
+  local -a names
+  names=(${(f)"$(grep -oE "$SKIPPED_CASE_PATTERN" "$log" 2>/dev/null \
+    | sed -E "s/^Test [Cc]ase '-?\[?([^]']*)\]?' skipped\$/\1/" | sort -u)"})
+
+  say ""
+  if (( interactive > 0 )); then
+    say "!! INTERACTIVE-SKIPPED (T-1741): $skipped test(s) in this run SKIPPED themselves, and the"
+    say "   interactive opt-in is why. They were built and they did not execute; the run's exit"
+    say "   code says nothing about the surfaces they read."
+  else
+    say "!! INTERACTIVE-SKIPPED (T-1741): $skipped test(s) in this run SKIPPED themselves, for a"
+    say "   reason other than the interactive opt-in. Read the skip message in $log."
+  fi
+  local n
+  for n in "${names[@]}"; do [[ -n "$n" ]] && say "     $n"; done
+  if (( interactive > 0 )); then
+    say "   Turn them on for a run, then turn them off again -- they take over the pointer:"
+    say "     touch '$INTERACTIVE_SKIP_MARKER'"
+    say "     rm    '$INTERACTIVE_SKIP_MARKER'"
+    say "   (CADENCE_RUN_INTERACTIVE_UI_TESTS=1 is honoured too and CANNOT be delivered to the"
+    say "    macOS UI-test runner -- it is sandboxed into its own container; T-1724.)"
+  fi
+  return 0
+}
+
+
 # --- the iOS Simulator destination guard (T-1282) ----------------------------
 # The zero-test guard above refuses a run that executed nothing. This refuses a run that COMPILED
 # nothing, which is the same failure one step earlier and wears an even better disguise.
@@ -1114,6 +1199,53 @@ selftest_only_testing() {
   check "…and a live id= passes" $( (( srn == 0 )) && print 1 || print 0 ) "exit $srn: $sout"
 
   say ""
+  say " 9a. the interactive UI-test skip report (T-1741)"
+  # Fixture logs in XCTest's real shapes. The skip message is the one
+  # `CadenceUITestEnvironment.requireInteractiveUITests` throws, abbreviated only where the real
+  # one wraps -- the phrase this keys on is present in full.
+  print -rl -- \
+    "Test Suite 'CadenceUITests' started at 2026-09-30 15:55:16.000" \
+    "/repo/CadenceUITests/CadenceUITests.swift:30: CadenceUITests.testRightClickingSidebarListOpensEditPanel : Test skipped - Interactive UI tests are opt-in: they take over the pointer and the keyboard of whatever Mac they run on." \
+    "Test Case '-[CadenceUITests testRightClickingSidebarListOpensEditPanel]' skipped (0.002 seconds)." \
+    "Test Case '-[CadenceUITests testLaunchesToTodayWithSeededSidebarLists]' passed (7.331 seconds)." \
+    "** TEST SUCCEEDED **" \
+    > "$ws/interactive-skip.log"
+  # The other reason this target skips, and it must NOT be reported as the opt-in.
+  print -rl -- \
+    "/repo/CadenceUITests/CadenceUITests.swift:9: CadenceUITests.testLaunchesToTodayWithSeededSidebarLists : Test skipped - The Mac's screen is locked, so loginwindow owns the foreground." \
+    "Test Case '-[CadenceUITests testLaunchesToTodayWithSeededSidebarLists]' skipped (0.001 seconds)." \
+    "** TEST SUCCEEDED **" \
+    > "$ws/locked-skip.log"
+  # The control that matters most: a run in which everything executed must say NOTHING, or the
+  # banner becomes a line every reader learns to scroll past.
+  print -rl -- \
+    "Test Case '-[CadenceUITests testRightClickingSidebarListOpensEditPanel]' passed (9.100 seconds)." \
+    "** TEST SUCCEEDED **" \
+    > "$ws/all-ran.log"
+  local iout irc
+  run_skips() { iout=$(zsh "$here" check-interactive-skips "$1" 2>&1); irc=$?; }
+
+  run_skips "$ws/interactive-skip.log"
+  check "a run that skipped an interactive test says INTERACTIVE-SKIPPED" \
+    $( [[ "$iout" == *INTERACTIVE-SKIPPED* ]] && print 1 || print 0 ) "exit $irc: $iout"
+  check "…counts it, and counts only it (the passing test beside it is not a skip)" \
+    $( [[ "$iout" == *"1 test(s) in this run SKIPPED"* ]] && print 1 || print 0 ) "$iout"
+  check "…names the test, so the report is checkable rather than a number" \
+    $( [[ "$iout" == *"CadenceUITests testRightClickingSidebarListOpensEditPanel"* ]] && print 1 || print 0 ) "$iout"
+  check "…and names the touch that turns them on" \
+    $( [[ "$iout" == *"touch "*cadence-run-interactive-ui-tests* ]] && print 1 || print 0 ) "$iout"
+  check "…and never gates: it exits 0 whatever it found" \
+    $( (( irc == 0 )) && print 1 || print 0 ) "exit $irc"
+
+  run_skips "$ws/locked-skip.log"
+  check "a locked-screen skip is reported, and NOT as the interactive opt-in" \
+    $( [[ "$iout" == *INTERACTIVE-SKIPPED* && "$iout" == *"other than the interactive opt-in"* && "$iout" != *"touch "* ]] && print 1 || print 0 ) "$iout"
+
+  run_skips "$ws/all-ran.log"
+  check "a run in which everything executed is SILENT" \
+    $( (( irc == 0 )) && [[ "$iout" != *INTERACTIVE-SKIPPED* ]] && print 1 || print 0 ) "exit $irc: $iout"
+
+  say ""
   say " 9. the per-requested-suite guard, and which of its two inputs it trusts (T-667 / T-1326)"
   # ONE LOG, TWO ARGUMENT SETS, TWO VERDICTS. That is the whole of T-1326: the log below holds the
   # literal string `-only-testing:CadenceTests/NotASuite` -- as a failing test's own prose, with the
@@ -1246,6 +1378,18 @@ if [[ "${1:-}" == "check-warnings" ]]; then
   # selftest -- enforces the baseline by running it and reading the exit code.
   diagnostic_report "$CHECK_LOG"
   exit $?
+fi
+
+# The interactive-skip report on its own (T-1741), for the two reasons `check-warnings` is
+# exposed: it is what `selftest` drives, and it lets anyone holding a UI-test log ask what that
+# run did not execute without re-running it. It never gates, so it always exits 0.
+if [[ "${1:-}" == "check-interactive-skips" ]]; then
+  CHECK_LOG="${2:-}"
+  if [[ ! -f "$CHECK_LOG" ]]; then
+    say "usage: ./scripts/xcb.sh check-interactive-skips <logfile>"; exit 2
+  fi
+  interactive_skip_report "$CHECK_LOG"
+  exit 0
 fi
 
 # The resolver on its own, the way `check-test-log` exposes the zero-test guard: it is what
@@ -1540,6 +1684,10 @@ if (( IS_TEST_RUN )); then
     # see `suite_started_guard`. Only reached when RAN > 0: a wholly empty run is the case above.
     suite_started_guard "$LOG" "$RAN" "${run_args[@]}" || { (( STATUS == 0 )) && STATUS=$SUITE_GATE_EXIT }
   fi
+  # After both, and outside the RAN branch on purpose (T-1741): a run whose every test skipped has
+  # RAN == 0 and is refused above, and the interactive opt-in is the likeliest reason it did --
+  # so the report that names it must not be the one thing that branch omits.
+  interactive_skip_report "$LOG"
 fi
 if [[ "$(shared_cadence_entries)" != "$before_entries" ]]; then
   say ""

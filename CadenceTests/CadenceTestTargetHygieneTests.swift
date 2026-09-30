@@ -1662,3 +1662,220 @@ func cadenceFileScopeReason(in source: String) -> String {
     this file are wrong and the tests below the break are not misplaced: \(located)
     """
 }
+
+// MARK: - T-1725: the 128-character cap on XCUIElementQuery's string subscript
+
+/// **`XCUIElementQuery`'s string subscript is unusable for an identifier this repository
+/// generates, and it does not fail gently.**
+///
+/// `app.buttons["…"]` raises `NSInternalInconsistencyException` — *"Invalid query - string
+/// identifier … exceeds maximum length of 128 characters"* — attributed to the line that asked.
+/// Not an unmatched query; an exception out of a lookup. `CadenceAccessibilityIdentifiers` slugs a
+/// task's **title** into its row, title and due-chip identifiers, so whether a lookup is past the
+/// cap is a property of the user's data. Measured 2026-09-29 (T-1488): the row identifier of
+/// `CadenceTodayRowCrushUITests`' fixture, whose title is deliberately longer than any pane can
+/// draw, comes out at **129** characters, and that is what its first ever run died on.
+///
+/// Three call sites were converted to `NSPredicate` one at a time as each one was hit. **This is
+/// the rule instead**, because the site that matters is the one nobody has written yet: a string
+/// subscript anywhere in `CadenceUITests` must carry a plain string literal, so a reader can see
+/// its length, and any *computed* identifier must go through `CadenceUITestQuery`, which matches
+/// `identifier` through a predicate and carries no cap.
+///
+/// Scanned from `CadenceTests` rather than enforced inside `CadenceUITests` deliberately: the UI
+/// target is opt-in and is not run by CI at all (T-531), so a guard living there would be a rule
+/// nobody executes — which is the shape of defect this whole batch is about.
+struct CadenceUITestIdentifierLookupTests {
+
+    /// Every `XCUIElementQuery` accessor this repository uses, plus the two that take an element
+    /// type. Written out rather than matched as "any identifier followed by `[`" so the sweep
+    /// cannot drift into counting array and dictionary subscripts.
+    private static let queryPattern = """
+    (?<![A-Za-z0-9_])(?:buttons|staticTexts|otherElements|images|cells|groups|windows|popovers\
+    |menuItems|menus|menuBars|textFields|secureTextFields|textViews|searchFields|checkBoxes\
+    |radioButtons|sheets|dialogs|tables|tableRows|outlines|outlineRows|scrollViews|collectionViews\
+    |toolbars|toolbarButtons|tabs|tabGroups|links|switches|sliders|steppers|segmentedControls\
+    |progressIndicators|disclosureTriangles|splitGroups|descendants\\(matching:\\s*\\.[A-Za-z]+\\)\
+    |children\\(matching:\\s*\\.[A-Za-z]+\\)|containing\\([^)]*\\))\\s*\\[([^\\]]*)\\]
+    """
+
+    /// A subscript argument that is a **single plain string literal** — no interpolation, no
+    /// concatenation, no variable, and not a named constant either.
+    ///
+    /// **A named constant is refused too, and that is the rule doing its job rather than
+    /// over-reaching.** Nothing at the call site distinguishes a `static let` holding a short
+    /// literal from a `static var` that slugs a title: `CadenceBoardPopoverAnchorPlacementUITests`
+    /// declares both in one identifier enum, three lines apart, and its `boardCard` is the
+    /// computed one. A reviewer looking at a subscript over a name cannot tell which they are
+    /// reading, and the failure mode is an exception, not a missed match. A literal shows its own
+    /// length; anything else goes through the predicate, which does not care.
+    private static func isAPlainLiteral(_ argument: String) -> Bool {
+        let text = argument.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") else { return false }
+        let body = String(text.dropFirst().dropLast())
+        return !body.contains("\"") && !body.contains("\\(")
+    }
+
+    private static func offenders(in source: String) -> [String] {
+        CadenceSourceScan.matchLines(queryPattern, in: source).compactMap { hit in
+            guard let open = hit.matched.firstIndex(of: "["),
+                  let close = hit.matched.lastIndex(of: "]") else { return nil }
+            let argument = String(hit.matched[hit.matched.index(after: open)..<close])
+            guard !isAPlainLiteral(argument) else { return nil }
+            return "line \(hit.line + 1): \(hit.matched.trimmingCharacters(in: .whitespacesAndNewlines))"
+        }
+    }
+
+    /// The detector, against both witnesses, before it is believed about the repository.
+    ///
+    /// The negative witness is the load-bearing one here: nearly every lookup in the UI target is
+    /// a literal subscript and always will be, so a detector that fired on those would report
+    /// twenty offenders and be switched off within the week.
+    @Test func theComputedSubscriptDetectorTellsALiteralFromAGeneratedIdentifier() {
+        #expect(Self.offenders(in: #"app.buttons["sidebar.destination.today"].click()"#).isEmpty,
+                "the detector fires on a plain literal subscript, which is the safe form")
+        #expect(Self.offenders(in: #"let row = app.descendants(matching: .any)["today.task.row.alpha"]"#).isEmpty,
+                "the detector fires on a literal subscript reached through descendants(matching:)")
+        #expect(Self.offenders(in: #"let ids = names["Alpha"]"#).isEmpty,
+                "the detector reads an ordinary dictionary subscript as a query lookup")
+        #expect(Self.offenders(in: #"let n = rowButtons["Alpha"]"#).isEmpty,
+                "the detector matches a name merely ENDING in a query accessor")
+
+        #expect(Self.offenders(in: "let row = app.descendants(matching: .any)[ID.row(name)]").count == 1,
+                "the detector cannot see a subscript over a generated identifier, so the sweep proves nothing")
+        #expect(Self.offenders(in: #"app.buttons["today.task.row.\(slug)"]"#).count == 1,
+                "the detector cannot see an interpolated identifier, which is the same cap by another spelling")
+        #expect(Self.offenders(in: "app.buttons[identifier].tap()").count == 1,
+                "the detector cannot see a subscript over a variable")
+        #expect(Self.offenders(in: "app.buttons[ID.seededAreaRow].click()").count == 1,
+                "the detector lets a NAMED constant through, and a name says nothing about its length")
+        #expect(Self.offenders(in: #"app.staticTexts["a" + suffix]"#).count == 1,
+                "the detector cannot see a concatenated identifier")
+    }
+
+    /// The sweep. Zero offenders across the whole UI target.
+    @Test func noUITestAddressesAnElementByAComputedStringSubscript() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let files = try CadenceSourceScan.swiftFiles(under: "CadenceUITests")
+        #expect(files.count >= 8, "the walk reached only \(files.count) files under CadenceUITests")
+
+        var found: [String] = []
+        var witnessed = false
+        for path in files.sorted() {
+            let source = try read(path)
+            // The walk has to actually reach a file that DOES look elements up, or an empty
+            // result is a statement about the walk rather than about the target.
+            if source.contains("app.buttons[") { witnessed = true }
+            found += Self.offenders(in: source).map { "\(path) \($0)" }
+        }
+        #expect(witnessed, "the sweep never read a file containing a query subscript at all")
+        #expect(
+            found.isEmpty,
+            """
+            XCUIElementQuery string subscripts over a computed identifier. The subscript RAISES \
+            NSInternalInconsistencyException past \(128) characters rather than not matching, and \
+            identifiers here are slugged from user titles. Use CadenceUITestQuery / \
+            XCUIElement.descendant(identified:) instead:
+            \(found.joined(separator: "\n"))
+            """
+        )
+    }
+
+    /// And the cap-free form exists, is in one place, and says what the cap is.
+    ///
+    /// Without this the sweep above is satisfiable by deleting every lookup in the target.
+    @Test func theCapFreePredicateLookupIsDeclaredOnceAndNamesTheCap() throws {
+        let environment = try CadenceSourceScan.sourceFile("CadenceUITests/CadenceUITestEnvironment.swift")
+        #expect(environment.contains("enum CadenceUITestQuery"),
+                "CadenceUITestQuery is gone, so every call site has been left to spell the predicate itself")
+        #expect(environment.contains("static let stringSubscriptIdentifierCap = 128"),
+                "the cap the subscript raises past is no longer named where the workaround lives")
+        #expect(environment.contains("func descendant(identified identifier: String) -> XCUIElement"),
+                "the shared cap-free lookup is gone")
+
+        // One home, not four. Three suites carried their own copy of this predicate before T-1725.
+        let read = CadenceSourceScan.strippedSourceReader()
+        var spellings: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "CadenceUITests") {
+            let count = CadenceSourceScan.matchCount(#"NSPredicate\(format: "identifier"#, in: try read(path))
+            if count > 0 { spellings.append("\(path) (\(count))") }
+        }
+        #expect(
+            spellings == ["CadenceUITests/CadenceUITestEnvironment.swift (2)"],
+            """
+            the identifier predicate is spelled outside CadenceUITestQuery again — a near-copy is \
+            how the cap got past three suites one at a time: \(spellings.joined(separator: ", "))
+            """
+        )
+    }
+}
+
+// MARK: - T-1724: one interactive opt-in, and no private copy of it
+
+/// **A gate with no working key is a silence, not a gate.**
+///
+/// `CadenceUITests.swift` carried a private `requireInteractiveUITestsEnabled` that read
+/// `ProcessInfo.processInfo.environment["CADENCE_RUN_INTERACTIVE_UI_TESTS"]` and nothing else — the
+/// one channel `CadenceUITestEnvironment` exists to record as **undeliverable**: the macOS UI-test
+/// runner is sandboxed into its own container, so neither a shell export nor a `TEST_RUNNER_`
+/// build-setting override reaches it (measured 2026-09-05). Its two tests therefore could not be
+/// enabled by any invocation and had never executed once, while the rest of the target ran fine
+/// through the marker-file channel beside it.
+///
+/// The repair is one line. The rule is what keeps it: **the opt-in is read in exactly one place.**
+/// A per-suite copy reads like a convenience and is indistinguishable, from the outside, from a
+/// test that is simply being skipped for the stated reason — which is precisely what it looked
+/// like for however long it was there.
+struct CadenceUITestInteractiveGateTests {
+
+    @Test func onlyCadenceUITestEnvironmentReadsTheInteractiveOptIn() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        var readers: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "CadenceUITests").sorted() {
+            let count = CadenceSourceScan.matchCount(
+                #"environment\[\s*"(TEST_RUNNER_)?CADENCE_RUN_INTERACTIVE_UI_TESTS""#,
+                in: try read(path)
+            )
+            if count > 0 { readers.append("\(path) (\(count))") }
+        }
+        #expect(
+            readers == ["CadenceUITests/CadenceUITestEnvironment.swift (2)"],
+            """
+            the interactive opt-in is read outside CadenceUITestEnvironment. That variable CANNOT \
+            reach the sandboxed macOS UI-test runner, so a private copy of the gate is a test that \
+            can never be enabled and looks exactly like one that is merely skipped (T-1724): \
+            \(readers.joined(separator: ", "))
+            """
+        )
+    }
+
+    /// And every gated suite calls the shared gate by its full name, not through a private wrapper
+    /// of its own. The wrapper is not itself the defect; being *able* to give a locally named
+    /// `requireInteractiveUITestsEnabled` a local body is, and one suite did exactly that.
+    @Test func noUITestSuiteWrapsTheSharedGateInAPrivateHelper() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        var wrappers: [String] = []
+        var callers = 0
+        for path in try CadenceSourceScan.swiftFiles(under: "CadenceUITests").sorted() {
+            let source = try read(path)
+            let declared = CadenceSourceScan.matchCount(
+                #"func requireInteractiveUITests(Enabled)?\("#, in: source
+            )
+            callers += CadenceSourceScan.matchCount(
+                #"CadenceUITestEnvironment\.requireInteractiveUITests\(\)"#, in: source
+            )
+            if declared > 0, path != "CadenceUITests/CadenceUITestEnvironment.swift" {
+                wrappers.append("\(path) (\(declared))")
+            }
+        }
+        #expect(callers >= 4, "only \(callers) call sites reach the shared gate — the scan walked the wrong tree")
+        #expect(
+            wrappers.isEmpty,
+            """
+            a UI-test suite declares its own interactive-gate helper. Call \
+            CadenceUITestEnvironment.requireInteractiveUITests() at the site instead (T-1724): \
+            \(wrappers.joined(separator: ", "))
+            """
+        )
+    }
+}

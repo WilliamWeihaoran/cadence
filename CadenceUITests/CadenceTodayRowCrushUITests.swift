@@ -143,7 +143,7 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
         launchApp()
 
         XCTAssertTrue(
-            app.buttons[ID.seededAreaRow].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            app.buttons.element(identified: ID.seededAreaRow).waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
             "the stock seed's sidebar lists never appeared, so the scenario seed cannot be trusted either"
         )
 
@@ -274,20 +274,17 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
     ///
     /// The length is the fixture's whole point, so the identifier is not what moves. The error
     /// names its own workaround and this is it: match `identifier` through an `NSPredicate`, which
-    /// carries no such cap.
+    /// carries no such cap. Since T-1725 that form lives once, in `CadenceUITestQuery`, and this
+    /// is a name for it rather than a fourth copy of it.
     private func element(_ identifier: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(Self.identifying(identifier)).firstMatch
+        app.descendant(identified: identifier)
     }
 
     /// Scoped to the row on purpose. `MacTaskRow` is drawn by Today *and* by a list's detail pane
     /// from one call site, so `task.row.…` identifiers are not Today's alone; asking the row for
     /// them is what makes this a reading of Today.
     private func descendant(_ identifier: String, of row: XCUIElement) -> XCUIElement {
-        row.descendants(matching: .any).matching(Self.identifying(identifier)).firstMatch
-    }
-
-    private static func identifying(_ identifier: String) -> NSPredicate {
-        NSPredicate(format: "identifier == %@", identifier)
+        row.descendant(identified: identifier)
     }
 
     /// What Today is actually publishing, for the failure message above.
@@ -296,10 +293,6 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
     /// different findings with the same symptom, and a reader of a red run cannot tell them apart
     /// from the absence alone. This prints the identifiers, with their lengths, so they can be.
     private func seededRowIdentifiers() -> String {
-        let rows = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "today.task.row."))
-            .allElementsBoundByIndex
-        guard !rows.isEmpty else { return "none at all" }
-        return rows.map { "\($0.identifier) (\($0.identifier.count) chars)" }.joined(separator: " ;; ")
+        app.identifiers(beginningWith: "today.task.row.")
     }
 }

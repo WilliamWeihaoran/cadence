@@ -1,5 +1,17 @@
 import XCTest
 
+/// **The interactive gate here is the shared one, and was not always** (T-1724).
+///
+/// Until 2026-09-30 this file carried a private `requireInteractiveUITestsEnabled` that read
+/// `CADENCE_RUN_INTERACTIVE_UI_TESTS` and nothing else — the one channel
+/// `CadenceUITestEnvironment` was written to record as **undeliverable** to the macOS UI-test
+/// runner, which is sandboxed into its own container and never sees a caller's environment. So the
+/// two tests below could not be enabled by any invocation: with the marker file touched the target
+/// ran 7 tests / 2 skipped, and those two were the skips. They had never executed once.
+///
+/// A gate with no working key is not a gate, it is a silence. The rule this leaves behind: there is
+/// exactly one interactive opt-in in this target, `CadenceUITestEnvironment.requireInteractiveUITests()`,
+/// and a per-suite copy of it is the defect rather than a convenience.
 @MainActor
 final class CadenceUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -20,31 +32,49 @@ final class CadenceUITests: XCTestCase {
     func testLaunchesToTodayWithSeededSidebarLists() throws {
         launchApp(resetStore: true, resetDefaults: true)
 
-        XCTAssertTrue(app.buttons["sidebar.destination.today"].waitForExistence(timeout: CadenceUITestBounds.firstPaint))
-        XCTAssertTrue(app.buttons["sidebar.list.area.alpha-area"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
-        XCTAssertTrue(app.buttons["sidebar.list.project.beta-project"].exists)
-        XCTAssertTrue(app.buttons["sidebar.list.area.gamma-area"].exists)
+        XCTAssertTrue(
+            app.buttons["sidebar.destination.today"].waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            "the sidebar's Today destination never appeared. \(surfaceReport())"
+        )
+        XCTAssertTrue(
+            app.buttons["sidebar.list.area.alpha-area"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "the stock seed's first list never appeared. \(surfaceReport())"
+        )
+        XCTAssertTrue(app.buttons["sidebar.list.project.beta-project"].exists, "seeded project row absent. \(surfaceReport())")
+        XCTAssertTrue(app.buttons["sidebar.list.area.gamma-area"].exists, "seeded second area row absent. \(surfaceReport())")
     }
 
     func testRightClickingSidebarListOpensEditPanel() throws {
-        try requireInteractiveUITestsEnabled()
+        try CadenceUITestEnvironment.requireInteractiveUITests()
         launchApp(resetStore: true, resetDefaults: true)
 
         let alphaArea = app.buttons["sidebar.list.area.alpha-area"]
-        XCTAssertTrue(alphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
+        XCTAssertTrue(
+            alphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "there is no sidebar row to right-click. \(surfaceReport())"
+        )
         alphaArea.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).rightClick()
 
-        XCTAssertTrue(app.staticTexts["Edit Area"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
+        XCTAssertTrue(
+            app.staticTexts["Edit Area"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "the right-click opened no Edit Area panel. \(surfaceReport())"
+        )
     }
 
     func testSidebarListReorderPersistsAcrossRelaunch() throws {
-        try requireInteractiveUITestsEnabled()
+        try CadenceUITestEnvironment.requireInteractiveUITests()
         launchApp(resetStore: true, resetDefaults: true)
 
         let alphaArea = app.buttons["sidebar.list.area.alpha-area"]
         let gammaArea = app.buttons["sidebar.list.area.gamma-area"]
-        XCTAssertTrue(alphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
-        XCTAssertTrue(gammaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
+        XCTAssertTrue(
+            alphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "there is no first sidebar row to drag. \(surfaceReport())"
+        )
+        XCTAssertTrue(
+            gammaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "there is no second sidebar row to drag onto. \(surfaceReport())"
+        )
         XCTAssertLessThan(alphaArea.frame.minY, gammaArea.frame.minY)
 
         drag(gammaArea, to: alphaArea)
@@ -84,16 +114,28 @@ final class CadenceUITests: XCTestCase {
         launchApp(resetStore: resetStore, resetDefaults: resetDefaults)
     }
 
+    /// **What the window is actually showing**, for a failure message that would otherwise be the
+    /// bare word `XCTAssertTrue failed`.
+    ///
+    /// Every assertion in this file was written without one, which cost this suite a whole run
+    /// when it went red: *the Today destination is absent* and *the app is on a different screen
+    /// entirely* have the same symptom and different causes, and neither the run log nor the
+    /// `.xcresult` says which. The sidebar's identifiers, plus the window's first few static
+    /// texts, tell them apart in one line.
+    private func surfaceReport() -> String {
+        let sidebar = app.identifiers(beginningWith: "sidebar.")
+        let texts = app.windows.firstMatch.staticTexts.allElementsBoundByIndex
+            .prefix(12)
+            .map(\.label)
+            .filter { !$0.isEmpty }
+        return "sidebar publishes: \(sidebar); window says: "
+            + (texts.isEmpty ? "nothing at all" : texts.joined(separator: " | "))
+    }
+
     private func drag(_ source: XCUIElement, to target: XCUIElement) {
         let start = source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         start.press(forDuration: 0.5, thenDragTo: end)
-    }
-
-    private func requireInteractiveUITestsEnabled() throws {
-        guard ProcessInfo.processInfo.environment["CADENCE_RUN_INTERACTIVE_UI_TESTS"] == "1" else {
-            throw XCTSkip("Set CADENCE_RUN_INTERACTIVE_UI_TESTS=1 to run click, context-menu, and drag UI tests.")
-        }
     }
 
     private func waitUntil(
