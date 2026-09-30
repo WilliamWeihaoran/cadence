@@ -340,16 +340,19 @@ struct CadenceAgentDefaultsIsolationTests {
             "defaultStoreDirectoryURL went back to answering the app-group store unconditionally"
         )
 
-        // Counted rather than named: a tenth no-argument entry point added later still has to go
-        // through `defaultStoreDirectoryURL`, and a count is the only reading that notices. Was
+        // Counted rather than named: an eleventh no-argument entry point added later still has to
+        // go through `defaultStoreDirectoryURL`, and a count is the only reading that notices. Was
         // nine for T-1448 (eight calls and the declaration); [[T-1532]] added the ninth call,
-        // `unmanagedBackupDirectories()`, which needs the live directory in order to *exclude* it.
+        // `unmanagedBackupDirectories()`, which needs the live directory in order to *exclude* it;
+        // [[T-1680]] added the tenth, `unmanagedStoreDirectories()`, which needs it for the same
+        // reason one directory over — the store folders the app is **not** using, of which the
+        // live store directory is never one.
         //
         // Over the stripped source, because T-1532 also wrote the name into a doc comment — and a
         // tripwire that a paragraph can trip is one that gets edited until it stops complaining.
         let code = CadenceSourceScan.strippingComments(source)
         let mentions = CadenceSourceScan.matchCount("defaultStoreDirectoryURL\\(\\)", in: code)
-        #expect(mentions == 10, "\(mentions) spellings of defaultStoreDirectoryURL(), not the 10 measured for T-1532")
+        #expect(mentions == 11, "\(mentions) spellings of defaultStoreDirectoryURL(), not the 11 measured for T-1680")
     }
 
     // MARK: - T-1530: the test host's backups follow the test host's store

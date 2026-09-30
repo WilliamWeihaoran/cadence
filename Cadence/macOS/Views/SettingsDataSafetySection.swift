@@ -14,6 +14,11 @@ struct SettingsDataSafetySection: View {
     /// ([[T-1532]]). Shown, never touched — see `UnmanagedBackupDirectory`.
     @State private var unmanagedBackupDirectories: [UnmanagedBackupDirectory] = []
 
+    /// The folders holding Cadence **store** files this launch is not opening ([[T-1680]]): the
+    /// `Recovery/` store a failed launch wrote, and the locations earlier versions kept the store
+    /// in. Shown, never touched — see `UnmanagedStoreDirectory`.
+    @State private var unmanagedStoreDirectories: [UnmanagedStoreDirectory] = []
+
     /// The outcome of the **export** and of the **reset**, shown under the reset card.
     ///
     /// Sharing one line between those two is deliberate — see `SettingsDataExportCard` — because
@@ -174,6 +179,44 @@ struct SettingsDataSafetySection: View {
                     }
                 }
             }
+
+            // **T-1680 — the copies this screen answered for and could not see, one directory
+            // further in.** T-1532 made the stray *backups* visible. The stray *stores* stayed
+            // invisible, and they are the worse half: `Recovery/` is a child of the live store
+            // directory, so it is inside the container "Delete Account & Data" has just emptied,
+            // and neither `listBackups()` nor `unmanagedBackupDirectories()` can see it because it
+            // is not a backups folder. On the owner's Mac on 2026-09-30 that was 512 KB written by
+            // a failed launch on 2026-08-19 and never read since, plus two earlier store locations
+            // holding a further ~2.4 MB.
+            //
+            // Reveal only, for T-1532's reason and one more: a recovery store is opened with
+            // CloudKit off, so anything typed during that degraded session synced nowhere and this
+            // folder is its only copy. Whether the reset should take it is T-1840, and it is the
+            // owner's call, not a button this row can grow.
+            if !unmanagedStoreDirectories.isEmpty {
+                VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                    SettingsSectionLabel(text: "Other Cadence Data Folders")
+                    SettingsCard {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("These hold Cadence store files outside the store this copy of Cadence is using — a recovery store Cadence wrote when it could not open your main one, or a location an earlier version kept the store in. Cadence does not sync them, back them up, or read them on a normal launch, and deleting all Cadence data does not delete them. Remove them in Finder if you want the space back.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.bottom, 12)
+
+                            ForEach(Array(unmanagedStoreDirectories.enumerated()), id: \.element.id) { index, directory in
+                                UnmanagedStoreDirectoryRow(
+                                    directory: directory,
+                                    onReveal: { NSWorkspace.shared.activateFileViewerSelecting([directory.url]) }
+                                )
+                                if index < unmanagedStoreDirectories.count - 1 {
+                                    CadenceRowDivider(leadingInset: 42)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         .onAppear(perform: refreshBackups)
         .fileExporter(
@@ -229,6 +272,7 @@ struct SettingsDataSafetySection: View {
         // Read-only, and the only call on this screen that reaches a path outside the live store
         // directory. `unmanagedBackupDirectories` lists and sizes; nothing here can write.
         unmanagedBackupDirectories = StoreBackupManager.unmanagedBackupDirectories()
+        unmanagedStoreDirectories = StoreBackupManager.unmanagedStoreDirectories()
     }
 
     /// Builds the archive, then hands it to the system save panel. Encoding happens *before* the
@@ -413,7 +457,13 @@ private struct SettingsDataResetCard: View {
                     Text("Account & Data Controls")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Delete the local Cadence account profile, Cadence data from this store, local Cadence backups, pending restores, and the saved OpenAI key.")
+                    // **T-1680 — the second clause is the one that was missing.** The sentence
+                    // named five things and stopped, and a reader takes a list that specific as
+                    // exhaustive. It is not: the reset reaches the live store directory only, so a
+                    // `Recovery/` store inside that very directory, and every earlier store
+                    // location, survive it. Naming the exception here rather than only in the
+                    // modal means the screen is honest before anyone presses anything.
+                    Text("Delete the local Cadence account profile, Cadence data from this store, local Cadence backups, pending restores, and the saved OpenAI key. Store folders Cadence is not using are left alone and listed further down this page.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
@@ -478,7 +528,7 @@ private struct SettingsDataResetConfirmationSheet: View {
                                 Text("This cannot be undone")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(Theme.text)
-                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted.")
+                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted, and neither are the store folders Cadence is not using — a recovery store from a failed launch, or a location an earlier version kept the store in. Data Safety lists those under Other Cadence Data Folders with their full paths.")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -560,6 +610,52 @@ private struct UnmanagedBackupDirectoryRow: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("\(directory.displayCount) • \(directory.displaySize) • not managed by Cadence")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            Spacer(minLength: 8)
+
+            SettingsActionButton(tone: .tinted(Theme.blue), action: onReveal) {
+                Text("Reveal")
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 2)
+    }
+}
+
+/// One folder of Cadence store files the app is not using, with the path that makes it findable.
+///
+/// **The row has one button and it opens Finder ([[T-1680]], following [[T-1532]]).** Same two
+/// members as `UnmanagedBackupDirectoryRow` — `directory` and `onReveal` — so a delete cannot be
+/// handed to it, which is the rule enforced by the shape of the view rather than by a convention.
+/// A recovery store never synced and is the only copy of what a degraded session recorded; a
+/// "Clear" button here would be this screen destroying that on the strength of a path it inferred.
+private struct UnmanagedStoreDirectoryRow: View {
+    let directory: UnmanagedStoreDirectory
+    let onReveal: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: Theme.radiusControl)
+                .fill(Theme.dim.opacity(0.14))
+                .frame(width: 32, height: 32)
+                .overlay {
+                    Image(systemName: "internaldrive")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                }
+
+            VStack(alignment: .leading, spacing: 3) {
+                // The path in full, for the reason `UnmanagedBackupDirectoryRow` shows one: it is
+                // the only thing that makes the folder findable, and none of these are guessable.
+                Text(directory.url.path)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.text)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(directory.displayDetail)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
             }

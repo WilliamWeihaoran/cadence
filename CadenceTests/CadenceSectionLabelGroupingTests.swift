@@ -116,7 +116,10 @@ struct CadenceSectionLabelGroupingTests {
             ("struct SettingsListsSection: View", listManagement, 7),
             // 2 since [[T-1532]]: "Available Backups" and "Other Backup Folders", the second of
             // which lists the backups directories beside store locations the app has left behind.
-            ("struct SettingsDataSafetySection: View", dataSafety, 2),
+            // 3 since [[T-1680]]: "Other Cadence Data Folders", the *stores* the app is not using
+            // — the `Recovery/` folder inside the live store directory, and the earlier store
+            // locations — none of which the reset deletes and none of which any screen named.
+            ("struct SettingsDataSafetySection: View", dataSafety, 3),
             ("struct SettingsAboutSection: View", about, 2)
         ]
 

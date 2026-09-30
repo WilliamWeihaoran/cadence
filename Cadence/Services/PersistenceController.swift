@@ -600,15 +600,51 @@ struct PersistenceController {
         }
     }
 
+    /// The same list, resolved for **this** launch and without creating anything.
+    ///
+    /// **[[T-1680]] — the recovery store was the last store path that had not learned about the
+    /// redirect.** `recoveryStoreDirectoryURL()` below built its first candidate from
+    /// `CadenceStoreSupport.primaryStoreDirectoryURL()` unconditionally, and it *creates* the
+    /// directory it hands back. So a `CadenceTests` host, or an agent launch through
+    /// `scripts/run-macos-app.sh`, that failed its preflight would have created a `Recovery/`
+    /// folder — and opened a store in it — inside the signed-in person's app-group container. That
+    /// is the shape [[T-1448]] found for the backups and [[T-1530]] for the test host, one
+    /// directory over. The base is now `CadenceUITestStoreDirectory.redirectedStoreDirectory`, the
+    /// single resolver both of those settled on, and an environment naming neither a store id nor
+    /// a test host still answers the app-group path exactly.
+    ///
+    /// Nothing here writes: the only filesystem call is `primaryStoreDirectoryURL`, which is the
+    /// app's own store directory and already exists on any launch that reached this code. That is
+    /// what makes the same question safe for `StoreBackupManager.unmanagedStoreDirectories()` to
+    /// ask read-only, from a healthy launch, in order to *list* a recovery folder it must not
+    /// touch.
+    static func recoveryStoreDirectoryCandidates(
+        in environment: [String: String],
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        let activeStoreDirectoryURL = CadenceUITestStoreDirectory.redirectedStoreDirectory(
+            in: environment,
+            temporaryDirectory: temporaryDirectory
+        ) ?? (try? CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager))
+
+        return recoveryStoreDirectoryCandidates(
+            primaryStoreDirectoryURL: activeStoreDirectoryURL,
+            applicationSupportDirectoryURL: fileManager.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
+            ).first,
+            temporaryDirectoryURL: temporaryDirectory
+        )
+    }
+
     private static func recoveryStoreDirectoryURL(fileManager: FileManager = .default) throws -> URL {
-        let primaryStoreDirectoryURL = try? CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
-        let applicationSupportDirectoryURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         var lastError: Error?
 
         for candidate in recoveryStoreDirectoryCandidates(
-            primaryStoreDirectoryURL: primaryStoreDirectoryURL,
-            applicationSupportDirectoryURL: applicationSupportDirectoryURL,
-            temporaryDirectoryURL: fileManager.temporaryDirectory
+            in: ProcessInfo.processInfo.environment,
+            temporaryDirectory: fileManager.temporaryDirectory,
+            fileManager: fileManager
         ) {
             do {
                 try fileManager.createDirectory(at: candidate, withIntermediateDirectories: true)
@@ -726,6 +762,76 @@ struct UnmanagedBackupDirectory: Identifiable, Hashable {
     var displayCount: String {
         "\(backupCount) backup\(backupCount == 1 ? "" : "s")"
     }
+}
+
+/// A folder of Cadence **store** files that this launch is not opening, and that nothing in the
+/// app adds to, thins, migrates or deletes.
+///
+/// **[[T-1680]].** [[T-1532]] made the stray *backup* folders visible and left the stray *stores*
+/// invisible, which is the larger of the two: a backup folder announces itself by its name, and a
+/// `Recovery/` folder sitting inside the live store directory does not. Two kinds exist on a real
+/// machine and both are derived from lists the app already keeps, never guessed:
+///
+/// - `.recovery` — `PersistenceController.recoveryStoreDirectoryCandidates`, the directories
+///   `makeRecoveryContainer` writes a `recovery.store` into when the primary store will not open.
+///   The live store directory's own `Recovery/` child is one of these, which is why this list is
+///   **not** filtered the way `unmanagedBackupDirectories` is: there the live directory is the one
+///   already on screen, here it is the one nothing has ever named.
+/// - `.previousLocation` — `CadenceStoreSupport.legacyStoreCandidateDirectories()`, the store
+///   locations `migrateLegacyStoreIfNeeded` still reads from.
+///
+/// **It carries no delete, for the reason `UnmanagedBackupDirectory` carries none and one more.**
+/// A recovery store is the only copy of anything typed during a degraded session — it is opened
+/// with `cloudKitDatabase: .none`, so nothing in it ever synced — and whether **Delete Account &
+/// Data** should take it is a product decision the owner has not made ([[T-1840]]). Until it is
+/// made, the honest thing is to say where the folder is and say that the reset leaves it, which is
+/// what this type and its row do.
+struct UnmanagedStoreDirectory: Identifiable, Hashable {
+    enum Kind: String, Hashable {
+        /// Written by `PersistenceController.makeRecoveryContainer` after a failed store open.
+        case recovery
+        /// Where an earlier version of Cadence kept the store.
+        case previousLocation
+
+        var label: String {
+            switch self {
+            case .recovery: return "recovery store"
+            case .previousLocation: return "earlier store location"
+            }
+        }
+    }
+
+    var id: String { url.path }
+    let url: URL
+    let kind: Kind
+    /// How many store items are in it — counted, not estimated, and an empty leftover directory is
+    /// filtered out before it can become a row.
+    let itemCount: Int
+    /// The store items only. A `Cadence Store Backups` folder beside them is
+    /// `UnmanagedBackupDirectory`'s row, and counting it here would put the same bytes on two rows
+    /// of the same screen.
+    let sizeBytes: Int64
+    /// When a store item in it was last written — the one fact that says whether this is debris
+    /// from a launch years ago or something from this week.
+    let lastModified: Date?
+
+    var displaySize: String {
+        ByteCountFormatter.string(fromByteCount: sizeBytes, countStyle: .file)
+    }
+
+    var displayDetail: String {
+        var parts = [kind.label, displaySize]
+        if let lastModified {
+            parts.append("last written \(lastModified.formatted(date: .abbreviated, time: .omitted))")
+        }
+        return parts.joined(separator: " • ")
+    }
+}
+
+/// One candidate before the filesystem has been asked about it: a path and what it would be.
+struct UnmanagedStoreDirectoryCandidate: Hashable {
+    let url: URL
+    let kind: UnmanagedStoreDirectory.Kind
 }
 
 private struct StoreBackupManifest: Codable {
@@ -1013,6 +1119,110 @@ enum StoreBackupManager {
                 sizeBytes: backups.reduce(into: Int64(0)) { $0 += $1.sizeBytes }
             )
         }
+    }
+
+    // MARK: - The store folders this app is not using ([[T-1680]])
+
+    /// Every directory that could hold Cadence store files this launch is not opening, recovery
+    /// folders first, de-duplicated by standardized path.
+    ///
+    /// Derived rather than listed, exactly as `backupDirectoryCandidates` is, and from the two
+    /// lists the app already acts on: the recovery half is where `makeRecoveryContainer` *writes*,
+    /// the legacy half is where `migrateLegacyStoreIfNeeded` *reads*. Neither is inferred from a
+    /// path seen on one Mac, which is the mistake [[T-1532]] had to correct with its parent rule.
+    static func unmanagedStoreDirectoryCandidates(
+        recoveryStoreDirectories: [URL],
+        legacyStoreDirectories: [URL] = CadenceStoreSupport.legacyStoreCandidateDirectories()
+    ) -> [UnmanagedStoreDirectoryCandidate] {
+        var seenPaths: Set<String> = []
+        let candidates =
+            recoveryStoreDirectories.map { UnmanagedStoreDirectoryCandidate(url: $0, kind: .recovery) }
+            + legacyStoreDirectories.map { UnmanagedStoreDirectoryCandidate(url: $0, kind: .previousLocation) }
+        return candidates.filter { seenPaths.insert($0.url.standardizedFileURL.path).inserted }
+    }
+
+    /// The candidates that exist, hold at least one store item, and are **not** the store this
+    /// launch has open.
+    ///
+    /// Read-only from end to end — `contentsOfDirectory`, `resourceValues` and the size walk, and
+    /// nothing that creates, moves or removes. That is a property of this function and not of its
+    /// callers, for the reason it is one on `unmanagedBackupDirectories`: this is the second place
+    /// in the file that reaches paths the app has no business writing to, and one of them is the
+    /// only copy of whatever a degraded launch recorded.
+    ///
+    /// - Note: a `CadenceTests` process asks the no-argument form with the **test host's** live
+    ///   directory, so the owner's real app-group store comes back as one of these. That is the
+    ///   honest answer for that process and it is why the whole path is read-only. Tests inject.
+    static func unmanagedStoreDirectories() -> [UnmanagedStoreDirectory] {
+        unmanagedStoreDirectories(
+            liveStoreDirectoryURL: try? defaultStoreDirectoryURL(),
+            recoveryStoreDirectories: PersistenceController.recoveryStoreDirectoryCandidates(
+                in: ProcessInfo.processInfo.environment
+            )
+        )
+    }
+
+    static func unmanagedStoreDirectories(
+        liveStoreDirectoryURL: URL?,
+        recoveryStoreDirectories: [URL],
+        legacyStoreDirectories: [URL] = CadenceStoreSupport.legacyStoreCandidateDirectories(),
+        fileManager: FileManager = .default
+    ) -> [UnmanagedStoreDirectory] {
+        let livePath = liveStoreDirectoryURL?.standardizedFileURL.path
+
+        return unmanagedStoreDirectoryCandidates(
+            recoveryStoreDirectories: recoveryStoreDirectories,
+            legacyStoreDirectories: legacyStoreDirectories
+        )
+        .filter { $0.url.standardizedFileURL.path != livePath }
+        .compactMap { candidate in
+            let items = storeItems(in: candidate.url, fileManager: fileManager)
+            guard !items.isEmpty else { return nil }
+            return UnmanagedStoreDirectory(
+                url: candidate.url,
+                kind: candidate.kind,
+                itemCount: items.count,
+                sizeBytes: items.reduce(into: Int64(0)) { $0 += storeItemSize($1, fileManager: fileManager) },
+                lastModified: items.compactMap {
+                    (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                }.max()
+            )
+        }
+    }
+
+    /// The names a store directory's own files go by, primary and recovery.
+    ///
+    /// Spelled from `CadenceStoreSupport.managedStoreItemNames` rather than beside it, so a sixth
+    /// item added to the store cannot be a file this screen stops reporting.
+    static let unmanagedStoreItemNames: [String] =
+        CadenceStoreSupport.managedStoreItemNames + [
+            "recovery.store",
+            "recovery.store-wal",
+            "recovery.store-shm",
+            ".recovery_SUPPORT",
+        ]
+
+    /// The store files in a directory, and only those — matched by exact name, so a
+    /// `Cadence Store Backups` folder, a `Cadence Unrestored Store Files …` folder or anything
+    /// else a person left beside the store is neither counted nor sized here.
+    private static func storeItems(in directoryURL: URL, fileManager: FileManager = .default) -> [URL] {
+        ((try? fileManager.contentsOfDirectory(atPath: directoryURL.path)) ?? [])
+            .filter { unmanagedStoreItemNames.contains($0) }
+            .sorted()
+            .map { directoryURL.appendingPathComponent($0) }
+    }
+
+    /// A size for one store item, file or directory. `directorySize` enumerates, and an enumerator
+    /// over a plain file yields nothing — so `default.store` itself would have been sized at zero
+    /// and `.default_SUPPORT` would have carried the whole row.
+    private static func storeItemSize(_ url: URL, fileManager: FileManager = .default) -> Int64 {
+        let values = try? url.resourceValues(
+            forKeys: [.isDirectoryKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+        )
+        if values?.isDirectory == true {
+            return directorySize(url, fileManager: fileManager)
+        }
+        return Int64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
     }
 
     @discardableResult

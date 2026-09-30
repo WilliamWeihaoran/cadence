@@ -746,8 +746,11 @@ struct SettingsSevenPaneVocabularyTests {
                 // 1 before T-575; the second is the footer hairline in the Mac's typed-phrase
                 // reset confirmation, which is in this file and therefore in this sweep. The
                 // third is [[T-1532]]'s "Other Backup Folders" list, which separates the backups
-                // directories beside store locations the app has left behind.
-                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 3,
+                // directories beside store locations the app has left behind. The fourth is
+                // [[T-1680]]'s "Other Cadence Data Folders" list, which separates the *store*
+                // folders the app is not using — the recovery store a failed launch wrote, and
+                // the earlier store locations.
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 4,
                 "Cadence/macOS/Views/SettingsSectionViews.swift": 4
             ]
         )
