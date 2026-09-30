@@ -60,6 +60,7 @@ Cadence/iOS/iOSSwipeActionRow.swift
 Cadence/iOS/iOSFloatingCreateTaskButton.swift
 Cadence/iOS/iOSBoardCards.swift
 Cadence/Shared/Components/CadenceBoardColumnHeader.swift
+Cadence/Shared/Components/CadenceBoardMetadataChip.swift
 Cadence/iOS/iOSFeatureComponents.swift
 Cadence/iOS/iOSDesignSystem.swift
 Cadence/Shared/Components/EmptyStateView.swift
