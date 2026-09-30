@@ -81,7 +81,7 @@ struct iOSListCountBadge: View {
 
     var body: some View {
         Text(count > 999 ? "999+" : "\(count)")
-            .font(.system(size: 11, weight: .semibold))
+            .cadenceFont(.metadata, base: 11, weight: .semibold)
             .monospacedDigit()
             .foregroundStyle(Theme.muted)
             .lineLimit(1)
@@ -157,10 +157,14 @@ struct iOSListsPageHeader: View {
 /// thing on a page whose subject is the user's own list colours. They are the same neutral chip
 /// the task view-options bar uses now; the type still carries its colour, on the glyph only.
 struct iOSListCreateButtonsRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @Binding var editorMode: iOSListEditorMode?
 
     var body: some View {
-        HStack(spacing: 8) {
+        let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+        layout {
             iOSActionButton(
                 title: "New Area",
                 systemImage: "folder.badge.plus",
@@ -193,6 +197,8 @@ struct iOSListCreateButtonsRow: View {
 /// `.plain` rather than `.cadencePlain` on purpose — that style paints its own fill and stroke,
 /// which would stack a second selection layer on top of this one.
 struct iOSListDetailPagePicker: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @Binding var page: ListDetailPage
     /// How many items each tab holds, for the tabs where a total means something. Each tab used
     /// to draw its own header carrying this number; removing those headers — the tab bar already
@@ -209,7 +215,7 @@ struct iOSListDetailPagePicker: View {
                     } label: {
                         HStack(spacing: 6) {
                             Text(item.rawValue)
-                                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                                .cadenceFont(.controlLabel, weight: isSelected ? .semibold : .medium)
                                 // `muted`, not `dim`: an unselected tab is a label you read and
                                 // tap, and `dim` on this surface sits under the AA floor at 13pt.
                                 .foregroundStyle(isSelected ? Theme.text : Theme.muted)
@@ -217,13 +223,13 @@ struct iOSListDetailPagePicker: View {
 
                             if let count = counts[item], count > 0 {
                                 Text("\(count)")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .cadenceFont(.metadata, base: 11, weight: .semibold)
                                     .monospacedDigit()
                                     .foregroundStyle(isSelected ? Theme.muted : Theme.dim)
                             }
                         }
                             .padding(.horizontal, 12)
-                            .frame(minHeight: 44)
+                            .frame(minHeight: CadenceTypeScale.height(44, holding: .controlLabel, at: dynamicTypeSize, scaling: scaling))
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                                     .fill(isSelected ? Theme.surfaceHighlight : Color.clear)
@@ -261,6 +267,8 @@ struct iOSListDetailPagePicker: View {
 }
 
 struct iOSListPickerRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     let subtitle: String?
     let icon: String
@@ -268,23 +276,27 @@ struct iOSListPickerRow: View {
     let count: Int
 
     var body: some View {
-        HStack(spacing: 12) {
+        let wraps = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let layout = wraps ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             iOSListIconBadge(icon: icon, colorHex: colorHex)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                    .font(.system(size: 15, weight: .semibold))
+                    .cadenceFont(.bodyText, weight: .semibold)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: wraps)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 12, weight: .medium))
+                        .cadenceFont(.metadata)
                         .foregroundStyle(Theme.subdued)
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
                 }
             }
 
-            Spacer(minLength: 8)
+            if !wraps { Spacer(minLength: 8) }
 
             iOSListCountBadge(count: count)
         }
@@ -293,6 +305,8 @@ struct iOSListPickerRow: View {
 }
 
 struct iOSArchivedListRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     let subtitle: String?
     let icon: String
@@ -300,23 +314,27 @@ struct iOSArchivedListRow: View {
     let restore: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        let wraps = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let layout = wraps ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             iOSListIconBadge(icon: icon, colorHex: colorHex, isMuted: true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                    .font(.system(size: 15, weight: .medium))
+                    .cadenceFont(.bodyText, weight: .medium)
                     .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: wraps)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 12, weight: .medium))
+                        .cadenceFont(.metadata)
                         .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
                 }
             }
 
-            Spacer(minLength: 8)
+            if !wraps { Spacer(minLength: 8) }
 
             iOSActionButton(
                 title: "Restore",
@@ -642,7 +660,7 @@ struct iOSListLinksPanel: View {
             // a swipe-to-delete happens with the form closed.
             if let actionError {
                 Text(actionError)
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel)
                     .foregroundStyle(Theme.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -771,44 +789,52 @@ private struct iOSAddLinkForm: View {
 }
 
 private struct iOSLinkField: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let placeholder: String
     @Binding var text: String
 
     var body: some View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
-            .font(.system(size: 15, weight: .medium))
+            .cadenceFont(.bodyText, weight: .medium)
             .foregroundStyle(Theme.text)
             .padding(.horizontal, 12)
-            .frame(minHeight: 44)
+            .frame(minHeight: CadenceTypeScale.height(44, holding: .bodyText, at: dynamicTypeSize, scaling: scaling))
             .background(Theme.surfaceElevated.opacity(0.72))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 
 private struct iOSLinkRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let link: SavedLink
 
     var body: some View {
-        HStack(spacing: 12) {
+        let wraps = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let layout = wraps ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             iOSListIconBadge(icon: "link", colorHex: Theme.blueHex)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(CadenceTitleNormalization.display(link.title, fallback: link.url))
-                    .font(.system(size: 15, weight: .semibold))
+                    .cadenceFont(.bodyText, weight: .semibold)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: wraps)
 
                 Text(link.url)
-                    .font(.system(size: 12, weight: .medium))
+                    .cadenceFont(.metadata)
                     .foregroundStyle(Theme.subdued)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: wraps)
             }
 
-            Spacer(minLength: 8)
+            if !wraps { Spacer(minLength: 8) }
 
             Image(systemName: "arrow.up.right")
-                .font(.system(size: 11, weight: .bold))
+                .cadenceFont(.metadata, base: 11, weight: .bold)
                 .foregroundStyle(Theme.dim)
         }
         .frame(minHeight: 44)

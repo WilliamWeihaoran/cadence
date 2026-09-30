@@ -5,6 +5,7 @@ import SwiftUI
 import UIKit
 
 struct iOSSearchView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.openURL) private var openURL
     @Environment(iOSCalendarManager.self) private var calendarManager
 
@@ -386,6 +387,7 @@ struct iOSSearchView: View {
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 10)
         }
+        .cadenceScaledTypography()
         .task(id: calendarSearchRequestID) {
             refreshCalendarSearchEvents()
         }
@@ -395,55 +397,64 @@ struct iOSSearchView: View {
         // `iOSListsView` registers `iOSListRoute`. Two registrations for one type in one stack is
         // undefined behaviour in SwiftUI, and these were only ever duplicate clones of them.
         .navigationDestination(item: $pushedListRoute) { route in
-            switch route {
-            case .area(let id):
-                if let area = areas.first(where: { $0.id == id }) {
-                    iOSListDetailView(area: area)
-                } else {
-                    iOSMissingListView()
-                }
-            case .project(let id):
-                if let project = projects.first(where: { $0.id == id }) {
-                    iOSListDetailView(project: project)
-                } else {
-                    iOSMissingListView()
+            Group {
+                switch route {
+                case .area(let id):
+                    if let area = areas.first(where: { $0.id == id }) {
+                        iOSListDetailView(area: area)
+                    } else {
+                        iOSMissingListView()
+                    }
+                case .project(let id):
+                    if let project = projects.first(where: { $0.id == id }) {
+                        iOSListDetailView(project: project)
+                    } else {
+                        iOSMissingListView()
+                    }
                 }
             }
+            .cadenceFixedTypography()
         }
         .navigationDestination(item: $pushedDestination) { destination in
-            switch destination {
-            case .today:
-                iOSTodayView()
-            case .allTasks:
-                iOSAllTasksView()
-            case .focus:
-                iOSFocusView()
-            case .inbox:
-                iOSInboxView()
-            case .calendar:
-                iOSCalendarView()
-            case .notes:
-                iOSNotesView()
-            case .lists:
-                iOSListsView()
-            case .goals:
-                iOSGoalsView()
-            case .habits:
-                iOSHabitsView()
-            case .search:
-                iOSSearchView()
-            case .settings:
-                iOSSettingsView()
+            Group {
+                switch destination {
+                case .today:
+                    iOSTodayView()
+                case .allTasks:
+                    iOSAllTasksView()
+                case .focus:
+                    iOSFocusView()
+                case .inbox:
+                    iOSInboxView()
+                case .calendar:
+                    iOSCalendarView()
+                case .notes:
+                    iOSNotesView()
+                case .lists:
+                    iOSListsView()
+                case .goals:
+                    iOSGoalsView()
+                case .habits:
+                    iOSHabitsView()
+                case .search:
+                    iOSSearchView()
+                case .settings:
+                    iOSSettingsView()
+                }
             }
+            // Destination pages choose their own scope; Search cannot opt them in.
+            .cadenceFixedTypography()
         }
         .sheet(item: $selectedTask) { task in
             iOSTaskInspectorSheet(task: task) { selectedTask = nil }
         }
         .sheet(item: $selectedNote) { note in
             noteSheet(for: note)
+                .cadenceFixedTypography()
         }
         .sheet(item: $selectedEvent) { selection in
             iOSCalendarEventEditSheet(event: selection.event)
+                .cadenceFixedTypography()
         }
     }
 
@@ -464,12 +475,16 @@ struct iOSSearchView: View {
     @ViewBuilder
     private var calendarAccessSection: some View {
         if !calendarManager.isAuthorized {
+            // Geometry here belongs to the enabled page, outside its environment modifier.
+            let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: .enabled)
+            let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     SectionEyebrowLabel(text: "Calendar Events")
                         .padding(.horizontal, 4)
 
-                    HStack(alignment: .top, spacing: 12) {
+                    layout {
                         iOSIconTile(
                             systemImage: calendarManager.isDenied ? "calendar.badge.exclamationmark" : "calendar",
                             color: calendarManager.isDenied ? Theme.amber : Theme.blue
@@ -477,11 +492,11 @@ struct iOSSearchView: View {
 
                         VStack(alignment: .leading, spacing: 6) {
                             Text(calendarManager.isDenied ? "Calendar access is disabled" : "Calendar access is off")
-                                .font(.system(size: 15, weight: .semibold))
+                                .cadenceFont(.bodyText, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
                             Text(calendarManager.isDenied ? "Enable Calendar access in Settings to include Apple Calendar events in search." : "Allow Calendar access to search and edit Apple Calendar events from Cadence.")
-                                .font(.system(size: 13))
+                                .cadenceFont(.fieldLabel, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
 
@@ -501,7 +516,7 @@ struct iOSSearchView: View {
                             .padding(.top, 2)
                         }
 
-                        Spacer(minLength: 0)
+                        if !stacks { Spacer(minLength: 0) }
                     }
                     .padding(14)
                     .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)

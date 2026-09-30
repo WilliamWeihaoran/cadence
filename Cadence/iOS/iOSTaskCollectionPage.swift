@@ -108,6 +108,7 @@ struct iOSTaskCollectionPage: View {
         // region has to publish the rectangle a finger can actually be in.
         .iOSNewTaskDropRegion(collection.activeGroupIdentity)
         .background(Theme.bg.ignoresSafeArea())
+        .cadenceScaledTypography()
         // **Access can change while this page is on screen, and on iOS it changes somewhere else.**
         // Appearance alone is not enough: revoking Reminders access happens in the Settings app,
         // so coming back to a page that never disappeared is a foreground transition rather than

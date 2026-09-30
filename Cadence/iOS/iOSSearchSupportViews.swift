@@ -276,48 +276,56 @@ struct iOSSearchResultGroup<Row: View>: View {
 }
 
 struct iOSSearchResultRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let result: iOSSearchResult
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        let wraps = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let layout = wraps ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        layout {
             iOSIconTile(systemImage: result.icon, color: result.color)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(result.title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 16, weight: .semibold)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(2)
+                    .lineLimit(wraps ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: wraps)
                     .multilineTextAlignment(.leading)
 
                 if !result.subtitle.isEmpty {
                     // `subdued`, not `dim`: this is the destination the row leads to, which
                     // is ordinary reading text, not de-emphasized chrome.
                     Text(result.subtitle)
-                        .font(.system(size: 13))
+                        .cadenceFont(.fieldLabel, weight: .regular)
                         .foregroundStyle(Theme.subdued)
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
                 }
 
                 if !result.detail.isEmpty || result.dueLabel != nil {
-                    HStack(spacing: 6) {
+                    let detailLayout = wraps ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 6))
+                    detailLayout {
                         if !result.detail.isEmpty {
                             Text(result.detail)
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, weight: .regular)
                                 .foregroundStyle(Theme.dim)
-                                .lineLimit(1)
+                                .lineLimit(wraps ? nil : 1)
+                                .fixedSize(horizontal: false, vertical: wraps)
                                 .truncationMode(.tail)
                         }
 
                         if let dueLabel = result.dueLabel {
                             iOSMetaChip(label: dueLabel, color: Theme.amber)
-                                .fixedSize()
+                                .fixedSize(horizontal: !wraps, vertical: true)
                                 .layoutPriority(1)
                         }
                     }
                 }
             }
 
-            Spacer(minLength: 0)
+            if !wraps { Spacer(minLength: 0) }
         }
         .padding(.vertical, 10)
         .frame(minHeight: 44)

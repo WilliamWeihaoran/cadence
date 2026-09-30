@@ -9,6 +9,8 @@ import SwiftUI
 // `horizontalSizeClass` and from nothing else; that file carries the full accounting.
 
 struct iOSTaskRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @Bindable var task: AppTask
     /// Off for surfaces that are already scoped to one list, where naming it on every row is
     /// noise — the same knob, and the same reason, as `KanbanCard.showsContainerChip` on macOS.
@@ -59,6 +61,18 @@ struct iOSTaskRow: View {
 
     private var metrics: CadenceTaskRowMetrics {
         .metrics(isRegularWidth: isRegularWidth)
+    }
+
+    private var wraps: Bool {
+        iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+    }
+
+    private var completionDiameter: CGFloat {
+        CadenceTypeScale.size(.rowTitle, base: CadenceTaskRowMetrics.completionCircleDiameter, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    private var completionFrame: CGFloat {
+        CadenceTypeScale.height(metrics.completionGlyphSize, holding: .rowTitle, textBase: CadenceTaskRowMetrics.completionCircleDiameter, at: dynamicTypeSize, scaling: scaling)
     }
 
     /// T-147. "Over, however it ended" — the shared `CadenceTaskCompletionState.isSettled`, which
@@ -177,7 +191,7 @@ struct iOSTaskRow: View {
             completionButton
             taskSummary
 
-            if task.estimatedMinutes > 0 {
+            if task.estimatedMinutes > 0 && !wraps {
                 iOSTaskRowEstimateChip(task: task)
             }
         }
@@ -203,10 +217,10 @@ struct iOSTaskRow: View {
         } label: {
             iOSTaskCompletionCircle(
                 glyph: glyph,
-                diameter: CadenceTaskRowMetrics.completionCircleDiameter
+                diameter: completionDiameter
             )
-            .frame(width: metrics.completionGlyphSize, height: metrics.completionGlyphSize)
-            .iOSExpandedHitArea((44 - metrics.completionGlyphSize) / 2)
+            .frame(width: completionFrame, height: completionFrame)
+            .iOSExpandedHitArea(max(0, (44 - completionFrame) / 2))
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(glyph.state.accessibilityActionLabel)
@@ -218,21 +232,27 @@ struct iOSTaskRow: View {
             // to truncate to one line while the next tab along wrapped to two, and it is the day's
             // planning screen that could least afford to hide half a title.
             Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                .font(.system(size: metrics.titleFontSize, weight: .medium))
+                .cadenceFont(.rowTitle, base: metrics.titleFontSize)
                 .foregroundStyle(isSettled ? Theme.dim : Theme.text)
                 .strikethrough(isSettled, color: Theme.dim)
-                .lineLimit(CadenceTaskRowMetrics.titleLineLimit)
+                .lineLimit(wraps ? nil : CadenceTaskRowMetrics.titleLineLimit)
+                .fixedSize(horizontal: false, vertical: wraps)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let secondaryLine {
                 Text(secondaryLine)
-                    .font(.system(size: metrics.secondaryFontSize, weight: .medium))
+                    .cadenceFont(.metadata, base: metrics.secondaryFontSize)
                     .foregroundStyle(Theme.dim.opacity(isSettled ? 0.58 : 0.82))
-                    .lineLimit(metrics.secondaryLineLimit)
+                    .lineLimit(wraps ? nil : metrics.secondaryLineLimit)
+                    .fixedSize(horizontal: false, vertical: wraps)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             taskBadges
+
+            if task.estimatedMinutes > 0 && wraps {
+                iOSTaskRowEstimateChip(task: task)
+            }
 
             // Both widths carry the same *elements*; only spacing and type scale change. Tags used
             // to be dropped at compact width, which meant an iPhone's Today row and an iPad's
@@ -268,9 +288,9 @@ struct iOSTaskRow: View {
                 if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
                     Button(action: openDetail) {
                         Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hidden))
-                            .font(.system(size: 12, weight: .medium))
+                            .cadenceFont(.metadata)
                             .foregroundStyle(Theme.dim)
-                            .frame(minHeight: 30)
+                            .frame(minHeight: CadenceTypeScale.height(30, holding: .metadata, at: dynamicTypeSize, scaling: scaling))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }
@@ -516,6 +536,8 @@ struct iOSTaskRow: View {
 /// words. An item is either ordinary, and entirely `Theme.dim`, or exceptional, and entirely the
 /// colour that says so.
 struct iOSTaskMetaLabel: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let systemImage: String
     let text: String
     /// Icon *and* text. Neutral unless this item is one of the few that has earned a colour.
@@ -524,12 +546,13 @@ struct iOSTaskMetaLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage)
-                .font(.system(size: 9.5, weight: .semibold))
+                .cadenceFont(.metadata, base: 9.5, weight: .semibold)
                 .foregroundStyle(tint)
             Text(text)
-                .font(.system(size: 11, weight: .medium))
+                .cadenceFont(.metadata, base: 11)
                 .foregroundStyle(tint)
-                .lineLimit(1)
+                .lineLimit(iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+                .fixedSize(horizontal: false, vertical: scaling == .enabled)
         }
     }
 }
@@ -573,6 +596,8 @@ struct iOSTaskSectionHeader: View {
 }
 
 struct iOSTaskViewOptionsBar: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
     var completedCount: Int
@@ -597,15 +622,19 @@ struct iOSTaskViewOptionsBar: View {
     /// They used to be two different treatments for two peer controls — a blue-washed capsule
     /// beside a grey one — which read as one being an action and the other a state.
     var body: some View {
-        HStack(spacing: 10) {
+        let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+        let height = CadenceTypeScale.height(44, holding: .controlLabel, textBase: Self.fontSize, at: dynamicTypeSize, scaling: scaling)
+        layout {
             Button {
                 showSortPicker = true
             } label: {
                 Label(sortMode.title, systemImage: "arrow.up.arrow.down")
-                    .font(.system(size: Self.fontSize, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: Self.fontSize)
                     .foregroundStyle(Theme.text)
                     .padding(.horizontal, Self.horizontalPadding)
-                    .frame(minHeight: 44)
+                    .fixedSize(horizontal: false, vertical: stacks)
+                    .frame(minHeight: height)
                     .background(Theme.surfaceElevated.opacity(0.72))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
@@ -620,7 +649,7 @@ struct iOSTaskViewOptionsBar: View {
                 )
             }
 
-            if spreads {
+            if spreads && !stacks {
                 Spacer()
             }
 
@@ -628,10 +657,11 @@ struct iOSTaskViewOptionsBar: View {
                 showCompleted.toggle()
             } label: {
                 Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
-                    .font(.system(size: Self.fontSize, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: Self.fontSize)
                     .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
                     .padding(.horizontal, Self.horizontalPadding)
-                    .frame(minHeight: 44)
+                    .fixedSize(horizontal: false, vertical: stacks)
+                    .frame(minHeight: height)
                     .background(showCompleted ? Theme.surfaceElevated.opacity(0.72) : Theme.surfaceElevated.opacity(0.36))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }

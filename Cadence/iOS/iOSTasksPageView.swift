@@ -32,6 +32,7 @@ struct iOSTasksPageView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Theme.bg.ignoresSafeArea())
+        .cadenceScaledTypography()
         .onChange(of: requestedScope, initial: true) { _, requested in
             guard let requested else { return }
             scopeRaw = requested.rawValue

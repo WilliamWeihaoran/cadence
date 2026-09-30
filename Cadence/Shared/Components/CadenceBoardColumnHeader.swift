@@ -202,16 +202,19 @@ nonisolated struct CadenceBoardColumnDueDatePlan: Equatable, Sendable {
 /// half of T-331 that was "iOS shows nothing" cannot become "iOS shows something slightly else".
 struct CadenceBoardColumnDueDateLine: View {
     let plan: CadenceBoardColumnDueDatePlan
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
 
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: "flag.fill")
-                .font(.system(size: 8, weight: .semibold))
+                .cadenceFont(.metadata, base: 8, weight: .semibold)
                 .foregroundStyle(plan.hasDueDate ? Theme.red : Theme.dim)
             Text(plan.label)
-                .font(.system(size: 10, weight: .medium))
+                .cadenceFont(.metadata, base: 10, weight: .medium)
                 .foregroundStyle(plan.isOverdue ? Theme.red : Theme.dim)
-                .lineLimit(1)
+                .lineLimit(scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) ? nil : 1)
+                .fixedSize(horizontal: false, vertical: scaling == .enabled)
             Spacer(minLength: 0)
         }
     }
@@ -226,6 +229,12 @@ struct CadenceBoardColumnTitleRow<Trailing: View>: View {
     let title: String
     let count: Int
     @ViewBuilder let trailing: () -> Trailing
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+
+    private var wraps: Bool {
+        scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
+    }
 
     var body: some View {
         HStack(spacing: CadenceBoardColumnHeaderMetrics.titleRowSpacing) {
@@ -242,13 +251,15 @@ struct CadenceBoardColumnTitleRow<Trailing: View>: View {
                     kerning: CadenceBoardColumnHeaderMetrics.labelKerning
                 )
                 .foregroundStyle(Theme.muted)
-                .lineLimit(1)
+                .lineLimit(wraps ? nil : 1)
+                .fixedSize(horizontal: false, vertical: scaling == .enabled)
                 .truncationMode(.tail)
 
             Spacer(minLength: CadenceBoardColumnHeaderMetrics.countLeadingGap)
 
             Text("\(count)")
-                .font(.system(size: CadenceBoardColumnHeaderMetrics.countSize, weight: .medium))
+                .cadenceFont(.sectionLabel, base: CadenceBoardColumnHeaderMetrics.countSize, weight: .medium)
+                .fixedSize(horizontal: scaling == .enabled, vertical: scaling == .enabled)
                 .monospacedDigit()
                 .foregroundStyle(Theme.dim)
 

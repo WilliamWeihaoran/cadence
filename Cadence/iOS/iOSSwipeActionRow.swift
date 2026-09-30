@@ -43,6 +43,8 @@ final class iOSSwipeActionCoordinator {
 /// is in `CadenceSwipeActionSupport`, which is outside `#if os(iOS)` and therefore testable by the
 /// macOS-built `CadenceTests` target.
 struct iOSSwipeActionsModifier: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let leadingActions: [CadenceSwipeAction]
     let trailingActions: [CadenceSwipeAction]
     var metrics: CadenceSwipeActionMetrics = .standard
@@ -98,6 +100,7 @@ struct iOSSwipeActionsModifier: ViewModifier {
                 }
                 .offset(x: offset)
         }
+        .frame(minHeight: iOSTaskPageTypographyMetrics.swipeTrayHeight(at: dynamicTypeSize, scaling: scaling))
         .background {
             GeometryReader { proxy in
                 Color.clear
@@ -180,10 +183,13 @@ struct iOSSwipeActionsModifier: ViewModifier {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: action.systemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                Text(action.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
+                    .cadenceFont(.metadata, base: 16, weight: .semibold)
+                if !iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling) {
+                    Text(action.title)
+                        .cadenceFont(.metadata, base: 11, weight: .semibold)
+                        .lineLimit(iOSTaskPageTypographyMetrics.swipeLabelLineLimit(at: dynamicTypeSize, scaling: scaling))
+                        .multilineTextAlignment(.center)
+                }
             }
             .foregroundStyle(Theme.onColor(for: action.tint))
             .frame(width: width)
@@ -192,6 +198,7 @@ struct iOSSwipeActionsModifier: ViewModifier {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(action.title)
         .clipped()
     }
 

@@ -150,16 +150,21 @@ struct iOSCompactTodayView: View {
 /// hosts. The fill reasoning is kept here only because it explains why a `Theme.surface` card would
 /// have been invisible on iPad if anyone reaches for one again.
 struct iOSCompactTodayEmptyState: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     var body: some View {
         emptyRow
     }
 
     private var emptyRow: some View {
-        HStack(alignment: .center, spacing: 13) {
+        let wraps = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let side = iOSTaskPageTypographyMetrics.glyphFrame(42, glyph: 20, at: dynamicTypeSize, scaling: scaling)
+        let layout = wraps ? AnyLayout(VStackLayout(alignment: .leading, spacing: 13)) : AnyLayout(HStackLayout(spacing: 13))
+        return layout {
             Image(systemName: "checkmark.circle")
-                .font(.system(size: 20, weight: .semibold))
+                .cadenceFont(.controlLabel, base: 20)
                 .foregroundStyle(Theme.dim)
-                .frame(width: 42, height: 42)
+                .frame(width: side, height: side)
                 .background(Theme.surfaceElevated.opacity(0.54))
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .overlay {
@@ -169,17 +174,19 @@ struct iOSCompactTodayEmptyState: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(CadenceTodayPresentationSupport.emptyTitle)
-                    .font(.system(size: 15, weight: .semibold))
+                    .cadenceFont(.bodyText, weight: .semibold)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(1)
+                    .lineLimit(wraps ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: wraps)
 
                 Text(CadenceTodayPresentationSupport.emptySubtitle)
-                    .font(.system(size: 12, weight: .medium))
+                    .cadenceFont(.metadata)
                     .foregroundStyle(Theme.dim)
-                    .lineLimit(2)
+                    .lineLimit(wraps ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: wraps)
             }
 
-            Spacer(minLength: 0)
+            if !wraps { Spacer(minLength: 0) }
         }
         .padding(14)
     }
@@ -189,32 +196,39 @@ struct iOSCompactTodayEmptyState: View {
 /// button welded into its empty-state card; it is this card now.
 #if DEBUG
 struct iOSCompactSampleDataCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let status: String?
     let action: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 11) {
+        let wraps = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let side = iOSTaskPageTypographyMetrics.glyphFrame(34, glyph: 14, at: dynamicTypeSize, scaling: scaling)
+        let layout = wraps ? AnyLayout(VStackLayout(alignment: .leading, spacing: 11)) : AnyLayout(HStackLayout(spacing: 11))
+        layout {
             iOSIconTile(systemImage: "wand.and.stars", color: Theme.amber, bordered: false)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(status ?? "Need realistic rows?")
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(2)
+                    .lineLimit(wraps ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: wraps)
 
                 Text("Seed local simulator tasks for Today, Inbox, and Timeline.")
-                    .font(.system(size: 11, weight: .medium))
+                    .cadenceFont(.metadata, base: 11)
                     .foregroundStyle(Theme.dim)
-                    .lineLimit(2)
+                    .lineLimit(wraps ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: wraps)
             }
 
-            Spacer(minLength: 8)
+            if !wraps { Spacer(minLength: 8) }
 
             Button(action: action) {
                 Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .bold))
+                    .cadenceFont(.controlLabel, base: 14, weight: .bold)
                     .foregroundStyle(Theme.onColor(for: Theme.blue))
-                    .frame(width: 34, height: 34)
+                    .frame(width: side, height: side)
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }

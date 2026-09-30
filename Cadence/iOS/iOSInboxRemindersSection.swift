@@ -66,7 +66,7 @@ struct iOSInboxRemindersSection: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Loading reminders...")
-                    .font(.system(size: 13))
+                    .cadenceFont(.fieldLabel, weight: .regular)
                     .foregroundStyle(Theme.dim)
                 Spacer(minLength: 0)
             }
@@ -99,11 +99,11 @@ struct iOSInboxRemindersSection: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(state.accessTitle)
-                    .font(.system(size: 15, weight: .semibold))
+                    .cadenceFont(.bodyText, weight: .semibold)
                     .foregroundStyle(Theme.text)
 
                 Text(state.accessMessage)
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, weight: .regular)
                     .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -148,6 +148,8 @@ struct iOSInboxRemindersSection: View {
 /// measurement, `iOSTaskMetaLabel` for read-only metadata, and the row's own bottom hairline as its
 /// only chrome. One layer, at one radius.
 private struct iOSInboxReminderRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let reminder: AppleReminderItem
     let onComplete: (String) -> AppleReminderCompletionOutcome
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -168,10 +170,11 @@ private struct iOSInboxReminderRow: View {
 
             VStack(alignment: .leading, spacing: metrics.summarySpacing) {
                 Text(CadenceTitleNormalization.display(reminder.title, fallback: CadenceTitleNormalization.defaultReminderTitle))
-                    .font(.system(size: metrics.titleFontSize, weight: .medium))
+                    .cadenceFont(.rowTitle, base: metrics.titleFontSize)
                     .foregroundStyle(rowState.isCompleting ? Theme.dim : Theme.text)
                     .strikethrough(rowState.isCompleting, color: Theme.dim)
-                    .lineLimit(CadenceTaskRowMetrics.titleLineLimit)
+                    .lineLimit(iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling) ? nil : CadenceTaskRowMetrics.titleLineLimit)
+                    .fixedSize(horizontal: false, vertical: scaling == .enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 metadata
@@ -181,7 +184,7 @@ private struct iOSInboxReminderRow: View {
                 // it sits under the sentence it is about rather than under the completion circle.
                 if let failureNotice = rowState.failureNotice {
                     Text(failureNotice)
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, weight: .regular)
                         .foregroundStyle(Theme.red)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -205,16 +208,17 @@ private struct iOSInboxReminderRow: View {
     /// one, so the row still reads as a checkable thing that this particular list will not let you
     /// check.
     private var completionButton: some View {
-        Button(action: complete) {
+        let frame = CadenceTypeScale.height(metrics.completionGlyphSize, holding: .rowTitle, textBase: CadenceTaskRowMetrics.completionCircleDiameter, at: dynamicTypeSize, scaling: scaling)
+        return Button(action: complete) {
             iOSTaskCompletionCircle(
                 glyph: .binary(
                     isDone: rowState.isCompleting,
                     tint: AppleReminderRowPresentation.priorityTint(reminder.priority)
                 ),
-                diameter: CadenceTaskRowMetrics.completionCircleDiameter
+                diameter: CadenceTypeScale.size(.rowTitle, base: CadenceTaskRowMetrics.completionCircleDiameter, at: dynamicTypeSize, scaling: scaling)
             )
-            .frame(width: metrics.completionGlyphSize, height: metrics.completionGlyphSize)
-            .iOSExpandedHitArea((44 - metrics.completionGlyphSize) / 2)
+            .frame(width: frame, height: frame)
+            .iOSExpandedHitArea(max(0, (44 - frame) / 2))
         }
         .buttonStyle(.iosPressable)
         .disabled(!reminder.allowsCompletion || rowState.isCompleting)

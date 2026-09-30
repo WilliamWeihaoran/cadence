@@ -117,6 +117,8 @@ extension View {
 /// curve are the *same* two figures `CommitmentIconTile` reads, so the pair now agrees on all four
 /// of its geometry numbers rather than three.
 struct iOSIconTile: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let systemImage: String
     let color: Color
     var size: CGFloat = 34
@@ -131,11 +133,12 @@ struct iOSIconTile: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: CadencePageHeaderMetrics.tileCornerStyle)
+        let side = iOSTaskPageTypographyMetrics.glyphFrame(size, glyph: iconSize, at: dynamicTypeSize, scaling: scaling)
 
         return Image(systemName: systemImage)
-            .font(.system(size: iconSize, weight: .semibold))
+            .cadenceFont(.controlLabel, base: iconSize)
             .foregroundStyle(color)
-            .frame(width: size, height: size)
+            .frame(width: side, height: side)
             .background(shape.fill(color.opacity(fillOpacity)))
             .overlay {
                 if bordered {
@@ -150,6 +153,8 @@ struct iOSIconTile: View {
 /// iOS counterpart of `CommitmentMetaChip`. One chip shape for goal status, goal kind, event
 /// times, habit cadence — everywhere a small tinted fact hangs off a title.
 struct iOSMetaChip: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let label: String
     let color: Color
     var systemImage: String? = nil
@@ -160,11 +165,12 @@ struct iOSMetaChip: View {
         HStack(spacing: 4) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 10, weight: .bold))
+                    .cadenceFont(.metadata, base: 10, weight: .bold)
             }
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
+                .cadenceFont(.metadata, base: 11, weight: .semibold)
+                .lineLimit(iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+                .fixedSize(horizontal: false, vertical: scaling == .enabled)
         }
         .foregroundStyle(prominent ? Theme.bg : color)
         .padding(.horizontal, 9)
@@ -219,6 +225,8 @@ enum iOSActionButtonSize {
 /// system buttons the tracking surfaces were using. Those inherit the OS's own material and corner
 /// radius, so a "primary" action looked like a different app depending on which screen you were on.
 struct iOSActionButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     var systemImage: String?
     var role: iOSActionButtonRole = .secondary
@@ -265,15 +273,16 @@ struct iOSActionButton: View {
             HStack(spacing: 7) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: size.fontSize - 1, weight: .semibold))
+                        .cadenceFont(.controlLabel, base: size.fontSize - 1)
                 }
                 Text(title)
-                    .font(.system(size: size.fontSize, weight: .semibold))
-                    .lineLimit(1)
+                    .cadenceFont(.controlLabel, base: size.fontSize)
+                    .lineLimit(iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: scaling == .enabled)
             }
             .foregroundStyle(foreground)
             .padding(.horizontal, size.horizontalPadding)
-            .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: size.minHeight)
+            .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: CadenceTypeScale.height(size.minHeight, holding: .controlLabel, textBase: size.fontSize, at: dynamicTypeSize, scaling: scaling))
             .background(shape.fill(background))
             .overlay(shape.strokeBorder(border, lineWidth: 1))
             .contentShape(shape)

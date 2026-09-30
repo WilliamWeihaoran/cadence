@@ -79,6 +79,7 @@ struct iOSListsView: View {
         .background(Theme.bg)
         .sheet(item: $editorMode) { mode in
             iOSListEditorSheet(mode: mode)
+                .cadenceFixedTypography()
         }
         .iOSListDeletion(target: $pendingDeletion)
         .iOSListWindDown(target: $pendingWindDown)

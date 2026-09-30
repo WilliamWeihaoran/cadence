@@ -229,6 +229,7 @@ private struct iOSListWindDownModifier: ViewModifier {
             iOSWindDownConfirmationSheet(subject: target.windDownSubject) {
                 modelContext.windDownList(target)
             }
+            .cadenceFixedTypography()
         }
     }
 }

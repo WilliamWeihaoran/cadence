@@ -549,6 +549,8 @@ struct iOSTaskRowEstimateChip: View {
 /// `CadenceTaskRowMetrics`. Its only writer was the row's density, and on a phone that meant a
 /// subtask under a Today task was drawn 1pt smaller than the same subtask under an Inbox task.
 struct iOSTaskRowSubtaskRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let subtask: Subtask
     @Environment(\.modelContext) private var modelContext
 
@@ -558,15 +560,16 @@ struct iOSTaskRowSubtaskRow: View {
             try? modelContext.save()
         } label: {
             HStack(spacing: 8) {
-                iOSTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: 12)
+                iOSTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: CadenceTypeScale.size(.metadata, at: dynamicTypeSize, scaling: scaling))
                 Text(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                    .font(.system(size: 12, weight: .medium))
+                    .cadenceFont(.metadata)
                     .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
+                    .lineLimit(iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: scaling == .enabled)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
-            .frame(minHeight: 32)
+            .frame(minHeight: CadenceTypeScale.height(32, holding: .metadata, at: dynamicTypeSize, scaling: scaling))
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }

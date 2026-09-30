@@ -674,8 +674,17 @@ struct CadenceSharedTaskRowJobsTests {
         )
         try expectOccurrences(
             of: "metrics.completionGlyphSize",
-            at: ["Cadence/iOS/iOSTaskViews.swift": 3, "Cadence/iOS/iOSInboxRemindersSection.swift": 3]
+            at: ["Cadence/iOS/iOSTaskViews.swift": 1, "Cadence/iOS/iOSInboxRemindersSection.swift": 1]
         )
+        try expectOccurrences(
+            of: "CadenceTypeScale.height(metrics.completionGlyphSize, holding: .rowTitle, textBase: CadenceTaskRowMetrics.completionCircleDiameter, at: dynamicTypeSize, scaling: scaling)",
+            at: ["Cadence/iOS/iOSTaskViews.swift": 1, "Cadence/iOS/iOSInboxRemindersSection.swift": 1]
+        )
+        for (path, frame) in [("Cadence/iOS/iOSTaskViews.swift", "completionFrame"),
+                              ("Cadence/iOS/iOSInboxRemindersSection.swift", "frame")] {
+            try expectOccurrences(of: ".frame(width: \(frame), height: \(frame))", at: [path: 1])
+            try expectOccurrences(of: ".iOSExpandedHitArea(max(0, (44 - \(frame)) / 2))", at: [path: 1])
+        }
     }
 
     /// Both iOS rows had the title size typed out too, in the file that reads the metrics for

@@ -28,6 +28,7 @@ struct iOSTasksTabView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Theme.bg.ignoresSafeArea())
+        .cadenceScaledTypography()
         .iOSHidesCompactNavigationBar()
     }
 

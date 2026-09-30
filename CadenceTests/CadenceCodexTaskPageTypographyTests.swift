@@ -4,7 +4,7 @@ import Testing
 @testable import Cadence
 
 struct CadenceCodexTaskPageTypographyTests {
-    private let glyphFrames: [(CGFloat, CGFloat)] = [(30, 17), (38, 17), (38, 14), (30, 11), (44, 15)]
+    private let glyphFrames: [(CGFloat, CGFloat)] = [(30, 17), (38, 17), (38, 14), (30, 11), (44, 15), (34, 15), (42, 20), (34, 14)]
 
     @Test func codexPageChromeRetainsItsFixedMetricsAtAllTwelveSizes() {
         #expect(DynamicTypeSize.allCases.count == 12)

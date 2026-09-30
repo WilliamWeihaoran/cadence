@@ -100,6 +100,7 @@ private struct iOSListDeletionModifier: ViewModifier {
             ) {
                 try perform(target)
             }
+            .cadenceFixedTypography()
         }
     }
 

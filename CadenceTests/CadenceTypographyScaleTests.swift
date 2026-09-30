@@ -339,7 +339,7 @@ struct CadenceTypographyConversionSweepTests {
         // The reader, before an empty result is believed. `strippingComments` blanks comments and
         // keeps code; a reader swapped for `codeOnly` would blank nothing relevant here, but one
         // pointed at the wrong root returns empty strings and this sweep passes forever.
-        #expect(try read("Cadence/iOS/iOSDesignSystem.swift").contains(".font(.system(size:"),
+        #expect(try read("Cadence/iOS/iOSSettingsComponents.swift").contains(".font(.system(size:"),
                 "the sweep's reader no longer reaches unconverted source, so its needle cannot match")
 
         let hits = try instrument.sweep(
@@ -422,8 +422,13 @@ struct CadenceTypographyConversionSweepTests {
             "Cadence/Shared/Components/CadenceDatePicker.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
+            "Cadence/iOS/iOSSearchView.swift",
+            "Cadence/iOS/iOSTaskCollectionPage.swift",
             "Cadence/iOS/iOSTaskDetailComponents.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/iOS/iOSTasksPageView.swift",
+            "Cadence/iOS/iOSTasksTabView.swift",
+            "Cadence/iOS/iOSTodayView.swift",
         ].sorted())
     }
 }

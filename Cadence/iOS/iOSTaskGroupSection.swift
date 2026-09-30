@@ -125,7 +125,8 @@ struct iOSTaskGroupSection: View {
                             total: totalCount
                         ) {
                             Text(caption)
-                                .font(.system(size: 12, weight: .medium))
+                                .cadenceFont(.metadata)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .foregroundStyle(Theme.dim)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.top, 2)
