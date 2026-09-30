@@ -47,7 +47,6 @@ always allowed and never needs listing.
 ```lease
 Cadence/iOS/iOSInbox*.swift
 Cadence/iOS/iOSToday*.swift
-Cadence/iOS/iPadTodaySupportViews.swift
 Cadence/iOS/iOSList*.swift
 Cadence/iOS/iOSSearch*.swift
 Cadence/iOS/iOSTaskCollection*.swift
@@ -61,7 +60,6 @@ Cadence/iOS/iOSFloatingCreateTaskButton.swift
 Cadence/iOS/iOSBoardCards.swift
 Cadence/Shared/Components/CadenceBoardColumnHeader.swift
 Cadence/Shared/Components/CadenceBoardMetadataChip.swift
-Cadence/iOS/iOSFeatureComponents.swift
 Cadence/iOS/iOSDesignSystem.swift
 Cadence/Shared/Components/EmptyStateView.swift
 Cadence/Shared/Components/CadenceTaskGroupHeading.swift
@@ -130,6 +128,23 @@ it said it would. It is already a declared scaled root in the inventory at
 name it, so returning it would grant a path nobody is working on — which this file's own rule says is
 the kind of lease that eventually gets believed. It comes back the moment an assignment needs it; say
 so rather than working around it.
+
+### Two files are out on loan for T-1702, and they come back
+
+`Cadence/iOS/iOSFeatureComponents.swift` and `Cadence/iOS/iPadTodaySupportViews.swift` are **out of
+the lease** while [[T-1702]] is fixed — the owner-reported iPad header truncation lives in
+`iOSPageHeader.eyebrowLine`, and agent `padwidth` established that all three candidate homes for the
+fix are leased files, so it stopped rather than working around it. That was the right call and this
+is the answer to it.
+
+Checked before narrowing, not after: Codex's branch is at `2be0d847`, its worktree is clean, both
+files are unmodified, and T-1453's remaining patch order names `iOSListDetailView`, `iOSListsView`
+and `CadenceBoardMetadataChip` — not these two.
+
+**They return when T-1702 lands.** [[T-1492]] made the same promise about `CadenceDatePicker.swift`
+and I did not keep it; [[T-1800]] records why that was defensible and it is still a promise I broke.
+This one is narrow and short-lived: if Codex needs either file before T-1702 is done, **say so and
+stop** — that is a one-line lease change, not a blocker.
 
 ## Do not edit `Cadence.xcodeproj/project.pbxproj`
 
