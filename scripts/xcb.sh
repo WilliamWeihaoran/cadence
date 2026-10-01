@@ -1012,6 +1012,61 @@ resolve_destinations() {
   return $SIMULATOR_GATE_EXIT
 }
 
+# --- does this selection launch an app? (T-1933) -----------------------------
+# ONE QUESTION, TWO DECISIONS. The locked-screen guard (T-563) and the test-host lock (T-236) were
+# each written against a different proxy for the same fact, and both proxies are the target name:
+# the guard refused `[[ "${args[*]}" == *CadenceUITests* ]]` -- the string ANYWHERE in the argument
+# list -- and the lock is taken for the `test` ACTION whatever the action selects. Measured
+# 2026-10-01: `-only-testing:CadenceUITests/CadenceOverdrawVerdictTests` was refused with exit 5 on
+# a locked Mac, and on an unlocked one the same selection queued 800 seconds behind two siblings
+# for a lease it does not need. That suite launches nothing, takes no pointer and reads no screen;
+# it is arithmetic over bitmaps it draws itself. Both decisions have the same input, so they now
+# share one answer and one set of selftest checks.
+#
+# WHAT MAKES A SUITE SCREEN-FREE IS READ FROM ITS SOURCE, not from a list kept here. A list is a
+# second copy of a fact, and T-1382 is thirteen days of what two copies of one rule do: a suite
+# that gains an `XCUIApplication` would keep its exemption until somebody remembered this file.
+# The source IS the fact -- a test that never names `XCUIApplication` cannot launch an app -- and
+# `CadenceUITestLaunchFreedomTests` holds the other half, that the suite the exemption is for still
+# has no way to reach one.
+#
+# IT FAILS CLOSED, EVERY WAY IT CAN FAIL. No `-only-testing:` at all selects the whole scheme, which
+# includes this target: launches. A filter naming any target but `CadenceUITests` reaches the unit
+# target, which hosts IN the app and is the T-236 container hazard: launches. A suite whose
+# declaration cannot be found, or that is declared in more than one file, is unanswerable: launches.
+# Only a selection where EVERY named suite was read and every one of them is screen-free is exempt.
+# This is deliberately not symmetric with the refusals above it, which refuse on a positive finding:
+# here the exemption is the finding, so the exemption is what has to be proven.
+#
+# CADENCE_UI_TEST_SOURCE_DIR is the testing seam `CADENCE_SUITE_FILES` is, and for the same reason:
+# `selftest` points it at a two-file fixture so the checks assert against a known screen-free suite
+# AND a known app-launching one, rather than against a live directory that changes under them. One
+# fixture could not tell a working guard from a deleted one.
+ui_suite_launches_an_app() {    # $1 = suite name. 0 = launches, or cannot be answered.
+  local suite="$1"
+  local dir="${CADENCE_UI_TEST_SOURCE_DIR:-$ROOT_DIR/CadenceUITests}"
+  local -a decl
+  decl=(${(f)"$(grep -lE "^[[:space:]]*(final[[:space:]]+)?(class|struct)[[:space:]]+${suite}[[:space:]]*:" -- "$dir"/*.swift(N) 2>/dev/null)"})
+  (( ${#decl} == 1 )) || return 0
+  [[ -n "${decl[1]}" ]] || return 0
+  grep -qF 'XCUIApplication' -- "${decl[1]}" && return 0
+  return 1
+}
+
+selection_launches_an_app() {   # $@ = the -only-testing: values, flag already stripped.
+  (( $# )) || return 0
+  local spec target rest suite
+  for spec in "$@"; do
+    target="${spec%%/*}"; rest=""
+    [[ "$spec" == */* ]] && rest="${spec#*/}"
+    [[ "$target" != "CadenceUITests" ]] && return 0
+    [[ -z "$rest" ]] && return 0
+    suite="${rest%%/*}"
+    ui_suite_launches_an_app "$suite" && return 0
+  done
+  return 1
+}
+
 
 # --- selftest ----------------------------------------------------------------
 # `agent-commit.sh selftest` and `mutate.sh selftest` are the precedent: a guard nobody exercises
@@ -1581,6 +1636,74 @@ selftest_only_testing() {
   check "and the refusals above carry no stray zsh assignment line (T-1074)" \
     $( print -r -- "$pout" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$pout"
 
+  say ""
+  say " 10. does this selection launch an app (T-1933)"
+  # TWO FIXTURE SUITES, AND THE SECOND IS THE WHOLE CHECK. One screen-free suite on its own passes
+  # with the reading deleted and `return 1` left in its place -- the exemption would simply be
+  # unconditional, and every check below it that asserts SCREEN-FREE would still be green. So the
+  # app-launching sibling sits in the same fixture target and the two answers are asserted to
+  # DIFFER. Everything else here is a fail-closed case: the exemption is the finding, so it is the
+  # exemption that has to be proven, and anything unreadable has to come back LAUNCHES-AN-APP.
+  mkdir -p "$ws/uitests"
+  print -rl -- 'import XCTest' '@MainActor' 'final class ScreenFreeFixtureTests: XCTestCase {' \
+               '    func testArithmeticOverABitmap() { XCTAssertEqual(1, 1) }' '}' \
+               > "$ws/uitests/ScreenFreeFixtureTests.swift"
+  print -rl -- 'import XCTest' 'final class LaunchingFixtureTests: XCTestCase {' \
+               '    func testLaunches() { let app = XCUIApplication(); app.launch() }' '}' \
+               > "$ws/uitests/LaunchingFixtureTests.swift"
+  local uiout uisrc
+  run_sel() { uiout=$(CADENCE_UI_TEST_SOURCE_DIR="$ws/uitests" zsh "$here" check-ui-selection "$@" 2>&1); rc=$?; }
+
+  run_sel CadenceUITests/ScreenFreeFixtureTests
+  check "a suite whose source never names XCUIApplication is SCREEN-FREE" \
+    $( [[ $rc == 1 && "$uiout" == *SCREEN-FREE* ]] && print 1 || print 0 ) "exit $rc: $uiout"
+  local screenfree_out="$uiout"
+  run_sel CadenceUITests/LaunchingFixtureTests
+  check "CONTROL: its sibling in the same target LAUNCHES-AN-APP" \
+    $( [[ $rc == 0 && "$uiout" == *LAUNCHES-AN-APP* ]] && print 1 || print 0 ) "exit $rc: $uiout"
+  check "...and the two selections do not get the same answer" \
+    $( [[ "$uiout" != "$screenfree_out" ]] && print 1 || print 0 ) "$uiout"
+
+  run_sel CadenceUITests/ScreenFreeFixtureTests/testArithmeticOverABitmap
+  check "scoping to ONE test of a screen-free suite is screen-free too" \
+    $( [[ $rc == 1 && "$uiout" == *SCREEN-FREE* ]] && print 1 || print 0 ) "exit $rc: $uiout"
+  run_sel CadenceUITests
+  check "FAIL-CLOSED: the whole UI target launches an app" \
+    $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $uiout"
+  run_sel CadenceUITests/NoSuchSuiteInTheFixture
+  check "FAIL-CLOSED: a suite whose declaration cannot be found launches an app" \
+    $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $uiout"
+  run_sel
+  check "FAIL-CLOSED: no -only-testing: at all launches an app (the whole scheme runs)" \
+    $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $uiout"
+  # CadenceTests is NOT exempt and must never become so: it hosts IN the app, which is the one
+  # app-group container T-236 is about. Nothing about this ticket touches the unit target's lease.
+  run_sel CadenceTests/CadenceOverdrawVerdictTests
+  check "FAIL-CLOSED: the unit target hosts in the app, so it launches one" \
+    $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $uiout"
+  run_sel CadenceUITests/ScreenFreeFixtureTests CadenceTests/SomeUnitSuite
+  check "FAIL-CLOSED: one launching member makes the whole selection launching" \
+    $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $uiout"
+
+  # The fixture above is a claim about the reading; this is the claim about this repository, and it
+  # is section 5's argument again -- without it a fixture that had drifted from the real target
+  # would pass in silence while the live suite the ticket is about stayed refused.
+  run_sel() { uiout=$(zsh "$here" check-ui-selection "$@" 2>&1); rc=$?; }
+  run_sel CadenceUITests/CadenceOverdrawVerdictTests
+  check "LIVE: CadenceOverdrawVerdictTests is screen-free (T-1933's whole subject)" \
+    $( [[ $rc == 1 && "$uiout" == *SCREEN-FREE* ]] && print 1 || print 0 ) "exit $rc: $uiout"
+  run_sel CadenceUITests/CadenceTodayCompositionUITests
+  check "LIVE CONTROL: a real suite that does launch an app is not exempted" \
+    $( [[ $rc == 0 && "$uiout" == *LAUNCHES-AN-APP* ]] && print 1 || print 0 ) "exit $rc: $uiout"
+
+  # ONE INPUT, ONE ANSWER. The locked-screen refusal and the test-host lease are two decisions
+  # about the same fact, and the defect was that each carried its own proxy for it. A future edit
+  # that repairs one and leaves the other is the shape this check exists to catch; both call sites
+  # pass the same parsed selection to the same function.
+  uisrc=$(grep -c 'selection_launches_an_app "\${only_testing\[@\]}"' "$here")
+  check "both the locked-screen guard and the test-host lock ask the one question" \
+    $( (( uisrc == 2 )) && print 1 || print 0 ) "found $uisrc call site(s), want 2"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -1683,6 +1806,22 @@ fi
 # is what `selftest` drives, and it answers "does this Mac have that simulator" for a caller that
 # would otherwise find out by reading a vacuous build log. Accepts the value with or without the
 # `-destination` flag in front of it.
+# The selection question on its own (T-1933), for the two reasons `check-only-testing` is exposed:
+# it is what `selftest` drives, and it lets a caller staring at a refused run -- or at a 13-minute
+# queue for the test host -- ask why without paying for a build. It exits 0 when the selection can
+# reach a test that launches an app and 1 when it provably cannot, so it is scriptable as well as
+# readable. Accepts the values with or without the `-only-testing:` prefix.
+if [[ "${1:-}" == "check-ui-selection" ]]; then
+  shift
+  if selection_launches_an_app "${@#-only-testing:}"; then
+    say "ui selection: LAUNCHES-AN-APP -- refused while the screen is locked, and it takes the test-host lock."
+    exit 0
+  fi
+  say "ui selection: SCREEN-FREE -- every named suite is screen-free, so a locked screen does not"
+  say "  refuse it and no test-host lease is taken for it (T-1933)."
+  exit 1
+fi
+
 if [[ "${1:-}" == "check-destination" ]]; then
   shift
   if (( $# == 0 )); then
@@ -1770,6 +1909,20 @@ if (( $(pgrep -x Xcode 2>/dev/null | wc -l) > 0 )); then
 fi
 before_entries="$(shared_cadence_entries)"
 
+# --- what this run SELECTS, read before the guards that depend on it ---------
+# Parsed here rather than beside `resolve_only_testing` below, because two guards between here and
+# there now need it (T-1933): a selection is what says whether this run can reach a test that
+# launches an app, and both the locked-screen refusal and the test-host lease turn on that one
+# fact. The resolver itself still runs where it did -- it is a separate, more expensive question
+# (does this name match a suite at all) and it is answered after the cheap refusals.
+only_testing=()
+for (( i = 1; i <= ${#args}; i++ )); do
+  case "${args[i]}" in
+    -only-testing:*) only_testing+=("${args[i]#-only-testing:}") ;;
+    -only-testing)   only_testing+=("${args[i+1]:-}") ;;
+  esac
+done
+
 # --- the locked-screen guard (T-563) -----------------------------------------
 # A UI test cannot activate an app while the Mac's screen is locked: `loginwindow` owns the
 # foreground, the app XCUITest launches stays `Running Background`, and `app.launch()` gives up
@@ -1791,30 +1944,41 @@ before_entries="$(shared_cadence_entries)"
 screen_is_locked() {
   [[ "$(ioreg -n Root -d1 -k IOConsoleUsers 2>/dev/null)" == *'"CGSSessionScreenIsLocked"=Yes'* ]]
 }
-# CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 exists so this guard, and the skip it pairs with, can be
-# *tested* -- a guard nobody can exercise is the hollow-instrument shape this repo keeps catching.
-# It is not a way to get a UI run out of a locked Mac: with it set the tests skip instead, which is
-# the behaviour worth confirming. There is no spelling of it that makes an app reach the foreground.
-if screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]] \
+# CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 exists so this guard can be *tested* -- a guard nobody can
+# exercise is the hollow-instrument shape this repo keeps catching. It is not a way to get a UI run
+# out of a locked Mac, and there is no spelling of it that makes an app reach the foreground.
+# ITS OLD COMMENT SAID "with it set the tests skip instead". THAT IS FALSE FOR AT LEAST ONE SUITE
+# (T-1933): `CadenceOverdrawVerdictTests` carries no skip at all and would run. The sentence was
+# true of the suites the guard was written against and was never re-read when the target grew one
+# that launches nothing -- which is the same mistake the guard's own condition made.
+#
+# AND THE CONDITION NOW ASKS THE RIGHT QUESTION. `[[ "${args[*]}" == *CadenceUITests* ]]` is the
+# target's name anywhere in the argument list, which refuses `-only-testing:CadenceUITests/
+# CadenceOverdrawVerdictTests` -- measured exit 5 on 2026-10-01 -- a suite that launches nothing,
+# takes no pointer and reads no screen, and is exactly the suite still worth running on a Mac that
+# has locked. The mention is still required, so an ordinary `CadenceTests` run on a locked screen
+# is unaffected; what it is ANDed with is now a reading of the selection rather than of a string.
+SCREEN_LOCKED=0; screen_is_locked && SCREEN_LOCKED=1
+if (( SCREEN_LOCKED )) && [[ "${args[*]}" == *CadenceUITests* ]] \
+   && selection_launches_an_app "${only_testing[@]}" \
    && [[ "${CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN:-}" != "1" ]]; then
   say ""
   say "!! REFUSING: the screen is locked, and no UI test in CadenceUITests can pass while it is."
   say "   loginwindow holds the foreground, so the launched app never leaves Running Background"
   say "   and app.launch() fails after ~60s per test. Unlock the screen and re-run (T-563)."
+  say "   Scope to a suite that launches no app to run anyway: ./scripts/xcb.sh check-ui-selection"
+  say "   <filter> says whether one does (T-1933)."
   exit 5
+fi
+if (( SCREEN_LOCKED )) && [[ "${args[*]}" == *CadenceUITests* ]]; then
+  say "  screen is locked, but every named CadenceUITests suite launches no app -- proceeding (T-1933)."
 fi
 
 # --- resolve -only-testing: before anything expensive (T-1076) ---------------
 # Ahead of the drift check and the test-host lock on purpose. A name that selects nothing costs
 # a full build to discover through the zero-test guard, and a `test` action queues behind a lock
 # that has been reaching forty minutes; neither is worth paying to learn that a suite is misspelt.
-only_testing=()
-for (( i = 1; i <= ${#args}; i++ )); do
-  case "${args[i]}" in
-    -only-testing:*) only_testing+=("${args[i]#-only-testing:}") ;;
-    -only-testing)   only_testing+=("${args[i+1]:-}") ;;
-  esac
-done
+# (The flags themselves are parsed further up, where the locked-screen guard needs them.)
 if (( ${#only_testing} )); then
   resolve_only_testing "${only_testing[@]}" || exit 8
 fi
@@ -1877,7 +2041,18 @@ fi
 # Only `test` needs it: it is the app-group container that two hosts corrupt (T-236), not the
 # build output. Acquire and release under the SAME id -- a mismatch makes `release` refuse and
 # strands the lock for the rest of its lease.
-if [[ "$ACTION" == "test" ]]; then
+#
+# AND ONLY A `test` THAT STARTS A HOST NEEDS IT (T-1933). The lease was taken per ACTION, which is
+# a proxy for "does this run start an app" that is wrong in exactly one direction: measured
+# 2026-10-01, `-only-testing:CadenceUITests/CadenceOverdrawVerdictTests` queued **800 seconds**
+# behind two siblings for a container it never opens. The condition is the locked-screen guard's,
+# deliberately -- one input, one answer -- and it fails closed the same way, so every selection
+# that could reach a host still queues. It is NOT the `raw` escape hatch: `raw` skips the lock on
+# the caller's word, this skips it on a reading of the selection, and a run that skips it here is
+# still a run the zero-test, warning and suite guards all gate.
+if [[ "$ACTION" == "test" ]] && ! selection_launches_an_app "${only_testing[@]}"; then
+  say "  test-host lock: not taken -- this selection launches no app (T-1933)."
+elif [[ "$ACTION" == "test" ]]; then
   "$ROOT_DIR/scripts/test-host-lock.sh" acquire "${CADENCE_LOCK_TIMEOUT:-5400}" "xcb-$ID" || exit 1
   trap "\"$ROOT_DIR/scripts/test-host-lock.sh\" release 'xcb-$ID'" EXIT INT TERM
 fi

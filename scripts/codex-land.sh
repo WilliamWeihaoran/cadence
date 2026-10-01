@@ -75,6 +75,38 @@ cmd_inbox() {
     printf 'inbox: %d entry line(s), %d distinct id(s).\n' "$nlines" "$nids"
 }
 
+# --- is one named file already in main? (T-1930) ------------------------------
+# `git diff --name-only "$base".."$ref"` answers *what did this branch change since it forked*.
+# With a branch 23 commits behind main that is NOT *what is main missing*, and the difference is
+# not academic: measured 2026-10-01, `review codex/task-page-typography-finish` exited 3 with three
+# CODEX-INBOX-ID-CLASH refusals over a 31-file list -- the same exit code and the same words a
+# genuinely blocked branch gets -- while every one of those 31 files was already in main. The ids
+# clashed BECAUSE the work had landed. So every named file is asked the two-dot question too.
+#
+# Two shapes count as already-in-main, and the second is why a plain byte comparison is not enough:
+#
+#   identical    `git diff --quiet main "$ref" -- "$f"`; the bytes match.
+#   main-ahead   the branch's blob for that path appears somewhere in main's own history for that
+#                path. Two of the 31 measured files were this: the work landed and main then moved
+#                PAST it, so the bytes differ while the branch still contributes nothing. Calling
+#                that pending would leave the one defect this is for half-unreported.
+#
+# The history scan is bounded because it costs three processes per file, and the bound fails SAFE:
+# a landed file whose commit sits deeper than the scan reads as pending, which leaves a coordinator
+# looking at a spent branch -- never the reverse, which would be advising `reset --hard` over work.
+BLOB_SCAN_DEPTH=${CODEX_BLOB_SCAN_DEPTH:-200}
+
+blob_is_in_main_history() {   # $1 = ref, $2 = path
+    _bb=$(git rev-parse "$1:$2" 2>/dev/null) || return 1
+    [ -n "$_bb" ] || return 1
+    # One `rev-list` + one `cat-file --batch-check` per file rather than a `rev-parse` per commit:
+    # 31 files against a 50-commit scan is 1,550 processes the other way round.
+    git rev-list -n "$BLOB_SCAN_DEPTH" main -- "$2" 2>/dev/null \
+        | sed "s|\$|:$2|" \
+        | git cat-file --batch-check='%(objectname)' 2>/dev/null \
+        | grep -qxF "$_bb"
+}
+
 # --- review ------------------------------------------------------------------
 cmd_review() {
     ref=${1:-}
@@ -102,6 +134,43 @@ cmd_review() {
 
     rc=0
     printf 'codex-land: %s is %d commit(s), %d file(s) over %s\n\n' "$ref" "$ncommits" "$nfiles" "$(echo "$base" | cut -c1-8)"
+
+    # 0. does main already have this? (T-1930) -- asked FIRST, because when the answer is yes every
+    #    refusal below is a consequence of the work having landed rather than an obstacle to it.
+    landed_report=
+    pending_list=
+    n_identical=0; n_ahead=0; n_pending=0
+    for f in $files; do
+        if git diff --quiet main "$ref" -- "$f" 2>/dev/null; then
+            mark='already in main (identical)'; n_identical=$((n_identical+1))
+        elif blob_is_in_main_history "$ref" "$f"; then
+            mark='already in main (main has moved past it)'; n_ahead=$((n_ahead+1))
+        else
+            mark='NOT in main'; n_pending=$((n_pending+1)); pending_list="$pending_list $f"
+        fi
+        landed_report="$landed_report  $f  --  $mark
+"
+    done
+    if [ "$n_pending" -eq 0 ]; then
+        printf 'REFUSED (CODEX-BRANCH-ALREADY-LANDED): all %d file(s) this branch changed are\n  already in main -- %d identical, %d where main has moved past the branch.\n' \
+            "$nfiles" "$n_identical" "$n_ahead" >&2
+        printf '  The branch is SPENT, not blocked. There is nothing here to land, and an id clash or a\n  lease complaint on a branch in this state is a CONSEQUENCE of the work having landed, not a\n  reason to call the coordinator (T-1930). Reset the Codex worktree to main and reassign.\n' >&2
+        printf '\nfiles:\n'
+        printf '%s' "$landed_report"
+        return 5
+    fi
+    printf 'landed: %d of %d file(s) already in main; %d still only on the branch.\n' \
+        "$((n_identical + n_ahead))" "$nfiles" "$n_pending"
+    # The shape the live measurement actually had on 2026-10-01, once main had moved on: 30 of the
+    # 31 files already in main and the 31st was the INBOX -- the branch's own ledger entries, which
+    # the coordinator never published (T-1800). The code is spent; what is left is the record of it,
+    # and an id clash on a branch in THIS state is still a consequence of the work having landed.
+    # Said out loud, because a reader who sees only three CODEX-INBOX-ID-CLASH lines concludes the
+    # opposite -- that is the defect this whole section is for.
+    if [ "$n_pending" -eq 1 ] && [ "$pending_list" = " $INBOX" ]; then
+        printf 'note (CODEX-ONLY-THE-INBOX-IS-UNLANDED): every CODE file on this branch is already in\n  main; the one path that is not is %s, the branch'"'"'s own ledger entries.\n  Publish those entries on main (T-1800) rather than treating this as pending work -- an id\n  clash here means the work landed, not that it is blocked.\n' "$INBOX"
+    fi
+    printf '\n'
 
     # 1. the ledger is the coordinator's, always
     ledger_hit=$(printf '%s\n' "$files" | grep -E "^($TODO|$DONE)$" || true)
@@ -162,8 +231,10 @@ cmd_review() {
     behind=$(git rev-list --count "$ref"..main 2>/dev/null || echo 0)
     [ "$behind" -gt 0 ] && printf 'note: %s is %d commit(s) behind main; the coordinator rebases at landing.\n' "$ref" "$behind"
 
+    # Per file, whether main already has it (T-1930). A bare list of names was the whole of the
+    # reporting defect: it reads as 31 files of pending work in exactly the case where it is none.
     printf '\nfiles:\n'
-    for f in $files; do printf '  %s\n' "$f"; done
+    printf '%s' "$landed_report"
     [ "$rc" -eq 0 ] && printf '\ncodex-land: no refusal fired. Run the tests, then land through scripts/agent-commit.sh.\n'
     return $rc
 }
@@ -268,6 +339,77 @@ cmd_selftest() {
       && printf -- '- [T-9101] **new work**\n' >> docs/CODEX_LEDGER_INBOX.md \
       && git add -A && git commit -qm t ) >/dev/null 2>&1
     ck "an inbox id the coordinator already folded is not a clash" "$(run review codex/folded)" 0
+
+    # T-1930, and the ONE-CANDIDATE trap is the reason there are three fixtures here rather than
+    # one. A selftest holding only a fully-landed branch passes with the whole per-file reading
+    # deleted: delete it and that branch still exits non-zero, because the id clash fires on it
+    # too. What the defect was is that the two states are INDISTINGUISHABLE, so the spent branch is
+    # pinned beside a genuinely pending one and the two reports are asserted to DIFFER.
+    run_out() { ( cd "$ws" && sh ./scripts/codex-land.sh "$@" 2>&1 ); }
+
+    # (a) spent: the coordinator landed the code AND published the inbox entry (T-1800's rule), then
+    #     filed the id -- so the clash fires for the one reason that means the work is already in.
+    ( cd "$ws" && git checkout -q main && git checkout -qb codex/landed \
+      && printf 'typography\n' > Cadence/iOS/iOSTaskRowE.swift \
+      && printf -- '- [T-9200] **landed work**\n' >> docs/CODEX_LEDGER_INBOX.md \
+      && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -q main \
+      && printf 'typography\n' > Cadence/iOS/iOSTaskRowE.swift \
+      && printf -- '- [T-9200] **landed work**\n' >> docs/CODEX_LEDGER_INBOX.md \
+      && printf -- '- [T-9200] **folded by the coordinator**\n' >> docs/TODO.md \
+      && git add -A && git commit -qm landed ) >/dev/null 2>&1
+    ck "a branch whose every file is already in main is SPENT, not blocked" "$(run review codex/landed)" 5
+    spent_out=$(run_out review codex/landed)
+
+    # (b) the control: same shape, same lease, same inbox vocabulary, nothing landed.
+    ( cd "$ws" && git checkout -q main && git checkout -qb codex/pending \
+      && printf 'typography\n' > Cadence/iOS/iOSTaskRowF.swift \
+      && printf -- '- [T-9201] **pending work**\n' >> docs/CODEX_LEDGER_INBOX.md \
+      && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -q main ) >/dev/null 2>&1
+    ck "a genuinely pending branch is NOT reported as landed" "$(run review codex/pending)" 0
+    pending_out=$(run_out review codex/pending)
+
+    ck "the spent and the pending branch do not get the same report" \
+       "$( [ "$spent_out" != "$pending_out" ] && echo differ || echo same )" differ
+    ck "the spent branch's report names the state" \
+       "$(printf '%s' "$spent_out" | grep -c 'CODEX-BRANCH-ALREADY-LANDED')" 1
+    ck "the pending branch's report does NOT" \
+       "$(printf '%s' "$pending_out" | grep -c 'CODEX-BRANCH-ALREADY-LANDED')" 0
+    ck "every named file carries its own verdict against main" \
+       "$(printf '%s' "$pending_out" | grep -c 'NOT in main')" 2
+
+    # (c) main is AHEAD of the branch on a file the branch changed -- two of the 31 measured files
+    #     were this. The bytes differ, so a pure `git diff --quiet` reading calls it pending and the
+    #     branch reads as blocked; the blob is in main's history, so it is landed.
+    ( cd "$ws" && git checkout -q main && git checkout -qb codex/ahead \
+      && printf 'v1\n' > Cadence/iOS/iOSTaskRowG.swift \
+      && printf -- '- [T-9202] **work main moved past**\n' >> docs/CODEX_LEDGER_INBOX.md \
+      && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -q main \
+      && printf 'v1\n' > Cadence/iOS/iOSTaskRowG.swift \
+      && printf -- '- [T-9202] **work main moved past**\n' >> docs/CODEX_LEDGER_INBOX.md \
+      && git add -A && git commit -qm landed-ahead \
+      && printf 'v1\nv2\n' > Cadence/iOS/iOSTaskRowG.swift \
+      && git add -A && git commit -qm moved-past ) >/dev/null 2>&1
+    ck "a file main has moved PAST still counts as landed, not as pending" "$(run review codex/ahead)" 5
+
+    # (d) the shape the live branch was in once main moved on: all the CODE landed, the branch's
+    #     own inbox entries never published, the id filed -- so the clash fires and the branch is
+    #     still not "fully landed". It must not read as 31 files of pending work either.
+    ( cd "$ws" && git checkout -q main && git checkout -qb codex/inboxonly \
+      && printf 'done\n' > Cadence/iOS/iOSTaskRowH.swift \
+      && printf -- '- [T-9203] **code landed, entry not published**\n' >> docs/CODEX_LEDGER_INBOX.md \
+      && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -q main \
+      && printf 'done\n' > Cadence/iOS/iOSTaskRowH.swift \
+      && printf -- '- [T-9203] **folded by the coordinator**\n' >> docs/TODO.md \
+      && git add -A && git commit -qm landed-code-only ) >/dev/null 2>&1
+    inboxonly_out=$(run_out review codex/inboxonly)
+    ck "a branch whose only unlanded path is the inbox still refuses on the clash" \
+       "$(run review codex/inboxonly)" 3
+    ck "...and SAYS the code landed, instead of reading as pending work" \
+       "$(printf '%s' "$inboxonly_out" | grep -c 'CODEX-ONLY-THE-INBOX-IS-UNLANDED')" 1
 
     ( cd "$ws" && git checkout -q main \
       && printf '# x\n\n```lease\n```\n' > docs/CODEX_WORKTREE.md \
