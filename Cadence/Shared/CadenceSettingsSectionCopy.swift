@@ -368,3 +368,54 @@ nonisolated enum CadenceListLifecycleSectionCopy {
     static let pausedProjects = "Paused Projects"
     static let cancelledProjects = "Cancelled Projects"
 }
+
+/// The sentences both platforms say about the store folders Cadence is **not** using, and the
+/// name of the section that lists them.
+///
+/// **[[T-1841]], and the shape [[T-1782]] names.** [[T-1532]] and [[T-1680]] gave macOS two
+/// lists and taught its two reset sentences to stop implying totality; iOS said the older thing
+/// and had no screen to point at. The fix is not a second copy of the sentences — the part that
+/// must not drift is the *claim*: the reset leaves these behind, and here is the section that
+/// says where they are. Spelled once, so a later edit to one platform's wording cannot leave the
+/// other promising a section name that no longer exists.
+///
+/// **What is deliberately NOT shared is where to go and remove them.** macOS can open Finder on the
+/// folder; iOS has no Files route into Cadence's container, so there is nowhere to send a reader
+/// and no **Reveal** button to send them with. A single sentence covering both would have to be
+/// vague enough to be true on each, which is the failure [[T-1782]] records in the other
+/// direction. Two sentences that differ *because the platforms differ* is the right number; two
+/// that differ because nobody noticed is not.
+nonisolated enum CadenceUnmanagedStoreCopy {
+
+    /// The Settings → Data Safety section that lists them. Named in the section label **and**
+    /// inside the reset's typed-phrase gate on both platforms, which is four places for one
+    /// string and the reason it is a constant.
+    static let sectionTitle = "Other Cadence Data Folders"
+
+    /// What the two kinds are. Derived from `UnmanagedStoreDirectory.Kind`, which has exactly
+    /// these two cases, rather than from a path seen on one machine.
+    static let whatTheyAre =
+        "These hold Cadence store files outside the store this copy of Cadence is using — "
+        + "a recovery store Cadence wrote when it could not open your main one, or a location an "
+        + "earlier version kept the store in."
+
+    /// The half the reset is answerable for. "deleting all Cadence data does not delete them" is
+    /// the sentence [[T-1680]] added to stop the enumeration reading as exhaustive, and it has to
+    /// be the same sentence the reset's own copy points at.
+    static let whatCadenceDoesNotDo =
+        "Cadence does not sync them, back them up, or read them on a normal launch, and deleting "
+        + "all Cadence data does not delete them."
+
+    /// Appended to the reset card's own sentence, which enumerates what the reset *does* take.
+    /// Without it that enumeration reads as exhaustive, which is what it was before [[T-1680]].
+    static let resetLeavesThem =
+        "Store folders Cadence is not using are left alone and listed further down this page."
+
+    /// The typed-phrase gate's version: it is the last thing a reader sees before an irreversible
+    /// button, so it names the two kinds rather than deferring to a section they have not scrolled
+    /// to yet, and then names the section.
+    static let resetGateLeavesThem =
+        "The store folders Cadence is not using are not deleted either — a recovery store from a "
+        + "failed launch, or a location an earlier version kept the store in. Data Safety lists "
+        + "those under \(sectionTitle) with their full paths."
+}

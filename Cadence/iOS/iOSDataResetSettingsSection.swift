@@ -44,7 +44,12 @@ struct iOSDataResetSettingsSection: View {
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
 
-                            Text("Removes every task, list, note, goal, habit, tag, and saved link Cadence holds in this store, along with local Cadence backups, pending restores, and the saved OpenAI key.")
+                            // The enumeration used to end here, at five things, which a reader
+                            // takes as exhaustive — and it is not (T-1680 on the Mac, T-1841
+                            // here). The clause is `CadenceUnmanagedStoreCopy`'s rather than a
+                            // second copy of macOS's, so the two cannot drift into promising
+                            // different things about the same reset.
+                            Text("Removes every task, list, note, goal, habit, tag, and saved link Cadence holds in this store, along with local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetLeavesThem)")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -131,7 +136,11 @@ private struct iOSDataResetConfirmationSheet: View {
                                         .font(.system(size: 15, weight: .semibold))
                                         .foregroundStyle(Theme.text)
 
-                                    Text("Cadence permanently deletes your tasks, lists, notes, goals, habits, tags, saved links, and focus history from this store, plus local Cadence backups, any pending restore, and the saved OpenAI key.")
+                                    // Same correction as the card above, in the stronger place:
+                                    // this is the last thing read before an irreversible button,
+                                    // so it names the two kinds outright and then names the
+                                    // section that gives their full paths (T-1841).
+                                    Text("Cadence permanently deletes your tasks, lists, notes, goals, habits, tags, saved links, and focus history from this store, plus local Cadence backups, any pending restore, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
                                         .font(.system(size: 12))
                                         .foregroundStyle(Theme.subdued)
                                         .fixedSize(horizontal: false, vertical: true)

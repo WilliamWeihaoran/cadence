@@ -483,6 +483,11 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSTaskDetailSheetSections.swift",
             "Cadence/iOS/iOSTodayCompactViews.swift",
             "Cadence/iOS/iOSTodaySchedulePanel.swift",
+            // T-1841. The store-folder list on Settings → Data Safety draws an `iOSIconTile` for
+            // each folder. Undeclared, like every other section on that page and like the page
+            // itself: it is inside `iOSSettingsView`, which is undeclared, so the environment
+            // default is its answer and it renders as the rest of that screen does.
+            "Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift",
             "Cadence/iOS/iOSWindDownConfirmation.swift",
         ]
         let declaredControls: Set<String> = [

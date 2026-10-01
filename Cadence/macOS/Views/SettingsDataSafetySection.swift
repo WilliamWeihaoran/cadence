@@ -195,10 +195,13 @@ struct SettingsDataSafetySection: View {
             // owner's call, not a button this row can grow.
             if !unmanagedStoreDirectories.isEmpty {
                 VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
-                    SettingsSectionLabel(text: "Other Cadence Data Folders")
+                    SettingsSectionLabel(text: CadenceUnmanagedStoreCopy.sectionTitle)
                     SettingsCard {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("These hold Cadence store files outside the store this copy of Cadence is using — a recovery store Cadence wrote when it could not open your main one, or a location an earlier version kept the store in. Cadence does not sync them, back them up, or read them on a normal launch, and deleting all Cadence data does not delete them. Remove them in Finder if you want the space back.")
+                            // The two shared claims, then the one sentence that is this
+                            // platform's own: a Mac has Finder and a phone has no route into the
+                            // container at all, so that half cannot be shared (T-1841).
+                            Text("\(CadenceUnmanagedStoreCopy.whatTheyAre) \(CadenceUnmanagedStoreCopy.whatCadenceDoesNotDo) Remove them in Finder if you want the space back.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -463,7 +466,7 @@ private struct SettingsDataResetCard: View {
                     // `Recovery/` store inside that very directory, and every earlier store
                     // location, survive it. Naming the exception here rather than only in the
                     // modal means the screen is honest before anyone presses anything.
-                    Text("Delete the local Cadence account profile, Cadence data from this store, local Cadence backups, pending restores, and the saved OpenAI key. Store folders Cadence is not using are left alone and listed further down this page.")
+                    Text("Delete the local Cadence account profile, Cadence data from this store, local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetLeavesThem)")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
@@ -528,7 +531,12 @@ private struct SettingsDataResetConfirmationSheet: View {
                                 Text("This cannot be undone")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(Theme.text)
-                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted, and neither are the store folders Cadence is not using — a recovery store from a failed launch, or a location an earlier version kept the store in. Data Safety lists those under Other Cadence Data Folders with their full paths.")
+                                // The trailing claim is `CadenceUnmanagedStoreCopy`'s, read by
+                                // iOS's gate as well (T-1841). It used to be welded onto the
+                                // Calendar clause with "and neither are"; split into its own
+                                // sentence so one string can serve both platforms without either
+                                // depending on what precedes it.
+                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)

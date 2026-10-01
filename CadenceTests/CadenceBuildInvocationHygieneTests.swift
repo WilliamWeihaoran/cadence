@@ -461,6 +461,214 @@ struct CadenceBuildInvocationHygieneTests {
         #expect(Self.appIntentsNoticeLog.contains("warning:"))
     }
 
+    // MARK: - T-1851: the gate's own test counter
+
+    /// **The number the job summary prints, counted against a log whose true contents are known.**
+    ///
+    /// [[T-1851]]. `.github/scripts/check-log.sh` counted a test run with a pattern that required
+    /// the `identifier()` spelling and no result verb at all. Both halves of that were wrong and
+    /// both were silent, because nothing in the job ever compared the figure to a second reading:
+    ///
+    ///  * every `@Test("A sentence in quotes")` was invisible to it, and
+    ///  * each failing test matched TWICE -- once on its `recorded an issue` line and once on its
+    ///    `failed after` line -- so the failure count was doubled, which is the number feeding the
+    ///    `failed > 100` concurrency-collision heuristic.
+    ///
+    /// Measured off run `36759839618`'s `test-log` artifact, 2026-09-30: 5237 identifier results +
+    /// 137 named results = 5374, exactly swift-testing's own summary line in that log. The gate
+    /// printed `tests executed: 5242` (5237 real results plus 5 `recorded an issue` lines) and
+    /// `tests failed: 10` over 5 failing tests.
+    ///
+    /// Nothing here pins a figure from CI. CI runs Xcode 26 and this Mac runs 27.0, and a log's
+    /// line shapes are a toolchain property; the fixtures below are written by this test, so every
+    /// number asserted is a COUNT this test itself put into the file. The claim is a RELATION:
+    /// **the gate's two counts equal the fixture's own two counts**, for three fixtures that
+    /// differ in exactly the dimensions the old pattern was blind to.
+    ///
+    /// The second and third fixtures are the controls, and they are not decoration. A `ran` reading
+    /// that simply counted every `Test` line would satisfy the first fixture too; the all-identifier
+    /// fixture holds it to the same answer where there is nothing extra to see, and the two must
+    /// disagree with each other or the named half is being proved by a one-row table. Likewise a
+    /// `failed` reading hard-wired to halve its match count would pass a one-failure fixture, so a
+    /// second fixture carries two.
+    @Test func theCIGateCountsEveryTestResultOnceAndEachFailureOnce() throws {
+        let fixtures: [(label: String, log: CIGateTestLog)] = [
+            ("mixed", CIGateTestLog(identifierTests: 3, namedTests: 2, failures: 1)),
+            ("identifier-only", CIGateTestLog(identifierTests: 3, namedTests: 0, failures: 1)),
+            ("two failures", CIGateTestLog(identifierTests: 4, namedTests: 3, failures: 2)),
+        ]
+
+        var observed: [String: (ran: Int, failed: Int)] = [:]
+        for fixture in fixtures {
+            let reading = try Self.runCIGate(over: fixture.log)
+            observed[fixture.label] = (reading.ran ?? -1, reading.failed ?? -1)
+            #expect(
+                reading.ran == fixture.log.totalResults,
+                """
+                fixture `\(fixture.label)` holds \(fixture.log.totalResults) test results \
+                (\(fixture.log.identifierTests) identifier-named, \(fixture.log.namedTests) \
+                quoted-name, \(fixture.log.failures) failing) and the CI gate counted \
+                \(reading.ran.map(String.init) ?? "nothing") (T-1851)
+                \(reading.output)
+                """
+            )
+            #expect(
+                reading.failed == fixture.log.failures,
+                """
+                fixture `\(fixture.label)` holds \(fixture.log.failures) failing test(s), each \
+                writing one `recorded an issue` line and one `failed after` line, and the CI gate \
+                counted \(reading.failed.map(String.init) ?? "nothing") (T-1851)
+                \(reading.output)
+                """
+            )
+        }
+
+        // The control, stated as its own assertion rather than left implicit: the two fixtures
+        // with the same identifier count must NOT report the same total, or the named half of the
+        // pattern is being proved by a table where it cannot matter.
+        #expect(
+            observed["mixed"]?.ran != observed["identifier-only"]?.ran,
+            """
+            the gate gives the same total for a fixture with 2 quoted-name tests and one with none \
+            (\(observed["mixed"]?.ran ?? -1) vs \(observed["identifier-only"]?.ran ?? -1)); \
+            whatever it is counting, it is not test results (T-1851)
+            """
+        )
+        #expect(
+            observed["mixed"]?.failed != observed["two failures"]?.failed,
+            "the gate gives the same failure count for a 1-failure and a 2-failure fixture (T-1851)"
+        )
+    }
+
+    /// The other two readings the counter is responsible for, which the fix above must not have
+    /// cost: T-552's zero-test refusal, and T-1851's own new self-audit.
+    ///
+    /// The first is the gate's actual job -- a `-only-testing:` name that matches nothing is a
+    /// GREEN run over zero tests -- and it is the one place a NARROWER pattern could have done
+    /// damage. The second is why the blind spot was able to hide for as long as it did: nothing
+    /// compared the grep to swift-testing's own declared total. Now a shortfall says so by name,
+    /// so the next spelling this pattern cannot read announces itself instead of printing a
+    /// plausible wrong number.
+    @Test func theCIGateStillRefusesAZeroTestRunAndNowNoticesAShortfall() throws {
+        let empty = try Self.runCIGate(over: CIGateTestLog(identifierTests: 0, namedTests: 0, failures: 0))
+        #expect(empty.ran == 0, "a log with no test results counted \(empty.ran.map(String.init) ?? "nothing")")
+        #expect(empty.status != 0, "the T-552 zero-test refusal no longer fails the gate\n\(empty.output)")
+        #expect(empty.output.contains("T-552"), "the zero-test refusal no longer names T-552\n\(empty.output)")
+
+        // A log whose declared total exceeds the results the pattern can see: exactly the shape of
+        // the defect, synthesised by overstating the summary line rather than by inventing a name
+        // form, so this stays true whatever spelling a future toolchain picks.
+        var overstated = CIGateTestLog(identifierTests: 3, namedTests: 2, failures: 1)
+        overstated.declaredTotalOverride = 99
+        let shortfall = try Self.runCIGate(over: overstated)
+        #expect(
+            shortfall.output.contains("T-1851"),
+            """
+            the gate saw \(shortfall.ran.map(String.init) ?? "nothing") results against a declared \
+            99 and said nothing about the gap; that silence is the whole reason the undercount \
+            survived (T-1851)
+            \(shortfall.output)
+            """
+        )
+        // ...and the control for it: the honest fixture must NOT raise the shortfall notice, or
+        // the notice is noise and will be tuned out.
+        let honest = try Self.runCIGate(over: CIGateTestLog(identifierTests: 3, namedTests: 2, failures: 1))
+        #expect(
+            !honest.output.contains("T-1851"),
+            "the shortfall notice fires on a log whose counts agree, so it says nothing\n\(honest.output)"
+        )
+    }
+
+    /// A synthetic `xcodebuild` test log, in the shapes Swift Testing actually writes. Only the
+    /// lines this gate reads are modelled; the suite scaffolding is there so the fixture is a
+    /// plausible log rather than a list of needles.
+    struct CIGateTestLog {
+        var identifierTests: Int
+        var namedTests: Int
+        var failures: Int
+        /// Overstates the `Test run with N tests` summary without changing the body, to synthesise
+        /// a result spelling the gate cannot read.
+        var declaredTotalOverride: Int?
+
+        /// Failing tests are identifier-named, matching the artifact this was measured against.
+        var totalResults: Int { identifierTests + namedTests + failures }
+
+        var text: String {
+            var lines = [
+                "Command line invocation:",
+                "    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test",
+                "SwiftCompile normal arm64 Compiling\\ Fixture.swift /fixture/Fixture.swift",
+                "Testing started",
+                "◇ Suite CadenceFixtureSuite started.",
+            ]
+            for index in 0..<identifierTests {
+                lines.append("◇ Test aFixtureTestNumber\(index)() started.")
+                lines.append("✔ Test aFixtureTestNumber\(index)() passed after 0.001 seconds.")
+            }
+            for index in 0..<namedTests {
+                lines.append("◇ Test \"A fixture sentence number \(index)\" started.")
+                lines.append("✔ Test \"A fixture sentence number \(index)\" passed after 0.001 seconds.")
+            }
+            for index in 0..<failures {
+                lines.append("◇ Test aFailingFixtureTest\(index)() started.")
+                lines.append("✘ Test aFailingFixtureTest\(index)() recorded an issue at Fixture.swift:1:1: Expectation failed")
+                lines.append("✘ Test aFailingFixtureTest\(index)() failed after 0.001 seconds with 1 issue.")
+            }
+            lines.append("✔ Suite CadenceFixtureSuite passed after 0.100 seconds.")
+            if totalResults > 0 {
+                let declared = declaredTotalOverride ?? totalResults
+                let mark = failures > 0 ? "✘" : "✔"
+                let verb = failures > 0 ? "failed" : "passed"
+                lines.append("\(mark) Test run with \(declared) tests in 1 suites \(verb) after 0.100 seconds.")
+            }
+            lines.append(failures > 0 ? "** TEST FAILED **" : "** TEST SUCCEEDED **")
+            return lines.joined(separator: "\n") + "\n"
+        }
+    }
+
+    struct CIGateReading {
+        var status: Int32
+        var output: String
+        var ran: Int?
+        var failed: Int?
+    }
+
+    /// Writes the fixture under the TEST's own temporary directory -- never beside anything the
+    /// gate or the repository owns -- and runs the real `.github/scripts/check-log.sh` over it.
+    ///
+    /// Run under `/bin/bash` because that is the script's shebang. This repository mixes shells and
+    /// a reading taken under the wrong one is not a reading of the shipped script (T-1334/T-1343).
+    static func runCIGate(over log: CIGateTestLog) throws -> CIGateReading {
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-ci-gate-fixture-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let logURL = scratch.appendingPathComponent("cadence-xcb-fixture-tests.log")
+        try log.text.write(to: logURL, atomically: true, encoding: .utf8)
+
+        let script = CadenceSelftestRun.repositoryRoot()
+            .appendingPathComponent(".github/scripts/check-log.sh").path
+        let shebang = try String(contentsOfFile: script, encoding: .utf8).hasPrefix("#!/bin/bash")
+        #expect(shebang, "check-log.sh's shebang changed; this test runs it under /bin/bash on purpose")
+        let run = try CadenceSelftestRun.run("/bin/bash", [script, logURL.path, "test"])
+        return CIGateReading(
+            status: run.status,
+            output: run.output,
+            ran: number(after: "tests executed:", in: run.output),
+            failed: number(after: "tests failed:", in: run.output)
+        )
+    }
+
+    static func number(after label: String, in output: String) -> Int? {
+        for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.drop(while: { $0 == " " })
+            guard trimmed.hasPrefix(label) else { continue }
+            return Int(trimmed.dropFirst(label.count).trimmingCharacters(in: .whitespaces))
+        }
+        return nil
+    }
+
     // MARK: - T-1781: the warning gate is not a macOS gate
 
     /// **An iOS-only compiler warning and the zero-warning baseline, measured rather than

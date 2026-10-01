@@ -373,7 +373,7 @@ struct CadenceUnmanagedStoreDirectoryTests {
             "SettingsDataResetCard did not read as itself"
         )
         #expect(
-            card.contains("Store folders Cadence is not using are left alone"),
+            card.contains("CadenceUnmanagedStoreCopy.resetLeavesThem"),
             "the reset card still lists five things it deletes and nothing it does not"
         )
 
@@ -382,12 +382,267 @@ struct CadenceUnmanagedStoreDirectoryTests {
             "SettingsDataResetConfirmationSheet did not read as itself"
         )
         #expect(
-            sheet.contains("recovery store"),
+            sheet.contains("CadenceUnmanagedStoreCopy.resetGateLeavesThem"),
             "the last gate before an irreversible delete does not mention the store folder it leaves behind"
         )
+        // ...and the two claims the shared sentence is carrying on its behalf. Asserting only
+        // that the view names the constant would pass over a constant emptied of its meaning,
+        // which is this repository's recurring hollow-instrument shape.
         #expect(
-            sheet.contains("Other Cadence Data Folders"),
+            CadenceUnmanagedStoreCopy.resetGateLeavesThem.contains("recovery store"),
+            "the shared gate sentence no longer names the folder it is leaving behind"
+        )
+        #expect(
+            CadenceUnmanagedStoreCopy.resetGateLeavesThem.contains(CadenceUnmanagedStoreCopy.sectionTitle),
             "the gate does not say where to find the folders it is leaving"
         )
+    }
+
+    // MARK: - T-1841: the phone says the same thing, and now has a screen to say it on
+
+    /// **iOS said what the reset takes and stopped, and had nowhere to point.**
+    ///
+    /// [[T-1841]]. [[T-1680]] taught both macOS sentences to end by naming what the reset leaves
+    /// behind and pointing at the section that lists it; `iOSDataResetSettingsSection` still
+    /// enumerated five things and stopped, at the card and again inside the typed-phrase gate.
+    /// A list that specific reads as exhaustive on a phone exactly as it does on a Mac, and the
+    /// gate is the last thing read before an irreversible button.
+    ///
+    /// The claim is pinned as a RELATION rather than as two string literals: **both platforms
+    /// reach the same declaration**, so the way these drift apart — [[T-1782]]'s shape, two
+    /// platforms and two different "what is in here" sentences — is not available. The section
+    /// title in particular is named in four places (two section labels, two reset gates) and is
+    /// now spelled once.
+    @Test func bothPlatformsTellTheSameStoryAboutWhatTheResetLeaves() throws {
+        let iOSReset = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSDataResetSettingsSection.swift")
+        #expect(iOSReset.contains("struct iOSDataResetSettingsSection: View {"), "the file did not read as itself")
+        #expect(
+            iOSReset.contains("CadenceUnmanagedStoreCopy.resetLeavesThem"),
+            "the iOS reset card still lists five things it deletes and nothing it does not (T-1841)"
+        )
+        #expect(
+            iOSReset.contains("CadenceUnmanagedStoreCopy.resetGateLeavesThem"),
+            "the iOS typed-phrase gate does not name the store folders it leaves behind (T-1841)"
+        )
+
+        // The shared sentences are not empty of the claims the two views are delegating to them.
+        #expect(CadenceUnmanagedStoreCopy.resetLeavesThem.contains("left alone"))
+        #expect(CadenceUnmanagedStoreCopy.whatCadenceDoesNotDo.contains("deleting all Cadence data does not delete them"))
+        #expect(CadenceUnmanagedStoreCopy.whatTheyAre.contains("recovery store"))
+
+        // One spelling of the section name. It is named in four places — two section labels and
+        // two reset gates — and a view that writes it as a literal is how a renamed section leaves
+        // a reset pointing at a section that no longer exists.
+        //
+        // The three view files are named rather than swept. A `CadenceSourceScan.swiftFiles(under:)`
+        // walk would be a stronger claim and would also make this a real-tree sweep, which is a
+        // manifest entry (T-808) and not this ticket's to add; these are the only files that
+        // render or point at the section, and a fourth would have to come from the same change
+        // that moved one of them.
+        var offenders: [String] = []
+        for relativePath in [
+            "Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift",
+            "Cadence/iOS/iOSDataResetSettingsSection.swift",
+            "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+        ] {
+            let source = try CadenceSourceScan.sourceFile(relativePath)
+            if source.contains("\"\(CadenceUnmanagedStoreCopy.sectionTitle)\"") { offenders.append(relativePath) }
+        }
+        #expect(
+            offenders.isEmpty,
+            """
+            `\(CadenceUnmanagedStoreCopy.sectionTitle)` is spelled as a literal in \
+            \(offenders.joined(separator: ", ")) rather than read from the shared copy, so the \
+            two platforms can come to point at different section names (T-1841)
+            """
+        )
+        // The control: the string really is declared somewhere, so the emptiness above is the
+        // views deferring rather than the name having been deleted.
+        let shared = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSettingsSectionCopy.swift")
+        #expect(
+            shared.contains("\"\(CadenceUnmanagedStoreCopy.sectionTitle)\""),
+            "the section name is not a literal anywhere, including where it is supposed to be"
+        )
+    }
+
+    /// **The phone now has the screen, and its row carries no action — which is the macOS rule in
+    /// its stronger form, not a weaker port of it.**
+    ///
+    /// macOS's `UnmanagedStoreDirectoryRow` takes `directory` and `onReveal` and nothing else, so
+    /// a delete cannot be handed to a path the app does not own. The **Reveal** half does not
+    /// survive the crossing: `Cadence/Info.plist` declares neither `UIFileSharingEnabled` nor
+    /// `LSSupportsOpeningDocumentsInPlace`, so there is no Files route into Cadence's container
+    /// for a reveal to open, and no `NSWorkspace` to open it with. The iOS row therefore takes
+    /// `directory` alone. Asserting that is asserting the rule at its binding site: a row that
+    /// cannot be handed an action cannot grow a destructive one.
+    @Test func theiPhoneHasAScreenToListTheStoreFoldersOnAndItsRowCarriesNoAction() throws {
+        let section = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift")
+        #expect(
+            section.contains("StoreBackupManager.unmanagedStoreDirectories()"),
+            "the iOS section names no store folder, so it is a section about nothing (T-1841)"
+        )
+        #expect(
+            section.contains("CadenceSettingsSectionLabel(text: CadenceUnmanagedStoreCopy.sectionTitle)"),
+            "the iOS section does not carry the section name the reset points at (T-1841)"
+        )
+
+        let row = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSUnmanagedStoreDirectoryRow: View", in: section),
+            "iOSUnmanagedStoreDirectoryRow did not read as itself"
+        )
+        #expect(row.contains("directory.url.path"), "the row does not show the folder's path")
+        #expect(row.contains("directory.displayDetail"), "the row does not say what kind of folder it is")
+        for forbidden in [
+            "onReveal",
+            "deleteAllBackups",
+            "cleanUpAutomaticBackups",
+            "deleteRetainedUnrestoredOriginals",
+            "removeItem",
+            "scheduleRestore",
+            "role: .destructive",
+            "Theme.red",
+            "Button",
+        ] {
+            #expect(
+                !row.contains(forbidden),
+                "the iOS store-folder row reaches \(forbidden); it is supposed to carry no action at all (T-1841)"
+            )
+        }
+        // The reveal that is absent is absent because the platform cannot support it, and that is
+        // a property of the shipped plist rather than of this view's taste.
+        let plist = try CadenceSourceScan.sourceFile("Cadence/Info.plist")
+        for key in ["UIFileSharingEnabled", "LSSupportsOpeningDocumentsInPlace"] {
+            #expect(
+                !plist.contains(key),
+                """
+                Cadence/Info.plist now declares \(key), so there IS a Files route into the \
+                container and the iOS row's missing reveal is worth revisiting (T-1841)
+                """
+            )
+        }
+
+        // ...and it is actually on the page, below the reset, because the reset's own sentence
+        // says these are "listed further down this page".
+        let settings = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift")
+        let dataSafety = try #require(
+            CadenceSourceScan.declarationBody("private var dataSafetySection: some View", in: settings),
+            "dataSafetySection did not read as itself"
+        )
+        let resetAt = try #require(
+            dataSafety.range(of: "iOSDataResetSettingsSection()"),
+            "the iOS Data Safety page no longer presents the reset at all"
+        )
+        let listAt = try #require(
+            dataSafety.range(of: "iOSUnmanagedStoreSettingsSection()"),
+            "the iOS Data Safety page does not list the store folders the reset says it leaves (T-1841)"
+        )
+        #expect(
+            resetAt.lowerBound < listAt.lowerBound,
+            """
+            the store-folder list is ABOVE the reset, and the reset's own copy says they are \
+            "listed further down this page" (T-1841)
+            """
+        )
+    }
+
+    /// **There is no "Other Backup Folders" section on iOS, and that is a measurement rather than
+    /// an omission.**
+    ///
+    /// [[T-1841]] asks for both of macOS's lists. The store list is real on a phone — a
+    /// `Recovery/` folder inside the app-group store directory is exactly as reachable here as on
+    /// a Mac. The *backup* list is not, and the reason is structural rather than circumstantial:
+    /// `StoreBackupManager` only ever writes into the **live** store directory's own
+    /// `Cadence Store Backups`, and `unmanagedBackupDirectories` excludes precisely that root by
+    /// construction. Its remaining candidates are the legacy store locations, and on iOS
+    /// `CadenceStoreSupport.legacyStoreCandidateDirectories()` resolves them under the app's own
+    /// sandbox — `Library/Containers/…` cannot exist on this platform, and no iOS build has ever
+    /// kept a store outside the app group. So the section could hold a row only if iOS had once
+    /// used a second store directory, and it has not. A permanently empty section is a claim a
+    /// screen cannot keep, so none was added.
+    ///
+    /// The fixture is the iOS shape: backups beside the live store and nowhere else. The CONTROL
+    /// is the second half and is what keeps this from being a test that passes because the
+    /// fixture is empty — the identical call, over the identical tree, with one *second* store
+    /// directory handed in, finds it. Empty is therefore a property of where the backups are, not
+    /// of the walk failing to run.
+    @Test func theOnlyBackupRootAnIPhoneWritesIsTheOneTheListExcludes() throws {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // The app-group container as iOS lays it out, and the store directory inside it.
+        let groupSupport = root
+            .appendingPathComponent("Group Containers/group.com.haoranwei.Cadence/Library/Application Support", isDirectory: true)
+        let live = groupSupport.appendingPathComponent("Cadence", isDirectory: true)
+        try plantPrimaryStore(in: live)
+        try plantBackupFolder(named: "2026-09-29 Automatic", besideStoreAt: live)
+        try plantBackupFolder(named: "2026-09-30 Automatic", besideStoreAt: live)
+
+        // The two legacy candidates an iOS launch would be handed: paths under the app's own
+        // sandbox that no iOS build has ever written a store into. Deliberately NOT created.
+        let sandbox = root.appendingPathComponent("Containers/Data/Application/UUID", isDirectory: true)
+        let neverUsed = [
+            sandbox.appendingPathComponent("Library/Containers/com.haoranwei.Cadence/Data/Library/Application Support/Cadence", isDirectory: true),
+            sandbox.appendingPathComponent("Library/Application Support/Cadence", isDirectory: true),
+        ]
+
+        let listed = StoreBackupManager.unmanagedBackupDirectories(
+            liveStoreDirectoryURL: live,
+            legacyStoreDirectories: neverUsed
+        )
+        #expect(
+            listed.isEmpty,
+            """
+            an iOS-shaped tree produced \(listed.count) unmanaged backup folder(s) \
+            (\(listed.map(\.url.standardizedFileURL.path).joined(separator: ", "))); if that is now reachable on a \
+            phone, iOS needs the Other Backup Folders section too (T-1841)
+            """
+        )
+
+        // The control, and the reason the emptiness above means something. Same call, same tree,
+        // plus one store directory Cadence is no longer using that has backups of its own.
+        let secondStore = sandbox.appendingPathComponent("Library/Application Support/Cadence", isDirectory: true)
+        try plantPrimaryStore(in: secondStore)
+        try plantBackupFolder(named: "2026-05-21 Manual", besideStoreAt: secondStore)
+
+        let withAnOrphan = StoreBackupManager.unmanagedBackupDirectories(
+            liveStoreDirectoryURL: live,
+            legacyStoreDirectories: neverUsed
+        )
+        #expect(
+            withAnOrphan.map(\.url.standardizedFileURL.path)
+                == [secondStore.appendingPathComponent("Cadence Store Backups", isDirectory: true).standardizedFileURL.path],
+            """
+            the walk did not find a backup folder beside a second store directory, so the empty \
+            reading above is the walk failing rather than the layout: \
+            \(withAnOrphan.map(\.url.standardizedFileURL.path))
+            """
+        )
+        #expect(withAnOrphan.first?.backupCount == 1, "the control folder was found but not counted")
+
+        // ...and the store list, over the very same tree, is NOT empty: a recovery folder inside
+        // the live store directory is what a phone really can have, and it is why one of the two
+        // sections was worth porting and the other was not.
+        try plantRecoveryStore(in: live.appendingPathComponent("Recovery", isDirectory: true))
+        let stores = StoreBackupManager.unmanagedStoreDirectories(
+            liveStoreDirectoryURL: live,
+            recoveryStoreDirectories: [live.appendingPathComponent("Recovery", isDirectory: true)],
+            legacyStoreDirectories: neverUsed
+        )
+        #expect(
+            stores.map(\.kind) == [.recovery, .previousLocation],
+            "the store list over an iOS-shaped tree read \(stores.map(\.kind)) (T-1841)"
+        )
+    }
+
+    /// `StoreBackupManager.listBackups` only reports a folder it recognises, so a fixture backup
+    /// is a directory with a store item in it. Named apart from the store planters above because
+    /// this plants *beside* a store rather than *as* one.
+    private func plantBackupFolder(named name: String, besideStoreAt storeDirectoryURL: URL) throws {
+        let backupURL = storeDirectoryURL
+            .appendingPathComponent("Cadence Store Backups", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: backupURL, withIntermediateDirectories: true)
+        try Data(repeating: 0x2A, count: 4096)
+            .write(to: backupURL.appendingPathComponent("default.store"))
     }
 }

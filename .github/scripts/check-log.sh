@@ -112,10 +112,44 @@ if [ "$KIND" = "test" ]; then
   # serial, so it would not hit it today; it is spelled safely so that enabling parallelism
   # later cannot turn the guard into a liar. Same family as AGENTS.md's note that parallel mode
   # changes the log format and silently breaks greps written for the serial one.
-  ran=$(grep -acE "(✔|✘) Test [A-Za-z0-9_]+\(\)|[Tt]est [Cc]ase '[^']*' (passed|failed)" "$LOG" | tr -d ' ')
-  failed=$(grep -acE "✘ Test [A-Za-z0-9_]+\(\)|[Tt]est [Cc]ase '[^']*' failed" "$LOG" | tr -d ' ')
+  #
+  # T-1851. The pattern below was wrong in BOTH directions and both ways were quiet, because
+  # nothing in the job ever compared it to a second reading. Two changes, measured 2026-09-30
+  # off run 36759839618's `test-log` artifact (5374 tests, 5 of them failing):
+  #
+  #  * A RESULT line names the test AND the verb. The old `ran` required the `identifier()`
+  #    spelling and no verb at all, so every `@Test("A sentence in quotes")` was invisible to it
+  #    -- 137 of them in that log -- while the 5 `✘ Test theThing() recorded an issue at ...`
+  #    lines, which are not results, were counted as if they were. 5237 identifier results + 137
+  #    named results = 5374, exactly what swift-testing's own summary line in that log says; the
+  #    old pattern printed 5242. The job summary is the first thing a triager reads, and that
+  #    one made a coordinator hunt for 133 tests that were never missing.
+  #  * `failed` matched the same two lines per failing test -- `recorded an issue` and `failed
+  #    after` -- so 5 failures printed as "tests failed: 10". That is a doubled number feeding
+  #    the `failed > 100` collision heuristic below.
+  #
+  # `✘ Test run with 5374 tests in 453 suites failed after ...` is the RUN summary, not a test.
+  # The name alternation excludes it; a loose `Test .* failed after` would count it, which is how
+  # the ticket's own hand-measurement arrived at 133 where the true shortfall was 132.
+  ran=$(grep -acE "(✔|✘) Test (\"[^\"]*\"|[A-Za-z0-9_]+\([^)]*\)) (passed|failed) after|[Tt]est [Cc]ase '[^']*' (passed|failed)" "$LOG" | tr -d ' ')
+  failed=$(grep -acE "✘ Test (\"[^\"]*\"|[A-Za-z0-9_]+\([^)]*\)) failed after|[Tt]est [Cc]ase '[^']*' failed" "$LOG" | tr -d ' ')
   echo "  tests executed:          $ran"
   echo "  tests failed:            $failed"
+  # The second reading, and the reason the first one's blind spot is no longer able to hide.
+  # swift-testing states its own total; when it is in the log it is the authority, and a grep
+  # that sees FEWER results than it claims is a result spelling this gate cannot read -- which
+  # is precisely the T-1851 defect, restated rather than re-inferred. An EXCESS is legitimate: a
+  # mixed run adds XCTest `Test Case '...'` results that the swift-testing total does not cover.
+  declared=$(grep -aoE 'Test run with [0-9]+ test' "$LOG" | tail -1 | grep -oE '[0-9]+')
+  if [ -n "$declared" ]; then
+    echo "  swift-testing declared:  $declared"
+    if [ "$ran" -lt "$declared" ]; then
+      echo "::warning::swift-testing says $declared tests ran; this gate could only see $ran"
+      echo "  result line(s). A shortfall means a result SPELLING the pattern on this line cannot"
+      echo "  match -- a new name form, or a log-format change. Fix the pattern, not the number"
+      echo "  (T-1851). The count above understates the suite until you do."
+    fi
+  fi
   if [ "$ran" -eq 0 ]; then
     echo "::error::this test run executed 0 tests, and xcodebuild called that a success (T-552)."
     rc=1
