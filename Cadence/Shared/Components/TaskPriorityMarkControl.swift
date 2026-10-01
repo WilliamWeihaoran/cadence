@@ -18,6 +18,13 @@ import SwiftUI
 /// target; on iOS the call site wraps this in `iOSExpandedHitArea` to reach 44 without changing a
 /// pixel of what is drawn — the shape is the shared thing, the hit region is the platform's.
 struct TaskPriorityMarkControl: View {
+    /// The drawn tile's side, and the one place it is spelled (T-1600).
+    ///
+    /// macOS's `TaskDetailHeaderSection` indents everything under the task title by this plus the
+    /// title row's spacing, so the number is not private to the control: it used to be written out
+    /// again over there, which is two files holding one fact about a view only one of them draws.
+    static let side: CGFloat = 28
+
     let priority: TaskPriority
 
     private var isSet: Bool { priority != .none }
@@ -28,7 +35,7 @@ struct TaskPriorityMarkControl: View {
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(tint)
             .lineLimit(1)
-            .frame(minWidth: 28, minHeight: 28)
+            .frame(minWidth: Self.side, minHeight: Self.side)
             .background(isSet ? tint.opacity(0.10) : Theme.surfaceElevated)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.radiusControlCompact)

@@ -269,7 +269,7 @@ private struct TaskRecurrencePickerPanel: View {
                 clearRepeatButton
             }
         }
-        .frame(width: 268)
+        .frame(width: TaskInspectorPanelMetrics.recurrenceWidth)
         .background(Theme.surfaceElevated)
         .onAppear {
             countText = String(resolvedCount)

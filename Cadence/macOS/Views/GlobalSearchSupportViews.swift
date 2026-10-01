@@ -78,15 +78,20 @@ struct GlobalSearchCommandDefinition {
 
 /// A row in Cmd+K's **Pages** section.
 ///
-/// The destination is the one stored fact, and the four things that used to be typed beside it
-/// all follow from it: the selection the row opens (`item`), the tint it is drawn in, the sidebar
-/// toggle its subtitle reports on (`toggleable`), and — since T-258 — the glyph (`icon`). See
-/// `GlobalSearchCommandDefinition` for why the tint is not spelled here.
+/// The destination is the one stored fact, and **everything else follows from it**: the selection
+/// the row opens (`item`), the tint it is drawn in, the sidebar toggle its subtitle reports on
+/// (`toggleable`), the glyph (`icon`, T-258) and — since T-1782 — the row's own title, its
+/// subtitle and the extra words that reach it. See `GlobalSearchCommandDefinition` for why the
+/// tint is not spelled here, and for the one list in this file that still types its own copy.
 struct GlobalSearchPageDefinition {
-    let label: String
     let feature: CadenceFeatureDestination
-    let baseSubtitle: String
-    let aliases: String
+
+    /// The row's title, which is the destination's own (T-1782).
+    ///
+    /// It was a stored `let label: String` and all nine entries typed the string `title` already
+    /// returns. `compactTitle` is deliberately *not* what this reads: the palette row says
+    /// "All Tasks", where a sidebar row says "Tasks".
+    var label: String { feature.title }
 
     /// The glyph the sidebar draws this destination with (T-258).
     ///
@@ -101,6 +106,33 @@ struct GlobalSearchPageDefinition {
     /// The `doc.text` on `GlobalSearchIndexSupport`'s event-note rows is unrelated and stays:
     /// those rows are notes, not the Notes destination.
     var icon: String { feature.systemImage }
+
+    /// **What is in this page — the destination's own sentence, not a second one** (T-1782).
+    ///
+    /// This was a stored `baseSubtitle`, and it was a *contents* line for all nine entries, which
+    /// is what `CadenceFeatureDestination.searchSummary` is. The two lists disagreed about seven of
+    /// the nine: Today read "Daily dashboard and timeline" here and "Tasks, notes, and schedule"
+    /// on iOS, Notes "Workspace notes" against "Daily, weekly, and permanent notes", and so on.
+    /// T-1701 had already taken two of them — Inbox's and Goals' — *from* this list into the
+    /// destination precisely so it would not invent an eleventh phrasing; this is the rest of that
+    /// move, in the same direction.
+    ///
+    /// **Deleted rather than left stored-and-equal**, which is the rule `icon` below was already
+    /// fixed by: a second copy that currently matches is the exact state this one was in before
+    /// somebody changed the other list. The standing "page headers do not describe the page you are
+    /// on" rule does not bear on it either way — both surfaces are search *rows*, which the rule
+    /// explicitly allows a subtitle, so it permits two registers without requiring them.
+    var baseSubtitle: String { feature.searchSummary }
+
+    /// The extra words that reach this row, which are the destination's (T-1782).
+    ///
+    /// Also stored, also a second answer to a question the destination answers: the palette matched
+    /// against `aliases` while iOS matched against `searchAliases`, so "dashboard" found Today on a
+    /// Mac and nothing on a phone, and "notepad" the reverse. The five words this list had that
+    /// `searchKeywords` did not — dashboard, daily, targets, stages, docs — moved into
+    /// `searchKeywords`, so nothing stopped being findable here and everything became findable on
+    /// both.
+    var aliases: String { feature.searchAliases }
 
     /// `nil` for a destination the sidebar does not route to as a page — `.lists` is the
     /// scrolling region and `.search` is the header button, so neither can be a palette row.
@@ -180,17 +212,25 @@ extension GlobalSearchCommandDefinition {
 }
 
 extension GlobalSearchPageDefinition {
+    /// **The destination is the whole entry** (T-1782). Every word a Pages row draws or is matched
+    /// against now comes from `CadenceFeatureDestination`, so the palette has nowhere to keep a
+    /// second opinion about a page — which is the enforcement, the stored field being gone rather
+    /// than a test comparing two lists that are free to drift between runs of it.
+    ///
+    /// This list is still shorter than `CadenceFeatureDestination.allCases`, and deliberately:
+    /// `.lists` is the sidebar's scrolling region and `.search` is the palette itself, so neither
+    /// is a row the palette can open. That is a routing fact, not a copy one.
     static var all: [GlobalSearchPageDefinition] {
         [
-            .init(label: "Today", feature: .today, baseSubtitle: "Daily dashboard and timeline", aliases: "today dashboard daily"),
-            .init(label: "All Tasks", feature: .allTasks, baseSubtitle: "Everything across your workspace", aliases: "tasks all"),
-            .init(label: "Inbox", feature: .inbox, baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture"),
-            .init(label: "Focus", feature: .focus, baseSubtitle: "Focus timer and active task", aliases: "focus timer pomodoro"),
-            .init(label: "Calendar", feature: .calendar, baseSubtitle: "Full calendar and time blocks", aliases: "calendar schedule events"),
-            .init(label: "Goals", feature: .goals, baseSubtitle: "Directions, milestones, and progress", aliases: "goals milestones targets stages directions"),
-            .init(label: "Habits", feature: .habits, baseSubtitle: "Habits and streaks", aliases: "habits streaks"),
-            .init(label: "Notes", feature: .notes, baseSubtitle: "Workspace notes", aliases: "notes docs"),
-            .init(label: "Settings", feature: .settings, baseSubtitle: "Appearance, calendar, and sidebar preferences", aliases: "settings preferences")
+            .init(feature: .today),
+            .init(feature: .allTasks),
+            .init(feature: .inbox),
+            .init(feature: .focus),
+            .init(feature: .calendar),
+            .init(feature: .goals),
+            .init(feature: .habits),
+            .init(feature: .notes),
+            .init(feature: .settings)
         ]
     }
 }

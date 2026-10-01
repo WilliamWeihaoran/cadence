@@ -440,5 +440,135 @@ struct CadenceInspectorChildPopoverPlacementTests {
         }
     }
 
+    // MARK: - The panels' own widths (T-1600)
+
+    /// The type size the inspector is read at. It is macOS-only and macOS has no Dynamic Type
+    /// control, so `.large` is the desktop reading — named once rather than typed into each
+    /// assertion below.
+    private static let desktopTypeSize: DynamicTypeSize = .large
+
+    /// **Non-vacuity, and the count the ticket turns on.** T-1600 says "two of the four panels";
+    /// this is the four, enumerated by the type the placement rule reads rather than by a comment.
+    /// A fifth panel added to the inspector arrives here rather than slipping past every relation
+    /// below.
+    @MainActor
+    @Test
+    func theInspectorOpensFourPanelsAndEachOneNamesItsWidth() {
+        let panels = TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize)
+        #expect(panels.count == 4, "read \(panels.count) inspector panels")
+        #expect(Set(panels.map(\.name)) == ["date", "estimate", "priority", "recurrence"])
+        for panel in panels {
+            #expect(panel.width > 0, "\(panel.name) reports a \(panel.width)pt panel")
+        }
+    }
+
+    /// **The precondition every assertion in this file rests on, now stated for all four panels
+    /// rather than for the date one.** `theDatePanelIsNarrowerThanTheInspectorsContentColumn` could
+    /// only ever be written about a panel whose width was readable; two of the four were literals
+    /// inside a view body, so the relation that makes `.belowRow` a defect went unasserted for
+    /// them. It is a relation, not a figure: either number may move, and only their order matters.
+    @MainActor
+    @Test
+    func everyPanelTheInspectorOpensIsNarrowerThanItsContentColumn() {
+        for panel in TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize) {
+            #expect(
+                panel.width < TaskInspectorPopoverMetrics.contentColumnWidth,
+                "the \(panel.name) panel is \(panel.width)pt against a \(TaskInspectorPopoverMetrics.contentColumnWidth)pt column, so anchoring it below a row would cover the rows rather than slice them and T-1480's argument would not apply to it"
+            )
+        }
+    }
+
+    /// And therefore: anchored under a row that spans the column, **every** one of the four slices
+    /// the inspector's own rows. This is T-1480's defect reproduced for the priority and recurrence
+    /// panels for the first time — before T-1600 neither width could be read to say it.
+    @MainActor
+    @Test
+    func anchoringAnyOfTheFourPanelsUnderARowSlicesTheRowsBelowIt() {
+        for panel in TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize) {
+            let size = CGSize(width: panel.width, height: Self.headerPanelHeight)
+            #expect(
+                Self.occlusion(.belowRow, panelSize: size) == .sliced,
+                "the \(panel.name) panel no longer slices the rows under its own row"
+            )
+            #expect(Self.occlusion(.besideInspector, panelSize: size) == .clear)
+        }
+    }
+
+    /// **The views frame from the metric, not from a literal that happens to equal it.** The needle
+    /// is built *from* the constant, so a panel left framing the old number fails the moment the
+    /// constant moves — which is the exact failure mode this test exists to rule out.
+    @Test
+    func thePriorityAndRecurrencePanelsFrameThemselvesFromTheirNamedWidths() throws {
+        let sites: [(path: String, declaration: String, metric: String, width: CGFloat)] = [
+            (
+                "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift",
+                "struct TaskPriorityPickerPopover: View",
+                "TaskInspectorPanelMetrics.priorityWidth",
+                TaskInspectorPanelMetrics.priorityWidth
+            ),
+            (
+                "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+                "private struct TaskRecurrencePickerPanel: View",
+                "TaskInspectorPanelMetrics.recurrenceWidth",
+                TaskInspectorPanelMetrics.recurrenceWidth
+            )
+        ]
+
+        for site in sites {
+            let source = try CadenceCommitSurfaceScan.scanned(site.path)
+            let body = try #require(
+                CadenceSourceScan.declarationBody(site.declaration, in: source),
+                "\(site.declaration) no longer reads as a declaration this scan can scope to"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"\.frame\(width: \#(site.metric)\)"#, in: body) == 1,
+                "\(site.declaration) no longer frames itself from \(site.metric) (T-1600)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"\.frame\(width: \#(Int(site.width))[,)]"#, in: body) == 0,
+                "\(site.declaration) frames itself from the bare number \(Int(site.width)) again, so the width the placement rule reads and the width the panel draws are two facts (T-1600)"
+            )
+        }
+    }
+
+    /// **One owner for the priority tile's 28.** The header indents everything under the task title
+    /// by the tile's width, and the tile is `TaskPriorityMarkControl` — a **shared** view the iOS
+    /// inspector draws too, so a number copied into the macOS header could drift from the thing it
+    /// describes without a single test failing.
+    ///
+    /// Asserted as a borrow rather than as a value, the same shape as
+    /// `CadenceSettingsTemplatesCardLayoutTests.theEditorFloorIsBorrowedFromTheNotesEditorRatherThanInvented`:
+    /// a value assertion alone cannot fail against a re-typed literal that still equals 28.
+    @Test
+    func theInspectorHeaderBorrowsThePriorityTilesWidthRatherThanRestatingIt() throws {
+        let controlSource = try CadenceCommitSurfaceScan.scanned(
+            "Cadence/Shared/Components/TaskPriorityMarkControl.swift"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"static let side: CGFloat"#, in: controlSource) == 1,
+            "TaskPriorityMarkControl no longer owns the tile's side (T-1600)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.frame\(minWidth: Self\.side, minHeight: Self\.side\)"#, in: controlSource) == 1,
+            "TaskPriorityMarkControl no longer draws itself at its own declared side (T-1600)"
+        )
+
+        let headerSource = try CadenceCommitSurfaceScan.scanned(
+            "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift"
+        )
+        let header = try #require(
+            CadenceSourceScan.declarationBody("struct TaskDetailHeaderSection: View", in: headerSource),
+            "TaskDetailHeaderSection no longer reads as a declaration this scan can scope to"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"tileSize: CGFloat \{ TaskPriorityMarkControl\.side \}"#, in: header) == 1,
+            "TaskDetailHeaderSection states the tile's size itself again instead of reading the control's (T-1600)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"tileSize: CGFloat = "#, in: header) == 0,
+            "TaskDetailHeaderSection stores a second copy of the tile's size (T-1600)"
+        )
+    }
+
 }
 #endif

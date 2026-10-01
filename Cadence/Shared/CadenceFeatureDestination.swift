@@ -142,12 +142,20 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
     }
 
     /// **What is in here.** The third line of an iOS search Pages row, under `title` and
-    /// `subtitle`, and one of the fields the query is matched against.
+    /// `subtitle`, **and the whole of a macOS command-palette Pages row's second line** — one
+    /// sentence, read by both search surfaces (T-1782). It is also one of the fields the query is
+    /// matched against on either platform.
     ///
     /// It names contents where the subtitle names the activity — "Run focused sessions" /
     /// "Timer and current work" — or, where the subtitle is already a contents line, it is the
     /// fuller enumeration: "Daily and permanent notes" / "Daily, weekly, and permanent notes".
-    /// Either way it has to say something the subtitle does not, because both are drawn.
+    /// Either way it has to say something the subtitle does not, because on iOS both are drawn.
+    ///
+    /// **Cmd+K drew its own string for seven of these until T-1782** — Today was "Daily dashboard
+    /// and timeline" there and "Tasks, notes, and schedule" here — and the palette's list is the
+    /// one that lost, because the two it already shared (Inbox, Goals) had come *from* it and
+    /// because a destination is the thing that knows what is in it. `GlobalSearchPageDefinition`
+    /// has no stored subtitle any more, so there is nowhere for an eleventh phrasing to live.
     var searchSummary: String {
         switch self {
         case .today: return "Tasks, notes, and schedule"
@@ -164,10 +172,16 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         }
     }
 
+    /// The extra query words that reach a destination, beyond everything it already says.
+    ///
+    /// **Both search surfaces read this** since T-1782, through `searchAliases`. Cmd+K used to
+    /// carry its own `aliases` string per page, which is how "dashboard" found Today on a Mac and
+    /// nothing on a phone; the five words that list had and this one did not — dashboard, daily,
+    /// targets, stages, docs — were folded in here rather than dropped.
     var searchKeywords: String {
         switch self {
         case .today:
-            return "today plan tasks notes schedule agenda do date due date"
+            return "today plan tasks notes schedule agenda do date due date dashboard daily"
         case .allTasks:
             return "all tasks task index completed active priority due scheduled"
         case .focus:
@@ -177,11 +191,11 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .calendar:
             return "calendar schedule timeline month board events bundles"
         case .notes:
-            return "notes daily weekly notepad markdown permanent meeting"
+            return "notes daily weekly notepad markdown permanent meeting docs"
         case .lists:
             return "lists areas projects contexts organize kanban planning links"
         case .goals:
-            return "goals milestones outcomes progress timeline pursuits aspirations directions"
+            return "goals milestones outcomes progress timeline pursuits aspirations directions targets stages"
         case .habits:
             return "habits routines streaks recurring commitments"
         case .search:

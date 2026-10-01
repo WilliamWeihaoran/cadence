@@ -15,6 +15,46 @@ nonisolated enum TaskInspectorPopoverMetrics {
     static var contentColumnWidth: CGFloat { width - contentInset * 2 }
 }
 
+/// The widths of the panels the inspector opens, for the two that have no metrics type of their
+/// own.
+///
+/// **Why these two are here and the other two are not.** The inspector opens four panels: the date
+/// panel (Do and Due), the estimate roller, the priority picker and the recurrence picker. The
+/// first two already answer from a named metric — `CadenceDateSelectionMetrics.width(at:)` and
+/// `EstimateRollerMetrics.panelWidth(at:scaling:)` — because both are shared controls that grow
+/// with type size. The other two are macOS-only panels of fixed width and ended their bodies in a
+/// bare `.frame(width: 160)` and `.frame(width: 268)`.
+///
+/// That mattered because **the whole argument in `TaskInspectorChildPopoverPlacement` is
+/// arithmetic over a panel's width against `TaskInspectorPopoverMetrics.contentColumnWidth`**, and
+/// half of it was unreadable: T-1510 had to take the priority panel's width out of a view body to
+/// do its sums, and T-1480 quoted the recurrence panel as "268" from the same literal. A width a
+/// placement rule reasons about has to be a width the placement rule can read (T-1600).
+nonisolated enum TaskInspectorPanelMetrics {
+    /// `TaskPriorityPickerPopover` — one row per `TaskPriority`, mark, label and tick.
+    static let priorityWidth: CGFloat = 160
+    /// `TaskRecurrencePickerPanel` — APPLY TO / REPEATS / ENDS.
+    static let recurrenceWidth: CGFloat = 268
+
+    /// Every panel the inspector can open, named, at one type size.
+    ///
+    /// `dynamicTypeSize` is a parameter rather than `.large` baked in even though the inspector is
+    /// macOS-only: the two shared panels genuinely widen with type, and a caller that wants the
+    /// desktop reading should have to say so.
+    ///
+    /// `@MainActor` because `EstimateRollerMetrics.panelWidth(at:scaling:)` is: the roller's
+    /// metrics are view code. Nothing here is, so the rest of the type stays `nonisolated`.
+    @MainActor
+    static func allWidths(at dynamicTypeSize: DynamicTypeSize) -> [(name: String, width: CGFloat)] {
+        [
+            ("date", CadenceDateSelectionMetrics.width(at: dynamicTypeSize)),
+            ("estimate", EstimateRollerMetrics.panelWidth(at: dynamicTypeSize, scaling: .enabled)),
+            ("priority", priorityWidth),
+            ("recurrence", recurrenceWidth)
+        ]
+    }
+}
+
 /// Where a panel opened from a row *inside* the task inspector is anchored.
 ///
 /// **A macOS popover is its own `NSWindow`.** The inspector is one, and every picker it opens is a

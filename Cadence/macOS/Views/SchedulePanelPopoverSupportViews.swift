@@ -31,7 +31,12 @@ struct TaskDetailHeaderSection: View {
 
     /// Priority tile width + the title row's spacing, so everything under the title row lines up
     /// with the title text rather than with the tile.
-    private static let tileSize: CGFloat = 28
+    ///
+    /// **The tile's size is `TaskPriorityMarkControl`'s own, by reference** (T-1600). It used to be
+    /// `28` here and `minWidth: 28, minHeight: 28` in that control — one fact in two files, and the
+    /// control is **shared**: the iOS inspector draws the same view, so the two could drift apart
+    /// without anything failing. The header is the reader of the tile's width, not its owner.
+    private static var tileSize: CGFloat { TaskPriorityMarkControl.side }
     private static let titleRowSpacing: CGFloat = 10
     private static var titleColumnInset: CGFloat { tileSize + titleRowSpacing }
 
@@ -204,7 +209,7 @@ struct TaskPriorityPickerPopover: View {
             }
         }
         .padding(6)
-        .frame(width: 160)
+        .frame(width: TaskInspectorPanelMetrics.priorityWidth)
     }
 }
 
