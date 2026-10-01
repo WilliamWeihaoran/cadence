@@ -36,14 +36,19 @@ final class CadenceOverdrawVerdictTests: XCTestCase {
 
     /// A 5:8 magenta block on a neutral field, plus whatever `marks` paint on top of it.
     ///
-    /// The block is 640×400 because that is the size the live reading measured, so the allowance
-    /// this exercises is the size the live one computes.
-    private func makeBitmap(marks: [(rect: CGRect, colour: CadenceUITestPixel.Colour)]) throws
+    /// The block defaults to 640×400 because that is the size the live reading measured, so the
+    /// allowance this exercises is the size the live one computes. `picture` is a parameter because
+    /// T-1892 turned on a question the fixed size cannot ask: the allowance is a *share* of the
+    /// picture and the badge is a *fixed* size, so the two only agree above some picture size, and
+    /// finding that size means drawing more than one.
+    private func makeBitmap(
+        picture: CGRect = CGRect(x: 130, y: 150, width: 640, height: 400),
+        marks: [(rect: CGRect, colour: CadenceUITestPixel.Colour)]
+    ) throws
         -> (bitmap: CadenceUITestPixel.Bitmap, block: CadenceUITestPixel.Block)
     {
-        let width = 900
-        let height = 700
-        let picture = CGRect(x: 130, y: 150, width: 640, height: 400)
+        let width = Int(picture.maxX) + 130
+        let height = Int(picture.maxY) + 150
 
         let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
         let context = try XCTUnwrap(CGContext(
@@ -202,5 +207,126 @@ final class CadenceOverdrawVerdictTests: XCTestCase {
             + "picture — the assertion outside it is no longer about most of the picture"
         )
         XCTAssertGreaterThan(verdict.allowanceShareOfThePicture, 0, "there is no allowance at all, so nothing is being sized")
+    }
+
+    // MARK: - The bound nobody had stated (T-1892)
+
+    /// The product's own badge, restated — a UI-test bundle cannot import the app module.
+    ///
+    /// `CadenceTextView.resizeHandleRect(for:)`, `MarkdownEditorInteractionSupport.swift:519`:
+    /// `NSRect(x: imageRect.maxX - 22, y: imageRect.maxY - 22, width: 18, height: 18)`. So **18pt
+    /// on a side, 4pt in from both edges**, and at 2x that is the 36/8 the tolerated-badge case
+    /// above already uses. These are the two numbers the allowance has to cover.
+    private enum ProductBadge {
+        static let sidePoints: CGFloat = 18
+        static let marginPoints: CGFloat = 4
+        static let scale: CGFloat = 2
+        static var sidePixels: CGFloat { sidePoints * scale }
+        static var marginPixels: CGFloat { marginPoints * scale }
+    }
+
+    /// `MarkdownImageAssetService.minDisplayWidth`, restated for the same reason. A picture this
+    /// wide is not a degenerate case: it is the narrowest the product will ever draw one.
+    private static let minimumLegalPictureWidthPoints: CGFloat = 120
+
+    /// **Agent `overdraw` predicted, from arithmetic alone, that the allowance only holds while the
+    /// picture's shorter side is ≳140pt, and called it falsifiable by one run. It is CONFIRMED.**
+    ///
+    /// The allowance is a *share* of the picture; the badge is a *fixed* size in points. Below some
+    /// picture size the share stops covering the fixed thing, and then a picture with nothing on it
+    /// but the product's own affordance is refused — a false red, in the one direction T-1723's
+    /// design cannot see, because T-1723 only ever drew one picture size.
+    ///
+    /// The comparison is the point: **the same badge, on two pictures, with opposite verdicts.**
+    /// A single red fixture would be indistinguishable from a fixture built wrong.
+    func testTheBadgeAllowanceCannotHoldTheBadgeOnAPictureAtTheProductsMinimumWidth() throws {
+        // The product's narrowest legal picture, at the fixture's 8:5, in 2x pixels.
+        let shortSide = (Self.minimumLegalPictureWidthPoints * 5 / 8 * ProductBadge.scale).rounded()
+        let longSide = (Self.minimumLegalPictureWidthPoints * ProductBadge.scale).rounded()
+        let small = CGRect(x: 130, y: 150, width: longSide, height: shortSide)
+        let large = CGRect(x: 130, y: 150, width: 640, height: 400)
+
+        let smallVerdict = try verdictForTheProductsBadge(on: small)
+        let largeVerdict = try verdictForTheProductsBadge(on: large)
+
+        // The control, and it is not decoration: if BOTH were red the fixture would be the defect.
+        XCTAssertTrue(
+            largeVerdict.isClean,
+            "the badge is already refused on the 640×400 picture, so this comparison says nothing about size"
+        )
+        XCTAssertFalse(
+            smallVerdict.isClean,
+            "the allowance held the badge on a \(Int(longSide))×\(Int(shortSide))px picture — the predicted bound "
+            + "does not exist and T-1892's arithmetic is wrong"
+        )
+        XCTAssertGreaterThan(
+            smallVerdict.outsideAllowance, 0,
+            "the small picture is refused for some reason OTHER than badge pixels outside the allowance "
+            + "(\(smallVerdict.outsideBounds)), so this is not the bound being claimed"
+        )
+        // And the refusal is the allowance being too small, not the badge being too big for the
+        // picture: the badge still fits inside the picture with room to spare.
+        XCTAssertLessThan(
+            ProductBadge.sidePixels + 2 * ProductBadge.marginPixels, shortSide,
+            "the badge does not even fit on this picture, so the fixture is not a legal rendering"
+        )
+    }
+
+    /// Where the bound actually is, measured rather than asserted at a point figure.
+    ///
+    /// Swept over the picture's shorter side, this prints the smallest one at which the product's
+    /// own badge stops being refused, and asserts the only two things that are not this Mac's:
+    /// **the threshold exists** (one side of it red, the other green) and **it is above the product's
+    /// own minimum picture**, which is what makes it a defect rather than a curiosity.
+    func testTheBadgeAllowanceOnlyHoldsAboveAPictureSizeThisSweepReports() throws {
+        var firstClean: CGFloat?
+        var lastRefused: CGFloat?
+        for shortSide in stride(from: CGFloat(150), through: CGFloat(300), by: 2) {
+            let picture = CGRect(x: 130, y: 150, width: (shortSide * 8 / 5).rounded(), height: shortSide)
+            let verdict = try verdictForTheProductsBadge(on: picture)
+            if verdict.isClean {
+                if firstClean == nil { firstClean = shortSide }
+            } else {
+                lastRefused = shortSide
+                // A clean reading followed by a refused one would mean the relation is not monotone
+                // and the "threshold" below is not a threshold at all.
+                XCTAssertNil(
+                    firstClean,
+                    "the verdict went clean at \(Int(firstClean ?? 0))px and refused again at \(Int(shortSide))px, "
+                    + "so there is no single bound and the sweep's conclusion would be an artefact"
+                )
+            }
+        }
+
+        let threshold = try XCTUnwrap(
+            firstClean,
+            "the product's own badge is refused at every picture size up to 400px, so the allowance never holds"
+        )
+        let refused = try XCTUnwrap(lastRefused, "no picture size refused the badge, so there is no bound to report")
+        XCTAssertLessThan(refused, threshold, "the sweep's two sides are not on opposite sides of each other")
+
+        let thresholdPoints = threshold / ProductBadge.scale
+        print(
+            "T-1892 badge-allowance bound: the product's badge (\(Int(ProductBadge.sidePixels))px, "
+            + "\(Int(ProductBadge.marginPixels))px in) is refused up to a shorter side of \(Int(refused))px and "
+            + "tolerated from \(Int(threshold))px — \(Int(thresholdPoints))pt at \(Int(ProductBadge.scale))x. "
+            + "The product's own minimum picture is \(Int(Self.minimumLegalPictureWidthPoints))pt wide."
+        )
+
+        // The finding, as a relation: the bound sits ABOVE the shorter side of the narrowest picture
+        // the product will draw, which is exactly why a legal rendering can go red untouched.
+        let minimumLegalShortSide = (Self.minimumLegalPictureWidthPoints * 5 / 8 * ProductBadge.scale).rounded()
+        XCTAssertGreaterThan(
+            threshold, minimumLegalShortSide,
+            "the allowance already holds at the product's narrowest picture (\(Int(minimumLegalShortSide))px), "
+            + "so T-1892's bound is not reachable by a legal rendering after all"
+        )
+    }
+
+    /// One picture, the product's badge in its corner, nothing else.
+    private func verdictForTheProductsBadge(on picture: CGRect) throws -> CadenceUITestPixel.OverdrawVerdict {
+        let badge = badgeSquare(in: picture, side: ProductBadge.sidePixels, margin: ProductBadge.marginPixels)
+        let (bitmap, block) = try makeBitmap(picture: picture, marks: [(badge, Paint.badge)])
+        return CadenceUITestPixel.overdraw(in: bitmap, block: block)
     }
 }

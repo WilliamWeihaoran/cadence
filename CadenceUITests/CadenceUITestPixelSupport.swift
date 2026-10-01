@@ -267,6 +267,25 @@ enum CadenceUITestPixel {
         /// fail on a narrower pane for being narrow. A share rather than a pixel count for the
         /// reason every bound in `CadenceTodayRowCrushUITests` is a comparison — a pixel figure
         /// survives neither a display nor an Xcode major.
+        ///
+        /// **The prediction two lines up — "would fail on a narrower pane for being narrow" — is
+        /// now a measured number, and the bound is NOT this constant's (T-1892).** Swept against
+        /// the product's own badge geometry by
+        /// `CadenceOverdrawVerdictTests.testTheBadgeAllowanceOnlyHoldsAboveAPictureSizeThisSweepReports`:
+        /// the badge is **refused up to a shorter side of 294px and tolerated from 296px — 148pt at
+        /// 2x**. Below that a picture with nothing on it but the editor's own affordance goes red.
+        /// That matters because `MarkdownImageAssetService.minDisplayWidth` is **120pt**, which at
+        /// the seeded fixture's 8:5 is 75pt of height — half the floor — so the red is reachable by
+        /// a legal rendering rather than only by a pathological one.
+        ///
+        /// **And the floor is set by `maximumFillOfTheAllowance`, not by this share.** The purely
+        /// geometric requirement — a square wide enough to contain a badge spanning
+        /// `[blockMaxX-44, blockMaxX-8]` — needs `side ≥ 42` and clears at a shorter side of 286px.
+        /// 286px is still refused. 36×36 is 1296px, `0.7 × side²` reaches 1296 only at `side = 44`,
+        /// and `round(0.15 × (shorter − 5))` reaches 44 only at 295px. At 290–294px the badge
+        /// **fits** and is refused for overfilling its square **by two pixels** (1296 against 1294).
+        /// So raising this share alone does not move the floor; the two bounds have to move
+        /// together, and whoever repairs it should say which of the two they intend to relax.
         let sideShareOfTheShorterSide: CGFloat
 
         /// And whatever that works out to, the hole may not exceed this share of the picture.
