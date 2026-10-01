@@ -39,16 +39,16 @@ nonisolated enum MarkdownInlineSpanSupport {
     /// Callers use these two ways: as the *protected* set that stops emphasis, links, tags and
     /// highlights from styling anything inside a code span, and as the code spans themselves.
     nonisolated static func codeRanges(in markdown: String) -> [NSRange] {
-        matches(of: Pattern.code, in: markdown).map(\.range)
+        Compiled.code.flatMap { matches(of: $0, in: markdown) }.map(\.range)
     }
 
     nonisolated static func spans(in markdown: String, excluding excludedRanges: [NSRange] = []) -> [MarkdownInlineSpan] {
         let codeRanges = codeRanges(in: markdown)
         var spans: [MarkdownInlineSpan] = []
 
-        func collect(_ kind: MarkdownInlineSpanKind, _ patterns: [String], protectedByCode: Bool = true) {
-            for pattern in patterns {
-                for match in matches(of: pattern, in: markdown) {
+        func collect(_ kind: MarkdownInlineSpanKind, _ regexes: [NSRegularExpression], protectedByCode: Bool = true) {
+            for regex in regexes {
+                for match in matches(of: regex, in: markdown) {
                     guard match.numberOfRanges >= 2 else { continue }
                     let full = match.range(at: 0)
                     let content = match.range(at: 1)
@@ -68,14 +68,14 @@ nonisolated enum MarkdownInlineSpanSupport {
             }
         }
 
-        collect(.boldItalic, Pattern.boldItalic)
-        collect(.bold, Pattern.bold)
-        collect(.italic, Pattern.italic)
-        collect(.strikethrough, [Pattern.strikethrough])
+        collect(.boldItalic, Compiled.boldItalic)
+        collect(.bold, Compiled.bold)
+        collect(.italic, Compiled.italic)
+        collect(.strikethrough, Compiled.strikethrough)
         // No code protection for code itself: every code span is contained in a code range — its
         // own — so protecting it against that set would reject all of them.
-        collect(.code, [Pattern.code], protectedByCode: false)
-        collect(.highlight, [Pattern.highlight])
+        collect(.code, Compiled.code, protectedByCode: false)
+        collect(.highlight, Compiled.highlight)
 
         return spans
     }
@@ -117,24 +117,83 @@ nonisolated enum MarkdownInlineSpanSupport {
         return [opening, closing].filter { $0.length > 0 }
     }
 
-    private enum Pattern {
-        /// Both `***bold italic***` and `___bold italic___`.
-        nonisolated static let boldItalic = [#"\*\*\*(.+?)\*\*\*"#, #"___(.+?)___"#]
-        /// Both `**bold**` and `__bold__`.
-        nonisolated static let bold = [#"\*\*(.+?)\*\*"#, #"(?<!_)__(?!_)(.+?)(?<!_)__(?!_)"#]
-        /// Both `*italic*` and `_italic_`. The underscore form refuses to fire inside a word, so
-        /// `snake_case_name` is not two italics.
+    /// The compiled form of the six families, grouped the way `spans` applies them.
+    ///
+    /// Each array is `compactMap`ped over `try?`, so a pattern that would not compile drops out of
+    /// its family exactly as the old per-call `guard let regex = try? … else { return [] }` dropped
+    /// it from a single call. Nothing here spells a pattern out: the strings are
+    /// `MarkdownInlineEmphasisPatterns`', which the inline preview and the macOS styler also read.
+    private enum Compiled {
+        nonisolated static let boldItalic = [
+            MarkdownInlineEmphasisPatterns.boldItalicAsteriskRegex,
+            MarkdownInlineEmphasisPatterns.boldItalicUnderscoreRegex
+        ].compactMap { $0 }
+        nonisolated static let bold = [
+            MarkdownInlineEmphasisPatterns.boldAsteriskRegex,
+            MarkdownInlineEmphasisPatterns.boldUnderscoreRegex
+        ].compactMap { $0 }
         nonisolated static let italic = [
-            #"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#,
-            #"(?<![\p{L}\p{N}_])_(?!_)(.+?)(?<!_)_(?![\p{L}\p{N}_])"#
-        ]
-        nonisolated static let strikethrough = #"~~(.+?)~~"#
-        nonisolated static let code = #"`([^`\n]+?)`"#
-        nonisolated static let highlight = #"==(.+?)=="#
+            MarkdownInlineEmphasisPatterns.italicAsteriskRegex,
+            MarkdownInlineEmphasisPatterns.italicUnderscoreRegex
+        ].compactMap { $0 }
+        nonisolated static let strikethrough = [MarkdownInlineEmphasisPatterns.strikethroughRegex].compactMap { $0 }
+        nonisolated static let code = [MarkdownInlineEmphasisPatterns.codeRegex].compactMap { $0 }
+        nonisolated static let highlight = [MarkdownInlineEmphasisPatterns.highlightRegex].compactMap { $0 }
     }
 
-    nonisolated private static func matches(of pattern: String, in text: String) -> [NSTextCheckingResult] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        return regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length))
+    nonisolated private static func matches(of regex: NSRegularExpression, in text: String) -> [NSTextCheckingResult] {
+        regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length))
     }
+}
+
+/// **The one spelling of each inline emphasis pattern, and the one compiled form of it.**
+///
+/// Nine literals that three passes over the same markdown each used to write out for themselves:
+/// this file's span table, `MarkdownInlinePreviewSupport.inlineMatches` — which handed every one of
+/// them to a generic `regexMatches(pattern:…)` helper, so all nine were compiled again on **every
+/// inline string** — and, for five of the nine, `MarkdownStylist`'s cached-regex block in
+/// `macOS/Editor/MarkdownEditorSupport.swift`, spelled with backslash escapes rather than as raw
+/// literals so a search for one spelling could not see the other. Measured on 2026-09-30, before
+/// the change: twenty-six occurrences of the ten patterns across five files.
+///
+/// **What they decide is the same question three times** — which run of a note is bold, which is
+/// italic, which is code — asked by the renderer, by the iOS live styler and by the macOS live
+/// styler. A character edited into one of them and not the others is a note that renders one way
+/// and edits another, which is the drift [[T-1484]] and [[T-1521]] were both filed about.
+///
+/// **No speed claim is made.** [[T-1484]] measured a construction of this shape at ~2µs, because
+/// `NSRegularExpression` caches compiled patterns internally; `inlineMatches` runs once per inline
+/// string, not once per line. The reason for the change is the duplication and the one-spelling
+/// rule. [[T-1660]].
+///
+/// The compiled properties are `try?` rather than `try!` because that is what both Services
+/// readers did per call; `MarkdownStylist` keeps its own `try!` and reads the **pattern**, which is
+/// each site's own answer to a pattern that will not compile ([[T-1521]]'s distinction).
+nonisolated enum MarkdownInlineEmphasisPatterns {
+    /// `***bold italic***`.
+    nonisolated static let boldItalicAsterisk = #"\*\*\*(.+?)\*\*\*"#
+    /// `___bold italic___`.
+    nonisolated static let boldItalicUnderscore = #"___(.+?)___"#
+    /// `**bold**`.
+    nonisolated static let boldAsterisk = #"\*\*(.+?)\*\*"#
+    /// `__bold__`.
+    nonisolated static let boldUnderscore = #"(?<!_)__(?!_)(.+?)(?<!_)__(?!_)"#
+    /// `*italic*`.
+    nonisolated static let italicAsterisk = #"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#
+    /// `_italic_`. The underscore form refuses to fire inside a word, so `snake_case_name` is not
+    /// two italics.
+    nonisolated static let italicUnderscore = #"(?<![\p{L}\p{N}_])_(?!_)(.+?)(?<!_)_(?![\p{L}\p{N}_])"#
+    nonisolated static let strikethrough = #"~~(.+?)~~"#
+    nonisolated static let code = #"`([^`\n]+?)`"#
+    nonisolated static let highlight = #"==(.+?)=="#
+
+    nonisolated static let boldItalicAsteriskRegex = try? NSRegularExpression(pattern: boldItalicAsterisk)
+    nonisolated static let boldItalicUnderscoreRegex = try? NSRegularExpression(pattern: boldItalicUnderscore)
+    nonisolated static let boldAsteriskRegex = try? NSRegularExpression(pattern: boldAsterisk)
+    nonisolated static let boldUnderscoreRegex = try? NSRegularExpression(pattern: boldUnderscore)
+    nonisolated static let italicAsteriskRegex = try? NSRegularExpression(pattern: italicAsterisk)
+    nonisolated static let italicUnderscoreRegex = try? NSRegularExpression(pattern: italicUnderscore)
+    nonisolated static let strikethroughRegex = try? NSRegularExpression(pattern: strikethrough)
+    nonisolated static let codeRegex = try? NSRegularExpression(pattern: code)
+    nonisolated static let highlightRegex = try? NSRegularExpression(pattern: highlight)
 }

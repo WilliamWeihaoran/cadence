@@ -236,17 +236,33 @@ enum MarkdownStylist {
 
     // MARK: - Cached Regexes
 
-    private static let boldItalicRegex = try! NSRegularExpression(pattern: "\\*\\*\\*(.+?)\\*\\*\\*")
-    private static let boldRegex = try! NSRegularExpression(pattern: "\\*\\*(.+?)\\*\\*")
-    private static let italicRegex = try! NSRegularExpression(pattern: "(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)")
-    private static let strikethroughRegex = try! NSRegularExpression(pattern: "~~(.+?)~~")
-    private static let highlightRegex = try! NSRegularExpression(pattern: "==(.+?)==")
+    /// Five of the six emphasis patterns below are `MarkdownInlineEmphasisPatterns`', not a
+    /// sixth spelling of them ([[T-1660]]). They were written here with backslash escapes and in
+    /// `MarkdownInlineSpanSupport` and `MarkdownInlinePreviewSupport` as raw literals, so a search
+    /// for one spelling could not see the other two — the same shape as [[T-1521]]'s `[[…]]`, and
+    /// with no target boundary near it: all three files are app-target only. `try!` stays, because
+    /// what to do with a pattern that will not compile is this file's own question; what may not
+    /// differ is which run of a note is bold.
+    private static let boldItalicRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.boldItalicAsterisk)
+    private static let boldRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.boldAsterisk)
+    private static let italicRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.italicAsterisk)
+    private static let strikethroughRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.strikethrough)
+    private static let highlightRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.highlight)
+    /// Deliberately **not** `MarkdownInlineEmphasisPatterns.code`: that one is lazy
+    /// and this is greedy. The two reach the same answer — the character class excludes the
+    /// backtick, so there is nothing for the quantifier to be greedy about — but they are not the
+    /// same bytes, so this is not one of the duplicates [[T-1660]] removed and it is not silently
+    /// unified here.
     private static let inlineCodeRegex = try! NSRegularExpression(pattern: "`([^`\n]+)`")
     /// The pattern is `NoteReferenceParser.wikiReferencePattern`, not a third spelling of it
     /// ([[T-1521]]): what `[[…]]` matches has to be the same question in the live editor, the
     /// renderer and the MCP read service, and it was written out three times in three files.
     private static let wikiLinkRegex = try! NSRegularExpression(pattern: NoteReferenceParser.wikiReferencePattern)
-    private static let wikiLinkDisplayPrefixRegex = try! NSRegularExpression(pattern: #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#, options: [.caseInsensitive])
+    /// `MarkdownReferenceDisplaySupport`'s compiled object, not a second one built from the same
+    /// bytes ([[T-1661]]). It was the 33-byte literal **and** `.caseInsensitive` written out twice
+    /// in two app-target files, deciding how much of a `[[task:…|Title]]` label the renderer hides
+    /// and how much the live editor hides.
+    private static let wikiLinkDisplayPrefixRegex = MarkdownReferenceDisplaySupport.referencePrefixRegex
     private static let codeFenceRegex = try! NSRegularExpression(pattern: #"(?s)```([^\n`]*)\n(.*?)\n?```"#)
     private static let tablePipeRegex = try! NSRegularExpression(pattern: #"\|"#)
 
@@ -1064,7 +1080,8 @@ enum MarkdownStylist {
     private static func wikiLinkDisplayRange(label: String, labelRange: NSRange) -> NSRange {
         let nsLabel = label as NSString
         let fullRange = NSRange(location: 0, length: nsLabel.length)
-        guard let match = wikiLinkDisplayPrefixRegex.firstMatch(in: label, range: fullRange) else {
+        guard let wikiLinkDisplayPrefixRegex,
+              let match = wikiLinkDisplayPrefixRegex.firstMatch(in: label, range: fullRange) else {
             return labelRange
         }
 

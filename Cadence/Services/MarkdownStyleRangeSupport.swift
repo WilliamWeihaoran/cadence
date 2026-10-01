@@ -121,9 +121,19 @@ nonisolated struct MarkdownInlineImageReference: Equatable {
 nonisolated enum MarkdownInlineMarkerRanges {
     /// A `#tag`, not preceded by a letter, digit or underscore.
     ///
-    /// The lookbehind is what keeps `C#` and `id_#4` from becoming tags; the tag body deliberately
-    /// starts with an alphanumeric so a bare `#-` or `#_` is not one either.
-    static let hashtagPattern = #"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#
+    /// It **is** `MarkdownMetadataParser.inlineTagPattern`, not a copy of it ([[T-1660]]): the
+    /// styler's answer to "what is a tag" and the launch sweep's answer decide, respectively, what
+    /// gets drawn as a chip and what gets *inserted* as a `Tag` row, and two spellings is how
+    /// those come to disagree. The owner is the metadata file because that one is in all three
+    /// targets; this file is app-only. Mirrors `inlineImageReferencePattern` below.
+    static let hashtagPattern = MarkdownMetadataParser.inlineTagPattern
+
+    /// The same tag pattern, already compiled — `MarkdownMetadataParser.inlineTagRegex`, not a
+    /// second `NSRegularExpression` built from the same string.
+    ///
+    /// `hashtagRanges` below and `MarkdownInlinePreviewSupport`'s tag rule both rebuilt it on
+    /// every call, which is half of what [[T-1660]] was filed about.
+    static let hashtagRegex = MarkdownMetadataParser.inlineTagRegex
 
     /// The unanchored form of `MarkdownImageAssetService`'s reference pattern — the anchored one
     /// there matches only a line that is *nothing but* an image, which is the standalone-block case.
@@ -143,7 +153,8 @@ nonisolated enum MarkdownInlineMarkerRanges {
     static let inlineImageReferenceRegex = MarkdownImageAssetService.anyReferenceRegex
 
     static func hashtagRanges(in markdown: String) -> [NSRange] {
-        matchRanges(of: hashtagPattern, in: markdown).map { $0.range }
+        guard let hashtagRegex else { return [] }
+        return matchRanges(of: hashtagRegex, in: markdown).map { $0.range }
     }
 
     static func imageReferences(in markdown: String) -> [MarkdownInlineImageReference] {
@@ -196,11 +207,6 @@ nonisolated enum MarkdownInlineMarkerRanges {
             ranges.append(NSRange(location: full.location + 2, length: hiddenPrefixUTF16Length))
         }
         return ranges
-    }
-
-    private static func matchRanges(of pattern: String, in text: String) -> [NSTextCheckingResult] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        return matchRanges(of: regex, in: text)
     }
 
     private static func matchRanges(of regex: NSRegularExpression, in text: String) -> [NSTextCheckingResult] {

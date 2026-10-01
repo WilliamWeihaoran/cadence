@@ -119,6 +119,43 @@ struct CadenceMarkdownRegexHoistTests {
         let control = CadenceStartupPopulationSweepTests.regexConstructionCounts(in: regressed)
         #expect(control.stored == 1)
         #expect(control.inBody == 1, "the counter cannot see an in-body compile, so the zeroes above mean nothing")
+
+        // **A second control, and the reason for it ([[T-1660]]).** Two of the rows above now
+        // read `stored: 0, inBody: 0`, and a pair of zeroes is a reading that cannot distinguish
+        // "this file compiles nothing per call" from "this scan saw nothing at all". So the shape
+        // that was actually removed is put through the same counter verbatim — the generic
+        // `regexMatches(pattern:…)` helper and two of its ten literal call sites, copied from
+        // `git show HEAD:Cadence/Services/MarkdownInlinePreviewSupport.swift` — and the two
+        // readings are required to DIFFER. The zeroes mean something only because this is a 1.
+        let perCallHelper = """
+            nonisolated enum Sample {
+                private static func inlineMatches(in markdown: String) -> [Int] {
+                    var matches: [Int] = []
+                    matches += regexMatches(pattern: #"~~(.+?)~~"#, priority: 8, in: markdown)
+                    matches += regexMatches(pattern: #"==(.+?)=="#, priority: 8, in: markdown)
+                    return matches
+                }
+                private static func regexMatches(pattern: String, priority: Int, in markdown: String) -> [Int] {
+                    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+                    return [regex.numberOfCaptureGroups, priority]
+                }
+            }
+            """
+        let perCall = CadenceStartupPopulationSweepTests.regexConstructionCounts(in: perCallHelper)
+        #expect(perCall.inBody == 1, "the counter cannot see the generic-helper shape this ticket removed")
+        #expect(perCall.stored == 0)
+        let previewSource = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/MarkdownInlinePreviewSupport.swift")
+        )
+        let previewBody = try #require(
+            CadenceSourceScan.declarationBody("nonisolated enum MarkdownInlinePreviewSupport", in: previewSource)
+        )
+        let live = CadenceStartupPopulationSweepTests.regexConstructionCounts(in: previewBody)
+        #expect(
+            live.inBody != perCall.inBody,
+            "the shipping file and the shape it replaced read the same, so this measurement is blind"
+        )
+        #expect(live.inBody == 0)
     }
 
     struct HoistedFunction {
@@ -184,32 +221,57 @@ struct CadenceMarkdownRegexHoistTests {
                 HoistedFunction(name: "headingPrefix", reads: "MarkdownMetadataParser.headingPrefixRegex"),
             ]
         ),
-        // [[T-1520]] from here down.
+        // [[T-1520]] from here down, and [[T-1660]] from the two rows that used to say 1.
         //
-        // `MarkdownInlinePreviewSupport`'s expected in-body count is **1 and not 0**, for the same
-        // reason `MarkdownTaskEmbedParser`'s is: `regexMatches(pattern:…)` is a generic helper that
-        // ten callers hand ten different literals, so the construction is not one constant pattern
-        // and hoisting it is a table refactor rather than a `let`. [[T-1520]] scoped itself to
-        // `imageMatches`, the one that read an already-shared constant; the ten are filed as
-        // [[T-1660]]. Asserting 1 records that rather than letting a hoist of it pass unnoticed.
+        // Both of these expected an in-body count of **1** until [[T-1660]], and both of those
+        // ones were the same shape: a generic helper (`regexMatches(pattern:…)` here,
+        // `matchRanges(of pattern:in:)` in the styler) that callers handed constant literals to,
+        // so the construction was not *one* constant pattern and hoisting it was a table refactor
+        // rather than a `let`. Both are 0 now. Neither file compiles a pattern at all any more —
+        // `stored` is 0 because the patterns themselves moved to the two files that own them, so
+        // the non-vacuity for these two rows is the `functions` list below rather than `stored`,
+        // and `MarkdownInlineEmphasisPatterns`' row carries the 9 that appeared.
         ConstructionCount(
             path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
             declaration: "nonisolated enum MarkdownInlinePreviewSupport",
             stored: 0,
-            inBody: 1,
+            inBody: 0,
             functions: [
                 HoistedFunction(name: "imageMatches", reads: "MarkdownInlineMarkerRanges.inlineImageReferenceRegex"),
+                HoistedFunction(name: "inlineMatches", reads: "emphasisRules"),
+                HoistedFunction(name: "inlineMatches", reads: "tagRule"),
             ]
         ),
-        // Same shape, same reason: `matchRanges(of pattern:in:)` still serves `hashtagRanges`,
-        // whose pattern is a constant nobody has hoisted yet ([[T-1660]]).
         ConstructionCount(
             path: "Cadence/Services/MarkdownStyleRangeSupport.swift",
             declaration: "nonisolated enum MarkdownInlineMarkerRanges",
             stored: 0,
-            inBody: 1,
+            inBody: 0,
             functions: [
                 HoistedFunction(name: "imageReferences", reads: "inlineImageReferenceRegex"),
+                HoistedFunction(name: "hashtagRanges", reads: "hashtagRegex"),
+            ]
+        ),
+        // [[T-1660]]: the nine emphasis patterns, and the one declaration that compiles them.
+        // This row is the half of the count that is *not* a zero — nine stored constructions where
+        // this file had none, against nine that left `MarkdownInlinePreviewSupport`'s body and nine
+        // per-call ones that left `MarkdownInlineSpanSupport`'s.
+        ConstructionCount(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            declaration: "nonisolated enum MarkdownInlineEmphasisPatterns",
+            stored: 9,
+            inBody: 0,
+            functions: []
+        ),
+        ConstructionCount(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            declaration: "nonisolated enum MarkdownInlineSpanSupport",
+            stored: 0,
+            inBody: 0,
+            functions: [
+                HoistedFunction(name: "codeRanges", reads: "Compiled.code"),
+                HoistedFunction(name: "spans", reads: "Compiled.boldItalic"),
+                HoistedFunction(name: "spans", reads: "Compiled.highlight"),
             ]
         ),
         ConstructionCount(
@@ -266,9 +328,10 @@ struct CadenceMarkdownRegexHoistTests {
         for expectation in Self.literalExpectations {
             // `literal` carries the `#"` / `"#` delimiters, four bytes the pattern itself does
             // not have; `bytes` is the pattern's own length, as `git show HEAD:` measured it.
+            let expectedLiteralBytes = (expectation.sourceBytes ?? expectation.bytes) + expectation.delimiters
             #expect(
-                expectation.literal.utf8.count == expectation.bytes + 4,
-                "the expectation \(expectation.literal) was retyped wrong: \(expectation.literal.utf8.count - 4) pattern bytes, not \(expectation.bytes)"
+                expectation.literal.utf8.count == expectedLiteralBytes,
+                "the expectation \(expectation.literal) was retyped wrong: \(expectation.literal.utf8.count - expectation.delimiters) literal bytes, not \(expectation.sourceBytes ?? expectation.bytes)"
             )
             let source = CadenceSourceScan.strippingComments(
                 try CadenceSourceScan.sourceFile(expectation.path)
@@ -289,9 +352,19 @@ struct CadenceMarkdownRegexHoistTests {
         let path: String
         /// The pattern literal exactly as it is written in Swift source, delimiters included.
         let literal: String
-        /// The UTF-8 length of the pattern itself, without the `#"` / `"#` delimiters.
+        /// The UTF-8 length of the pattern itself, without the delimiters.
         let bytes: Int
         let occurrences: Int
+        /// How many of `literal`'s bytes are delimiter: 4 for a raw `#"…"#`, 2 for a plain
+        /// `"…"`. [[T-1660]] needed the second: `MarkdownStylist` wrote five of these patterns
+        /// as escaped Swift strings rather than raw ones, which is *why* a grep for the raw
+        /// spelling never found them and the duplication survived [[T-1484]] and [[T-1520]].
+        /// A row with `delimiters: 2` also measures `bytes` after the escapes are resolved,
+        /// so `"\\*\\*\\*(.+?)\\*\\*\\*"` is the same 17 bytes as `#"\*\*\*(.+?)\*\*\*"#`.
+        var delimiters: Int = 4
+        /// The escaped literal's resolved byte count, when it differs from `literal` minus
+        /// delimiters. `nil` means the two agree.
+        var sourceBytes: Int?
     }
 
     nonisolated static let literalExpectations: [LiteralExpectation] = [
@@ -330,12 +403,13 @@ struct CadenceMarkdownRegexHoistTests {
             path: "Cadence/Services/MarkdownReferenceDisplaySupport.swift",
             literal: ##"#"^\s*(?:task|note):(?:[^\|\]]*\|)?"#"##, bytes: 33, occurrences: 1
         ),
-        // The *other* reference literal, still written twice — and, unlike the one above, with no
-        // target boundary anywhere near it: both files are app-target only. Pinned at 1 here so
-        // the duplication has a tripwire while [[T-1661]] is open, and so closing it is one row.
+        // [[T-1661]]'s dedup, as an absence. The 33 bytes left the editor; the identical hash
+        // stays in `MarkdownReferenceDisplaySupport.swift`, and the editor reads that file's
+        // *compiled* object — so `.caseInsensitive` is written once too, which a shared pattern
+        // string would not have achieved.
         LiteralExpectation(
             path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
-            literal: ##"#"^\s*(?:task|note):(?:[^\|\]]*\|)?"#"##, bytes: 33, occurrences: 1
+            literal: ##"#"^\s*(?:task|note):(?:[^\|\]]*\|)?"#"##, bytes: 33, occurrences: 0
         ),
         LiteralExpectation(
             path: "Cadence/Services/NoteReferenceSupport.swift",
@@ -409,6 +483,135 @@ struct CadenceMarkdownRegexHoistTests {
         LiteralExpectation(
             path: "CadenceMCPServer/CadenceMCPArgumentParsing.swift",
             literal: ##"#"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$"#"##, bytes: 34, occurrences: 1
+        ),
+
+        // MARK: [[T-1660]] — the ten inline patterns, and the five escaped spellings
+        //
+        // Measured 2026-09-30 before the change: the ten patterns `inlineMatches` ran were
+        // written **26** times across five files, not the one duplicate the ticket named.
+        // Nine of the ten also stood in `MarkdownInlineSpanSupport`'s span table, five of
+        // those nine a third time in `MarkdownStylist`, and the tag pattern a third time in
+        // `MarkdownMetadataParser`. Every row below is the literal as `git show HEAD:`
+        // printed it, with its byte length beside it; each pattern is now written once.
+
+        // The nine that stay, in the file that owns them.
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"\*\*\*(.+?)\*\*\*"#"##, bytes: 17, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"___(.+?)___"#"##, bytes: 11, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"\*\*(.+?)\*\*"#"##, bytes: 13, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"(?<!_)__(?!_)(.+?)(?<!_)__(?!_)"#"##, bytes: 31, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#"##, bytes: 35, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"(?<![\p{L}\p{N}_])_(?!_)(.+?)(?<!_)_(?![\p{L}\p{N}_])"#"##, bytes: 53, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"~~(.+?)~~"#"##, bytes: 9, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"`([^`\n]+?)`"#"##, bytes: 12, occurrences: 1
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlineSpanSupport.swift",
+            literal: ##"#"==(.+?)=="#"##, bytes: 9, occurrences: 1
+        ),
+
+        // The ten that left `MarkdownInlinePreviewSupport`, as absences.
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"\*\*\*(.+?)\*\*\*"#"##, bytes: 17, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"___(.+?)___"#"##, bytes: 11, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"\*\*(.+?)\*\*"#"##, bytes: 13, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"(?<!_)__(?!_)(.+?)(?<!_)__(?!_)"#"##, bytes: 31, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#"##, bytes: 35, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"(?<![\p{L}\p{N}_])_(?!_)(.+?)(?<!_)_(?![\p{L}\p{N}_])"#"##, bytes: 53, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"~~(.+?)~~"#"##, bytes: 9, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"`([^`\n]+?)`"#"##, bytes: 12, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"==(.+?)=="#"##, bytes: 9, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
+            literal: ##"#"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#"##, bytes: 46, occurrences: 0
+        ),
+
+        // The tag pattern: gone from the styler, kept by the one file in all three targets.
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownStyleRangeSupport.swift",
+            literal: ##"#"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#"##, bytes: 46, occurrences: 0
+        ),
+        LiteralExpectation(
+            path: "Cadence/Services/MarkdownMetadataSupport.swift",
+            literal: ##"#"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#"##, bytes: 46, occurrences: 1
+        ),
+
+        // The five `MarkdownStylist` wrote as escaped Swift strings rather than raw literals —
+        // which is why a grep for `#"` never saw them and they outlived two dedup tickets. They
+        // are rows with `delimiters: 2`, and `sourceBytes` is the escaped source length while
+        // `bytes` stays the pattern's own, so each row says both numbers.
+        LiteralExpectation(
+            path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
+            literal: ##""\\*\\*\\*(.+?)\\*\\*\\*""##, bytes: 17, occurrences: 0,
+            delimiters: 2, sourceBytes: 23
+        ),
+        LiteralExpectation(
+            path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
+            literal: ##""\\*\\*(.+?)\\*\\*""##, bytes: 13, occurrences: 0,
+            delimiters: 2, sourceBytes: 17
+        ),
+        LiteralExpectation(
+            path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
+            literal: ##""(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)""##, bytes: 35, occurrences: 0,
+            delimiters: 2, sourceBytes: 41
+        ),
+        LiteralExpectation(
+            path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
+            literal: ##""~~(.+?)~~""##, bytes: 9, occurrences: 0,
+            delimiters: 2, sourceBytes: 9
+        ),
+        LiteralExpectation(
+            path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
+            literal: ##""==(.+?)==""##, bytes: 9, occurrences: 0,
+            delimiters: 2, sourceBytes: 9
         ),
     ]
 
@@ -859,5 +1062,458 @@ struct CadenceMarkdownRegexHoistTests {
         "> quote"	heading(2)	"## > quote"	3,0
         "> quote"	paragraph	"quote"	0,0
         "> quote"	heading(1)	"# > quote"	2,0
+        """#
+
+    // MARK: - [[T-1660]]: the nine emphasis patterns, written once
+
+    /// **The ten patterns `MarkdownInlinePreviewSupport.inlineMatches` runs were written 26 times
+    /// across five files, and the ticket said one.**
+    ///
+    /// [[T-1660]] was filed saying ten constant literals were compiled per inline string and that
+    /// *one* of them — the 46-byte tag pattern — duplicated a constant two files away. The first
+    /// half is right. The second understates it by an order of magnitude, measured 2026-09-30 over
+    /// every Swift string literal in the tree, **raw and escaped**, compared by decoded value:
+    ///
+    /// ```
+    ///   nine emphasis patterns   MarkdownInlinePreviewSupport + MarkdownInlineSpanSupport
+    ///   five of those nine       ... + MarkdownStylist, spelled with backslash escapes
+    ///   the tag pattern          MarkdownInlinePreviewSupport + MarkdownInlineMarkerRanges
+    ///                            + MarkdownMetadataParser          (3 copies, not 2)
+    ///   total                    26 occurrences of 10 patterns in 5 files
+    /// ```
+    ///
+    /// **The escaped spellings are why this survived [[T-1484]] and [[T-1520]].** Both of those
+    /// enumerated `#"…"#` literals, and `MarkdownStylist` writes `"\\*\\*\\*(.+?)\\*\\*\\*"`, which
+    /// is the same 17 pattern bytes and a different 25-byte source literal. A grep for one
+    /// spelling cannot see the other, which is exactly the drift a shared constant removes and a
+    /// byte-identity test alone would not have found.
+    ///
+    /// What these decide is one question asked three times — which run of a note is bold, italic,
+    /// struck, code or marked — by the renderer, by the iOS live styler and by the macOS live
+    /// styler. The `options` assertion is the other half: these are built with **no** options at
+    /// all, and a `.caseInsensitive` quietly added to a shared constant would change all three.
+    @Test func theInlineEmphasisPatternsAreOneSpellingThreeStylersShare() throws {
+        let patterns: [(name: String, value: String, bytes: Int, regex: NSRegularExpression?)] = [
+            ("boldItalicAsterisk", MarkdownInlineEmphasisPatterns.boldItalicAsterisk, 17, MarkdownInlineEmphasisPatterns.boldItalicAsteriskRegex),
+            ("boldItalicUnderscore", MarkdownInlineEmphasisPatterns.boldItalicUnderscore, 11, MarkdownInlineEmphasisPatterns.boldItalicUnderscoreRegex),
+            ("boldAsterisk", MarkdownInlineEmphasisPatterns.boldAsterisk, 13, MarkdownInlineEmphasisPatterns.boldAsteriskRegex),
+            ("boldUnderscore", MarkdownInlineEmphasisPatterns.boldUnderscore, 31, MarkdownInlineEmphasisPatterns.boldUnderscoreRegex),
+            ("italicAsterisk", MarkdownInlineEmphasisPatterns.italicAsterisk, 35, MarkdownInlineEmphasisPatterns.italicAsteriskRegex),
+            ("italicUnderscore", MarkdownInlineEmphasisPatterns.italicUnderscore, 53, MarkdownInlineEmphasisPatterns.italicUnderscoreRegex),
+            ("strikethrough", MarkdownInlineEmphasisPatterns.strikethrough, 9, MarkdownInlineEmphasisPatterns.strikethroughRegex),
+            ("code", MarkdownInlineEmphasisPatterns.code, 12, MarkdownInlineEmphasisPatterns.codeRegex),
+            ("highlight", MarkdownInlineEmphasisPatterns.highlight, 9, MarkdownInlineEmphasisPatterns.highlightRegex),
+        ]
+
+        // The bytes, against the literals `git show HEAD:` printed before anything moved.
+        #expect(MarkdownInlineEmphasisPatterns.boldItalicAsterisk == ##"\*\*\*(.+?)\*\*\*"##)
+        #expect(MarkdownInlineEmphasisPatterns.boldItalicUnderscore == ##"___(.+?)___"##)
+        #expect(MarkdownInlineEmphasisPatterns.boldAsterisk == ##"\*\*(.+?)\*\*"##)
+        #expect(MarkdownInlineEmphasisPatterns.boldUnderscore == ##"(?<!_)__(?!_)(.+?)(?<!_)__(?!_)"##)
+        #expect(MarkdownInlineEmphasisPatterns.italicAsterisk == ##"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"##)
+        #expect(MarkdownInlineEmphasisPatterns.italicUnderscore == ##"(?<![\p{L}\p{N}_])_(?!_)(.+?)(?<!_)_(?![\p{L}\p{N}_])"##)
+        #expect(MarkdownInlineEmphasisPatterns.strikethrough == ##"~~(.+?)~~"##)
+        #expect(MarkdownInlineEmphasisPatterns.code == ##"`([^`\n]+?)`"##)
+        #expect(MarkdownInlineEmphasisPatterns.highlight == ##"==(.+?)=="##)
+
+        for pattern in patterns {
+            #expect(pattern.value.utf8.count == pattern.bytes, "\(pattern.name) is \(pattern.value.utf8.count) bytes, not \(pattern.bytes)")
+            let regex = try #require(pattern.regex, "\(pattern.name) no longer compiles")
+            #expect(regex.pattern == pattern.value, "\(pattern.name)'s compiled object is not the pattern it is named for")
+            #expect(
+                regex.options == [],
+                "\(pattern.name) gained a regex option; these nine are built with none and three stylers read them"
+            )
+        }
+        // Non-vacuity: nine distinct patterns, not nine aliases of one.
+        #expect(Set(patterns.map(\.value)).count == 9)
+
+        // The macOS styler reads the five it shares, and spells none of them. Its inline-code
+        // pattern is deliberately NOT one of them — `` `([^`\n]+)` `` is greedy where the shared
+        // one is lazy — so it is checked as an exception rather than left ambiguous.
+        let editor = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorSupport.swift")
+        )
+        let stylist = try #require(CadenceSourceScan.declarationBody("enum MarkdownStylist", in: editor))
+        let editorReaders: [(property: String, constant: String)] = [
+            ("boldItalicRegex", "MarkdownInlineEmphasisPatterns.boldItalicAsterisk"),
+            ("boldRegex", "MarkdownInlineEmphasisPatterns.boldAsterisk"),
+            ("italicRegex", "MarkdownInlineEmphasisPatterns.italicAsterisk"),
+            ("strikethroughRegex", "MarkdownInlineEmphasisPatterns.strikethrough"),
+            ("highlightRegex", "MarkdownInlineEmphasisPatterns.highlight"),
+        ]
+        for reader in editorReaders {
+            let declarations = stylist
+                .components(separatedBy: "\n")
+                .filter { $0.contains("static let \(reader.property)") }
+            #expect(declarations.count == 1, "MarkdownStylist declares \(reader.property) \(declarations.count) times")
+            #expect(
+                try #require(declarations.first).contains(reader.constant),
+                "\(reader.property) spells its pattern out again instead of reading \(reader.constant)"
+            )
+        }
+        let inlineCode = try #require(
+            stylist.components(separatedBy: "\n").first { $0.contains("static let inlineCodeRegex") }
+        )
+        #expect(
+            !inlineCode.contains("MarkdownInlineEmphasisPatterns"),
+            "the greedy editor code pattern was silently unified with the lazy shared one"
+        )
+
+        // And the two Services readers hold no literal of their own: the preview's table names
+        // each of the nine constants exactly once, which is the half a byte-identity scan on its
+        // own cannot state (an absence says nothing about what replaced it).
+        let preview = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/MarkdownInlinePreviewSupport.swift")
+        )
+        let previewBody = try #require(
+            CadenceSourceScan.declarationBody("nonisolated enum MarkdownInlinePreviewSupport", in: preview)
+        )
+        for pattern in patterns {
+            let read = "MarkdownInlineEmphasisPatterns.\(pattern.name)Regex"
+            #expect(
+                previewBody.components(separatedBy: read).count - 1 == 1,
+                "the inline rule table reads \(read) \(previewBody.components(separatedBy: read).count - 1) times, expected once"
+            )
+        }
+    }
+
+    // MARK: - [[T-1660]]: the tag pattern, one compiled object
+
+    /// **`(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)` was written three times, and the owner
+    /// is the file a target boundary forces it to be.**
+    ///
+    /// The ticket said two. Measured: three — `MarkdownInlineMarkerRanges.hashtagPattern`,
+    /// `MarkdownInlinePreviewSupport.inlineMatches` (per inline string) and
+    /// `MarkdownMetadataParser.inlineTagRegex`.
+    ///
+    /// **The owner could not be the styler's file, and that is read out of `project.pbxproj`
+    /// rather than remembered** — the same argument [[T-1521]] had to make, reaching the opposite
+    /// placement. `MarkdownMetadataSupport.swift` is in the app's synchronized folder *and* in the
+    /// explicit Sources phases of `CadenceMCPServer` **and** `CadenceWidgets`;
+    /// `MarkdownStyleRangeSupport.swift` is in none of the explicit ones. A constant declared in
+    /// the styler's file would not link in the two extra targets the metadata file compiles into,
+    /// so the metadata file owns it and the styler aliases it. No file moved between targets.
+    ///
+    /// **The assertion is `===`.** A second object built from the same string passes every
+    /// behavioural row, and a second object is exactly what was removed. What the three readers do
+    /// with a `#tag` differs — draw it as a chip, hide its marker, or *insert* a `Tag` row the
+    /// user never created — and what one **is** may not.
+    @Test func theHashtagPatternIsOneCompiledObjectThreeReadersShare() throws {
+        let mcp = try cadenceMCPServerMemberFiles()
+        #expect(mcp.count >= 50, "the MCP source list parsed as \(mcp.count) files, so this scan read nothing")
+        #expect(
+            mcp.contains("Cadence/Services/MarkdownMetadataSupport.swift"),
+            "the file that owns inlineTagPattern left the MCP target, so the ownership has to move"
+        )
+        #expect(
+            !mcp.contains("Cadence/Services/MarkdownStyleRangeSupport.swift"),
+            "the styler's file joined the MCP target, so this boundary argument is gone"
+        )
+        #expect(!mcp.contains("Cadence/Services/MarkdownInlinePreviewSupport.swift"))
+
+        #expect(MarkdownMetadataParser.inlineTagPattern == ##"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"##)
+        #expect(MarkdownMetadataParser.inlineTagPattern.utf8.count == 46)
+        #expect(MarkdownInlineMarkerRanges.hashtagPattern == MarkdownMetadataParser.inlineTagPattern)
+        #expect(
+            MarkdownInlineMarkerRanges.hashtagRegex === MarkdownMetadataParser.inlineTagRegex,
+            "the styler alias is a second compiled copy again, not the tag sweep's object"
+        )
+        let compiled = try #require(MarkdownMetadataParser.inlineTagRegex)
+        #expect(compiled.pattern == MarkdownMetadataParser.inlineTagPattern)
+        #expect(compiled.options == [], "the tag pattern gained an option three readers did not ask for")
+
+        // The three readers agree on the same rows, by position and not merely by count.
+        let corpus: [(markdown: String, tags: [String])] = [
+            ("#alpha and #beta", ["alpha", "beta"]),
+            ("C#sharp is not a tag and neither is id_#4", []),
+            ("#tag-with-dash #tag_under #Mixed99", ["tag-with-dash", "tag_under", "Mixed99"]),
+            ("#-bad and #_bad are not tags", []),
+            ("plain prose", []),
+        ]
+        for row in corpus {
+            let styler = MarkdownInlineMarkerRanges.hashtagRanges(in: row.markdown)
+            let sweep = MarkdownMetadataParser.inlineTagNames(in: row.markdown)
+            let preview = MarkdownInlinePreviewSupport.runs(in: row.markdown).filter { $0.traits.contains(.tag) }
+            #expect(sweep == row.tags, "the launch tag sweep read \(sweep) in \(row.markdown.debugDescription)")
+            #expect(styler.count == row.tags.count, "the styler saw \(styler.count) tags in \(row.markdown.debugDescription)")
+            #expect(preview.map(\.text) == row.tags.map { "#\($0)" }, "the preview drew \(preview.map(\.text))")
+            let ns = row.markdown as NSString
+            #expect(
+                styler.map { ns.substring(with: $0) } == row.tags.map { "#\($0)" },
+                "the styler and the sweep name different runs in \(row.markdown.debugDescription)"
+            )
+        }
+        #expect(corpus.contains { !$0.tags.isEmpty })
+        #expect(corpus.contains { $0.tags.isEmpty })
+    }
+
+    // MARK: - [[T-1661]]: the reference prefix, and its one `.caseInsensitive`
+
+    /// **`^\s*(?:task|note):(?:[^\|\]]*\|)?` was written twice with `.caseInsensitive` written
+    /// twice, and the measured count is two — the ticket was right about this one.**
+    ///
+    /// Both copies are app-target only, so unlike [[T-1521]]'s literal there is no boundary
+    /// argument at all and the owner is simply the file whose job is reference display.
+    ///
+    /// **What is shared is the compiled object, not the pattern string, and that is the one place
+    /// this departs from [[T-1521]].** There the three sites disagreed about what to do with a
+    /// pattern that will not compile, so only the bytes could be shared. Here the option is part
+    /// of what the prefix *is*: without `.caseInsensitive`, `[[Task:…|Title]]` stops hiding its
+    /// prefix and the label renders as `Task:…|Title`. Sharing the string would have left
+    /// `options: [.caseInsensitive]` spelled in two places to drift on its own, so the editor
+    /// takes the object and keeps a guard where it had a `try!`.
+    @Test func theReferencePrefixIsOneCompiledObjectCarryingItsCaseInsensitiveOption() throws {
+        #expect(MarkdownReferenceDisplaySupport.referencePrefixPattern == ##"^\s*(?:task|note):(?:[^\|\]]*\|)?"##)
+        #expect(MarkdownReferenceDisplaySupport.referencePrefixPattern.utf8.count == 33)
+        let regex = try #require(MarkdownReferenceDisplaySupport.referencePrefixRegex)
+        #expect(regex.pattern == MarkdownReferenceDisplaySupport.referencePrefixPattern)
+        #expect(
+            regex.options == [.caseInsensitive],
+            "the shared prefix regex lost .caseInsensitive, so [[Task:…]] stops hiding its prefix"
+        )
+
+        // The editor reads that object and compiles nothing.
+        let editor = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorSupport.swift")
+        )
+        let stylist = try #require(CadenceSourceScan.declarationBody("enum MarkdownStylist", in: editor))
+        let declarations = stylist
+            .components(separatedBy: "\n")
+            .filter { $0.contains("static let wikiLinkDisplayPrefixRegex") }
+        #expect(declarations.count == 1)
+        let declaration = try #require(declarations.first)
+        #expect(
+            declaration.contains("MarkdownReferenceDisplaySupport.referencePrefixRegex"),
+            "the editor builds its own prefix regex again"
+        )
+        #expect(!declaration.contains("NSRegularExpression("))
+        #expect(!declaration.contains("caseInsensitive"), ".caseInsensitive is spelled a second time again")
+        #expect(
+            stylist.components(separatedBy: "caseInsensitive").count - 1 == 0,
+            "MarkdownStylist spells caseInsensitive again"
+        )
+        let displayRange = try #require(CadenceSourceScan.functionBody(named: "wikiLinkDisplayRange", in: stylist))
+        #expect(displayRange.contains("wikiLinkDisplayPrefixRegex"))
+
+        // The behaviour the option decides, on the reader this target can execute. The mixed-case
+        // rows are the point: drop `.caseInsensitive` and the hidden length goes to 0.
+        #expect(MarkdownReferenceDisplaySupport.display(forWikiLabel: "task:1111|A").hiddenPrefixUTF16Length == 10)
+        #expect(MarkdownReferenceDisplaySupport.display(forWikiLabel: "TASK:1111|A").hiddenPrefixUTF16Length == 10)
+        #expect(MarkdownReferenceDisplaySupport.display(forWikiLabel: "NOTE:x|y").displayText == "y")
+        #expect(MarkdownReferenceDisplaySupport.display(forWikiLabel: "plain label").hiddenPrefixUTF16Length == 0)
+    }
+
+    // MARK: - [[T-1660]]: the oracle, recorded from the pre-change implementation
+
+    /// **The shared table answers exactly what the ten per-call literals answered.**
+    ///
+    /// `inlinePatternRecording` is not a guess. It is the output of `inlinePatternDump()` run
+    /// against the **unmodified** tree — the shipping `MarkdownInlinePreviewSupport`,
+    /// `MarkdownInlineSpanSupport`, `MarkdownInlineMarkerRanges`, `MarkdownMetadataParser` and
+    /// `MarkdownReferenceDisplaySupport`, before a literal moved — captured 2026-09-30 from a test
+    /// run of this target against HEAD.
+    ///
+    /// It is here because the byte-identity rows above cannot see the parts of this change that
+    /// are not bytes: the ten rules carry `traits`, a `contentRangeIndex`, a `priority` and a
+    /// `normalizesContent` flag, and they are appended in an order that `nonOverlapping` resolves
+    /// ties within. A table that hoisted the patterns correctly and transposed two priorities
+    /// would pass every assertion above and render `***x***` as a stray asterisk.
+    ///
+    /// Rows that look surprising are *recorded* behaviour, not this ticket's to change:
+    /// `** not bold **` is bold, `== not marked ==` is marked, `snake_case_name and id__x__y`
+    /// yields one bold run over `x`, an unclosed backtick leaves `` ` `` in the text, and
+    /// `"  task:abc|Deep  "` hides 11 UTF-16 units because `^\s*` eats the leading spaces.
+    @Test func theInlinePatternTableAnswersWhatThePerCallPatternsAnswered() {
+        let produced = Self.inlinePatternDump().components(separatedBy: "\n")
+        let recorded = Self.inlinePatternRecording.components(separatedBy: "\n")
+        #expect(produced.count == recorded.count, "the dump is \(produced.count) lines, recorded is \(recorded.count)")
+        for (index, expected) in recorded.enumerated() where index < produced.count {
+            #expect(
+                produced[index] == expected,
+                "line \(index + 1) of the inline dump changed:\n  recorded: \(expected)\n  produced: \(produced[index])"
+            )
+        }
+
+        // Non-vacuity: the recording is the real one, at the length it was captured, and the dump
+        // is not a wall of empty answers.
+        #expect(recorded.count == 85, "the inline recording was shortened")
+        #expect(!recorded.contains { $0.isEmpty })
+        #expect(produced.contains { $0.contains(##"["bold"/1/nil/nil " and "/0/nil/nil "italic"/2/nil/nil]"##) })
+        #expect(recorded.filter { $0.contains("/32/") }.count >= 2, "the tag rows are gone from the recording")
+        #expect(recorded.filter { $0.hasSuffix("\t[]") }.count > 10)
+    }
+
+    // MARK: - [[T-1660]] / [[T-1661]]: the inline pattern table
+
+    /// The corpus the inline recording below is taken over. It reaches every one of the ten
+    /// patterns `MarkdownInlinePreviewSupport.inlineMatches` runs, both underscore forms, the
+    /// precedence between them, the code-span protection, and the two non-emphasis readers of the
+    /// tag pattern.
+    nonisolated static let inlinePatternCorpus: [String] = [
+        "**bold** and *italic*",
+        "***triple*** then **double** then *single*",
+        "___triple___ then __double__ then _single_",
+        "snake_case_name and id__x__y stay plain",
+        "~~struck~~ and `code` and ==marked==",
+        "`a **b** c` keeps its markers",
+        "**bold with `code` inside**",
+        "#tag and C#sharp and id_#4 and #1digit",
+        "#tag-with-dash #tag_under #Mixed99 #-bad #_bad",
+        "a line with [label](https://example.com) in it",
+        "[**bold label**](https://example.com/x)",
+        "==**marked bold**== together",
+        "text with ![photo](cadence-image://3F2504E0-4F89-11D3-9A0C-0305E82C3301) image",
+        "[[note:Alpha]] reference and **bold**",
+        "[[task:11111111-2222-3333-4444-555555555555|A title]] embed",
+        "*a* *b* *c*",
+        "== not marked ==",
+        "** not bold **",
+        #"escaped \*not italic\* here"#,
+        "multi\nline **bold** across",
+        "`unclosed code and **bold**",
+        "",
+        "plain prose with nothing at all",
+    ]
+
+    /// Labels for the `task:`/`note:` prefix pattern. Four of them are mixed case on purpose:
+    /// `.caseInsensitive` is the option [[T-1661]] is about, and without it `[[Task:…]]` stops
+    /// hiding its prefix.
+    nonisolated static let referencePrefixCorpus: [String] = [
+        "task:1111|A",
+        "TASK:1111|A",
+        "Task: 1111 | A ",
+        "note:Alpha",
+        "NOTE:x|y",
+        "  task:abc|Deep  ",
+        "task:",
+        "note:",
+        "plain label",
+        "tasknote:x|y",
+        "task:no pipe here",
+        "nested|pipe|label",
+    ]
+
+    nonisolated static func inlinePatternDump() -> String {
+        var lines: [String] = []
+        lines.append("--- MarkdownInlinePreviewSupport.runs")
+        for row in inlinePatternCorpus {
+            let rendered = MarkdownInlinePreviewSupport.runs(in: row).map { run in
+                "\(quoted(run.text))/\(run.traits.rawValue)/\(run.linkURL.map(quoted) ?? "nil")/\(run.target?.identity ?? "nil")"
+            }.joined(separator: " ")
+            lines.append("\(quoted(row))\t[\(rendered)]")
+        }
+        lines.append("--- MarkdownInlineSpanSupport.spans")
+        for row in inlinePatternCorpus {
+            let rendered = MarkdownInlineSpanSupport.spans(in: row).map { span in
+                let markers = span.markerRanges.map { "\($0.location),\($0.length)" }.joined(separator: "+")
+                return "\(span.kind)/\(span.fullRange.location),\(span.fullRange.length)/\(span.contentRange.location),\(span.contentRange.length)/\(markers)"
+            }.joined(separator: " ")
+            lines.append("\(quoted(row))\t[\(rendered)]")
+        }
+        lines.append("--- codeRanges / hashtagRanges / inlineTagNames")
+        for row in inlinePatternCorpus {
+            let code = MarkdownInlineSpanSupport.codeRanges(in: row).map { "\($0.location),\($0.length)" }.joined(separator: "+")
+            let hashtags = MarkdownInlineMarkerRanges.hashtagRanges(in: row).map { "\($0.location),\($0.length)" }.joined(separator: "+")
+            let names = MarkdownMetadataParser.inlineTagNames(in: row).map { quoted($0) }.joined(separator: "+")
+            lines.append("\(quoted(row))\t[\(code)]\t[\(hashtags)]\t[\(names)]")
+        }
+        lines.append("--- MarkdownReferenceDisplaySupport.display(forWikiLabel:)")
+        for label in referencePrefixCorpus {
+            let display = MarkdownReferenceDisplaySupport.display(forWikiLabel: label)
+            lines.append("\(quoted(label))\t\(display.kind.rawValue)\t\(quoted(display.displayText))\t\(display.hiddenPrefixUTF16Length)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The dump above, as the **pre-change** implementations printed it — ten literals compiled per
+    /// inline string, nine of them written twice over and five of those a third time. Captured
+    /// 2026-09-30 from a run of this target against the unmodified tree. See the test.
+    nonisolated static let inlinePatternRecording = #"""
+        --- MarkdownInlinePreviewSupport.runs
+        "**bold** and *italic*"	["bold"/1/nil/nil " and "/0/nil/nil "italic"/2/nil/nil]
+        "***triple*** then **double** then *single*"	["triple"/3/nil/nil " then "/0/nil/nil "double"/1/nil/nil " then "/0/nil/nil "single"/2/nil/nil]
+        "___triple___ then __double__ then _single_"	["triple"/3/nil/nil " then "/0/nil/nil "double"/1/nil/nil " then "/0/nil/nil "single"/2/nil/nil]
+        "snake_case_name and id__x__y stay plain"	["snake_case_name and id"/0/nil/nil "x"/1/nil/nil "y stay plain"/0/nil/nil]
+        "~~struck~~ and `code` and ==marked=="	["struck"/8/nil/nil " and "/0/nil/nil "code"/4/nil/nil " and "/0/nil/nil "marked"/16/nil/nil]
+        "`a **b** c` keeps its markers"	["a **b** c"/4/nil/nil " keeps its markers"/0/nil/nil]
+        "**bold with `code` inside**"	["bold with code inside"/1/nil/nil]
+        "#tag and C#sharp and id_#4 and #1digit"	["#tag"/32/nil/nil " and C#sharp and id_#4 and "/0/nil/nil "#1digit"/32/nil/nil]
+        "#tag-with-dash #tag_under #Mixed99 #-bad #_bad"	["#tag-with-dash"/32/nil/nil " "/0/nil/nil "#tag_under"/32/nil/nil " "/0/nil/nil "#Mixed99"/32/nil/nil " #-bad #_bad"/0/nil/nil]
+        "a line with [label](https://example.com) in it"	["a line with "/0/nil/nil "label"/0/"https://example.com"/nil " in it"/0/nil/nil]
+        "[**bold label**](https://example.com/x)"	["bold label"/0/"https://example.com/x"/nil]
+        "==**marked bold**== together"	["marked bold"/16/nil/nil " together"/0/nil/nil]
+        "text with ![photo](cadence-image://3F2504E0-4F89-11D3-9A0C-0305E82C3301) image"	["text with "/0/nil/nil "photo"/64/nil/nil " image"/0/nil/nil]
+        "[[note:Alpha]] reference and **bold**"	["Alpha"/0/nil/note:Alpha " reference and "/0/nil/nil "bold"/1/nil/nil]
+        "[[task:11111111-2222-3333-4444-555555555555|A title]] embed"	["A title"/0/nil/task:11111111-2222-3333-4444-555555555555 " embed"/0/nil/nil]
+        "*a* *b* *c*"	["a"/2/nil/nil " "/0/nil/nil "b"/2/nil/nil " "/0/nil/nil "c"/2/nil/nil]
+        "== not marked =="	[" not marked "/16/nil/nil]
+        "** not bold **"	[" not bold "/1/nil/nil]
+        "escaped \\*not italic\\* here"	["escaped \\"/0/nil/nil "not italic\\"/2/nil/nil " here"/0/nil/nil]
+        "multi\nline **bold** across"	["multi\nline "/0/nil/nil "bold"/1/nil/nil " across"/0/nil/nil]
+        "`unclosed code and **bold**"	["`unclosed code and "/0/nil/nil "bold"/1/nil/nil]
+        ""	[]
+        "plain prose with nothing at all"	["plain prose with nothing at all"/0/nil/nil]
+        --- MarkdownInlineSpanSupport.spans
+        "**bold** and *italic*"	[bold/0,8/2,4/0,2+6,2 italic/13,8/14,6/13,1+20,1]
+        "***triple*** then **double** then *single*"	[boldItalic/0,12/3,6/0,3+9,3 bold/0,11/2,7/0,2+9,2 bold/18,10/20,6/18,2+26,2 italic/34,8/35,6/34,1+41,1]
+        "___triple___ then __double__ then _single_"	[boldItalic/0,12/3,6/0,3+9,3 bold/18,10/20,6/18,2+26,2 italic/34,8/35,6/34,1+41,1]
+        "snake_case_name and id__x__y stay plain"	[bold/22,5/24,1/22,2+25,2]
+        "~~struck~~ and `code` and ==marked=="	[strikethrough/0,10/2,6/0,2+8,2 code/15,6/16,4/15,1+20,1 highlight/26,10/28,6/26,2+34,2]
+        "`a **b** c` keeps its markers"	[code/0,11/1,9/0,1+10,1]
+        "**bold with `code` inside**"	[bold/0,27/2,23/0,2+25,2 code/12,6/13,4/12,1+17,1]
+        "#tag and C#sharp and id_#4 and #1digit"	[]
+        "#tag-with-dash #tag_under #Mixed99 #-bad #_bad"	[]
+        "a line with [label](https://example.com) in it"	[]
+        "[**bold label**](https://example.com/x)"	[bold/1,14/3,10/1,2+13,2]
+        "==**marked bold**== together"	[bold/2,15/4,11/2,2+15,2 highlight/0,19/2,15/0,2+17,2]
+        "text with ![photo](cadence-image://3F2504E0-4F89-11D3-9A0C-0305E82C3301) image"	[]
+        "[[note:Alpha]] reference and **bold**"	[bold/29,8/31,4/29,2+35,2]
+        "[[task:11111111-2222-3333-4444-555555555555|A title]] embed"	[]
+        "*a* *b* *c*"	[italic/0,3/1,1/0,1+2,1 italic/4,3/5,1/4,1+6,1 italic/8,3/9,1/8,1+10,1]
+        "== not marked =="	[highlight/0,16/2,12/0,2+14,2]
+        "** not bold **"	[bold/0,14/2,10/0,2+12,2]
+        "escaped \\*not italic\\* here"	[italic/9,13/10,11/9,1+21,1]
+        "multi\nline **bold** across"	[bold/11,8/13,4/11,2+17,2]
+        "`unclosed code and **bold**"	[bold/19,8/21,4/19,2+25,2]
+        ""	[]
+        "plain prose with nothing at all"	[]
+        --- codeRanges / hashtagRanges / inlineTagNames
+        "**bold** and *italic*"	[]	[]	[]
+        "***triple*** then **double** then *single*"	[]	[]	[]
+        "___triple___ then __double__ then _single_"	[]	[]	[]
+        "snake_case_name and id__x__y stay plain"	[]	[]	[]
+        "~~struck~~ and `code` and ==marked=="	[15,6]	[]	[]
+        "`a **b** c` keeps its markers"	[0,11]	[]	[]
+        "**bold with `code` inside**"	[12,6]	[]	[]
+        "#tag and C#sharp and id_#4 and #1digit"	[]	[0,4+31,7]	["tag"+"1digit"]
+        "#tag-with-dash #tag_under #Mixed99 #-bad #_bad"	[]	[0,14+15,10+26,8]	["tag-with-dash"+"tag_under"+"Mixed99"]
+        "a line with [label](https://example.com) in it"	[]	[]	[]
+        "[**bold label**](https://example.com/x)"	[]	[]	[]
+        "==**marked bold**== together"	[]	[]	[]
+        "text with ![photo](cadence-image://3F2504E0-4F89-11D3-9A0C-0305E82C3301) image"	[]	[]	[]
+        "[[note:Alpha]] reference and **bold**"	[]	[]	[]
+        "[[task:11111111-2222-3333-4444-555555555555|A title]] embed"	[]	[]	[]
+        "*a* *b* *c*"	[]	[]	[]
+        "== not marked =="	[]	[]	[]
+        "** not bold **"	[]	[]	[]
+        "escaped \\*not italic\\* here"	[]	[]	[]
+        "multi\nline **bold** across"	[]	[]	[]
+        "`unclosed code and **bold**"	[]	[]	[]
+        ""	[]	[]	[]
+        "plain prose with nothing at all"	[]	[]	[]
+        --- MarkdownReferenceDisplaySupport.display(forWikiLabel:)
+        "task:1111|A"	task	"A"	10
+        "TASK:1111|A"	task	"A"	10
+        "Task: 1111 | A "	task	" A "	12
+        "note:Alpha"	note	"Alpha"	5
+        "NOTE:x|y"	note	"y"	7
+        "  task:abc|Deep  "	task	"Deep  "	11
+        "task:"	task	"task:"	0
+        "note:"	note	"note:"	0
+        "plain label"	note	"plain label"	0
+        "tasknote:x|y"	note	"tasknote:x|y"	0
+        "task:no pipe here"	task	"no pipe here"	5
+        "nested|pipe|label"	note	"nested|pipe|label"	0
         """#
 }

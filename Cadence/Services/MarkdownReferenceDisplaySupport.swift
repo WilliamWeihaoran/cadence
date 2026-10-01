@@ -92,12 +92,27 @@ nonisolated enum MarkdownReferenceDisplaySupport {
     /// guards below it are this file's own answer to a pattern that will not compile.
     nonisolated private static let wikiReferenceRegex = try? NSRegularExpression(pattern: NoteReferenceParser.wikiReferencePattern)
 
-    /// The hidden `task:`/`note:` prefix inside a reference label, read once per label by
-    /// `display(forWikiLabel:)` — so once per reference in a note, not once per note. Hoisted
-    /// with the two above; `.caseInsensitive` is carried across unchanged, and without it
-    /// `[[Task:…]]` would stop hiding its prefix.
-    nonisolated private static let referencePrefixRegex = try? NSRegularExpression(
-        pattern: #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#,
+    /// **The hidden `task:`/`note:` prefix, written once and compiled once ([[T-1661]]).**
+    ///
+    /// Read once per label by `display(forWikiLabel:)` — so once per reference in a note, not once
+    /// per note. [[T-1484]] hoisted it out of that function; it is shared with the macOS editor
+    /// here.
+    ///
+    /// The 33 bytes stood here and again in `MarkdownStylist.wikiLinkDisplayPrefixRegex`, with
+    /// `.caseInsensitive` written out twice beside them. They decide how much of a
+    /// `[[task:…|Title]]` label is **hidden** — the renderer's answer and the live editor's answer
+    /// to one question — and unlike [[T-1521]]'s literal there is no target boundary anywhere near
+    /// this one: neither file is in `CadenceMCPServer`'s Sources phase, so the owner can be the
+    /// file whose job is reference display, and the editor reads it.
+    ///
+    /// **What is shared here is the compiled object, not just the pattern**, which is the one
+    /// place this departs from [[T-1521]] and does so deliberately: `.caseInsensitive` is part of
+    /// what the prefix *is* — without it `[[Task:…]]` stops hiding its prefix — and a shared
+    /// pattern string would have left the option to be spelled twice and drift on its own.
+    nonisolated static let referencePrefixPattern = #"^\s*(?:task|note):(?:[^\|\]]*\|)?"#
+
+    nonisolated static let referencePrefixRegex = try? NSRegularExpression(
+        pattern: referencePrefixPattern,
         options: [.caseInsensitive]
     )
 

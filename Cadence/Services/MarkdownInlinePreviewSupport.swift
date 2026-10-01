@@ -104,31 +104,55 @@ nonisolated enum MarkdownInlinePreviewSupport {
         return runs.filter { !$0.text.isEmpty }
     }
 
+    /// **The ten inline patterns, each compiled once per process and each written down once in
+    /// the tree.**
+    ///
+    /// This was ten `#"…"#` literals handed to a generic `regexMatches(pattern:…)` helper that did
+    /// `try? NSRegularExpression(pattern:)` on every call — so ten constant patterns were compiled
+    /// for every inline string a preview rendered ([[T-1660]]). The nine emphasis patterns are
+    /// `MarkdownInlineEmphasisPatterns`', shared with `MarkdownInlineSpanSupport`'s span table and
+    /// (for five of them) with `MarkdownStylist`'s cached regexes; the tenth is the tag pattern,
+    /// which `MarkdownMetadataParser` owns because it is the one file in all three targets, and
+    /// which `MarkdownInlineMarkerRanges` aliases for the stylers.
+    ///
+    /// **The reason is the duplication, not the time.** [[T-1484]] measured a construction of this
+    /// shape at ~2µs because `NSRegularExpression` caches compiled patterns internally, and
+    /// `inlineMatches` runs once per inline string rather than once per line.
+    ///
+    /// The order is the order the ten were appended in before the table existed, image matches
+    /// still between the highlight rule and the tag rule. `nonOverlapping` sorts by location, then
+    /// priority, then length, and `Array.sorted` is not documented as stable — so the append order
+    /// is kept rather than argued about.
+    private static let emphasisRules: [InlineRule] = [
+        InlineRule(MarkdownInlineEmphasisPatterns.boldItalicAsteriskRegex, traits: [.bold, .italic], priority: 10, normalizesContent: true),
+        InlineRule(MarkdownInlineEmphasisPatterns.boldItalicUnderscoreRegex, traits: [.bold, .italic], priority: 10, normalizesContent: true),
+        InlineRule(MarkdownInlineEmphasisPatterns.boldAsteriskRegex, traits: .bold, priority: 9, normalizesContent: true),
+        InlineRule(MarkdownInlineEmphasisPatterns.boldUnderscoreRegex, traits: .bold, priority: 9, normalizesContent: true),
+        InlineRule(MarkdownInlineEmphasisPatterns.italicAsteriskRegex, traits: .italic, priority: 8, normalizesContent: true),
+        InlineRule(MarkdownInlineEmphasisPatterns.italicUnderscoreRegex, traits: .italic, priority: 8, normalizesContent: true),
+        InlineRule(MarkdownInlineEmphasisPatterns.strikethroughRegex, traits: .strikethrough, priority: 8, normalizesContent: true),
+        InlineRule(MarkdownInlineEmphasisPatterns.codeRegex, traits: .inlineCode, priority: 11),
+        InlineRule(MarkdownInlineEmphasisPatterns.highlightRegex, traits: .highlight, priority: 8, normalizesContent: true),
+    ].compactMap { $0 }
+
+    /// The tag rule, kept out of the table above because it is the one whose content range is the
+    /// whole match (`#tag` is drawn with its `#`) and the one whose pattern another file owns.
+    private static let tagRule: InlineRule? = InlineRule(
+        MarkdownInlineMarkerRanges.hashtagRegex,
+        traits: .tag,
+        contentRangeIndex: 0,
+        priority: 5
+    )
+
     private static func inlineMatches(in markdown: String) -> [InlineMatch] {
         var matches: [InlineMatch] = []
-        matches += regexMatches(pattern: #"\*\*\*(.+?)\*\*\*"#, traits: [.bold, .italic], priority: 10, in: markdown, normalizesContent: true)
-        matches += regexMatches(pattern: #"___(.+?)___"#, traits: [.bold, .italic], priority: 10, in: markdown, normalizesContent: true)
-        matches += regexMatches(pattern: #"\*\*(.+?)\*\*"#, traits: .bold, priority: 9, in: markdown, normalizesContent: true)
-        matches += regexMatches(pattern: #"(?<!_)__(?!_)(.+?)(?<!_)__(?!_)"#, traits: .bold, priority: 9, in: markdown, normalizesContent: true)
-        matches += regexMatches(pattern: #"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#, traits: .italic, priority: 8, in: markdown, normalizesContent: true)
-        matches += regexMatches(
-            pattern: #"(?<![\p{L}\p{N}_])_(?!_)(.+?)(?<!_)_(?![\p{L}\p{N}_])"#,
-            traits: .italic,
-            priority: 8,
-            in: markdown,
-            normalizesContent: true
-        )
-        matches += regexMatches(pattern: #"~~(.+?)~~"#, traits: .strikethrough, priority: 8, in: markdown, normalizesContent: true)
-        matches += regexMatches(pattern: #"`([^`\n]+?)`"#, traits: .inlineCode, priority: 11, in: markdown)
-        matches += regexMatches(pattern: #"==(.+?)=="#, traits: .highlight, priority: 8, in: markdown, normalizesContent: true)
+        for rule in emphasisRules {
+            matches += regexMatches(rule, in: markdown)
+        }
         matches += imageMatches(in: markdown)
-        matches += regexMatches(
-            pattern: #"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#,
-            traits: .tag,
-            contentRangeIndex: 0,
-            priority: 5,
-            in: markdown
-        )
+        if let tagRule {
+            matches += regexMatches(tagRule, in: markdown)
+        }
         matches += MarkdownLinkSupport.linkRanges(in: markdown).map { link in
             InlineMatch(
                 fullRange: link.fullRange,
@@ -146,29 +170,49 @@ nonisolated enum MarkdownInlinePreviewSupport {
         runs(in: markdown).map(\.text).joined()
     }
 
-    private static func regexMatches(
-        pattern: String,
-        traits: MarkdownInlinePreviewTraits,
-        contentRangeIndex: Int = 1,
-        priority: Int,
-        in markdown: String,
-        normalizesContent: Bool = false
-    ) -> [InlineMatch] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    /// One compiled inline pattern plus the four numbers that decide what a match becomes.
+    ///
+    /// The initialiser is failable and the table above is `compactMap`ped, so a pattern that would
+    /// not compile drops out of the sweep — which is exactly what the old
+    /// `guard let regex = try? … else { return [] }` did for that one pattern, and nothing else.
+    private struct InlineRule {
+        let regex: NSRegularExpression
+        let traits: MarkdownInlinePreviewTraits
+        let contentRangeIndex: Int
+        let priority: Int
+        let normalizesContent: Bool
+
+        init?(
+            _ regex: NSRegularExpression?,
+            traits: MarkdownInlinePreviewTraits,
+            contentRangeIndex: Int = 1,
+            priority: Int,
+            normalizesContent: Bool = false
+        ) {
+            guard let regex else { return nil }
+            self.regex = regex
+            self.traits = traits
+            self.contentRangeIndex = contentRangeIndex
+            self.priority = priority
+            self.normalizesContent = normalizesContent
+        }
+    }
+
+    private static func regexMatches(_ rule: InlineRule, in markdown: String) -> [InlineMatch] {
         let nsMarkdown = markdown as NSString
-        return regex.matches(in: markdown, range: NSRange(location: 0, length: nsMarkdown.length)).compactMap { match in
-            guard match.numberOfRanges > contentRangeIndex else { return nil }
-            let content = match.range(at: contentRangeIndex)
+        return rule.regex.matches(in: markdown, range: NSRange(location: 0, length: nsMarkdown.length)).compactMap { match in
+            guard match.numberOfRanges > rule.contentRangeIndex else { return nil }
+            let content = match.range(at: rule.contentRangeIndex)
             guard content.location != NSNotFound, content.length > 0 else { return nil }
             return InlineMatch(
                 fullRange: match.range(at: 0),
                 contentRange: content,
-                displayText: normalizesContent
+                displayText: rule.normalizesContent
                     ? displayText(fromInlineMarkdown: nsMarkdown.substring(with: content))
                     : nil,
-                traits: traits,
+                traits: rule.traits,
                 linkURL: nil,
-                priority: priority
+                priority: rule.priority
             )
         }
     }

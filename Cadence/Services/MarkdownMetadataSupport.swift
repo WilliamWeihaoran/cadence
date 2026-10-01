@@ -330,10 +330,27 @@ nonisolated enum MarkdownMetadataParser {
     /// note size. Compiling this pattern is ~100µs on the machine that measured it.
     ///
     /// `NSRegularExpression` is immutable once built and its matching methods are documented as
-    /// thread-safe, which is the same property `nonProseRegex` already relies on here.
-    nonisolated private static let inlineTagRegex = try? NSRegularExpression(
-        pattern: #"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#
-    )
+    /// thread-safe, which is the same property `nonProseRegex` already relies on here. That is
+    /// what lets three readers share the one compiled object below ([[T-1660]]).
+    ///
+    /// The 46 bytes were written three times ([[T-1660]]): here, in
+    /// `MarkdownInlineMarkerRanges.hashtagPattern`, and again inside
+    /// `MarkdownInlinePreviewSupport.inlineMatches`, which compiled its copy on every inline
+    /// string. The owner has to be *this* file rather than the styler's, and the reason is the
+    /// target boundary [[T-1521]] established: `MarkdownMetadataSupport.swift` is in the app's
+    /// synchronized folder **and** in `CadenceMCPServer`'s and `CadenceWidgets`' Sources phases,
+    /// while `MarkdownStyleRangeSupport.swift` is in none of the explicit ones — so a constant
+    /// declared there would not link in the two extra targets this file compiles into. No file
+    /// moved between targets and `project.pbxproj` was not edited.
+    ///
+    /// The lookbehind is what keeps `C#` and `id_#4` from becoming tags; the tag body deliberately
+    /// starts with an alphanumeric so a bare `#-` or `#_` is not one either.
+    nonisolated static let inlineTagPattern = #"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#
+
+    /// The compiled form, read by the launch tag sweep above, by the stylers through
+    /// `MarkdownInlineMarkerRanges.hashtagRegex`, and by the inline preview's tag rule — one
+    /// object, not three built from the same string.
+    nonisolated static let inlineTagRegex = try? NSRegularExpression(pattern: inlineTagPattern)
 
     /// Link destinations, autolinks, raw HTML tags and inline code are not prose, so a `#` inside
     /// them is a URL fragment or a hex colour rather than a tag. Tag sync runs unattended at launch
