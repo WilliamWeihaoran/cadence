@@ -335,3 +335,51 @@ jobs:
       - name: Gates
         if: always()
         run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-ios.log" build
+
+  # ---------------------------------------------------------------------------
+  # T-1641: the one lock property that NOTHING has ever run on a schedule.
+  #
+  # `scripts/test-host-lock.sh selftest` proves eleven properties. Ten of them substitute the
+  # process probe and are proved inside `CadenceTests` on every run. The eleventh,
+  # `host-pattern-calibration`, is the only one about the REAL `HOST_PATTERN` constant read by a
+  # REAL `pgrep` over REAL argv (T-1162), so substituting either would delete the property rather
+  # than move it -- and the `CadenceTests` host is App-Sandboxed and denied the process list, so in
+  # there `pgrep` exits 3 and the property fails for a reason that is about the host. It is
+  # therefore TOLERATED in `CadenceGuardScriptSelftestTests.theTestHostLocksOwnGuardsStillFire` on
+  # every host, which is to say it had no automated coverage anywhere: the comment said "the run
+  # outside the sandbox is where the calibration is read" and nothing outside the sandbox ran it.
+  #
+  # Why it matters more than a tolerated line usually does: T-1162 is the ticket where the SHIPPED
+  # pattern matched no test run this repository makes -- `'^/Applications/.*/xcodebuild test'`, the
+  # action FIRST, while `xcb.sh` appends it LAST -- so the lock read `live test hosts: 0` on a busy
+  # box. This is the only property that catches that class.
+  #
+  # A SEPARATE JOB, NOT A STEP IN `macos-tests`, and that is the whole answer to the one objection
+  # T-1641 raised against landing it. The selftest spawns real processes with argv copied from live
+  # `xcodebuild test` command lines and `pkill -P`s them; asked to share a runner with a live
+  # `xcodebuild test`, it would have to be ARGUED safe. On its own runner the exposure is zero by
+  # construction rather than by reasoning. It costs nothing to do it this way -- this repository is
+  # PUBLIC, and GitHub Actions bills standard runners on public repos at zero (measured 2026-09-27,
+  # `MACOS=0ms`; see the concurrency comment above) -- and it needs no build, no Xcode, no signing
+  # and no DerivedData. Measured on this Mac 2026-09-30: 65 seconds wall clock, 11/11 PASS.
+  #
+  # It FAILS the job. An advisory step here would be one more green line proving nothing, which is
+  # the exact failure shape the property itself exists to catch.
+  #
+  # `zsh -f`: the script is `#!/bin/zsh` and the `-f` is not decoration -- `live_test_hosts` parses
+  # every line its probe prints, so one `print` from a startup file arrives as a non-pid line and is
+  # read as "cannot tell". Same flag `CadenceGuardScriptSelftestTests` runs it under.
+  #
+  # T-1640's classifier rides along: `scripts/ci-run-coverage.sh selftest` is pure shell over
+  # fixtures, needs no network and takes under a second, so it has no job of its own.
+  # ---------------------------------------------------------------------------
+  guard-script-selftests:
+    name: Unsandboxed guard-script selftests
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: test-host-lock.sh selftest (the real HOST_PATTERN, T-1162/T-1641)
+        run: zsh -f ./scripts/test-host-lock.sh selftest
+      - name: ci-run-coverage.sh selftest (T-1640)
+        run: zsh -f ./scripts/ci-run-coverage.sh selftest

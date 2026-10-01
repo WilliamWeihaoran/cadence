@@ -36,7 +36,8 @@ launches a real `Cadence.app`, so it MUST hold the test-host lock: `scripts/xcb.
 `-only-testing:CadenceUITests`, never a bare `xcodebuild`. Zero **compiler** warnings, **enforced not asserted**
 (T-1147/T-1149): `xcb.sh` **exits 9** when a run that recompiled Swift has any and `.github/scripts/check-log.sh` fails CI
 the same way; tool notices count separately, a vacuous run never gates, and `CADENCE_ALLOW_WARNINGS=1` downgrades it to a
-report for `mutate.sh` alone. The `TestAction` pins **`TZ=UTC`** (T-1116): zones via `CadenceTestTimeZones`, never a shell `TZ=`.
+report for `mutate.sh` alone. **Both counters are destination-AGNOSTIC and a macOS build is not** (T-1781): it compiles no `#if os(iOS)`, so its `0` over 695 tasks says nothing about the iOS surface — the same tree, one injected iOS-only warning, gave **2** over 1390 on `generic/platform=iOS Simulator` with `xcb.sh` 9 and `check-log.sh` 1 (measured 2026-09-30). CI's `ios-build` gates its own log the same way on every push, so an iOS-only warning reaches you AFTER the push; build iOS yourself when you touch `Shared/`, `Models/` or `Services/`. Pinned by `CadenceBuildInvocationHygieneTests.everyCompilingCIJobRoutesItsOwnLogThroughTheSameWarningGate`.
+The `TestAction` pins **`TZ=UTC`** (T-1116): zones via `CadenceTestTimeZones`, never a shell `TZ=`.
 
 ## Where Things Live
 

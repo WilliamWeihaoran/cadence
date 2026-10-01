@@ -839,6 +839,125 @@ struct CadenceGuardScriptSelftestTests {
         #expect(complaints.isEmpty, "./scripts/test-host-lock.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
+    /// **T-1641: a guard tolerated everywhere is a guard nowhere, and this is what stops it
+    /// becoming one again.**
+    ///
+    /// `tolerating:` above is honest about one thing and silent about another. It is honest that
+    /// this HOST cannot prove `host-pattern-calibration` — the property's whole subject is the real
+    /// `HOST_PATTERN` read by a real `pgrep` over real argv (T-1162), and the App-Sandboxed test
+    /// host is denied the process list on this Mac and on CI alike. It was silent about the
+    /// consequence: the comment on the tolerated set said *"the run outside the sandbox is where
+    /// the calibration is read"* and **nothing outside the sandbox ran it**, on any schedule, on
+    /// any machine. The property with the worst failure history in this family — T-1162 is where
+    /// the shipped pattern matched no test run this repository makes, so the lock read
+    /// `live test hosts: 0` on a busy box — was the one property nobody ever ran.
+    ///
+    /// So tolerating a name now *costs* something: it obliges `ci.yml` to run that script's
+    /// selftest as a plain, unsandboxed shell step, where `pgrep` works. The obligation is
+    /// conditional on the tolerated set being non-empty, which is the right polarity — emptying
+    /// the set (T-1381 shrank it from five to one) releases the obligation, and adding to it
+    /// creates one.
+    ///
+    /// **The step must be a step.** This reads `ci.yml`'s `run:` blocks through
+    /// `CadenceBuildInvocationHygieneTests.shellText`, never the file's raw text, because the job
+    /// that runs the selftest also has a thirty-line comment ABOUT the selftest directly above it,
+    /// and a raw `contains` would be satisfied by the prose alone — a test that passes on a
+    /// workflow whose step was deleted and whose comment was left behind. That shape is exactly
+    /// what this suite exists to refuse.
+    ///
+    /// Measured on this Mac 2026-09-30, outside the sandbox: 65 seconds wall clock, 11 of 11
+    /// properties `PASS`, `host-pattern-calibration` among them.
+    ///
+    /// **Unverified until the owner's next push.** No agent here can watch a `.github/` change
+    /// run, so what this pins is that the step is *written* and that the tolerated set is what
+    /// obliges it. Whether a hosted runner's `pgrep`, `exec -a` and `pkill -P` behave as this
+    /// Mac's do is a claim the first real Actions run either confirms or reddens — and it reddens
+    /// the job, deliberately, rather than being advisory.
+    @Test func everyPropertyToleratedInThisSandboxIsProvedByAnUnsandboxedCIStep() throws {
+        let steps = try CadenceBuildInvocationHygieneTests.shellText(at: ".github/workflows/ci.yml")
+
+        // Non-vacuity, and the trap named above: the workflow's prose must NOT be what satisfies
+        // this. If the extractor ever starts handing back comments, this fails first.
+        #expect(
+            !steps.contains("proves eleven properties"),
+            "ci.yml's job comments leaked into its run: steps, so every check below could pass on prose"
+        )
+        #expect(steps.contains("xcb.sh"), "no run: steps were extracted from ci.yml at all")
+
+        let tolerated: [(script: String, names: Set<String>)] = [
+            ("scripts/test-host-lock.sh", Self.testHostLockPropertiesUnverifiableInThisSandbox),
+            ("scripts/simulator-claim.sh", Self.simulatorClaimPropertiesUnverifiableInThisSandbox),
+        ]
+        var missing: [String] = []
+        for entry in tolerated where !entry.names.isEmpty {
+            let runsIt = steps.split(separator: "\n").contains {
+                $0.contains(entry.script) && $0.contains("selftest")
+            }
+            if !runsIt {
+                missing.append("\(entry.script) tolerates \(entry.names.sorted()) in this sandbox and no ci.yml step runs its selftest")
+            }
+        }
+        #expect(missing.isEmpty, "\(missing.joined(separator: "; ")) (T-1641)")
+
+        // The obligation is only worth anything while something is tolerated, so say so: an empty
+        // set here would make the loop above vacuous, and that is a fact about the day it happens
+        // rather than a silent pass.
+        #expect(
+            Self.testHostLockPropertiesUnverifiableInThisSandbox.contains("host-pattern-calibration"),
+            "the lock's tolerated set no longer names T-1162's property; re-read whether the CI step is still the right remedy"
+        )
+
+        // **A table with one eligible row cannot tell "the rule fired" from "there was nothing
+        // else to choose".** `simulator-claim.sh` is the second row and it is the control: since
+        // T-1382 nothing of its is tolerated, so it is NOT obliged — and `ci.yml` indeed runs no
+        // selftest for it. If the loop above had been written over every row rather than over the
+        // tolerated ones, it would be red today on this very script rather than passing for the
+        // wrong reason, and these two expectations are what make that legible instead of lucky.
+        #expect(
+            Self.simulatorClaimPropertiesUnverifiableInThisSandbox.isEmpty,
+            "simulator-claim.sh now tolerates \(Self.simulatorClaimPropertiesUnverifiableInThisSandbox.sorted()), so it owes ci.yml a step too and this control has become a second requirement"
+        )
+        #expect(
+            !steps.split(separator: "\n").contains(where: { $0.contains("scripts/simulator-claim.sh") && $0.contains("selftest") }),
+            "ci.yml runs simulator-claim.sh's selftest, so the check above can no longer tell an obliged script from an unobliged one"
+        )
+
+        // And it must FAIL the job. An advisory step is one more green line proving nothing, which
+        // is the failure shape the tolerated property itself guards against.
+        let workflow = try CadenceSourceScan.sourceFile(".github/workflows/ci.yml")
+        #expect(
+            !workflow.contains("continue-on-error"),
+            "a ci.yml step is advisory; a selftest that cannot redden its job proves nothing (T-1641)"
+        )
+    }
+
+    /// T-1640's classifier, run for real. Pure shell over fixtures it writes itself — no `gh`, no
+    /// network, no build — so unlike the lock's selftest this one needs nothing the sandbox
+    /// withholds and nothing is tolerated.
+    ///
+    /// The named modes are the discriminations, not the outputs. `cancelled-is-not-never-pushed`
+    /// is the ticket; `docs-only-push-is-not-a-missing-run` is the state the ticket's own four-way
+    /// reading loses, and the one that would have made the instrument cry wolf on the majority of
+    /// this repository's commits (`ci.yml` counts 308 of the 430 that ever touched `docs/TODO.md`
+    /// as compiling nothing); `eligible-push-with-no-run-is-reported` is its non-vacuity, because
+    /// a classifier answering CI-SKIPPED to everything passes the other two.
+    @Test func theCIRunCoverageReaderTellsADroppedRunFromASkippedOne() throws {
+        let run = try CadenceSelftestRun.of("scripts/ci-run-coverage.sh")
+        let complaints = run.complaints(requiring: Self.ciRunCoverageProperties)
+        #expect(complaints.isEmpty, "./scripts/ci-run-coverage.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
+    /// Mirrors the mode names `scripts/ci-run-coverage.sh selftest` prints, so deleting a mode
+    /// from the script fails here rather than shrinking the selftest in silence.
+    static let ciRunCoverageProperties = [
+        "cancelled-is-not-never-pushed",
+        "docs-only-push-is-not-a-missing-run",
+        "eligible-push-with-no-run-is-reported",
+        "a-completed-run-outranks-a-cancelled-one",
+        "in-flight-is-not-completed",
+        "the-ignore-list-is-read-from-the-workflow",
+    ]
+
     /// T-749. Runs against a throwaway claims root and a fake `simctl` (`CADENCE_SIM_CLAIMS_DIR` /
     /// `CADENCE_SIMCTL`), so this is safe alongside sibling agents holding real device claims —
     /// and MORE safely than before T-1382, which found the selftest process's own `$CLAIMS` and
@@ -2271,6 +2390,65 @@ struct CadenceGuardScriptSelftestTests {
                 Self.joinsWhatPrecedesIt(harmless[$0]) && syntactic.contains(harmless[$0 - 1])
             },
             "the detector fires on an ordinary accented letter, which the repair already handles"
+        )
+    }
+
+    /// **T-1590's tripwire, and the reason it had to be written rather than cited.**
+    ///
+    /// T-1590 records a second divergence one function over:
+    /// `CadenceCommentSymbolClaim.partition`'s `extract` emits one space per `Character` where
+    /// `CadenceSourceScan.codeOnly`'s `blankedSpansAsSpaces` emits one per unicode **scalar**, so
+    /// `theCodeHalfOfThePartitionIsTheAuditedReader`'s character-for-character equality is only
+    /// true for text whose graphemes are one scalar wide. The ticket states that *"exposure is
+    /// zero today and is held there by a test"* and names the sweep above.
+    ///
+    /// **It is not held there by that sweep.** That one hunts a joining scalar written onto a
+    /// SYNTACTIC character, and `theJoiningScalarDetectorSeparatesTheHarmfulShapeFromTheHarmlessOne`
+    /// — directly above — asserts in as many words that `let s = "cafe\u{301}"` must NOT fire it,
+    /// calling the ordinary accented letter *harmless*. It is harmless for T-1338, whose subject
+    /// is column offsets shared with the Python pass. It is precisely the case T-1590 measured:
+    /// `let s = "cafe\u{301}"` is 14 characters through `extract` and 15 through
+    /// `blankedSpansAsSpaces`. So the cited tripwire excludes T-1590's own example, and until this
+    /// test the only thing holding the exposure at zero was T-1338's 2026-09-25 MEASUREMENT, with
+    /// nothing re-running it.
+    ///
+    /// This is that measurement, turned into a check. It is a deliberate over-approximation — any
+    /// multi-scalar grapheme cluster anywhere in a source file, not only one inside a blanked span
+    /// — because the cheap reading is the one that cannot be subtly wrong, and because the honest
+    /// answer today is that the tree has none at all. Re-measured 2026-09-30: **977 files, 0
+    /// offenders**, including zero CRLF line endings (a `\r\n` is one `Character` of two scalars
+    /// and would land here too).
+    ///
+    /// Like its neighbour this is a PINNED DIVERGENCE, not a prohibition on ever writing an emoji:
+    /// the day a file needs one, this fails and the next agent reads T-1590 and picks which
+    /// contract `partition` owes, which is the work that ticket says is not a one-liner.
+    @Test func noSourceFileHoldsAMultiScalarGraphemeTheTwoBlankingPassesWouldSpellDifferently() throws {
+        var scanned = 0
+        var offenders: [String] = []
+
+        for root in ["Cadence", "CadenceTests", "CadenceWidgets", "CadenceMCPServer"] {
+            for path in try CadenceSourceScan.swiftFiles(under: root) {
+                scanned += 1
+                let text = try CadenceSourceScan.sourceFile(path)
+                guard text.count != text.unicodeScalars.count else { continue }
+                let cluster = text.first { $0.unicodeScalars.count > 1 }
+                let spelled = (cluster?.unicodeScalars ?? "?".unicodeScalars)
+                    .map { "U+" + String($0.value, radix: 16, uppercase: true) }
+                    .joined(separator: " ")
+                offenders.append("\(path): \(spelled)")
+            }
+        }
+
+        #expect(scanned > 900, "the walk read \(scanned) files; an empty walk would pass vacuously")
+        #expect(
+            offenders == [],
+            """
+            a source file holds a grapheme cluster of more than one unicode scalar. \
+            CadenceCommentSymbolClaim.partition blanks it to ONE space and \
+            CadenceSourceScan.codeOnly to one space PER SCALAR, so \
+            theCodeHalfOfThePartitionIsTheAuditedReader's equality no longer holds over this \
+            tree (T-1590): \(offenders)
+            """
         )
     }
 

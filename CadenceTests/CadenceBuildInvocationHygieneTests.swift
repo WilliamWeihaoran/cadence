@@ -461,6 +461,76 @@ struct CadenceBuildInvocationHygieneTests {
         #expect(Self.appIntentsNoticeLog.contains("warning:"))
     }
 
+    // MARK: - T-1781: the warning gate is not a macOS gate
+
+    /// **An iOS-only compiler warning and the zero-warning baseline, measured rather than
+    /// reasoned — and the ticket's central claim is REFUTED.**
+    ///
+    /// [[T-1781]] reads: *"every gate that enforces it builds macOS ... `scripts/xcb.sh` exit 9 and
+    /// `.github/scripts/check-log.sh` only ever see a macOS log, so the baseline is structurally
+    /// blind to an entire platform."* Half of that is true and the load-bearing half is not.
+    ///
+    /// Measured 2026-09-30 on one `git archive HEAD` tree with one deliberate iOS-only warning
+    /// injected inside `Cadence/iOS/iOSAppDelegate.swift`'s `#if os(iOS)` fence (an unused
+    /// immutable, `[#NoUsage]`), built twice through `scripts/xcb.sh`:
+    ///
+    /// | destination                          | compile tasks | warnings | `xcb.sh` | `check-log.sh` |
+    /// |--------------------------------------|---------------|----------|----------|----------------|
+    /// | `platform=macOS`                     | 695           | 0        | exit 0   | exit 0         |
+    /// | `generic/platform=iOS Simulator`     | 1390          | 2        | **9**    | **1**          |
+    ///
+    /// So a macOS build really is blind — it compiles none of `#if os(iOS)`, and 695 tasks of it
+    /// saw nothing. But **neither counter is**: both are destination-agnostic, they gate whatever
+    /// log they are handed, and `.github/workflows/ci.yml`'s `ios-build` job has piped its own
+    /// `cadence-xcb-ci-ios.log` through `check-log.sh` since the workflow's first commit
+    /// (`6c6ce44a`, 2026-08-31), `if: always()`, on every push and pull request that survives
+    /// `paths-ignore`. The three instances that prompted the ticket belonged to an *uncommitted*
+    /// sibling edit, which is why CI never saw them — not because CI could not have.
+    ///
+    /// **What was actually missing is this test.** Nothing anywhere required the iOS job to keep
+    /// its gate, so the property the ticket assumed was absent could have become absent at any
+    /// time without a single failure. The residual hole is now one of latency and not of
+    /// blindness: an agent who builds only macOS locally lands an iOS-only warning and learns
+    /// about it from CI rather than before the push. `AGENTS.md` names the destination for that
+    /// reason.
+    ///
+    /// The property is deliberately keyed on the *log file name* rather than on job names or step
+    /// ordering: `xcb.sh` writes `${TMPDIR}cadence-xcb-<id>.log`, so `<id>` is the only thing that
+    /// ties a compile to the gate that reads it, and a job that builds under a new id and forgets
+    /// the Gates step fails here by name.
+    @Test func everyCompilingCIJobRoutesItsOwnLogThroughTheSameWarningGate() throws {
+        let shell = try Self.shellText(at: ".github/workflows/ci.yml")
+        let runs = CadenceTestRunGuard.guardedRunnerInvocations(in: shell)
+        let gated = CadenceTestRunGuard.gatedLogIds(in: shell)
+
+        // Non-vacuity first: a walk that found nothing would satisfy every "for all" below.
+        let compiling = runs.filter { $0.action == "build" || $0.action == "test" }
+        #expect(compiling.count >= 3, "ci.yml runs \(compiling.count) compiling xcb.sh invocation(s); the walk or the workflow lost one")
+        let ids = Set(compiling.map { $0.id })
+        #expect(ids.isSuperset(of: ["ci-mcp", "ci-tests", "ci-ios"]), "ci.yml's compiling jobs are \(ids.sorted())")
+
+        let ungated = compiling.filter { !gated.contains($0.id) }.map { $0.id }.sorted()
+        #expect(
+            ungated.isEmpty,
+            """
+            \(ungated) compile(s) Swift in CI and no step passes cadence-xcb-<id>.log to \
+            .github/scripts/check-log.sh, so that job's warnings gate nothing (T-1781)
+            """
+        )
+
+        // The half that is specifically about the platform. A gate that ran on three macOS logs
+        // would satisfy everything above and would be exactly the instrument T-1781 describes.
+        let gatedDestinations = compiling.filter { gated.contains($0.id) }.map { $0.destination }
+        #expect(
+            gatedDestinations.contains { $0.contains("iOS Simulator") },
+            "no GATED CI invocation names an iOS Simulator destination, so the zero-warning baseline is a macOS baseline (T-1781): \(gatedDestinations)"
+        )
+        #expect(
+            gatedDestinations.contains { $0.contains("platform=macOS") },
+            "no gated CI invocation names a macOS destination: \(gatedDestinations)"
+        )
+    }
+
     // MARK: - T-1516 witnesses
 
     /// ONE real diagnostic, whole, out of a `build-for-testing` log of this repository captured
@@ -849,5 +919,55 @@ enum CadenceTestRunGuard {
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces).hasPrefix("#") ? "" : String($0) }
             .joined(separator: "\n")
+    }
+
+    // MARK: - T-1781: what CI compiles, and what reads the log it wrote
+
+    /// Every `scripts/xcb.sh <id> <action> ... -destination <value>` in the shell text, with its
+    /// backslash continuations joined first.
+    ///
+    /// Joining is the whole of why this reads the invocation rather than the line: in `ci.yml`
+    /// the id and the action sit on the `xcb.sh` line and the destination is four continuations
+    /// below it, so a per-physical-line walk would find the id of every job and the destination of
+    /// none — and would then happily report that no CI job builds for a simulator.
+    static func guardedRunnerInvocations(in shell: String) -> [(id: String, action: String, destination: String)] {
+        var found: [(id: String, action: String, destination: String)] = []
+        let joined = commandLines(shell).replacingOccurrences(of: "\\\n", with: " ")
+        for line in joined.split(separator: "\n", omittingEmptySubsequences: false) {
+            let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            guard let index = tokens.firstIndex(where: { $0.hasSuffix("xcb.sh") }),
+                  index + 2 < tokens.count else { continue }
+            var destination = ""
+            if let flag = tokens.firstIndex(of: "-destination"), flag + 1 < tokens.count {
+                // The value is single-quoted and holds a space (`generic/platform=iOS Simulator`),
+                // so it is read from the raw line rather than reassembled out of tokens.
+                if let open = line.range(of: "-destination '"),
+                   let close = line[open.upperBound...].firstIndex(of: "'") {
+                    destination = String(line[open.upperBound..<close])
+                } else {
+                    destination = tokens[flag + 1]
+                }
+            }
+            found.append((id: tokens[index + 1], action: tokens[index + 2], destination: destination))
+        }
+        return found
+    }
+
+    /// The `<id>` of every `cadence-xcb-<id>.log` handed to `check-log.sh` in the shell text.
+    ///
+    /// Keyed on the log name and not on the job or step, because the log name is the only thing
+    /// that ties a gate to the compile it is a gate for: `xcb.sh` writes
+    /// `${TMPDIR}cadence-xcb-<id>.log`, and a `Gates` step naming a DIFFERENT id would read a log
+    /// this job never wrote and pass over it.
+    static func gatedLogIds(in shell: String) -> Set<String> {
+        var ids: Set<String> = []
+        for line in commandLines(shell).split(separator: "\n", omittingEmptySubsequences: false)
+        where line.contains("check-log.sh") {
+            guard let start = line.range(of: "cadence-xcb-") else { continue }
+            let rest = line[start.upperBound...]
+            guard let end = rest.range(of: ".log") else { continue }
+            ids.insert(String(rest[..<end.lowerBound]))
+        }
+        return ids
     }
 }

@@ -572,6 +572,17 @@ enum CadenceCommentSymbolClaim {
     /// eight days over a `partition` that had never learned what [[T-1328]] taught `codeOnly`.
     /// An input list for a copied walk is a claim about which shapes the two agree on, not a
     /// spot check.
+    ///
+    /// **The equality is SCOPED TO SINGLE-SCALAR TEXT, and that is deliberate as of [[T-1590]].**
+    /// Every input below is one scalar per `Character`, and on such text the two walks agree
+    /// exactly. They do not agree on anything else, and cannot: `partition`'s `extract` emits one
+    /// `Character` per `Character` while `codeOnly` ends in `blankedSpansAsSpaces`, which [[T-1338]]
+    /// deliberately changed to emit one space per unicode SCALAR so that the Swift pass and the
+    /// Python `blank()` in `scripts/test-suite-index.sh` agree on column offsets. The scoping is
+    /// not a hedge written into a comment — `theTwoBlankingPassesAgreeOnlyWhileAGraphemeIsOneScalar`
+    /// below measures the divergence, and
+    /// `CadenceGuardScriptSelftestTests.noSourceFileHoldsAMultiScalarGraphemeTheTwoBlankingPassesWouldSpellDifferently`
+    /// is what holds the tree inside the scope.
     @Test func theCodeHalfOfThePartitionIsTheAuditedReader() {
         let inputs = [
             "let url = \"https://example.com\" // trailing\nlet x = 1\n",
@@ -587,6 +598,77 @@ enum CadenceCommentSymbolClaim {
             let regions = CadenceCommentSymbolClaim.partition(input)
             #expect(regions.code == CadenceSourceScan.codeOnly(input), "diverged on: \(input)")
         }
+    }
+
+    /// **T-1590, measured rather than reasoned: exactly where the pin above stops being true, and
+    /// which contract each side owes.**
+    ///
+    /// The two functions have INCOMPATIBLE contracts, which is why this is a pinned divergence and
+    /// not a one-line repair:
+    ///
+    /// * `thePartitionCoversEveryCharacterExactlyOnce` compares the three halves position by
+    ///   position against `Array(source)` and asserts `code.count == original.count` in
+    ///   `Character` terms. The scalar spelling breaks it.
+    /// * `codeOnly`'s callers — `declarationBody`, `declarationExtents`, `typeExtents` and the
+    ///   `blank()` mirror in `scripts/test-suite-index.sh` — need the scalar one, because a column
+    ///   offset shared with a Python pass is counted in code points ([[T-1338]]).
+    ///
+    /// **Deliberately left diverging.** Closing it means picking which contract `partition` owes
+    /// and re-reading every assertion leaning on the other, which is not proportionate to a class
+    /// with zero members — and [[T-1489]] is the precedent for writing the reasoning down instead.
+    /// What T-1590 asked for is *"state in `theCodeHalfOfThePartitionIsTheAuditedReader` that its
+    /// equality is scoped to single-scalar inputs and add a fixture proving the scoping is
+    /// deliberate"*, and this is that fixture. It also does what prose alone cannot: if somebody
+    /// later makes the two agree, this goes red and points at the decision rather than letting the
+    /// scoping note rot into a false sentence — which is [[T-1571]]'s whole lesson about two
+    /// copies of one walk held together by an assertion that they are the same.
+    ///
+    /// The tripwire is named and it is NOT the one T-1590 cited:
+    /// `CadenceGuardScriptSelftestTests.noSourceFileHoldsAMultiScalarGraphemeTheTwoBlankingPassesWouldSpellDifferently`.
+    /// The ticket named `noSourceFileWritesAJoiningScalarOntoASyntacticCharacter`, which is
+    /// T-1338's narrower class and which explicitly asserts that `"cafe\u{301}"` — T-1590's own
+    /// worked example — must NOT fire it.
+    @Test func theTwoBlankingPassesAgreeOnlyWhileAGraphemeIsOneScalar() {
+        // A combining acute inside a string literal: 14 `Character`s, 15 unicode scalars. The
+        // exact pair T-1590 measured on 2026-09-29.
+        let acute = "let s = \"cafe\u{301}\"\n"
+        #expect(acute.count == 15, "the fixture is \(acute.count) characters")          // 14 + newline
+        #expect(acute.unicodeScalars.count == 16, "the fixture is \(acute.unicodeScalars.count) scalars")
+
+        let partitioned = CadenceCommentSymbolClaim.partition(acute).code
+        let blanked = CadenceSourceScan.codeOnly(acute)
+
+        // Each side keeps its OWN contract, and the contracts are what disagree.
+        #expect(partitioned.count == acute.count,
+                "partition stopped owing a Character-for-Character reading; thePartitionCoversEveryCharacterExactlyOnce leans on it")
+        #expect(blanked.unicodeScalars.count == acute.unicodeScalars.count,
+                "codeOnly stopped owing a scalar-for-scalar reading; scripts/test-suite-index.sh's blank() leans on it")
+
+        // ...and therefore the pin above cannot hold here. Asserted as an inequality on purpose:
+        // the day this becomes an equality, somebody has changed one of the two contracts and
+        // owes the other side's callers an answer.
+        #expect(partitioned != blanked,
+                "the two blanking passes now agree on a multi-scalar grapheme; re-read T-1590 before deleting this")
+        #expect(partitioned.count == 15)
+        #expect(blanked.count == 16)
+
+        // A ZWJ family emoji, the wider end of the same measurement, so the fixture is not one
+        // cherry-picked scalar: 11 against 15 in the ticket's own figures, before the newline.
+        let family = "let s = \"\u{1F469}\u{200D}\u{1F469}\u{200D}\u{1F467}\"\n"
+        let familyPartitioned = CadenceCommentSymbolClaim.partition(family).code
+        let familyBlanked = CadenceSourceScan.codeOnly(family)
+        #expect(familyPartitioned.count == family.count)
+        #expect(familyBlanked.count == family.unicodeScalars.count)
+        // Non-vacuity for the pair above: the fixture really is a five-scalar cluster, so the two
+        // counts are four apart rather than equal by accident.
+        #expect(family.unicodeScalars.count - family.count == 4,
+                "the ZWJ family fixture is \(family.unicodeScalars.count - family.count) scalars wider than it is characters, not 4")
+        #expect(familyPartitioned.count < familyBlanked.count)
+
+        // Non-vacuity for all of it: on single-scalar text the two are identical, which is the
+        // scope `theCodeHalfOfThePartitionIsTheAuditedReader` really pins.
+        let ascii = "let s = \"cafe\" // note\n"
+        #expect(CadenceCommentSymbolClaim.partition(ascii).code == CadenceSourceScan.codeOnly(ascii))
     }
 
     /// **T-1571, end to end: an interpolated closure must not close the type that holds it.**
