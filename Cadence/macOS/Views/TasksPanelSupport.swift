@@ -102,6 +102,51 @@ enum TasksPanelDropAssignment: Equatable {
     case priority(TaskPriority)
 }
 
+/// What a drop key did to the task, which is three answers and not two ([[T-1580]]).
+///
+/// `assignTask` used to answer `Bool`, and the `true` was a **report** over
+/// `try? modelContext.save()`: a header that accepted the row, kept it where it was dropped, and
+/// said nothing when the store refused the write — the T-566 shape, one screen over from the
+/// reorder half that [[T-868]] already fixed. The two failures are not the same failure and the
+/// surface draws them differently:
+///
+/// - `.resolvedNothing` — the key named a list that is gone, or a vocabulary this surface does not
+///   speak. Nothing was written, the row springs back, and **nothing is said**: that is
+///   [[T-591]]'s refusal and a sentence there would be describing the user's aim.
+/// - `.refused` — the key resolved, the fields were written, and the store would not take them.
+///   `CadenceTaskFieldEditCommit` has already put every field back by the time this is answered,
+///   so the page and `CadencePendingChangePersistence.editFailureNotice` agree: nothing changed.
+enum TasksPanelDropOutcome: Equatable {
+    case applied
+    case resolvedNothing
+    case refused
+}
+
+/// A drop assignment with the row it names already looked up — or nothing, when that row is gone.
+///
+/// The resolution is split out of `apply` so that **one** place decides whether a key applies.
+/// `assignTask` has to know that before it writes anything: a key that resolves to nothing must not
+/// reach the store at all, and a `commit` over a drop that changed no field would commit whatever
+/// unrelated work the app's single `ModelContext` happened to be holding.
+private enum TasksPanelResolvedAssignment {
+    case inbox
+    case area(Area)
+    case project(Project)
+    case scheduleToday
+    case pushToScheduled
+    case clearSchedule
+    case priority(TaskPriority)
+
+    /// Whether applying this writes a date field, and therefore whether the OS notifications have
+    /// to be reconciled once the commit lands. A list move or a priority change does not.
+    var changesSchedule: Bool {
+        switch self {
+        case .scheduleToday, .pushToScheduled, .clearSchedule: return true
+        case .inbox, .area, .project, .priority: return false
+        }
+    }
+}
+
 enum TasksPanelSupport {
     /// `CadenceTaskQuerySupport.listGroupOrder`, not a second copy of it. Today groups by list too
     /// now (T-305), and two by-list surfaces that ordered their groups differently is exactly the
@@ -372,6 +417,18 @@ enum TasksPanelSupport {
     /// an unknown vocabulary, or a list id no longer in `areas`/`projects` — must not be reported
     /// as a drop that happened; see `TasksPanelDropCoordinator.handleSectionDrop`, which used to
     /// answer `true` unconditionally and is the reason this was invisible for so long.
+    ///
+    /// **It answers three things and not two, because it used to report success over a commit it
+    /// could not see refused ([[T-1580]]).** The body was `try? modelContext.save(); return true` —
+    /// the swallowed commit and the success report in the same four lines, which is the half-2
+    /// shape `AGENTS.md` names and which `CadenceSaveCommitDisciplineTests` reads one frame down at
+    /// every caller. The reorder half of this very coordinator was fixed for it in [[T-868]]; the
+    /// assign half was not, and a list move the store refused left the row sitting in its new
+    /// section until the next launch put it back with nothing to retry. See
+    /// `TasksPanelDropOutcome`, and `TasksListDropCommitRateTests` for the counts.
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container, and an
+    ///   undo path no test can reach is an undo path no test can prove.
     @discardableResult
     static func assignTask(
         _ task: AppTask,
@@ -379,23 +436,39 @@ enum TasksPanelSupport {
         todayKey: String,
         areas: [Area],
         projects: [Project],
-        modelContext: ModelContext
-    ) -> Bool {
-        var applied = false
-        for assignment in dropAssignments(forDropKey: dropKey) {
-            let didApply = apply(
-                assignment,
-                to: task,
-                todayKey: todayKey,
-                areas: areas,
-                projects: projects,
-                modelContext: modelContext
-            )
-            applied = applied || didApply
+        modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> TasksPanelDropOutcome {
+        // Resolved before anything is written, which is what keeps the three outcomes apart: a key
+        // that applies to nothing must not reach `commit` at all, or a drop that moved no field
+        // would commit whatever unrelated pending work the app's single context is holding.
+        let resolved = dropAssignments(forDropKey: dropKey)
+            .compactMap { resolve($0, areas: areas, projects: projects) }
+        guard !resolved.isEmpty else { return .resolvedNothing }
+
+        // **One commit for the whole drop, with the undo that makes `.refused` honest.** A compound
+        // key writes a list *and* a date; the date half used to commit itself through a swallowed
+        // save inside `apply`, so half the drop landed in the store before anybody could ask
+        // whether the other half would. Every write below is handed `commit: { _ in }` and this
+        // frame owns the single commit.
+        let landed = CadenceTaskFieldEditCommit.commit(
+            task,
+            in: modelContext,
+            reconciler: reconciler,
+            commit: commit
+        ) {
+            for assignment in resolved {
+                apply(assignment, to: task, todayKey: todayKey, modelContext: modelContext)
+            }
         }
-        guard applied else { return false }
-        try? modelContext.save()
-        return true
+        guard landed else { return .refused }
+        // After the commit and not inside the write, which is `CadenceTaskDateEditing`'s own
+        // contract: the reconcile fetches, and it must read the arrangement the store took.
+        if resolved.contains(where: \.changesSchedule) {
+            (reconciler ?? .default).run(in: modelContext)
+        }
+        return .applied
     }
 
     /// What a drop key asks for, resolved before anything is touched.
@@ -435,50 +508,84 @@ enum TasksPanelSupport {
         return nil
     }
 
-    /// `false` means the assignment named a list that is not here any more — the one case the
-    /// parse cannot see and the caller still needs to know about.
-    private static func apply(
+    /// `nil` means the assignment named a list that is not here any more — the one case the parse
+    /// cannot see and the caller still needs to know about, and the only reason `areas`/`projects`
+    /// reach this far at all.
+    private static func resolve(
         _ assignment: TasksPanelDropAssignment,
+        areas: [Area],
+        projects: [Project]
+    ) -> TasksPanelResolvedAssignment? {
+        switch assignment {
+        case .inbox: return .inbox
+        case .area(let areaID):
+            guard let target = areas.first(where: { $0.id == areaID }) else { return nil }
+            return .area(target)
+        case .project(let projectID):
+            guard let target = projects.first(where: { $0.id == projectID }) else { return nil }
+            return .project(target)
+        case .scheduleToday: return .scheduleToday
+        case .pushToScheduled: return .pushToScheduled
+        case .clearSchedule: return .clearSchedule
+        case .priority(let priority): return .priority(priority)
+        }
+    }
+
+    /// Writes the assignment and **commits nothing** — `assignTask` owns the one commit, which is
+    /// why every date edit here is handed `commit: { _ in }` and `reconciler: .inert`. Still routed
+    /// through `CadenceTaskDateEditing` rather than writing `task.scheduledDate` by hand: T-362's
+    /// rule is that a user surface never touches the three date fields directly, and the reconcile
+    /// it would otherwise perform is simply moved to after the commit.
+    private static func apply(
+        _ assignment: TasksPanelResolvedAssignment,
         to task: AppTask,
         todayKey: String,
-        areas: [Area],
-        projects: [Project],
         modelContext: ModelContext
-    ) -> Bool {
+    ) {
         switch assignment {
         case .inbox:
             task.area = nil
             task.project = nil
             task.context = nil
-        case .area(let areaID):
-            guard let target = areas.first(where: { $0.id == areaID }) else { return false }
+        case .area(let target):
             task.area = target
             task.project = nil
             task.context = target.context
-        case .project(let projectID):
-            guard let target = projects.first(where: { $0.id == projectID }) else { return false }
+        case .project(let target):
             task.project = target
             task.area = nil
             task.context = target.resolvedContext
         case .scheduleToday:
-            CadenceTaskDateEditing.setScheduledDate(todayKey, for: task, in: modelContext)
+            CadenceTaskDateEditing.setScheduledDate(
+                todayKey,
+                for: task,
+                in: modelContext,
+                reconciler: .inert,
+                commit: { _ in }
+            )
         case .pushToScheduled:
             // Already scheduled past today: the drop resolved, and leaving the later date alone is
-            // the assignment, not a failure to make one. Still `true` — see `assignTask`.
+            // the assignment, not a failure to make one — see `assignTask`.
             if task.scheduledDate.isEmpty || task.scheduledDate == todayKey {
                 let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
                 CadenceTaskDateEditing.setScheduledDate(
                     DateFormatters.dateKey(from: tomorrow),
                     for: task,
-                    in: modelContext
+                    in: modelContext,
+                    reconciler: .inert,
+                    commit: { _ in }
                 )
             }
         case .clearSchedule:
-            CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
+            CadenceTaskDateEditing.clearScheduledDate(
+                task,
+                in: modelContext,
+                reconciler: .inert,
+                commit: { _ in }
+            )
         case .priority(let priority):
             task.priority = priority
         }
-        return true
     }
 }
 #endif

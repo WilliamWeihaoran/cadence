@@ -33,6 +33,41 @@ struct QuickCreateTaskDraft {
     }
 }
 
+/// The prose each tab of the quick-create popover composes, kept apart.
+///
+/// **[[T-1610]].** There was one `@State private var notes` and both composers were handed it, so
+/// a note typed on the **Event** tab rode into whatever the **Task** tab created next. That is not
+/// a carry like `title`'s — the two fields are not the same field. The Event tab's prose is
+/// `EKEvent.notes` and leaves the store entirely; the Task tab's is `AppTask.notes`. And the carry
+/// was invisible on the path that matters most: of the **two** Task spellings this popover draws,
+/// `QuickCreateTaskSlotInspectorView` (the `usesTaskPanelForTaskCreation` one, which the schedule
+/// panel takes) has no Notes row at all — so `SchedulePanel` forwarded `draft.notes` to
+/// `TaskCreationManager.present` and the create sheet opened pre-filled with a paragraph about an
+/// event the user had abandoned, with nothing on screen that had ever shown it.
+///
+/// **Two slots and not a clear-on-switch**, which is the same decision made without the loss: a
+/// user who flips Task → Event → Task finds the task's own notes where they left them, and the
+/// Event tab's where *they* were left. `title` keeps its single slot, because a title is the one
+/// thing all three tabs genuinely share — `selectMode` swapping `TaskBundle.defaultDisplayTitle`
+/// in and out is that sharing being managed, and it is what made this field's silence conspicuous.
+struct QuickCreateNotesDraft: Equatable {
+    /// The Task tab's. On the panel-handoff path this stays empty by construction: that spelling
+    /// draws no Notes row, so nothing can write it, and the create sheet opens clean.
+    var task = ""
+    /// The Event tab's — Apple Calendar's note, not a task's.
+    var event = ""
+
+    /// What `create()` hands the host for `mode`. The Bundle tab composes no prose at all, and
+    /// answers the empty string rather than whichever neighbour's happens to be non-empty.
+    func notes(for mode: QuickCreateChoicePopover.Mode) -> String {
+        switch mode {
+        case .timeBlock: return task
+        case .calendarEvent: return event
+        case .bundle: return ""
+        }
+    }
+}
+
 struct QuickCreateChoicePopover: View {
     enum Mode { case timeBlock, calendarEvent, bundle }
 
@@ -60,7 +95,7 @@ struct QuickCreateChoicePopover: View {
     @State private var mode: Mode
     @State private var title = ""
     @State private var selectedCalendarID = ""
-    @State private var notes = ""
+    @State private var notesDraft = QuickCreateNotesDraft()
     @State private var subtaskDraft = ""
     @State private var subtaskTitles: [String] = []
     @State private var selectedContainer: TaskContainerSelection = .inbox
@@ -207,7 +242,7 @@ struct QuickCreateChoicePopover: View {
                         selectedContainer: $selectedContainer,
                         selectedSectionName: $selectedSectionName,
                         priority: $selectedPriority,
-                        notes: $notes,
+                        notes: $notesDraft.task,
                         subtaskDraft: $subtaskDraft,
                         subtaskTitles: $subtaskTitles,
                         contexts: contexts,
@@ -224,7 +259,7 @@ struct QuickCreateChoicePopover: View {
                         endMin: endMin,
                         calendars: calendarManager.writableCalendars,
                         selectedCalendarID: $selectedCalendarID,
-                        notes: $notes
+                        notes: $notesDraft.event
                     )
                 } else if mode == .bundle {
                     QuickCreateBundleDetailsView(
@@ -293,7 +328,7 @@ struct QuickCreateChoicePopover: View {
                     container: selectedContainer,
                     sectionName: selectedSectionName,
                     priority: selectedPriority,
-                    notes: notes,
+                    notes: notesDraft.notes(for: .timeBlock),
                     subtaskTitles: resolvedSubtasks
                 )
             )
@@ -303,7 +338,11 @@ struct QuickCreateChoicePopover: View {
                 selectedBundleTasks
             )
         } else {
-            onCreateEvent?(title, selectedCalendar?.calendarIdentifier ?? selectedCalendarID, notes)
+            onCreateEvent?(
+                title,
+                selectedCalendar?.calendarIdentifier ?? selectedCalendarID,
+                notesDraft.notes(for: .calendarEvent)
+            )
         }
     }
 

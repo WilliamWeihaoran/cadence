@@ -1936,8 +1936,15 @@ enum CadenceSaveCommitRule {
         // "Couldn't Update the Series" alert that already existed and could never fire.
         // [[T-636]](b): `return true` from a `-> Bool` drop handler. The repo argued this one
         // itself, in `TasksPanelDropCoordinator`: "a silent accept says the move happened".
+        // [[T-1580]] emptied half of that pair. `TasksPanelSupport.assignTask` was the All Tasks /
+        // Today drop assignment, and the exemption was load bearing in both directions: it held a
+        // real offence *and* it was what let `TasksListView.dropCoordinator` stay a second
+        // whole-store derivation per render, because parameterising it put the same swallow one
+        // frame down at `body`. It commits once through `CadenceTaskFieldEditCommit`, undoes the
+        // whole compound drop on a refusal and answers `TasksPanelDropOutcome` now; the counts are
+        // in `TasksListDropCommitRateTests`. `unschedule` below is the same sentence on the
+        // calendar board and is **not** fixed here — [[T-1952]].
         "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift": ["unschedule"],
-        "Cadence/macOS/Views/TasksPanelSupport.swift": ["assignTask"],
 
         // MARK: Found by T-636(b)'s Optional half of the same sentence
         //

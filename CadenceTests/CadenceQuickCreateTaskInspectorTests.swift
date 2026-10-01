@@ -359,6 +359,113 @@ struct CadenceQuickCreateTaskInspectorTests {
         )
     }
 
+    // MARK: - [[T-1610]]: the Event tab's prose is not the Task tab's
+
+    /// **The defect, as a value.** A note typed on the Event tab must not come back out of the
+    /// draft the Task tab builds — they are not the same field in the first place: one is
+    /// `EKEvent.notes` and leaves the store, the other is `AppTask.notes`.
+    ///
+    /// Both directions and a third tab, because one direction alone is satisfiable by a slot that
+    /// always answers empty: the Task tab's own prose has to come back out of `.timeBlock`
+    /// unchanged while the Event tab's comes back out of `.calendarEvent`, and the two readings
+    /// must differ. `.bundle` composes no prose at all and must answer neither neighbour's.
+    @Test func theEventTabsProseNeverReachesTheTaskDraft() {
+        var draft = QuickCreateNotesDraft()
+        draft.event = "Bring the referral letter"
+
+        #expect(
+            draft.notes(for: .timeBlock).isEmpty,
+            "the Event tab's note rode into the Task draft: \(draft.notes(for: .timeBlock))"
+        )
+        #expect(draft.notes(for: .calendarEvent) == "Bring the referral letter")
+
+        draft.task = "Draft the brief first"
+        #expect(
+            draft.notes(for: .timeBlock) == "Draft the brief first",
+            "the Task tab cannot keep its own prose, which is not a fix but a second defect"
+        )
+        #expect(
+            draft.notes(for: .calendarEvent) == "Bring the referral letter",
+            "the Task tab's note overwrote the Event tab's"
+        )
+        #expect(
+            draft.notes(for: .timeBlock) != draft.notes(for: .calendarEvent),
+            "both tabs answered the same prose; this test measures nothing"
+        )
+        #expect(draft.notes(for: .bundle).isEmpty, "the Bundle tab composes no notes")
+    }
+
+    /// The wiring, because the value above is only the fix if the popover is holding it.
+    ///
+    /// One `@State`, two slots, and each composer handed its own — the shape that fails while a
+    /// single `notes` is passed to both. The two `create()` branches are pinned with it: a popover
+    /// that bound the slots correctly and then built its draft out of the other one would satisfy
+    /// every binding assertion here.
+    @Test func theTwoQuickCreateComposersAreHandedTwoDifferentNotesSlots() throws {
+        let popover = try code(Self.popoverPath)
+
+        #expect(
+            CadenceSourceScan.matchCount(#"@State private var notesDraft = QuickCreateNotesDraft\(\)"#, in: popover) == 1,
+            "the popover no longer holds exactly one notes draft"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"@State private var notes\s*="#, in: popover) == 0,
+            "the one shared notes state is back"
+        )
+        #expect(popover.contains("notes: $notesDraft.task"), "the Task composer is not bound to the Task slot")
+        #expect(popover.contains("notes: $notesDraft.event"), "the Event composer is not bound to the Event slot")
+        #expect(
+            CadenceSourceScan.matchCount(#"notes: \$notes\b"#, in: popover) == 0,
+            "a composer is still handed the shared binding"
+        )
+
+        let create = try #require(CadenceSourceScan.functionBody(named: "create", in: popover))
+        #expect(
+            create.contains("notes: notesDraft.notes(for: .timeBlock)"),
+            "the Task draft is built from something other than the Task tab's slot"
+        )
+        #expect(
+            create.contains("notesDraft.notes(for: .calendarEvent)"),
+            "the event is created from something other than the Event tab's slot"
+        )
+    }
+
+    /// **There are exactly two Task spellings and only one of them draws a Notes field** — which is
+    /// the asymmetry that made the carry invisible rather than merely surprising, and the reason
+    /// this is fixed by splitting the state rather than by giving the other spelling a Notes row.
+    ///
+    /// Counted rather than asserted one at a time: a third Task composer, or a Notes row appearing
+    /// on the handoff inspector, both change a number here. `QuickCreateNotesEditor` is drawn twice
+    /// in the file — once by the in-place Task composer, once by the Event composer.
+    @Test func thePanelHandoffTaskSpellingStillDrawsNoNotesFieldAndNowCarriesNone() throws {
+        let support = try code(Self.supportPath)
+        let popover = try code(Self.popoverPath)
+
+        #expect(
+            CadenceSourceScan.matchCount(#"struct QuickCreateTask\w+View: View"#, in: support) == 2,
+            "the popover's Task tab has stopped being exactly two spellings"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"QuickCreateTask\w+View\("#, in: popover) == 2,
+            "the popover draws a number of Task composers other than two"
+        )
+
+        let handoff = try #require(
+            CadenceSourceScan.declarationBody("struct QuickCreateTaskSlotInspectorView: View", in: support)
+        )
+        #expect(!handoff.contains("QuickCreateNotesEditor"), "the handoff inspector drew a Notes field")
+        #expect(!handoff.contains("notes"), "the handoff inspector took a notes binding")
+
+        let inPlace = try #require(
+            CadenceSourceScan.declarationBody("struct QuickCreateTaskDetailsView: View", in: support)
+        )
+        #expect(inPlace.contains("QuickCreateNotesEditor(text: $notes"), "the in-place composer lost its Notes field")
+        #expect(
+            CadenceSourceScan.matchCount(#"QuickCreateNotesEditor\("#, in: support) == 2,
+            "the file draws a number of notes editors other than the in-place composer's and the Event tab's"
+        )
+    }
+
     /// The List row's controls are one component read by both Task composers in the file. The
     /// read-only `tray` row this replaces is precisely what drifting from its editable sibling
     /// looks like.

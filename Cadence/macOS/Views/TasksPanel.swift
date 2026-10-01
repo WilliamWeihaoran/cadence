@@ -143,7 +143,11 @@ struct TasksPanel: View {
             allTasks: allTasks,
             taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
             assignTask: { task, dropKey in
-                TasksPanelSupport.assignTask(
+                // Three outcomes, two of them `false` — see `TasksPanelDropOutcome` and
+                // `TasksListView.assignTask`, which spells the same mapping for All Tasks and
+                // Inbox. A key that named nothing says nothing; a refused commit borrows this
+                // page's one notice slot, and has already been undone by the time it answers.
+                let outcome = TasksPanelSupport.assignTask(
                     task,
                     for: dropKey,
                     todayKey: todayKey,
@@ -151,6 +155,8 @@ struct TasksPanel: View {
                     projects: projects,
                     modelContext: modelContext
                 )
+                reorderFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
+                return outcome == .applied
             },
             reorderTask: { droppedID, targetID, scopeTasks in
                 // **Asked before the drop lands, not after it (T-1119).** The question is about the

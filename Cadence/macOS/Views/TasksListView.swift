@@ -152,18 +152,18 @@ struct TasksListView: View {
     /// bought: the decode is the lenient one (a bare UUID, as the kanban card and the month-grid
     /// chip emit), so a task from some other surface has to fail *some* check, and failing the
     /// membership lookup is a stronger check than the payload prefix was.
-    /// **Deliberately still a computed property over `visibleTaskUniverse`, and so still the
-    /// page's second derivation of the store per render (T-1501).** Parameterising it the way the
-    /// four derivations above were parameterised turns `body`'s reference from a property *access*
-    /// into a *call*, and `CadenceSaveCommitDisciplineTests`' half-2-one-frame-down sweep reads a
-    /// call that reaches a swallow inside a block that reports success — so the one-word change
-    /// reddens `noSuccessReportFollowsACommitSwallowedOneFrameDown` against `body`. The drop
-    /// handlers genuinely do reach `TasksPanelSupport.assignTask`, so that is a question about
-    /// this page worth answering rather than silencing, and it is filed as its own ticket rather
-    /// than settled here by an exemption. Seven derivations to two is this ticket's measured win.
-    private var dropCoordinator: TasksPanelDropCoordinator {
+    /// **Takes the universe too, which makes it the seventh and last derivation to go
+    /// ([[T-1580]]).** It was left a computed property by T-1501 because parameterising it turns
+    /// `body`'s reference from a property *access* into a *call*, and the half-2-one-frame-down
+    /// sweep then read a call that reaches a swallowed commit inside a block that reports success.
+    /// **The sweep was right about this page**: `TasksPanelSupport.assignTask` ended in
+    /// `try? modelContext.save(); return true`, so a list drop the store refused was accepted,
+    /// drawn in its new section and never mentioned. That is fixed where it lives — one commit per
+    /// drop, through `CadenceTaskFieldEditCommit`, answering `TasksPanelDropOutcome` — and the
+    /// render-cost saving follows, which is the order the ticket asked for. Two derivations to one.
+    private func dropCoordinator(in universe: [AppTask]) -> TasksPanelDropCoordinator {
         TasksPanelDropCoordinator(
-            allTasks: visibleTaskUniverse,
+            allTasks: universe,
             taskIDFromPayload: { taskID(from: $0) },
             assignTask: { task, dropKey in assignTask(task, for: dropKey) },
             reorderTask: { droppedID, targetID, scopeTasks in
@@ -257,16 +257,17 @@ struct TasksListView: View {
     // MARK: - Body
 
     var body: some View {
-        // **Two derivations of the store per render, not seven (T-1501).** Every name below used
-        // to be a computed property over `visibleTaskUniverse`, which is itself a computed
-        // property, so each reference re-ran `allTasks.filter` and three of them re-sorted. The
-        // second survivor is `dropCoordinator`, and its own doc says why it is still one.
+        // **One derivation of the store per render, not seven (T-1501, [[T-1580]]).** Every name
+        // below used to be a computed property over `visibleTaskUniverse`, which is itself a
+        // computed property, so each reference re-ran `allTasks.filter` and three of them
+        // re-sorted. The seventh went with T-1580: `dropCoordinator` takes the universe now, and
+        // what had been blocking it was a real defect in the drop path rather than the census.
         let universe = visibleTaskUniverse
         let naturalTasks = naturalActiveTasks(in: universe)
         let visibleTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder)
         let completedCount = completedTaskCount(in: universe)
         let visibleCompletedTasks = isCompletedCollapsed ? [] : completedTasks(in: universe)
-        let coordinator = dropCoordinator
+        let coordinator = dropCoordinator(in: universe)
         let showsEmptyState = isEmptyPage(activeTasks: visibleTasks, completedCount: completedCount)
 
         ScrollView {
@@ -471,10 +472,17 @@ struct TasksListView: View {
         return reordered
     }
 
-    /// Answers whether anything resolved — see `dropCoordinator`. Was `Void`, which threw away the
-    /// only signal a header has that the key it handed out named nothing.
+    /// Answers whether the move is **in the store** — see `dropCoordinator`. Was `Void`, which
+    /// threw away the only signal a header has that the key it handed out named nothing; then
+    /// `Bool`, which could not tell that from a commit the store refused ([[T-1580]]).
+    ///
+    /// Two `false`s, one sentence between them. `.resolvedNothing` says nothing at all, because
+    /// the row springing back *is* the whole report and a header whose list is gone is the user's
+    /// aim rather than a failure (T-591). `.refused` borrows the drop surface's one notice slot:
+    /// `CadencePendingChangePersistence.editFailureNotice` is "Nothing was changed", which is only
+    /// true because `CadenceTaskFieldEditCommit` put every field back before answering.
     private func assignTask(_ task: AppTask, for dropKey: String) -> Bool {
-        TasksPanelSupport.assignTask(
+        let outcome = TasksPanelSupport.assignTask(
             task,
             for: dropKey,
             todayKey: todayKey,
@@ -482,6 +490,8 @@ struct TasksListView: View {
             projects: projects,
             modelContext: modelContext
         )
+        reorderFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
+        return outcome == .applied
     }
 
     private func requestRemindersAccess() {

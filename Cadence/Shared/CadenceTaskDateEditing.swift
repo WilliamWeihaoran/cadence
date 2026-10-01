@@ -49,14 +49,26 @@ enum CadenceTaskDateEditing {
 
     // MARK: - Do date
 
+    /// **`commit:` for the same two reasons `clearScheduledTime` has one** — a refused save cannot
+    /// be provoked out of an in-memory container, and a caller that owns a larger unit of work
+    /// takes the commit away with `commit: { _ in }` (T-1580: a drop key that writes a list *and* a
+    /// date is one gesture and must be one commit, or half of it lands where no undo can reach it).
+    @discardableResult
     static func setScheduledDate(
         _ dateKey: String,
         for task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.setScheduledDate(dateKey, for: task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.setScheduledDate(
+            dateKey,
+            for: task,
+            modelContext: context,
+            commit: commit
+        )
         reconcile(context, reconciler)
+        return landed
     }
 
     static func scheduleToday(
@@ -89,13 +101,17 @@ enum CadenceTaskDateEditing {
     /// Clearing a do date drops the timeline slot with it — a slot on no day is not a slot. That is
     /// `clearScheduledDate`'s existing contract, and it is why the date pickers that used to write
     /// `task.scheduledDate = ""` by hand now come through here.
+    /// `commit:` for the reasons `setScheduledDate` above states.
+    @discardableResult
     static func clearScheduledDate(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     static func moveTaskToDate(

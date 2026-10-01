@@ -489,7 +489,7 @@ struct CadenceTaskGroupDropSupportTests {
             modelContext: context
         )
 
-        #expect(moved)
+        #expect(moved == .applied)
         #expect(task.project?.id == project.id)
         #expect(task.area == nil)
         #expect(task.scheduledDate == todayKey)
@@ -516,7 +516,7 @@ struct CadenceTaskGroupDropSupportTests {
                     areas: [],
                     projects: [],
                     modelContext: context
-                )
+                ) == .applied
             },
             reorderTask: { _, _, _ in true }
         )
@@ -567,7 +567,7 @@ struct CadenceTaskGroupDropSupportTests {
                         areas: [],
                         projects: projects,
                         modelContext: context
-                    )
+                    ) == .applied
                 },
                 reorderTask: { _, _, _ in true }
             )

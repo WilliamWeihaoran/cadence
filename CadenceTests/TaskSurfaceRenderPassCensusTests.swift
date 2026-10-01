@@ -305,7 +305,7 @@ enum TaskSurfaceDerivationScan {
         "naturalActiveTasks": "func naturalActiveTasks(",
         "completedTasks": "func completedTasks(",
         "completedTaskCount": "func completedTaskCount(",
-        "dropCoordinator": "var dropCoordinator",
+        "dropCoordinator": "func dropCoordinator(",
         "revealsCompletedSection": "var revealsCompletedSection",
         "isEmptyPage": "func isEmptyPage("
     ]
@@ -343,7 +343,7 @@ enum TaskSurfaceDerivationScan {
         let body = try #require(graph.split["body"]).fixed
         #expect(body.contains("let universe = visibleTaskUniverse"))
         #expect(body.contains("let completedCount = completedTaskCount(in: universe)"))
-        #expect(body.contains("let coordinator = dropCoordinator"))
+        #expect(body.contains("let coordinator = dropCoordinator(in: universe)"))
     }
 
     /// **The stripping rule is a rule and not a blanket.** `revealsCompletedSection` reaches the
@@ -363,7 +363,7 @@ enum TaskSurfaceDerivationScan {
 
     // MARK: All Tasks, as a list
 
-    /// **One body evaluation of `TasksListView` derives its whole task universe twice, and it used
+    /// **One body evaluation of `TasksListView` derives its whole task universe once, and it used
     /// to derive it seven times.**
     ///
     /// `visibleTaskUniverse` is a computed property, so it is recomputed at every reference, and
@@ -371,18 +371,20 @@ enum TaskSurfaceDerivationScan {
     /// `completedTasks`, `dropCoordinator`, `naturalActiveTasks`, and `isEmpty`, which re-reaches
     /// two of the others. Seven full passes over every task in the store, per render.
     ///
-    /// **Two and not one, and the second one is on purpose.** `dropCoordinator` is still a
-    /// computed property over the universe; its own doc carries the reason, which is that
-    /// parameterising it turns a property access in `body` into a *call* and trips
-    /// `noSuccessReportFollowsACommitSwallowedOneFrameDown`. That sweep is asking a real question
-    /// about this page's drop handlers, so it is filed rather than exempted.
+    /// **It read `2` until [[T-1580]], and the survivor was blocked on a real defect rather than on
+    /// the census.** `dropCoordinator` stayed a computed property because parameterising it turns a
+    /// property access in `body` into a *call*, and
+    /// `noSuccessReportFollowsACommitSwallowedOneFrameDown` then read a call reaching a swallowed
+    /// commit inside a block that reports success. The sweep was right: `TasksPanelSupport
+    /// .assignTask` ended `try? modelContext.save(); return true`. It commits once, undoes and
+    /// answers `TasksPanelDropOutcome` now, and the seventh derivation went with it.
     ///
     /// The control is `CalendarPageView`, which the owner calls smooth — see
     /// `theSmoothControlDerivesItsStoreOncePerBranch`, which must come out differently for any of
     /// this to mean anything.
     @Test func allTasksAsAListDerivesItsUniverseOncePerRender() throws {
         let subject = try Self.tasksListGraph().reach(to: "visibleTaskUniverse")
-        #expect(subject == .init(fixed: 2, perElement: 0), "All Tasks (list) universe passes: \(subject)")
+        #expect(subject == .init(fixed: 1, perElement: 0), "All Tasks (list) universe passes: \(subject)")
     }
 
     /// The same walk, to the property that **sorts**. `naturalActiveTasks` sorts the whole open set;

@@ -230,9 +230,24 @@ enum CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
-    static func setScheduledDate(_ dateKey: String, for task: AppTask, modelContext: ModelContext) {
+    /// **T-1580.** Same answer, and the same reason, as `setScheduledTime` below: an in-place field
+    /// write on a task the store already holds, flushed through `CadenceInPlaceEditFlush` rather
+    /// than left to a bare `try?`.
+    ///
+    /// The `commit:` parameter is also what lets a caller that owns a **larger** unit of work take
+    /// the commit away from this one — `commit: { _ in }`, the idiom `CadenceWriteService` already
+    /// uses. `TasksPanelSupport.assignTask` is that caller: a compound drop key writes a list *and*
+    /// a date, and a swallowed save in the middle of it committed half the drop where no undo could
+    /// reach it.
+    @discardableResult
+    static func setScheduledDate(
+        _ dateKey: String,
+        for task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         task.scheduledDate = dateKey
-        try? modelContext.save()
+        return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 
     static func moveTaskToDate(_ task: AppTask, dateKey: String, modelContext: ModelContext) {
@@ -262,10 +277,16 @@ enum CadenceTaskMutationSupport {
         return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 
-    static func clearScheduledDate(_ task: AppTask, modelContext: ModelContext) {
+    /// **T-1580.** `setScheduledDate`'s pair, in the same shape and for the same reasons.
+    @discardableResult
+    static func clearScheduledDate(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         task.scheduledDate = ""
         task.scheduledStartMin = -1
-        try? modelContext.save()
+        return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 
     /// **T-761.** Same answer as `setScheduledTime` above, for the picker's "No time" row.
