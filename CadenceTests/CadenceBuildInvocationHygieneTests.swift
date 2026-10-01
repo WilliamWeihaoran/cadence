@@ -429,6 +429,111 @@ struct CadenceBuildInvocationHygieneTests {
         )
     }
 
+    /// T-1620, and it is the counter *beside* the two above asked the same question a fourth time.
+    /// `tool notices:` is the subtraction left over when the anchored warning counts are taken out
+    /// of the loose `grep -c 'warning:'` reading, and its own banner says what it claims to hold:
+    /// "lines saying `warning:` that are not a compiler diagnostic". It was wrong about that on
+    /// exactly the runs it matters on.
+    ///
+    /// **A diagnostic is not one line.** The Swift snippet renderer prints the primary
+    /// `file:LINE:COL: warning:` line and then repeats the whole message on a caret continuation
+    /// inside the source snippet. The continuation says `warning:` and carries no
+    /// `name:LINE:COL:`, so it matches neither anchored pattern — correctly, because counting it
+    /// would report one warning as two — and fell straight through into the notice bucket. Every
+    /// real warning therefore manufactured at least one phantom notice, which means the one number
+    /// in the banner that is supposed to be diagnostic-free was inflated **precisely** on the runs
+    /// that have diagnostics: the runs somebody is reading the banner to triage.
+    ///
+    /// **Measured, twice, on real bytes.** On the captured T-1516 probe log of 2026-09-29: 6 loose
+    /// `warning:` lines over 3 real macro-expansion diagnostics, reported as `warnings: 3` plus
+    /// `tool notices: 3`, where the true tool-notice count in that log is **0**. And on the
+    /// witness below, captured fresh from `xcrun swiftc -typecheck` of a two-deprecation probe on
+    /// 2026-10-01: 4 loose lines over 2 diagnostics, 2 of them continuations, true notices 0.
+    ///
+    /// **Why this test can only be written with a log that has BOTH.** A fixture with one notice
+    /// and no diagnostics passes with the defect fully intact — `loose - warnings` is right
+    /// whenever there is nothing to continue — and a fixture with diagnostics and no notices is
+    /// equally satisfied by a counter hard-wired to zero, which would delete the `ld:` and
+    /// `actool:` readings the T-1147 anchor exists to keep. So the controls below are as
+    /// load-bearing as the finding: a genuine notice must NOT match the continuation pattern, and
+    /// neither must a primary diagnostic line, which is already subtracted as a warning and would
+    /// otherwise be subtracted twice.
+    @Test func theRunnersNoticeCountReadsADiagnosticsContinuationAsPartOfTheDiagnostic() throws {
+        let runner = try CadenceSourceScan.sourceFile("scripts/xcb.sh")
+        let sourcePattern = try #require(
+            CadenceTestRunGuard.singleQuotedAssignment("SWIFT_WARNING_PATTERN", in: runner),
+            "scripts/xcb.sh declares no SWIFT_WARNING_PATTERN"
+        )
+        let macroPattern = try #require(
+            CadenceTestRunGuard.singleQuotedAssignment("MACRO_WARNING_PATTERN", in: runner),
+            "scripts/xcb.sh declares no MACRO_WARNING_PATTERN"
+        )
+        let continuationPattern = try #require(
+            CadenceTestRunGuard.singleQuotedAssignment("CONTINUATION_WARNING_PATTERN", in: runner),
+            "scripts/xcb.sh declares no CONTINUATION_WARNING_PATTERN — T-1620's phantom notices are back"
+        )
+
+        // The defect restated as arithmetic over the real block: four lines say `warning:`, two of
+        // them are the diagnostics, and the old reading called the other two tool notices.
+        #expect(CadenceSourceScan.matchCount("warning:", in: Self.continuedSwiftWarningBlock) == 4)
+        #expect(CadenceSourceScan.matchCount(sourcePattern, in: Self.continuedSwiftWarningBlock) == 2)
+        #expect(CadenceSourceScan.matchCount(macroPattern, in: Self.continuedSwiftWarningBlock) == 0)
+        #expect(CadenceSourceScan.matchCount(continuationPattern, in: Self.continuedSwiftWarningBlock) == 2)
+        // The relation, which is what the count above is for and is the thing that must hold on
+        // any toolchain: nothing in that block is a tool notice.
+        #expect(
+            CadenceSourceScan.matchCount("warning:", in: Self.continuedSwiftWarningBlock)
+                == CadenceSourceScan.matchCount(sourcePattern, in: Self.continuedSwiftWarningBlock)
+                + CadenceSourceScan.matchCount(macroPattern, in: Self.continuedSwiftWarningBlock)
+                + CadenceSourceScan.matchCount(continuationPattern, in: Self.continuedSwiftWarningBlock),
+            "a log of nothing but compiler diagnostics still yields a tool notice (T-1620)"
+        )
+        // The same shape one layer in, on the block T-1620 was actually measured on.
+        #expect(CadenceSourceScan.matchCount(continuationPattern, in: Self.macroExpansionWarningBlock) == 1)
+
+        // CONTROLS. A genuine tool notice is not a continuation, so the subtraction does not eat
+        // it — the direction a pattern widened to `warning:` would break, and the whole reason
+        // `tool notices:` is reported separately rather than deleted.
+        #expect(CadenceSourceScan.matchCount(continuationPattern, in: Self.linkerAndAssetNoticeLog) == 0)
+        #expect(CadenceSourceScan.matchCount(continuationPattern, in: Self.appIntentsNoticeLog) == 0)
+        #expect(Self.linkerAndAssetNoticeLog.contains("ld: warning:"))
+        // …and a PRIMARY diagnostic line is not one either. It is already subtracted as a warning;
+        // a pattern matching both would subtract it twice and drive the count negative.
+        #expect(CadenceSourceScan.matchCount(continuationPattern, in: Self.realSwiftWarningLog) == 0)
+        #expect(CadenceSourceScan.matchCount(continuationPattern, in: Self.attachedMacroWarningLog) == 0)
+
+        // And that the script SUBTRACTS it, which is the half a pattern declared and never used
+        // would pass. The variable is not pinned by name: it is recovered from the banner that
+        // prints it, so renaming it is free and losing the subtraction is not.
+        let joined = CadenceTestRunGuard.commandLines(runner)
+            .replacingOccurrences(of: "\\\n", with: " ")
+        let lines = joined.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        let banner = try #require(
+            lines.first(where: { $0.hasPrefix("say ") && $0.contains("tool notices:") }),
+            "scripts/xcb.sh no longer prints a tool-notice count at all"
+        )
+        let reported = try #require(
+            Self.firstShellVariableName(in: banner),
+            "scripts/xcb.sh's tool-notice banner `\(banner)` prints no variable"
+        )
+        let assignment = try #require(
+            lines.first(where: { $0.hasPrefix("\(reported)=") }),
+            "scripts/xcb.sh prints `\(reported)` and never assigns it"
+        )
+        #expect(
+            assignment.contains("CONTINUATION_WARNING_PATTERN"),
+            "the tool-notice count `\(assignment)` does not exclude a diagnostic's continuation line (T-1620)"
+        )
+    }
+
+    /// The name of the first `$name` in a shell line, or `nil`. Used to read which variable a
+    /// banner prints without pinning what it is called.
+    private static func firstShellVariableName(in line: String) -> String? {
+        guard let dollar = line.firstIndex(of: "$") else { return nil }
+        let name = line[line.index(after: dollar)...].prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+        return name.isEmpty ? nil : String(name)
+    }
+
     /// The other half of T-1516, and the generalised lesson it was closed under: a guard fixed in
     /// the one place somebody could name is not a guard fixed. `.github/scripts/check-log.sh` is a
     /// second, independent copy of this reading — it gates all three CI jobs `if: always()` — and
@@ -770,6 +875,27 @@ struct CadenceBuildInvocationHygieneTests {
     private static let attachedMacroWarningLog = """
     SwiftCompile normal arm64 Compiling\\ ZZProbeMacroWarning.swift /repo/CadenceTests/ZZProbeMacroWarning.swift (in target 'CadenceTests' from project 'Cadence')
     macro expansion @ObservationTracked:2:24: warning: 'ZZProbeDeprecated' is deprecated: probe [#DeprecatedDeclaration]
+    """
+
+    // MARK: - T-1620 witness
+
+    /// Two real Swift diagnostics WITH their snippet continuations, captured verbatim from
+    /// `xcrun swiftc -typecheck` of a two-deprecation probe on this Mac, 2026-10-01, with only the
+    /// path shortened to `/repo/`. Four of its lines say `warning:` and exactly two are
+    /// diagnostics; the other two are the caret continuations the notice count used to claim.
+    ///
+    /// It is a fresh capture rather than a hand-written shape for the reason every witness in this
+    /// file is: the defect is about which real lines a pattern reaches. Six real diagnostics across
+    /// three probe compiles on this toolchain print the continuation marker as `` `- `` and nothing
+    /// else — `|- warning:` was looked for in all of them and never seen, which is why the pattern
+    /// lifted above does not try to match a shape this repository cannot show a line for.
+    private static let continuedSwiftWarningBlock = """
+    /repo/CadenceTests/Probe.swift:5:13: warning: 'zzDeprecated()' is deprecated: probe [#DeprecatedDeclaration]
+    5 |     let p = zzDeprecated() + zzDeprecated()
+      |             `- warning: 'zzDeprecated()' is deprecated: probe [#DeprecatedDeclaration]
+    /repo/CadenceTests/Probe.swift:5:30: warning: 'zzDeprecated()' is deprecated: probe [#DeprecatedDeclaration]
+    5 |     let p = zzDeprecated() + zzDeprecated()
+      |                              `- warning: 'zzDeprecated()' is deprecated: probe [#DeprecatedDeclaration]
     """
 
     /// The two notices the `.swift:` anchor exists to exclude, in the canonical form the comment

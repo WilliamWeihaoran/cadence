@@ -286,9 +286,47 @@ empty_run_diagnostic() {
 # reports VACUOUS-COUNT on every run rather than quietly certifying zero -- loud and wrong beats
 # silent and wrong, and `CadenceBuildInvocationHygieneTests` pins the pattern against real log
 # lines so the drift is caught before anybody has to notice the noise.
+# --- and the line the two anchors leave over: a CONTINUATION, not a notice (T-1620) ---------
+# `notices` below is a SUBTRACTION, and until 2026-10-01 it subtracted only the primary lines. A
+# Swift diagnostic is not one line. The snippet renderer prints the primary `file:LINE:COL:
+# warning:` line and then repeats the whole message on a caret continuation inside the source
+# snippet:
+#
+#   /repo/CadenceTests/Probe.swift:5:13: warning: 'zzDeprecated()' is deprecated: probe
+#   5 |     let p = zzDeprecated() + zzDeprecated()
+#     |             `- warning: 'zzDeprecated()' is deprecated: probe
+#
+# That second line says `warning:` and matches NEITHER anchored pattern -- it carries no
+# `name:LINE:COL:` at all, which is exactly why T-1516 was careful not to count it as a warning.
+# So it fell through to `loose - warnings` and was reported as a TOOL NOTICE, under a banner whose
+# own words are "not a compiler diagnostic". Every real warning therefore manufactured at least one
+# phantom notice, which inverts the number the same way T-1147 found the warning count inverted:
+# the only line in the banner that is supposed to be diagnostic-free is wrong exactly on the runs
+# that have diagnostics, i.e. the runs somebody is reading it to triage.
+#
+# MEASURED 2026-09-29 on the captured T-1516 probe logs: 6 loose `warning:` lines over 3 real
+# macro-expansion diagnostics, reported as `warnings: 3` + `tool notices: 3`, true notices 0.
+# MEASURED 2026-10-01 on a fresh `xcrun swiftc -typecheck` of a two-deprecation probe (Xcode 27):
+# 4 loose lines over 2 diagnostics, 2 of them continuations, true notices 0.
+#
+# The marker is `` `- `` immediately before `warning:`, and that adjacency is the whole anchor: a
+# real `ld: warning:`, `actool: warning:` or `appintentsmetadataprocessor ... warning:` has no
+# caret in front of its `warning:` and is still counted, which is the control section 6 asserts.
+# Six real diagnostics across three probe compiles on this toolchain, plus the two captured 2026-09-29
+# logs, print this marker and no other; `|- warning:` was looked for in all of them and never seen,
+# so it is deliberately NOT matched -- an unwitnessed alternative would be a pattern this repository
+# cannot show a line for, and missing one would only restore today's inflation rather than break a count.
+#
+# Why SUBTRACT rather than widen a warning pattern: a continuation is not a second warning. T-1516
+# already pins that the block must count ONCE, and widening to reach the caret line would double
+# every diagnostic against a zero baseline. The subtraction below is written as a set difference
+# (`grep | grep -v`) rather than as arithmetic for the reason that arithmetic has here: if a line
+# ever matched two of the three patterns at once, `loose - a - b` goes NEGATIVE and the banner
+# prints nonsense, while a set difference cannot.
 SWIFT_ERROR_PATTERN='\.swift:[0-9]+:[0-9]+: error:'
 SWIFT_WARNING_PATTERN='\.swift:[0-9]+:[0-9]+: warning:'
 MACRO_WARNING_PATTERN='macro expansion [^ :]+:[0-9]+:[0-9]+: warning:'
+CONTINUATION_WARNING_PATTERN='`- warning:'
 SWIFT_COMPILE_TASK_PATTERN='^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources|CompileC) '
 
 # --- and whether anything ACTS on it (T-1149) --------------------------------
@@ -335,7 +373,7 @@ DIAG_WARNINGS=0
 DIAG_COMPILED=0
 diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline is broken.
   local log="$1"
-  local errors warnings sourced macroed loose compiled notices
+  local errors warnings sourced macroed compiled notices
   errors=$(grep -cE "$SWIFT_ERROR_PATTERN" "$log" 2>/dev/null | tr -d ' ')
   sourced=$(grep -cE "$SWIFT_WARNING_PATTERN" "$log" 2>/dev/null | tr -d ' ')
   macroed=$(grep -cE "$MACRO_WARNING_PATTERN" "$log" 2>/dev/null | tr -d ' ')
@@ -343,9 +381,13 @@ diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline 
   # warning that happens to have no file to be attributed to; it belongs in this number and not in
   # the tool-notice bucket, which is where the single-pattern reading put it.
   warnings=$(( sourced + macroed ))
-  loose=$(grep -c 'warning:' "$log" 2>/dev/null | tr -d ' ')
   compiled=$(grep -cE "$SWIFT_COMPILE_TASK_PATTERN" "$log" 2>/dev/null | tr -d ' ')
-  notices=$(( loose - warnings ))
+  # T-1620: a tool notice is a line that says `warning:` and belongs to NO compiler diagnostic --
+  # neither as a primary line nor as the caret continuation of the one above it. Set difference,
+  # not `loose - warnings`, so a line can never be subtracted twice into a negative count.
+  notices=$(grep 'warning:' "$log" 2>/dev/null \
+    | grep -vcE "$SWIFT_WARNING_PATTERN|$MACRO_WARNING_PATTERN|$CONTINUATION_WARNING_PATTERN" \
+    | tr -d ' ')
   DIAG_WARNINGS=$warnings
   DIAG_COMPILED=$compiled
   say "  compile errors:  $errors"
@@ -1185,6 +1227,72 @@ selftest_only_testing() {
   run_counters "$ws/real.log"
   check "an ordinary \`.swift:N:C:\` warning is not relabelled as a macro expansion" \
     $( [[ "$dout" != *MACRO-EXPANSION-WARNING* ]] && print 1 || print 0 ) "$dout"
+
+  # --- T-1620: the CONTINUATION line is part of the diagnostic above it, not a tool notice ------
+  # The fixture below is the whole point of this subsection and it must carry BOTH halves at once.
+  # A log with one notice and no diagnostics passes with the defect fully intact -- `loose -
+  # warnings` is right whenever there is nothing to continue -- so `notice.log` and `toolnoise.log`
+  # above could never have caught this. A log with diagnostics and no notices would only show the
+  # number going to zero, which a counter hard-wired to 0 also does. Both together are what
+  # discriminates: two real diagnostics (four `warning:` lines) beside two real notices, where the
+  # right answer is 2 and the old answer was 4.
+  #
+  # The diagnostic half is verbatim out of `xcrun swiftc -typecheck` of a two-deprecation probe on
+  # this Mac, 2026-10-01, with the path shortened to `/repo/` -- a REAL rendering of the snippet,
+  # because the defect is a pattern that has to match a real line. The notice half is the two
+  # shapes already used above: the `appintentsmetadataprocessor` line every honest run of this
+  # repository emits, and the canonical `ld: warning:`.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "/repo/CadenceTests/Probe.swift:5:13: warning: 'zzDeprecated()' is deprecated: probe [#DeprecatedDeclaration]" \
+    '5 |     let p = zzDeprecated() + zzDeprecated()' \
+    '  |             `- warning: '"'"'zzDeprecated()'"'"' is deprecated: probe [#DeprecatedDeclaration]' \
+    "/repo/CadenceTests/Probe.swift:5:30: warning: 'zzDeprecated()' is deprecated: probe [#DeprecatedDeclaration]" \
+    '5 |     let p = zzDeprecated() + zzDeprecated()' \
+    '  |                              `- warning: '"'"'zzDeprecated()'"'"' is deprecated: probe [#DeprecatedDeclaration]' \
+    "2026-09-12 04:37:24.072 appintentsmetadataprocessor[66824:4236838] warning: Metadata extraction skipped. No AppIntents.framework dependency found." \
+    "ld: warning: ignoring duplicate libraries: '-lc++'" \
+    > "$ws/diag-and-notice.log"
+  # …and the SAME two notices with the diagnostics removed. This is the control that makes the
+  # check a RELATION rather than a number: whatever the right notice count is, adding compiler
+  # diagnostics to a log must not change it.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "2026-09-12 04:37:24.072 appintentsmetadataprocessor[66824:4236838] warning: Metadata extraction skipped. No AppIntents.framework dependency found." \
+    "ld: warning: ignoring duplicate libraries: '-lc++'" \
+    > "$ws/notices-only.log"
+
+  notice_count() {  # $1 = a diagnostic_report banner. Absent line means zero.
+    local n; n=$(print -r -- "$1" | sed -n 's/^[[:space:]]*tool notices:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+    print -r -- "${n:-0}"
+  }
+  # The fixture really is the shape this is about -- asserted, not assumed, so that a later edit
+  # that quietly drops the continuation lines out of the fixture fails here instead of passing.
+  check "the fixture carries a REAL caret continuation, twice (T-1620)" \
+    $( (( $(grep -c -- '`- warning:' "$ws/diag-and-notice.log") == 2 )) && print 1 || print 0 ) \
+    "$(grep -c -- '`- warning:' "$ws/diag-and-notice.log")"
+
+  local withDiagnostics withoutDiagnostics
+  run_counters "$ws/diag-and-notice.log"
+  withDiagnostics=$(notice_count "$dout")
+  check "two real diagnostics in the same log are still counted once each" \
+    $( [[ "$dout" == *"warnings:        2"* ]] && print 1 || print 0 ) "$dout"
+  check "…and their caret continuations are NOT reported as tool notices (T-1620)" \
+    $( (( withDiagnostics == 2 )) && print 1 || print 0 ) "tool notices: $withDiagnostics in: $dout"
+  run_counters "$ws/notices-only.log"
+  withoutDiagnostics=$(notice_count "$dout")
+  check "…and the SAME two notices alone read the same: adding diagnostics changes nothing" \
+    $( (( withDiagnostics == withoutDiagnostics && withoutDiagnostics > 0 )) && print 1 || print 0 ) \
+    "with: $withDiagnostics, without: $withoutDiagnostics"
+  # The macro block is the log T-1620 was measured on, and it is the stronger case: its only
+  # `warning:` lines are one diagnostic and one continuation, so the old reading printed a
+  # tool-notice line over a log with no tool in it at all.
+  run_counters "$ws/macro.log"
+  check "a macro diagnostic's continuation invents no tool notice either (T-1620)" \
+    $( [[ "$dout" != *"tool notices:"* ]] && print 1 || print 0 ) "$dout"
+  run_counters "$ws/attached-macro.log"
+  check "…and neither does an attached macro's" \
+    $( [[ "$dout" != *"tool notices:"* ]] && print 1 || print 0 ) "$dout"
 
   say ""
   say " 7. the warning gate (T-1149)"
