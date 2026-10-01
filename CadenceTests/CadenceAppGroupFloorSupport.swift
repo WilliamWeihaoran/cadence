@@ -193,6 +193,17 @@ struct CadenceAppGroupFloor {
     /// has to agree with.
     let reference: CadenceAppGroupStoreOutcome
 
+    /// What `CadenceStoreSupport.storeDirectoryLocation` answers on this floor — the **non-creating**
+    /// question, and the reference for the resolvers that take it ([[T-1852]]).
+    ///
+    /// It is a second reading and not a cheaper spelling of the first. `primaryStoreDirectoryURL`
+    /// can fail in two places and `storeDirectoryLocation` only in the first, so the two differ on
+    /// exactly one floor: `.unwritableContainer`, where the container is answered and cannot be
+    /// written — which is **CI's** floor. That difference is the whole of what [[T-1852]] buys a
+    /// hosted runner: a listing resolver's unset half now *resolves* there and can be compared
+    /// against an exact path, where before both sides could only agree on a refusal.
+    let locationReference: CadenceAppGroupStoreOutcome
+
     var name: String { kind.rawValue }
 
     /// All four floors. `root` must be the test's own temporary directory: the injected containers
@@ -220,6 +231,9 @@ struct CadenceAppGroupFloor {
                 fileManager: fileManager,
                 reference: CadenceAppGroupStoreOutcome {
                     try CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
+                },
+                locationReference: CadenceAppGroupStoreOutcome {
+                    try CadenceStoreSupport.storeDirectoryLocation(fileManager: fileManager)
                 }
             )
         }
@@ -254,6 +268,27 @@ func expectResolvesLikeTheAppGroupStore(
     #expect(
         actual == floor.reference,
         "[\(floor.name)] \(reason): resolved \(actual), CadenceStoreSupport resolved \(floor.reference)",
+        sourceLocation: sourceLocation
+    )
+}
+
+/// The same assertion against the **non-creating** reference ([[T-1852]]).
+///
+/// Separate from `expectResolvesLikeTheAppGroupStore` rather than a parameter on it, because which
+/// reference a resolver owes agreement to is a property of the resolver: one that creates must
+/// refuse where `createDirectory` is refused, and one that does not create must *not* start
+/// refusing there. Collapsing the two would let a listing resolver that quietly went back to
+/// creating its answer stay green on the floor built to catch it.
+func expectResolvesLikeTheAppGroupStoreLocation(
+    _ resolve: (FileManager) throws -> URL,
+    on floor: CadenceAppGroupFloor,
+    _ reason: String,
+    sourceLocation: SourceLocation = #_sourceLocation
+) {
+    let actual = CadenceAppGroupStoreOutcome { try resolve(floor.fileManager) }
+    #expect(
+        actual == floor.locationReference,
+        "[\(floor.name)] \(reason): resolved \(actual), CadenceStoreSupport located \(floor.locationReference)",
         sourceLocation: sourceLocation
     )
 }
@@ -424,5 +459,77 @@ struct CadenceAppGroupFloorSupportTests {
         let elsewhere = root.appendingPathComponent("Fixture", isDirectory: true)
         try stub.createDirectory(at: elsewhere, withIntermediateDirectories: true)
         #expect(FileManager.default.fileExists(atPath: elsewhere.path))
+    }
+
+    /// **The second reference is a second reading, and the floors say where the two part
+    /// company ([[T-1852]]).**
+    ///
+    /// Counted and visible, like the four floors above, rather than left as a claim in a doc
+    /// comment: the non-creating location resolves on **three** of the four floors and refuses on
+    /// exactly one, while the creating reference resolves on at most two. The floor they disagree
+    /// on is `.unwritableContainer` — CI's — and that disagreement is the entire benefit the
+    /// ticket predicted. A change that made `storeDirectoryLocation` create again would collapse
+    /// the two counts into each other and fail here before it reached any resolver.
+    @Test func theNonCreatingLocationResolvesWhereTheCreatingReferenceCannot() throws {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let byKind = Dictionary(
+            uniqueKeysWithValues: CadenceAppGroupFloor.all(in: root).map { ($0.kind, $0) }
+        )
+
+        // `.standIn`: both halves work, so the two readings are the same value. This is the
+        // control — without it, "they differ" could be true because the location answered nonsense.
+        let standIn = try #require(byKind[.standIn])
+        #expect(
+            standIn.locationReference == standIn.reference,
+            "the stand-in's two readings disagree: \(standIn.locationReference) vs \(standIn.reference)"
+        )
+
+        // `.unwritableContainer`: the container is named and cannot be written. The creating
+        // reference refuses; the location answers the path anyway, which is the point.
+        let unwritable = try #require(byKind[.unwritableContainer])
+        #expect(unwritable.reference.isRefusal, "the unwritable floor stopped refusing")
+        let located = try #require(
+            unwritable.locationReference.url,
+            "the non-creating location refused on the floor it exists to answer on"
+        )
+        #expect(
+            located.lastPathComponent == CadenceStoreSupport.storeDirectoryName,
+            "the location did not resolve through CadenceStoreSupport's own layout"
+        )
+
+        // ...and it answered without making anything. Asserted off the filesystem: the container
+        // was never created, so neither was the store directory under it.
+        #expect(
+            !FileManager.default.fileExists(atPath: located.path),
+            "asking where the store is created \(located.path)"
+        )
+
+        // `.noContainer`: there is no path to name, so both readings refuse, identically. The one
+        // branch the non-creating form keeps.
+        let noContainer = try #require(byKind[.noContainer])
+        #expect(
+            noContainer.locationReference == noContainer.reference,
+            "a missing container stopped being a refusal for the non-creating form"
+        )
+        #expect(noContainer.locationReference.isRefusal)
+
+        // The counts, over all four floors, spelled so that they do not move with the host. How
+        // many floors the *creating* reference resolves on is exactly the CI/local split — two
+        // here, one on a runner — so it is the relations that are asserted, not that number.
+        let floors = CadenceAppGroupFloor.all(in: root)
+        #expect(
+            floors.filter { $0.locationReference.isRefusal }.count == 1,
+            "the non-creating location refuses on a floor other than the one with no container"
+        )
+        #expect(
+            floors.allSatisfy { $0.reference.isRefusal || !$0.locationReference.isRefusal },
+            "a floor that can create the store directory could not name it"
+        )
+        #expect(
+            floors.contains { $0.reference.isRefusal && !$0.locationReference.isRefusal },
+            "no floor separates the two references, so they are one reading and T-1852 bought nothing"
+        )
     }
 }

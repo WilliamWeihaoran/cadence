@@ -75,7 +75,23 @@ nonisolated enum CadenceStoreSupport {
         try sharedStoreDirectoryURL(fileManager: fileManager)
     }
 
-    nonisolated static func sharedStoreDirectoryURL(
+    /// **Where the app-group store directory *is*, composed and never created ([[T-1852]]).**
+    ///
+    /// `sharedStoreDirectoryURL` below ends in a `createDirectory`, and until this existed it was
+    /// the only way to ask the question at all — so three callers that only wanted to *know where
+    /// the store would be* created it as a side effect of asking:
+    /// `StoreBackupManager.unmanagedBackupDirectories()`, `StoreBackupManager.unmanagedStoreDirectories()`
+    /// and `PersistenceController.recoveryStoreDirectoryCandidates(in:)`, all three of them
+    /// read-only listings, plus `attemptRecoveryExport` ([[T-1842]]). Asking where a store is must
+    /// not be a way for a unit test, or an agent launch, to make a directory inside the signed-in
+    /// person's group container.
+    ///
+    /// It is also the half a hosted runner **can** answer. `containerURL(forSecurityApplicationGroupIdentifier:)`
+    /// succeeds there — macOS derives the path from the identifier rather than from an entitlement —
+    /// and only the `createDirectory` is denied, `NSCocoaErrorDomain` 513 over `NSPOSIXErrorDomain` 1
+    /// ([[T-1850]]). So the two functions refuse in *different* places, deliberately: this one
+    /// refuses only when there is no container to name, and that is the whole difference.
+    nonisolated static func storeDirectoryLocation(
         fileManager: FileManager = .default,
         containerURL: URL? = nil
     ) throws -> URL {
@@ -88,9 +104,21 @@ nonisolated enum CadenceStoreSupport {
             throw CocoaError(.fileNoSuchFile)
         }
 
-        let storeDirectoryURL = baseURL
+        return baseURL
             .appendingPathComponent("Library/Application Support", isDirectory: true)
             .appendingPathComponent(storeDirectoryName, isDirectory: true)
+    }
+
+    /// The same path, created. The write path's entry point, and the one every *opening* caller
+    /// still takes — the store directory has to exist before a `ModelContainer` is pointed at it.
+    nonisolated static func sharedStoreDirectoryURL(
+        fileManager: FileManager = .default,
+        containerURL: URL? = nil
+    ) throws -> URL {
+        let storeDirectoryURL = try storeDirectoryLocation(
+            fileManager: fileManager,
+            containerURL: containerURL
+        )
         try fileManager.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
         return storeDirectoryURL
     }

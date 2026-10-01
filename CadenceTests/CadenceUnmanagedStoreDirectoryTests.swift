@@ -224,6 +224,105 @@ struct CadenceUnmanagedStoreDirectoryTests {
         }
     }
 
+    // MARK: - Asking where the store is does not make one ([[T-1852]])
+
+    /// **The question itself was a write, and this is the filesystem reading that says it is not.**
+    ///
+    /// `CadenceStoreSupport.primaryStoreDirectoryURL` ends in a `createDirectory`, and until
+    /// [[T-1852]] it was the only way to ask where the app-group store is — so every read-only
+    /// caller created the directory as a side effect of wondering about it. The two spellings are
+    /// driven here against the **same** injected container, one after the other, so the difference
+    /// is the function and not the fixture: the non-creating form leaves the container absent, and
+    /// the creating form then makes it. A control, and not one reading taken alone: a test that only
+    /// checked "the location did not create" would pass just as well against a container the stub
+    /// could never have created at all.
+    @Test func askingWhereTheStoreIsCreatesNothingAndAskingForItStillDoes() throws {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // A container path under this test's own root, deliberately **not** created. Never the real
+        // group container: the whole hazard being pinned is a resolver that makes a directory
+        // inside it.
+        let container = root.appendingPathComponent("GroupContainer", isDirectory: true)
+        let stub = CadenceAppGroupContainerStub(container: container)
+        #expect(!FileManager.default.fileExists(atPath: container.path), "the fixture started dirty")
+
+        let located = try CadenceStoreSupport.storeDirectoryLocation(fileManager: stub)
+        #expect(
+            located.standardizedFileURL.path
+                == container
+                    .appendingPathComponent("Library/Application Support", isDirectory: true)
+                    .appendingPathComponent(CadenceStoreSupport.storeDirectoryName, isDirectory: true)
+                    .standardizedFileURL.path,
+            "the non-creating form composed \(located.path), which is not the app-group layout"
+        )
+        #expect(
+            tree(under: root).isEmpty,
+            "asking where the store is wrote \(tree(under: root))"
+        )
+
+        // The control: the creating form answers the *same* path and does make it.
+        let created = try CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: stub)
+        #expect(created.standardizedFileURL == located.standardizedFileURL, "the two forms disagree about the path")
+        #expect(
+            FileManager.default.fileExists(atPath: created.path),
+            "the creating form stopped creating, so the test above is about nothing"
+        )
+    }
+
+    /// The three read-only resolvers that asked it. Same control, one level up.
+    ///
+    /// Each of these is a *listing* — the store folders Data Safety shows, the backup folders it
+    /// shows beside them, and the terminal recovery screen's candidate search ([[T-1842]]) — and
+    /// each used to create the signed-in person's store directory on its way to answering. They are
+    /// driven here with an injected container that does not exist, and the assertion is the one the
+    /// safety rule is written in: the tree under this test's own root is unchanged.
+    @Test func theReadOnlyResolversNoLongerCreateTheStoreDirectoryTheyAskAbout() throws {
+        let root = makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let container = root.appendingPathComponent("GroupContainer", isDirectory: true)
+        let stub = CadenceAppGroupContainerStub(container: container)
+        let storeDirectory = try CadenceStoreSupport.storeDirectoryLocation(fileManager: stub)
+
+        // Three resolutions, all unredirected — the half that reaches the app-group container, and
+        // therefore the half that could write into it.
+        let recovery = PersistenceController.recoveryStoreDirectoryCandidates(
+            in: [:],
+            temporaryDirectory: root.appendingPathComponent("Temporary", isDirectory: true),
+            fileManager: stub
+        )
+        let backups = try StoreBackupManager.storeDirectoryLocation(
+            in: [:],
+            temporaryDirectory: root.appendingPathComponent("Temporary", isDirectory: true),
+            fileManager: stub
+        )
+        let exportCandidates = PersistenceController.recoveryExportCandidateStoreURLs(
+            in: [:],
+            temporaryDirectory: root.appendingPathComponent("Temporary", isDirectory: true),
+            fileManager: stub
+        )
+
+        // Non-vacuity first: each one really did resolve *through* the injected container, so the
+        // "nothing was written" reading below is about these calls and not about three refusals.
+        #expect(
+            recovery.first?.standardizedFileURL.path
+                == storeDirectory.appendingPathComponent("Recovery", isDirectory: true).standardizedFileURL.path,
+            "the recovery candidates resolved \(recovery.first?.path ?? "nil")"
+        )
+        #expect(backups.standardizedFileURL == storeDirectory.standardizedFileURL)
+        #expect(
+            exportCandidates.first?.standardizedFileURL.path
+                == storeDirectory.appendingPathComponent(CadenceStoreSupport.storeFilename).standardizedFileURL.path,
+            "the export candidates resolved \(exportCandidates.first?.path ?? "nil")"
+        )
+
+        #expect(
+            tree(under: root).isEmpty,
+            "a read-only resolver wrote into the container it was only asked about: \(tree(under: root))"
+        )
+    }
+
     // MARK: - The recovery store follows the store this launch opens
 
     /// **The [[T-1448]] property, for the one store path that never had it — in both directions.**
@@ -263,10 +362,18 @@ struct CadenceUnmanagedStoreDirectoryTests {
                 fileManager: floor.fileManager
             )
             let firstUnset = unset.first?.standardizedFileURL.path
-            switch floor.reference {
+            // **[[T-1852]] changed which reference this owes agreement to, and that is the point of
+            // the ticket rather than an accommodation to it.** The candidate base was
+            // `primaryStoreDirectoryURL`, which *creates*, so on a container that is named and
+            // cannot be written — CI's floor exactly — this fell into the `.refused` branch below
+            // and could only assert the `Application Support` fallback. The base is now
+            // `storeDirectoryLocation`, which composes and creates nothing, so that floor resolves
+            // and the **exact app-group Recovery path** is asserted there too. The `.refused` branch
+            // survives for the one floor that still takes it: no container at all, nothing to name.
+            switch floor.locationReference {
             case .directory:
                 #expect(
-                    firstUnset == floor.reference.appending("Recovery").url?.standardizedFileURL.path,
+                    firstUnset == floor.locationReference.appending("Recovery").url?.standardizedFileURL.path,
                     "[\(floor.name)] an environment naming nothing resolved \(firstUnset ?? "nil") instead of the app-group Recovery folder"
                 )
             case .refused:
@@ -296,7 +403,7 @@ struct CadenceUnmanagedStoreDirectoryTests {
                 redirected.first?.standardizedFileURL.path == expected.standardizedFileURL.path,
                 "[\(floor.name)] a redirected launch resolved \(redirected.first?.path ?? "nil") instead of its private Recovery folder"
             )
-            let appGroupRecovery = floor.reference.appending("Recovery")
+            let appGroupRecovery = floor.locationReference.appending("Recovery")
             #expect(
                 !redirected.contains {
                     CadenceAppGroupStoreOutcome.directory($0.standardizedFileURL.path) == appGroupRecovery

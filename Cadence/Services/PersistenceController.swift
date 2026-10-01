@@ -425,8 +425,25 @@ struct PersistenceController {
         }
     }
 
-    /// A best-effort, read-only, export-only open of whatever store this device actually has —
+    /// A best-effort, read-only, export-only open of the store **this launch tried to open** —
     /// tried only from `CadenceTerminalRecoveryView`, after `terminalFailure` is already set.
+    ///
+    /// **[[T-1842]] decided which of the two readings this is, and it is not the one the comment
+    /// here used to argue for.** The old sentence said "whatever store this device actually has",
+    /// and the code matched it: the candidates were built from `CadenceStoreSupport.primaryStoreURL()`
+    /// and `primaryStoreDirectoryURL()` with no redirect at all. That is right for the shipping app,
+    /// where the two readings coincide, and wrong everywhere else — a `CadenceTests` host, or an
+    /// agent launch through `scripts/run-macos-app.sh`, opens a private store, and the whole point
+    /// of a redirected launch is that the signed-in person's store is **not** the one it has. The
+    /// screen is read-only and unreachable without a terminal failure, so nothing was ever copied;
+    /// what it offered was worse in kind than a stray file, because the one button on it would have
+    /// put the owner's tasks into an archive at a path chosen by whoever was driving that launch.
+    /// It now resolves through `CadenceUITestStoreDirectory.redirectedStoreDirectory`, the same
+    /// single resolver the store itself, its backups and its recovery directory take, and an
+    /// environment naming neither redirect still answers the app-group store exactly.
+    ///
+    /// The recovery directories were already redirect-aware ([[T-1680]]) while the primary store
+    /// beside them was not, which is the inconsistency that made this a defect rather than a choice.
     ///
     /// This is not a fourth attempt at the sequence above. `init` already tried the primary store
     /// **with CloudKit**, a separate on-disk recovery store **without** it, and a fully in-memory
@@ -444,20 +461,49 @@ struct PersistenceController {
     /// built on the already-pure `recoveryStoreDirectoryCandidates`: a test can hand the search
     /// real, isolated temporary files, or an injected open and export, without ever touching this
     /// device's actual app-group container.
-    static func attemptRecoveryExport(fileManager: FileManager = .default) -> RecoveryExportResult {
-        let primaryStoreURL = try? CadenceStoreSupport.primaryStoreURL(fileManager: fileManager)
-        let primaryStoreDirectoryURL = try? CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
-        let applicationSupportDirectoryURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+    static func attemptRecoveryExport(
+        in environment: [String: String] = ProcessInfo.processInfo.environment,
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default
+    ) -> RecoveryExportResult {
+        recoverFirstExportableStore(from: recoveryExportCandidateStoreURLs(
+            in: environment,
+            temporaryDirectory: temporaryDirectory,
+            fileManager: fileManager
+        ))
+    }
 
-        let candidateStoreURLs = recoveryExportCandidateStoreURLs(
-            primaryStoreURL: primaryStoreURL,
+    /// The candidate list resolved for **this** launch, and the seam the redirect is asserted at
+    /// ([[T-1842]]).
+    ///
+    /// Split out from `attemptRecoveryExport` for the reason the pure overload below is split out
+    /// from this one: the ordering is one question, the resolution is another, and only the
+    /// resolution can be wrong about *whose* store it names. A test can therefore read the two
+    /// candidate lists a redirected and an unredirected launch produce and compare them, without
+    /// opening anything at all.
+    ///
+    /// Nothing here creates a directory. The unredirected base is `CadenceStoreSupport.storeDirectoryLocation`,
+    /// not `primaryStoreDirectoryURL` ([[T-1852]]) — a terminal-failure screen asking where the
+    /// store would be must not be the thing that makes one.
+    static func recoveryExportCandidateStoreURLs(
+        in environment: [String: String],
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        let activeStoreDirectoryURL = CadenceUITestStoreDirectory.redirectedStoreDirectory(
+            in: environment,
+            temporaryDirectory: temporaryDirectory
+        ) ?? (try? CadenceStoreSupport.storeDirectoryLocation(fileManager: fileManager))
+
+        return recoveryExportCandidateStoreURLs(
+            primaryStoreURL: activeStoreDirectoryURL?
+                .appendingPathComponent(CadenceStoreSupport.storeFilename),
             recoveryDirectoryCandidates: recoveryStoreDirectoryCandidates(
-                primaryStoreDirectoryURL: primaryStoreDirectoryURL,
-                applicationSupportDirectoryURL: applicationSupportDirectoryURL,
-                temporaryDirectoryURL: fileManager.temporaryDirectory
+                in: environment,
+                temporaryDirectory: temporaryDirectory,
+                fileManager: fileManager
             )
         )
-        return recoverFirstExportableStore(from: candidateStoreURLs)
     }
 
     /// The ordered list of store files `attemptRecoveryExport` will try: the
@@ -613,11 +659,13 @@ struct PersistenceController {
     /// single resolver both of those settled on, and an environment naming neither a store id nor
     /// a test host still answers the app-group path exactly.
     ///
-    /// Nothing here writes: the only filesystem call is `primaryStoreDirectoryURL`, which is the
-    /// app's own store directory and already exists on any launch that reached this code. That is
-    /// what makes the same question safe for `StoreBackupManager.unmanagedStoreDirectories()` to
-    /// ask read-only, from a healthy launch, in order to *list* a recovery folder it must not
-    /// touch.
+    /// **Nothing here writes, and since [[T-1852]] that is true of the resolution too.** It used to
+    /// end in `CadenceStoreSupport.primaryStoreDirectoryURL`, which *creates* the directory it
+    /// answers — defensible while that was the only way to ask the question, and still a listing
+    /// that made a folder in the signed-in person's group container merely by wondering where it
+    /// was. `storeDirectoryLocation` composes the same path and creates nothing, which is what
+    /// makes this question safe for `StoreBackupManager.unmanagedStoreDirectories()` to ask
+    /// read-only, from a healthy launch, in order to *list* a recovery folder it must not touch.
     static func recoveryStoreDirectoryCandidates(
         in environment: [String: String],
         temporaryDirectory: URL = FileManager.default.temporaryDirectory,
@@ -626,7 +674,7 @@ struct PersistenceController {
         let activeStoreDirectoryURL = CadenceUITestStoreDirectory.redirectedStoreDirectory(
             in: environment,
             temporaryDirectory: temporaryDirectory
-        ) ?? (try? CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager))
+        ) ?? (try? CadenceStoreSupport.storeDirectoryLocation(fileManager: fileManager))
 
         return recoveryStoreDirectoryCandidates(
             primaryStoreDirectoryURL: activeStoreDirectoryURL,
@@ -1088,7 +1136,7 @@ enum StoreBackupManager {
     ///   test host's store is `<tmp>/CadenceTestsHostStore`, and their app-group backups really are
     ///   a directory it does not manage. Tests inject rather than relying on it.
     static func unmanagedBackupDirectories() -> [UnmanagedBackupDirectory] {
-        unmanagedBackupDirectories(liveStoreDirectoryURL: try? defaultStoreDirectoryURL())
+        unmanagedBackupDirectories(liveStoreDirectoryURL: defaultStoreDirectoryLocation())
     }
 
     static func unmanagedBackupDirectories(
@@ -1155,7 +1203,7 @@ enum StoreBackupManager {
     ///   honest answer for that process and it is why the whole path is read-only. Tests inject.
     static func unmanagedStoreDirectories() -> [UnmanagedStoreDirectory] {
         unmanagedStoreDirectories(
-            liveStoreDirectoryURL: try? defaultStoreDirectoryURL(),
+            liveStoreDirectoryURL: defaultStoreDirectoryLocation(),
             recoveryStoreDirectories: PersistenceController.recoveryStoreDirectoryCandidates(
                 in: ProcessInfo.processInfo.environment
             )
@@ -1657,6 +1705,19 @@ enum StoreBackupManager {
         try storeDirectoryURL(in: ProcessInfo.processInfo.environment)
     }
 
+    /// Where the two **listings** look — `unmanagedBackupDirectories()` and
+    /// `unmanagedStoreDirectories()`, and nothing else ([[T-1852]]).
+    ///
+    /// They are the entry points that want the live store directory in order to exclude it from a
+    /// read-only list, and going through `defaultStoreDirectoryURL()` meant that opening Settings →
+    /// Data Safety — or running a unit test that called either one — *created* the store directory
+    /// it was asking about. `nil` rather than `throws` because a live directory that cannot be
+    /// resolved is already an ordinary input here: both listings take `URL?` and simply exclude
+    /// nothing.
+    private static func defaultStoreDirectoryLocation() -> URL? {
+        try? storeDirectoryLocation(in: ProcessInfo.processInfo.environment)
+    }
+
     /// The resolution itself, with its inputs injected so a test can drive **both** halves — the
     /// redirected one and, more importantly, the unset one, which has to keep answering exactly
     /// the production path or this change reaches the shipping app.
@@ -1673,13 +1734,39 @@ enum StoreBackupManager {
         temporaryDirectory: URL = FileManager.default.temporaryDirectory,
         fileManager: FileManager = .default
     ) throws -> URL {
+        let storeDirectoryURL = try storeDirectoryLocation(
+            in: environment,
+            temporaryDirectory: temporaryDirectory,
+            fileManager: fileManager
+        )
+        try fileManager.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
+        return storeDirectoryURL
+    }
+
+    /// **The same resolution, composed and never created ([[T-1852]]).**
+    ///
+    /// The redirect is asked here and nowhere else on this type — `storeDirectoryURL(in:)` above is
+    /// this plus one `createDirectory`, which is the shape that keeps the creating and the
+    /// non-creating answers from drifting apart. Two copies of the redirect question is exactly how
+    /// the store and its backups came to disagree in [[T-1530]].
+    ///
+    /// The read-only listings take this one: `unmanagedBackupDirectories()` and
+    /// `unmanagedStoreDirectories()` want the live directory only in order to **exclude** it, and
+    /// before this they created the signed-in person's store directory merely by asking where it
+    /// was. On a host with no writable app-group container this also *answers* where the unredirected
+    /// store would be instead of refusing, because only the `createDirectory` is denied there
+    /// ([[T-1850]]).
+    static func storeDirectoryLocation(
+        in environment: [String: String],
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default
+    ) throws -> URL {
         guard let redirectedStoreDirectoryURL = CadenceUITestStoreDirectory.redirectedStoreDirectory(
             in: environment,
             temporaryDirectory: temporaryDirectory
         ) else {
-            return try CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
+            return try CadenceStoreSupport.storeDirectoryLocation(fileManager: fileManager)
         }
-        try fileManager.createDirectory(at: redirectedStoreDirectoryURL, withIntermediateDirectories: true)
         return redirectedStoreDirectoryURL
     }
 

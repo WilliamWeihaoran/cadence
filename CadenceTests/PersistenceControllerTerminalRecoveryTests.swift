@@ -458,4 +458,210 @@ struct PersistenceControllerTerminalRecoveryTests {
         #expect(body.contains("url: recoveryDirectoryURL.appendingPathComponent(\"recovery.store\")"))
         #expect(body.contains("return try ModelContainer(for: schema, configurations: [recoveryConfig])"))
     }
+
+    // MARK: - Whose store the screen offers to export ([[T-1842]])
+
+    /// A root of this test's own. Every fixture below hangs off it — never off the value being
+    /// resolved, and never anywhere near the real app-group container.
+    private func makeT1842Root() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("CadenceT1842-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    /// **The discriminating reading: the two launches produce different candidate lists.**
+    ///
+    /// `attemptRecoveryExport` built its candidates from `CadenceStoreSupport.primaryStoreURL()`
+    /// and `primaryStoreDirectoryURL()` with no redirect, so a `CadenceTests` host or an agent
+    /// launch through `scripts/run-macos-app.sh` that reached terminal recovery offered to export
+    /// the **signed-in person's** store. A test that only checked "a candidate list comes back", or
+    /// "an export produces a file", passes with that defect untouched; what says it is fixed is
+    /// that the redirected and the unredirected readings are not the same list.
+    ///
+    /// Both halves are asserted, because only one of them reaches the shipping app: an environment
+    /// naming no redirect still has to answer the app-group store **exactly**, and that is asserted
+    /// against `CadenceStoreSupport` rather than a literal so a later move of the store cannot make
+    /// it pass by drifting with it. Driven on all four floors ([[T-1850]]) — the exact-path half is
+    /// decidable on a hosted runner because [[T-1852]] made the resolution non-creating, which is
+    /// the same change that keeps this screen from creating a directory in someone's container
+    /// while asking where one is.
+    @Test func theRecoveryExportCandidatesFollowTheStoreThisLaunchTriedToOpen() throws {
+        let temporaryDirectory = makeT1842Root()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let expectedPrivateStore = CadenceUITestStoreDirectory
+            .rootDirectory(in: temporaryDirectory)
+            .appendingPathComponent("t1842", isDirectory: true)
+            .appendingPathComponent(CadenceStoreSupport.storeFilename)
+
+        for floor in CadenceAppGroupFloor.all(in: temporaryDirectory) {
+            let unset = PersistenceController.recoveryExportCandidateStoreURLs(
+                in: [:],
+                temporaryDirectory: temporaryDirectory,
+                fileManager: floor.fileManager
+            )
+            let redirected = PersistenceController.recoveryExportCandidateStoreURLs(
+                in: ["CADENCE_UI_TEST_STORE_ID": "t1842"],
+                temporaryDirectory: temporaryDirectory,
+                fileManager: floor.fileManager
+            )
+
+            // (1) The shipping app's half: the app-group store's own file, first and exactly.
+            switch floor.locationReference {
+            case .directory:
+                #expect(
+                    unset.first?.standardizedFileURL.path
+                        == floor.locationReference
+                            .appending(CadenceStoreSupport.storeFilename)
+                            .url?.standardizedFileURL.path,
+                    "[\(floor.name)] an unredirected launch offered \(unset.first?.path ?? "nil") instead of the app-group store"
+                )
+            case .refused:
+                // No container to name at all. There is then no primary store to rank first, and
+                // the list must *begin* with the recovery fallbacks rather than with something the
+                // resolver invented — the `nil` is dropped, never passed through.
+                #expect(
+                    unset.first?.lastPathComponent == "recovery.store",
+                    "[\(floor.name)] with no app group the list began \(unset.first?.path ?? "nil")"
+                )
+            }
+
+            // (2) The redirected half: this launch's own private store, exactly.
+            #expect(
+                redirected.first?.standardizedFileURL.path == expectedPrivateStore.standardizedFileURL.path,
+                "[\(floor.name)] a redirected launch offered \(redirected.first?.path ?? "nil") instead of its own store"
+            )
+
+            // (3) ...and the person's store is nowhere in it. Not just "not first": a candidate
+            //     ranked second is still a store this launch would open and export if the first
+            //     one failed, which is the ordinary case on a screen reached by a store failure.
+            if let appGroupStoreDirectory = floor.locationReference.url {
+                let prefix = appGroupStoreDirectory.standardizedFileURL.path + "/"
+                #expect(
+                    !redirected.contains { $0.standardizedFileURL.path.hasPrefix(prefix) },
+                    "[\(floor.name)] a redirected launch can still export out of the app-group store"
+                )
+            }
+
+            // (4) **The two readings differ.** Without this the pair above could both be satisfied
+            //     by a resolver that ignored the environment and happened to answer the same thing
+            //     twice — the EMPTY-DENOMINATOR shape, where every list matches because every list
+            //     is the same list.
+            #expect(
+                unset.map(\.standardizedFileURL.path) != redirected.map(\.standardizedFileURL.path),
+                "[\(floor.name)] the redirect makes no difference to the export, so it is not a redirect"
+            )
+        }
+
+        // Resolving is not creating — the private store directory must not exist merely because the
+        // screen asked where it was.
+        #expect(
+            !FileManager.default.fileExists(atPath: expectedPrivateStore.deletingLastPathComponent().path),
+            "asking created the private store directory"
+        )
+    }
+
+    /// **The same claim at the level of bytes: which person's tasks come out of the file.**
+    ///
+    /// The candidate list is the seam, but a list is not what the button produces. Two *real*
+    /// stores are seeded — one under the stand-in app-group container, one under the private
+    /// directory a redirected launch opens — with different task titles, and `attemptRecoveryExport`
+    /// is driven twice over the same `FileManager`. The titles in the two archives have to be
+    /// different titles. With the defect restored both archives say the same thing, and that thing
+    /// is the signed-in person's.
+    ///
+    /// Two rows rather than one, deliberately: the ONE-CANDIDATE trap would let a resolver that
+    /// ignored the environment still export *a* store and look right. The stand-in floor is used
+    /// because it resolves on every host, so this is not a test that only runs on a Mac with an
+    /// app-group container; its container lives under this test's own temporary root.
+    @Test func theRecoveryExportReadsTheRedirectedStoreAndNotTheSignedInPersons() throws {
+        let temporaryDirectory = makeT1842Root()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let standIn = try #require(
+            CadenceAppGroupFloor.all(in: temporaryDirectory).first { $0.kind == .standIn },
+            "the stand-in floor is gone, so this test has no host-independent container"
+        )
+        let appGroupStoreDirectory = try #require(standIn.locationReference.url)
+
+        // The "signed-in person's" store — a stand-in under this test's own root, never the real
+        // container. This is the data the defect would have put into the export.
+        try seedRealStore(
+            at: appGroupStoreDirectory.appendingPathComponent(CadenceStoreSupport.storeFilename),
+            taskTitle: "Belongs to the signed-in person"
+        )
+
+        // The store a redirected launch actually has open.
+        let privateStoreDirectory = CadenceUITestStoreDirectory
+            .rootDirectory(in: temporaryDirectory)
+            .appendingPathComponent("t1842-export", isDirectory: true)
+        try FileManager.default.createDirectory(at: privateStoreDirectory, withIntermediateDirectories: true)
+        try seedRealStore(
+            at: privateStoreDirectory.appendingPathComponent(CadenceStoreSupport.storeFilename),
+            taskTitle: "Belongs to this launch"
+        )
+
+        let redirected = PersistenceController.attemptRecoveryExport(
+            in: ["CADENCE_UI_TEST_STORE_ID": "t1842-export"],
+            temporaryDirectory: temporaryDirectory,
+            fileManager: standIn.fileManager
+        )
+        let unset = PersistenceController.attemptRecoveryExport(
+            in: [:],
+            temporaryDirectory: temporaryDirectory,
+            fileManager: standIn.fileManager
+        )
+
+        #expect(try exportedTitles(redirected) == ["Belongs to this launch"])
+        #expect(try exportedTitles(unset) == ["Belongs to the signed-in person"])
+
+        // The two readings differ, stated as a relation rather than left to the two literals above
+        // — this is the assertion a resolver that ignored the environment cannot satisfy.
+        #expect(
+            try exportedTitles(redirected) != exportedTitles(unset),
+            "both launches exported the same store, so the export does not follow the redirect"
+        )
+
+        // And the archive names the file it came from, which is the other half of what the screen
+        // tells the user.
+        guard case .exported(let export) = redirected else { return }
+        #expect(
+            export.storeURL.standardizedFileURL
+                == privateStoreDirectory
+                    .appendingPathComponent(CadenceStoreSupport.storeFilename)
+                    .standardizedFileURL,
+            "the redirected export came out of \(export.storeURL.path)"
+        )
+        #expect(export.precedingFailures.isEmpty)
+    }
+
+    /// The screen still asks with no arguments, so the resolution proved above is the one the
+    /// button reaches — otherwise this is a tested helper beside an untouched defect.
+    @Test func theTerminalRecoveryScreenAsksTheLaunchAwareEntryPoint() throws {
+        let view = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTerminalRecoveryView.swift")
+        )
+        #expect(
+            view.contains("PersistenceController.attemptRecoveryExport()"),
+            "the recovery screen no longer calls the no-argument entry point"
+        )
+
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        let body = try #require(
+            // The environment-aware overload is declared first, so the shared prefix reaches it
+            // rather than the pure one below it. Non-vacuity is the second `#expect`: the pure
+            // overload's body contains neither of the two names asserted here.
+            CadenceSourceScan.declarationBody("static func recoveryExportCandidateStoreURLs(", in: source),
+            "recoveryExportCandidateStoreURLs did not read as itself"
+        )
+        #expect(
+            body.contains("CadenceUITestStoreDirectory.redirectedStoreDirectory("),
+            "the export resolver is back to the app-group store unconditionally"
+        )
+        #expect(
+            !body.contains("CadenceStoreSupport.primaryStoreURL("),
+            "the export resolver creates and opens the app-group store again"
+        )
+    }
 }

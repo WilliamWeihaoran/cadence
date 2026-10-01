@@ -369,19 +369,53 @@ struct CadenceAgentDefaultsIsolationTests {
             "defaultStoreDirectoryURL went back to answering the app-group store unconditionally"
         )
 
-        // Counted rather than named: an eleventh no-argument entry point added later still has to
-        // go through `defaultStoreDirectoryURL`, and a count is the only reading that notices. Was
-        // nine for T-1448 (eight calls and the declaration); [[T-1532]] added the ninth call,
-        // `unmanagedBackupDirectories()`, which needs the live directory in order to *exclude* it;
-        // [[T-1680]] added the tenth, `unmanagedStoreDirectories()`, which needs it for the same
-        // reason one directory over — the store folders the app is **not** using, of which the
-        // live store directory is never one.
+        // **[[T-1852]]: the two *listings* now take a second, non-creating resolver — and it has to
+        // ask the same redirect.** `unmanagedBackupDirectories()` and `unmanagedStoreDirectories()`
+        // want the live store directory only in order to **exclude** it from a read-only list, and
+        // reaching it through `defaultStoreDirectoryURL()` meant that asking created the signed-in
+        // person's store directory. They are the only two that moved; every destructive entry point
+        // still takes the creating form, which is correct — it is about to write there.
+        let location = try #require(
+            CadenceSourceScan.declarationBody("private static func defaultStoreDirectoryLocation(", in: source),
+            "the listings no longer share a non-creating resolver"
+        )
+        #expect(
+            location.contains("storeDirectoryLocation(in: ProcessInfo.processInfo.environment)"),
+            "defaultStoreDirectoryLocation does not ask the environment, so the redirect does not reach it"
+        )
+        #expect(
+            !location.contains("CadenceStoreSupport.primaryStoreDirectoryURL"),
+            "the non-creating resolver creates the app-group store directory again"
+        )
+
+        // Counted rather than named, in both spellings: an entry point added later still has to go
+        // through one of the two, and a count is the only reading that notices. The creating form
+        // was nine for T-1448 (eight calls and the declaration); [[T-1532]] added a tenth,
+        // `unmanagedBackupDirectories()`, and [[T-1680]] an eleventh, `unmanagedStoreDirectories()`
+        // — and [[T-1852]] moved exactly those two onto the non-creating form, which is why the
+        // first number went back to 9 and the second is 3 (two calls and the declaration). The
+        // **sum** is what must not fall: twelve spellings, one resolver each.
         //
         // Over the stripped source, because T-1532 also wrote the name into a doc comment — and a
         // tripwire that a paragraph can trip is one that gets edited until it stops complaining.
         let code = CadenceSourceScan.strippingComments(source)
-        let mentions = CadenceSourceScan.matchCount("defaultStoreDirectoryURL\\(\\)", in: code)
-        #expect(mentions == 11, "\(mentions) spellings of defaultStoreDirectoryURL(), not the 11 measured for T-1680")
+        let creating = CadenceSourceScan.matchCount("defaultStoreDirectoryURL\\(\\)", in: code)
+        let locating = CadenceSourceScan.matchCount("defaultStoreDirectoryLocation\\(\\)", in: code)
+        #expect(creating == 9, "\(creating) spellings of defaultStoreDirectoryURL(), not the 9 measured for T-1852")
+        #expect(locating == 3, "\(locating) spellings of defaultStoreDirectoryLocation(), not the 3 measured for T-1852")
+        #expect(
+            creating + locating == 12,
+            "\(creating + locating) no-argument store-directory resolutions, not the 12 measured for T-1852"
+        )
+
+        // The two that moved are the two listings, named — a count alone cannot tell "the listing
+        // stopped creating" from "a destructive entry point quietly stopped creating too".
+        for listing in [
+            "unmanagedBackupDirectories(liveStoreDirectoryURL: defaultStoreDirectoryLocation())",
+            "liveStoreDirectoryURL: defaultStoreDirectoryLocation(),",
+        ] {
+            #expect(code.contains(listing), "a read-only listing is back on the creating resolver: \(listing)")
+        }
     }
 
     // MARK: - T-1530: the test host's backups follow the test host's store
@@ -558,13 +592,35 @@ struct CadenceAgentDefaultsIsolationTests {
             "the store resolver spells its own redirects again"
         )
 
+        // **[[T-1852]] moved the redirect one level down, on purpose.** `storeDirectoryURL(in:)` is
+        // now `storeDirectoryLocation(in:)` plus one `createDirectory`, so the creating and the
+        // non-creating answers cannot drift apart — which is this test's own rule applied to the
+        // pair it created. Asserted in both halves: the question is asked once, below, and the
+        // creating form is the one that delegates to it.
         let backupResolver = try #require(
-            CadenceSourceScan.declarationBody("static func storeDirectoryURL(", in: source),
-            "StoreBackupManager.storeDirectoryURL did not read as itself"
+            CadenceSourceScan.declarationBody("static func storeDirectoryLocation(", in: source),
+            "StoreBackupManager.storeDirectoryLocation did not read as itself"
         )
         #expect(
             backupResolver.contains("CadenceUITestStoreDirectory.redirectedStoreDirectory("),
             "the backup resolver is back to asking only about CADENCE_UI_TEST_STORE_ID"
+        )
+        #expect(
+            backupResolver.contains("CadenceStoreSupport.storeDirectoryLocation(fileManager: fileManager)"),
+            "the unredirected half creates the app-group store directory merely by being asked"
+        )
+
+        let creatingBackupResolver = try #require(
+            CadenceSourceScan.declarationBody("static func storeDirectoryURL(", in: source),
+            "StoreBackupManager.storeDirectoryURL did not read as itself"
+        )
+        #expect(
+            creatingBackupResolver.contains("try storeDirectoryLocation("),
+            "storeDirectoryURL spells the redirect itself again, so the two answers can disagree"
+        )
+        #expect(
+            !creatingBackupResolver.contains("CadenceUITestStoreDirectory.redirectedStoreDirectory("),
+            "the redirect question is asked in two places on StoreBackupManager again"
         )
 
         // The literal is the tell. While the test-host directory name was written out in
