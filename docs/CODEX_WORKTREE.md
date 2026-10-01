@@ -67,6 +67,8 @@ Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
 Cadence/Shared/CadenceTypography.swift
 Cadence/Shared/Components/CadenceTagChip.swift
 Cadence/iOS/iOSTaskInspectorMetrics.swift
+Cadence/iOS/iOSFeatureComponents.swift
+Cadence/iOS/iPadTodaySupportViews.swift
 CadenceTests/CadenceCodex*.swift
 CadenceTests/CadencePickerLargeTextLayoutTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
@@ -129,22 +131,34 @@ name it, so returning it would grant a path nobody is working on — which this 
 the kind of lease that eventually gets believed. It comes back the moment an assignment needs it; say
 so rather than working around it.
 
-### Two files are out on loan for T-1702, and they come back
+### The two files loaned for T-1702 have come back — and they came back
 
-`Cadence/iOS/iOSFeatureComponents.swift` and `Cadence/iOS/iPadTodaySupportViews.swift` are **out of
-the lease** while [[T-1702]] is fixed — the owner-reported iPad header truncation lives in
-`iOSPageHeader.eyebrowLine`, and agent `padwidth` established that all three candidate homes for the
-fix are leased files, so it stopped rather than working around it. That was the right call and this
-is the answer to it.
-
-Checked before narrowing, not after: Codex's branch is at `2be0d847`, its worktree is clean, both
-files are unmodified, and T-1453's remaining patch order names `iOSListDetailView`, `iOSListsView`
-and `CadenceBoardMetadataChip` — not these two.
+The promise this section carried while the loan was in force, kept word for word because it is the
+one being discharged:
 
 **They return when T-1702 lands.** [[T-1492]] made the same promise about `CadenceDatePicker.swift`
 and I did not keep it; [[T-1800]] records why that was defensible and it is still a promise I broke.
-This one is narrow and short-lived: if Codex needs either file before T-1702 is done, **say so and
-stop** — that is a one-line lease change, not a blocker.
+
+**T-1702 landed as `3d1f5c33` on 2026-09-30, and both files are back in the lease as of 2026-10-01.**
+That is this promise kept on its own terms. [[T-1492]]'s is still outstanding and is still recorded
+as outstanding in the section above; nothing here discharges it.
+
+What changed under the loan, so Codex is not surprised by the bytes: `iOSFeatureComponents.swift`
+gained `CadencePageHeaderEyebrow.ladder(eyebrow:compactEyebrow:detail:)`, three **named** rungs fed to
+a `ViewThatFits` on the header line. Two things about that are load-bearing and must not be undone by
+a typography pass. First, the budget is not the pane and not the column — it is **what the two chips
+on the same row leave behind**, which is why the fix is a ladder and not a width rule in the layout
+support. Second, **an `if` inside a `ViewThatFits` builder produces an empty candidate that fits every
+width and draws nothing**, and `ViewThatFits` renders its *final* candidate whether it fits or not —
+so the rungs are unconditional and ordered deliberately. Re-spelling either property is a change to
+the ladder, not to a font.
+
+`iPadTodaySupportViews.swift` is unchanged in substance.
+
+**Open against these two files, and yours now:** [[T-1880]] — `iPadTodayTaskHeader` reads `Date()`
+twice for one header, because `iOSTodayView.todayTaskColumn` passes an eyebrow built from one `Date()`
+and the header takes another. It was left unfixed precisely because the file was leased. It is a real
+two-reads-one-render defect, not a tidy-up: the two reads can straddle midnight.
 
 ## Do not edit `Cadence.xcodeproj/project.pbxproj`
 
