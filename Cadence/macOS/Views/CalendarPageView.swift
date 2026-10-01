@@ -92,7 +92,8 @@ struct CalendarPageView: View {
                     allBundles: allBundles,
                     areas: areas,
                     projects: projects,
-                    bundlesByDate: bundlesByDate
+                    bundlesByDate: bundlesByDate,
+                    eventCache: calendarEventDayCache
                 )
             } else if viewMode == .month {
                 MonthGridView(

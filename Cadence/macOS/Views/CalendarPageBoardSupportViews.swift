@@ -3,6 +3,52 @@ import EventKit
 import SwiftData
 import SwiftUI
 
+/// What one day column of the Calendar Board draws from EventKit, **through the page's day cache**
+/// (T-1570).
+///
+/// This was `CalendarPageBoardView.calendarDisplayItems(for:)`, and it called
+/// `calendarManager.fetchAllDayEvents(for:)` and `calendarManager.fetchEvents(for:)` back to back
+/// with no memoisation of any kind — two `NSPredicate` builds and two `EKEventStore.events(matching:)`
+/// runs per *realized day column*, per render, inside a `ForEach` over
+/// `CalendarBoardPlannerSupport.plannerRenderDayCount`. The board re-renders on every task change,
+/// every store refresh and every rail toggle, so a `LazyHStack` holding six to ten columns paid
+/// twelve to twenty queries each time. It is the same defect T-1499 closed on Today's timeline, on
+/// the surface T-1499 used as its control — and, like that one, **it is a query count and not a
+/// duration**: the board is reported smooth and nothing here claims otherwise.
+///
+/// The cache is the caller's, not this function's, for T-1499's reason: it has to belong to a
+/// lifetime longer than one body evaluation or the memo never survives one. Here that lifetime is
+/// `CalendarPageView.calendarEventDayCache`, the cache the month grid and the timeline viewport
+/// were already given — so the board is no longer the one presentation on that page that queries
+/// the store directly, and switching presentations reuses the warm days rather than re-querying
+/// them.
+///
+/// Taking `any CalendarEventDaySource` rather than `CalendarManager` is also what makes the cost
+/// countable: the test host is not calendar-authorised, so against the shipping manager every
+/// fetch-count reads zero whatever the code does.
+enum CalendarPageBoardDataSupport {
+    @MainActor
+    static func calendarDisplayItems(
+        for date: Date,
+        calendarManager: any CalendarEventDaySource,
+        cache: CalendarEventDayCache,
+        calendar: Calendar = .current
+    ) -> [CalendarBoardEventDisplayItem] {
+        guard calendarManager.isAuthorized else { return [] }
+        let allDay = cache.allDayEvents(for: date, calendarManager: calendarManager).map {
+            CalendarBoardEventDisplayItem(allDay: $0, date: date, calendar: calendar)
+        }
+        let timed = CalendarEventItem
+            .timedSegments(
+                from: cache.timedEvents(for: date, calendarManager: calendarManager),
+                for: date,
+                calendar: calendar
+            )
+            .map(CalendarBoardEventDisplayItem.init(timed:))
+        return (allDay + timed).sorted { $0.sortKey < $1.sortKey }
+    }
+}
+
 /// The Calendar Board: day columns that scroll horizontally, flanked by two pinned rails.
 ///
 /// The rails are what the retired Planning page turned into. Overdue and Unscheduled were two of
@@ -21,6 +67,10 @@ struct CalendarPageBoardView: View {
     let areas: [Area]
     let projects: [Project]
     let bundlesByDate: [String: [TaskBundle]]
+    /// The calendar page's own `CalendarEventDayCache`, handed down rather than made here (T-1570).
+    /// The month grid and the timeline viewport were always given it; the board was the one
+    /// presentation reading `EKEventStore` straight through, once per realized column per render.
+    let eventCache: CalendarEventDayCache
 
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
@@ -345,17 +395,19 @@ struct CalendarPageBoardView: View {
         try? modelContext.save()
     }
 
+    /// **T-1570.** Served from `eventCache`, keyed by each column's `yyyy-MM-dd`. The
+    /// `storeVersion` read stays here because it is the SwiftUI subscription — and it is also what
+    /// invalidates the cache, since `CalendarEventDayCache` drops everything when that number
+    /// moves.
     @MainActor
     private func calendarDisplayItems(for date: Date) -> [CalendarBoardEventDisplayItem] {
-        guard calendarManager.isAuthorized else { return [] }
-        let _ = calendarManager.storeVersion
-        let allDay = calendarManager.fetchAllDayEvents(for: date).map {
-            CalendarBoardEventDisplayItem(allDay: $0, date: date, calendar: calendar)
-        }
-        let timed = CalendarEventItem
-            .timedSegments(from: calendarManager.fetchEvents(for: date), for: date, calendar: calendar)
-            .map(CalendarBoardEventDisplayItem.init(timed:))
-        return (allDay + timed).sorted { $0.sortKey < $1.sortKey }
+        let _ = calendarManager.storeVersion  // subscribe to store change refreshes
+        return CalendarPageBoardDataSupport.calendarDisplayItems(
+            for: date,
+            calendarManager: calendarManager,
+            cache: eventCache,
+            calendar: calendar
+        )
     }
 }
 
