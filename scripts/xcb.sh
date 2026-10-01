@@ -698,6 +698,109 @@ interactive_skip_report() {
 }
 
 
+# --- the MID-RUN locked-screen report (T-1890) -------------------------------
+# The preflight guard below refuses a run whose screen is ALREADY locked. This names the case it
+# structurally cannot see: a screen that locks *while* the run is in flight.
+#
+# Why that gap is not hypothetical, and what it costs. `requireAnUnlockedScreen()` runs in
+# `setUpWithError`, so it reads the lock state at each test's START; the preflight reads it once,
+# before the build. A lock arriving after setUp and during a test body is invisible to both. What
+# the run then produces is not a skip and not an activation failure -- it is a launched app that
+# reaches `.runningForeground` and publishes an EMPTY accessibility tree, so every element query
+# times out and every failure is attributed to whatever line asked. T-1890 is four runs across
+# three suites of exactly that, read for a day as a product regression, and the lock was only
+# inferred three hours later from an unrelated refused run.
+#
+# The existing post-run reading is a grep for the skip message, and it fires only inside the
+# zero-test guard -- i.e. only when EVERY test skipped, which requires the lock at setUp time.
+# That is precisely the case this one does not cover.
+#
+# TWO SIGNALS, because a lock that is released before the run ends leaves no state behind:
+#   1. `CGSSessionScreenIsLocked=Yes` now -- the screen is still locked at postflight.
+#   2. `CGSSessionScreenLockedTime` >= the run's start -- the screen locked DURING the run, even
+#      if it has since been unlocked. This is the one that catches a lock-and-unlock.
+#
+# WHAT IS MEASURED AND WHAT IS NOT. Signal 1 and the silence on an old lock time are measured
+# (selftest, and live on 2026-10-01 against a Mac locked since 01:33:44 EDT). Signal 2's behaviour
+# on an UNLOCKED Mac is NOT: whether `CGSSessionScreenLockedTime` survives an unlock carrying the
+# last lock's time, or disappears with the lock, could not be measured without unlocking the host.
+# The code is written so that either answer is safe -- an absent key makes no claim and falls back
+# to signal 1, so the unmeasured semantics can only cost a detection, never invent one. A
+# false NEGATIVE here leaves today's behaviour exactly as it is; a false positive would be the
+# damaging direction and is unreachable.
+#
+# It REPORTS and never gates. The run's reds are already red; what was missing was anybody saying
+# the reds are not about the code. Changing the exit code would hide a genuine failure behind an
+# environmental one, which is the inversion this repository keeps catching.
+
+# The session dictionary, with a testing seam. `CADENCE_SESSION_FIXTURE` points at a file holding
+# an `ioreg -n Root -d1 -k IOConsoleUsers` capture, so the selftest can drive the mid-run case --
+# which cannot be induced on a live host without locking the screen out from under the run.
+session_dictionary() {
+  if [[ -n "${CADENCE_SESSION_FIXTURE:-}" ]]; then
+    cat "${CADENCE_SESSION_FIXTURE}" 2>/dev/null
+    return 0
+  fi
+  ioreg -n Root -d1 -k IOConsoleUsers 2>/dev/null
+}
+
+# The epoch second at which the screen last locked, or empty when the key is absent.
+# No pipe into `grep -q` anywhere in this family -- see `screen_is_locked` for why that shape
+# answers "not locked" precisely when it DID find the key.
+screen_lock_time() {
+  local session; session="$(session_dictionary)"
+  [[ "$session" == *'"CGSSessionScreenLockedTime"'* ]] || return 0
+  print -r -- "$session" | sed -nE 's/.*"CGSSessionScreenLockedTime"[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' | head -1
+}
+
+screen_lock_report() {
+  local -i run_start=${1:-0}
+  local session; session="$(session_dictionary)"
+  local -i locked_now=0
+  [[ "$session" == *'"CGSSessionScreenIsLocked"=Yes'* ]] && locked_now=1
+  local lock_time; lock_time="$(screen_lock_time)"
+  local -i locked_during=0
+  if [[ -n "$lock_time" ]] && (( run_start > 0 )) && (( lock_time >= run_start )); then
+    locked_during=1
+  fi
+  (( locked_now || locked_during )) || return 0
+
+  say ""
+  say "!! SCREEN-LOCKED-MID-RUN (T-1890): the Mac's screen was locked around this run."
+  # The STATE alone is not a diagnosis. "Locked underneath a live run" and "already locked before
+  # the run started" are different failures with different fixes, and the timestamp is the only
+  # thing that tells them apart -- so it is printed in BOTH branches, not just the mid-run one.
+  # 2026-10-01 is the case that forced this: a Mac locked 7h37m before the run was ever launched,
+  # which the state-only report would have described as a mid-run lock.
+  if (( locked_during )); then
+    say "   DIAGNOSIS: locked UNDERNEATH a live run -- the lock timestamp is inside the window."
+    say "   The run started on an unlocked screen and lost it part-way through, so an early test"
+    say "   may have read a real surface and a later one an empty tree. Trust neither."
+  elif [[ -n "$lock_time" ]]; then
+    say "   DIAGNOSIS: ALREADY LOCKED before this run started -- the lock PREDATES the window."
+    say "   Nothing in this run ever had a foreground. On a live run the preflight refuses this"
+    say "   outright, so reaching it here means the reading was taken by hand or out of band."
+  else
+    say "   DIAGNOSIS: locked now, and the session published no timestamp to date the lock by."
+  fi
+  if [[ -n "$lock_time" ]]; then
+    say "   locked at:  $(date -r "$lock_time" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || print -r -- "$lock_time") (epoch $lock_time)"
+  else
+    say "   locked at:  unknown (no CGSSessionScreenLockedTime in the session dictionary)"
+  fi
+  say "   run began:  $(date -r "$run_start" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || print -r -- "$run_start") (epoch $run_start)"
+  say "   still locked at postflight: $( (( locked_now )) && print -n yes || print -n no)"
+  say "   A UI test cannot read a surface while loginwindow owns the foreground. The app reaches"
+  say "   .runningForeground and then publishes NO accessibility tree, so every element query"
+  say "   times out and the failure lands on whichever line asked. THESE REDS ARE NOT EVIDENCE"
+  say "   ABOUT THE CODE. Unlock the screen, arm \`caffeinate -d -i\`, and re-run before reading"
+  say "   anything into them. Note that caffeinate does NOT unlock an already-locked screen and"
+  say "   does not prevent a manual lock -- measured 2026-10-01, a live -d -i assertion alongside"
+  say "   CGSSessionScreenIsLocked=Yes."
+  return 0
+}
+
+
 # --- the iOS Simulator destination guard (T-1282) ----------------------------
 # The zero-test guard above refuses a run that executed nothing. This refuses a run that COMPILED
 # nothing, which is the same failure one step earlier and wears an even better disguise.
@@ -1246,6 +1349,58 @@ selftest_only_testing() {
     $( (( irc == 0 )) && [[ "$iout" != *INTERACTIVE-SKIPPED* ]] && print 1 || print 0 ) "exit $irc: $iout"
 
   say ""
+  say " 9b. the MID-RUN locked-screen report (T-1890)"
+  # The live condition cannot be induced -- it needs the host's screen to lock out from under a
+  # run -- so the session dictionary is a fixture, in `ioreg -n Root -d1 -k IOConsoleUsers` shape.
+  # The two CONTROLS are the load-bearing half: a report that fires on an ordinary unlocked run is
+  # a line every reader learns to scroll past, which is how the preflight's own finding was missed.
+  local -i snow sstart smid sold
+  snow=$(date +%s); sstart=$(( snow - 600 )); smid=$(( snow - 300 )); sold=$(( snow - 99999 ))
+  print -rl -- '    "IOConsoleLocked" = Yes' \
+               "    \"CGSSessionScreenIsLocked\"=Yes" \
+               "    \"CGSSessionScreenLockedTime\"=$smid" > "$ws/sess-locked-midrun.txt"
+  print -rl -- "    \"CGSSessionScreenLockedTime\"=$smid" \
+               '    "kCGSSessionUserNameKey"="someone"' > "$ws/sess-locked-then-unlocked.txt"
+  print -rl -- "    \"CGSSessionScreenLockedTime\"=$sold" \
+               '    "kCGSSessionUserNameKey"="someone"' > "$ws/sess-old-lock.txt"
+  # Locked NOW, locked LONG BEFORE the run: the shape this Mac was actually in on 2026-10-01,
+  # and the one a state-only report would have mislabelled as a mid-run lock.
+  print -rl -- '    "IOConsoleLocked" = Yes' \
+               "    \"CGSSessionScreenIsLocked\"=Yes" \
+               "    \"CGSSessionScreenLockedTime\"=$sold" > "$ws/sess-locked-before-run.txt"
+  print -rl -- '    "kCGSSessionUserNameKey"="someone"' \
+               '    "kCGSSessionOnConsoleKey"=Yes' > "$ws/sess-never-locked.txt"
+  local lout lrc
+  run_lock() { lout=$(CADENCE_SESSION_FIXTURE="$1" zsh "$here" check-screen-lock-window "$2" 2>&1); lrc=$?; }
+
+  run_lock "$ws/sess-locked-midrun.txt" "$sstart"
+  check "a screen still locked at postflight says SCREEN-LOCKED-MID-RUN" \
+    $( [[ "$lout" == *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "exit $lrc: $lout"
+  check "...and says the reds are not evidence about the code" \
+    $( [[ "$lout" == *"NOT EVIDENCE"* ]] && print 1 || print 0 ) "$lout"
+  run_lock "$ws/sess-locked-then-unlocked.txt" "$sstart"
+  check "a screen that locked mid-run and was UNLOCKED again is still caught (the timestamp)" \
+    $( [[ "$lout" == *SCREEN-LOCKED-MID-RUN* && "$lout" == *"UNDERNEATH a live run"* ]] && print 1 || print 0 ) "$lout"
+  check "...and reports that it is no longer locked, rather than implying it is" \
+    $( [[ "$lout" == *"still locked at postflight: no"* ]] && print 1 || print 0 ) "$lout"
+  run_lock "$ws/sess-old-lock.txt" "$sstart"
+  check "CONTROL: a lock BEFORE the run window is SILENT (not every past lock is a finding)" \
+    $( (( lrc == 0 )) && [[ "$lout" != *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "exit $lrc: $lout"
+  run_lock "$ws/sess-locked-before-run.txt" "$sstart"
+  check "a lock PREDATING the run is diagnosed as already-locked, NOT as a mid-run lock" \
+    $( [[ "$lout" == *"ALREADY LOCKED before this run started"* && "$lout" != *"UNDERNEATH a live run"* ]] && print 1 || print 0 ) "$lout"
+  check "...and still reports the lock TIME, which is the only thing that tells the two apart" \
+    $( [[ "$lout" == *"locked at:"* && "$lout" == *"epoch $sold"* ]] && print 1 || print 0 ) "$lout"
+  run_lock "$ws/sess-locked-midrun.txt" "$sstart"
+  check "...while a lock inside the window is diagnosed as UNDERNEATH a live run (the contrast)" \
+    $( [[ "$lout" == *"UNDERNEATH a live run"* && "$lout" != *"ALREADY LOCKED"* ]] && print 1 || print 0 ) "$lout"
+  run_lock "$ws/sess-never-locked.txt" "$sstart"
+  check "CONTROL: a session with no lock key at all is SILENT" \
+    $( (( lrc == 0 )) && [[ "$lout" != *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "exit $lrc: $lout"
+  check "...and the report never gates: it exits 0 whatever it found" \
+    $( (( lrc == 0 )) && print 1 || print 0 ) "exit $lrc"
+
+  say ""
   say " 9. the per-requested-suite guard, and which of its two inputs it trusts (T-667 / T-1326)"
   # ONE LOG, TWO ARGUMENT SETS, TWO VERDICTS. That is the whole of T-1326: the log below holds the
   # literal string `-only-testing:CadenceTests/NotASuite` -- as a failing test's own prose, with the
@@ -1389,6 +1544,18 @@ if [[ "${1:-}" == "check-interactive-skips" ]]; then
     say "usage: ./scripts/xcb.sh check-interactive-skips <logfile>"; exit 2
   fi
   interactive_skip_report "$CHECK_LOG"
+  exit 0
+fi
+
+# The mid-run locked-screen report on its own (T-1890), for the same two reasons: it is what
+# `selftest` drives -- against `CADENCE_SESSION_FIXTURE`, since the live condition cannot be
+# induced without locking the host's screen out from under a run -- and it lets anyone holding a
+# run's start time ask whether the screen went out underneath it. It never gates, so it exits 0.
+if [[ "${1:-}" == "check-screen-lock-window" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    say "usage: ./scripts/xcb.sh check-screen-lock-window <run-start-epoch-seconds>"; exit 2
+  fi
+  screen_lock_report "$2"
   exit 0
 fi
 
@@ -1654,6 +1821,9 @@ for a in "${run_args[@]}"; do
   [[ "$a" == "test" || "$a" == "test-without-building" ]] && IS_TEST_RUN=1
 done
 
+# Taken immediately before the run so a lock landing any time after this point is inside the
+# window `screen_lock_report` tests at postflight (T-1890).
+RUN_START_EPOCH=$(date +%s)
 "$XCODEBUILD" -project "$ROOT_DIR/Cadence.xcodeproj" "${run_args[@]}" > "$LOG" 2>&1 &
 XCB_PID=$!
 watchdog "$XCB_PID" &
@@ -1688,6 +1858,10 @@ if (( IS_TEST_RUN )); then
   # RAN == 0 and is refused above, and the interactive opt-in is the likeliest reason it did --
   # so the report that names it must not be the one thing that branch omits.
   interactive_skip_report "$LOG"
+  # Last of the test-run reports, and outside the RAN branch for the same reason: a mid-run lock
+  # produces BOTH shapes -- an empty-tree run full of reds (RAN > 0) and a skipped-out one
+  # (RAN == 0) -- depending only on whether the lock beat `setUpWithError` to it (T-1890).
+  screen_lock_report "$RUN_START_EPOCH"
 fi
 if [[ "$(shared_cadence_entries)" != "$before_entries" ]]; then
   say ""

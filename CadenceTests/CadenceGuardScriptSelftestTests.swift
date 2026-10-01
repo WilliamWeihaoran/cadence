@@ -629,6 +629,32 @@ struct CadenceGuardScriptSelftestTests {
     /// must still induce it over a fixture log in XCTest's real skip shape, and must still show
     /// the run in which everything executed staying **silent**: a banner that printed on every run
     /// would be scrolled past within a week and would then be worth nothing.
+    /// `SCREEN-LOCKED-MID-RUN` is the same shape one layer in, and T-1890 is the cost of not
+    /// having had it. The locked-screen guard above it is a **preflight**: it reads the lock state
+    /// once, before the build, and `requireAnUnlockedScreen()` reads it again in `setUpWithError`,
+    /// at each test's start. Neither can see a screen that locks *during* a test body — and that
+    /// case does not present as the activation failure T-563 measured. It presents as a launched
+    /// app that reaches `.runningForeground` and then publishes an **empty accessibility tree**,
+    /// so every element query times out and every failure is attributed to whichever line asked.
+    /// Four runs across three suites were read as a product regression for a day on that reading.
+    ///
+    /// It does not gate, for the reason `INTERACTIVE-SKIPPED` does not: the run's reds are already
+    /// red, and promoting an environmental cause over a genuine failure would hide the second
+    /// behind the first. What was missing was anyone *saying* the reds are not about the code.
+    ///
+    /// **The report must print the lock TIME, not only the state, and section 9b pins that.**
+    /// *Locked underneath a live run* and *already locked before the run started* are different
+    /// diagnoses with different fixes, and `CGSSessionScreenLockedTime` is the only thing that
+    /// separates them. 2026-10-01 is why the distinction is pinned rather than assumed: this Mac
+    /// had been locked for **7h37m** before the run that reported it was ever launched, and a
+    /// state-only report would have called that a mid-run lock and sent the next reader hunting a
+    /// race that was not there.
+    ///
+    /// Section 9b must keep inducing it over a fixture session dictionary — the live condition
+    /// needs the host's screen to lock out from under a run, so it cannot be induced — and must
+    /// keep both CONTROLS: an ordinary unlocked run, and a run whose only lock predates it, both
+    /// **silent**. The timestamp half is also what catches a screen locked and unlocked again
+    /// inside one run, which leaves no state behind for a postflight boolean to find.
     static let buildRunnerRefusals = [
         "UNKNOWN-SUITE",
         "PARTIAL-SCOPE",
@@ -637,6 +663,7 @@ struct CadenceGuardScriptSelftestTests {
         "NO-SUCH-SIMULATOR",
         "MACRO-EXPANSION-WARNING",
         "INTERACTIVE-SKIPPED",
+        "SCREEN-LOCKED-MID-RUN",
     ]
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody
