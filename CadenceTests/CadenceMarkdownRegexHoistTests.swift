@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+#if os(macOS)
+import AppKit
+#endif
 @testable import Cadence
 
 /// **[[T-1484]]: ten constant regex literals the markdown services rebuilt on every call, two of
@@ -613,6 +616,20 @@ struct CadenceMarkdownRegexHoistTests {
             literal: ##""==(.+?)==""##, bytes: 9, occurrences: 0,
             delimiters: 2, sourceBytes: 9
         ),
+
+        // MARK: [[T-1931]] — the sixth escaped spelling, the one [[T-1660]] left standing
+        //
+        // `"`([^`\n]+)`"` is 11 bytes of Swift source and a **10**-byte pattern, because this is a
+        // plain string literal and `\n` resolves to one line feed. The ticket said 11, which is
+        // what it would be if the backslash survived into the pattern the way it does in the
+        // shared raw literal's 12. Measured 2026-10-02: 10. Both numbers are on this row so the
+        // distinction cannot be lost again — and it is the distinction, LF-in-a-class versus
+        // `\n`-in-a-class, that is the second half of why the two spellings matched.
+        LiteralExpectation(
+            path: "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
+            literal: ##""`([^`\n]+)`""##, bytes: 10, occurrences: 0,
+            delimiters: 2, sourceBytes: 11
+        ),
     ]
 
     // MARK: - The oracle: recorded from the pre-change implementation
@@ -1128,9 +1145,9 @@ struct CadenceMarkdownRegexHoistTests {
         // Non-vacuity: nine distinct patterns, not nine aliases of one.
         #expect(Set(patterns.map(\.value)).count == 9)
 
-        // The macOS styler reads the five it shares, and spells none of them. Its inline-code
-        // pattern is deliberately NOT one of them — `` `([^`\n]+)` `` is greedy where the shared
-        // one is lazy — so it is checked as an exception rather than left ambiguous.
+        // The macOS styler reads all six it shares, and spells none of them. The sixth —
+        // inline code, greedy where the shared one is lazy — was the exception until [[T-1931]]
+        // took it; `theInlineCodePatternIsOneSpellingThreeReadersShare` is the behavioural half.
         let editor = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorSupport.swift")
         )
@@ -1141,6 +1158,7 @@ struct CadenceMarkdownRegexHoistTests {
             ("italicRegex", "MarkdownInlineEmphasisPatterns.italicAsterisk"),
             ("strikethroughRegex", "MarkdownInlineEmphasisPatterns.strikethrough"),
             ("highlightRegex", "MarkdownInlineEmphasisPatterns.highlight"),
+            ("inlineCodeRegex", "MarkdownInlineEmphasisPatterns.code"),
         ]
         for reader in editorReaders {
             let declarations = stylist
@@ -1152,14 +1170,6 @@ struct CadenceMarkdownRegexHoistTests {
                 "\(reader.property) spells its pattern out again instead of reading \(reader.constant)"
             )
         }
-        let inlineCode = try #require(
-            stylist.components(separatedBy: "\n").first { $0.contains("static let inlineCodeRegex") }
-        )
-        #expect(
-            !inlineCode.contains("MarkdownInlineEmphasisPatterns"),
-            "the greedy editor code pattern was silently unified with the lazy shared one"
-        )
-
         // And the two Services readers hold no literal of their own: the preview's table names
         // each of the nine constants exactly once, which is the half a byte-identity scan on its
         // own cannot state (an absence says nothing about what replaced it).
@@ -1177,6 +1187,142 @@ struct CadenceMarkdownRegexHoistTests {
             )
         }
     }
+
+#if os(macOS)
+    // MARK: - [[T-1931]]: the inline-code pattern, one spelling
+
+    /// **The macOS live editor, the inline preview and the iOS span table read one inline-code
+    /// pattern, and the reason they could not keep two is that the equivalence was an argument
+    /// about the character class.**
+    ///
+    /// [[T-1660]] unified five of `MarkdownStylist`'s six emphasis patterns and deliberately left
+    /// this one, because it was not the same bytes: `` `([^`\n]+)` `` against the shared
+    /// `` `([^`\n]+?)` ``. **Measured 2026-10-02, the two spellings differ twice, not once.** The
+    /// quantifier is greedy here and lazy there; and the styler's was a *plain* Swift string, so
+    /// its `\n` was a line feed and the pattern was **10** bytes, where the shared raw literal
+    /// keeps the backslash and is 12. (The ticket said 11, which is the count for a raw spelling
+    /// of the greedy form. The `literalExpectations` row carries both numbers.)
+    ///
+    /// Both differences were invisible, and both for one reason: `[^`\n]` cannot contain a
+    /// backtick, so the first backtick after the opener is the only place *either* quantifier can
+    /// stop, and a bare LF inside a class is exactly what `\n` means there. `theSpellingsAgree`
+    /// below is that, as a corpus rather than as an argument — two spans on one line, two spans
+    /// sharing a backtick, a span that straddles a newline, an unterminated opener.
+    ///
+    /// **And `theClassIsWhyTheyAgree` is why one spelling had to go.** The same two quantifiers
+    /// over a body class that *admits* the delimiter disagree on the very first row: greedy
+    /// swallows the gap between two spans. [[T-1520]] widened the image label class from
+    /// `[^\]\n]` to `(?:[^\]\n\\]|\\.)*` for exactly the reason someone would widen this one — to
+    /// let an escaped delimiter live inside the label. The day that happens here, two spellings
+    /// would have started styling different runs of the same note on two surfaces, with no test
+    /// in the tree able to notice. One spelling cannot.
+    ///
+    /// The oracle is **behavioural**: the real `MarkdownStylist.apply(to:)` is run over each row
+    /// and the `.cadenceMarkdownInlineCode` ranges it leaves are compared against ranges recorded
+    /// from the greedy spelling it used to hold — so a shared constant quietly retuned fails on
+    /// which characters of a note are code, not on a count.
+    @MainActor
+    @Test func theInlineCodePatternIsOneSpellingThreeReadersShare() throws {
+        // The shared constant, and the spelling that left — as bytes, so neither leg below is a
+        // comparison of one object with itself.
+        let shared = MarkdownInlineEmphasisPatterns.code
+        let departed = "`([^`\n]+)`"
+        #expect(shared == ##"`([^`\n]+?)`"##)
+        #expect(shared.utf8.count == 12)
+        #expect(departed.utf8.count == 10, "the departed greedy spelling is \(departed.utf8.count) bytes")
+        #expect(shared != departed, "the two spellings became one string, so this test proves nothing")
+        #expect(departed.contains("\n"), "the departed spelling's `\\n` was a line feed, not a backslash")
+        let sharedRegex = try #require(MarkdownInlineEmphasisPatterns.codeRegex)
+        #expect(sharedRegex.options == [], "the shared code pattern gained an option three readers did not ask for")
+
+        // Recorded from the greedy spelling, before it was replaced: the full match ranges, and
+        // the content the styler marks (the match minus its two delimiters, and only where the
+        // match is at least three characters long — `applyCode`'s own floor).
+        let corpus: [(markdown: String, full: [NSRange], code: [String])] = [
+            // Two spans on one line. This is the row that fails the moment the class admits the
+            // delimiter, and it is first so the fixture is never one-candidate.
+            ("`a` and `b`", [NSRange(location: 0, length: 3), NSRange(location: 8, length: 3)], ["a", "b"]),
+            ("a `code` b `more` c", [NSRange(location: 2, length: 6), NSRange(location: 11, length: 6)], ["code", "more"]),
+            ("`one`", [NSRange(location: 0, length: 5)], ["one"]),
+            ("text `a b c` tail", [NSRange(location: 5, length: 7)], ["a b c"]),
+            // Two spans sharing a backtick: the closer of the first is the opener of the second.
+            ("`a``b`", [NSRange(location: 0, length: 3), NSRange(location: 3, length: 3)], ["a", "b"]),
+            ("``a``", [NSRange(location: 1, length: 3)], ["a"]),
+            // The newline leg — the half of the equivalence that is about `\n` and not about the
+            // quantifier. A span may not straddle a line, under either spelling.
+            ("`multi\nline`", [], []),
+            // An empty span: two characters, so there is nothing for `[^`\n]+` to take.
+            ("``", [], []),
+            ("`unclosed code", [], []),
+            ("no code here", [], []),
+            // Outside the BMP: the ranges are UTF-16, as every reader's are.
+            ("`\u{1F600}`", [NSRange(location: 0, length: 4)], ["\u{1F600}"]),
+        ]
+        #expect(corpus.count == 11)
+        #expect(corpus.filter { !$0.full.isEmpty }.count >= 7, "the corpus went all-negative, so nothing is being matched")
+
+        let greedy = try NSRegularExpression(pattern: departed)
+        for row in corpus {
+            let ns = row.markdown as NSString
+            let full = NSRange(location: 0, length: ns.length)
+
+            let greedyRanges = greedy.matches(in: row.markdown, range: full).map(\.range)
+            let sharedRanges = sharedRegex.matches(in: row.markdown, range: full).map(\.range)
+            #expect(greedyRanges == row.full, "the greedy spelling moved on \(row.markdown.debugDescription)")
+            #expect(sharedRanges == row.full, "the shared pattern answers differently on \(row.markdown.debugDescription)")
+
+            // The behavioural half: the real styler, over the real text view, leaving the real
+            // attribute. Recorded content, not a count.
+            #expect(
+                Self.styledInlineCode(in: row.markdown) == row.code,
+                "MarkdownStylist marked \(Self.styledInlineCode(in: row.markdown)) as code in \(row.markdown.debugDescription)"
+            )
+
+            // And the second reader of the same constant agrees about the same rows, so the two
+            // surfaces cannot drift apart while each stays internally consistent.
+            let previewCode = MarkdownInlinePreviewSupport.runs(in: row.markdown)
+                .filter { $0.traits.contains(.inlineCode) }
+                .map(\.text)
+            #expect(previewCode == row.code, "the inline preview read \(previewCode) in \(row.markdown.debugDescription)")
+        }
+
+        // Why one spelling and not two: the same quantifiers over a class that admits the
+        // delimiter are not the same pattern. `[^\n]` is the minimal widening; [[T-1520]]'s was
+        // `(?:[^\]\n\\]|\\.)*`, and the point is the same — once the body can cross a delimiter,
+        // greedy and lazy stop agreeing, silently.
+        let wideGreedy = try NSRegularExpression(pattern: #"`([^\n]+)`"#)
+        let wideLazy = try NSRegularExpression(pattern: #"`([^\n]+?)`"#)
+        let row = "`a` and `b`"
+        let wholeRow = NSRange(location: 0, length: (row as NSString).length)
+        let wideGreedyRanges = wideGreedy.matches(in: row, range: wholeRow).map(\.range)
+        let wideLazyRanges = wideLazy.matches(in: row, range: wholeRow).map(\.range)
+        #expect(wideGreedyRanges == [NSRange(location: 0, length: 11)], "the widened greedy pattern no longer spans the row")
+        #expect(wideLazyRanges == [NSRange(location: 0, length: 3), NSRange(location: 8, length: 3)])
+        #expect(
+            wideGreedyRanges != wideLazyRanges,
+            "greedy and lazy agree even on a class that admits the delimiter, so the equivalence was never about the class"
+        )
+    }
+
+    /// The `.cadenceMarkdownInlineCode` content the shipping macOS styler leaves on `markdown`.
+    @MainActor
+    private static func styledInlineCode(in markdown: String) -> [String] {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+        textView.string = markdown
+        MarkdownStylist.apply(to: textView)
+        guard let storage = textView.textStorage else { return [] }
+        let ns = storage.string as NSString
+        var marked: [String] = []
+        storage.enumerateAttribute(
+            .cadenceMarkdownInlineCode,
+            in: NSRange(location: 0, length: storage.length)
+        ) { value, range, _ in
+            guard value as? Bool == true else { return }
+            marked.append(ns.substring(with: range))
+        }
+        return marked
+    }
+#endif
 
     // MARK: - [[T-1660]]: the tag pattern, one compiled object
 

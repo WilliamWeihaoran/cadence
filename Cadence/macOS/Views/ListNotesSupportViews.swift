@@ -471,21 +471,13 @@ struct TaskNoteEditorPane: View {
     private func linkMention(_ mentionedNote: Note) {
         let markdown = NoteReferenceParser.noteReferenceMarkdown(for: mentionedNote)
         let title = mentionedNote.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let range = firstLoosePhraseRange(title, in: editorContent) {
+        if let range = NoteUnlinkedMentionResolver.firstLoosePhraseRange(title, in: editorContent) {
             let nsContent = editorContent as NSString
             replaceEditorContent(nsContent.replacingCharacters(in: range, with: markdown))
         } else {
             let separator = editorContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
             replaceEditorContent(editorContent + "\(separator)\(markdown)")
         }
-    }
-
-    private func firstLoosePhraseRange(_ phrase: String, in content: String) -> NSRange? {
-        guard !phrase.isEmpty else { return nil }
-        let escaped = NSRegularExpression.escapedPattern(for: phrase)
-        let pattern = #"(?i)(?<![\p{L}\p{N}_])"# + escaped + #"(?![\p{L}\p{N}_])"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        return regex.firstMatch(in: content, range: NSRange(location: 0, length: (content as NSString).length))?.range
     }
 }
 

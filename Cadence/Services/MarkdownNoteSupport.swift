@@ -549,15 +549,37 @@ nonisolated enum NoteUnlinkedMentionResolver {
             guard candidate.id != noteID, !linkedIDs.contains(candidate.id) else { return false }
             let title = candidate.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             guard title.count >= 3, !linkedTitles.contains(title.lowercased()) else { return false }
-            return containsLoosePhrase(title, in: content)
+            return firstLoosePhraseRange(title, in: content) != nil
         }
     }
 
-    private static func containsLoosePhrase(_ phrase: String, in content: String) -> Bool {
+    /// **"Does this note mention that title as a whole word" is one decision, and this is the one
+    /// place that makes it** ([[T-1932]]).
+    ///
+    /// It was written three times: this file had the boolean half as `containsLoosePhrase`, and
+    /// `ListNotesSupportViews` and `NoteEditorPane` each had a private `firstLoosePhraseRange`
+    /// that were **byte-identical** to each other (sha256 of the seven lines,
+    /// `7419a4f1c3bfdaef…` in both). That is not a tidiness complaint: the resolver decides which
+    /// notes the "unlinked mentions" list *offers*, and the two view copies decide which run of
+    /// the note the accepted suggestion *replaces*. A lookbehind edited into one of them and not
+    /// the others offers a phrase on one surface that the other surface will not find, or
+    /// replaces a different span than the one that was offered.
+    ///
+    /// The range is the shared answer and the boolean is derived from it (`!= nil`), not the other
+    /// way round — a `Bool` cannot be narrowed back into a range, so the caller that needs less
+    /// asks the one that knows more.
+    ///
+    /// `guard !phrase.isEmpty` came from the two view copies and is kept: the empty phrase
+    /// compiles to a pair of bare lookarounds that matches a zero-length range next to any
+    /// non-word character, so the old `containsLoosePhrase("")` could answer `true` about a note
+    /// containing nothing but a space. `unlinkedMentions` cannot reach it — it requires
+    /// `title.count >= 3` — but the views call this with a trimmed title and no such floor.
+    static func firstLoosePhraseRange(_ phrase: String, in content: String) -> NSRange? {
+        guard !phrase.isEmpty else { return nil }
         let escaped = NSRegularExpression.escapedPattern(for: phrase)
         let pattern = #"(?i)(?<![\p{L}\p{N}_])"# + escaped + #"(?![\p{L}\p{N}_])"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
-        return regex.firstMatch(in: content, range: NSRange(location: 0, length: (content as NSString).length)) != nil
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        return regex.firstMatch(in: content, range: NSRange(location: 0, length: (content as NSString).length))?.range
     }
 }
 

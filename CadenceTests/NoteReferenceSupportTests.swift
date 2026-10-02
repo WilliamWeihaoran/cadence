@@ -416,4 +416,143 @@ struct NoteReferenceSupportTests {
 
         #expect(mentions.map(\.id) == [mentioned.id])
     }
+
+    // MARK: - [[T-1932]]: one loose-phrase decision, three callers
+
+    /// **"Does this note mention that title as a whole word" was answered in three places, two of
+    /// them byte-identical.**
+    ///
+    /// Measured 2026-10-02 with a search that catches escaped literals as well as raw `#"…"#`
+    /// ones (`rg 'p\{L\}'`, which matches the substring in either spelling — the dual-spelling
+    /// miss that let five copies survive two sweeps in [[T-1660]]): three production copies, and
+    /// three is what the ticket said. `ListNotesSupportViews.swift:483-489` and
+    /// `NoteEditorPane.swift:696-702` hashed identically (`7419a4f1c3bfdaef…`), and
+    /// `MarkdownNoteSupport` held the boolean half. One now:
+    /// `NoteUnlinkedMentionResolver.firstLoosePhraseRange`.
+    ///
+    /// **The guard is behavioural because the structural one cannot see the legs.** Four
+    /// decisions live in those seven lines and a count test holds none of them: `(?i)`, the
+    /// lookbehind, the lookahead, and `escapedPattern(for:)`. Each has a row below that goes red
+    /// on its own if that leg is dropped, and the `snake_case` row is the one-candidate control —
+    /// a fixture with a single clean phrase passes with both lookarounds deleted.
+    ///
+    /// The range matters as much as the boolean: the resolver decides which titles the "link this
+    /// note" affordance *offers*, and both macOS editors replace the range it returns. Two
+    /// answers here are a note whose offered phrase is not the phrase that gets replaced.
+    @Test func theLoosePhraseRangeIsOneDecisionWithAllFourLegs() {
+        let content = """
+        Project Brief is open. project brief again, and reproject briefing is not.
+        A snake_case_name and C++ notes/with (parens) live here.
+        """
+
+        // (?i): the lowercase occurrence is found, and it is the FIRST one that is returned.
+        let firstBrief = NoteUnlinkedMentionResolver.firstLoosePhraseRange("Project Brief", in: content)
+        #expect(firstBrief == NSRange(location: 0, length: 13))
+        let lowered = NoteUnlinkedMentionResolver.firstLoosePhraseRange("project brief", in: content)
+        #expect(lowered == NSRange(location: 0, length: 13), "the case-insensitive flag is gone")
+
+        // The lookbehind and the lookahead, each on its own row. `reproject briefing` contains
+        // `project brief` and must not be offered; `snake_case_name` is the one-candidate control
+        // that a fixture of clean phrases would never catch.
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("eproject brie", in: content) == nil)
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("case", in: content) == nil, "the lookarounds stopped excluding `_`")
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("snake_case_name", in: content) != nil)
+
+        // `escapedPattern(for:)`: a title full of regex metacharacters is a phrase, not a pattern.
+        // Without it `C++` is a quantifier error and `(parens)` matches the bare word.
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("C++", in: content) != nil)
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("(parens)", in: content) != nil)
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("parens", in: content) != nil)
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("notes/with", in: content) != nil)
+        #expect(
+            NoteUnlinkedMentionResolver.firstLoosePhraseRange("C.", in: content) == nil,
+            "the phrase is being read as a pattern: `.` matched a character it should not"
+        )
+
+        // The empty phrase: the two view copies guarded it and the services copy did not, so the
+        // shared one keeps the guard. A pair of bare lookarounds matches a zero-length range
+        // beside any non-word character, which is not an answer either caller can use.
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("", in: " ") == nil)
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("", in: "") == nil)
+
+        // Non-vacuity: not every lookup answers nil, and not every lookup answers the same range.
+        let ranges = ["Project Brief", "snake_case_name", "parens"]
+            .compactMap { NoteUnlinkedMentionResolver.firstLoosePhraseRange($0, in: content) }
+        #expect(ranges.count == 3)
+        #expect(Set(ranges.map(\.location)).count == 3, "three lookups returned one location, so nothing is being located")
+    }
+
+    /// **The resolver and the two macOS editors read the same function, and the range is what the
+    /// editors replace.**
+    ///
+    /// `unlinkedMentions` is the boolean caller and it is now `firstLoosePhraseRange(…) != nil`,
+    /// so this drives the public resolver over the same rows as the test above and checks that the
+    /// offer and the range agree. The second note is the control: without it, reverting the
+    /// lookbehind leaves a one-row fixture green.
+    @Test func unlinkedMentionsAgreeWithTheRangeTheEditorsReplace() {
+        let brief = Note(kind: .list, title: "Project Brief")
+        let snake = Note(kind: .list, title: "snake_case_name")
+        let buried = Note(kind: .list, title: "ocumentatio")
+        let source = Note(
+            kind: .list,
+            title: "Source",
+            content: "project brief is open; see snake_case_name. Documentation is elsewhere."
+        )
+
+        let mentions = NoteUnlinkedMentionResolver.unlinkedMentions(for: source, in: [source, brief, snake, buried])
+        #expect(mentions.map(\.displayTitle) == ["Project Brief", "snake_case_name"])
+        #expect(!mentions.contains { $0.id == buried.id }, "a phrase inside a word was offered as a mention")
+
+        // Every title the resolver offers has a range for the editors to replace, and the ranges
+        // are the ones the content actually holds.
+        let ns = source.content as NSString
+        for mention in mentions {
+            guard let located = NoteUnlinkedMentionResolver.firstLoosePhraseRange(mention.displayTitle, in: source.content) else {
+                Issue.record("\(mention.displayTitle) was offered as a mention with no range to replace")
+                continue
+            }
+            #expect(ns.substring(with: located).lowercased() == mention.displayTitle.lowercased())
+        }
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange(buried.displayTitle, in: source.content) == nil)
+    }
+
+    /// **The seven lines are written once.** Two byte-identical copies is the state this ticket
+    /// removed, and a count is the only thing that keeps it removed — the behavioural rows above
+    /// pass just as well with three copies as with one.
+    @Test func theLoosePhraseConstructionIsSpelledOnce() throws {
+        let sites = [
+            "Cadence/Services/MarkdownNoteSupport.swift",
+            "Cadence/macOS/Views/ListNotesSupportViews.swift",
+            "Cadence/macOS/Views/NoteEditorPane.swift",
+        ]
+        // The literal as it stands, delimiters included. A copy reintroduced with backslash
+        // escapes instead of raw literals would spell `\\p{L}`, so both forms are counted.
+        let raw = ##"#"(?i)(?<![\p{L}\p{N}_])"# + escaped + #"(?![\p{L}\p{N}_])"#"##
+        let escapedForm = ##""(?i)(?<![\\p{L}\\p{N}_])""##
+        var total = 0
+        for site in sites {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(site))
+            total += source.components(separatedBy: raw).count - 1
+            #expect(
+                source.components(separatedBy: escapedForm).count - 1 == 0,
+                "\(site) spells the loose-phrase lookbehind as an escaped literal, where a raw-literal sweep cannot see it"
+            )
+            let declarations = source.components(separatedBy: "func firstLoosePhraseRange").count - 1
+            let expected = site.hasSuffix("MarkdownNoteSupport.swift") ? 1 : 0
+            #expect(declarations == expected, "\(site) declares firstLoosePhraseRange \(declarations) time(s), expected \(expected)")
+        }
+        #expect(total == 1, "the loose-phrase pattern is written \(total) times across the three files, expected 1")
+
+        // The two views call the shared one rather than holding their own.
+        for view in sites.dropFirst() {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(view))
+            #expect(
+                source.contains("NoteUnlinkedMentionResolver.firstLoosePhraseRange"),
+                "\(view) no longer reads the shared loose-phrase range"
+            )
+        }
+        // Non-vacuity: the scan read real files, not empty strings.
+        let owner = try CadenceSourceScan.sourceFile(sites[0])
+        #expect(owner.utf8.count > 1000, "the owner file scanned as \(owner.utf8.count) bytes, so this sweep read nothing")
+    }
 }

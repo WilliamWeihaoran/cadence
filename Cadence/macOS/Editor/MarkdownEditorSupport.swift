@@ -236,8 +236,9 @@ enum MarkdownStylist {
 
     // MARK: - Cached Regexes
 
-    /// Five of the six emphasis patterns below are `MarkdownInlineEmphasisPatterns`', not a
-    /// sixth spelling of them ([[T-1660]]). They were written here with backslash escapes and in
+    /// Five of the six emphasis patterns below became `MarkdownInlineEmphasisPatterns`' in
+    /// [[T-1660]], and the sixth in [[T-1931]]; none is a second spelling of them any more. The
+    /// five were written here with backslash escapes and in
     /// `MarkdownInlineSpanSupport` and `MarkdownInlinePreviewSupport` as raw literals, so a search
     /// for one spelling could not see the other two — the same shape as [[T-1521]]'s `[[…]]`, and
     /// with no target boundary near it: all three files are app-target only. `try!` stays, because
@@ -248,12 +249,25 @@ enum MarkdownStylist {
     private static let italicRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.italicAsterisk)
     private static let strikethroughRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.strikethrough)
     private static let highlightRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.highlight)
-    /// Deliberately **not** `MarkdownInlineEmphasisPatterns.code`: that one is lazy
-    /// and this is greedy. The two reach the same answer — the character class excludes the
-    /// backtick, so there is nothing for the quantifier to be greedy about — but they are not the
-    /// same bytes, so this is not one of the duplicates [[T-1660]] removed and it is not silently
-    /// unified here.
-    private static let inlineCodeRegex = try! NSRegularExpression(pattern: "`([^`\n]+)`")
+    /// The sixth, and now `MarkdownInlineEmphasisPatterns.code` as well ([[T-1931]]).
+    ///
+    /// [[T-1660]] left this one alone on purpose, because it was not the same bytes: it was
+    /// `` `([^`\n]+)` `` — **greedy**, and in a plain Swift string where `\n` is a real line feed,
+    /// so **10** bytes against the shared constant's 12. Both differences are invisible at run
+    /// time, and both for the same reason: the body class excludes the backtick, so the first
+    /// backtick after the opener is the only place either quantifier can stop, and a bare LF
+    /// inside a class is what `\n` means there anyway.
+    ///
+    /// That argument is about the **character class**, not about the quantifier, which is why the
+    /// two spellings could not be left standing. [[T-1520]] widened the image label class from
+    /// `[^\]\n]` to `(?:[^\]\n\\]|\\.)*` to keep an escaped `]` inside a caption; the day someone
+    /// does the same here so a code span can contain a backtick, the class stops excluding the
+    /// delimiter, greedy and lazy part company, and the macOS editor styles a different run of the
+    /// note than the inline preview and the iOS span table do — with nothing failing.
+    /// `CadenceMarkdownRegexHoistTests.theInlineCodePatternIsOneSpellingThreeReadersShare` holds
+    /// the behaviour both spellings had, and shows the divergence on a class that admits the
+    /// delimiter.
+    private static let inlineCodeRegex = try! NSRegularExpression(pattern: MarkdownInlineEmphasisPatterns.code)
     /// The pattern is `NoteReferenceParser.wikiReferencePattern`, not a third spelling of it
     /// ([[T-1521]]): what `[[…]]` matches has to be the same question in the live editor, the
     /// renderer and the MCP read service, and it was written out three times in three files.
