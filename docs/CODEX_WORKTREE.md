@@ -67,6 +67,9 @@ Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
 Cadence/Shared/CadenceTypography.swift
 Cadence/Shared/Components/CadenceTagChip.swift
 Cadence/iOS/iOSTaskInspectorMetrics.swift
+CLAUDE.md
+scripts/codex-inbox.sh
+docs/CODEX_REQUESTS.md
 Cadence/iOS/iOSFeatureComponents.swift
 Cadence/iOS/iPadTodaySupportViews.swift
 CadenceTests/CadenceCodex*.swift
@@ -78,6 +81,36 @@ CadenceTests/CadenceSharedBoardChromeTests.swift
 CadenceTests/CadenceSharedTaskRowJobsTests.swift
 CadenceTests/CadenceTodayUnificationTests.swift
 ```
+
+### The context-budget grant (2026-10-02), and the two things it does not permit
+
+`CLAUDE.md`, `scripts/codex-inbox.sh` and `docs/CODEX_REQUESTS.md` are leased to Codex for the
+context-budget work Codex itself scoped. Measured at `74c1d186`: the request document is **306 KB**
+with no per-request lookup, and `CLAUDE.md` repeats directory maps, build commands and incident
+history that `AGENTS.md` already owns.
+
+Two boundaries, both load-bearing:
+
+**`scripts/codex-inbox.sh` has a selftest and it is a landing gate.** It currently offers
+`report | fold R<n> | selftest`. Add `show R<n>`; do not change what `fold` or the id-clash check
+mean. The selftest must be green and must gain a case for the new subcommand — a lookup that
+silently returns the wrong request is worse than no lookup. `codex-inbox.sh` is `#!/bin/bash`;
+`codex-land.sh` is `#!/bin/sh`; do not assume either from the extension.
+
+**`CLAUDE.md` is startup context for every agent, so trimming it is in charter but rewriting it is
+not.** Its own rule says: when adding an always-read rule, remove or link out something else. Move
+duplicated material to `docs/CLAUDE_REFERENCE.md` or the scoped `AGENTS.md` and leave a link. Do not
+remove a safety rule, and do not remove the first-reads ordering. If a line looks redundant but you
+cannot find where it is covered, keep it and say so.
+
+**Archiving acted-on requests is permitted only if ids and acknowledgement tracking survive byte for
+byte.** The whole point of the inbox is that an id resolves to exactly one entry; an archive that
+loses that is a regression, not a saving. Measure the before and after sizes and state both.
+
+**Not granted, and not to be inferred:** `docs/TODO.md`, `AGENTS.md`, `scripts/xcb.sh`,
+`scripts/agent-commit.sh`, `scripts/codex-land.sh`, `.github/`. The largest saving in this area —
+never reading the 2.4 MB ledger, using `./scripts/ledger-view.sh show`/`brief` instead — is a
+coordinator habit that has already been fixed in the agent brief, not a change to any file here.
 
 ## The coordinator's side
 
