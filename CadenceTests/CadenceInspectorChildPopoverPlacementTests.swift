@@ -449,8 +449,14 @@ struct CadenceInspectorChildPopoverPlacementTests {
 
     /// **Non-vacuity, and the count the ticket turns on.** T-1600 says "two of the four panels";
     /// this is the four, enumerated by the type the placement rule reads rather than by a comment.
-    /// A fifth panel added to the inspector arrives here rather than slipping past every relation
-    /// below.
+    ///
+    /// **This is not the guard on the count, and it never was** (T-1941). It reads the enumeration
+    /// and asserts a figure about the enumeration, so it is circular with respect to the thing at
+    /// risk: a fifth `.popover` added to the inspector changes neither side and nothing here goes
+    /// red. What it *does* hold is that the four rows already enumerated keep their names and
+    /// report a positive width. The omission is caught by
+    /// `theEnumeratedPanelsAreCountedAgainstTheInspectorsOwnPopovers`, which counts the inspector's
+    /// own popovers out of the source.
     @MainActor
     @Test
     func theInspectorOpensFourPanelsAndEachOneNamesItsWidth() {
@@ -567,6 +573,129 @@ struct CadenceInspectorChildPopoverPlacementTests {
         #expect(
             CadenceSourceScan.matchCount(#"tileSize: CGFloat = "#, in: header) == 0,
             "TaskDetailHeaderSection stores a second copy of the tile's size (T-1600)"
+        )
+    }
+
+    // MARK: - The enumeration against the source (T-1941)
+
+    /// **Every `.popover` the inspector opens, found in the tree rather than listed here.**
+    ///
+    /// A panel is anchored by a `TaskInspectorChildPopoverPlacement` — that is what the whole of
+    /// T-1480 and T-1722 is about, and `theScheduleControlsPresentOnThePlacementTheyWereHanded`
+    /// already forbids the controls from hand-typing an edge instead. So "an inspector child
+    /// popover" has a spelling: `arrowEdge:` resolved from a `…Placement`, and that spelling is
+    /// searchable across every Swift file in the app rather than in a list of three files somebody
+    /// has to remember to extend.
+    ///
+    /// One `.popover` is not one panel. `TaskDetailHeaderSection` presents **two** from a single
+    /// modifier — deliberately, because two `.popover`s chained onto one anchor do not both work —
+    /// switching over its `HeaderPanel` cases. So a closure that switches contributes one panel per
+    /// case and any other closure contributes one.
+    ///
+    /// **The known limit, stated rather than hidden:** a closure that presented a second panel
+    /// through an `if`/`else` instead of a `switch` would still read as one. Nothing in the
+    /// inspector does that today, and the two shapes that *are* used — a new control with its own
+    /// `.popover`, and a new case on an existing multi-panel one — are both counted.
+    private static func scannedInspectorPanels() throws -> (panels: Int, sites: [String]) {
+        let read = CadenceSourceScan.strippedSourceReader()
+        var panels = 0
+        var sites: [String] = []
+
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence").sorted() {
+            let source = try read(path)
+            guard source.contains(".popover(") else { continue }
+            let hits = CadenceSourceScan.captures(
+                #"\.popover\([^)]*arrowEdge:\s*(?:Self\.)?[A-Za-z]*Placement\.arrowEdge\s*\)"#,
+                in: source,
+                group: 0
+            )
+            for hit in hits {
+                guard let closure = CadenceSourceScan.matchedBody(
+                    after: hit.range.upperBound,
+                    in: source,
+                    open: "{",
+                    close: "}"
+                ) else {
+                    sites.append("\(path) (unbalanced closure)")
+                    continue
+                }
+                let cases = CadenceSourceScan.matchCount(#"case \.[a-zA-Z]"#, in: closure)
+                panels += max(cases, 1)
+                sites.append("\(path) x\(max(cases, 1))")
+            }
+        }
+        return (panels, sites)
+    }
+
+    /// **The enumeration is checked against the source, not against itself** (T-1941).
+    ///
+    /// `theInspectorOpensFourPanelsAndEachOneNamesItsWidth` above asserts `count == 4` against
+    /// `allWidths(at:)` — the same hand-written list it is trying to protect. That is circular with
+    /// respect to the thing at risk: a fifth `.popover` added to the inspector changes neither
+    /// side, and every relation in this section — narrower than the content column, slices the rows
+    /// under a column-spanning anchor — then simply never sees the new panel. It is the [[T-552]] /
+    /// [[T-535]] shape, a scope that silently covers less than it appears to, rather than a wrong
+    /// assertion: each of the four claims is true and mutation-proved.
+    ///
+    /// **The list cannot be derived outright and this says why.** `allWidths` returns *widths*, and
+    /// a width is a `CGFloat` that only the running type can produce — `CadenceDateSelectionMetrics`
+    /// and `EstimateRollerMetrics` compute theirs from a `DynamicTypeSize`. No scan can read those.
+    /// What a scan *can* read is how many panels there are to have a width, so the list stays typed
+    /// and this is the thing that cannot forget one: the moment the inspector opens a fifth panel,
+    /// the enumeration is one short and this fails.
+    ///
+    /// **Non-vacuity is the whole risk here**, as the ticket says: a sweep that matched nothing
+    /// returns 0, and `0 == 0` would be green while covering nothing at all. Both the site count
+    /// and the panel count carry their own floor, and the sites are named in the failure message.
+    @MainActor
+    @Test
+    func theEnumeratedPanelsAreCountedAgainstTheInspectorsOwnPopovers() throws {
+        let scan = try Self.scannedInspectorPanels()
+        let enumerated = TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize)
+
+        // Floors first: an empty sweep must fail here rather than agree with an empty enumeration.
+        #expect(scan.sites.count >= 3, "scanned \(scan.sites.count) inspector child popovers: \(scan.sites)")
+        #expect(scan.panels >= 4, "scanned \(scan.panels) inspector panels: \(scan.sites)")
+        #expect(enumerated.count >= 4, "enumerated \(enumerated.count) panels")
+
+        #expect(
+            scan.panels == enumerated.count,
+            "the inspector opens \(scan.panels) panels and TaskInspectorPanelMetrics.allWidths names \(enumerated.count) — a panel it does not name is invisible to every relation in this file (T-1941). Scanned: \(scan.sites)"
+        )
+    }
+
+    /// **The sweep's own discrimination**, so the count above is not three numbers that happen to
+    /// agree. The app is full of `.popover`s — board cards, tag pickers, the Focus log sheet — and
+    /// the sweep must see far more of them than it counts, or its filter is matching on something
+    /// other than the inspector's placement type.
+    @Test
+    func theInspectorPanelSweepSeesFewerPopoversThanTheAppDraws() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        var all = 0
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            all += CadenceSourceScan.matchCount(#"\.popover\("#, in: try read(path))
+        }
+
+        let scanned = try Self.scannedInspectorPanels()
+        #expect(all > 20, "the sweep read \(all) popovers in the whole app, which is not this app")
+        #expect(
+            scanned.sites.count < all,
+            "the inspector filter matched every popover in the app (\(all)), so it is not filtering on the placement type (T-1941)"
+        )
+
+        // And it is anchored on the placement rather than on a file: the three it does match are
+        // the ones whose arrow edge comes from TaskInspectorChildPopoverPlacement.
+        #expect(
+            scanned.sites.contains { $0.contains("SchedulePanelPopoverSupportViews.swift") },
+            "the header's two-panel popover fell out of the sweep: \(scanned.sites)"
+        )
+        #expect(
+            scanned.sites.contains { $0.contains("TaskInspectorWorkflowSupportViews.swift") },
+            "the recurrence panel fell out of the sweep: \(scanned.sites)"
+        )
+        #expect(
+            scanned.sites.contains { $0.contains("TaskInspectorFieldSupportViews.swift") },
+            "the date panel fell out of the sweep: \(scanned.sites)"
         )
     }
 

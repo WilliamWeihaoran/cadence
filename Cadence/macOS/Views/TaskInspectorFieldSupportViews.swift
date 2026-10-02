@@ -38,6 +38,16 @@ nonisolated enum TaskInspectorPanelMetrics {
 
     /// Every panel the inspector can open, named, at one type size.
     ///
+    /// **It is a typed list, and it has to be: a width is a value, not a spelling** (T-1941). Two
+    /// of the four are computed from a `DynamicTypeSize` by types that live elsewhere, so nothing
+    /// that reads source text can produce this array. What *can* be read out of source is how many
+    /// panels there are to have a width — the inspector's child popovers are the ones whose
+    /// `arrowEdge:` comes from a `TaskInspectorChildPopoverPlacement` — and
+    /// `CadenceInspectorChildPopoverPlacementTests.theEnumeratedPanelsAreCountedAgainstTheInspectorsOwnPopovers`
+    /// counts them and fails when this list is one short. Before that, the only test over this list
+    /// asserted `count == 4` *against this list*, so a fifth panel was invisible to every relation
+    /// asserted over it and nothing went red.
+    ///
     /// `dynamicTypeSize` is a parameter rather than `.large` baked in even though the inspector is
     /// macOS-only: the two shared panels genuinely widen with type, and a caller that wants the
     /// desktop reading should have to say so.
