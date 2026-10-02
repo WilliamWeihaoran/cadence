@@ -67,6 +67,12 @@ Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
 Cadence/Shared/CadenceTypography.swift
 Cadence/Shared/Components/CadenceTagChip.swift
 Cadence/iOS/iOSTaskInspectorMetrics.swift
+Cadence/macOS/Views/CalendarPageBoardSupportViews.swift
+Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift
+Cadence/Shared/CadenceTaskFieldEditCommit.swift
+CadenceTests/CalendarBoardDayDropCommitTests.swift
+CadenceTests/CalendarBoardUnscheduleCommitTests.swift
+CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
 CLAUDE.md
 scripts/codex-inbox.sh
 docs/CODEX_REQUESTS.md
@@ -111,6 +117,40 @@ loses that is a regression, not a saving. Measure the before and after sizes and
 `scripts/agent-commit.sh`, `scripts/codex-land.sh`, `.github/`. The largest saving in this area —
 never reading the 2.4 MB ledger, using `./scripts/ledger-view.sh show`/`brief` instead — is a
 coordinator habit that has already been fixed in the agent brief, not a change to any file here.
+
+### T-1980 is leased to Codex (2026-10-02), and it is a FINISH, not a start
+
+Six macOS paths are leased for [[T-1980]] only. This is the first time Codex has held anything under
+`Cadence/macOS/Views/`, and the grant is narrow and temporary: it ends when T-1980 lands.
+
+**The implementation already exists and is ~80% done.** Agent `boarddrops` built it and ran out of
+budget mid-verification. The work is a patch, not a blank page, and the instruction is **finish and
+verify it, do not redesign it**. If Codex believes a design decision is wrong, it says so and stops
+rather than rewriting — the decisions were measured, and two of them were measured *against* the
+obvious alternative.
+
+**What is already proven:** M1, the headline mutation — both drops restored to the swallowing form
+with the `commit:` seam kept — produced **31 issues across 6 tests**, linked and re-signed. The
+macOS build is clean at 696 compile tasks, 0 warnings.
+
+**What is missing, and it is the whole job:** M2 (`calendarEventID` dropped from `restore(to:)`,
+expected to redden **only** the block-move calendar-link assertions) and M3
+(`CadenceTaskBundleSlotSnapshot` dropping `startMin`/`durationMinutes`, expected to redden **only**
+the clamp test). These are *attribution* mutations: each must redden exactly one group and leave the
+rest green. That is the evidence that proved [[T-1952]] and caught that copying [[T-1580]]'s shape
+unaltered would have made it worse. Also missing: a full `-only-testing:CadenceTests` run over final
+bytes, and an **iOS build**, which is owed because `Cadence/Shared/CadenceTaskFieldEditCommit.swift`
+is touched.
+
+**Two design decisions not to undo.** `CadenceTaskMutationSupport.updateBundle` was deliberately not
+reused: it writes `title`, clamps against its own literals, and does not clear members' calendar
+links, so reusing it would have changed what the drop does while fixing what it reports. And
+`CalendarBoardDayColumn.handleDrop` returned `true` unconditionally because both callbacks were
+`Void`; they answer `Bool` now, and the one surviving `return true` is the hit-test deferral to a
+bundle card, which is correct.
+
+**`CadenceSaveCommitRule.reportExemptions` is empty (`[:]`) and stays empty.** Fix defects; never
+widen or add an exemption.
 
 ## The coordinator's side
 
