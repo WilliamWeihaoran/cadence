@@ -684,6 +684,180 @@ struct CadenceBuildInvocationHygieneTests {
         )
     }
 
+    /// **The failure count was printed and not gated: `tests failed: 1`, exit 0.**
+    ///
+    /// [[T-1981]], measured 2026-10-02 by running the shipped `.github/scripts/check-log.sh` over
+    /// two real logs from this Mac's own `$TMPDIR`: `cadence-xcb-landgate-unit` 20261001-192525
+    /// (46 results, 1 failing) read `tests failed: 1` and exited **0**, and
+    /// `cadence-xcb-heartbeat` 20261001-192612 (5451 results, 3 failing) read `tests failed: 3`
+    /// and exited **0**. The only test-shaped gates were [[T-552]]'s `ran == 0` and the
+    /// `failed > 100` *warning* for [[T-236]]'s collision shape, and neither covers one failure.
+    ///
+    /// **Why the fixture now carries SUCCEEDED banners, and why that is the whole test.** A
+    /// failing `CIGateTestLog` ends `** TEST FAILED **` and nothing else, so `succeeded == 0`
+    /// reddened it already — an assertion that "the gate fails on a failing log" would have passed
+    /// over a gate that never reads the failure count at all. A real red `test` log is not that
+    /// shape: the one measured above carries **6** per-target `** BUILD SUCCEEDED **` banners
+    /// beside its `** TEST FAILED **`, which is exactly why `succeeded == 0` never fired on it.
+    /// The fixtures below mirror that, and the test asserts the gate does NOT name the banner
+    /// check — so the redness can only be coming from the count.
+    ///
+    /// **And a real red log trips BOTH of T-1981's gates**, so a status alone does not say which
+    /// one is carrying it — the one-candidate trap wearing a different hat. Measured against a copy
+    /// of the script with the failure gate deleted: the realistic fixture still exited 1, on the
+    /// banner. The count gate is therefore held by its own message AND by a second fixture with no
+    /// final banner at all, the shape a clipped artifact takes, where the count is the only signal.
+    ///
+    /// **And the other direction**, because a gate that fires on everything is worth no more than
+    /// one that fires on nothing: the same fixture with zero failures must stay green, and the
+    /// `failed > 100` collision heuristic must stay a *warning* rather than becoming a second
+    /// error on a log that is already red for the honest reason.
+    @Test func theCIGateFailsARunWhoseTestsFailedInsteadOfPrintingTheCount() throws {
+        var red = CIGateTestLog(identifierTests: 40, namedTests: 5, failures: 1)
+        red.succeededBanners = 6
+        let redReading = try Self.runCIGate(over: red)
+        #expect(redReading.failed == 1, "fixture holds 1 failing test; the gate counted \(redReading.failed.map(String.init) ?? "nothing")")
+        #expect(
+            redReading.status != 0,
+            """
+            the gate read `tests failed: 1` off a log with a failing test and exited \
+            \(redReading.status); that is T-1981 verbatim
+            \(redReading.output)
+            """
+        )
+        #expect(redReading.output.contains("T-1981"), "the failure gate does not name its ticket\n\(redReading.output)")
+        // The reason this fixture is not proved by an unrelated gate: the banner check cannot be
+        // what reddened it, because six SUCCEEDED banners are in the log.
+        #expect(
+            !redReading.output.contains("no BUILD/TEST SUCCEEDED banner"),
+            """
+            the fixture went red on `succeeded == 0`, not on its failure count, so this proves \
+            nothing about T-1981 — a real red test log carries 6 SUCCEEDED banners
+            \(redReading.output)
+            """
+        )
+        // ...and the SECOND thing that could be reddening it, which a status alone cannot rule
+        // out: T-1981 adds TWO gates and a real red log trips both. Measured 2026-10-02 against a
+        // copy of the script with the failure gate deleted — the fixture above still exited 1, on
+        // the banner. So the count gate is held by its own message, and by the fixture below.
+        #expect(
+            redReading.output.contains("1 test(s) failed"),
+            """
+            the gate reddened without saying a test failed, so the failure COUNT is still ungated \
+            and something else is carrying the status (T-1981)
+            \(redReading.output)
+            """
+        )
+
+        // THE ISOLATING FIXTURE. One failing test and NO `** TEST FAILED **` banner at all — the
+        // shape a clipped or truncated artifact takes, and the only shape in which the failure
+        // count is the sole signal. Deleting the count gate leaves this green; measured.
+        var countOnly = CIGateTestLog(identifierTests: 40, namedTests: 5, failures: 1)
+        countOnly.succeededBanners = 6
+        countOnly.finalBannerOverride = ""
+        let countOnlyReading = try Self.runCIGate(over: countOnly)
+        #expect(
+            countOnlyReading.status != 0,
+            """
+            a log with a failing test and no final banner read as a clean run (exit \
+            \(countOnlyReading.status)); with the banner absent the count is the only signal there \
+            is, so this is the failure gate on its own (T-1981)
+            \(countOnlyReading.output)
+            """
+        )
+
+        // CONTROL, the other direction. Same shape, no failing test: the gate must stay green, or
+        // it has stopped discriminating and every CI run is red from here on.
+        var green = CIGateTestLog(identifierTests: 40, namedTests: 5, failures: 0)
+        green.succeededBanners = 6
+        let greenReading = try Self.runCIGate(over: green)
+        #expect(greenReading.failed == 0, "a fixture with no failing test counted \(greenReading.failed.map(String.init) ?? "nothing")")
+        #expect(
+            greenReading.status == 0,
+            """
+            the new failure gate reddens a log with zero failing tests (exit \(greenReading.status)); \
+            a gate that fires on everything says as little as one that fires on nothing
+            \(greenReading.output)
+            """
+        )
+        #expect(
+            !greenReading.output.contains("T-1981"),
+            "the failure gate announces itself on a green log, so its message is noise\n\(greenReading.output)"
+        )
+
+        // ...and the two readings must DIFFER, stated rather than left to be inferred from two
+        // separate expectations that a constant would satisfy one at a time.
+        #expect(
+            redReading.status != greenReading.status,
+            "the gate gives the same status for a 1-failure log and a 0-failure log (T-1981)"
+        )
+
+        // T-236's collision heuristic stays a WARNING. It explains a large count; it is not a
+        // second error, and promoting it would re-triage every genuine red run as a collision.
+        #expect(
+            !redReading.output.contains("::warning::1 failures"),
+            "the collision heuristic fired on a single failure\n\(redReading.output)"
+        )
+    }
+
+    /// **The banner, separately — because the count can be zero on a run that still failed.**
+    ///
+    /// [[T-1981]]'s second half. A crashed test host, or a runner that exits early, ends the log
+    /// with `** TEST FAILED **` and leaves no `failed after` line to count. T-552's `ran == 0`
+    /// catches only the subset where nothing ran at all, and `succeeded == 0` cannot catch it
+    /// either once per-target build banners are in the log.
+    ///
+    /// **The anchor is the point, and its witness is real.** `cadence-xcb-heartbeat` 20261001-192612
+    /// contains the string `** TEST FAILED **` TWICE: once as xcodebuild's banner at column 0, and
+    /// once as `          "** TEST FAILED **" \`, a line of `scripts/xcb.sh`'s own selftest
+    /// fixture quoted back into the log by a failing `CadenceGuardScriptSelftestTests` expectation.
+    /// That is [[T-1971]]'s defect in banner form: a loose grep would redden a GREEN run whose
+    /// output happens to print that script. The second fixture here is that exact line, in an
+    /// otherwise passing run, and it must stay green.
+    @Test func theCIGateTreatsATestFailedBannerAsFatalWithoutReadingEveryQuotedCopyOfIt() throws {
+        // A run that failed with nothing countable: every result passed, and the run still ended
+        // `** TEST FAILED **`.
+        var crashed = CIGateTestLog(identifierTests: 12, namedTests: 0, failures: 0)
+        crashed.succeededBanners = 6
+        crashed.finalBannerOverride = "** TEST FAILED **"
+        let crashedReading = try Self.runCIGate(over: crashed)
+        #expect(crashedReading.failed == 0, "the fixture has no failing result line; the gate counted \(crashedReading.failed.map(String.init) ?? "nothing")")
+        #expect(crashedReading.ran == 12, "the fixture has 12 results; the gate counted \(crashedReading.ran.map(String.init) ?? "nothing")")
+        #expect(
+            crashedReading.status != 0,
+            """
+            a log ending `** TEST FAILED **` with 12 passing results and no failing one read as a \
+            clean run (exit \(crashedReading.status)). The failure COUNT cannot see this shape and \
+            T-552's zero-test refusal does not either, because 12 tests ran (T-1981)
+            \(crashedReading.output)
+            """
+        )
+
+        // CONTROL. The same green run, with one INDENTED line quoting the banner, as a real log of
+        // this repository's own suite contains. The anchor is the only thing between this and a
+        // gate that reddens whenever a test prints a script.
+        var quoting = CIGateTestLog(identifierTests: 12, namedTests: 0, failures: 0)
+        quoting.succeededBanners = 6
+        quoting.quotesTheBannerInTestOutput = true
+        let quotingReading = try Self.runCIGate(over: quoting)
+        #expect(
+            quotingReading.status == 0,
+            """
+            the banner gate reddened a passing run because its OUTPUT quoted the banner, indented, \
+            which `cadence-xcb-heartbeat` 20261001-192612 really does (T-1971's shape, T-1981's \
+            gate); exit \(quotingReading.status)
+            \(quotingReading.output)
+            """
+        )
+        #expect(
+            crashedReading.status != quotingReading.status,
+            """
+            the gate gives the same status for a log whose banner is xcodebuild's and one whose \
+            banner is a quoted line of shell in a passing test's output (T-1981)
+            """
+        )
+    }
+
     /// A synthetic `xcodebuild` test log, in the shapes Swift Testing actually writes. Only the
     /// lines this gate reads are modelled; the suite scaffolding is there so the fixture is a
     /// plausible log rather than a list of needles.
@@ -694,6 +868,21 @@ struct CadenceBuildInvocationHygieneTests {
         /// Overstates the `Test run with N tests` summary without changing the body, to synthesise
         /// a result spelling the gate cannot read.
         var declaredTotalOverride: Int?
+        /// Per-target `** BUILD SUCCEEDED **` banners, which a real red `test` log carries
+        /// ALONGSIDE its `** TEST FAILED **` -- six of them in the log [[T-1981]] was measured on.
+        /// Without these a failing fixture is red for the WRONG reason (`succeeded == 0`), and a
+        /// test asserting that the gate reddens on a failure would pass over a gate that does not
+        /// read the failure count at all.
+        var succeededBanners: Int = 0
+        /// Replaces the final banner the body would otherwise choose, to synthesise the one shape
+        /// the failure COUNT cannot see: a run that failed without any countable result line.
+        var finalBannerOverride: String?
+        /// Emits, inside the test output, an INDENTED line that merely quotes the banner. Measured
+        /// off `cadence-xcb-heartbeat` 20261001-192612, where a failing
+        /// `CadenceGuardScriptSelftestTests` expectation printed `scripts/xcb.sh`'s own selftest
+        /// fixture back into the log: `          "** TEST FAILED **" \\`. A loose banner grep
+        /// counts that line.
+        var quotesTheBannerInTestOutput: Bool = false
 
         /// Failing tests are identifier-named, matching the artifact this was measured against.
         var totalResults: Int { identifierTests + namedTests + failures }
@@ -703,9 +892,14 @@ struct CadenceBuildInvocationHygieneTests {
                 "Command line invocation:",
                 "    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test",
                 "SwiftCompile normal arm64 Compiling\\ Fixture.swift /fixture/Fixture.swift",
+            ]
+            for _ in 0..<succeededBanners {
+                lines.append("** BUILD SUCCEEDED **")
+            }
+            lines.append(contentsOf: [
                 "Testing started",
                 "◇ Suite CadenceFixtureSuite started.",
-            ]
+            ])
             for index in 0..<identifierTests {
                 lines.append("◇ Test aFixtureTestNumber\(index)() started.")
                 lines.append("✔ Test aFixtureTestNumber\(index)() passed after 0.001 seconds.")
@@ -720,13 +914,16 @@ struct CadenceBuildInvocationHygieneTests {
                 lines.append("✘ Test aFailingFixtureTest\(index)() failed after 0.001 seconds with 1 issue.")
             }
             lines.append("✔ Suite CadenceFixtureSuite passed after 0.100 seconds.")
+            if quotesTheBannerInTestOutput {
+                lines.append("          \"** TEST FAILED **\" \\")
+            }
             if totalResults > 0 {
                 let declared = declaredTotalOverride ?? totalResults
                 let mark = failures > 0 ? "✘" : "✔"
                 let verb = failures > 0 ? "failed" : "passed"
                 lines.append("\(mark) Test run with \(declared) tests in 1 suites \(verb) after 0.100 seconds.")
             }
-            lines.append(failures > 0 ? "** TEST FAILED **" : "** TEST SUCCEEDED **")
+            lines.append(finalBannerOverride ?? (failures > 0 ? "** TEST FAILED **" : "** TEST SUCCEEDED **"))
             return lines.joined(separator: "\n") + "\n"
         }
     }

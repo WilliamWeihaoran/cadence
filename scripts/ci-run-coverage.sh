@@ -4,6 +4,9 @@
 #   ./scripts/ci-run-coverage.sh report [<limit>]   # ask GitHub and git, classify every sha from
 #                                                   #   the last COMPLETED CI run to HEAD
 #   ./scripts/ci-run-coverage.sh classify <pushed|unpushed> <paths-file> <runs-file>
+#   ./scripts/ci-run-coverage.sh attribution <manifest>
+#                                                   # T-1950: does every code-bearing commit in a
+#                                                   #   push have a run of its OWN? exit 1 if not
 #   ./scripts/ci-run-coverage.sh selftest           # prove the classification discriminates
 #
 # WHY THIS EXISTS
@@ -80,6 +83,7 @@ say() { print -r -- "$@" }
 usage() {
     say "usage: ./scripts/ci-run-coverage.sh report [<limit>]"
     say "       ./scripts/ci-run-coverage.sh classify <pushed|unpushed> <paths-file> <runs-file>"
+    say "       ./scripts/ci-run-coverage.sh attribution <manifest>"
     say "       ./scripts/ci-run-coverage.sh selftest"
 }
 
@@ -194,6 +198,68 @@ classify() {
     say "NO-RUN"
 }
 
+# --- push attribution (T-1950) -------------------------------------------------
+#
+# GitHub Actions creates ONE run for the pushed **tip**, not one per commit, so an intermediate
+# commit in a multi-commit push never gets a run of its own. Measured 2026-10-01 by the coordinator
+# on this very instrument's first real use: `report` printed `NO-RUN  4e00a5a6` -- agent
+# `searchsent`'s T-1782/T-1600 landing, 8 files and ~420 insertions across `Cadence/Shared/`,
+# `Cadence/macOS/Views/` and `CadenceTests/`, so `paths-ignore` is not and cannot be the cause. It
+# rode behind `74e9394a`, a docs-only ledger correction that changed no code at all.
+#
+# WHAT IS LOST IS ATTRIBUTION, NOT COVERAGE, and that distinction is the whole severity. `main` is
+# linear, so the tip's tree contains the intermediate commit's bytes and a break is still caught --
+# caught, and blamed on a commit that changed nothing. That is the diagnostic failure T-1640 was
+# filed about, reproduced live. The remedy is behavioural and free: push after each landing.
+#
+# WHAT COUNTS AS CODE-BEARING IS NOT SPELLED OUT HERE. T-1950 words it as `Cadence/` or
+# `CadenceTests/`; this asks the question `all_paths_ignored` already answers off the real
+# `ci.yml` -- "would the workflow have started for this commit?" -- which strictly contains the
+# ticket's two directories and also covers `CadenceWidgets/` and `CadenceMCPServer/`, which the
+# ticket's wording silently drops. Same argument as CI-SKIPPED: a second copy of the rule is a
+# second thing to forget. In `classify`'s vocabulary a code-bearing commit with no run of its own
+# is exactly the verdict `NO-RUN`, so nothing new is being decided here, only aggregated.
+#
+# Manifest: one line per commit IN PUSH ORDER, `sha<TAB>pushed|unpushed<TAB>paths-file<TAB>runs-file`.
+cmd_attribution() {
+    local manifest="${1:-}"
+    [[ -n "$manifest" && -s "$manifest" ]] || {
+        say "ci-run-coverage: attribution manifest '${manifest:-<none>}' is missing or empty; nothing was read."
+        return 2
+    }
+    local sha pushed paths runs verdict
+    local -a unattributed; unattributed=()
+    local seen=0
+    while IFS=$'\t' read -r sha pushed paths runs; do
+        [[ -n "$sha" ]] || continue
+        seen=$(( seen + 1 ))
+        verdict=$(classify "$pushed" "$paths" "$runs")
+        printf '  %-18s %s\n' "$verdict" "${sha[1,8]}"
+        [[ "$verdict" == "NO-RUN" ]] && unattributed+=("${sha[1,8]}")
+    done < "$manifest"
+    if (( seen == 0 )); then
+        say "push attribution: NOTHING-READ"
+        return 2
+    fi
+    say_attribution "$seen" $unattributed
+}
+
+# The verdict line, factored so `report` says the same thing `attribution` does rather than growing
+# a second wording of it. `report` prints it and keeps its own exit status (see cmd_report).
+say_attribution() {
+    local seen=$1; shift
+    local -a unattributed; unattributed=("$@")
+    if (( ${#unattributed} )); then
+        say "push attribution: UNATTRIBUTED -- ${#unattributed} of $seen commit(s) have no run of their own: ${(j:, :)unattributed}"
+        say "  Actions creates one run for the pushed TIP, so an intermediate code commit in a"
+        say "  multi-commit push is never reported on by name (T-1950). The tip's run still covers"
+        say "  the tree; what is lost is which commit a break belongs to. Push after each landing."
+        return 1
+    fi
+    say "push attribution: ATTRIBUTED -- all $seen commit(s) either have a run of their own or compile nothing"
+    return 0
+}
+
 # --- report --------------------------------------------------------------------
 cmd_report() {
     local limit="${1:-40}"
@@ -235,6 +301,8 @@ cmd_report() {
 
     local remote_head; remote_head=$(git -C "$REPO_ROOT" rev-parse origin/main 2>/dev/null)
     local verdict subject pushed
+    local -a unattributed; unattributed=()
+    local walked=0
     for sha in $shas; do
         [[ -n "$sha" ]] || continue
         git -C "$REPO_ROOT" diff-tree --no-commit-id --name-only -r "$sha" > "$ws/paths" 2>/dev/null
@@ -248,8 +316,18 @@ cmd_report() {
         verdict=$(classify "$pushed" "$ws/paths" "$ws/sha-runs")
         subject=$(git -C "$REPO_ROOT" log -1 --format='%s' "$sha" 2>/dev/null)
         printf '  %-18s %s  %.72s\n' "$verdict" "${sha[1,8]}" "$subject"
+        (( walked = walked + 1 ))
+        [[ "$verdict" == "NO-RUN" ]] && unattributed+=("${sha[1,8]}")
     done
     rm -rf "$ws"
+
+    # T-1950's reading, over the window this report already walked. It is PRINTED and does not
+    # change this subcommand's exit status, on purpose: a sha pushed seconds ago has a window in
+    # which Actions has not created its run yet, and the intended caller is a 20-minute heartbeat.
+    # An instrument that flaps gets switched off, which is the same argument CI-SKIPPED is built
+    # on. `attribution` over an explicit manifest is the deterministic form and exits 1.
+    say ""
+    (( walked )) && say_attribution "$walked" $unattributed
     return 0
 }
 
@@ -409,6 +487,63 @@ cmd_selftest() {
         "read ${#real} pattern(s): ${real[*]}"
     WORKFLOW="$ws/ci.yml"
 
+    say ""
+    say " 7. a-code-commit-riding-behind-a-push-is-unattributed -- T-1950"
+    # THE ONE-CANDIDATE CAUTION, DISCHARGED. A check that "every code commit has its own run"
+    # passes VACUOUSLY on a history where every push is single-commit, so the ticket asks for a
+    # grouped push and a single-commit push to be pinned together and the two readings asserted to
+    # DIFFER. Both manifests below describe the SAME code commit; the only thing that changes is
+    # whether a run exists for it, which is exactly what push grouping takes away.
+    #
+    # `aaaa1111` is agent `searchsent`'s landing in miniature; `bbbb2222` is the docs-only ledger
+    # correction it rode behind, and it is the one with the run.
+    print -rl -- \
+        $'aaaa1111\tpushed\t'"$ws/code-only"$'\t'"$ws/no-runs" \
+        $'bbbb2222\tpushed\t'"$ws/docs-only"$'\t'"$ws/success" > "$ws/grouped-push"
+    print -rl -- \
+        $'aaaa1111\tpushed\t'"$ws/code-only"$'\t'"$ws/success" > "$ws/single-push"
+
+    local grouped single grouped_rc single_rc
+    grouped=$(cmd_attribution "$ws/grouped-push"); grouped_rc=$?
+    single=$(cmd_attribution "$ws/single-push");   single_rc=$?
+    check "a-code-commit-riding-behind-a-push-is-unattributed" \
+        $( [[ "$grouped" == *UNATTRIBUTED* && "$grouped" == *aaaa1111* && $grouped_rc -eq 1 ]] && print 1 || print 0 ) \
+        "grouped push read rc=$grouped_rc: ${grouped//$'\n'/ | }"
+    check "a-code-commit-riding-behind-a-push-is-unattributed: a single-commit push is attributed" \
+        $( [[ "$single" == *ATTRIBUTED* && "$single" != *UNATTRIBUTED* && $single_rc -eq 0 ]] && print 1 || print 0 ) \
+        "single-commit push read rc=$single_rc: ${single//$'\n'/ | }"
+    # ...and the assertion the ticket actually asks for, stated rather than inferred from the two
+    # above: the SAME commit must read DIFFERENTLY depending only on whether it rode behind
+    # another. A guard that answered one constant would satisfy exactly one of the two checks.
+    check "a-code-commit-riding-behind-a-push-is-unattributed: the two readings differ" \
+        $( [[ "$grouped_rc" -ne "$single_rc" ]] && print 1 || print 0 ) \
+        "grouped rc=$grouped_rc and single rc=$single_rc are the same reading"
+
+    # THE OTHER DIRECTION, because a guard that fires on every grouped push is as useless as one
+    # that fires on none. T-1950 is explicit that "a docs-only commit riding behind a code commit
+    # is harmless"; only the reverse costs anything.
+    print -rl -- \
+        $'cccc3333\tpushed\t'"$ws/docs-only"$'\t'"$ws/no-runs" \
+        $'dddd4444\tpushed\t'"$ws/code-only"$'\t'"$ws/success" > "$ws/harmless-group"
+    got=$(cmd_attribution "$ws/harmless-group"); local harmless_rc=$?
+    check "a-code-commit-riding-behind-a-push-is-unattributed: a docs commit riding behind is harmless" \
+        $( [[ "$got" == *ATTRIBUTED* && "$got" != *UNATTRIBUTED* && $harmless_rc -eq 0 ]] && print 1 || print 0 ) \
+        "a grouped push carrying only a docs commit read rc=$harmless_rc: ${got//$'\n'/ | }"
+    # ...and an in-flight run is a run. A code commit whose run has not finished yet is not an
+    # unattributed one, or the guard screams at every push for the length of a 35-minute job.
+    print -r -- $'eeee5555\tpushed\t'"$ws/code-only"$'\t'"$ws/in-flight" > "$ws/in-flight-push"
+    got=$(cmd_attribution "$ws/in-flight-push"); local inflight_rc=$?
+    check "a-code-commit-riding-behind-a-push-is-unattributed: an in-flight run is a run" \
+        $( [[ "$got" == *ATTRIBUTED* && "$got" != *UNATTRIBUTED* && $inflight_rc -eq 0 ]] && print 1 || print 0 ) \
+        "a code commit with an in-flight run read rc=$inflight_rc: ${got//$'\n'/ | }"
+    # An empty manifest is a reading failure, not an all-clear -- the same rule as the empty path
+    # list in mode 3, and the shape a `git log` that returned nothing would take.
+    : > "$ws/empty-push"
+    got=$(cmd_attribution "$ws/empty-push"); local empty_rc=$?
+    check "a-code-commit-riding-behind-a-push-is-unattributed: an empty manifest is not an all-clear" \
+        $( [[ "$got" != *"ATTRIBUTED --"* && $empty_rc -eq 2 ]] && print 1 || print 0 ) \
+        "an empty manifest read rc=$empty_rc: ${got//$'\n'/ | }"
+
     rm -rf "$ws"
     say ""
     say "checks: $(( ${#performed} - ${#failures} )) passed, ${#failures} failed"
@@ -423,6 +558,7 @@ cmd_selftest() {
 case "${1:-}" in
     report)   shift; cmd_report "$@" ;;
     classify) shift; (( $# == 3 )) || { usage; exit 2 }; classify "$@" ;;
+    attribution) shift; (( $# == 1 )) || { usage; exit 2 }; cmd_attribution "$@" ;;
     selftest) cmd_selftest ;;
     *)        usage; exit 2 ;;
 esac

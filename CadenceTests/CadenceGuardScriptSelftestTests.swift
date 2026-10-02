@@ -1008,6 +1008,10 @@ struct CadenceGuardScriptSelftestTests {
         "a-completed-run-outranks-a-cancelled-one",
         "in-flight-is-not-completed",
         "the-ignore-list-is-read-from-the-workflow",
+        // T-1950. The mode the one-candidate caution is about: a check that "every code commit has
+        // its own run" passes vacuously on a history where every push is single-commit, so the
+        // mode pins a grouped push AND a single-commit push and asserts the two readings DIFFER.
+        "a-code-commit-riding-behind-a-push-is-unattributed",
     ]
 
     /// T-749. Runs against a throwaway claims root and a fake `simctl` (`CADENCE_SIM_CLAIMS_DIR` /

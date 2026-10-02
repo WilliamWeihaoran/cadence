@@ -190,6 +190,46 @@ if [ "$KIND" = "test" ]; then
     echo "::error::this test run executed 0 tests, and xcodebuild called that a success (T-552)."
     rc=1
   fi
+  # T-1981. THE COUNT ABOVE WAS PRINTED AND NOT GATED. Until this block existed the script read
+  # `tests failed: 1` off a genuinely red run and exited **0** -- measured 2026-10-02 over
+  # `cadence-xcb-landgate-unit` 20261001-192525 (46 results, 1 failing) and again over
+  # `cadence-xcb-heartbeat` 20261001-192612 (5451 results, 3 failing). The only test-shaped gates
+  # were T-552's `ran == 0` and the `failed > 100` *warning* below, and neither covers one failure.
+  #
+  # Why CI was nonetheless never green over a red suite, and why that is the hazard rather than the
+  # reassurance: `.github/workflows/ci.yml`'s `Test` step runs `scripts/xcb.sh` directly with no
+  # pipe, so xcodebuild's own status fails the job, and the `Gates` step runs `if: always()` as a
+  # SECOND opinion that has simply never had to carry it. A reader holding only the uploaded
+  # artifact -- which is the entire point of uploading it -- got `tests failed: 1` and exit 0.
+  # This script's own comment on the vacuous-count check states the standard it was failing:
+  # a gate that certifies a build it never saw is worse than no gate.
+  if [ "$failed" -gt 0 ]; then
+    echo "::error::$failed test(s) failed. The baseline is zero failing tests (T-1981)."
+    grep -aE "✘ Test (\"[^\"]*\"|[A-Za-z0-9_]+\([^)]*\)) failed after|[Tt]est [Cc]ase '[^']*' failed" "$LOG" | head -40
+    rc=1
+  fi
+
+  # ...and the banner, SEPARATELY, because the count above can be zero on a run that still failed.
+  # A test host that crashes, or a runner that exits early, ends the log with `** TEST FAILED **`
+  # and no `failed after` line to count; T-552's `ran == 0` catches only the subset where nothing
+  # ran at all. The `SUCCEEDED banners` check does not cover this either and cannot: the red log
+  # measured above carries **6** per-target `** BUILD SUCCEEDED **` banners beside its
+  # `** TEST FAILED **`, so `succeeded == 0` never fires on it.
+  #
+  # ANCHORED AT COLUMN 0, and that is not decoration -- it is T-1971's lesson applied to a banner
+  # instead of to a diagnostic. `cadence-xcb-heartbeat` 20261001-192612 contains the string TWICE:
+  # once as xcodebuild's own banner at column 0, and once as `          "** TEST FAILED **" \` --
+  # a line of `scripts/xcb.sh`'s selftest fixture, quoted back by a failing
+  # `CadenceGuardScriptSelftestTests` expectation. A loose `grep -c 'TEST FAILED'` counts 2 there
+  # and would count 1 on a GREEN run whose output happens to quote that script. xcodebuild writes
+  # the banner unindented; a test printing source does not.
+  test_failed_banner=$(grep -cE '^\*\* TEST FAILED \*\*' "$LOG" | tr -d ' ')
+  if [ "$test_failed_banner" -gt 0 ]; then
+    echo "::error::the log ends with a ** TEST FAILED ** banner, whatever the failure count says."
+    echo "  A crashed test host or a runner that exited early fails the run while leaving no"
+    echo "  countable result line behind it (T-1981). Read the tail of the log, not the counts."
+    rc=1
+  fi
   # A concurrency collision on this project shows up as a large number of ZERO-SECOND failures
   # (T-236). Naming it here keeps CI from being triaged as a code regression.
   if [ "$failed" -gt 100 ]; then
