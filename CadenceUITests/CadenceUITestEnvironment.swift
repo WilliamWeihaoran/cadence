@@ -176,6 +176,15 @@ enum CadenceUITestBounds {
     /// in the foreground failed here, on `sidebar.list.area.alpha-area` — the seeded rows had not
     /// appeared within 5s. Whether they are late or absent is the open question, filed as
     /// [[T-710]]; until someone times it, this stays where it was.
+    ///
+    /// **It has now been timed, and the answer is that this bound is not the question.**
+    /// `CadenceSeededSidebarTimingUITests` ran 40 launches over two runs (2026-10-01 `coordgated`,
+    /// 2026-10-02 `seedrace`) waiting 60s each: **38 arrivals, every one between 0.04s and 0.52s,
+    /// none past this bound.** The seed is ~10-100x inside 5s when it works. The two launches with
+    /// no arrival also never showed `sidebar.destination.today`, a static row no seed creates — so
+    /// they drew no UI at all and are [[T-563]]/[[T-1890]], not seeding. **Raising this cannot
+    /// make any observed failure green**, which is what the paragraph above forbids and now has a
+    /// distribution behind it. See `CadenceSeededSidebarArrivalVerdict`.
     static let sidebarRow: TimeInterval = 5
 
     /// **Not measured**, same as `sidebarRow`. First element queried after a launch, so it carries

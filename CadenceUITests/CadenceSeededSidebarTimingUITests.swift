@@ -35,6 +35,19 @@ import XCTest
 ///
 /// **Read the run, not the verdict.** Even an all-green run of this test is only interesting
 /// for the numbers it printed. Search its output for `T710`.
+///
+/// **MEASURED, 40 launches over two runs — the answer is "neither late nor absent".**
+/// `coordgated` 2026-10-01 (18/20) and `seedrace` 2026-10-02 (20/20): every arrival landed
+/// between **0.04s and 0.52s**, median 0.06s and 0.36s, and **not one of the 38 was past
+/// `CadenceUITestBounds.sidebarRow`**. The seed is an order of magnitude inside the bound, so
+/// raising it answers nothing — which is what that constant's comment already forbids.
+///
+/// The two launches that produced no arrival, `coordgated` runs 7 and 8, had **`today=ABSENT`
+/// too** — the static control. They drew no UI at all (run 7: *"app did not reach the
+/// foreground; state is 3"*, [[T-563]]; run 8: foreground reached, empty tree, [[T-1890]]), and
+/// the first version of this test failed them with a sentence blaming seeding that it did not
+/// check. [[T-1954]] inherited that sentence as fact. The verdict now comes from
+/// `CadenceSeededSidebarArrivalVerdict`, which reads the control first.
 @MainActor
 final class CadenceSeededSidebarTimingUITests: XCTestCase {
 
@@ -60,7 +73,12 @@ final class CadenceSeededSidebarTimingUITests: XCTestCase {
     func testSeededSidebarRowsArriveAndHowLongTheyTake() throws {
         let runs = Int(ProcessInfo.processInfo.environment["CADENCE_T710_RUNS"] ?? "") ?? 20
         var arrivals: [TimeInterval] = []
-        var misses = 0
+        /// Launches where the seeded rows were missing **and the static control was there** — the
+        /// only shape that is evidence about seeding.
+        var seedMisses = 0
+        /// Launches that drew no UI at all, control included. Counted apart from `seedMisses`
+        /// because conflating the two is what re-filed a launch failure as a seeding defect.
+        var blankLaunches = 0
 
         for run in 1...runs {
             let storeID = "t710-\(UUID().uuidString)"
@@ -93,19 +111,31 @@ final class CadenceSeededSidebarTimingUITests: XCTestCase {
                 + "alpha=\(fmt(alpha)) beta=\(fmt(beta)) gamma=\(fmt(gamma))"
             )
 
-            if let alpha {
-                arrivals.append(alpha)
+            // **`today` is the control and is consulted before anything is concluded.** It is a
+            // static destination no seed creates, so a launch that never shows it drew no UI at
+            // all and cannot be evidence about seeding — which is exactly what the first version
+            // of this test reported it as. See `CadenceSeededSidebarArrivalVerdict`.
+            let verdict = CadenceSeededSidebarArrivalVerdict.verdict(
+                control: today,
+                seeded: alpha,
+                bound: CadenceUITestBounds.sidebarRow
+            )
+
+            switch verdict {
+            case .uiNeverAppeared:
+                blankLaunches += 1
+            case .seedNeverArrived:
+                seedMisses += 1
+            case .arrivedWithinBound(let seenAt):
+                arrivals.append(seenAt)
+            case .arrivedPastBound(let seenAt):
                 // Recorded, not asserted: whether it beat 5s is the question, not the requirement.
-                if alpha > CadenceUITestBounds.sidebarRow {
-                    print("T710   ^ past the \(CadenceUITestBounds.sidebarRow)s bound this ticket is about")
-                }
-            } else {
-                misses += 1
-                XCTFail(
-                    "run \(run): the seeded sidebar rows never appeared within "
-                    + "\(Self.observationWindow)s. They are ABSENT, not late — T-710 is a seeding "
-                    + "or @Query refresh bug and CadenceUITestBounds.sidebarRow is irrelevant."
-                )
+                arrivals.append(seenAt)
+                print("T710   ^ past the \(CadenceUITestBounds.sidebarRow)s bound this ticket is about")
+            }
+
+            if let message = verdict.failureMessage {
+                XCTFail("run \(run): \(message)")
             }
 
             app.terminate()
@@ -123,7 +153,10 @@ final class CadenceSeededSidebarTimingUITests: XCTestCase {
             summary = "n=\(sorted.count) min=\(fmt(sorted.first)) median=\(fmt(median)) "
                 + "max=\(fmt(sorted.last)) over-\(CadenceUITestBounds.sidebarRow)s=\(overBound)"
         }
-        print("T710 SUMMARY runs=\(runs) never-arrived=\(misses) \(summary)")
+        print(
+            "T710 SUMMARY runs=\(runs) seed-never-arrived=\(seedMisses) "
+            + "blank-launches=\(blankLaunches) \(summary)"
+        )
     }
 
     /// When `identifier` first exists, measured from `origin`, or `nil` if it never does inside
