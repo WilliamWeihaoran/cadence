@@ -52,7 +52,9 @@ enum CalendarPageBoardDataSupport {
 /// What the Calendar Board's Unscheduled rail does with a dropped card, with the commit it reports
 /// on injectable ([[T-1952]]).
 ///
-/// **What the user saw.** `CalendarPageBoardView.unschedule` ended
+/// **What the user saw.** The view's own unschedule drop handler — renamed to
+/// `CalendarPageBoardView.handleUnscheduleDrop` by this same change, so the old spelling no
+/// longer resolves and is deliberately not written here — ended
 /// `try? modelContext.save(); return true`, and that `true` is what `.dropDestination` reads to
 /// decide whether the card stays where it was released. A drop the store refused was accepted,
 /// drawn on the Unscheduled rail, and put back at the next launch with nothing to retry — the
