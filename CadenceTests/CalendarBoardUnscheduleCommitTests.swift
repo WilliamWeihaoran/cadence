@@ -332,9 +332,17 @@ struct CalendarBoardUnscheduleCommitTests {
             "the board draws the slot it now fills"
         )
         // `.resolvedNothing` says nothing, which is T-591's refusal: a header whose task this board
-        // is not holding is the user's aim, not a failure. So there is exactly one assignment to
-        // the notice and it is the ternary above.
-        #expect(CadenceSourceScan.matchCount(#"dropFailureNotice = "#, in: source) == 1)
+        // is not holding is the user's aim, not a failure. So every assignment to the notice is one
+        // of these ternaries — three of them since [[T-1980]] gave the day column's two drops the
+        // same mapping, and no fourth spelling writes the slot.
+        #expect(CadenceSourceScan.matchCount(#"dropFailureNotice = "#, in: source) == 3)
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"dropFailureNotice = outcome == \.refused \? CadencePendingChangePersistence\.editFailureNotice : nil"#,
+                in: source
+            ) == 3,
+            "and all three are the same ternary, not three readings of what a refusal means"
+        )
     }
 
     /// The exemption left by being fixed, not by being edited — which is what

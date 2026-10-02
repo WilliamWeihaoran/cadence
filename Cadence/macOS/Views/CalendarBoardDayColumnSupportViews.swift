@@ -16,8 +16,13 @@ struct CalendarBoardDayColumn: View {
     /// day — but the decision still comes from `CalendarBoardPlannerSupport.addAction(for:)` so the
     /// board's columns and rails answer it in one place.
     let add: KanbanColumnAddBehavior?
-    let onDropTaskOnDay: (AppTask) -> Void
-    let onDropBundleOnDay: (TaskBundle) -> Void
+    /// **Answers whether the store took the drop ([[T-1980]]), and `Void` is what hid the defect.**
+    /// `handleDrop` below reads this to decide what `.dropDestination` is told, and while these two
+    /// answered nothing it told it `true` unconditionally — over a `try? modelContext.save()` one
+    /// frame up in `CalendarPageBoardView`. A refused drop was drawn on the day it was released and
+    /// reverted at the next launch, the [[T-566]] shape the rail drop had until [[T-1952]].
+    let onDropTaskOnDay: (AppTask) -> Bool
+    let onDropBundleOnDay: (TaskBundle) -> Bool
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
 
     @Environment(HoveredKanbanColumnManager.self) private var hoveredKanbanColumnManager
@@ -213,8 +218,7 @@ struct CalendarBoardDayColumn: View {
         guard let payload = items.first else { return false }
         if let bundleID = TaskDragPayload.bundleID(from: payload),
            let bundle = allBundlesLookup(bundleID) {
-            onDropBundleOnDay(bundle)
-            return true
+            return onDropBundleOnDay(bundle)
         }
         if let taskID = TaskDragPayload.taskID(from: payload),
            let task = allTasks.first(where: { $0.id == taskID }) {
@@ -226,8 +230,7 @@ struct CalendarBoardDayColumn: View {
                 bundleIDs: bundles.map(\.id),
                 bundleFrames: bundleFrames
             ) == nil else { return true }
-            onDropTaskOnDay(task)
-            return true
+            return onDropTaskOnDay(task)
         }
         return false
     }
