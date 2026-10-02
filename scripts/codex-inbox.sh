@@ -25,11 +25,13 @@
 # hand-written sed was the defect.
 #
 #   scripts/codex-inbox.sh                 report (default)
+#   scripts/codex-inbox.sh show R63       print exactly one request and its answer
 #   scripts/codex-inbox.sh fold R63 R57    record ids as acted on
 #   scripts/codex-inbox.sh selftest        prove the out-of-order case still reports
 #
 # Exit 0 always in report mode. This is a report, not a gate. `selftest` exits nonzero on
-# failure, and `fold` exits nonzero if it cannot write.
+# failure, `fold` exits nonzero if it cannot write, and `show` exits 2 on an invalid or
+# ambiguous lookup. `show` never writes the document or its acknowledgement markers.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 0
@@ -108,6 +110,55 @@ cmd_report() {
   open=$(read_open "$doc" | tr '\n' ' ')
   [ -n "${open// /}" ] && echo "still unanswered: $(echo "$open" | sed -E 's/([0-9]+)/R\1/g')"
   echo "standing (recurring, never 'answered'): $(grep -oE '^## R[0-9]+ .*Standing:' "$doc" | grep -oE 'R[0-9]+' | tr '\n' ' ')"
+}
+
+cmd_show() {
+  local doc=$1; shift
+  if [ "$#" -ne 1 ] || [[ ! "$1" =~ ^R[0-9]+$ ]]; then
+    echo "show: name exactly one request id, e.g. show R63" >&2
+    return 2
+  fi
+  if [ ! -f "$doc" ] || [ ! -r "$doc" ]; then
+    echo "show: cannot read $doc" >&2
+    return 2
+  fi
+
+  # Buffer until every heading has been checked: a later duplicate must not leak the first
+  # answer. Fenced examples are answer text, not request boundaries.
+  awk -v wanted="$1" '
+    {
+      if (fence == "" && /^## R[0-9]+ /) {
+        selected = ($2 == wanted)
+        if (selected) matches++
+      }
+      if (selected) block = block $0 ORS
+
+      s = $0
+      for (i = 0; i < 3 && substr(s, 1, 1) == " "; i++) s = substr(s, 2)
+      c = substr(s, 1, 1)
+      if (c == "`" || c == "~") {
+        n = 0
+        while (substr(s, n + 1, 1) == c) n++
+        rest = substr(s, n + 1)
+        if (fence == "" && n >= 3 && (c != "`" || index(rest, "`") == 0)) {
+          fence = c; width = n
+        } else if (fence == c && n >= width && rest ~ /^[ \t]*$/) {
+          fence = ""
+        }
+      }
+    }
+    END {
+      if (matches == 0) {
+        print "show: request " wanted " not found" > "/dev/stderr"
+        exit 2
+      }
+      if (matches != 1) {
+        print "show: duplicate request id " wanted " (" matches " entries)" > "/dev/stderr"
+        exit 2
+      }
+      printf "%s", block
+    }
+  ' "$doc"
 }
 
 cmd_fold() {
@@ -243,6 +294,59 @@ cmd_selftest() {
   # ...and that list is not empty, or the check above compares nothing to nothing.
   check "the unanswered list is non-vacuous" "R1 R2 R3 R4 R5 R7 R8" "$after"
 
+  # Exercise the public lookup, not just its helper, with prefix-colliding ids and a fenced
+  # request heading that must remain part of the answer rather than become a boundary.
+  local self show_rc
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  # Bash here-documents need a temp file the app-sandboxed test host cannot create.
+  printf '%s\n' \
+    '<!-- FOLDED-THROUGH: R1 -->' '<!-- FOLDED-ALSO: R10 -->' '' \
+    '## R1 - first request' 'first body' '' \
+    '## R10 - middle request' 'ANSWER 2026-10-02:' \
+    '```markdown' '## R1 - quoted example, not another request' '```' '' \
+    '### Answer detail' 'middle body' '' \
+    '## R2 - last request' 'last body' > "$dir/lookup"
+  local report_before
+  report_before=$(cmd_report "$dir/lookup")
+  cp "$dir/lookup" "$dir/lookup-before"
+  printf '## R1 - first request\nfirst body\n\n' > "$dir/expected-first"
+  printf '## R10 - middle request\nANSWER 2026-10-02:\n```markdown\n## R1 - quoted example, not another request\n```\n\n### Answer detail\nmiddle body\n\n' > "$dir/expected-middle"
+  printf '## R2 - last request\nlast body\n' > "$dir/expected-last"
+
+  CODEX_INBOX_DOC="$dir/lookup" /bin/bash "$self" show R1 > "$dir/shown" 2> "$dir/show-error"; show_rc=$?
+  check "show finds the first request without matching R10" "0" "$show_rc"
+  check "show prints the first request exactly" "identical" "$(cmp -s "$dir/shown" "$dir/expected-first" && echo identical)"
+  CODEX_INBOX_DOC="$dir/lookup" /bin/bash "$self" show R10 > "$dir/shown" 2> "$dir/show-error"; show_rc=$?
+  check "show accepts a request containing a fenced heading" "0" "$show_rc"
+  check "show retains the complete answer and fenced example" "identical" "$(cmp -s "$dir/shown" "$dir/expected-middle" && echo identical)"
+  CODEX_INBOX_DOC="$dir/lookup" /bin/bash "$self" show R2 > "$dir/shown" 2> "$dir/show-error"; show_rc=$?
+  check "show finds the last request through EOF" "0" "$show_rc"
+  check "show prints the last request exactly" "identical" "$(cmp -s "$dir/shown" "$dir/expected-last" && echo identical)"
+
+  local bad
+  for bad in R99 1 R1extra; do
+    CODEX_INBOX_DOC="$dir/lookup" /bin/bash "$self" show "$bad" > "$dir/shown" 2> "$dir/show-error"; show_rc=$?
+    check "show refuses missing or invalid id $bad" "2" "$show_rc"
+    check "show emits no request for refused id $bad" "empty" "$([ ! -s "$dir/shown" ] && echo empty)"
+    check "show explains refused id $bad" "diagnostic" "$(grep -q 'show:' "$dir/show-error" && echo diagnostic)"
+  done
+  CODEX_INBOX_DOC="$dir/lookup" /bin/bash "$self" show > "$dir/shown" 2> "$dir/show-error"; show_rc=$?
+  check "show requires an id" "2" "$show_rc"
+  CODEX_INBOX_DOC="$dir/lookup" /bin/bash "$self" show R1 R2 > "$dir/shown" 2> "$dir/show-error"; show_rc=$?
+  check "show requires exactly one id" "2" "$show_rc"
+  CODEX_INBOX_DOC="$dir/absent" /bin/bash "$self" show R1 > "$dir/shown" 2> "$dir/show-error"; show_rc=$?
+  check "show refuses a missing document" "2" "$show_rc"
+  check "show emits no request for a missing document" "empty" "$([ ! -s "$dir/shown" ] && echo empty)"
+
+  cp "$dir/lookup" "$dir/duplicate"
+  printf '\n## R1 - duplicate request\nother body\n' >> "$dir/duplicate"
+  CODEX_INBOX_DOC="$dir/duplicate" /bin/bash "$self" show R1 > "$dir/shown" 2> "$dir/show-error"; show_rc=$?
+  check "show refuses duplicate request ids" "2" "$show_rc"
+  check "show never prints an ambiguous request" "empty" "$([ ! -s "$dir/shown" ] && echo empty)"
+  check "show names the duplicate refusal" "diagnostic" "$(grep -q 'duplicate' "$dir/show-error" && echo diagnostic)"
+  check "show preserves the document and acknowledgement markers byte for byte" "identical" "$(cmp -s "$dir/lookup" "$dir/lookup-before" && echo identical)"
+  check "show does not change the report" "$report_before" "$(cmd_report "$dir/lookup")"
+
   # T-1334. The tally is the vocabulary `CadenceGuardScriptSelftestTests` reads, and it is the
   # half that cannot be faked by a selftest gutted to `return 0`: "0 passed" is a complaint there,
   # so a run that printed its headers and asserted nothing fails the test rather than pinning it.
@@ -253,7 +357,8 @@ cmd_selftest() {
 
 case "${1:-report}" in
   report)   cmd_report "$DOC"; exit 0 ;;
+  show)     shift; cmd_show "$DOC" "$@"; exit $? ;;
   fold)     shift; cmd_fold "$DOC" "$@"; exit $? ;;
   selftest) cmd_selftest; exit $? ;;
-  *)        echo "usage: $0 [report|fold R<n>...|selftest]" >&2; exit 2 ;;
+  *)        echo "usage: $0 [report|show R<n>|fold R<n>...|selftest]" >&2; exit 2 ;;
 esac

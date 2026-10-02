@@ -22,14 +22,20 @@ was a read that could have happened here instead, once, before a brief was writt
   usually that the quote may be stale.
 - Answer under the request, prefixed `ANSWER <date>:`. Leave the request text intact.
 
+**Read one request:** run `./scripts/codex-inbox.sh` for the queue summary, then
+`./scripts/codex-inbox.sh show R63` (substitute the chosen id) for that request and its answer.
+Lookup is read-only and refuses missing or duplicate ids; acknowledgement still uses `fold` only
+after the coordinator acts. Historical requests remain here intact; do not load the whole file.
+
 ## Next-work map (2026-09-22)
 
 User asked to preserve the rough-scan recommendations with actionable detail. Research queue, not
 new production-bug claims. Priority: **R61 recent-fix verification**, **R58 MCP trust boundary**,
 **R57 text scaling**, **R59 widget reliability**, **R60 SDK compatibility**, **R62 startup cost**.
 R57-R60 already contain detailed requests; do not duplicate them. R61/R62 below supply the missing
-briefs. **R63 is the completed rough token-efficiency scan**, with follow-up recommendations, not
-implemented tooling. Find sections with `rg -n '^## R(57|58|59|60|61|62|63) ' docs/CODEX_REQUESTS.md`.
+briefs. **R63 is the completed rough token-efficiency scan**, with historical follow-up
+recommendations. Check the current tools before briefing implementation; several have since landed.
+Read the chosen section with `./scripts/codex-inbox.sh show R61` (or its id).
 R56 is separate naming work; its statement that the icon geometry is settled may supersede parts
 of R55. Confirm that scope before generating more icons. Do not silently close either request.
 
