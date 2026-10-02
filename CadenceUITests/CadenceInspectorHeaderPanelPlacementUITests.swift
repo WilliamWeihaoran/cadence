@@ -92,6 +92,9 @@ final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
     /// `CadenceAccessibilityIdentifiers` is the definition; this is the mirror.
     private enum ID {
         static let seededAreaRow = "sidebar.list.area.alpha-area"
+        /// The control for the row above: a sidebar destination **no seed creates**, so its absence
+        /// means the launch drew nothing rather than that the seed failed. See T-1954 / T-2020.
+        static let todayDestinationControl = "sidebar.destination.today"
         static let todayRow = "today.task.row.today-one"
 
         /// `CadenceAccessibilityIdentifiers.inspectorPanelControl(_:)`.
@@ -152,6 +155,19 @@ final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
     func testEveryInspectorPanelOpensClearOfTheRowsItIsOpenedFrom() throws {
         launchApp()
 
+        // **The control, and the reason it is here** (T-1954, refuted by `seedrace` in `acd36856`).
+        // `sidebar.destination.today` is a STATIC sidebar row — `SidebarView` builds it from
+        // `destination.rawValue` and no seed creates it — so it is present in any launch that drew
+        // a sidebar at all. The seeded row below exists only because the seed committed an `Area`.
+        // Asked without the control, the seeded row's absence reads as a seeding bug, and that is
+        // exactly how T-1954 was mis-filed: in both launches that "proved" one, the control was
+        // absent too, so those launches had drawn no UI whatsoever. Roughly 2 in 40 launches do
+        // that, and the cause is open as T-2020.
+        XCTAssertTrue(
+            app.buttons.element(identified: ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            "the sidebar drew no static Today row, so this launch drew no UI at all — nothing "
+            + "below is evidence about the seed. See T-2020."
+        )
         XCTAssertTrue(
             app.buttons.element(identified: ID.seededAreaRow).waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
             "the stock seed's sidebar lists never appeared, so the scenario seed cannot be trusted either"

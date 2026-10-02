@@ -323,6 +323,43 @@ enum CadenceUITestPixel {
     /// The cap still fires, and now fires only where the verdict genuinely cannot discriminate: a
     /// region whose **longer** side is under 104px is one the 52px square is at least half of by
     /// area, so there is nowhere else in it for an overdraw to be.
+    ///
+    /// ### What this allowance holds on a REAL window (T-1892, measured 2026-10-02)
+    ///
+    /// Every figure above was argued against synthetic bitmaps. The reading below is the first one
+    /// ever taken against a window the window server actually drew — `CadenceUITests` on an
+    /// unlocked Mac with the owner's interactive marker present, so
+    /// `CadenceTodayCompositionUITests.testTodayHoldsItsGeometryAndItsPictureAcrossFullScreenAndHover`
+    /// ran instead of skipping. Its activity log, in all three window states it checks:
+    ///
+    /// ```
+    /// [windowed]    picture (584, 500, 640, 400) rgb(255,0,255); badge allowance (1170, 846, 52, 52)
+    ///               (1.1% of the picture by area, 0.08 of its longer side)
+    ///               held 1228 foreign px of 1893 allowed; outside it 0
+    /// [full screen] picture (584, 436, 640, 400) rgb(255,0,255); badge allowance (1170, 782, 52, 52) …
+    ///               held 1228 foreign px of 1893 allowed; outside it 0
+    /// [restored]    picture (584, 500, 640, 400) rgb(255,0,255); badge allowance (1170, 846, 52, 52) …
+    ///               held 1228 foreign px of 1893 allowed; outside it 0
+    /// ```
+    ///
+    /// **Both of the questions that only a window could answer came back agreeing with the source
+    /// reading, which is the less interesting of the two outcomes and is the one that happened.**
+    ///
+    /// - *Does a real window draw anything else inside the picture's box?* **No** —
+    ///   `outside it 0`, three times, across a resize and a hover. `MarkdownEditorTextViewDecorations`
+    ///   puts the backing plate at `insetBy(-1, -1)` and the selection ring at `insetBy(-2, -2)`
+    ///   with `lineWidth 2`, both wholly outside `imageRect`, and `image.draw(in:)` is unclipped;
+    ///   nothing contradicted that on the live surface. The editor draws exactly one thing inside
+    ///   the picture's box and it is the resize handle.
+    /// - *Does `dominantSaturatedBlock` pick the right block on a real surface?* **Yes** — it
+    ///   returned 640×400px of `rgb(255,0,255)`, which is the fixture's 320×200pt at 2x to the
+    ///   pixel, at the same origin before and after the full-screen round trip.
+    ///
+    /// The badge held **1228** foreign pixels. That is the figure a human read off a screenshot on
+    /// 2026-09-29, reproduced here by the instrument, and it sits against the **1893** this
+    /// allowance permits — so the live badge fills 45% of the square against the 70%
+    /// `maximumFillOfTheAllowance` tolerates, and the hole is not being used up. Geometry predicted
+    /// ~1210 for a 5pt-radius 36×36 rounded square; the extra 18px are its antialiased rim.
     struct BadgeAllowance {
 
         /// The badge's own side, in **points**: `CadenceTextView.resizeHandleRect(for:)`'s
