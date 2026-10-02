@@ -582,7 +582,12 @@ struct SettingsSevenPaneVocabularyTests {
                 // of why), so the count went up because a near-copy was removed, not because a
                 // row was added.
                 "Cadence/macOS/Views/SettingsRemindersSection.swift": 2,
-                "Cadence/macOS/Views/SettingsSyncSection.swift": 1,
+                // 1 before [[T-2000]]. The second is the mirroring-activity row — "Last import
+                // 3:25 PM · Last export 3:45 PM · No errors" — which is a *history* verdict
+                // beside the pane's existing *capability* verdict, not a second opinion on the
+                // same question. It reached for the shared row unprompted, which is the outcome
+                // this count exists to keep true.
+                "Cadence/macOS/Views/SettingsSyncSection.swift": 2,
                 "Cadence/macOS/Views/SettingsTagsSection.swift": 1,
                 // T-450: the sidebar-tab editor's row, which T-286 left private.
                 "Cadence/macOS/Views/SettingsSupportViews.swift": 1,

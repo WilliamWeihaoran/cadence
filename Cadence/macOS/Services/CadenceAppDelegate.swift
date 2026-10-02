@@ -7,6 +7,7 @@ final class CadenceAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CadenceRemoteNotificationRegistrar.registerIfNeeded()
+        CadenceSyncActivityLog.shared.startIfNeeded()
         GlobalHotKeyManager.shared.registerIfNeeded()
         CadenceWindowRestorationSupport.clampWindowsOntoConnectedScreens(
             NSApplication.shared.windows,

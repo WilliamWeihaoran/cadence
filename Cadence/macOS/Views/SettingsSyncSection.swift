@@ -42,6 +42,18 @@ struct SettingsSyncSection: View {
         Self.health(for: probe.state)
     }
 
+    /// The second half of the answer, and a **separate** verdict from `health` above (T-2000).
+    ///
+    /// Read from the shared log inside `body` so `@Observable` tracks it — the same shape as the
+    /// push-registration read in `health(for:)`. It is deliberately not folded into `resolve`:
+    /// `health` says whether this Mac *can* sync and this says what it has actually *done*, and a
+    /// store that can sync but has imported nothing for four days is exactly the state that cost
+    /// the owner half an hour in the CloudKit Console. See `CadenceSyncActivitySummary` for why
+    /// merging the two would make the banner lie in both directions.
+    private var activity: CadenceSyncActivitySummary {
+        CadenceSyncActivityLog.shared.summary
+    }
+
     var body: some View {
         CadenceFieldSection(title: nil, contentSpacing: 14) {
             // The verdict row is the shared one (T-286) — the same line Notifications draws twice
@@ -69,6 +81,21 @@ struct SettingsSyncSection: View {
                 Text("Last checked \(lastChecked.formatted(date: .abbreviated, time: .shortened))")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
+            }
+
+            CadenceRowDivider()
+
+            // The activity row. No button beside it, and that absence is the ticket's one explicit
+            // instruction: `NSPersistentCloudKitContainer` has no public API to force a sync, so
+            // anything here called "Sync Now" would be either a nudge that pulls nothing down or a
+            // destructive re-import. This row reports; it does not pretend to drive.
+            CadenceSettingsNoticeRow(
+                systemImage: activity.iconName,
+                tint: activity.tone.tint,
+                title: activity.headline,
+                detail: activity.statusLine(now: Date())
+            ) {
+                EmptyView()
             }
         }
     }

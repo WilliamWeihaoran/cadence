@@ -26,6 +26,22 @@ struct iOSSyncSettingsSection: View {
         )
     }
 
+    /// What mirroring has actually done, which on **this** platform is the whole ticket (T-2000).
+    ///
+    /// The owner could not tell whether their iPhone was syncing and ended up reading the CloudKit
+    /// Console for half an hour; the Console's own timeline then showed iOS last speaking to
+    /// CloudKit at 19:25:39Z while the Mac carried on to 19:45:34Z. Every in-app surface said
+    /// "iCloud available" the entire time, and it was telling the truth — the account *was*
+    /// available. `health` above answers whether this device **can** sync; this answers whether it
+    /// **has**, and only the second one could have shown a four-day-old import.
+    ///
+    /// A separate verdict rather than a third input to `resolve`, and the reasoning is on
+    /// `CadenceSyncActivitySummary`: a 105 ms transient would otherwise turn this card amber, and
+    /// an empty history has no honest place on `CadenceSyncHealthLevel`'s scale.
+    private var activity: CadenceSyncActivitySummary {
+        CadenceSyncActivityLog.shared.summary
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             CadenceSettingsSectionLabel(text: "iCloud")
@@ -74,6 +90,35 @@ struct iOSSyncSettingsSection: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(Theme.dim)
                         }
+                    }
+
+                    iOSRowDivider()
+
+                    // The mirroring-activity row, the same facts macOS's `SettingsSyncSection`
+                    // draws and in the same order — both platforms get this, because iOS is the
+                    // surface that could not be diagnosed. There is no button beside it and there
+                    // will not be one: `NSPersistentCloudKitContainer` has no public API to force
+                    // a sync pass, so a "Sync Now" here would be either a nudge that schedules an
+                    // export and pulls nothing down, or a destructive re-import.
+                    HStack(spacing: 12) {
+                        iOSIconTile(
+                            systemImage: activity.iconName,
+                            color: activity.tone.tint,
+                            size: 34,
+                            iconSize: 17
+                        )
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(activity.headline)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                            Text(activity.statusLine(now: Date()))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.subdued)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 0)
                     }
                 }
             }

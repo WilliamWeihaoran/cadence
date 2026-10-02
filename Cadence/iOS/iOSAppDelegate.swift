@@ -24,6 +24,7 @@ final class CadenceIOSAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         CadenceRemoteNotificationRegistrar.registerIfNeeded()
+        CadenceSyncActivityLog.shared.startIfNeeded()
         return true
     }
 
