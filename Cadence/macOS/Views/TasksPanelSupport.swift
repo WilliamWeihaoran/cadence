@@ -116,6 +116,12 @@ enum TasksPanelDropAssignment: Equatable {
 /// - `.refused` — the key resolved, the fields were written, and the store would not take them.
 ///   `CadenceTaskFieldEditCommit` has already put every field back by the time this is answered,
 ///   so the page and `CadencePendingChangePersistence.editFailureNotice` agree: nothing changed.
+///
+/// **The Calendar Board answers this too ([[T-1952]])**, rather than minting a near-copy of it:
+/// `CalendarPageBoardDropSupport.unschedule` is the same three outcomes with the same two meanings
+/// for the two `false`s, and both macOS drop surfaces plus the board map them identically. The name
+/// stays `TasksPanel…` because that is where the vocabulary was first written down, not because it
+/// is the only page that speaks it.
 enum TasksPanelDropOutcome: Equatable {
     case applied
     case resolvedNothing

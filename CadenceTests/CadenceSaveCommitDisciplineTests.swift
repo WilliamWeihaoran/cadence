@@ -1942,9 +1942,15 @@ enum CadenceSaveCommitRule {
         // whole-store derivation per render, because parameterising it put the same swallow one
         // frame down at `body`. It commits once through `CadenceTaskFieldEditCommit`, undoes the
         // whole compound drop on a refusal and answers `TasksPanelDropOutcome` now; the counts are
-        // in `TasksListDropCommitRateTests`. `unschedule` below is the same sentence on the
-        // calendar board and is **not** fixed here — [[T-1952]].
-        "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift": ["unschedule"],
+        // in `TasksListDropCommitRateTests`.
+        // [[T-1952]] emptied the other half, so T-636(b)'s pair is gone from this list entirely:
+        // `CalendarPageBoardSupportViews.unschedule` is `CalendarPageBoardDropSupport.unschedule`
+        // now, one commit through `CadenceTaskFieldEditCommit` answering the same
+        // `TasksPanelDropOutcome`, with the board's first failure notice drawn above its rails. It
+        // was the harder half for a reason the exemption did not record: the drop detaches the card
+        // from its block first, so the undo had to grow `bundle`/`bundleOrder` and restore the
+        // block's other members too — counts and the refusal's own store readings are in
+        // `CalendarBoardUnscheduleCommitTests`.
 
         // MARK: Found by T-636(b)'s Optional half of the same sentence
         //
@@ -1968,6 +1974,12 @@ enum CadenceSaveCommitRule {
         // macOS's `LinksView.addLink` already did. The entry is deleted in the same change,
         // because `everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule` fails on a
         // stale one — which is exactly how it was meant to leave.
+
+        // **The list is empty as of [[T-1952]]**, and the `:` below is the empty dictionary
+        // literal rather than a typo: every half-2 site this sweep ever named is fixed. The
+        // comments above are kept because each one records what the entry was *for*, and an empty
+        // list with no history reads as a rule nothing ever caught.
+        :
     ]
 
     static func existenceInstrument(changing index: ExistenceIndex) throws -> CadenceScanInstrument {

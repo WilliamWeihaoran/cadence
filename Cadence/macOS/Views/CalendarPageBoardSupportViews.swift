@@ -49,6 +49,69 @@ enum CalendarPageBoardDataSupport {
     }
 }
 
+/// What the Calendar Board's Unscheduled rail does with a dropped card, with the commit it reports
+/// on injectable ([[T-1952]]).
+///
+/// **What the user saw.** `CalendarPageBoardView.unschedule` ended
+/// `try? modelContext.save(); return true`, and that `true` is what `.dropDestination` reads to
+/// decide whether the card stays where it was released. A drop the store refused was accepted,
+/// drawn on the Unscheduled rail, and put back at the next launch with nothing to retry — the
+/// [[T-566]] shape, the sibling of the All Tasks drop [[T-1580]] fixed, and the two were listed
+/// together under one [[T-636]](b) comment in `CadenceSaveCommitRule.reportExemptions`.
+///
+/// **Where it is not the same shape, and why that mattered.** `TasksPanelSupport.assignTask` writes
+/// nothing but task fields. This drop changes *existence* one frame down before it touches the
+/// date: a card dragged off a block runs `SchedulingActions.removeTaskFromBundle`, which empties the
+/// task out of `TaskBundle.tasks`, nils its `bundle`, and renumbers every remaining member through
+/// `normalizeBundleOrder`. So T-1580's undo was not enough on its own —
+/// `CadenceTaskFieldSnapshot` carried neither `bundle` nor `bundleOrder`, and a `.refused` answered
+/// over that snapshot would have left the card out of the block it was still being drawn in while
+/// telling the user nothing had changed. The snapshot carries both now, and the block's other
+/// members ride along in `alsoRestoring:` so the renumbering comes back with them.
+///
+/// **Resolution happens before anything is written**, for `assignTask`'s reason: a payload this
+/// board cannot place must not reach `commit` at all, or a drop that moved no field would commit
+/// whatever unrelated pending work the app's single `ModelContext` is holding.
+@MainActor
+enum CalendarPageBoardDropSupport {
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container, and an
+    ///   undo path no test can reach is an undo path no test can prove.
+    static func unschedule(
+        _ items: [String],
+        in allTasks: [AppTask],
+        modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> TasksPanelDropOutcome {
+        guard let action = CalendarBoardPlannerSupport.dropAction(for: .rail(.unscheduled)),
+              let payload = items.first,
+              let taskID = TaskDragPayload.taskID(from: payload),
+              let task = allTasks.first(where: { $0.id == taskID }) else { return .resolvedNothing }
+
+        // The block's other members, snapshotted beside the dragged card because
+        // `normalizeBundleOrder` renumbers them as part of the detach. Read off the inverse rather
+        // than the array, which can still list a task whose own `bundle` has moved on.
+        let blockSiblings = (task.bundle?.tasks ?? []).filter {
+            $0.id != task.id && $0.bundle?.id == task.bundle?.id
+        }
+
+        let landed = CadenceTaskFieldEditCommit.commit(
+            task,
+            alsoRestoring: blockSiblings,
+            in: modelContext,
+            reconciler: reconciler,
+            commit: commit
+        ) {
+            if task.bundle != nil {
+                SchedulingActions.removeTaskFromBundle(task, keepOnBundleDate: false)
+            }
+            CalendarBoardPlannerSupport.apply(action, to: task)
+        }
+        return landed ? .applied : .refused
+    }
+}
+
 /// The Calendar Board: day columns that scroll horizontally, flanked by two pinned rails.
 ///
 /// The rails are what the retired Planning page turned into. Overdue and Unscheduled were two of
@@ -84,6 +147,10 @@ struct CalendarPageBoardView: View {
     /// time, so the fixed side never costs more than one expanded rail plus one strip — the whole
     /// point of the gate. Ignored above `CadenceCalendarBoardLayout.expandedRailsMinimumWidth`.
     @State private var userExpandedRail: CalendarBoardRail?
+    /// The board's one notice slot, and it had none at all before [[T-1952]] — which is why that
+    /// ticket was a surface decision on top of a commit rather than the commit alone. Cleared by
+    /// the next drop, like every other `*FailureNotice` on a drop surface: the retry is the report.
+    @State private var dropFailureNotice: String?
 
     private let calendar = Calendar.current
 
@@ -133,6 +200,15 @@ struct CalendarPageBoardView: View {
         return VStack(spacing: 0) {
             summary(rails)
 
+            // Indented to the summary's gutter, above the rails rather than inside one: the drop
+            // it reports on can land on a rail that is collapsed to a strip, and a sentence drawn
+            // in there would be a sentence nobody can read.
+            if let dropFailureNotice {
+                CadenceInlineFailureNotice(text: dropFailureNotice)
+                    .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
+                    .padding(.bottom, 8)
+            }
+
             HStack(spacing: 0) {
                 rail(.overdue, tasks: rails[.overdue] ?? [], boardForm: boardForm)
                 dayColumns
@@ -179,7 +255,7 @@ struct CalendarPageBoardView: View {
             // `nil` where the pane can pay for both rails: there is nothing to toggle, so there is
             // no control offering to.
             onToggleForm: boardForm == .collapsed ? { toggleRail(rail) } : nil,
-            onDrop: { items in rail == .unscheduled ? unschedule(items) : false }
+            onDrop: { items in rail == .unscheduled ? handleUnscheduleDrop(items) : false }
         )
     }
 
@@ -360,20 +436,23 @@ struct CalendarPageBoardView: View {
     /// The Unscheduled rail's drop. Clears the do date *and* the timeline slot together — an
     /// earlier version of this drag wrote only one of the two, which left the card bucketed
     /// exactly where it started and made the drop look like it had done nothing.
-    private func unschedule(_ items: [String]) -> Bool {
-        guard let action = CalendarBoardPlannerSupport.dropAction(for: .rail(.unscheduled)),
-              let payload = items.first,
-              let taskID = TaskDragPayload.taskID(from: payload),
-              let task = allTasks.first(where: { $0.id == taskID }) else { return false }
-
-        if task.bundle != nil {
-            SchedulingActions.removeTaskFromBundle(task, keepOnBundleDate: false)
+    ///
+    /// **Three outcomes and not two ([[T-1952]]), the mapping [[T-1580]] spelled for All Tasks.**
+    /// `.resolvedNothing` says nothing: the payload named a task this board is not holding, the row
+    /// springs back, and that is the whole report. `.refused` borrows the board's one notice slot —
+    /// `CadencePendingChangePersistence.editFailureNotice` is "Nothing was changed", and
+    /// `CalendarPageBoardDropSupport.unschedule` has already put the do date, the timeline slot and
+    /// the block membership back by the time it answers.
+    private func handleUnscheduleDrop(_ items: [String]) -> Bool {
+        let outcome = withAnimation(kanbanCardReorderAnimation) {
+            CalendarPageBoardDropSupport.unschedule(
+                items,
+                in: allTasks,
+                modelContext: modelContext
+            )
         }
-        withAnimation(kanbanCardReorderAnimation) {
-            CalendarBoardPlannerSupport.apply(action, to: task)
-        }
-        try? modelContext.save()
-        return true
+        dropFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
+        return outcome == .applied
     }
 
     /// A day column's drop. Goes through the same `apply` the Unscheduled rail uses, so both

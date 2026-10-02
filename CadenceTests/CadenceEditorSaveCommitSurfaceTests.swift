@@ -391,18 +391,25 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// set silently shrank a caller's undo to half an edit was that `init` and `restore(to:)` are
     /// two lists nothing held level with each other. So this pins the set from three directions:
     /// every field survives a refused edit that moved it (behavioural), `init` captures exactly
-    /// those sixteen, and `restore(to:)` writes back exactly those sixteen. A field added to one
+    /// those eighteen, and `restore(to:)` writes back exactly those eighteen. A field added to one
     /// list and not the other fails here rather than in whichever screen next reaches for it.
     ///
-    /// The sixteen are named individually rather than counted. Counting would let one field drop
+    /// The eighteen are named individually rather than counted. Counting would let one field drop
     /// out while another arrived, which is the change this exists to catch.
+    ///
+    /// `bundle` and `bundleOrder` joined the set with [[T-1952]], when the Calendar Board's
+    /// Unscheduled rail became the first caller to write them: dragging a card off a block detaches
+    /// it before the do date is cleared, so a refusal that restored only the date left the task out
+    /// of the block it was still drawn in. `CalendarBoardUnscheduleCommitTests` holds the
+    /// behavioural half for the pair, including the block's other members.
     private static let snapshottedTaskFields = [
-        "area", "completedAt", "context", "dueDate", "estimatedMinutes", "order", "priorityRaw",
-        "project", "recurrenceRaw", "recurrenceSeriesIDRaw", "recurrenceSpawnedTaskIDRaw",
-        "scheduledDate", "scheduledStartMin", "sectionName", "statusRaw", "title"
+        "area", "bundle", "bundleOrder", "completedAt", "context", "dueDate", "estimatedMinutes",
+        "order", "priorityRaw", "project", "recurrenceRaw", "recurrenceSeriesIDRaw",
+        "recurrenceSpawnedTaskIDRaw", "scheduledDate", "scheduledStartMin", "sectionName",
+        "statusRaw", "title"
     ]
 
-    @Test func thefieldSnapshotCapturesAndRestoresTheSameSixteenFields() throws {
+    @Test func thefieldSnapshotCapturesAndRestoresTheSameEighteenFields() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceTaskFieldEditCommit.swift")
 
         let initStart = try #require(source.range(of: "init(_ task: AppTask)"))
@@ -421,7 +428,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(restored.sorted() == Self.snapshottedTaskFields, "the snapshot restores \(restored.sorted())")
     }
 
-    /// The behavioural half: one refused edit that moves all sixteen, and all sixteen come back.
+    /// The behavioural half: one refused edit that moves all eighteen, and all eighteen come back.
     @Test func arefusedEditRestoresEverySnapshottedFieldAtOnce() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)
@@ -436,6 +443,11 @@ struct CadenceEditorSaveCommitSurfaceTests {
         let completedAt = Date(timeIntervalSince1970: 1_700_000_000)
         let seriesID = UUID()
         let successorID = UUID()
+        let block = TaskBundle(title: "Morning block", dateKey: "2026-06-01", startMin: 600, durationMinutes: 30)
+        let otherBlock = TaskBundle(title: "Evening block", dateKey: "2026-06-03", startMin: 1_200, durationMinutes: 30)
+        modelContext.insert(block)
+        modelContext.insert(otherBlock)
+
         let task = AppTask(title: "Ship the fix")
         task.order = 3
         task.statusRaw = TaskStatus.done.rawValue
@@ -451,6 +463,8 @@ struct CadenceEditorSaveCommitSurfaceTests {
         task.recurrenceSpawnedTaskIDRaw = successorID.uuidString
         task.area = area
         task.context = homeContext
+        task.bundle = block
+        task.bundleOrder = 2
         modelContext.insert(task)
         try modelContext.save()
 
@@ -476,6 +490,8 @@ struct CadenceEditorSaveCommitSurfaceTests {
             task.area = nil
             task.project = project
             task.context = officeContext
+            task.bundle = otherBlock
+            task.bundleOrder = 0
         }
 
         #expect(!landed)
@@ -495,6 +511,8 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(task.area?.id == area.id)
         #expect(task.project == nil)
         #expect(task.context?.id == homeContext.id)
+        #expect(task.bundle?.id == block.id)
+        #expect(task.bundleOrder == 2)
     }
 
     /// The undo is a snapshot, not `rollback()`, and this is what says so: the popover opens over a

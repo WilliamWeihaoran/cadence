@@ -10,9 +10,21 @@ import SwiftData
 /// meant to leave alone. Restoring the raw is the only spelling that is a no-op when the commit
 /// lands and an exact undo when it does not.
 ///
-/// The three relationships are the to-one sides only, which is the same reach the write had:
+/// The four relationships are the to-one sides only, which is the same reach the write had:
 /// `TaskContainerResolver.applyContainer` assigns `task.area` / `project` / `context` and lets
 /// SwiftData maintain the inverse arrays, so assigning them back is symmetric with it.
+///
+/// **`bundle` and `bundleOrder` are here because a drop handler started writing them ([[T-1952]]).**
+/// The Calendar Board's Unscheduled rail detaches the card from its block before it clears the do
+/// date — `SchedulingActions.removeTaskFromBundle` — so a refused commit that restored only the
+/// date left the task out of the block it was still drawn in, and
+/// `CadencePendingChangePersistence.editFailureNotice`'s "Nothing was changed" would have been a
+/// second lie on top of the first. `bundle` is the to-one side, exactly as `area`/`project`/
+/// `context` are: assigning it back re-enters the task in `TaskBundle.tasks` through the inverse
+/// SwiftData maintains, which is the same route the detach left by.
+/// `bundleOrder` **does** need the sibling repair `order` does not: `normalizeBundleOrder`
+/// renumbers every remaining member of the block the task left, so the caller passes those members
+/// as `alsoRestoring:` and this field is what puts their numbering back.
 ///
 /// **`title` and `order` are here because leaving them out restored half of an edit (T-701).**
 /// They are the two scalars a caller writes through this unit without writing anything else that
@@ -24,13 +36,13 @@ import SwiftData
 /// destination's siblings but writes only the moved task, so putting that one value back is the
 /// whole undo.
 ///
-/// **The stated boundary.** `restore(to:)` assigns the sixteen properties below and nothing else.
+/// **The stated boundary.** `restore(to:)` assigns the eighteen properties below and nothing else.
 /// A task's `notes`, `actualMinutes`, `calendarEventID`, `createdAt`, the `recurrenceEnd*` and
-/// `recurrenceSource*`/`recurrenceOccurrenceIndex` fields, `goal`, `bundle`/`bundleOrder`, and the
-/// to-many `subtasks` / `tags` / `focusSessions` are **not** carried — the to-manys because a
-/// snapshot of a relationship array cannot restore an insert, and the rest because no caller of
+/// `recurrenceSource*`/`recurrenceOccurrenceIndex` fields, `goal`, and the to-many `subtasks` /
+/// `tags` / `focusSessions` are **not** carried — the to-manys because a snapshot of a relationship
+/// array cannot restore an insert, and the rest because no caller of
 /// `CadenceTaskFieldEditCommit.commit` writes them. A caller that starts to must add the field
-/// here in the same change, and `thefieldSnapshotCapturesAndRestoresTheSameSixteenFields` in
+/// here in the same change, and `thefieldSnapshotCapturesAndRestoresTheSameEighteenFields` in
 /// `CadenceEditorSaveCommitSurfaceTests` pins the covered set exactly, so an addition on one side
 /// of the pair cannot be forgotten on the other.
 struct CadenceTaskFieldSnapshot {
@@ -52,6 +64,8 @@ struct CadenceTaskFieldSnapshot {
     private let area: Area?
     private let project: Project?
     private let context: Context?
+    private let bundle: TaskBundle?
+    private let bundleOrder: Int
 
     init(_ task: AppTask) {
         taskID = task.id
@@ -71,6 +85,8 @@ struct CadenceTaskFieldSnapshot {
         area = task.area
         project = task.project
         context = task.context
+        bundle = task.bundle
+        bundleOrder = task.bundleOrder
     }
 
     /// The successor `markDone` / `markCancelled` minted after this snapshot was taken, if they
@@ -98,6 +114,8 @@ struct CadenceTaskFieldSnapshot {
         task.area = area
         task.project = project
         task.context = context
+        task.bundle = bundle
+        task.bundleOrder = bundleOrder
     }
 }
 
