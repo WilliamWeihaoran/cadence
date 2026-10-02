@@ -329,6 +329,49 @@ MACRO_WARNING_PATTERN='macro expansion [^ :]+:[0-9]+:[0-9]+: warning:'
 CONTINUATION_WARNING_PATTERN='`- warning:'
 SWIFT_COMPILE_TASK_PATTERN='^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources|CompileC) '
 
+# --- where the build stops and the tests start (T-1971) ----------------------
+# EVERY PATTERN ABOVE USED TO BE GREPPED OVER THE WHOLE LOG, AND A `test` LOG IS TWO DOCUMENTS.
+# The second one is test OUTPUT, and a failing test prints whatever its message holds -- which, for
+# the tests that read these very guards, is shell source. `xcb.sh` carries, deliberately, in its own
+# comments and selftest fixtures, the literal lines
+# `/repo/CadenceTests/Probe.swift:5:13: warning: 'zzDeprecated()' is deprecated: probe` and
+# `macro expansion #expect:1:39: warning: ...` -- they are there to document and to EXERCISE
+# T-1516's two spellings. Measured 2026-10-01: one red `CadenceGuardScriptSelftestTests` expectation
+# echoed those lines into the log and this report said **`warnings: 12`,
+# `MACRO-EXPANSION-WARNING: 10`, `WARNING-BASELINE`, exit 9** over a tree with **zero** real
+# warnings. The same tree with the expectation fixed reported 0. The gate was lying in the exact
+# minute somebody was triaging a red run, and the lie pointed at a file they had not touched.
+#
+# A COMPILER CANNOT EMIT A DIAGNOSTIC AFTER THE BUILD IS OVER, so the counters read the build phase.
+# The boundary is the first line announcing test execution, at column 0 in both vocabularies XCTest
+# and swift-testing use (`Test Suite 'Selected tests' started at ...` / `◇ Test run started.`).
+#
+# AND THE FALLBACK IS TODAY'S BEHAVIOUR, WHICH IS THE WHOLE SAFETY ARGUMENT. A log with no such line
+# -- a `build` action, a compile failure that never reached the tests, a format that changes under
+# us -- is scanned WHOLE, exactly as before. So this change can only ever stop counting lines that
+# come after testing began; it can never make a build diagnostic invisible by failing to find a
+# marker. That direction matters more than the fix: T-1516 is what a warning gate reading zero over
+# fourteen real warnings costs, and a boundary that guessed wrong would rebuild it.
+#
+# IT ALSO REFUSES TO BE SILENT ABOUT WHAT IT DROPPED. Anything past the boundary that still matches
+# is COUNTED SEPARATELY and reported, with the line number to grep from -- so the 12 lines above
+# would still be visible to a reader, just not gating. A guard that quietly discards input is the
+# next ticket.
+TEST_PHASE_START_PATTERN='^(Test Suite .* started at |◇ Test run started|Testing started)'
+
+# Prints the number of lines to scan, or 0 meaning "the whole log".
+build_phase_line_count() {  # $1 = log
+  local n
+  n=$(grep -nE "$TEST_PHASE_START_PATTERN" "$1" 2>/dev/null | head -1 | cut -d: -f1)
+  [[ -n "$n" ]] || { print 0; return 0; }
+  print $(( n - 1 ))
+}
+
+# Streams the portion of the log the counters are entitled to read.
+build_phase_of() {  # $1 = log, $2 = line count from build_phase_line_count
+  if (( $2 > 0 )); then head -n "$2" -- "$1"; else cat -- "$1"; fi
+}
+
 # --- and whether anything ACTS on it (T-1149) --------------------------------
 # Everything above is a REPORT, and until 2026-09-12 that is all it was: `$STATUS` was never
 # touched by a warning count, so a build that introduced ten Swift warnings exited 0 and read green
@@ -374,18 +417,27 @@ DIAG_COMPILED=0
 diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline is broken.
   local log="$1"
   local errors warnings sourced macroed compiled notices
-  errors=$(grep -cE "$SWIFT_ERROR_PATTERN" "$log" 2>/dev/null | tr -d ' ')
-  sourced=$(grep -cE "$SWIFT_WARNING_PATTERN" "$log" 2>/dev/null | tr -d ' ')
-  macroed=$(grep -cE "$MACRO_WARNING_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  # T-1971: the build phase, or the whole log when nothing says the tests ever started.
+  local -i scan after_phase
+  scan=$(build_phase_line_count "$log")
+  errors=$(build_phase_of "$log" $scan | grep -cE "$SWIFT_ERROR_PATTERN" 2>/dev/null | tr -d ' ')
+  sourced=$(build_phase_of "$log" $scan | grep -cE "$SWIFT_WARNING_PATTERN" 2>/dev/null | tr -d ' ')
+  macroed=$(build_phase_of "$log" $scan | grep -cE "$MACRO_WARNING_PATTERN" 2>/dev/null | tr -d ' ')
+  # What the old whole-log reading would have added, kept so it can be REPORTED rather than dropped.
+  after_phase=0
+  if (( scan > 0 )); then
+    after_phase=$(tail -n "+$(( scan + 1 ))" -- "$log" \
+      | grep -cE "$SWIFT_WARNING_PATTERN|$MACRO_WARNING_PATTERN" 2>/dev/null | tr -d ' ')
+  fi
   # T-1516: ONE gating total over TWO anchored patterns. A macro-expansion diagnostic is a compiler
   # warning that happens to have no file to be attributed to; it belongs in this number and not in
   # the tool-notice bucket, which is where the single-pattern reading put it.
   warnings=$(( sourced + macroed ))
-  compiled=$(grep -cE "$SWIFT_COMPILE_TASK_PATTERN" "$log" 2>/dev/null | tr -d ' ')
+  compiled=$(build_phase_of "$log" $scan | grep -cE "$SWIFT_COMPILE_TASK_PATTERN" 2>/dev/null | tr -d ' ')
   # T-1620: a tool notice is a line that says `warning:` and belongs to NO compiler diagnostic --
   # neither as a primary line nor as the caret continuation of the one above it. Set difference,
   # not `loose - warnings`, so a line can never be subtracted twice into a negative count.
-  notices=$(grep 'warning:' "$log" 2>/dev/null \
+  notices=$(build_phase_of "$log" $scan | grep 'warning:' 2>/dev/null \
     | grep -vcE "$SWIFT_WARNING_PATTERN|$MACRO_WARNING_PATTERN|$CONTINUATION_WARNING_PATTERN" \
     | tr -d ' ')
   DIAG_WARNINGS=$warnings
@@ -401,6 +453,14 @@ diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline 
   if (( notices > 0 )); then
     say "  tool notices:    $notices  (lines saying \`warning:\` that are not a compiler diagnostic;"
     say "                   the baseline of zero is about the line above. grep the log to read them.)"
+  fi
+  if (( after_phase > 0 )); then
+    say "  note (T-1971): $after_phase line(s) AFTER testing started match a compiler-warning pattern and"
+    say "     are NOT in the count above. A compiler cannot emit a diagnostic once the build is over;"
+    say "     what produces these is a FAILING TEST printing source that contains one -- this script's"
+    say "     own comments and fixtures carry such lines on purpose (T-1516). Reported, never gated:"
+    say "     read them with \`tail -n +$(( scan + 1 )) <log> | grep -nE 'warning:'\`. If a run is red,"
+    say "     fix the test; these lines are its output, not your tree's diagnostics."
   fi
   if (( compiled == 0 )); then
     say "  !! VACUOUS-COUNT: this run compiled 0 Swift files, so \"warnings: $warnings\" is a count"
@@ -419,7 +479,7 @@ diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline 
   say "!! WARNING-BASELINE: $warnings Swift warning(s) over $compiled compile task(s). The baseline"
   say "   is ZERO and any new warning is a regression (AGENTS.md). This run recompiled Swift, so"
   say "   the count is about something -- it is not the VACUOUS-COUNT case."
-  grep -E "$SWIFT_WARNING_PATTERN|$MACRO_WARNING_PATTERN" "$log" 2>/dev/null | head -20 | sed 's/^/     /'
+  build_phase_of "$log" $scan | grep -E "$SWIFT_WARNING_PATTERN|$MACRO_WARNING_PATTERN" 2>/dev/null | head -20 | sed 's/^/     /'
   say "   Fix them, or set CADENCE_ALLOW_WARNINGS=1 if you are deliberately building a tree that"
   say "   is not the baseline (mutate.sh does exactly that)."
   return $WARNING_GATE_EXIT
@@ -1637,6 +1697,67 @@ selftest_only_testing() {
     $( print -r -- "$pout" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$pout"
 
   say ""
+  say " 9c. the counters read the BUILD, not the test output (T-1971)"
+  # EVERY LINE OF THESE FIXTURES IS VERBATIM from the log that produced the defect
+  # (`cadence-xcb-landgate-unit` 20261001-192525), with the absolute path shortened. That matters
+  # here more than usual: the lines that were miscounted are THIS SCRIPT'S OWN comments and
+  # fixtures, echoed by a failing test, so a fixture written from the ticket's description would
+  # have been a sentence about the bug rather than the bug.
+  #
+  # THE CONTROL IS THE SAFETY ARGUMENT, not a formality. The hazard in a boundary is that it stops
+  # counting too early and a warning gate goes quiet -- T-1516 is what that costs. So the same
+  # offending line is asserted to be COUNTED when nothing says the tests started, and a real
+  # build-phase warning is asserted to still gate with a test phase present.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "Test Suite 'Selected tests' started at 2026-10-01 23:39:17.901." \
+    "◇ Test run started." \
+    "✘ Test theGuardStillFires() recorded an issue at CadenceGuardScriptSelftestTests.swift:1249:9: Expectation failed" \
+    "    #   /repo/CadenceTests/Probe.swift:5:13: warning: 'zzDeprecated()' is deprecated: probe" \
+    "    #   macro expansion #expect:1:39: warning: main actor-isolated conformance of ..." \
+    > "$ws/testecho.log"
+  # The same two lines with no test phase at all: nothing says the build ended, so they are build
+  # output as far as anything here can tell, and they must still be counted.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "    #   /repo/CadenceTests/Probe.swift:5:13: warning: 'zzDeprecated()' is deprecated: probe" \
+    "    #   macro expansion #expect:1:39: warning: main actor-isolated conformance of ..." \
+    > "$ws/nophase.log"
+  # A REAL warning, raised in the build, in a log that also runs tests. This is the line that must
+  # never be lost: it is the one the gate exists for.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "/repo/CadenceTests/Probe.swift:15:13: warning: initialization of immutable value 'p' was never used; consider replacing with assignment to '_'" \
+    "Test Suite 'Selected tests' started at 2026-10-01 23:39:17.901." \
+    "    #   macro expansion #expect:1:39: warning: main actor-isolated conformance of ..." \
+    > "$ws/realplustest.log"
+
+  run_counters "$ws/testecho.log"
+  check "a failing test echoing a warning-shaped line is NOT counted as a warning" \
+    $( [[ "$dout" == *"warnings:        0"* ]] && print 1 || print 0 ) "exit $drc: $dout"
+  check "...and the gate does not fire on it" $( (( drc == 0 )) && print 1 || print 0 ) "exit $drc"
+  check "...and it is not laundered into the tool-notice bucket either" \
+    $( [[ "$dout" != *"tool notices:"* ]] && print 1 || print 0 ) "$dout"
+  check "...but it is REPORTED, with the line to grep from (a guard that silently drops input)" \
+    $( [[ "$dout" == *"note (T-1971): 2 line(s) AFTER testing started"* && "$dout" == *"tail -n +2 <log>"* ]] && print 1 || print 0 ) "$dout"
+
+  run_counters "$ws/nophase.log"
+  check "CONTROL: with NO test phase in the log, those same lines ARE counted" \
+    $( [[ "$dout" == *"warnings:        2"* ]] && print 1 || print 0 ) "exit $drc: $dout"
+  check "...and still gate, so the fallback is the OLD behaviour and not a quiet exemption" \
+    $( (( drc == WARNING_GATE_EXIT )) && print 1 || print 0 ) "exit $drc"
+  check "...and the note is silent when there is no test phase to have dropped anything" \
+    $( [[ "$dout" != *"T-1971"* ]] && print 1 || print 0 ) "$dout"
+
+  run_counters "$ws/realplustest.log"
+  check "CONTROL: a REAL build warning in a log that also runs tests is still counted" \
+    $( [[ "$dout" == *"warnings:        1"* ]] && print 1 || print 0 ) "exit $drc: $dout"
+  check "...and still gates (exit 9), which is the whole point of not moving the boundary early" \
+    $( (( drc == WARNING_GATE_EXIT )) && print 1 || print 0 ) "exit $drc"
+  check "...and the echoed line beside it is reported separately, not added to it" \
+    $( [[ "$dout" == *"note (T-1971): 1 line(s)"* ]] && print 1 || print 0 ) "$dout"
+
+  say ""
   say " 10. does this selection launch an app (T-1933)"
   # TWO FIXTURE SUITES, AND THE SECOND IS THE WHOLE CHECK. One screen-free suite on its own passes
   # with the reading deleted and `return 1` left in its place -- the exemption would simply be
@@ -1696,13 +1817,24 @@ selftest_only_testing() {
   check "LIVE CONTROL: a real suite that does launch an app is not exempted" \
     $( [[ $rc == 0 && "$uiout" == *LAUNCHES-AN-APP* ]] && print 1 || print 0 ) "exit $rc: $uiout"
 
-  # ONE INPUT, ONE ANSWER. The locked-screen refusal and the test-host lease are two decisions
-  # about the same fact, and the defect was that each carried its own proxy for it. A future edit
-  # that repairs one and leaves the other is the shape this check exists to catch; both call sites
-  # pass the same parsed selection to the same function.
+  # ONE CONSUMER, DELIBERATELY, AND THAT IS T-1933'S OWN PROPOSAL REFUTED. The ticket said the
+  # locked-screen refusal and the test-host lease share an input -- "does this selection launch an
+  # app" -- and should share an answer. Half of that is right: the LEASE is about T-236's app-group
+  # container, and a selection that starts no host needs none, measured at 800 seconds of queueing
+  # saved. The other half is wrong, and only a locked Mac could say so: NO suite in CadenceUITests
+  # runs while the screen is locked, because the UI-test RUNNER cannot initialize, so the screen
+  # question does not depend on the selection at all. The count below is 1, and a future edit that
+  # wires the selection back into the locked-screen guard -- which reads as the obvious fix, because
+  # it was -- has to come past this check and the one under it.
   uisrc=$(grep -c 'selection_launches_an_app "\${only_testing\[@\]}"' "$here")
-  check "both the locked-screen guard and the test-host lock ask the one question" \
-    $( (( uisrc == 2 )) && print 1 || print 0 ) "found $uisrc call site(s), want 2"
+  check "only the test-host lease consults the selection, not the locked-screen guard (T-1933)" \
+    $( (( uisrc == 1 )) && print 1 || print 0 ) "found $uisrc call site(s), want 1"
+  # ...and the refusal states the measured mechanism, because the mechanism is why the per-suite
+  # exemption looked correct for two days: T-563 blamed `app.launch()`, which only a suite that
+  # launches something would reach.
+  check "...and the locked-screen refusal names the RUNNER, not app.launch()" \
+    $( [[ "$(grep -A4 'REFUSING: the screen is locked' "$here")" == *"test runner failed to"* ]] && print 1 || print 0 ) \
+    "the refusal no longer says why a screen-free suite is refused too"
 
   rm -rf "$ws"
   say ""
@@ -1948,30 +2080,48 @@ screen_is_locked() {
 # exercise is the hollow-instrument shape this repo keeps catching. It is not a way to get a UI run
 # out of a locked Mac, and there is no spelling of it that makes an app reach the foreground.
 # ITS OLD COMMENT SAID "with it set the tests skip instead". THAT IS FALSE FOR AT LEAST ONE SUITE
-# (T-1933): `CadenceOverdrawVerdictTests` carries no skip at all and would run. The sentence was
-# true of the suites the guard was written against and was never re-read when the target grew one
-# that launches nothing -- which is the same mistake the guard's own condition made.
+# (T-1933): `CadenceOverdrawVerdictTests` carries no skip at all, so under that variable it RUNS --
+# and what happens then is the measurement below. The sentence was true of the suites the guard was
+# written against and was never re-read when the target grew one that launches nothing.
 #
-# AND THE CONDITION NOW ASKS THE RIGHT QUESTION. `[[ "${args[*]}" == *CadenceUITests* ]]` is the
-# target's name anywhere in the argument list, which refuses `-only-testing:CadenceUITests/
-# CadenceOverdrawVerdictTests` -- measured exit 5 on 2026-10-01 -- a suite that launches nothing,
-# takes no pointer and reads no screen, and is exactly the suite still worth running on a Mac that
-# has locked. The mention is still required, so an ordinary `CadenceTests` run on a locked screen
-# is unaffected; what it is ANDed with is now a reading of the selection rather than of a string.
-SCREEN_LOCKED=0; screen_is_locked && SCREEN_LOCKED=1
-if (( SCREEN_LOCKED )) && [[ "${args[*]}" == *CadenceUITests* ]] \
-   && selection_launches_an_app "${only_testing[@]}" \
+# THE CONDITION STAYS PER-TARGET, AND T-1933'S PROPOSAL THAT IT SHOULD NOT IS REFUTED BY MEASUREMENT.
+# The ticket argued -- reasonably, and this script's author believed it -- that the string match is
+# too coarse: `CadenceOverdrawVerdictTests` launches no app, takes no pointer and reads no screen,
+# so it was called "exactly the suite an agent still needs when the Mac has locked", and the guard
+# was changed to decide per suite. Measured 2026-10-02 on a Mac locked at 01:22:41, that selection
+# built clean (1095 compile tasks, 0 warnings) and then executed **0 tests**:
+#
+#     Testing failed:
+#       CadenceUITests-Runner (82754) encountered an error (The test runner failed to initialize
+#       for UI testing. (Underlying Error: Authentication canceled. System authentication is
+#       running.))
+#
+# THE BLOCK IS NOT `app.launch()`. It is the UI-test RUNNER, which is itself an app and cannot
+# initialize while loginwindow is holding an authentication session -- so it stops every suite in
+# the target, including the ones that launch nothing of their own. T-563 described the right
+# refusal by the wrong mechanism, and describing it by the wrong mechanism is what made the
+# per-suite exemption look obviously correct. The A/B is clean: the SAME selection, the SAME tree,
+# ran 10 result lines unlocked six hours earlier and 0 locked.
+#
+# So the coarse reading is the right one and it is now the measured one. What a per-suite exemption
+# would buy is a five-minute build followed by `** TEST FAILED **` and -- worse -- the zero-test
+# guard's advice, which would confidently tell the reader that `-only-testing:` takes a suite name.
+# That is the exact misdiagnosis this guard's own comment warned about two paragraphs down.
+#
+# The selection reading `selection_launches_an_app` still exists and is still used: by the
+# TEST-HOST LEASE below, which is a question about T-236's app-group container and not about the
+# screen. Two decisions, one of which turned out to depend on the selection and one of which does
+# not -- which is only knowable by measuring both.
+if screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]] \
    && [[ "${CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN:-}" != "1" ]]; then
   say ""
-  say "!! REFUSING: the screen is locked, and no UI test in CadenceUITests can pass while it is."
-  say "   loginwindow holds the foreground, so the launched app never leaves Running Background"
-  say "   and app.launch() fails after ~60s per test. Unlock the screen and re-run (T-563)."
-  say "   Scope to a suite that launches no app to run anyway: ./scripts/xcb.sh check-ui-selection"
-  say "   <filter> says whether one does (T-1933)."
+  say "!! REFUSING: the screen is locked, and NO suite in CadenceUITests can run while it is --"
+  say "   not even one that launches no app of its own (T-1933, measured 2026-10-02)."
+  say "   The UI-test RUNNER is itself an app and cannot initialize: \"The test runner failed to"
+  say "   initialize for UI testing. (Underlying Error: Authentication canceled. System"
+  say "   authentication is running.)\" -- so the run builds for five minutes and executes 0 tests."
+  say "   Unlock the screen and re-run (T-563)."
   exit 5
-fi
-if (( SCREEN_LOCKED )) && [[ "${args[*]}" == *CadenceUITests* ]]; then
-  say "  screen is locked, but every named CadenceUITests suite launches no app -- proceeding (T-1933)."
 fi
 
 # --- resolve -only-testing: before anything expensive (T-1076) ---------------

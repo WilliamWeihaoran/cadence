@@ -1262,11 +1262,32 @@ struct CadenceGuardScriptSelftestTests {
         #expect(body.contains("grep -qF 'XCUIApplication'"),
                 "the screen-free reading no longer asks the suite's own source; a hardcoded exemption list is a second copy of the fact")
 
-        // Both call sites, counted. Two is the whole property: one is a half-fix.
+        // ONE call site, and the number is T-1933's own proposal REFUTED, not a half-fix.
+        //
+        // The ticket said these two decisions share an input — *does this selection launch an app* —
+        // and should share an answer, and for two days this file asserted exactly that. The LEASE
+        // half holds: a run that starts no test host opens no app-group container, which is all
+        // T-236 is about, and the saving was measured at 800 seconds of queueing for a lease that
+        // was never needed. The SCREEN half does not, and only a locked Mac could say so. Measured
+        // 2026-10-02, on a Mac locked at 01:22:41: `-only-testing:CadenceUITests/`
+        // `CadenceOverdrawVerdictTests` built clean — 1095 compile tasks, 0 warnings — and then
+        // executed **zero** tests, because the UI-test RUNNER is itself an app and cannot start
+        // while loginwindow holds an authentication session:
+        //
+        //     CadenceUITests-Runner (82754) encountered an error (The test runner failed to
+        //     initialize for UI testing. (Underlying Error: Authentication canceled. System
+        //     authentication is running.))
+        //
+        // The A/B is clean: the same selection on the same tree ran ten result lines unlocked six
+        // hours earlier. So a screen-free suite is not screen-free in the way that matters, T-563
+        // was right for a reason it did not state, and a per-suite exemption buys a five-minute
+        // build, a `** TEST FAILED **`, and the zero-test guard confidently advising the reader to
+        // check their suite name. Wiring the selection back into the locked-screen guard reads as
+        // the obvious fix — it was one — so it has to come past this expectation and the two below.
         let call = #"selection_launches_an_app "${only_testing[@]}""#
         let callSites = body.components(separatedBy: call).count - 1
-        #expect(callSites == 2,
-                "the locked-screen guard and the test-host lease must ask the one question; found \(callSites) call site(s), want 2")
+        #expect(callSites == 1,
+                "only the test-host lease may consult the selection: a locked screen stops EVERY suite in the target (T-1933). Found \(callSites) call site(s), want 1")
 
         // ...and each in its OWN section, so a count that stays at two while one call moves
         // somewhere else — or both sit in one decision — fails. A section runs from its
@@ -1278,10 +1299,12 @@ struct CadenceGuardScriptSelftestTests {
         }
         let guardSection = section("the locked-screen guard") ?? ""
         let leaseSection = section("the test-host lock") ?? ""
-        #expect(guardSection.contains(call),
-                "the locked-screen guard no longer asks selection_launches_an_app of the parsed selection")
-        #expect(guardSection.contains("no UI test in CadenceUITests can pass while it is"),
+        #expect(!guardSection.contains(call),
+                "the locked-screen guard consults the selection again. It must not: measured 2026-10-02, the screen-free suite executed 0 tests on a locked Mac because the UI-test runner could not initialize (T-1933)")
+        #expect(guardSection.contains("REFUSING: the screen is locked"),
                 "the locked-screen refusal itself is gone — T-563 is not weakened by T-1933")
+        #expect(guardSection.contains("test runner failed to"),
+                "the refusal no longer names the measured mechanism. T-563 blamed app.launch(), which only a suite launching something ever reaches, and that wording is precisely why exempting a screen-free suite looked correct for two days")
         #expect(leaseSection.contains(call),
                 "the test-host lease no longer asks selection_launches_an_app of the parsed selection")
         #expect(leaseSection.contains("test-host lock: not taken"),
@@ -1295,6 +1318,8 @@ struct CadenceGuardScriptSelftestTests {
         // `CadenceOverdrawVerdictTests` carries no skip and would run.
         #expect(body.contains("THAT IS FALSE FOR AT LEAST ONE SUITE"),
                 "the guard's comment no longer refutes its own claim that the tests skip under CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN")
+        #expect(body.contains("Authentication canceled"),
+                "the guard no longer carries the measurement that refutes its own per-suite exemption; without it the next reader re-derives the exemption from the same correct-looking argument")
 
         // And the selftest must still induce BOTH verdicts. One fixture suite cannot tell a working
         // reading from `return 1`: the exemption would simply be unconditional and every
@@ -1306,8 +1331,9 @@ struct CadenceGuardScriptSelftestTests {
     }
 
     /// The other half of the claim above, and it is a fact about `CadenceUITests` rather than about
-    /// the script: `xcb.sh` exempts `CadenceOverdrawVerdictTests` from the locked-screen refusal and
-    /// from the test-host lease **because** that suite cannot reach an app, and the script decides
+    /// the script: `xcb.sh` exempts `CadenceOverdrawVerdictTests` from the **test-host lease**
+    /// (never from the locked-screen refusal — see above, that exemption is refuted)
+    /// because that suite cannot reach an app, and the script decides
     /// that by reading this file. If the suite ever gains an `XCUIApplication`, the exemption must
     /// stop — and it does, automatically, which is the reason the reading is taken from source. What
     /// this pins is the thing the script cannot see: that a *new* file in the target does not quietly

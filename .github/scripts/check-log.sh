@@ -34,10 +34,41 @@ if [ ! -f "$LOG" ]; then
   exit 1
 fi
 
-errors=$(grep -cE '\.swift:[0-9]+:[0-9]+: error:' "$LOG" | tr -d ' ')
-source_warnings=$(grep -cE '\.swift:[0-9]+:[0-9]+: warning:' "$LOG" | tr -d ' ')
-macro_warnings=$(grep -cE 'macro expansion [^ :]+:[0-9]+:[0-9]+: warning:' "$LOG" | tr -d ' ')
+# THE COUNTERS READ THE BUILD PHASE, NOT THE TEST OUTPUT (T-1971). A `test` log is two documents,
+# and the second one is whatever the tests printed. `scripts/xcb.sh` carries, in its own comments
+# and selftest fixtures, the literal lines `/repo/CadenceTests/Probe.swift:5:13: warning: ...` and
+# `macro expansion #expect:1:39: warning: ...` -- deliberately, to document and to exercise the two
+# patterns above -- and `CadenceGuardScriptSelftestTests` reads that script and quotes it in its
+# failure messages. Measured locally 2026-10-01: ONE red expectation made these counts report
+# **12 Swift warnings** on a tree with zero, and the same tree with the expectation fixed reported
+# zero. In CI that lands as a second `::error::` on an already-red run, blaming the warning baseline
+# for a file nobody touched.
+#
+# `build_phase` is `head` up to the first line announcing test execution, or the WHOLE log when
+# there is no such line. The fallback is this gate's previous behaviour, which is the safety
+# argument: the change can only stop counting lines that come after testing began, and can never
+# make a build diagnostic invisible by failing to find a marker. T-1516 is what a warning gate
+# reading zero over fourteen real warnings costs, and a boundary that guessed wrong would rebuild
+# it. Kept in step with `scripts/xcb.sh`'s copy, whose selftest induces all of this (section 9c);
+# two copies of one rule drifting is T-1382.
+phase_end=$(grep -nE '^(Test Suite .* started at |◇ Test run started|Testing started)' "$LOG" | head -1 | cut -d: -f1)
+if [ -n "$phase_end" ]; then
+  build_phase() { head -n "$((phase_end - 1))" -- "$LOG"; }
+else
+  build_phase() { cat -- "$LOG"; }
+fi
+
+errors=$(build_phase | grep -cE '\.swift:[0-9]+:[0-9]+: error:' | tr -d ' ')
+source_warnings=$(build_phase | grep -cE '\.swift:[0-9]+:[0-9]+: warning:' | tr -d ' ')
+macro_warnings=$(build_phase | grep -cE 'macro expansion [^ :]+:[0-9]+:[0-9]+: warning:' | tr -d ' ')
 warnings=$((source_warnings + macro_warnings))
+# Reported, never gated: a guard that silently discards input is the next ticket.
+if [ -n "$phase_end" ]; then
+  after_phase=$(tail -n "+$phase_end" -- "$LOG" \
+    | grep -cE '\.swift:[0-9]+:[0-9]+: warning:|macro expansion [^ :]+:[0-9]+:[0-9]+: warning:' | tr -d ' ')
+else
+  after_phase=0
+fi
 crash=$(grep -ci 'please submit a bug report' "$LOG" | tr -d ' ')
 # `build-for-testing` prints "** TEST BUILD SUCCEEDED **", which a (BUILD|TEST) alternation does
 # not match -- so the naive pattern reports a clean build as bannerless. Measured 2026-08-31.
@@ -48,13 +79,18 @@ succeeded=$(grep -cE '\*\* [A-Z ]*SUCCEEDED \*\*' "$LOG" | tr -d ' ')
 # runner starts with empty DerivedData today, which is exactly why this has never bitten -- and
 # exactly why it would go unnoticed the day a cache step is added to speed the job up. The gate
 # below states its denominator rather than trusting a property of the environment.
-compiled=$(grep -cE '^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources|CompileC) ' "$LOG" | tr -d ' ')
+compiled=$(build_phase | grep -cE '^[[:space:]]*(SwiftCompile|CompileSwift|CompileSwiftSources|CompileC) ' | tr -d ' ')
 
 echo "== gates =="
 echo "  compile errors (strict): $errors"
 echo "  swift warnings (strict): $warnings"
 if [ "$macro_warnings" -gt 0 ]; then
   echo "    of which in a macro expansion: $macro_warnings  (no \`.swift:N:C:\` prefix; T-1516)"
+fi
+if [ "$after_phase" -gt 0 ]; then
+  echo "    $after_phase warning-shaped line(s) AFTER testing started are NOT counted (T-1971) --"
+  echo "    a compiler emits no diagnostic once the build is over; a failing test printing source"
+  echo "    that contains one does. Read them: tail -n +$phase_end '$LOG' | grep -nE 'warning:'"
 fi
 echo "  swift compile tasks:     $compiled"
 echo "  toolchain crash markers: $crash"
@@ -78,7 +114,7 @@ fi
 # now lives in scripts/xcb.sh, and the denominator below.
 if [ "$warnings" -gt 0 ]; then
   echo "::error::$warnings Swift warning(s); the baseline is zero and any new warning is a regression."
-  grep -E '\.swift:[0-9]+:[0-9]+: warning:|macro expansion [^ :]+:[0-9]+:[0-9]+: warning:' "$LOG" | head -40
+  build_phase | grep -E '\.swift:[0-9]+:[0-9]+: warning:|macro expansion [^ :]+:[0-9]+:[0-9]+: warning:' | head -40
   rc=1
 fi
 
