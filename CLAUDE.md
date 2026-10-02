@@ -16,81 +16,27 @@ read only the section you need.
 ## Context Budget Rules
 
 - Prefer targeted source search over loading inventories, TODO history, or full feature lists.
+  Use `./scripts/ledger-view.sh brief` / `show T-NNNN` for tickets and
+  `./scripts/codex-inbox.sh show R<n>` for requests; never open either ledger whole.
 - Treat stale prose as weaker than code and tests. If docs disagree with source, say so and follow
   the code.
 - Keep new durable notes short. Put rare debugging narratives in `docs/TODO.md` or another linked
   reference, not here.
 - When adding a new always-read rule, remove or link out something else.
 
-## Project Shape
+## Rules And Verification
 
-Cadence is a native SwiftUI productivity app with:
+Use [AGENTS.md: Project Snapshot](AGENTS.md#project-snapshot) and
+[Where Things Live](AGENTS.md#where-things-live) for targets and the directory map.
+[Non-Negotiable Patterns](AGENTS.md#non-negotiable-patterns) owns the colour, date, relationship,
+header, hover, shared-component and unrelated-change rules; they all still apply.
 
-- macOS as the primary product surface.
-- A large, real iOS/iPadOS surface, not a stub.
-- Shared SwiftData models, CloudKit sync, widgets, EventKit calendar/reminder integration, notes,
-  markdown support, local notifications, data export/reset, and an MCP server/plugin boundary.
-
-Main paths:
-
-- `Cadence/Models/` - SwiftData models. Read `Cadence/Models/AGENTS.md` before model/schema edits.
-- `Cadence/Services/` - shared services, migrations, markdown logic, notifications, MCP read/write.
-- `Cadence/Shared/` - theme tokens, shared UI/components, date/time utilities, cross-platform helpers.
-- `Cadence/macOS/` - primary desktop app surface.
-- `Cadence/iOS/` - adaptive iPhone/iPad app surface.
-- `CadenceWidgets/` - widget extension; `Cadence` scheme already builds it.
-- `CadenceMCPServer/` and `plugins/cadence-mcp/` - separate MCP boundary.
-- `CadenceTests/` - unit tests. Use scoped test runs only.
-
-## Non-Negotiables
-
-- No hardcoded colours outside `Theme.swift` and user-owned `colorHex` values. Use `Theme.*`.
-- Persisted date strings are `yyyy-MM-dd`. Use `DateFormatters` / `TimeFormatters`.
-- SwiftData/CloudKit to-many relationships are optional arrays (`[Type]?`); read with `?? []`, append
-  by assigning a new array.
-- Page headers do not describe the page the user is already on. Search rows, pickers, and empty
-  states may keep subtitles.
-- Use one hover/selection layer at one radius.
-- Prefer shared components over near-copies.
-- Do not revert unrelated user or agent changes.
-
-## Build And Test
-
-Run from repo root with private DerivedData:
-
-```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
-  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
-  -derivedDataPath /tmp/cadence-build-$$ build
-```
-
-Tests must be scoped to `CadenceTests`:
-
-```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test \
-  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
-  -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
-```
-
-Scope unit runs to `CadenceTests` to keep them fast and deterministic. That is the whole reason —
-the old claim that `CadenceUITests` "cannot launch headless" is **false as of 2026-08-31**, when the
-one-time macOS automation authorisation was granted. That target now runs to completion: 4 tests, 2
-of them skipped behind `CADENCE_RUN_INTERACTIVE_UI_TESTS=1`.
-
-A UI-test run launches a real `Cadence.app`, so it must hold the test-host lock. Run it as
-`scripts/xcb.sh <id> test -only-testing:CadenceUITests` — **never** a bare `xcodebuild`, which takes
-no lock and will contend with any other run in flight.
-
-`CadenceUITests` is **not** flaky, which is what T-563 turned out to be. It cannot pass while the
-Mac's screen is locked: `loginwindow` owns the foreground, the launched app stays `Running
-Background`, and `app.launch()` fails about a minute later with *"Failed to activate application …
-(current state: Running Background)"* — attributed to whichever line called it, which is how the
-"about 1 run in 4" reading arose. Measured 2026-09-02 either side of a single lock event: 20 runs /
-40 launches before it with zero activation failures, 100% failure after. `scripts/xcb.sh` now
-refuses a UI run while the screen is locked and the tests skip themselves, so a red UI-test run
-**is** evidence of a regression again.
-
-The expected warning baseline is zero; any new warning is a regression.
+Follow [Build And Run Safety](AGENTS.md#build-and-run-safety) and
+[Red-Run Triage](AGENTS.md#red-run-triage). Use `scripts/xcb.sh <id> build|test` with private
+DerivedData, scope unit tests to `CadenceTests`, and hold the zero compiler-warning baseline.
+macOS UI tests can run, but require an unlocked screen and the wrapper's test-host lock:
+`scripts/xcb.sh <id> test -only-testing:CadenceUITests`, never bare `xcodebuild`.
+Detailed incident history belongs in `docs/AGENTS_REFERENCE.md`, not startup context.
 
 ## When To Read The Long Reference
 
