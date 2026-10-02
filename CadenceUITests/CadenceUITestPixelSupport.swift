@@ -230,7 +230,7 @@ enum CadenceUITestPixel {
         foreignPixels(in: bitmap, block: block, inset: inset, tolerance: tolerance).count
     }
 
-    // MARK: - The one thing the product is allowed to draw on the picture (T-1723)
+    // MARK: - The one thing the product is allowed to draw on the picture (T-1723, T-1955)
 
     /// **The allowance is a PLACE, not a number**, and that distinction is the whole of T-1723.
     ///
@@ -248,67 +248,105 @@ enum CadenceUITestPixel {
     /// zero, and the defect that motivated the reading — text across the picture — lands outside
     /// it by construction, because text spans the width it is drawn at.
     ///
-    /// Two further bounds keep the hole from becoming the assertion:
+    /// ### The square is sized from the BADGE now, not from the picture (T-1955)
     ///
-    /// - the square may not exceed `maximumShareOfThePicture` of the block, so a mis-measured
-    ///   block cannot quietly widen it, and
+    /// T-1723 made the square a share of the picture's shorter side — `0.15` — and that is the one
+    /// thing here that has been replaced rather than re-argued. Measured under T-1892 by the sweep
+    /// in `CadenceOverdrawVerdictTests`: the product's own badge was **refused up to a shorter side
+    /// of 294px and tolerated only from 296px — a 148pt floor at 2x** — while
+    /// `MarkdownImageAssetService.minDisplayWidth` is **120pt**, 75pt tall at the seeded fixture's
+    /// 8:5. So a legally sized picture failed the assertion with nothing drawn on it at all.
+    ///
+    /// And the floor was not where it looked. The purely *geometric* requirement — a square wide
+    /// enough to hold a badge spanning `[maxX-44, maxX-8]` — clears at a shorter side of 286px, and
+    /// 286px was still red. The binding bound was `maximumFillOfTheAllowance`: the badge is
+    /// 36×36 = 1296px, `0.7 × side²` reaches 1296 only at `side = 44`, and
+    /// `round(0.15 × (shorter − 5))` reaches 44 only at 295px. **At 290–294px the badge fitted
+    /// inside its own square and was refused for overfilling it by two pixels** (1296 against
+    /// 1294). Two bounds set one floor between them, so neither could be moved alone and moving
+    /// either alone only lowered the floor to 286px.
+    ///
+    /// The repair **breaks the coupling rather than widening either bound**. The square is now the
+    /// badge's own geometry — 18pt on a side with its own 4pt inset repeated on the far side, 26pt,
+    /// scaled to the bitmap — which is a figure the product owns and which does not move with the
+    /// picture's pixel size. The badge then fills 48% of it at *every* picture size and every
+    /// scale, so `maximumFillOfTheAllowance` is back to meaning only what it was written to mean,
+    /// and it is no longer half of a floor.
+    ///
+    /// Two bounds still keep the hole from becoming the assertion:
+    ///
+    /// - the square's side may not exceed `maximumSideShareOfTheShorterSide` of the region
+    ///   examined, so a block mis-measured small cannot be swallowed by a corner that is most of
+    ///   it, and
     /// - the badge may fill only `maximumFillOfTheAllowance` of the square, which is the cut
     ///   between *a badge sits in this corner* and *this corner has been painted over*.
     ///
-    /// Every figure is argued from the measurement rather than being the measurement rounded: the
-    /// badge measured 1228 px in a 640×400 block, about 35 px on a side, 0.5% of the picture.
+    /// **The safeguard deliberately relaxed, and what it stops catching.** T-1723's first bound was
+    /// an area cap, `maximumShareOfThePicture = 0.03`, and it is gone. It cost nothing, because it
+    /// could never fire: with the side at `0.15 × shorter`, the area share is at most
+    /// `0.0225 × shorter/longer`, which is **below 2.25% for every picture that has ever existed**
+    /// and so below its own 3% cap unconditionally. A fixed-size square makes that question live
+    /// again, and it is asked of the shorter *side* rather than of the area because an area share
+    /// climbs on a wide picture for a reason that is the picture's shape and not the allowance's
+    /// size. The new cap does fire — measured, at a shorter side under 110px.
     struct BadgeAllowance {
 
-        /// The square's side, as a share of the picture's **shorter** side.
+        /// The badge's own side, in **points**: `CadenceTextView.resizeHandleRect(for:)`'s
+        /// `width: 18, height: 18` (`MarkdownEditorInteractionSupport.swift:519`).
+        let badgeSidePoints: CGFloat
+
+        /// How far that rect is inset from the picture's corner, in **points** — the same line's
+        /// `imageRect.maxX - 22` against a side of 18.
+        let badgeMarginPoints: CGFloat
+
+        /// The square's side may not exceed this share of the shorter side of the region examined.
         ///
-        /// 0.15 of the 400px-tall block measured is 60px against a ~35px badge. The multiple is
-        /// deliberate: the badge draws at a fixed point size while the picture's pixel size moves
-        /// with the window and the display, so a share that only just covered today's ratio would
-        /// fail on a narrower pane for being narrow. A share rather than a pixel count for the
-        /// reason every bound in `CadenceTodayRowCrushUITests` is a comparison — a pixel figure
-        /// survives neither a display nor an Xcode major.
+        /// This is the bound that says *a corner*. It replaces T-1723's unreachable 3%-of-the-area
+        /// cap and it is reachable: with the side fixed at 52px at 2x, a region examined whose
+        /// shorter side is under 104px is refused outright, whatever is drawn on it.
         ///
-        /// **The prediction two lines up — "would fail on a narrower pane for being narrow" — is
-        /// now a measured number, and the bound is NOT this constant's (T-1892).** Swept against
-        /// the product's own badge geometry by
+        /// Measured by
         /// `CadenceOverdrawVerdictTests.testTheBadgeAllowanceOnlyHoldsAboveAPictureSizeThisSweepReports`:
-        /// the badge is **refused up to a shorter side of 294px and tolerated from 296px — 148pt at
-        /// 2x**. Below that a picture with nothing on it but the editor's own affordance goes red.
-        /// That matters because `MarkdownImageAssetService.minDisplayWidth` is **120pt**, which at
-        /// the seeded fixture's 8:5 is 75pt of height — half the floor — so the red is reachable by
-        /// a legal rendering rather than only by a pathological one.
-        ///
-        /// **And the floor is set by `maximumFillOfTheAllowance`, not by this share.** The purely
-        /// geometric requirement — a square wide enough to contain a badge spanning
-        /// `[blockMaxX-44, blockMaxX-8]` — needs `side ≥ 42` and clears at a shorter side of 286px.
-        /// 286px is still refused. 36×36 is 1296px, `0.7 × side²` reaches 1296 only at `side = 44`,
-        /// and `round(0.15 × (shorter − 5))` reaches 44 only at 295px. At 290–294px the badge
-        /// **fits** and is refused for overfilling its square **by two pixels** (1296 against 1294).
-        /// So raising this share alone does not move the floor; the two bounds have to move
-        /// together, and whoever repairs it should say which of the two they intend to relax.
-        let sideShareOfTheShorterSide: CGFloat
+        /// the product's badge is refused up to a shorter side of 108px and tolerated from 110px —
+        /// **55pt at 2x**, against a product minimum of 120pt wide and 75pt tall at the fixture's
+        /// 8:5. The floor is now *below* the narrowest picture the product will draw, which is
+        /// T-1955's whole ask; before the repair it was 148pt, nearly twice above it.
+        let maximumSideShareOfTheShorterSide: CGFloat
 
-        /// And whatever that works out to, the hole may not exceed this share of the picture.
-        /// 0.15² is 2.25% of a square block and less of an oblong one.
-        let maximumShareOfThePicture: CGFloat
-
-        /// How much of the square the badge may actually fill. The badge measured 1228 of the
-        /// ~3600 px such a square holds — 34%. 0.7 is twice that.
+        /// How much of the square the badge may actually fill. At 2x the badge is 36×36 = 1296px
+        /// and the square is 52×52 = 2704px, so the badge fills **48% at every picture size** —
+        /// which is the property sizing the square from the badge buys. 0.7 is the cut between *a
+        /// badge sits in this corner* and *this corner has been painted over*.
         let maximumFillOfTheAllowance: CGFloat
 
         static let imageEditBadge = BadgeAllowance(
-            sideShareOfTheShorterSide: 0.15,
-            maximumShareOfThePicture: 0.03,
+            badgeSidePoints: 18,
+            badgeMarginPoints: 4,
+            maximumSideShareOfTheShorterSide: 0.5,
             maximumFillOfTheAllowance: 0.7
         )
 
+        /// The square's side in the bitmap's pixels: the badge, with its own inset on **both**
+        /// sides, at the bitmap's scale. 26pt, so 52px on a Retina shot and 26px on a 1x one — and
+        /// it contains the badge at either, because both the badge and the square scale together.
+        func sidePixels(atScale scale: CGFloat) -> CGFloat {
+            ((badgeSidePoints + 2 * badgeMarginPoints) * max(scale, 1)).rounded()
+        }
+
         /// The square, at the **bottom-right** corner of the region examined. In the bitmap's
         /// pixels, whose origin is top-left, so that is max-x / max-y.
-        func rect(over examined: CGRect) -> CGRect {
+        ///
+        /// Clamped to `examined`, because a square hanging off the picture would tolerate pixels
+        /// that are not in the picture at all.
+        func rect(over examined: CGRect, scale: CGFloat) -> CGRect {
             guard examined.width > 0, examined.height > 0 else { return .null }
-            let side = (min(examined.width, examined.height) * sideShareOfTheShorterSide).rounded()
+            let side = sidePixels(atScale: scale)
             guard side > 0 else { return .null }
-            return CGRect(x: examined.maxX - side, y: examined.maxY - side, width: side, height: side)
+            let square = CGRect(
+                x: examined.maxX - side, y: examined.maxY - side, width: side, height: side
+            )
+            let clamped = square.intersection(examined)
+            return clamped.isEmpty ? .null : clamped
         }
 
         func maximumForeignPixels(in allowance: CGRect) -> Int {
@@ -326,7 +364,14 @@ enum CadenceUITestPixel {
     /// taken from cannot be asked on demand.
     struct OverdrawVerdict {
         let allowance: CGRect
+        /// **Reported, not compared** — what share of the picture's area the hole came to, for the
+        /// activity log of a green run. The bound is the side share below; this is the figure a
+        /// reader wants when they ask how big the hole was.
         let allowanceShareOfThePicture: CGFloat
+        /// **Compared.** The square the badge needs, against the shorter side of the region
+        /// examined. The unclamped side, so a square that had to be cut down to fit reads as
+        /// over-large rather than as exactly fitting.
+        let allowanceSideShareOfTheShorterSide: CGFloat
         let insideAllowance: Int
         let outsideAllowance: Int
         /// Where the pixels outside the allowance are. `.null` when there are none.
@@ -335,14 +380,14 @@ enum CadenceUITestPixel {
 
         var somethingIsDrawnOutsideTheAllowance: Bool { outsideAllowance > 0 }
         var theAllowanceIsFilledRatherThanBadged: Bool { insideAllowance > maximumInsideTheAllowance }
-        var theAllowanceHasGrownTooLarge: Bool { allowanceShareOfThePicture > allowanceCap }
+        var theAllowanceHasGrownTooLarge: Bool { allowanceSideShareOfTheShorterSide > allowanceSideCap }
         var isClean: Bool {
             !somethingIsDrawnOutsideTheAllowance
                 && !theAllowanceIsFilledRatherThanBadged
                 && !theAllowanceHasGrownTooLarge
         }
 
-        fileprivate let allowanceCap: CGFloat
+        fileprivate let allowanceSideCap: CGFloat
     }
 
     static func overdraw(
@@ -353,19 +398,21 @@ enum CadenceUITestPixel {
         tolerance: Int = 12
     ) -> OverdrawVerdict {
         let all = foreignPixels(in: bitmap, block: block, inset: inset, tolerance: tolerance)
-        let allowance = badge.rect(over: all.examined)
+        let allowance = badge.rect(over: all.examined, scale: bitmap.scale)
         let outside = foreignPixels(
             in: bitmap, block: block, inset: inset, tolerance: tolerance, excluding: allowance
         )
         let area = allowance.isNull ? 0 : allowance.width * allowance.height
+        let shorterExamined = max(min(all.examined.width, all.examined.height), 1)
         return OverdrawVerdict(
             allowance: allowance,
             allowanceShareOfThePicture: area / max(block.bounds.width * block.bounds.height, 1),
+            allowanceSideShareOfTheShorterSide: badge.sidePixels(atScale: bitmap.scale) / shorterExamined,
             insideAllowance: all.count - outside.count,
             outsideAllowance: outside.count,
             outsideBounds: outside.bounds,
             maximumInsideTheAllowance: badge.maximumForeignPixels(in: allowance),
-            allowanceCap: badge.maximumShareOfThePicture
+            allowanceSideCap: badge.maximumSideShareOfTheShorterSide
         )
     }
 
