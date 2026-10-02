@@ -67,12 +67,6 @@ Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
 Cadence/Shared/CadenceTypography.swift
 Cadence/Shared/Components/CadenceTagChip.swift
 Cadence/iOS/iOSTaskInspectorMetrics.swift
-Cadence/macOS/Views/CalendarPageBoardSupportViews.swift
-Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift
-Cadence/Shared/CadenceTaskFieldEditCommit.swift
-CadenceTests/CalendarBoardDayDropCommitTests.swift
-CadenceTests/CalendarBoardUnscheduleCommitTests.swift
-CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
 CLAUDE.md
 scripts/codex-inbox.sh
 docs/CODEX_REQUESTS.md
@@ -118,7 +112,10 @@ loses that is a regression, not a saving. Measure the before and after sizes and
 never reading the 2.4 MB ledger, using `./scripts/ledger-view.sh show`/`brief` instead — is a
 coordinator habit that has already been fixed in the agent brief, not a change to any file here.
 
-### T-1980 is leased to Codex (2026-10-02), and it is a FINISH, not a start
+### T-1980 was leased to Codex (2026-10-02), and it is a FINISH, not a start
+
+**LEASE ENDED 2026-10-02: T-1980 landed on `main`, and its six paths are out of the `lease` block
+above.** The section below is kept as the record of what was asked.
 
 Six macOS paths are leased for [[T-1980]] only. This is the first time Codex has held anything under
 `Cadence/macOS/Views/`, and the grant is narrow and temporary: it ends when T-1980 lands.

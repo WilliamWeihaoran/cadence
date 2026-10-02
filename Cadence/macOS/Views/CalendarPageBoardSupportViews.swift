@@ -112,6 +112,91 @@ enum CalendarPageBoardDropSupport {
         }
         return landed ? .applied : .refused
     }
+
+    /// A **day column's** drop of a card ([[T-1980]]), the sibling of `unschedule` above and the
+    /// same three answers.
+    ///
+    /// It was the second of the two swallows left in this file when T-1952 closed, and the pair is
+    /// worth a sentence about *why* the sweep could not see them: both returned `Void`, so there
+    /// was no answer for `CadenceSaveCommitRule`'s report half to read, and the `true` the drop
+    /// actually reports is built one frame up in another file — `CalendarBoardDayColumn.handleDrop`
+    /// returned it unconditionally. Invisible rather than exempted. The detector half of that is
+    /// [[T-1990]]; this is the defect half.
+    ///
+    /// **Three fields past the do date, and the reason this is not a one-line change.** A card
+    /// dragged onto a day runs `SchedulingActions.removeTaskFromBundle` first, exactly as the rail
+    /// drop does, so `bundle`/`bundleOrder` move and the block's remaining members are renumbered —
+    /// they ride in `alsoRestoring:`. The drop also materialises `estimatedMinutes` when the card
+    /// has none, so the block it draws on the timeline is the length the board already shows.
+    static func schedule(
+        _ task: AppTask,
+        on dateKey: String,
+        modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> TasksPanelDropOutcome {
+        guard let action = CalendarBoardPlannerSupport.dropAction(for: .day(dateKey)) else {
+            return .resolvedNothing
+        }
+
+        // Read off the inverse rather than the array, for `unschedule`'s reason: the array can
+        // still list a task whose own `bundle` has moved on.
+        let blockSiblings = (task.bundle?.tasks ?? []).filter {
+            $0.id != task.id && $0.bundle?.id == task.bundle?.id
+        }
+
+        let landed = CadenceTaskFieldEditCommit.commit(
+            task,
+            alsoRestoring: blockSiblings,
+            in: modelContext,
+            reconciler: reconciler,
+            commit: commit
+        ) {
+            if task.bundle != nil {
+                SchedulingActions.removeTaskFromBundle(task, keepOnBundleDate: false)
+            }
+            CalendarBoardPlannerSupport.apply(action, to: task)
+            if task.estimatedMinutes <= 0 {
+                task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes
+            }
+        }
+        return landed ? .applied : .refused
+    }
+
+    /// A **day column's** drop of a whole block ([[T-1980]]), the third of this board's drops and
+    /// the only one whose subject is not a task.
+    ///
+    /// `SchedulingActions.dropBundle` writes the block's own `dateKey`/`startMin`/`durationMinutes`
+    /// and then every member's `scheduledDate`, `scheduledStartMin` and `calendarEventID`. So the
+    /// undo is `CadenceTaskFieldEditCommit.commitBlockMove`: the slot through
+    /// `CadenceTaskBundleSlotSnapshot`, the members through the same `CadenceTaskFieldSnapshot`
+    /// every other commit on this board uses — which is why `calendarEventID` joined that set in
+    /// this change rather than being snapshotted a second way here.
+    ///
+    /// **An empty `dateKey` answers `.resolvedNothing`** rather than committing: it is the same
+    /// "this board cannot place that" the rail drop guards for, and `dropAction(for: .day(""))` is
+    /// already `nil` — asked here so a block move and a card move refuse the same input.
+    static func move(
+        _ bundle: TaskBundle,
+        to dateKey: String,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> TasksPanelDropOutcome {
+        guard CalendarBoardPlannerSupport.dropAction(for: .day(dateKey)) != nil else {
+            return .resolvedNothing
+        }
+
+        let members = (bundle.tasks ?? []).filter { $0.bundle?.id == bundle.id }
+        let landed = CadenceTaskFieldEditCommit.commitBlockMove(
+            bundle,
+            members: members,
+            in: modelContext,
+            commit: commit
+        ) {
+            SchedulingActions.dropBundle(bundle, to: dateKey, startMin: bundle.startMin)
+        }
+        return landed ? .applied : .refused
+    }
 }
 
 /// The Calendar Board: day columns that scroll horizontally, flanked by two pinned rails.
@@ -289,8 +374,8 @@ struct CalendarPageBoardView: View {
                             areas: areas,
                             projects: projects,
                             add: addBehavior(for: .day(dateKey)),
-                            onDropTaskOnDay: { task in schedule(task, on: dateKey) },
-                            onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
+                            onDropTaskOnDay: { task in handleDayColumnDrop(task, on: dateKey) },
+                            onDropBundleOnDay: { bundle in handleBlockMoveDrop(bundle, on: dateKey) },
                             onDropTaskOnBundle: { task, bundle in
                                 SchedulingActions.addTask(task, to: bundle)
                                 try? modelContext.save()
@@ -457,23 +542,32 @@ struct CalendarPageBoardView: View {
         return outcome == .applied
     }
 
-    /// A day column's drop. Goes through the same `apply` the Unscheduled rail uses, so both
-    /// directions of the drag write the one field the board buckets on.
-    private func schedule(_ task: AppTask, on dateKey: String) {
-        guard let action = CalendarBoardPlannerSupport.dropAction(for: .day(dateKey)) else { return }
-        if task.bundle != nil {
-            SchedulingActions.removeTaskFromBundle(task, keepOnBundleDate: false)
+    /// A day column's drop of a card. Goes through the same `apply` the Unscheduled rail uses, so
+    /// both directions of the drag write the one field the board buckets on, and maps the same
+    /// three answers onto the board's one notice slot ([[T-1980]]).
+    private func handleDayColumnDrop(_ task: AppTask, on dateKey: String) -> Bool {
+        let outcome = withAnimation(kanbanCardReorderAnimation) {
+            CalendarPageBoardDropSupport.schedule(
+                task,
+                on: dateKey,
+                modelContext: modelContext
+            )
         }
-        CalendarBoardPlannerSupport.apply(action, to: task)
-        if task.estimatedMinutes <= 0 {
-            task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes
-        }
-        try? modelContext.save()
+        dropFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
+        return outcome == .applied
     }
 
-    private func move(_ bundle: TaskBundle, on dateKey: String) {
-        SchedulingActions.dropBundle(bundle, to: dateKey, startMin: bundle.startMin)
-        try? modelContext.save()
+    /// A day column's drop of a whole block ([[T-1980]]). Same mapping, same slot.
+    private func handleBlockMoveDrop(_ bundle: TaskBundle, on dateKey: String) -> Bool {
+        let outcome = withAnimation(kanbanCardReorderAnimation) {
+            CalendarPageBoardDropSupport.move(
+                bundle,
+                to: dateKey,
+                modelContext: modelContext
+            )
+        }
+        dropFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
+        return outcome == .applied
     }
 
     /// **T-1570.** Served from `eventCache`, keyed by each column's `yyyy-MM-dd`. The

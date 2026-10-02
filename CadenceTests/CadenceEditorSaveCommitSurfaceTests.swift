@@ -329,6 +329,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
             task.sectionName = "Doing"
             task.scheduledDate = "2026-07-04"
             task.scheduledStartMin = 540
+            task.calendarEventID = ""
             task.dueDate = "2026-07-05"
         }
 
@@ -391,10 +392,10 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// set silently shrank a caller's undo to half an edit was that `init` and `restore(to:)` are
     /// two lists nothing held level with each other. So this pins the set from three directions:
     /// every field survives a refused edit that moved it (behavioural), `init` captures exactly
-    /// those eighteen, and `restore(to:)` writes back exactly those eighteen. A field added to one
+    /// those nineteen, and `restore(to:)` writes back exactly those nineteen. A field added to one
     /// list and not the other fails here rather than in whichever screen next reaches for it.
     ///
-    /// The eighteen are named individually rather than counted. Counting would let one field drop
+    /// The nineteen are named individually rather than counted. Counting would let one field drop
     /// out while another arrived, which is the change this exists to catch.
     ///
     /// `bundle` and `bundleOrder` joined the set with [[T-1952]], when the Calendar Board's
@@ -402,14 +403,20 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// it before the do date is cleared, so a refusal that restored only the date left the task out
     /// of the block it was still drawn in. `CalendarBoardUnscheduleCommitTests` holds the
     /// behavioural half for the pair, including the block's other members.
+    ///
+    /// `calendarEventID` joined one ticket later ([[T-1980]]), when the same board's day column
+    /// became the first caller to write it: `SchedulingActions.dropBundle` clears every member's
+    /// calendar link as part of moving a block, so a refused move that restored only the two
+    /// schedule fields left the members silently unlinked. `CalendarBoardDayDropCommitTests` holds
+    /// the behavioural half for it.
     private static let snapshottedTaskFields = [
-        "area", "bundle", "bundleOrder", "completedAt", "context", "dueDate", "estimatedMinutes",
-        "order", "priorityRaw", "project", "recurrenceRaw", "recurrenceSeriesIDRaw",
-        "recurrenceSpawnedTaskIDRaw", "scheduledDate", "scheduledStartMin", "sectionName",
-        "statusRaw", "title"
+        "area", "bundle", "bundleOrder", "calendarEventID", "completedAt", "context", "dueDate",
+        "estimatedMinutes", "order", "priorityRaw", "project", "recurrenceRaw",
+        "recurrenceSeriesIDRaw", "recurrenceSpawnedTaskIDRaw", "scheduledDate", "scheduledStartMin",
+        "sectionName", "statusRaw", "title"
     ]
 
-    @Test func thefieldSnapshotCapturesAndRestoresTheSameEighteenFields() throws {
+    @Test func thefieldSnapshotCapturesAndRestoresTheSameNineteenFields() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceTaskFieldEditCommit.swift")
 
         let initStart = try #require(source.range(of: "init(_ task: AppTask)"))
@@ -423,12 +430,18 @@ struct CadenceEditorSaveCommitSurfaceTests {
             .filter { $0 != "taskID" }
         #expect(captured.sorted() == Self.snapshottedTaskFields, "the snapshot captures \(captured.sorted())")
 
-        let restoreBody = try #require(CadenceSourceScan.functionBody(named: "restore", in: source))
+        // Read by its **full prefix**, not by the bare name: [[T-1980]] added
+        // `CadenceTaskBundleSlotSnapshot` to this file, which has a `restore(to bundle:)` of its
+        // own, and `functionBody(named: "restore")` would silently start reading whichever came
+        // first in the file.
+        let restoreBody = try #require(
+            CadenceSourceScan.declarationBody("func restore(to task: AppTask)", in: source)
+        )
         let restored = CadenceSourceScan.captures(#"task\.(\w+) = "#, in: restoreBody).map(\.text)
         #expect(restored.sorted() == Self.snapshottedTaskFields, "the snapshot restores \(restored.sorted())")
     }
 
-    /// The behavioural half: one refused edit that moves all eighteen, and all eighteen come back.
+    /// The behavioural half: one refused edit that moves all nineteen, and all nineteen come back.
     @Test func arefusedEditRestoresEverySnapshottedFieldAtOnce() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)
@@ -457,6 +470,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
         task.sectionName = "Backlog"
         task.scheduledDate = "2026-06-01"
         task.scheduledStartMin = 480
+        task.calendarEventID = "event-before"
         task.dueDate = "2026-06-02"
         task.recurrenceRaw = TaskRecurrenceRule.daily.rawValue
         task.recurrenceSeriesIDRaw = seriesID.uuidString
@@ -504,6 +518,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(task.sectionName == "Backlog")
         #expect(task.scheduledDate == "2026-06-01")
         #expect(task.scheduledStartMin == 480)
+        #expect(task.calendarEventID == "event-before")
         #expect(task.dueDate == "2026-06-02")
         #expect(task.recurrenceRaw == TaskRecurrenceRule.daily.rawValue)
         #expect(task.recurrenceSeriesIDRaw == seriesID.uuidString)
