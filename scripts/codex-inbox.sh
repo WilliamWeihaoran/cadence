@@ -298,7 +298,11 @@ cmd_selftest() {
   # request heading that must remain part of the answer rather than become a boundary.
   local self show_rc
   self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-  # Bash here-documents need a temp file the app-sandboxed test host cannot create.
+  # Bash here-documents need a temp file the app-sandboxed test host cannot create (T-719),
+  # which is why this fixture is built with `printf` instead. Pinned by
+  # `CadenceGuardScriptSelftestTests.theCodexInboxGuardsOwnChecksStillFire`, which runs this
+  # selftest inside that sandbox — the citation has to sit in THIS comment block, because the
+  # claim and its pin are read together (T-1153/T-1380).
   printf '%s\n' \
     '<!-- FOLDED-THROUGH: R1 -->' '<!-- FOLDED-ALSO: R10 -->' '' \
     '## R1 - first request' 'first body' '' \
