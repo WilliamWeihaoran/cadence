@@ -67,6 +67,7 @@ Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
 Cadence/Shared/CadenceTypography.swift
 Cadence/Shared/Components/CadenceTagChip.swift
 Cadence/iOS/iOSTaskInspectorMetrics.swift
+CadenceTests/CadenceSaveCommitDisciplineTests.swift
 CLAUDE.md
 scripts/codex-inbox.sh
 docs/CODEX_REQUESTS.md
@@ -148,6 +149,29 @@ bundle card, which is correct.
 
 **`CadenceSaveCommitRule.reportExemptions` is empty (`[:]`) and stays empty.** Fix defects; never
 widen or add an exemption.
+
+### `CadenceSaveCommitDisciplineTests.swift` is leased for T-1990 only (2026-10-02)
+
+Codex asked for this rather than assuming it, which is the behaviour the lease exists to produce.
+[[T-1990]] is a change to the **detector**, and `CadenceSaveCommitRule` and its file-private parser
+live inside that test file — 118 references — so the ticket is unreachable without it. Granted for
+T-1990 only; it ends when T-1990 lands.
+
+**Reserved from other writers while that lease is live.** It was clean and unheld when granted: no
+in-flight agent had it, and the only uncommitted paths were `palettecopy`'s four. A coordinator
+assigning work that touches this file must check the lease first rather than discovering the clash
+at `agent-commit.sh`.
+
+**`reportExemptions` is EMPTY (`[:]`) and stays empty.** [[T-1952]] emptied it by fixing the defect
+and [[T-1980]] kept it empty. A detector that makes 47 sites fail and is then made tolerable by
+re-populating that list would undo both. If the new rule needs an escape hatch, that is a finding to
+file, not a list to refill.
+
+**The trap, which Codex identified itself when filing the ticket:** a structural "a `Void`
+declaration may not swallow" rule names **47 of 51** sites in one change, and most are the in-place
+field edits the rule deliberately allows. The landable rule is the narrow one — a swallowing
+declaration whose only caller is a closure argument whose parameter type returns `Bool`, the
+`.dropDestination` shape where the `true` the UI reads is built one frame up in another file.
 
 ## The coordinator's side
 
