@@ -813,6 +813,31 @@ struct CadenceGuardScriptSelftestTests {
         "a branch inside the lease with an entry passes",
         "a NEW file under a glob that also matches an existing file passes",
         "an inbox id the coordinator already folded is not a clash",
+        // T-1930, and the first two of these are a pair that must stay a pair. `review` reported a
+        // branch whose every file was already in `main` with the SAME exit code and the SAME words
+        // it gives a genuinely blocked one: 31 files, three `CODEX-INBOX-ID-CLASH` refusals, exit 3
+        // — read plainly, a blocked branch with 31 files of pending work, when the truth was the
+        // opposite and the ids clashed BECAUSE the work had landed. A fixture holding only the
+        // spent branch passes with the whole per-file reading deleted, because the clash fires on
+        // it either way; the pending control beside it, and the assertion that the two reports
+        // DIFFER, is what makes any of this evidence.
+        "a branch whose every file is already in main is SPENT, not blocked",
+        "a genuinely pending branch is NOT reported as landed",
+        "the spent and the pending branch do not get the same report",
+        "the spent branch's report names the state",
+        "the pending branch's report does NOT",
+        "every named file carries its own verdict against main",
+        // Two of the 31 measured files were this shape: the work landed and `main` then moved PAST
+        // it, so the bytes differ while the branch contributes nothing. A pure two-dot byte
+        // comparison calls that pending, which would leave the branch reading as blocked over a
+        // file nobody is missing.
+        "a file main has moved PAST still counts as landed, not as pending",
+        // The shape the live branch was actually in once main had advanced: every CODE file landed
+        // and the one path left was the branch's own inbox entries, which the coordinator never
+        // published (T-1800). It is still a refusal — those entries are real, unlanded work — but
+        // it must not read as 31 files of pending code.
+        "a branch whose only unlanded path is the inbox still refuses on the clash",
+        "...and SAYS the code landed, instead of reading as pending work",
         "an empty lease refuses rather than allowing all",
     ]
 
@@ -1172,6 +1197,150 @@ struct CadenceGuardScriptSelftestTests {
                 #expect(selftest.contains(refusal), "\(script)'s selftest no longer induces \(refusal)")
             }
         }
+    }
+
+    /// T-1933, and T-1153's rule is why it is here: a claim about what the test host can do names
+    /// the test that holds it, and this is a claim about two of them at once.
+    ///
+    /// **One fact, two decisions, and each had grown its own proxy for it.** `xcb.sh`'s
+    /// locked-screen guard (T-563) refused on `[[ "${args[*]}" == *CadenceUITests* ]]` — the target
+    /// name anywhere in the argument list — and the test-host lease (T-236) was taken for the
+    /// `test` **action** whatever that action selected. Both proxies are wrong in the same one
+    /// direction and were measured wrong on the same day: `-only-testing:CadenceUITests/`
+    /// `CadenceOverdrawVerdictTests` was refused with exit 5 on a locked Mac, and on an unlocked
+    /// one the same selection queued **800 seconds** behind two siblings for a container it never
+    /// opens. That suite launches nothing, takes no pointer and reads no screen. So the two now
+    /// call one function on one parsed selection, and the check below is that they still both do —
+    /// a later edit repairing one and leaving the other is precisely how this started.
+    ///
+    /// **Source-level, like the `-only-testing:` pin above and for the same reason.** Shelling out
+    /// reaches a selftest whose live halves degrade to a printed `skip` inside an App Sandbox
+    /// (T-719), so it would assert progressively less while looking like it asserted more.
+    ///
+    /// **The stale sentence is pinned as an absence, which is unusual and is the point.** The
+    /// guard's own comment used to say that with `CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1` *"the tests
+    /// skip instead"*. That is false for `CadenceOverdrawVerdictTests`, which carries no skip and
+    /// would run — the sentence was true of the suites the guard was written against and was never
+    /// re-read when the target grew one that launches nothing. A comment that confidently describes
+    /// behaviour the code no longer has is the same instrument-is-the-defect shape as the guard it
+    /// sat on, and restoring it would restore the reading that stopped anyone looking.
+    @Test func theLockedScreenGuardAndTheTestHostLeaseAskOneQuestionAboutTheSelection() throws {
+        let source = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/xcb.sh"),
+            encoding: .utf8
+        )
+        guard let split = source.range(of: "\n# --- selftest") else {
+            Issue.record("scripts/xcb.sh has no `# --- selftest` section to read")
+            return
+        }
+        // The selftest is ONE function, and it ends at the first column-0 `}` after the marker.
+        // Slicing to end-of-file instead — the shape the sweeps above use — is vacuous HERE, and
+        // that was this test's second defect: everything below the function is the dispatch and
+        // the preflight, where `check-ui-selection` prints `SCREEN-FREE` and `LAUNCHES-AN-APP` and
+        // three comments name `CadenceOverdrawVerdictTests`. With section 10 deleted outright, all
+        // three expectations at the bottom of this test stayed green.
+        let afterMarker = source[split.lowerBound...]
+        let selftest = String(afterMarker[..<(afterMarker.range(of: "\n}\n")?.upperBound ?? afterMarker.endIndex)])
+        #expect(selftest.contains("SELFTEST PASSED"),
+                "the slice taken as xcb.sh's selftest does not reach the end of the selftest function")
+        // NOT `source[..<split]`, and the distinction cost this test one red run. For `xcb.sh` the
+        // `# --- selftest` marker sits at a third of the way down the file and the whole preflight
+        // — every guard that reads the command line, including both of this ticket's — is BELOW it.
+        // The convention the sweep above relies on is that the selftest section comes last, not
+        // that the dispatch does; `xcb.sh` escapes it only because its refusal FUNCTIONS are
+        // defined above the marker. The two decisions this test is about are made inline in the
+        // preflight, so they are read from the whole file.
+        let body = source
+
+        // The reading itself, and the floor under it: a suite is screen-free because its SOURCE
+        // never names `XCUIApplication`, not because a list in this script says so. A list is a
+        // second copy of a fact and T-1382 is thirteen days of what two copies of one rule do.
+        #expect(body.contains("ui_suite_launches_an_app"),
+                "xcb.sh no longer reads whether a named suite can launch an app")
+        // The grep, not the bare word: the comments name `XCUIApplication` a dozen times, so a
+        // bare `contains` would stay green with the reading replaced by a list.
+        #expect(body.contains("grep -qF 'XCUIApplication'"),
+                "the screen-free reading no longer asks the suite's own source; a hardcoded exemption list is a second copy of the fact")
+
+        // Both call sites, counted. Two is the whole property: one is a half-fix.
+        let call = #"selection_launches_an_app "${only_testing[@]}""#
+        let callSites = body.components(separatedBy: call).count - 1
+        #expect(callSites == 2,
+                "the locked-screen guard and the test-host lease must ask the one question; found \(callSites) call site(s), want 2")
+
+        // ...and each in its OWN section, so a count that stays at two while one call moves
+        // somewhere else — or both sit in one decision — fails. A section runs from its
+        // `# --- <name>` header to the next `\n# --- `.
+        func section(_ header: String) -> String? {
+            guard let start = body.range(of: "\n# --- " + header) else { return nil }
+            let rest = body[start.upperBound...]
+            return String(rest[..<(rest.range(of: "\n# --- ")?.lowerBound ?? rest.endIndex)])
+        }
+        let guardSection = section("the locked-screen guard") ?? ""
+        let leaseSection = section("the test-host lock") ?? ""
+        #expect(guardSection.contains(call),
+                "the locked-screen guard no longer asks selection_launches_an_app of the parsed selection")
+        #expect(guardSection.contains("no UI test in CadenceUITests can pass while it is"),
+                "the locked-screen refusal itself is gone — T-563 is not weakened by T-1933")
+        #expect(leaseSection.contains(call),
+                "the test-host lease no longer asks selection_launches_an_app of the parsed selection")
+        #expect(leaseSection.contains("test-host lock: not taken"),
+                "nothing says a lease was skipped, so a run that skips one cannot be told from one that holds it")
+
+        // The false sentence. NOT pinned as an absence — the string still occurs, inside the
+        // comment that QUOTES it in order to refute it, and an absence check reads that as the
+        // claim coming back. (It did: this expectation was red for exactly that reason before the
+        // refutation was what it looked for.) So what is pinned is the refutation standing beside
+        // it: the escape hatch must not be described as making the tests skip, because
+        // `CadenceOverdrawVerdictTests` carries no skip and would run.
+        #expect(body.contains("THAT IS FALSE FOR AT LEAST ONE SUITE"),
+                "the guard's comment no longer refutes its own claim that the tests skip under CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN")
+
+        // And the selftest must still induce BOTH verdicts. One fixture suite cannot tell a working
+        // reading from `return 1`: the exemption would simply be unconditional and every
+        // SCREEN-FREE assertion would stay green.
+        #expect(selftest.contains("SCREEN-FREE"), "xcb.sh's selftest no longer induces the screen-free verdict")
+        #expect(selftest.contains("LAUNCHES-AN-APP"), "xcb.sh's selftest no longer induces the app-launching control")
+        #expect(selftest.contains("CadenceOverdrawVerdictTests"),
+                "xcb.sh's selftest no longer asks the LIVE suite this ticket is about, so a drifted fixture would pass in silence")
+    }
+
+    /// The other half of the claim above, and it is a fact about `CadenceUITests` rather than about
+    /// the script: `xcb.sh` exempts `CadenceOverdrawVerdictTests` from the locked-screen refusal and
+    /// from the test-host lease **because** that suite cannot reach an app, and the script decides
+    /// that by reading this file. If the suite ever gains an `XCUIApplication`, the exemption must
+    /// stop — and it does, automatically, which is the reason the reading is taken from source. What
+    /// this pins is the thing the script cannot see: that a *new* file in the target does not quietly
+    /// hand the suite a launch through a helper.
+    @Test func theSuiteExemptedFromTheLockedScreenGuardStillCannotLaunchAnApp() throws {
+        let uiTests = CadenceSelftestRun.repositoryRoot().appendingPathComponent("CadenceUITests")
+        let names = try FileManager.default.contentsOfDirectory(atPath: uiTests.path)
+            .filter { $0.hasSuffix(".swift") }
+        // The floor: an enumeration that found nothing must not read as a clean sweep.
+        #expect(names.count >= 5, "only \(names.count) file(s) in CadenceUITests — the sweep read almost nothing")
+
+        let suiteFile = "CadenceOverdrawVerdictTests.swift"
+        #expect(names.contains(suiteFile), "\(suiteFile) is gone; xcb.sh's exemption now names a suite that does not exist")
+        let suite = try String(contentsOf: uiTests.appendingPathComponent(suiteFile), encoding: .utf8)
+        #expect(!suite.contains("XCUIApplication"),
+                "\(suiteFile) now names XCUIApplication, so it is no longer the screen-free suite the exemption is for")
+
+        // The helpers it actually reaches. `CadenceUITestPixelSupport` is the one it imports work
+        // from; a launch smuggled in there would be invisible to a per-suite reading of the suite.
+        let support = try String(
+            contentsOf: uiTests.appendingPathComponent("CadenceUITestPixelSupport.swift"), encoding: .utf8
+        )
+        #expect(!support.contains("XCUIApplication"),
+                "CadenceUITestPixelSupport now reaches XCUIApplication, so the screen-free suite can launch an app through it")
+
+        // The control, and it is what makes the two assertions above evidence rather than a tautology
+        // over a target that happens to name the class nowhere: at least one real suite here DOES.
+        let launching = names.filter {
+            (try? String(contentsOf: uiTests.appendingPathComponent($0), encoding: .utf8))?
+                .contains("XCUIApplication") == true
+        }
+        #expect(launching.count >= 4,
+                "only \(launching.count) file(s) in CadenceUITests name XCUIApplication — the reading is not discriminating")
     }
 
     /// The two readings `scripts/agent-commit.sh` makes that are deliberately NOT refusals, and are
