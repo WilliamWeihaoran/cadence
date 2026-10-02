@@ -303,7 +303,7 @@ final class CadenceOverdrawVerdictTests: XCTestCase {
             "the product's own badge is STILL refused on a \(Int(longSide))×\(Int(shortSide))px picture — "
             + "outside \(smallVerdict.outsideAllowance) px at \(smallVerdict.outsideBounds); inside "
             + "\(smallVerdict.insideAllowance) of \(smallVerdict.maximumInsideTheAllowance) allowed; side share "
-            + "\(String(format: "%.3f", smallVerdict.allowanceSideShareOfTheShorterSide))"
+            + "\(String(format: "%.3f", smallVerdict.allowanceSideShareOfTheLongerSide))"
         )
         XCTAssertTrue(
             largeVerdict.isClean,
@@ -341,8 +341,13 @@ final class CadenceOverdrawVerdictTests: XCTestCase {
     ///
     /// The sweep starts well below any legal picture on purpose. The floor is no longer the badge
     /// failing to fit — it fits at every size here — it is
-    /// `maximumSideShareOfTheShorterSide` refusing to call a square that big a *corner*, and that
+    /// `maximumSideShareOfTheLongerSide` refusing to call a square that big a *corner*, and that
     /// bound only bites on pictures smaller than the product will draw.
+    ///
+    /// The figure this prints moved again under T-1957, from 55pt to 34pt, when that cap was asked
+    /// of the longer side instead of the shorter one. Both readings are below the product's own
+    /// minimum picture; what T-1957 changed is which *shapes* clear it, which the aspect sweep
+    /// below is the measurement of.
     func testTheBadgeAllowanceOnlyHoldsAboveAPictureSizeThisSweepReports() throws {
         var firstClean: CGFloat?
         var lastRefused: CGFloat?
@@ -388,6 +393,156 @@ final class CadenceOverdrawVerdictTests: XCTestCase {
             "the allowance still does not hold at the product's narrowest picture (\(Int(minimumLegalShortSide))px) "
             + "— the floor is \(Int(threshold))px and T-1955 is not fixed"
         )
+    }
+
+    // MARK: - The residue T-1955 left and T-1957 measured
+
+    /// **T-1957, as the product varies it.** The sweep above moves the picture's *size* at a fixed
+    /// 8:5. The product does not: `MarkdownImageAssetService.fittedSize` clamps the **width** to
+    /// `minDisplayWidth` and takes the height from the image's own aspect, with **no height floor
+    /// at all** — so at the clamp the picture's shorter side is `120 / ratio` points, and the free
+    /// variable is the aspect ratio of the picture a user pasted.
+    ///
+    /// Swept over that, this reports the widest picture the allowance still holds on. The
+    /// assertion is a relation and not a point figure: **every aspect the product can draw this
+    /// badge on is tolerated**, where "can draw it on" is `resizeHandleRect`'s own requirement —
+    /// `maxY - 22` with a height of 18 needs 22pt of picture or the badge is drawn off the top of
+    /// the picture it belongs to, which is not a rendering to hold the verdict to.
+    ///
+    /// Before T-1957 this was red from 2.2:1 upward, which is where a 21:9 screenshot lives.
+    func testTheBadgeAllowanceHoldsAtEveryAspectTheProductCanDrawTheBadgeOnAtItsMinimumWidth() throws {
+        let widthPixels = (Self.minimumLegalPictureWidthPoints * ProductBadge.scale).rounded()
+
+        // The widest picture the badge fits on at all, from the badge's own geometry.
+        let badgeNeedsPoints = ProductBadge.sidePoints + ProductBadge.marginPoints
+        let widestRatioTheBadgeFitsOn = Self.minimumLegalPictureWidthPoints / badgeNeedsPoints
+
+        var widestClean: CGFloat?
+        var narrowestRefused: CGFloat?
+        for tenths in stride(from: 10, through: 80, by: 1) {
+            let ratio = CGFloat(tenths) / 10
+            let picture = CGRect(
+                x: 130, y: 150, width: widthPixels, height: (widthPixels / ratio).rounded()
+            )
+            let verdict = try verdictForTheProductsBadge(on: picture)
+            if verdict.isClean {
+                // Refused-then-clean-again would mean the relation is not monotone and the
+                // "widest tolerated" below would be an artefact of where the sweep stopped.
+                XCTAssertNil(
+                    narrowestRefused,
+                    "the verdict refused at \(String(format: "%.1f", narrowestRefused ?? 0)):1 and went clean "
+                    + "again at \(String(format: "%.1f", ratio)):1, so there is no single bound here"
+                )
+                widestClean = ratio
+            } else if narrowestRefused == nil {
+                narrowestRefused = ratio
+            }
+        }
+
+        let widest = try XCTUnwrap(
+            widestClean,
+            "the product's own badge is refused at EVERY aspect ratio, so the allowance never holds"
+        )
+        let tolerated = String(format: "%.1f", widest)
+        let refusedFrom: String
+        if let narrowestRefused {
+            refusedFrom = String(format: "%.1f", narrowestRefused) + ":1"
+        } else {
+            refusedFrom = "no ratio in this sweep"
+        }
+        let fitsTo = String(format: "%.2f", widestRatioTheBadgeFitsOn)
+        let clampPoints = Int(Self.minimumLegalPictureWidthPoints)
+        let clampPixels = Int(widthPixels)
+        let scale = Int(ProductBadge.scale)
+        print(
+            "T-1957 badge-allowance aspect ceiling: at the product's minimum width "
+            + "(\(clampPoints)pt, \(clampPixels)px at \(scale)x) the product's badge is tolerated up to "
+            + "\(tolerated):1 and refused from \(refusedFrom). The badge itself stops fitting on the "
+            + "picture at \(fitsTo):1. T-1955 left this ceiling at 2.2:1, which refuses a 21:9 "
+            + "screenshot at the clamp."
+        )
+
+        XCTAssertGreaterThanOrEqual(
+            widest, widestRatioTheBadgeFitsOn,
+            "the allowance stops holding at \(String(format: "%.1f", widest)):1, below the "
+            + "\(String(format: "%.2f", widestRatioTheBadgeFitsOn)):1 at which the product can still draw this "
+            + "badge — a legal rendering is refused with nothing drawn on it, which is T-1957"
+        )
+    }
+
+    /// **The green above is not bought by giving up on wide pictures.** The same three decisions
+    /// the 640×400 cases make, remade on a 4:1 picture at the product's clamp — the shape T-1957
+    /// is about and the one the shorter-side cap refused outright.
+    ///
+    /// Without this, a verdict that simply stopped refusing anything below some height would pass
+    /// the sweep above and be worthless.
+    func testTheVerdictStillDiscriminatesOnAWidePictureAtTheProductsMinimumWidth() throws {
+        let widthPixels = (Self.minimumLegalPictureWidthPoints * ProductBadge.scale).rounded()
+        let picture = CGRect(x: 130, y: 150, width: widthPixels, height: (widthPixels / 4).rounded())
+
+        let badged = try verdictForTheProductsBadge(on: picture)
+        XCTAssertGreaterThan(
+            badged.insideAllowance, 0,
+            "the allowance absorbed nothing, so this would be clean with the badge absent"
+        )
+        XCTAssertTrue(
+            badged.isClean,
+            "the product's own badge is refused on a 4:1 picture at the clamp — outside "
+            + "\(badged.outsideAllowance) px at \(badged.outsideBounds); inside \(badged.insideAllowance) of "
+            + "\(badged.maximumInsideTheAllowance) allowed; side share "
+            + "\(String(format: "%.3f", badged.allowanceSideShareOfTheLongerSide))"
+        )
+
+        // ── CONTROL ONE: the same badge, off the corner. ──────────────────────────────────────
+        let middle = CGRect(
+            x: picture.midX - ProductBadge.sidePixels / 2, y: picture.midY - ProductBadge.sidePixels / 2,
+            width: ProductBadge.sidePixels, height: ProductBadge.sidePixels
+        )
+        let (movedBitmap, movedBlock) = try makeBitmap(picture: picture, marks: [(middle, Paint.badge)])
+        let moved = CadenceUITestPixel.overdraw(in: movedBitmap, block: movedBlock)
+        XCTAssertFalse(moved.isClean, "a mark in the middle of a wide picture is tolerated")
+        XCTAssertGreaterThan(
+            moved.outsideAllowance, 0, "the refusal is not attributed to pixels outside the allowance"
+        )
+
+        // ── CONTROL TWO: the corner painted over rather than badged. ──────────────────────────
+        let filled = badgeSquare(in: picture, side: 46, margin: 4)
+        let (filledBitmap, filledBlock) = try makeBitmap(picture: picture, marks: [(filled, Paint.badge)])
+        let painted = CadenceUITestPixel.overdraw(in: filledBitmap, block: filledBlock)
+        XCTAssertEqual(
+            painted.outsideAllowance, 0,
+            "the mark is not wholly inside the allowance (\(painted.outsideBounds)), so this is not that case"
+        )
+        XCTAssertTrue(
+            painted.theAllowanceIsFilledRatherThanBadged,
+            "\(painted.insideAllowance) of \(painted.maximumInsideTheAllowance) allowed did not trip the fill "
+            + "bound on a wide picture"
+        )
+        XCTAssertFalse(painted.isClean, "a corner painted over on a wide picture is tolerated")
+    }
+
+    /// **And the corner cap still fires**, which is the half of T-1955 that must survive T-1957
+    /// moving which side it is asked of. A region the square would be half of by area is refused
+    /// outright, whatever is drawn on it — there is nowhere else in such a picture for an overdraw
+    /// to be, so a verdict about it would carry no information.
+    ///
+    /// Two readings, because a cap that refuses *everything* is as useless as one that refuses
+    /// nothing: the picture below the cap is refused and the one above it is clean.
+    func testTheCornerCapStillRefusesAPictureTheAllowanceWouldBeMostOf() throws {
+        let below = try verdictForTheProductsBadge(on: CGRect(x: 130, y: 150, width: 96, height: 96))
+        XCTAssertTrue(
+            below.theAllowanceHasGrownTooLarge,
+            "the corner cap did not fire on a 96×96px picture the 52px square is most of — side share "
+            + "\(String(format: "%.3f", below.allowanceSideShareOfTheLongerSide))"
+        )
+        XCTAssertFalse(below.isClean, "a picture the allowance is most of is judged clean")
+
+        let above = try verdictForTheProductsBadge(on: CGRect(x: 130, y: 150, width: 120, height: 120))
+        XCTAssertFalse(
+            above.theAllowanceHasGrownTooLarge,
+            "the cap fires on a 120×120px picture too, so it is a blanket refusal and not a threshold"
+        )
+        XCTAssertTrue(above.isClean, "a 120×120px picture with only the product's badge on it is refused")
     }
 
     /// One picture, the product's badge in its corner, nothing else.

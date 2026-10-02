@@ -434,7 +434,7 @@ final class CadenceTodayCompositionUITests: XCTestCase {
             named: "[\(state)] picture \(describe(block.bounds)) \(block.colour.description); "
             + "badge allowance \(describe(verdict.allowance)) "
             + "(\(String(format: "%.1f%%", verdict.allowanceShareOfThePicture * 100)) of the picture by area, "
-            + "\(String(format: "%.2f", verdict.allowanceSideShareOfTheShorterSide)) of its shorter side) "
+            + "\(String(format: "%.2f", verdict.allowanceSideShareOfTheLongerSide)) of its longer side) "
             + "held \(verdict.insideAllowance) foreign px of \(verdict.maximumInsideTheAllowance) allowed; "
             + "outside it \(verdict.outsideAllowance)"
         ) { _ in }
@@ -456,7 +456,7 @@ final class CadenceTodayCompositionUITests: XCTestCase {
         XCTAssertFalse(
             verdict.theAllowanceHasGrownTooLarge,
             "[\(state)] the badge allowance's side has grown to "
-            + "\(String(format: "%.2f", verdict.allowanceSideShareOfTheShorterSide)) of the picture's shorter "
+            + "\(String(format: "%.2f", verdict.allowanceSideShareOfTheLongerSide)) of the picture's longer "
             + "side (\(String(format: "%.1f%%", verdict.allowanceShareOfThePicture * 100)) of it by area) — at "
             + "that size this assertion no longer refuses a real overdraw"
         )
