@@ -9,6 +9,7 @@
 #   ./scripts/xcb.sh check-suites-started <log> [args...]      # the per-suite guard, on its own
 #   ./scripts/xcb.sh check-warnings <log>                      # the diagnostic counters, on their own
 #   ./scripts/xcb.sh check-host-launch <log> [xcodebuild-exit] # the refused-relaunch report (T-1992)
+#   ./scripts/xcb.sh check-entitlements <log> [exit] [dd-path] # the poisoned-DerivedData report (T-2046)
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
 #   ./scripts/xcb.sh last-green                                # is HEAD still the last full green? (T-2042)
 #   ./scripts/xcb.sh release-dd <id|path>                      # delete a DerivedData no live build uses
@@ -1021,6 +1022,26 @@ host_launch_refusal_report() {  # $1 = log, $2 = xcodebuild's exit status ("" wh
   say "   Re-run before treating the run as red. Suspects, unproven: a locked screen (see any"
   say "   SCREEN-LOCKED-MID-RUN note below; its UI-test explanation does not apply here) or an open"
   say "   Xcode stopping a process with the same bundle id."
+  return 0
+}
+
+# --- a DerivedData poisoned by a touched entitlements file (T-2046) ----------
+# Measured 2026-10-03 (agent `rowcrush`): one metadata-only write to `Cadence/Cadence.entitlements`
+# -- content and mtime unchanged, ctime moved -- poisons a warm private DerivedData for good. Every
+# later build in it dies at `builtin-productPackagingUtility` with xcodebuild's `Entitlements file
+# "Cadence.entitlements" was modified during the build`, having compiled 0 Swift files, so all the
+# result block said was VACUOUS-COUNT and T-552's "executed 0 tests" -- which reads exactly like a
+# wrong suite name. Four runs went into that dead end. Deleting the generated `.xcent` did not
+# clear it; `release-dd` plus a fresh build did. The error text offers a build-setting override:
+# this report deliberately does not, because that ships a product whose signature may not match
+# its entitlements. Never gates -- the run's exit status is left exactly as it was.
+ENTITLEMENTS_MODIFIED_PATTERN='Entitlements file .* was modified during the build'
+entitlements_poisoned_dd_report() {  # $1 = log, $2 = xcodebuild's exit status ("" when unknown), $3 = the DerivedData path
+  local log=$1 xstatus=${2:-} dd=${3:-<derived-data-path>}
+  [[ "$xstatus" == "0" ]] && return 0   # a green run has no red to explain
+  grep -aqE -- "$ENTITLEMENTS_MODIFIED_PATTERN" "$log" 2>/dev/null || return 0
+  say ""
+  say "!! ENTITLEMENTS-POISONED-DD (T-2046): this private DerivedData is poisoned by a metadata-only touch of Cadence.entitlements (\"was modified during the build\"), not by your code or your suite name -- run \`./scripts/xcb.sh release-dd $dd\` then a fresh build."
   return 0
 }
 
@@ -2069,6 +2090,35 @@ selftest_only_testing() {
     $( (( hrc == 0 )) && [[ "$hout" != *HOST-LAUNCH-REFUSED* ]] && print 1 || print 0 ) "exit $hrc: $hout"
 
   say ""
+  say " 8c. a DerivedData poisoned by a touched entitlements file is named, not read as a bad suite (T-2046)"
+  # The shape `rowcrush` measured four times on 2026-10-03: packaging dies on the entitlements
+  # check, nothing compiles, nothing runs. The error carries xcodebuild's own override hint, so the
+  # report is also checked for NOT echoing it.
+  print -rl -- \
+    "ProcessProductPackaging /x/Cadence.entitlements /x/Cadence.app.xcent (in target 'Cadence' from project 'Cadence')" \
+    "    builtin-productPackagingUtility /x/Cadence.entitlements -entitlements -format xml -o /x/Cadence.app.xcent" \
+    "error: Entitlements file \"Cadence.entitlements\" was modified during the build, which is not supported. You can disable this error by setting 'CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION' to 'YES', however this may cause the built product's code signature or provisioning profile to contain incorrect entitlements. (in target 'Cadence' from project 'Cadence')" \
+    "** TEST FAILED **" > "$ws/ent-poisoned.log"
+  print -rl -- \
+    "error: Signing for \"Cadence\" requires a development team. (in target 'Cadence' from project 'Cadence')" \
+    "** BUILD FAILED **" > "$ws/ent-other-red.log"
+  local eout erc
+  run_ent() { eout=$(zsh "$here" check-entitlements "$@" 2>&1); erc=$?; }
+  run_ent "$ws/ent-poisoned.log" 65 "$ws/cadence-dd-entdiag"
+  check "a log with 'Entitlements file ... was modified during the build' says ENTITLEMENTS-POISONED-DD" \
+    $( [[ "$eout" == *"!! ENTITLEMENTS-POISONED-DD (T-2046): this private DerivedData is poisoned by a metadata-only touch of Cadence.entitlements"* ]] && print 1 || print 0 ) "exit $erc: $eout"
+  check "...naming release-dd on THIS DerivedData, then a fresh build" \
+    $( [[ "$eout" == *"./scripts/xcb.sh release-dd $ws/cadence-dd-entdiag\` then a fresh build"* ]] && print 1 || print 0 ) "$eout"
+  check "...never offering the override the error text does, and never gating (exit 0)" \
+    $( (( erc == 0 )) && [[ "$eout" != *ALLOW_ENTITLEMENTS_MODIFICATION* ]] && print 1 || print 0 ) "exit $erc: $eout"
+  run_ent "$ws/ent-other-red.log" 65 "$ws/cadence-dd-entdiag"
+  check "CONTROL: a red build WITHOUT the entitlements error is silent" \
+    $( (( erc == 0 )) && [[ -z "$eout" ]] && print 1 || print 0 ) "exit $erc: $eout"
+  run_ent "$ws/ent-poisoned.log" 0
+  check "CONTROL: the line under exit 0 (nothing red to explain) is silent" \
+    $( (( erc == 0 )) && [[ -z "$eout" ]] && print 1 || print 0 ) "exit $erc: $eout"
+
+  say ""
   say " 9. the per-requested-suite guard, and which of its two inputs it trusts (T-667 / T-1326)"
   # ONE LOG, TWO ARGUMENT SETS, TWO VERDICTS. That is the whole of T-1326: the log below holds the
   # literal string `-only-testing:CadenceTests/NotASuite` -- as a failing test's own prose, with the
@@ -2655,6 +2705,17 @@ if [[ "${1:-}" == "check-host-launch" ]]; then
   exit 0
 fi
 
+# The poisoned-DerivedData report on its own (T-2046): what `selftest` drives, and how anyone
+# holding a red log that compiled nothing asks whether it is this. Never gates; exits 0.
+if [[ "${1:-}" == "check-entitlements" ]]; then
+  CHECK_LOG="${2:-}"
+  if [[ ! -f "$CHECK_LOG" ]]; then
+    say "usage: ./scripts/xcb.sh check-entitlements <logfile> [xcodebuild-exit] [derived-data-path]"; exit 2
+  fi
+  entitlements_poisoned_dd_report "$CHECK_LOG" "${3:-}" "${4:-}"
+  exit 0
+fi
+
 # The resolver on its own, the way `check-test-log` exposes the zero-test guard: it is what
 # `selftest` drives, and what a caller can point at a filter it is unsure of without paying for a
 # build. Accepts the value with or without the `-only-testing:` prefix.
@@ -3084,6 +3145,9 @@ if (( IS_TEST_RUN )); then
   host_launch_refusal_report "$LOG" "$XCODEBUILD_STATUS"
   screen_lock_report "$RUN_START_EPOCH" "${run_args[@]}"
 fi
+# Outside the test-run branch: a `build` dies the same way (T-2046). Last of the primary-run
+# reports, so it sits below the VACUOUS-COUNT and 0-tests readings it explains.
+entitlements_poisoned_dd_report "$LOG" "$XCODEBUILD_STATUS" "$DD"
 # --- the iOS leg (T-1956) ----------------------------------------------------
 # After every primary-run report and before the leak check, so a shared entry the leg's own
 # `xcodebuild` created is reported too. The reasoning, and the four things it must get right, are

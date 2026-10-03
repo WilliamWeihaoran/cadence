@@ -53,6 +53,37 @@ struct CalendarBehaviorRegressionTests {
         #expect(CalendarEventItem(event: event).isRecurringSeriesMember)
     }
 
+    // MARK: - Event edit popover on an event with no calendar (T-2047)
+    //
+    // `EKEvent.calendar` is an implicitly-unwrapped `EKCalendar!`. `CalendarEventEditPopover.init`
+    // read it bare, so an unsaved event with no calendar trapped in `init` the moment its board
+    // card was clicked, while `CalendarEventItem` beside it already read `calendar?.`. A regression
+    // here is a crash of the test process, not a failed expectation.
+
+    @Test func eventEditPopoverOpensOnAnEventThatHasNoCalendar() throws {
+        let calendar = Calendar.current
+        let start = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9)))
+        let event = Self.scratchEvent(title: "Calendarless fixture", start: start)
+        #expect(event.calendar == nil)
+
+        let item = CalendarEventItem(event: event)
+        _ = CalendarEventEditPopover(
+            item: item,
+            onSave: { _, _, _, _, _ in },
+            onDelete: { _ in },
+            actionFailureNotice: .constant(nil)
+        )
+        #expect(CalendarEventEditPopover.calendarIdentifier(of: event).isEmpty)
+
+        // The fallback is only for the missing case: an event on a calendar still reports it.
+        let store = EKEventStore()
+        let owned = EKEvent(eventStore: store)
+        owned.calendar = EKCalendar(for: .event, eventStore: store)
+        let ownedID = try #require(owned.calendar?.calendarIdentifier)
+        #expect(!ownedID.isEmpty)
+        #expect(CalendarEventEditPopover.calendarIdentifier(of: owned) == ownedID)
+    }
+
     @Test func detachedOccurrenceIsASeriesMemberEvenWithoutRulesOfItsOwn() {
         // `isDetached` is read-only on EKEvent, so the flag combination is asserted directly.
         #expect(CadenceEventNoteSupport.isRecurringSeriesMember(hasRecurrenceRules: false, isDetached: true))

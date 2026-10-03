@@ -55,7 +55,18 @@ struct CalendarEventEditPopover: View {
         _endMin   = State(initialValue: e)
         _startText = State(initialValue: TimeFormatters.timeString(from: s))
         _endText   = State(initialValue: TimeFormatters.timeString(from: e))
-        _selectedCalendarID = State(initialValue: item.ekEvent.calendar.calendarIdentifier)
+        _selectedCalendarID = State(initialValue: Self.calendarIdentifier(of: item.ekEvent))
+    }
+
+    /// The event's calendar identifier, or `""` when it has none (T-2047).
+    ///
+    /// `EKEvent.calendar` is an implicitly-unwrapped `EKCalendar!`, and an unsaved event built
+    /// without one returns `nil`. Every other reader on this path (`CalendarEventItem`,
+    /// `CalendarBoardEventDisplayItem`) already goes through `?.`; reading it bare here trapped in
+    /// `init` the moment such an event's card was clicked. All three readers in this popover go
+    /// through this one function so none of them can drift back to the bare read.
+    static func calendarIdentifier(of event: EKEvent) -> String {
+        event.calendar?.calendarIdentifier ?? ""
     }
 
     private var durationMinutes: Int { max(0, endMin - startMin) }
@@ -68,7 +79,7 @@ struct CalendarEventEditPopover: View {
         return EventNoteSupport.note(
             for: item.id,
             eventTitle: item.title,
-            calendarID: item.ekEvent.calendar.calendarIdentifier,
+            calendarID: Self.calendarIdentifier(of: item.ekEvent),
             eventDateKey: metadata.dateKey,
             eventStartMin: metadata.startMin,
             eventEndMin: metadata.endMin,
@@ -382,7 +393,7 @@ struct CalendarEventEditPopover: View {
         guard let note = EventNoteSupport.noteForEditing(
             calendarEventID: item.id,
             eventTitle: item.title,
-            calendarID: item.ekEvent.calendar.calendarIdentifier,
+            calendarID: Self.calendarIdentifier(of: item.ekEvent),
             eventDateKey: metadata.dateKey,
             eventStartMin: metadata.startMin,
             eventEndMin: metadata.endMin,

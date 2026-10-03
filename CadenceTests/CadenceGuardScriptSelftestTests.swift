@@ -664,6 +664,10 @@ struct CadenceGuardScriptSelftestTests {
         "MACRO-EXPANSION-WARNING",
         "INTERACTIVE-SKIPPED",
         "SCREEN-LOCKED-MID-RUN",
+        // T-2046: a DerivedData poisoned by a metadata-only touch of the entitlements file reads
+        // as VACUOUS-COUNT plus "executed 0 tests" -- a wrong suite name -- unless this is named.
+        // Section 8c induces it and keeps a red-without-it and an exit-0 control silent.
+        "ENTITLEMENTS-POISONED-DD",
     ]
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody
