@@ -368,13 +368,13 @@ struct CadenceTypographyConversionSweepTests {
         let fieldRows = try read("Cadence/Shared/Components/CadenceFieldRows.swift")
         #expect(fieldRows.contains(".cadenceFont(.fieldLabel)"))
         #expect(fieldRows.contains("CadenceSettingsRowMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling)"))
-        // The eyebrow routes through `cadenceUppercaseLabel(size:kerning:)` rather than
+        // The eyebrow routes through `cadenceUppercaseLabel(reading:size:kerning:)` rather than
         // `cadenceFont`, because its tracking has to move with its size — see
         // `CadenceUppercaseLabelTrackingTests`, which is what holds the four draw sites together.
         // Both the call and the modifier, so a caller that kept the name over a body that stopped
         // consulting the environment is caught here rather than only there.
         let eyebrow = try read("Cadence/Shared/Components/SectionEyebrowLabel.swift")
-        #expect(eyebrow.contains(".cadenceUppercaseLabel(size: size.fontSize, kerning: size.kerning)"))
+        #expect(eyebrow.contains(".cadenceUppercaseLabel(reading: text, size: size.fontSize, kerning: size.kerning)"))
         #expect(eyebrow.contains("CadenceTypeScale.multiplier(.sectionLabel, at: dynamicTypeSize, scaling: scaling)"))
     }
 

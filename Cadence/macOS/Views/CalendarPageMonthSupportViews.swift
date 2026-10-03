@@ -407,6 +407,7 @@ struct CalDayHeaderView: View {
             VStack(spacing: CadenceCalendarWeekdayHeaderMetrics.labelSpacing) {
                 Text(DateFormatters.dayOfWeek.string(from: date).uppercased())
                     .cadenceUppercaseLabel(
+                        reading: DateFormatters.dayOfWeek.string(from: date),
                         size: CadenceCalendarWeekdayHeaderMetrics.labelSize,
                         kerning: CadenceCalendarWeekdayHeaderMetrics.labelKerning
                     )

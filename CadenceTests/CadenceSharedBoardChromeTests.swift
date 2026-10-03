@@ -1477,7 +1477,7 @@ struct CadenceUppercaseLabelTrackingTests {
     /// constants. Once the size can move with the reader's text setting the pair stops being two
     /// independent facts: tracking is optical, so an eyebrow drawn at 33pt with the 0.8pt of
     /// tracking chosen for 10pt is an eyebrow set solid, which is the condition this style exists
-    /// to prevent. `cadenceUppercaseLabel(size:kerning:)` applies both by one multiplier, so a site
+    /// to prevent. `cadenceUppercaseLabel(reading:size:kerning:)` applies both by one multiplier, so a site
     /// can no longer scale one without the other, and the weight is read from
     /// `CadenceTypographyRole.sectionLabel` instead of being typed at each site.
     ///
@@ -1499,7 +1499,7 @@ struct CadenceUppercaseLabelTrackingTests {
             (
                 "Cadence/Shared/Components/SectionEyebrowLabel.swift",
                 [
-                    "Text(text.uppercased()).cadenceUppercaseLabel(size:size.fontSize,kerning:size.kerning)",
+                    "Text(text.uppercased()).cadenceUppercaseLabel(reading:text,size:size.fontSize,kerning:size.kerning)",
                     // The fixed-size form, still read by the two macOS/settings call sites that
                     // T-1364 did not convert. It is what keeps the unconverted surfaces on this
                     // same size rather than on a literal of their own.
@@ -1509,19 +1509,19 @@ struct CadenceUppercaseLabelTrackingTests {
             (
                 "Cadence/Shared/Components/CadenceBoardColumnHeader.swift",
                 [
-                    "Text(title.uppercased()).cadenceUppercaseLabel(size:CadenceBoardColumnHeaderMetrics.labelSize,kerning:CadenceBoardColumnHeaderMetrics.labelKerning)"
+                    "Text(title.uppercased()).cadenceUppercaseLabel(reading:title,size:CadenceBoardColumnHeaderMetrics.labelSize,kerning:CadenceBoardColumnHeaderMetrics.labelKerning)"
                 ]
             ),
             (
                 "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
                 [
-                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).cadenceUppercaseLabel(size:CadenceCalendarWeekdayHeaderMetrics.labelSize,kerning:CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
+                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).cadenceUppercaseLabel(reading:DateFormatters.dayOfWeek.string(from:date),size:CadenceCalendarWeekdayHeaderMetrics.labelSize,kerning:CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
                 ]
             ),
             (
                 "Cadence/iOS/iOSCalendarTimelineViews.swift",
                 [
-                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).cadenceUppercaseLabel(size:iOSCalendarTimelineMetrics.weekdaySize,kerning:CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
+                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).cadenceUppercaseLabel(reading:DateFormatters.dayOfWeek.string(from:date),size:iOSCalendarTimelineMetrics.weekdaySize,kerning:CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
                 ]
             )
         ]
@@ -1620,7 +1620,7 @@ struct CadenceUppercaseLabelTrackingTests {
     /// **It is 5 of 6 since T-1364, and the missing edge that closed is the eyebrow's.** This test
     /// said in its own comment that adding either absent citation is an improvement and that the
     /// line asserting its absence should then be deleted and the change recorded in T-496 — which
-    /// is what happened: `cadenceUppercaseLabel(size:kerning:)` lives in `SectionEyebrowLabel.swift`
+    /// is what happened: `cadenceUppercaseLabel(reading:size:kerning:)` lives in `SectionEyebrowLabel.swift`
     /// and is drawn by all four sites, so its doc comment names
     /// `CadenceCalendarWeekdayHeaderMetrics` as one of the pairs it is handed. The board header's
     /// absent edge is untouched and is still asserted below.

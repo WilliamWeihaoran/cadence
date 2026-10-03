@@ -94,12 +94,13 @@ struct SectionEyebrowLabel: View {
     /// else it is the same 10 or 9 points it has always been, and there is still one of it.
     var body: some View {
         Text(text.uppercased())
-            .cadenceUppercaseLabel(size: size.fontSize, kerning: size.kerning)
+            .cadenceUppercaseLabel(reading: text, size: size.fontSize, kerning: size.kerning)
             .foregroundStyle(tint)
     }
 }
 
 private struct CadenceUppercaseLabelType: ViewModifier {
+    let reading: String
     let size: CGFloat
     let kerning: CGFloat
 
@@ -111,6 +112,7 @@ private struct CadenceUppercaseLabelType: ViewModifier {
         return content
             .font(.system(size: size * multiplier, weight: CadenceTypographyRole.sectionLabel.weight))
             .kerning(kerning * multiplier)
+            .accessibilityLabel(Text(verbatim: reading))
     }
 }
 
@@ -130,7 +132,18 @@ extension View {
     /// so this consolidates the *drawing* and changes nothing about where the numbers are decided.
     /// `CadenceUppercaseLabelTrackingTests` still reads those declarations and still requires each
     /// to name `SectionEyebrowLabel.kerningRatio`.
-    func cadenceUppercaseLabel(size: CGFloat, kerning: CGFloat) -> some View {
-        modifier(CadenceUppercaseLabelType(size: size, kerning: kerning))
+    ///
+    /// **`reading:` is the words, in natural case, and it is required (T-2022).** The glyphs are
+    /// uppercased for the eye; assistive tech gets `Edit Area`, not `EDIT AREA` — an all-caps run
+    /// is what a screen reader is likeliest to spell out letter by letter, and `MON` is not a word.
+    /// It is a required argument rather than a default so no fifth site can draw an uppercase
+    /// label and forget what it says. What T-2022 measured, so nobody re-files it: on macOS a
+    /// SwiftUI `Text` publishes its string as the static text's **AXValue**, with no label, kerned
+    /// or not — `Text("Plain Words")` and `SectionEyebrowLabel` read identically in
+    /// `CadenceEyebrowAccessibilityTests`. The ticket's "empty label" was XCUITest's `.label`
+    /// reading a field macOS static text never fills; `.kerning` dropped nothing. And on macOS an
+    /// `.accessibilityLabel` on a `Text` lands in that same AXValue, which is where this one goes.
+    func cadenceUppercaseLabel(reading: String, size: CGFloat, kerning: CGFloat) -> some View {
+        modifier(CadenceUppercaseLabelType(reading: reading, size: size, kerning: kerning))
     }
 }

@@ -247,6 +247,7 @@ struct CadenceBoardColumnTitleRow<Trailing: View>: View {
 
             Text(title.uppercased())
                 .cadenceUppercaseLabel(
+                    reading: title,
                     size: CadenceBoardColumnHeaderMetrics.labelSize,
                     kerning: CadenceBoardColumnHeaderMetrics.labelKerning
                 )

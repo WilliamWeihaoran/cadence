@@ -70,6 +70,10 @@ final class CadenceUITests: XCTestCase {
     /// case-insensitive predicate for it can ever have resolved. The uppercasing was not the
     /// problem and fixing the case did not help: measured, that spelling fails too.
     ///
+    /// **Correction (T-2022):** the label was the wrong field to read. macOS static text carries
+    /// its string as the accessibility *value*, and the eyebrow's value was `EDIT AREA` all along;
+    /// `testEditAreaSheetPublishesItsHeadingInWords` now asserts it, in natural case.
+    ///
     /// So this test now asserts what the panel actually is rather than what it is called: a sheet
     /// that was not there before the click, carrying the list editor's identity header. The
     /// before-reading is half the evidence — a sheet counted only afterwards could have been on
@@ -114,6 +118,57 @@ final class CadenceUITests: XCTestCase {
             "the list editor sheet publishes no text field, so its name row is not there."
             + "\n  AFTER: \(transientReport())"
         )
+    }
+
+    /// **The Edit Area sheet names itself, in words** (T-2022).
+    ///
+    /// `ListEditorSheetShell` draws its title through `SectionEyebrowLabel`, and the sheet's one
+    /// static text read as an empty `label`. That was the wrong field, not a missing heading: a
+    /// macOS SwiftUI `Text` publishes its string as the static text's **value** and never fills the
+    /// label, kerned or not — measured on the accessibility tree by
+    /// `CadenceEyebrowAccessibilityTests`. What the eyebrow did publish was its glyphs,
+    /// `EDIT AREA`. This asserts the sheet exposes its heading once, as the words `Edit Area`.
+    func testEditAreaSheetPublishesItsHeadingInWords() throws {
+        try CadenceUITestEnvironment.requireInteractiveUITests()
+        launchApp(resetStore: true, resetDefaults: true)
+
+        let alphaArea = app.buttons["sidebar.list.area.alpha-area"]
+        XCTAssertTrue(
+            alphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "there is no sidebar row to right-click. \(surfaceReport())"
+        )
+        alphaArea.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).rightClick()
+
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(
+            sheet.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "the right-click opened no sheet. \(transientReport())"
+        )
+        XCTAssertTrue(
+            sheet.buttons["Selected colour"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "the sheet is not the list editor. \(transientReport())"
+        )
+
+        let heading = sheet.staticTexts.matching(NSPredicate(format: "value == %@", "Edit Area"))
+        XCTAssertTrue(
+            heading.firstMatch.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "the Edit Area sheet publishes no static text reading 'Edit Area'. Its static texts: "
+            + staticTextReport(in: sheet)
+        )
+        XCTAssertEqual(
+            heading.count, 1,
+            "the sheet's heading should be published once. Its static texts: \(staticTextReport(in: sheet))"
+        )
+    }
+
+    /// Every static text under `element`, with all three strings XCUITest can read off it. A label
+    /// alone cannot tell *the text is gone* from *the text is in the value*, and on macOS a SwiftUI
+    /// `Text` publishes its string as the accessibility value.
+    private func staticTextReport(in element: XCUIElement) -> String {
+        let texts = element.staticTexts.allElementsBoundByIndex.map { text in
+            "[label:'\(text.label)' value:'\(String(describing: text.value ?? ""))' title:'\(text.title)']"
+        }
+        return texts.isEmpty ? "none" : texts.joined(separator: " ")
     }
 
     /// **XCUITest cannot perform this drag, and that is a measurement rather than a guess**
