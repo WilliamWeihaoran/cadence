@@ -3,6 +3,8 @@
 #
 #   ./scripts/ci-run-coverage.sh report [<limit>]   # ask GitHub and git, classify every sha from
 #                                                   #   the last COMPLETED CI run to HEAD
+#                                                   #   (CADENCE_CI_RUNS_FILE=<tsv> reads runs
+#                                                   #   from a file, not GitHub; T-2044)
 #   ./scripts/ci-run-coverage.sh classify <pushed|unpushed> <paths-file> <runs-file>
 #   ./scripts/ci-run-coverage.sh attribution <manifest>
 #                                                   # T-1950: does every code-bearing commit in a
@@ -263,14 +265,26 @@ say_attribution() {
 # --- report --------------------------------------------------------------------
 cmd_report() {
     local limit="${1:-40}"
-    command -v gh >/dev/null 2>&1 || { say "ci-run-coverage: gh is not installed; nothing to ask."; return 2 }
-    local slug; slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
-    [[ -n "$slug" ]] || { say "ci-run-coverage: could not resolve the repository from gh."; return 2 }
+    # T-2044's seam: CADENCE_CI_RUNS_FILE names a runs list already in the `gh api` TSV shape
+    # (head_sha, name, status, conclusion; newest first), and then nothing asks GitHub anything --
+    # the same move `attribution` makes with its manifest, so the selftest can reach this offline.
+    local runs_override="${CADENCE_CI_RUNS_FILE:-}"
+    local slug ws
+    if [[ -n "$runs_override" ]]; then
+        [[ -r "$runs_override" ]] || { say "ci-run-coverage: runs file '$runs_override' is not readable; nothing was read."; return 2 }
+        slug="<runs file $runs_override>"
+        ws=$(mktemp -d "${TMPDIR:-/tmp}/cadence-ci-coverage.XXXXXX") || return 2
+        cat -- "$runs_override" > "$ws/runs.tsv" || { rm -rf "$ws"; return 2 }
+    else
+        command -v gh >/dev/null 2>&1 || { say "ci-run-coverage: gh is not installed; nothing to ask."; return 2 }
+        slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
+        [[ -n "$slug" ]] || { say "ci-run-coverage: could not resolve the repository from gh."; return 2 }
 
-    local ws; ws=$(mktemp -d "${TMPDIR:-/tmp}/cadence-ci-coverage.XXXXXX") || return 2
-    gh api "repos/$slug/actions/runs?per_page=100" \
-        --jq '.workflow_runs[] | [.head_sha, .name, .status, (.conclusion // "")] | @tsv' \
-        > "$ws/runs.tsv" 2>/dev/null || { say "ci-run-coverage: the runs query failed."; rm -rf "$ws"; return 2 }
+        ws=$(mktemp -d "${TMPDIR:-/tmp}/cadence-ci-coverage.XXXXXX") || return 2
+        gh api "repos/$slug/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | [.head_sha, .name, .status, (.conclusion // "")] | @tsv' \
+            > "$ws/runs.tsv" 2>/dev/null || { say "ci-run-coverage: the runs query failed."; rm -rf "$ws"; return 2 }
+    fi
 
     # The floor: the newest sha this workflow has a COMPLETED, non-cancelled run for. Everything
     # after it on `main` is what nothing has reported on yet.
@@ -282,11 +296,13 @@ cmd_report() {
         if git -C "$REPO_ROOT" cat-file -e "${sha}^{commit}" 2>/dev/null; then floor="$sha"; break; fi
     done < "$ws/runs.tsv"
 
+    # Unquoted `${(f)"…"}`, not `("${(@f)…}")`: the quoted form splits an EMPTY rev-list into ONE
+    # empty element, so a floor that IS HEAD read "1 commit(s) after it" (T-2044).
     local -a shas
     if [[ -n "$floor" ]]; then
-        shas=("${(@f)$(git -C "$REPO_ROOT" rev-list --reverse "$floor..HEAD" 2>/dev/null)}")
+        shas=(${(f)"$(git -C "$REPO_ROOT" rev-list --reverse "$floor..HEAD" 2>/dev/null)"})
     else
-        shas=("${(@f)$(git -C "$REPO_ROOT" rev-list --reverse -n "$limit" HEAD 2>/dev/null)}")
+        shas=(${(f)"$(git -C "$REPO_ROOT" rev-list --reverse -n "$limit" HEAD 2>/dev/null)"})
     fi
 
     say "ci-run-coverage: repository $slug, workflow '$CI_WORKFLOW_NAME'"
@@ -543,6 +559,36 @@ cmd_selftest() {
     check "a-code-commit-riding-behind-a-push-is-unattributed: an empty manifest is not an all-clear" \
         $( [[ "$got" != *"ATTRIBUTED --"* && $empty_rc -eq 2 ]] && print 1 || print 0 ) \
         "an empty manifest read rc=$empty_rc: ${got//$'\n'/ | }"
+
+    say ""
+    say " 8. report-counts-the-commits-after-the-floor -- T-2044"
+    # `report` over a throwaway three-commit repository and a runs FILE (CADENCE_CI_RUNS_FILE), so
+    # nothing here asks GitHub anything. A floor that IS HEAD has zero commits after it; the quoted
+    # `(@f)` split read that as one. The second reading is the non-vacuity: a report that printed a
+    # constant 0 would pass the first.
+    local repo="$ws/report-repo" c1 c3
+    (
+        mkdir -p "$repo" && cd "$repo" || exit 1
+        git init -q .
+        git config user.email selftest@example.com
+        git config user.name Selftest
+        git config commit.gpgsign false
+        print -r -- one > code.swift; git add . >/dev/null && git commit -qm c1 || exit 1
+        print -r -- two > code.swift; git commit -qam c2 || exit 1
+        print -r -- three > code.swift; git commit -qam c3 || exit 1
+    ) > "$ws/report-repo.log" 2>&1
+    c1=$(git -C "$repo" rev-parse HEAD~2 2>/dev/null); c3=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
+    print -r -- "$c3"$'\t'"$CI_WORKFLOW_NAME"$'\tcompleted\tsuccess' > "$ws/runs-at-head"
+    print -r -- "$c1"$'\t'"$CI_WORKFLOW_NAME"$'\tcompleted\tsuccess' > "$ws/runs-two-behind"
+    local at_head two_behind
+    at_head=$(REPO_ROOT="$repo"; CADENCE_CI_RUNS_FILE="$ws/runs-at-head"; cmd_report 2>&1)
+    two_behind=$(REPO_ROOT="$repo"; CADENCE_CI_RUNS_FILE="$ws/runs-two-behind"; cmd_report 2>&1)
+    check "report-counts-the-commits-after-the-floor: a floor at HEAD reads 0 commit(s)" \
+        $( [[ -n "$c3" && "$at_head" == *"last COMPLETED run: ${c3[1,8]}  -- 0 commit(s) after it"* ]] && print 1 || print 0 ) \
+        "floor=HEAD read: ${at_head//$'\n'/ | }$( [[ -n "$c3" ]] || print -n " [fixture repo failed: $(<"$ws/report-repo.log")]")"
+    check "report-counts-the-commits-after-the-floor: a floor two behind reads 2 commit(s)" \
+        $( [[ -n "$c1" && "$two_behind" == *"last COMPLETED run: ${c1[1,8]}  -- 2 commit(s) after it"* ]] && print 1 || print 0 ) \
+        "floor=HEAD~2 read: ${two_behind//$'\n'/ | }"
 
     rm -rf "$ws"
     say ""
