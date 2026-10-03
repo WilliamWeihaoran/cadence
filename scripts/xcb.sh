@@ -8,6 +8,7 @@
 #   ./scripts/xcb.sh check-test-log <log> [xcodebuild-exit]    # the zero-test guard, on its own
 #   ./scripts/xcb.sh check-suites-started <log> [args...]      # the per-suite guard, on its own
 #   ./scripts/xcb.sh check-warnings <log>                      # the diagnostic counters, on their own
+#   ./scripts/xcb.sh check-host-launch <log> [xcodebuild-exit] # the refused-relaunch report (T-1992)
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
 #   ./scripts/xcb.sh check-destination <-destination value>   # resolve a simulator, no build
 #   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
@@ -940,6 +941,51 @@ screen_lock_report() {
   return 0
 }
 
+# --- the test host macOS refused to (re)launch (T-1992) ----------------------
+# A full CadenceTests run can lose its host mid-suite and then be refused the relaunch:
+# measured 2026-10-02 (heartbeat, `a037faa3`), 2,197 tests passed, the host vanished inside one
+# test with no DiagnosticReports entry, and xcodebuild's relaunch came back `Could not launch
+# "CadenceTests"` -- LaunchServices -10699, RunningBoard's `Launch prevented due to "prevent
+# launch" assertion`. xcodebuild exited 65 with the test that happened to be running as the only
+# "failure". That suite then passed alone and a full rerun on the same HEAD passed, so the red was
+# not about the code -- but the only note the result block printed was SCREEN-LOCKED-MID-RUN,
+# whose explanation (an empty accessibility tree) is about UI tests and does not describe this.
+#
+# The phrases are xcodebuild's own, matched exactly, so a test's prose is unlikely to write them.
+# Cause unproven (a locked screen, or the owner's Xcode stopping a same-bundle-id process), so
+# the report names the evidence and asks for a re-run; it does NOT mark the named test flaky, and
+# like every report here it never gates -- the run's exit status is left exactly as it was.
+HOST_LAUNCH_REFUSAL_PATTERN='LaunchServices has returned error -10699|OSStatus error -10699|Launch prevented due to "prevent launch" assertion'
+# A test's START line: swift-testing's `◇ Test x() started.` (not `◇ Test run started.`) or
+# XCTest's `Test Case '-[S t]' started.`
+TEST_START_PATTERN='◇ Test .+ started\.|Test Case .+ started\.'
+
+host_launch_refusal_report() {  # $1 = log, $2 = xcodebuild's exit status ("" when unknown)
+  local log=$1 xstatus=${2:-}
+  [[ "$xstatus" == "0" ]] && return 0   # a green run has no red to explain
+  local first; first=$(grep -anE -m1 -- "$HOST_LAUNCH_REFUSAL_PATTERN" "$log" 2>/dev/null | cut -d: -f1)
+  [[ -n "$first" ]] || return 0
+  local last_test
+  last_test=$(head -n $(( first - 1 )) "$log" | grep -aE -- "$TEST_START_PATTERN" \
+    | grep -avF '◇ Test run started' | tail -1 \
+    | sed -E 's/^.*◇ Test (.+) started\..*$/\1/; s/^.*Test Case (.+) started\..*$/\1/')
+  say ""
+  say "!! HOST-LAUNCH-REFUSED (T-1992): macOS refused to (re)launch the test host part-way through."
+  say "   The log carries xcodebuild's own launch failure (LaunchServices -10699 / RunningBoard"
+  say "   \"prevent launch\" assertion) at line $first. The host vanished and its relaunch was refused,"
+  say "   so the run stopped there -- what reads as a failure is wherever it happened to be standing."
+  if [[ -n "$last_test" ]]; then
+    say "   last test started before the refusal: $last_test"
+  else
+    say "   last test started before the refusal: none found in the log"
+  fi
+  say "   THIS RED IS NOT EVIDENCE ABOUT THE CODE, and NOT about that test -- do not mark it flaky."
+  say "   Re-run before treating the run as red. Suspects, unproven: a locked screen (see any"
+  say "   SCREEN-LOCKED-MID-RUN note below; its UI-test explanation does not apply here) or an open"
+  say "   Xcode stopping a process with the same bundle id."
+  return 0
+}
+
 
 # --- the iOS Simulator destination guard (T-1282) ----------------------------
 # The zero-test guard above refuses a run that executed nothing. This refuses a run that COMPILED
@@ -1767,6 +1813,50 @@ selftest_only_testing() {
     $( (( lrc == 0 )) && print 1 || print 0 ) "exit $lrc"
 
   say ""
+  say " 8b. a test host macOS refused to relaunch is named, not filed under the lock note (T-1992)"
+  # The refusal lines are verbatim from the 2026-10-02 heartbeat log (`a037faa3`); the test that
+  # passed BEFORE the last start is there so the report must pick the LAST start, not the first.
+  print -rl -- \
+    "◇ Test run started." \
+    "◇ Test halfTwoReadsAWriteThroughAScalarBindingAsAReport() started." \
+    "✔ Test halfTwoReadsAWriteThroughAScalarBindingAsAReport() passed after 0.001 seconds." \
+    "◇ Test everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule() started." \
+    "2026-10-02 14:05:29.634 xcodebuild[80835:49836493]  IDELaunchReport: x:y:Launching CadenceTests Finished with error: Could not launch “CadenceTests”" \
+    "Recovery Suggestion: LaunchServices has returned error -10699. Please check the system logs for the underlying cause of the error." \
+    "Failure Reason: Launch prevented due to \"prevent launch\" assertion" \
+    "◇ Test aTestNamedOnlyByTheRelaunchNoise() started." \
+    "** TEST FAILED **" > "$ws/host-refused.log"
+  print -rl -- \
+    "Test Case '-[CadenceTests.SomeXCTests testSomething]' started." \
+    "Failure Reason: Launch prevented due to \"prevent launch\" assertion" > "$ws/host-refused-xctest.log"
+  print -rl -- \
+    "◇ Test run started." \
+    "◇ Test everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule() started." \
+    "✘ Test everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule() recorded an issue" \
+    "** TEST FAILED **" > "$ws/host-ordinary-red.log"
+  local hout hrc
+  run_host() { hout=$(zsh "$here" check-host-launch "$@" 2>&1); hrc=$?; }
+  run_host "$ws/host-refused.log" 65
+  check "a log with the -10699 relaunch refusal says HOST-LAUNCH-REFUSED" \
+    $( [[ "$hout" == *HOST-LAUNCH-REFUSED* ]] && print 1 || print 0 ) "exit $hrc: $hout"
+  check "...naming the LAST test started before the refusal, not an earlier or later one" \
+    $( [[ "$hout" == *"before the refusal: everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule()"* \
+          && "$hout" != *halfTwoReads* && "$hout" != *aTestNamedOnlyByTheRelaunchNoise* ]] && print 1 || print 0 ) "$hout"
+  check "...and says to re-run, and not to mark the test flaky" \
+    $( [[ "$hout" == *"Re-run before treating the run as red"* && "$hout" == *"do not mark it flaky"* ]] && print 1 || print 0 ) "$hout"
+  check "...and the report never gates: it exits 0" \
+    $( (( hrc == 0 )) && print 1 || print 0 ) "exit $hrc"
+  run_host "$ws/host-refused-xctest.log"
+  check "an XCTest start line is named too, and a log handed over alone (exit unknown) is read" \
+    $( [[ "$hout" == *HOST-LAUNCH-REFUSED* && "$hout" == *"'-[CadenceTests.SomeXCTests testSomething]'"* ]] && print 1 || print 0 ) "$hout"
+  run_host "$ws/host-ordinary-red.log" 65
+  check "CONTROL: an ordinary red WITHOUT the refusal is silent" \
+    $( (( hrc == 0 )) && [[ "$hout" != *HOST-LAUNCH-REFUSED* ]] && print 1 || print 0 ) "exit $hrc: $hout"
+  run_host "$ws/host-refused.log" 0
+  check "CONTROL: the refusal under exit 0 (nothing red to explain) is silent" \
+    $( (( hrc == 0 )) && [[ "$hout" != *HOST-LAUNCH-REFUSED* ]] && print 1 || print 0 ) "exit $hrc: $hout"
+
+  say ""
   say " 9. the per-requested-suite guard, and which of its two inputs it trusts (T-667 / T-1326)"
   # ONE LOG, TWO ARGUMENT SETS, TWO VERDICTS. That is the whole of T-1326: the log below holds the
   # literal string `-only-testing:CadenceTests/NotASuite` -- as a failing test's own prose, with the
@@ -2202,6 +2292,17 @@ if [[ "${1:-}" == "check-screen-lock-window" ]]; then
   exit 0
 fi
 
+# The refused-host-relaunch report on its own (T-1992): what `selftest` drives, and how anyone
+# holding a red run's log asks whether its host was refused a relaunch. Never gates; exits 0.
+if [[ "${1:-}" == "check-host-launch" ]]; then
+  CHECK_LOG="${2:-}"
+  if [[ ! -f "$CHECK_LOG" ]]; then
+    say "usage: ./scripts/xcb.sh check-host-launch <logfile> [xcodebuild-exit]"; exit 2
+  fi
+  host_launch_refusal_report "$CHECK_LOG" "${3:-}"
+  exit 0
+fi
+
 # The resolver on its own, the way `check-test-log` exposes the zero-test guard: it is what
 # `selftest` drives, and what a caller can point at a filter it is unsure of without paying for a
 # build. Accepts the value with or without the `-only-testing:` prefix.
@@ -2576,6 +2677,9 @@ if (( IS_TEST_RUN )); then
   # Last of the test-run reports, and outside the RAN branch for the same reason: a mid-run lock
   # produces BOTH shapes -- an empty-tree run full of reds (RAN > 0) and a skipped-out one
   # (RAN == 0) -- depending only on whether the lock beat `setUpWithError` to it (T-1890).
+  # The refused host relaunch first, so its note sits above the lock note that would otherwise
+  # be the only explanation offered for it (T-1992).
+  host_launch_refusal_report "$LOG" "$XCODEBUILD_STATUS"
   screen_lock_report "$RUN_START_EPOCH"
 fi
 # --- the iOS leg (T-1956) ----------------------------------------------------
