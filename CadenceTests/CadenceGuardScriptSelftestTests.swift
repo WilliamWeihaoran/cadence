@@ -1012,6 +1012,9 @@ struct CadenceGuardScriptSelftestTests {
         // its own run" passes vacuously on a history where every push is single-commit, so the
         // mode pins a grouped push AND a single-commit push and asserts the two readings DIFFER.
         "a-code-commit-riding-behind-a-push-is-unattributed",
+        // T-2044. An empty rev-list split into one empty element read "1 commit(s)" for a floor at
+        // HEAD; the mode builds a fixture repository, so it also proves git spawns in here (T-2045).
+        "report-counts-the-commits-after-the-floor",
     ]
 
     /// T-749. Runs against a throwaway claims root and a fake `simctl` (`CADENCE_SIM_CLAIMS_DIR` /

@@ -80,6 +80,18 @@ REPO_ROOT="${SCRIPT_PATH:h:h}"
 WORKFLOW="${CADENCE_CI_WORKFLOW:-$REPO_ROOT/.github/workflows/ci.yml}"
 CI_WORKFLOW_NAME="${CADENCE_CI_WORKFLOW_NAME:-CI}"
 
+# `/usr/bin/git` is an xcrun shim and xcrun refuses to run inside an App Sandbox, so every git call
+# fails there. Same probe worktree-drift.sh and agent-commit.sh use, and for the same reason:
+# `CadenceGuardScriptSelftestTests` runs this selftest from the sandboxed test host, and mode 8
+# (T-2044) builds a fixture repository with git (T-2045).
+if ! git --version >/dev/null 2>&1; then
+    for _candidate in /Applications/Xcode.app/Contents/Developer/usr/bin /opt/homebrew/bin /usr/local/bin; do
+        [[ -x "$_candidate/git" ]] || continue
+        "$_candidate/git" --version >/dev/null 2>&1 || continue
+        PATH="$_candidate:$PATH"; break
+    done
+fi
+
 say() { print -r -- "$@" }
 
 usage() {
