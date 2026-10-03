@@ -5,7 +5,7 @@
 #   ./scripts/xcb.sh <id> test  [extra xcodebuild args...]     # takes the test-host lock
 #   ./scripts/xcb.sh <id> raw   <every arg, including the action>
 #   ./scripts/xcb.sh audit                                     # report shared-DerivedData leaks
-#   ./scripts/xcb.sh check-test-log <log>                      # the zero-test guard, on its own
+#   ./scripts/xcb.sh check-test-log <log> [xcodebuild-exit]    # the zero-test guard, on its own
 #   ./scripts/xcb.sh check-suites-started <log> [args...]      # the per-suite guard, on its own
 #   ./scripts/xcb.sh check-warnings <log>                      # the diagnostic counters, on their own
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
@@ -174,9 +174,40 @@ requested_suite_names() {  # $@ = the run's own arguments; one suite name per li
   return 0
 }
 
+# --- the runner that never started (T-2021) ----------------------------------
+# A UI run can die before ANY test body executes: the UI-test runner times out asking macOS for
+# automation mode, xcodebuild exits 65, and the log holds zero test result lines -- which the T-552
+# advice below used to answer with "check your -only-testing: suite name". In every measured
+# instance the filter was correct (T-1953, T-1957); the cause was this Mac, and the check that
+# found it -- `DevToolsSecurity -status` -- took a full day to reach. So a run that exited non-zero
+# (or whose exit is unknown, as for `check-test-log` handed a log alone) AND ran nothing AND
+# carries xcodebuild's own sentence is an environmental refusal, and is reported as one.
+# The sentence is matched exactly; it is xcodebuild's text, not ours, so nothing else writes it.
+AUTOMATION_MODE_TIMEOUT='Timed out while enabling automation mode'
+
+runner_never_started() {  # $1 = log, $2 = xcodebuild's exit status ("" when unknown)
+  [[ "${2:-}" != "0" ]] && grep -qF -- "$AUTOMATION_MODE_TIMEOUT" "$1" 2>/dev/null
+}
+
+automation_mode_refusal() {
+  say ""
+  say "!! REFUSING: this test run executed 0 tests because the UI-test RUNNER never initialized."
+  say "   This is an ENVIRONMENTAL refusal -- not evidence about the code, and not about the"
+  say "   -only-testing: filter (T-2021). The log says: \"$AUTOMATION_MODE_TIMEOUT.\""
+  say "   That is the ~70s timeout macOS returns when enabling automation turns into an"
+  say "   authentication request, which a DISABLED developer mode does (T-1953, T-1957)."
+  say "   Check:  DevToolsSecurity -status    -- it must say developer mode is currently enabled."
+  say "   Enabling it is an admin change to this Mac and the owner's call; re-run once it reads enabled."
+}
+
 # Everything the caller needs to fix an empty run, printed where the empty run happened.
+# EMPTY_RUN_EXIT is xcodebuild's own exit status when the caller has it; unset means unknown.
 empty_run_diagnostic() {
   local log="$1"; shift
+  if runner_never_started "$log" "${EMPTY_RUN_EXIT:-}"; then
+    automation_mode_refusal
+    return 0
+  fi
   say ""
   say "!! REFUSING: this test run executed 0 tests, and xcodebuild called that a success."
   say "   ** TEST SUCCEEDED ** over an empty filter is indistinguishable from a passing suite,"
@@ -1697,6 +1728,37 @@ selftest_only_testing() {
     $( print -r -- "$pout" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$pout"
 
   say ""
+  say " 9d. a runner that never started is named, not blamed on the filter (T-2021)"
+  # The failure line is verbatim from the 2026-10-01 xcresult T-1953 quotes. The CONTROLS carry the
+  # weight: a log WITHOUT the sentence must still get the T-552 suite-name advice, and so must a log
+  # that has it under an exit of 0 -- the ticket's rule is all three halves, not the string alone.
+  print -rl -- \
+    "Command line invocation:" \
+    "    xcodebuild test -scheme Cadence -destination platform=macOS -only-testing:CadenceUITests" \
+    "CadenceUITests-Runner (45302) encountered an error (The test runner failed to initialize for UI testing. (Underlying Error: Timed out while enabling automation mode.))" \
+    "** TEST FAILED **" > "$ws/automation.log"
+  print -rl -- \
+    "Command line invocation:" \
+    "    xcodebuild test -scheme Cadence -destination platform=macOS -only-testing:CadenceTests/NoSuchSuite" \
+    "** TEST FAILED **" > "$ws/no-automation.log"
+  local aout arc
+  run_tlog() { aout=$(zsh "$here" check-test-log "$@" 2>&1); arc=$?; }
+  run_tlog "$ws/automation.log" 65
+  check "exit 65, 0 result lines and the automation-mode timeout: an ENVIRONMENTAL refusal" \
+    $( (( arc == 4 )) && [[ "$aout" == *ENVIRONMENTAL* && "$aout" == *"DevToolsSecurity -status"* ]] && print 1 || print 0 ) "exit $arc: $aout"
+  check "...and it does NOT hand out the T-552 suite-name advice" \
+    $( [[ "$aout" != *"takes a SUITE name"* && "$aout" != *"called that a success"* ]] && print 1 || print 0 ) "$aout"
+  run_tlog "$ws/automation.log"
+  check "a log handed over alone (exit unknown) is read the same way" \
+    $( (( arc == 4 )) && [[ "$aout" == *"DevToolsSecurity -status"* ]] && print 1 || print 0 ) "exit $arc: $aout"
+  run_tlog "$ws/no-automation.log" 65
+  check "CONTROL: an empty run WITHOUT the sentence still gets the T-552 advice" \
+    $( (( arc == 4 )) && [[ "$aout" == *"takes a SUITE name"* && "$aout" != *DevToolsSecurity* ]] && print 1 || print 0 ) "exit $arc: $aout"
+  run_tlog "$ws/automation.log" 0
+  check "CONTROL: the sentence under exit 0 is not the environmental refusal" \
+    $( (( arc == 4 )) && [[ "$aout" == *"takes a SUITE name"* && "$aout" != *DevToolsSecurity* ]] && print 1 || print 0 ) "exit $arc: $aout"
+
+  say ""
   say " 9c. the counters read the BUILD, not the test output (T-1971)"
   # EVERY LINE OF THESE FIXTURES IS VERBATIM from the log that produced the defect
   # (`cadence-xcb-landgate-unit` 20261001-192525), with the absolute path shortened. That matters
@@ -1852,11 +1914,11 @@ selftest_only_testing() {
 if [[ "${1:-}" == "check-test-log" ]]; then
   CHECK_LOG="${2:-}"
   if [[ ! -f "$CHECK_LOG" ]]; then
-    say "usage: ./scripts/xcb.sh check-test-log <logfile>"; exit 2
+    say "usage: ./scripts/xcb.sh check-test-log <logfile> [xcodebuild-exit]"; exit 2
   fi
   CHECK_RAN=$(tests_seen "$CHECK_LOG")
   if (( CHECK_RAN == 0 )); then
-    empty_run_diagnostic "$CHECK_LOG"
+    EMPTY_RUN_EXIT="${3:-}" empty_run_diagnostic "$CHECK_LOG"
     exit 4
   fi
   say "$CHECK_RAN test result(s) in $CHECK_LOG"
@@ -2268,6 +2330,7 @@ kill "$WATCHDOG_PID" 2>/dev/null
 say ""
 say "== xcb result ($ID) =="
 say "  XCODEBUILD_EXIT=$STATUS"
+XCODEBUILD_STATUS=$STATUS   # before any gate below can overwrite STATUS (T-2021 reads the raw one)
 # Both counts spelled the way AGENTS.md requires, and the denominator with them (T-1147): a loose
 # `grep -c 'error:'` counts a test failure whose message contains the word and reads a real kill as
 # a build break, and the loose warning reading it sat beside reported the AppIntents tool notice as
@@ -2280,7 +2343,7 @@ if (( IS_TEST_RUN )); then
   # one failure, 4 with two. Right for the zero-test guard below; wrong to quote as "N tests ran".
   say "  test result lines: $RAN"
   if (( RAN == 0 )); then
-    empty_run_diagnostic "$LOG" "${run_args[@]}"
+    EMPTY_RUN_EXIT=$XCODEBUILD_STATUS empty_run_diagnostic "$LOG" "${run_args[@]}"
     (( STATUS == 0 )) && STATUS=4
   else
     # The T-667 per-suite diff, whose inputs are the run's own ARGUMENTS and this run's log --
