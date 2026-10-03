@@ -72,7 +72,9 @@ final class CadenceUITests: XCTestCase {
     ///
     /// **Correction (T-2022):** the label was the wrong field to read. macOS static text carries
     /// its string as the accessibility *value*, and the eyebrow's value was `EDIT AREA` all along;
-    /// `testEditAreaSheetPublishesItsHeadingInWords` now asserts it, in natural case.
+    /// `testEditAreaSheetPublishesItsHeadingInWords` now asserts it, in natural case. Since T-2035
+    /// the eyebrow is an `AXHeading`, not a static text, and a macOS heading carries its words in
+    /// the *label*; that test reads the label, type-agnostically.
     ///
     /// So this test now asserts what the panel actually is rather than what it is called: a sheet
     /// that was not there before the click, carrying the list editor's identity header. The
@@ -128,6 +130,11 @@ final class CadenceUITests: XCTestCase {
     /// label, kerned or not — measured on the accessibility tree by
     /// `CadenceEyebrowAccessibilityTests`. What the eyebrow did publish was its glyphs,
     /// `EDIT AREA`. This asserts the sheet exposes its heading once, as the words `Edit Area`.
+    ///
+    /// **Read by label, from any element type (T-2035).** The eyebrow now carries `.isHeader`, which
+    /// SwiftUI on macOS publishes as an `AXHeading` whose string is in the label, not as a static
+    /// text with a value — measured in `CadenceEyebrowAccessibilityTests`. A `staticTexts` query
+    /// for `value == "Edit Area"` would now match nothing by construction.
     func testEditAreaSheetPublishesItsHeadingInWords() throws {
         try CadenceUITestEnvironment.requireInteractiveUITests()
         launchApp(resetStore: true, resetDefaults: true)
@@ -149,10 +156,10 @@ final class CadenceUITests: XCTestCase {
             "the sheet is not the list editor. \(transientReport())"
         )
 
-        let heading = sheet.staticTexts.matching(NSPredicate(format: "value == %@", "Edit Area"))
+        let heading = sheet.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Edit Area"))
         XCTAssertTrue(
             heading.firstMatch.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
-            "the Edit Area sheet publishes no static text reading 'Edit Area'. Its static texts: "
+            "the Edit Area sheet publishes no heading labelled 'Edit Area'. Its static texts: "
             + staticTextReport(in: sheet)
         )
         XCTAssertEqual(

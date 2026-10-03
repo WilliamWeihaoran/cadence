@@ -92,10 +92,18 @@ struct SectionEyebrowLabel: View {
     /// the exact defect T-284 spent this file's doc comment removing. `cadenceUppercaseLabel`
     /// reads `\.cadenceTypographyScaling` instead: inside a converted workflow it grows, everywhere
     /// else it is the same 10 or 9 points it has always been, and there is still one of it.
+    ///
+    /// **The heading trait is the eyebrow's, not the shared modifier's (T-2035).** Every eyebrow
+    /// names the section, group or well beneath it, so VoiceOver's heading navigation should stop
+    /// on it. `cadenceUppercaseLabel` also draws the two calendar weekday rails — `Mon` labels a
+    /// day column, it is not a heading — and the board column header, whose title is decided by
+    /// that component, so the trait is added here rather than in the modifier.
+    /// `CadenceEyebrowAccessibilityTests` reads it off a real tree, and its absence on a weekday rail.
     var body: some View {
         Text(text.uppercased())
             .cadenceUppercaseLabel(reading: text, size: size.fontSize, kerning: size.kerning)
             .foregroundStyle(tint)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

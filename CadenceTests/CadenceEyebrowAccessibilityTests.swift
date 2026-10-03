@@ -38,6 +38,18 @@ struct CadenceEyebrowAccessibilityTests {
         allNodes(in: view).filter { $0.role == NSAccessibility.Role.staticText.rawValue }
     }
 
+    /// AppKit declares no `NSAccessibility.Role` constant for it; `AXHeading` is the role string
+    /// SwiftUI publishes for `.isHeader` on macOS, as the control in
+    /// `theEyebrowIsAHeadingAndTheWeekdayRailIsNot` re-measures on every run.
+    private static let headingRole = "AXHeading"
+
+    /// The headings a view publishes, in tree order. On macOS SwiftUI turns `.isHeader` into a
+    /// change of ROLE — `AXHeading` in place of `AXStaticText` — and moves the string from the
+    /// value to the label (measured for T-2035), so a heading is found by role and read by label.
+    private func headings<V: View>(in view: V) -> [Node] {
+        allNodes(in: view).filter { $0.role == Self.headingRole }
+    }
+
     private func allNodes<V: View>(in view: V) -> [Node] {
         let app = NSApplication.shared
         let enhanced = NSSelectorFromString("accessibilitySetEnhancedUserInterfaceAttribute:")
@@ -98,14 +110,40 @@ struct CadenceEyebrowAccessibilityTests {
     }
 
     /// The Edit Area sheet's own heading: the eyebrow publishes the words, once, in natural case —
-    /// not the uppercased glyphs it draws.
+    /// not the uppercased glyphs it draws. Since T-2035 it is a heading, and a macOS heading carries
+    /// its string as the label rather than the value, so that is the field read here.
     @Test func theSectionEyebrowPublishesItsWordsInNaturalCase() {
-        let texts = staticTexts(in: SectionEyebrowLabel(text: "Edit Area"))
-        #expect(texts.count == 1, "the eyebrow should publish exactly one static text: \(texts)")
-        #expect(texts.first?.value == "Edit Area", "the eyebrow publishes its glyphs, not its words: \(texts)")
+        let found = headings(in: SectionEyebrowLabel(text: "Edit Area"))
+        #expect(found.count == 1, "the eyebrow should publish exactly one heading: \(found)")
+        #expect(found.first?.label == "Edit Area", "the eyebrow publishes its glyphs, not its words: \(found)")
 
-        let compact = staticTexts(in: SectionEyebrowLabel(text: "Unassigned", size: .compact))
-        #expect(compact.map(\.value) == ["Unassigned"], "the compact tier publishes something else: \(compact)")
+        let compact = headings(in: SectionEyebrowLabel(text: "Unassigned", size: .compact))
+        #expect(compact.map(\.label) == ["Unassigned"], "the compact tier publishes something else: \(compact)")
+    }
+
+    /// **The eyebrow is a heading; a weekday rail is not (T-2035).** VoiceOver's heading navigation
+    /// walks `AXHeading` nodes, so an eyebrow without the trait was a section VO-Cmd-H skipped. The
+    /// trait is the eyebrow's own, not the shared `cadenceUppercaseLabel` modifier's, because that
+    /// modifier also draws the calendar weekday rails, and `Mon` labels a day column — it does not
+    /// head a section. Both halves are read off the same tree, beside a control that proves the
+    /// harness can see a heading at all, so an absence below is a measurement and not blindness.
+    @Test func theEyebrowIsAHeadingAndTheWeekdayRailIsNot() {
+        let control = headings(in: Text(verbatim: "Plain Words").accessibilityAddTraits(.isHeader))
+        #expect(control.count == 1, "the harness cannot see a heading at all, so nothing below is measured: \(control)")
+
+        let eyebrow = allNodes(in: SectionEyebrowLabel(text: "Edit Area"))
+        let eyebrowHeadings = eyebrow.filter { $0.role == Self.headingRole }
+        let eyebrowTexts = eyebrow.filter { $0.role == NSAccessibility.Role.staticText.rawValue }
+        #expect(eyebrowHeadings.count == 1, "the section eyebrow is not a heading: \(eyebrow)")
+        #expect(eyebrowTexts.isEmpty, "the eyebrow also publishes a plain static text: \(eyebrow)")
+
+        let date = Date()
+        let weekday = DateFormatters.dayOfWeek.string(from: date)
+        let rail = allNodes(in: CalDayHeaderView(date: date))
+        let railHeadings = rail.filter { $0.role == Self.headingRole }
+        let railTexts = rail.filter { $0.role == NSAccessibility.Role.staticText.rawValue }
+        #expect(railTexts.map(\.value).contains(weekday), "the weekday rail is not on the tree, so its absence proves nothing: \(rail)")
+        #expect(railHeadings.isEmpty, "a weekday letter became a heading: \(rail)")
     }
 
     /// The same modifier draws the board column header, so the fix is the modifier's and reaches it
