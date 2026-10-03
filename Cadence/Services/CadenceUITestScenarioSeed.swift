@@ -114,6 +114,29 @@ enum CadenceUITestScenarioSeed {
 
         /// Minutes, so the duration badge reads a real value rather than the em dash placeholder.
         static let boardCardEstimateMinutes = 90
+
+        /// The **calendar event** the board draws beside the two of them ([[T-1843]]).
+        ///
+        /// Not seeded here, and it cannot be: everything else in this scenario is a SwiftData
+        /// object and this one is an `EKEvent`, which lives in a store this process holds no
+        /// authorisation for. `CalendarBoardUITestEventSupport` builds it, unsaved, at the point
+        /// the board asks EventKit for the day — the only place a display item can be put on
+        /// screen without one. The strings live here because they are the scenario's, and because
+        /// the test addresses the card by an identifier slugged from this title.
+        static let boardEventTitle = "Anchor Event"
+
+        /// 1:00 pm, after the card's 9:00 start, so the event card sorts below the task card and
+        /// the block rather than on top of either. Any later minute does.
+        static let boardEventStartMinute = 13 * 60
+
+        /// Minutes. Long enough that the card's time-range chip draws two distinct times.
+        static let boardEventDurationMinutes = 60
+
+        /// The unsaved calendar the fixture event is put on. It exists because
+        /// `CalendarEventEditPopover` reads `ekEvent.calendar` through an implicitly-unwrapped
+        /// optional and an event without one crashes the app when its card is clicked — measured
+        /// 2026-10-03, see [[T-2047]]. Not a user-facing name on any shipping surface.
+        static let boardEventCalendarTitle = "Anchor Calendar"
     }
 
     static var requestedScenario: Scenario? {

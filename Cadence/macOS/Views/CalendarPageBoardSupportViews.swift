@@ -34,6 +34,15 @@ enum CalendarPageBoardDataSupport {
         cache: CalendarEventDayCache,
         calendar: Calendar = .current
     ) -> [CalendarBoardEventDisplayItem] {
+        // **The UI-test seam, and it is first on purpose** ([[T-1843]]). The host that runs this
+        // target holds no EventKit authorisation, so the guard below answers `[]` for every day
+        // and the board's event card has never been on screen in a test. When — and only when —
+        // the scenario asks for it, the day's events come from `CalendarBoardUITestEventSupport`
+        // instead and EventKit is not consulted at all. `nil` is "not under that scenario", which
+        // is every shipping launch.
+        if let injected = CalendarBoardUITestEventSupport.injectedItems(for: date, calendar: calendar) {
+            return injected
+        }
         guard calendarManager.isAuthorized else { return [] }
         let allDay = cache.allDayEvents(for: date, calendarManager: calendarManager).map {
             CalendarBoardEventDisplayItem(allDay: $0, date: date, calendar: calendar)
@@ -46,6 +55,92 @@ enum CalendarPageBoardDataSupport {
             )
             .map(CalendarBoardEventDisplayItem.init(timed:))
         return (allDay + timed).sorted { $0.sortKey < $1.sortKey }
+    }
+}
+
+/// **The one way a `CalendarBoardEventCard` reaches the screen under test** ([[T-1843]]).
+///
+/// The board's event card is the third of its `attachmentAnchor: .rect(.bounds)` popovers and the
+/// only one [[T-1740]]'s sweep could not read, because the card is drawn from an `EKEvent` and
+/// `CadenceUITestScenarioSeed` writes SwiftData. The two ways out were an EventKit authorisation
+/// the runner could hold — which is the signed-in person's own calendar, on a host that must never
+/// be written to — or a seam that injects a display item without one. This is the second.
+///
+/// **The event is never saved and never asked for.** `EKEvent(eventStore:)` on an unsaved event
+/// needs no TCC prompt and touches no store, and that is a reading rather than an assumption —
+/// two tests in `CadenceTests` have been building unsaved events this way since T-693.
+///
+/// **It carries an unsaved `EKCalendar`, and that is not decoration — it is MEASURED.** The first
+/// cut of this seam left `event.calendar` nil, which every surrounding type tolerates:
+/// `CalendarEventItem` and `CalendarBoardEventDisplayItem` both read `event.calendar?.cgColor ??`
+/// and `event.calendar?.title ??`, so the card drew, tinted and titled itself from the product's
+/// own fallbacks. **Then the card was clicked and the app died in `EXC_BREAKPOINT` inside**
+/// `CalendarEventEditPopover.init` (2026-10-03, crash report `Cadence-2026-10-03-135632.ips`):
+/// `EKEvent.calendar` is an implicitly-unwrapped `EKCalendar!` and that initialiser is the one
+/// place in this path that reads it straight through, at
+/// `_selectedCalendarID = State(initialValue: item.ekEvent.calendar.calendarIdentifier)`. No event
+/// fetched from a real store can have a nil calendar, so this is not a defect a user can reach;
+/// it is a constraint on what this seam is allowed to hand it, and it is written down as
+/// [[T-2047]] rather than left as a surprise for whoever builds the next fixture event.
+///
+/// **Held once.** The item is rebuilt per call but the `EKEvent` under it is not: the board
+/// re-renders on every store change and a fresh event each time would give the card a new
+/// `calendarItemIdentifier`, a new `ForEach` identity and therefore a reset `@State showPopover`
+/// — a popover that closes itself at the next render is not something a placement reading can be
+/// taken from.
+@MainActor
+enum CalendarBoardUITestEventSupport {
+
+    /// Both halves, and both are required. `CADENCE_UI_TEST_MODE` alone is not enough: the other
+    /// UI suites in this target run under it too, and an event card appearing in their columns
+    /// would change what they are measuring.
+    static var isActive: Bool {
+        CadenceUITestSupport.isEnabled && CadenceUITestScenarioSeed.requestedScenario == .popoverAnchors
+    }
+
+    /// `nil` when the scenario is not asking — which is every shipping launch, and is what keeps
+    /// the authorisation guard below the only thing a real board consults.
+    ///
+    /// When it *is* asking it owns the whole answer, including the empty one for every day that is
+    /// not today: falling through to EventKit for the other columns would mean the board under
+    /// test had two sources, and a card appearing in the wrong column would read as a sorting
+    /// defect rather than as a second source.
+    static func injectedItems(for date: Date, calendar: Calendar = .current) -> [CalendarBoardEventDisplayItem]? {
+        guard isActive else { return nil }
+        guard DateFormatters.dateKey(from: date) == DateFormatters.todayKey() else { return [] }
+        guard let item = CalendarEventItem(event: event(on: date, calendar: calendar), clippedTo: date, calendar: calendar) else {
+            return []
+        }
+        return [CalendarBoardEventDisplayItem(timed: item)]
+    }
+
+    private static var heldEvent: EKEvent?
+
+    private static func event(on date: Date, calendar: Calendar) -> EKEvent {
+        if let heldEvent { return heldEvent }
+        let store = EKEventStore()
+        let created = EKEvent(eventStore: store)
+        // See the note above: `CalendarEventEditPopover` reads `ekEvent.calendar` through an
+        // implicitly-unwrapped optional, so a fixture event without one crashes the app the
+        // moment its card is clicked. An unsaved `EKCalendar` needs no authorisation either and
+        // carries a `calendarIdentifier` of its own from the moment it is made.
+        let calendarForEvent = EKCalendar(for: .event, eventStore: store)
+        calendarForEvent.title = CadenceUITestScenarioSeed.Fixture.boardEventCalendarTitle
+        created.calendar = calendarForEvent
+        created.title = CadenceUITestScenarioSeed.Fixture.boardEventTitle
+        let dayStart = calendar.startOfDay(for: date)
+        let start = calendar.date(
+            byAdding: .minute,
+            value: CadenceUITestScenarioSeed.Fixture.boardEventStartMinute,
+            to: dayStart
+        ) ?? dayStart
+        created.startDate = start
+        created.endDate = start.addingTimeInterval(
+            TimeInterval(CadenceUITestScenarioSeed.Fixture.boardEventDurationMinutes * 60)
+        )
+        created.isAllDay = false
+        heldEvent = created
+        return created
     }
 }
 

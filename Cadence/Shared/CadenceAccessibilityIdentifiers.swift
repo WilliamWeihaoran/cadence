@@ -120,6 +120,43 @@ nonisolated enum CadenceAccessibilityIdentifiers {
         "board.bundle.\(slug(title))"
     }
 
+    /// An **event** card on the Calendar Board, by the event's title — the card
+    /// `CalendarBoardEventCard` draws for an `EKEvent`, and the third of the board's
+    /// `.rect(.bounds)` anchors.
+    ///
+    /// It is the one site in [[T-1740]]'s sweep that went unmeasured, and the reason was not the
+    /// identifier: the card is drawn only for a real calendar event, the UI-test host holds no
+    /// EventKit authorisation, and the scenario seed writes SwiftData and cannot write a
+    /// calendar. [[T-1843]] adds the seam that puts one on screen; this names the card once it is.
+    static func boardEventCard(title: String) -> String {
+        "board.event.\(slug(title))"
+    }
+
+    /// The timeline's **drag-to-create draft**, as the two rectangles a placement reading needs.
+    ///
+    /// `block` is the ghost `TimelineDraftGhostLayer` draws — what a person sees, and the content
+    /// the quick-create popover must not land on top of. `anchor` is the `Color.clear` that
+    /// `TimelineDraftPopoverAnchor` actually hangs the popover off, placed from the **same**
+    /// `TimelineMetricsSupport.computeDraftFrame` call.
+    ///
+    /// Both, deliberately. [[T-1740]] closed on the finding that an attachment anchor is not
+    /// published by the accessibility tree, so a suite that reports one is reading it back out of
+    /// the source — the circularity [[T-1510]] passed through. Here the anchor **is** a view, so
+    /// naming it makes the claim [[T-1844]] was filed with ("full canvas width, so it spans its
+    /// container by construction") a reading rather than an argument.
+    /// One day's **timeline canvas**, by its `yyyy-MM-dd`.
+    ///
+    /// The drag-to-create gesture reads this view's own coordinate space, so a test that wants a
+    /// draft has to press and drag inside this rectangle. By the day rather than by an index: the
+    /// calendar's timeline draws seven columns at once and the scenario seeds a block on exactly
+    /// one of them, so "a column with nothing on it" is a question about a date.
+    static func timelineDayCanvas(dateKey: String) -> String {
+        "timeline.day.canvas.\(dateKey)"
+    }
+
+    static let timelineDraftBlock = "timeline.draft.block"
+    static let timelineDraftAnchor = "timeline.draft.anchor"
+
     /// Today's rollover banner — the offer to move yesterday's unfinished plans onto today.
     static let todayRolloverBanner = "today.rollover.banner"
 

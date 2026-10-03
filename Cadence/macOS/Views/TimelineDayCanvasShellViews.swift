@@ -75,6 +75,12 @@ struct TimelineDraftGhostLayer: View {
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
         .position(x: frame.centerX, y: frame.centerY)
         .allowsHitTesting(false)
+        // T-1844: what a person sees of the draft, and so the content the quick-create popover
+        // must not land on top of. `.allowsHitTesting(false)` keeps the pointer going through to
+        // the canvas below; it does not withhold the element from the accessibility tree, and the
+        // reading this names is a frame rather than a click.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.timelineDraftBlock)
     }
 }
 
@@ -115,6 +121,13 @@ struct TimelineDraftPopoverAnchor<PopoverContent: View>: View {
                 if !value { onDismissed() }
             }
             .position(x: frame.centerX, y: frame.centerY)
+            // T-1844: the rectangle the popover is **actually** attached to. T-1740 closed on the
+            // finding that an attachment anchor is not published by the accessibility tree, so a
+            // placement suite that reports one is reading it back out of the source. Here the
+            // anchor is a view, so naming it turns "full canvas width, so it spans its container
+            // by construction" into something a run can check rather than restate.
+            .accessibilityElement()
+            .accessibilityIdentifier(CadenceAccessibilityIdentifiers.timelineDraftAnchor)
     }
 }
 #endif

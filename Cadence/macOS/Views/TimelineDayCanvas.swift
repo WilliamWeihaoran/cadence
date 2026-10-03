@@ -182,6 +182,12 @@ struct TimelineDayCanvas: View {
         }
         .frame(width: width, height: metrics.totalHeight)
         .coordinateSpace(name: Self.coordinateSpaceName)
+        // T-1844: the rectangle the drag-to-create gesture is measured in, named so a UI test can
+        // derive its press-and-drag from a LIVE frame rather than from a normalized guess at where
+        // the pane sits. Keyed by the day, because the calendar's timeline draws seven of these
+        // side by side and the one with no seeded block on it is the one a draft can be made in.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(CadenceAccessibilityIdentifiers.timelineDayCanvas(dateKey: dateKey))
         .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
             Button("OK", role: .cancel) {}
         } message: {
