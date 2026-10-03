@@ -2043,7 +2043,7 @@ selftest_only_testing() {
   print -rl -- \
     "SwiftCompile normal arm64 /repo/Cadence/Services/CadenceWidgetIntents.swift (in target 'CadenceWidgets' from project 'Cadence')" \
     "** BUILD SUCCEEDED **" > "$ws/leg/ios-widgets.log"
-  local lout lrc lcalls lsecond leg_skip=""
+  local lcalls lsecond leg_skip=""
   run_leg() {  # $1 = primary log, $2 = iOS log, $3 = iOS exit, $4... = xcb.sh arguments after the id
     : > "$ws/leg/calls"
     lout=$(XCODEBUILD="$ws/leg/xcodebuild" FAKE_XCB_CALLS="$ws/leg/calls" FAKE_XCB_PRIMARY_LOG="$1" \
