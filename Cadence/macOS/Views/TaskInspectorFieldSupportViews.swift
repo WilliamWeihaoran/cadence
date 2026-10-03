@@ -65,6 +65,39 @@ nonisolated enum TaskInspectorPanelMetrics {
     }
 }
 
+/// **T-1742: Escape closes an inspector child panel.** One modifier for every `.popover` the
+/// inspector hangs off a control — the priority list, the estimate roller, Do / Due and Repeat —
+/// applied to the panel's content and given the same dismissal its own buttons already perform.
+///
+/// **Both spellings, because the panels differ in focus.** `.onKeyPress` only reaches a view that
+/// holds keyboard focus or has a focused descendant: the estimate roller does (its columns are
+/// `.focusable()` and already answer ↑ ↓ ← → and Return), the recurrence panel only while its
+/// end-count field is being typed into, and the priority list and the Do / Due calendar never
+/// (`.focusable(false)` below). `onExitCommand` rides AppKit's `cancelOperation(_:)` and is seen
+/// from an ancestor without a focused descendant of its own — the difference
+/// `ListNotesListSupportViews` records for its title field. Whichever fires first closes the panel;
+/// the dismissal is idempotent, so the other is a no-op. Pinned on the running app by
+/// `CadenceInspectorHeaderPanelPlacementUITests.testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen`.
+struct TaskInspectorChildPanelEscapeDismissal: ViewModifier {
+    let dismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onExitCommand(perform: dismiss)
+            .onKeyPress(.escape) {
+                dismiss()
+                return .handled
+            }
+    }
+}
+
+extension View {
+    /// See `TaskInspectorChildPanelEscapeDismissal`.
+    func taskInspectorChildPanelDismissesOnEscape(_ dismiss: @escaping () -> Void) -> some View {
+        modifier(TaskInspectorChildPanelEscapeDismissal(dismiss: dismiss))
+    }
+}
+
 /// Where a panel opened from a row *inside* the task inspector is anchored.
 ///
 /// **A macOS popover is its own `NSWindow`.** The inspector is one, and every picker it opens is a
@@ -429,6 +462,7 @@ struct TaskInspectorDateControl: View {
         .accessibilityIdentifier(CadenceAccessibilityIdentifiers.inspectorPanelControl(label))
         .popover(isPresented: $showPicker, arrowEdge: childPlacement.arrowEdge) {
             pickerPopover
+                .taskInspectorChildPanelDismissesOnEscape { showPicker = false }
         }
         .onAppear {
             var comps = cal.dateComponents([.year, .month], from: isOn ? date : Date())

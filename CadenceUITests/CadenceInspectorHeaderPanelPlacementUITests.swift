@@ -153,43 +153,7 @@ final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
     }
 
     func testEveryInspectorPanelOpensClearOfTheRowsItIsOpenedFrom() throws {
-        launchApp()
-
-        // **The control, and the reason it is here** (T-1954, refuted by `seedrace` in `acd36856`).
-        // `sidebar.destination.today` is a STATIC sidebar row — `SidebarView` builds it from
-        // `destination.rawValue` and no seed creates it — so it is present in any launch that drew
-        // a sidebar at all. The seeded row below exists only because the seed committed an `Area`.
-        // Asked without the control, the seeded row's absence reads as a seeding bug, and that is
-        // exactly how T-1954 was mis-filed: in both launches that "proved" one, the control was
-        // absent too, so those launches had drawn no UI whatsoever. Roughly 2 in 40 launches do
-        // that, and the cause is open as T-2020.
-        XCTAssertTrue(
-            app.buttons.element(identified: ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
-            "the sidebar drew no static Today row, so this launch drew no UI at all — nothing "
-            + "below is evidence about the seed. See T-2020."
-        )
-        XCTAssertTrue(
-            app.buttons.element(identified: ID.seededAreaRow).waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
-            "the stock seed's sidebar lists never appeared, so the scenario seed cannot be trusted either"
-        )
-
-        let row = app.descendants(matching: .any)
-            .matching(CadenceUITestQuery.identifying(ID.todayRow))
-            .firstMatch
-        XCTAssertTrue(
-            row.waitForExistence(timeout: CadenceUITestBounds.firstPaint),
-            "the seeded Today row is not on screen, so there is nothing to open an inspector from"
-        )
-        row.click()
-
-        let inspector = app.popovers.firstMatch
-        XCTAssertTrue(
-            inspector.waitForExistence(timeout: CadenceUITestBounds.settle),
-            "clicking the seeded row opened no popover, so the task inspector never appeared"
-        )
-        // Exactly one, so `inspectorFrame` is unambiguous and a child panel can be told from its
-        // parent by frame alone.
-        XCTAssertEqual(app.popovers.count, 1, "more than the inspector is on screen before anything was clicked")
+        let (row, inspector) = try openSeededInspector()
         let inspectorFrame = inspector.frame
 
         // ── THE COLUMN, DERIVED FROM THE SURFACE ──────────────────────────────────────────────
@@ -255,6 +219,108 @@ final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
         // Every figure this test reasoned about, in the run log, so a reader of a red run does not
         // have to re-derive them and a reader of a green one can see which side each panel took.
         XCTContext.runActivity(named: "measured — " + report.joined(separator: " ;; ")) { _ in }
+    }
+
+    /// **T-1742: Escape closes each of the five child panels, and only that panel.**
+    ///
+    /// Before T-1742 nothing in the product listened for Escape on any of them, and this sweep's
+    /// predecessor measured the panel still on screen a full settle after `app.typeKey(.escape)`
+    /// on every anchor. The fix is one modifier, `taskInspectorChildPanelDismissesOnEscape`, on
+    /// the content of all three `.popover` call sites.
+    ///
+    /// **Two readings per anchor, both existence, never a duration.** The child panel must be gone
+    /// (`waitForNonExistence`, the API `childPanel`'s doc says actually refreshes), and the
+    /// inspector must still be there: an Escape that closed the inspector along with the panel
+    /// would pass the first reading and still be the wrong behaviour — the key closes the
+    /// innermost thing, the way a click inside the inspector does.
+    ///
+    /// When Escape fails, the panel is closed by the click `dismissChildPanel` uses so the next
+    /// anchor is still read: one red anchor must not cost the other four, which is the reporting
+    /// failure the placement sweep above was written against.
+    func testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen() throws {
+        let (row, inspector) = try openSeededInspector()
+        let inspectorFrame = inspector.frame
+        let tileFrame = try frame(ofControl: "Priority", in: inspector)
+
+        var closedByEscape: [String] = []
+        for anchor in Self.anchors {
+            if app.popovers.count == 0 {
+                row.click()
+                XCTAssertTrue(
+                    inspector.waitForExistence(timeout: CadenceUITestBounds.settle),
+                    "the inspector closed and would not reopen, so Escape on \(anchor.field) cannot be read"
+                )
+            }
+            guard let panel = panel(openedBy: anchor.field, in: inspector, parentFrame: inspectorFrame) else {
+                continue
+            }
+
+            app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+
+            let closed = childPanel.waitForNonExistence(timeout: CadenceUITestBounds.settle)
+            XCTAssertTrue(
+                closed,
+                "Escape did not close the \(anchor.field) panel (T-1742). On screen: \(popoverFrames())"
+            )
+            XCTAssertTrue(
+                inspector.exists,
+                "Escape on the \(anchor.field) panel closed the inspector too, not just the panel"
+            )
+            if closed {
+                closedByEscape.append(anchor.field)
+            } else {
+                dismissChildPanel(panel, inside: inspector, inspectorFrame: inspectorFrame, titleRow: tileFrame)
+            }
+        }
+
+        // Non-vacuity: every anchor was reached and read, by name, rather than skipped.
+        XCTAssertEqual(
+            closedByEscape, Self.anchors.map(\.field),
+            "Escape closed only \(closedByEscape) of \(Self.anchors.map(\.field))"
+        )
+    }
+
+    /// Launch the seeded scenario, prove it drew, click the Today row and return the inspector.
+    /// Shared by both sweeps so the launch controls (T-1954 / T-2020) are stated once.
+    private func openSeededInspector() throws -> (row: XCUIElement, inspector: XCUIElement) {
+        launchApp()
+
+        // **The control, and the reason it is here** (T-1954, refuted by `seedrace` in `acd36856`).
+        // `sidebar.destination.today` is a STATIC sidebar row — `SidebarView` builds it from
+        // `destination.rawValue` and no seed creates it — so it is present in any launch that drew
+        // a sidebar at all. The seeded row below exists only because the seed committed an `Area`.
+        // Asked without the control, the seeded row's absence reads as a seeding bug, and that is
+        // exactly how T-1954 was mis-filed: in both launches that "proved" one, the control was
+        // absent too, so those launches had drawn no UI whatsoever. Roughly 2 in 40 launches do
+        // that, and the cause is open as T-2020.
+        XCTAssertTrue(
+            app.buttons.element(identified: ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            "the sidebar drew no static Today row, so this launch drew no UI at all — nothing "
+            + "below is evidence about the seed. See T-2020."
+        )
+        XCTAssertTrue(
+            app.buttons.element(identified: ID.seededAreaRow).waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "the stock seed's sidebar lists never appeared, so the scenario seed cannot be trusted either"
+        )
+
+        let row = app.descendants(matching: .any)
+            .matching(CadenceUITestQuery.identifying(ID.todayRow))
+            .firstMatch
+        XCTAssertTrue(
+            row.waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            "the seeded Today row is not on screen, so there is nothing to open an inspector from"
+        )
+        row.click()
+
+        let inspector = app.popovers.firstMatch
+        XCTAssertTrue(
+            inspector.waitForExistence(timeout: CadenceUITestBounds.settle),
+            "clicking the seeded row opened no popover, so the task inspector never appeared"
+        )
+        // Exactly one, so `inspectorFrame` is unambiguous and a child panel can be told from its
+        // parent by frame alone.
+        XCTAssertEqual(app.popovers.count, 1, "more than the inspector is on screen before anything was clicked")
+        return (row, inspector)
     }
 
     // MARK: - The assertion
@@ -334,11 +400,12 @@ final class CadenceInspectorHeaderPanelPlacementUITests: XCTestCase {
 
     /// Dismiss the child panel with a click **inside the inspector and outside the panel**.
     ///
-    /// **Not Escape.** Escape was the first thing this tried and it does not close these panels:
-    /// measured across three runs, the panel was still on screen a full 5s after
-    /// `app.typeKey(.escape)`, every time, with its frame unchanged. Filed as T-1742 — through the
-    /// harness only, so it may be XCUITest not delivering the key rather than the app not handling
-    /// it, and this test is not the place to decide which.
+    /// **Not Escape.** Escape was the first thing this tried and, before T-1742, it did not close
+    /// these panels: measured across three runs, the panel was still on screen a full 5s after
+    /// `app.typeKey(.escape)`, every time. T-1742 added the product-side handler and
+    /// `testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen` owns that behaviour; the
+    /// placement sweep keeps the click so a reading of where a panel opens never depends on the key
+    /// path, and the Escape sweep reuses this as its fallback when the key fails.
     ///
     /// **Not a click anywhere outside either**, which would close the inspector along with the
     /// panel. A macOS transient popover closes on a click outside *itself*, and the inspector is

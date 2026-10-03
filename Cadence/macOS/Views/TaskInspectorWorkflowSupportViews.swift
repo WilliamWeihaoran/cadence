@@ -55,6 +55,7 @@ struct TaskInspectorRecurrenceControl: View {
                 onSelectRule: selectRule,
                 onSelectEnd: selectEnd
             )
+            .taskInspectorChildPanelDismissesOnEscape { showPicker = false }
         }
     }
 

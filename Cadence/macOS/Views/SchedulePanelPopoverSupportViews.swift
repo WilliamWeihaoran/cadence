@@ -136,14 +136,18 @@ struct TaskDetailHeaderSection: View {
             // for the Schedule well, and the same reason: the arrow was never the part that was
             // wrong.
             .popover(item: presentedPanel, arrowEdge: Self.headerPanelPlacement.arrowEdge) { panel in
-                switch panel {
-                case .priority:
-                    TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
-                case .estimate:
-                    EstimatePickerPopoverContent(value: $task.estimatedMinutes) {
-                        showEstimatePicker = false
+                Group {
+                    switch panel {
+                    case .priority:
+                        TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)
+                    case .estimate:
+                        EstimatePickerPopoverContent(value: $task.estimatedMinutes) {
+                            showEstimatePicker = false
+                        }
                     }
                 }
+                // T-1742: the same "closed" both panels' own buttons write.
+                .taskInspectorChildPanelDismissesOnEscape { presentedPanel.wrappedValue = nil }
             }
 
             VStack(alignment: .leading, spacing: 6) {
