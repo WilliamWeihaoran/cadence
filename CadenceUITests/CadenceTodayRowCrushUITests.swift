@@ -24,6 +24,33 @@ import XCTest
 ///   tall. The other is the chip being given a width it cannot draw in, and no scan of the chip's
 ///   own body can see that.
 ///
+/// ### What it caught on its first run, and what it did not
+///
+/// Everything above is the case for this file, and it was written before the file had ever run.
+/// The first three runs it was able to make (2026-09-29, T-1488) refuted half of it, so the record
+/// is here rather than in the ledger alone:
+///
+/// - **Deleting `.layoutPriority(1)` from the title, and deleting the due chip's `.lineLimit(1)`,
+///   each left every figure below byte-identical** — both compiled, both relinked and re-signed the
+///   app, and the row still came out 342pt with a 143 / 232 title. The layout does not depend on
+///   either modifier at the width this test launches to, most plausibly because every
+///   `metadataStrip` variant is `.fixedSize(horizontal: true, vertical: false)`: a fixed-width
+///   sibling does not contend for width with a flexible one, so the priority has nothing to order.
+///   **The source scan refuses both of those and this test refuses neither** ([[T-1721]]) — the
+///   exact inverse of the paragraph above. So the scan is not a slower duplicate of this file and
+///   is **not to be deleted on the strength of this file existing**.
+/// - **The defect itself passed.** A `.frame(width: 40)` pinned on the title gave crushed 36pt /
+///   bare 39pt = **0.92** against the majority rule's 0.5, and the run was green: a ten-character
+///   title in a 342pt row, which is character for character the owner's screenshot in T-1432. The
+///   scan was green through it too, because nothing it greps for had moved. **Neither test caught
+///   the defect either test exists for** ([[T-1720]]). `Bound.titleShareOfItsOwnRow` below is the
+///   repair, and it is the assertion that makes this file worth its nine seconds.
+///
+/// The division of labour, stated rather than implied: the scan refuses the **removal of the fix's
+/// modifiers**, this file refuses a **title that lost its own row, however it lost it**. Neither
+/// subsumes the other, and a change only one of them catches is the normal case, not a bug in the
+/// other.
+///
 /// So the reading here is **geometry**: four frames off the accessibility tree, in points, of a
 /// window that really laid itself out. Group 3 in `CadenceTodayCompositionUITests`' scale — good
 /// evidence about layout, no evidence at all about drawing, and deliberately not group 4. Nothing
@@ -125,6 +152,42 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
         /// Stated in title-lines rather than points so it survives a font, a display and an Xcode
         /// major — this project builds on two.
         static let dueChipHeightInTitleLines: CGFloat = 2
+
+        /// **The own-row rule, and the reason the majority rule above cannot stand alone.**
+        ///
+        /// That bound divides the decorated row's title by the **control row's** title, and one
+        /// `MacTaskRow` call site draws both rows. Numerator and denominator therefore move
+        /// together under anything that crushes the title in *every* row, and the ratio does not
+        /// move at all. Measured 2026-09-29 (T-1488): a `.frame(width: 40)` pinned on the title
+        /// gave **crushed 36pt / bare 39pt = 0.92**, sailed past 0.5, and the run was **green** —
+        /// the test passing the defect it was written to refuse ([[T-1720]]).
+        ///
+        /// This is the assertion that ratio cannot express: the title against **its own row**.
+        /// `MacTaskRow` does not decide that width — the pane above it hands the row the width and
+        /// the row's `HStack` divides it — so the row frame is the one reference in reach that a
+        /// crush *inside* the stack cannot drag down together with the title. That is the whole
+        /// property being bought here, and it is why this is not simply a second ratio.
+        ///
+        /// **Measured**, this Mac, Xcode 27.0, default window, and re-measured 2026-10-03
+        /// (agent `rowcrush`) byte-identically to T-1488's three runs: healthy **143 / 342 =
+        /// 0.42**; the 40pt pin **36 / 342 = 0.11**; the screenshot that filed T-1432 is a title of
+        /// about ten characters where the pane drew the whole string, so roughly **0.18**. **A
+        /// quarter refuses all three and clears the healthy reading by 0.17.** It is not the
+        /// measurement rounded down — it is the smallest round share that still calls a title
+        /// holding a quarter of its own row uncrushed.
+        ///
+        /// **Unlike the ratio above this is a share of the window, and that is the cost.** At the
+        /// measured row the title has 143pt and everything else in it 199pt, so on a linear
+        /// reading the bound would fire below roughly a 265pt row. The strip does not stay 199pt:
+        /// `metadataStrip` is a `ViewThatFits` and sheds chips as the row narrows, which is the
+        /// half of T-1432's fix this file cannot otherwise see. So a red run here says either the
+        /// row got narrow enough that the strip ran out of chips to shed, or the title stopped
+        /// being laid out first — and both of those are this defect, not a portability artefact.
+        ///
+        /// **Do not lower it to chase a red run**, and do not raise it toward 0.42 either: 0.42 is
+        /// today's chip inventory, and pinning that would fail this test for the next chip added
+        /// rather than for anything crushing a title.
+        static let titleShareOfItsOwnRow: CGFloat = 0.25
     }
 
     private var app: XCUIApplication!
@@ -194,7 +257,8 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
         XCTContext.runActivity(
             named: """
             measured — row \(Int(crushedRowFrame.width))pt; title crushed \(Int(crushedTitleFrame.width))pt \
-            / bare \(Int(bareTitleFrame.width))pt = \(String(format: "%.2f", crushedTitleFrame.width / max(bareTitleFrame.width, 1))); \
+            / bare \(Int(bareTitleFrame.width))pt = \(String(format: "%.2f", crushedTitleFrame.width / max(bareTitleFrame.width, 1))), \
+            and \(String(format: "%.2f", crushedTitleFrame.width / max(crushedRowFrame.width, 1))) of its own row; \
             due chip \(Int(dueChipFrame.height))pt against a \(Int(crushedTitleFrame.height))pt title line; \
             row heights \(Int(crushedRowFrame.height)) / \(Int(bareRowFrame.height))
             """
@@ -228,6 +292,22 @@ final class CadenceTodayRowCrushUITests: XCTestCase {
             bareTitleFrame.width * Bound.titleShareOfTheUndecoratedTitle,
             "the decorated row's title is \(Int(crushedTitleFrame.width))pt where the same title with nothing "
             + "beside it got \(Int(bareTitleFrame.width))pt — the metadata is taking the row from its title again"
+        )
+
+        // ── THE OWN-ROW RULE ──────────────────────────────────────────────────────────────────
+        // The rule above compares two things `MacTaskRow` draws, so it reads 1.0 on a crush that
+        // takes both. This one compares the title against a width `MacTaskRow` is handed rather
+        // than one it allocates, which is the only reference in this window that does not move
+        // with the title. See `Bound.titleShareOfItsOwnRow`, and T-1720 for the green run that
+        // made it necessary.
+        XCTAssertGreaterThan(crushedRowFrame.width, 0, "the decorated row has no width to take a share of")
+        XCTAssertGreaterThan(
+            crushedTitleFrame.width,
+            crushedRowFrame.width * Bound.titleShareOfItsOwnRow,
+            "the decorated row's title is \(Int(crushedTitleFrame.width))pt of a \(Int(crushedRowFrame.width))pt row — "
+            + String(format: "%.2f", crushedTitleFrame.width / max(crushedRowFrame.width, 1))
+            + " of its own row, under the \(Bound.titleShareOfItsOwnRow) this test refuses. The title has lost "
+            + "its row, and it does not matter which subview took it"
         )
 
         // ── THE ONE-LINE RULE ─────────────────────────────────────────────────────────────────
