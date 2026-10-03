@@ -373,11 +373,7 @@ struct CadenceStartupCostInstrumentTests {
                 if index.isMultiple(of: 2) { task.dueDate = todayKey }
                 context.insert(task)
             }
-            // `.list` and not `.permanent`: `Note.canonicalKey` answers the bare string
-            // `"permanent"` for every permanent note by design — there is one of them — so a
-            // fixture of sixty would be merged into one by the integrity repair this suite is
-            // timing, and the population the tag sweep walks would not be the one it was seeded
-            // with. Measured: sixty permanent notes in, one out.
+            // Independent list documents keep the tag-sweep population stable across repair.
             for index in 0..<Self.noteCount {
                 context.insert(
                     Note(

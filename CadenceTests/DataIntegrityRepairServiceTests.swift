@@ -6,6 +6,53 @@ import Testing
 @Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct DataIntegrityRepairServiceTests {
+    @Test func independentNotepadNotesSurviveStartupWithTheirIdentitiesAndContent() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let first = try NoteMigrationService.createPermanentNote(in: context, title: "Alpha")
+        let second = try NoteMigrationService.createPermanentNote(in: context, title: "Beta")
+        first.content = "# Alpha\n\nFirst document"
+        second.content = "# Beta\n\nSecond document"
+        let firstID = first.id
+        let secondID = second.id
+        let reference = Note(kind: .daily, content: "[[note:\(secondID.uuidString)|Beta]]", dateKey: "2026-10-02")
+        context.insert(reference)
+        try context.save()
+
+        try withTemporaryDefaults("CadenceTests.notepadStartupIdentity") { defaults in
+            PersistenceController.performStartupMaintenance(in: context, defaults: defaults)
+            PersistenceController.performStartupMaintenance(in: context, defaults: defaults)
+        }
+
+        let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(notes.count == 3)
+        #expect(notes.first { $0.id == firstID }?.content == "# Alpha\n\nFirst document")
+        #expect(notes.first { $0.id == firstID }?.title == "Alpha")
+        #expect(notes.first { $0.id == secondID }?.content == "# Beta\n\nSecond document")
+        #expect(notes.first { $0.id == secondID }?.title == "Beta")
+        #expect(notes.first { $0.id == reference.id }?.content.contains(secondID.uuidString) == true)
+    }
+
+    @Test func notepadCopiesWithTheSameIdentityStillMergeWithoutTakingOtherNotes() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let id = UUID()
+        context.insert(Note(id: id, kind: .permanent, content: "First copy"))
+        context.insert(Note(id: id, kind: .permanent, content: "Second copy"))
+        let independent = Note(kind: .permanent, content: "Independent")
+        context.insert(independent)
+        try context.save()
+        #expect(try NoteMigrationService.healthCheck(in: context).canonicalDuplicateCount == 1)
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "notepad-identity-test")
+        let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(report.duplicateNotesMerged == 1)
+        #expect(notes.count == 2)
+        #expect(notes.first { $0.id == id }?.content.contains("First copy") == true)
+        #expect(notes.first { $0.id == id }?.content.contains("Second copy") == true)
+        #expect(notes.first { $0.id == independent.id }?.content == "Independent")
+    }
+
     @Test func duplicateContextsAreMergedWithoutDroppingListsOrTasks() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

@@ -304,9 +304,9 @@ struct CadenceNoteFolderSurfaceTests {
     /// they look, the merge never runs on them, and the folder assignment survives a repair pass
     /// untouched.
     ///
-    /// The line is not dead weight to be removed: it is what stops a merge of two *notepad* notes
-    /// (which all share the key `"permanent"`) from dropping a folder, should anything ever file
-    /// one. What it must never do is invent a value — it copies raw, which is precisely why the
+    /// The line is not dead weight to be removed: it is what stops a merge of two copies of one
+    /// *notepad* note (keyed `"permanent:<uuid>"`, so only same-id copies merge) from dropping a
+    /// folder, should anything ever file one. What it must never do is invent a value — it copies raw, which is precisely why the
     /// grouping normalizes on read.
     @Test func aRepairPassLeavesTwoIdenticalListNotesAndTheirFoldersAlone() throws {
         let context = try makeContext()

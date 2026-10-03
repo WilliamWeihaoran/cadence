@@ -130,9 +130,8 @@ nonisolated enum NoteKind: String, CaseIterable {
     }
 
     /// The identity two notes have to share before anything is allowed to treat them as the same
-    /// note — one daily note per day, one weekly note per ISO week, one notepad, one note per
-    /// calendar event. List notes are identified only by themselves: two list notes on the same
-    /// project are two different documents.
+    /// note — one daily note per day, one weekly note per ISO week, one note per calendar event.
+    /// Notepad and list notes are identified by UUID: separate documents must survive repair.
     ///
     /// This existed twice, and the two copies **disagreed**: `NoteMigrationService.canonicalKey`
     /// keyed every dateless daily note as `"daily:"` while `DataIntegrityRepairService`
@@ -179,7 +178,7 @@ nonisolated enum NoteKind: String, CaseIterable {
             let key = trimmed(weekKey)
             return key.isEmpty ? "weekly-note:\(id.uuidString)" : "weekly:\(key)"
         case .permanent:
-            return "permanent"
+            return "permanent:\(id.uuidString)"
         case .list:
             return "list:\(id.uuidString)"
         case .meeting:

@@ -33,12 +33,15 @@ nonisolated struct NoteMigrationReport: Codable, Equatable {
     var insertedPermanent: Int = 0
     var insertedList: Int = 0
     var insertedMeeting: Int = 0
+    var restoredEmptyNotes: Int = 0
     var skippedAlreadyMigrated: Int = 0
     var skippedCanonicalDuplicate: Int = 0
 
     var insertedTotal: Int {
         insertedDaily + insertedWeekly + insertedPermanent + insertedList + insertedMeeting
     }
+
+    var changedNoteCount: Int { insertedTotal + restoredEmptyNotes }
 
     var legacyScannedTotal: Int {
         legacyDailyScanned + legacyWeeklyScanned + legacyPermanentScanned + legacyDocumentScanned + legacyEventNoteScanned
@@ -104,6 +107,7 @@ nonisolated extension NoteMigrationReport {
         insertedPermanent = try container.decodeIfPresent(Int.self, forKey: .insertedPermanent) ?? 0
         insertedList = try container.decodeIfPresent(Int.self, forKey: .insertedList) ?? 0
         insertedMeeting = try container.decodeIfPresent(Int.self, forKey: .insertedMeeting) ?? 0
+        restoredEmptyNotes = try container.decodeIfPresent(Int.self, forKey: .restoredEmptyNotes) ?? 0
         skippedAlreadyMigrated = try container.decodeIfPresent(Int.self, forKey: .skippedAlreadyMigrated) ?? 0
         skippedCanonicalDuplicate = try container.decodeIfPresent(Int.self, forKey: .skippedCanonicalDuplicate) ?? 0
     }
@@ -145,7 +149,7 @@ nonisolated enum NoteMigrationService {
     private struct MigrationTracking {
         var migratedSources: Set<String>
         var canonicalKeys: Set<String>
-        var inserted = false
+        var emptyDatedNotes: [String: Note]
     }
 
     private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "NoteMigration")
@@ -204,6 +208,7 @@ nonisolated enum NoteMigrationService {
         report.canonicalDuplicateCount = canonicalDuplicateCount(in: notes)
 
         let canonicalKeys = Set(notes.map(\.canonicalKey))
+        let migratedSources = Set(notes.compactMap(sourceKey(for:)))
         for legacy in try context.fetch(FetchDescriptor<DailyNote>()) {
             if !canonicalKeys.contains(canonicalKey(kind: .daily, dateKey: legacy.date, id: legacy.id)) {
                 report.legacyWithoutCanonicalCount += 1
@@ -215,7 +220,8 @@ nonisolated enum NoteMigrationService {
             }
         }
         for legacy in try context.fetch(FetchDescriptor<PermNote>())
-        where !canonicalKeys.contains(canonicalKey(kind: .permanent, id: legacy.id)) {
+        where !canonicalKeys.contains(canonicalKey(kind: .permanent, id: legacy.id))
+            && !migratedSources.contains(sourceKey(kind: .permanent, id: legacy.id)) {
             report.legacyWithoutCanonicalCount += 1
         }
         for legacy in try context.fetch(FetchDescriptor<Document>()) {
@@ -295,8 +301,8 @@ nonisolated enum NoteMigrationService {
         saveChanges: Bool
     ) throws -> NoteMigrationReport {
         // **The whole pass is skipped, not just the five legacy fetches ([[T-1341]]).** With every
-        // legacy table empty the five loops below have nothing to iterate, so `inserted` stays
-        // false and nothing is saved — the pass is already a no-op except for the `Note` fetch it
+        // legacy table empty the five loops below have nothing to iterate, so `insertedTotal` stays
+        // zero and nothing is saved — the pass is already a no-op except for the `Note` fetch it
         // opens with, which is the expensive half: it materialises every note in the store and
         // builds two `Set`s and a grouping dictionary from them, on every launch, forever, on a
         // store that has held no legacy row since whichever launch first migrated them.
@@ -317,7 +323,16 @@ nonisolated enum NoteMigrationService {
         report.canonicalDuplicateCount = canonicalDuplicateCount(in: notes)
         var tracking = MigrationTracking(
             migratedSources: Set(notes.compactMap(sourceKey(for:))),
-            canonicalKeys: Set(notes.map(\.canonicalKey))
+            canonicalKeys: Set(notes.map(\.canonicalKey)),
+            emptyDatedNotes: Dictionary(
+                notes.filter {
+                    ($0.kind == .daily || $0.kind == .weekly)
+                        && $0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        && ($0.tags ?? []).isEmpty
+                        && $0.legacySourceKindRaw.isEmpty && $0.legacySourceID.isEmpty
+                }.sorted { $0.id.uuidString < $1.id.uuidString }.map { ($0.canonicalKey, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
         )
 
         try migrateDailyNotes(in: context, report: &report, tracking: &tracking)
@@ -326,7 +341,7 @@ nonisolated enum NoteMigrationService {
         try migrateDocumentNotes(in: context, report: &report, tracking: &tracking)
         try migrateEventNotes(in: context, report: &report, tracking: &tracking)
 
-        if tracking.inserted && saveChanges {
+        if report.changedNoteCount > 0 && saveChanges {
             try context.save()
         }
 
@@ -344,6 +359,11 @@ nonisolated enum NoteMigrationService {
             report.legacyDailyScanned += 1
             let source = sourceKey(kind: .daily, id: legacy.id)
             let canonical = canonicalKey(kind: .daily, dateKey: legacy.date, id: legacy.id)
+            if restoreEmptyDatedNote(
+                canonical: canonical, kind: .daily, id: legacy.id, content: legacy.content,
+                createdAt: legacy.createdAt, updatedAt: legacy.updatedAt,
+                tracking: &tracking, report: &report
+            ) { continue }
             guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
@@ -361,7 +381,6 @@ nonisolated enum NoteMigrationService {
             tracking.migratedSources.insert(source)
             tracking.canonicalKeys.insert(canonical)
             report.insertedDaily += 1
-            tracking.inserted = true
         }
     }
 
@@ -374,6 +393,11 @@ nonisolated enum NoteMigrationService {
             report.legacyWeeklyScanned += 1
             let source = sourceKey(kind: .weekly, id: legacy.id)
             let canonical = canonicalKey(kind: .weekly, weekKey: legacy.weekKey, id: legacy.id)
+            if restoreEmptyDatedNote(
+                canonical: canonical, kind: .weekly, id: legacy.id, content: legacy.content,
+                createdAt: legacy.createdAt, updatedAt: legacy.updatedAt,
+                tracking: &tracking, report: &report
+            ) { continue }
             guard shouldMigrate(source: source, canonical: canonical, migratedSources: tracking.migratedSources, canonicalKeys: tracking.canonicalKeys, report: &report) else {
                 continue
             }
@@ -391,7 +415,6 @@ nonisolated enum NoteMigrationService {
             tracking.migratedSources.insert(source)
             tracking.canonicalKeys.insert(canonical)
             report.insertedWeekly += 1
-            tracking.inserted = true
         }
     }
 
@@ -419,7 +442,6 @@ nonisolated enum NoteMigrationService {
             tracking.migratedSources.insert(source)
             tracking.canonicalKeys.insert(canonical)
             report.insertedPermanent += 1
-            tracking.inserted = true
         }
     }
 
@@ -450,7 +472,6 @@ nonisolated enum NoteMigrationService {
             tracking.migratedSources.insert(source)
             tracking.canonicalKeys.insert(canonicalKey(kind: .list, id: legacy.id))
             report.insertedList += 1
-            tracking.inserted = true
         }
     }
 
@@ -484,7 +505,6 @@ nonisolated enum NoteMigrationService {
             tracking.migratedSources.insert(source)
             tracking.canonicalKeys.insert(canonical)
             report.insertedMeeting += 1
-            tracking.inserted = true
         }
     }
 
@@ -657,16 +677,31 @@ nonisolated enum NoteMigrationService {
         return true
     }
 
-    /// Permanent notes are excluded on purpose.
-    ///
-    /// `canonicalKey` maps every permanent note to the single key `"permanent"`, which is exactly
-    /// right for the migration guard — one legacy `PermNote` must not be copied in twice, and must
-    /// not be copied in at all if the app already made a notepad note before the migration ran —
-    /// but it is no longer a statement about duplication. Notepad holds as many notes as the user
-    /// makes, so counting them as duplicates would report a healthy store as broken and grow the
-    /// count every time they wrote something down.
+    /// A dated placeholder can be created before its legacy content arrives from iCloud.
+    /// Keep its identity and record the consumed source, so a later user edit (including clearing
+    /// the body) is never replaced by that source again. Nonempty or already-migrated notes keep
+    /// the existing canonical-duplicate policy.
+    private static func restoreEmptyDatedNote(
+        canonical: String, kind: LegacyKind, id: UUID, content: String,
+        createdAt: Date, updatedAt: Date,
+        tracking: inout MigrationTracking, report: inout NoteMigrationReport
+    ) -> Bool {
+        let source = sourceKey(kind: kind, id: id)
+        guard !tracking.migratedSources.contains(source),
+              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let note = tracking.emptyDatedNotes.removeValue(forKey: canonical) else { return false }
+        note.content = content
+        note.createdAt = min(note.createdAt, createdAt)
+        note.updatedAt = max(note.updatedAt, updatedAt)
+        note.legacySourceKindRaw = kind.rawValue
+        note.legacySourceID = id.uuidString
+        tracking.migratedSources.insert(source)
+        report.restoredEmptyNotes += 1
+        return true
+    }
+
     private static func canonicalDuplicateCount(in notes: [Note]) -> Int {
-        let counts = Dictionary(grouping: notes.filter { $0.kind != .permanent }, by: \.canonicalKey)
+        let counts = Dictionary(grouping: notes, by: \.canonicalKey)
             .mapValues(\.count)
         return counts.values.reduce(0) { total, count in
             count > 1 ? total + count - 1 : total
@@ -681,14 +716,14 @@ nonisolated enum NoteMigrationService {
     /// **The two store-wide figures are named only when they were measured ([[T-1341]]).** A pass
     /// that took the legacy-row fast path never read the `Note` table, so `existingNotes=0,
     /// canonicalDuplicates=0` in the log would be a sentence about a store nobody looked at. The
-    /// guard above already never fires on that pass — it takes `insertedTotal`, the two skip
-    /// counters and `canonicalDuplicateCount`, all of which are zero there — so this branch is
+    /// change/issue condition never fires on that pass either — `changedNoteCount`,
+    /// `skippedCanonicalDuplicate` and `canonicalDuplicateCount` are all zero there — so this branch is
     /// what keeps that true rather than the only thing that does.
     private static func log(_ report: NoteMigrationReport) {
         guard report.noteTableScanned else { return }
-        if report.insertedTotal > 0 || report.canonicalDuplicateCount > 0 || report.skippedCanonicalDuplicate > 0 {
+        if report.changedNoteCount > 0 || report.canonicalDuplicateCount > 0 || report.skippedCanonicalDuplicate > 0 {
             logger.info(
-                "Note migration completed from \(report.source, privacy: .public): inserted=\(report.insertedTotal), scanned=\(report.legacyScannedTotal), existingNotes=\(report.existingNoteCount), canonicalDuplicates=\(report.canonicalDuplicateCount), skippedCanonical=\(report.skippedCanonicalDuplicate)"
+                "Note migration completed from \(report.source, privacy: .public): inserted=\(report.insertedTotal), restoredEmpty=\(report.restoredEmptyNotes), scanned=\(report.legacyScannedTotal), existingNotes=\(report.existingNoteCount), canonicalDuplicates=\(report.canonicalDuplicateCount), skippedCanonical=\(report.skippedCanonicalDuplicate)"
             )
         }
     }

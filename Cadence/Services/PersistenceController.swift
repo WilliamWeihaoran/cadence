@@ -306,7 +306,7 @@ struct PersistenceController {
         } classifying: { report in
             guard let report else { return .refused("noReport") }
             guard report.success else { return .refused("passReportedFailure") }
-            return report.insertedTotal > 0 ? .changed(report.insertedTotal) : .noChange
+            return report.changedNoteCount > 0 ? .changed(report.changedNoteCount) : .noChange
         }
         let syncedNoteTags = recorder.measure(.tagSync) {
             TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
@@ -341,7 +341,7 @@ struct PersistenceController {
         } classifying: { outcome in
             .forMaintenancePass(outcome)
         }
-        let changedStore = (migrationReport?.insertedTotal ?? 0) > 0 ||
+        let changedStore = (migrationReport?.changedNoteCount ?? 0) > 0 ||
             syncedNoteTags.changedStore ||
             reconciledFocusMinutes.changedStore ||
             repairReport?.changed == true

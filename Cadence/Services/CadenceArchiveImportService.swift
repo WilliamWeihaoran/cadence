@@ -191,7 +191,7 @@ nonisolated enum CadenceArchiveImportService {
     /// Fold any legacy note rows an import brought in that are not already represented by a `Note`.
     ///
     /// Run after the archive's commit rather than inside it so the migration reads a settled store,
-    /// and with `saveChanges: true` so its own inserts are committed by the service that made them.
+    /// and with `saveChanges: true` so its inserts and placeholder restorations are committed.
     /// A failure here leaves the imported rows in place and the fold undone, which the next launch
     /// repairs: `PersistenceController` runs the same migration.
     ///
@@ -204,7 +204,7 @@ nonisolated enum CadenceArchiveImportService {
             in: modelContext,
             source: "archive-import",
             saveChanges: true
-        ).insertedTotal
+        ).changedNoteCount
     }
 
     // MARK: - Validation

@@ -6,6 +6,149 @@ import Testing
 @Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct NoteMigrationServiceTests {
+    @Test func archiveFoldCountsAndCommitsRestoredPlaceholders() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let placeholder = try NoteMigrationService.dailyNote(for: "2026-10-02", in: context)
+        let legacy = DailyNote(date: "2026-10-02")
+        legacy.content = "Imported daily body"
+        context.insert(legacy)
+        try context.save()
+
+        #expect(try CadenceArchiveImportService.foldLegacyNotes(in: context) == 1)
+        let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(notes.count == 1)
+        #expect(notes.first?.id == placeholder.id)
+        #expect(notes.first?.content == "Imported daily body")
+        #expect(try CadenceArchiveImportService.foldLegacyNotes(in: context) == 0)
+    }
+
+    @Test func previouslyMergedLegacyNotepadIsRecognizedByItsSourceEvenWithADifferentID() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let legacy = PermNote()
+        legacy.content = "Historical notepad"
+        context.insert(legacy)
+        let survivor = Note(
+            kind: .permanent, content: "Edited surviving document",
+            legacySourceKind: "permanent", legacySourceID: legacy.id.uuidString
+        )
+        context.insert(survivor)
+        try context.save()
+
+        let report = try NoteMigrationService.migrateIfNeeded(in: context, source: "old-notepad-merge")
+        #expect(report.changedNoteCount == 0)
+        #expect(report.skippedAlreadyMigrated == 1)
+        #expect(try context.fetch(FetchDescriptor<Note>()).count == 1)
+        #expect(try NoteMigrationService.healthCheck(in: context).legacyWithoutCanonicalCount == 0)
+    }
+
+    @Test func lateLegacyNotepadMigratesBesideAnExistingLocalNotepadOnce() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let local = try NoteMigrationService.permanentNote(in: context)
+        let legacy = PermNote()
+        legacy.content = "Historical notepad"
+        context.insert(legacy)
+        try context.save()
+        #expect(try NoteMigrationService.healthCheck(in: context).legacyWithoutCanonicalCount == 1)
+
+        let first = try NoteMigrationService.migrateIfNeeded(in: context, source: "late-notepad-test")
+        _ = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "late-notepad-test")
+        let second = try NoteMigrationService.migrateIfNeeded(in: context, source: "late-notepad-retry")
+        let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(first.insertedPermanent == 1)
+        #expect(second.changedNoteCount == 0)
+        #expect(notes.count == 2)
+        #expect(notes.first { $0.id == local.id }?.content == "")
+        #expect(notes.first { $0.id == legacy.id }?.content == "Historical notepad")
+        #expect(try NoteMigrationService.healthCheck(in: context).issueCount == 0)
+    }
+
+    @Test func lateDatedLegacyContentFillsPlaceholdersWithoutChangingTheirIDsOrReplayingEdits() throws {
+        for kind in [NoteKind.daily, .weekly] {
+            let container = try CadenceTestStore.container()
+            let context = ModelContext(container)
+            let placeholder: Note
+            let legacyID: UUID
+            switch kind {
+            case .daily:
+                placeholder = try NoteMigrationService.dailyNote(for: "2026-10-02", in: context)
+                let legacy = DailyNote(date: "2026-10-02")
+                legacy.content = "Historical dated body"
+                legacyID = legacy.id
+                context.insert(legacy)
+            default:
+                placeholder = try NoteMigrationService.weeklyNote(for: "2026-W40", in: context)
+                let legacy = WeeklyNote(weekKey: "2026-W40")
+                legacy.content = "Historical dated body"
+                legacyID = legacy.id
+                context.insert(legacy)
+            }
+            let placeholderID = placeholder.id
+            try context.save()
+
+            let report = try NoteMigrationService.migrateIfNeeded(in: context, source: "late-dated-test")
+            let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+            #expect(report.insertedTotal == 0)
+            #expect(report.restoredEmptyNotes == 1)
+            #expect(report.changedNoteCount == 1)
+            #expect(notes.count == 1)
+            #expect(notes.first?.id == placeholderID)
+            #expect(notes.first?.content == "Historical dated body")
+            #expect(notes.first?.legacySourceID == legacyID.uuidString)
+
+            // Clearing text after migration is an edit, not a fresh placeholder to hydrate again.
+            placeholder.content = ""
+            try context.save()
+            let retry = try NoteMigrationService.migrateIfNeeded(in: context, source: "late-dated-retry")
+            #expect(retry.changedNoteCount == 0)
+            #expect(retry.skippedAlreadyMigrated == 1)
+            #expect(placeholder.content == "")
+        }
+    }
+
+    @Test func startupCommitsARestoredPlaceholderEvenWhenMigrationInsertsNothing() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let placeholder = try NoteMigrationService.dailyNote(for: "2026-10-02", in: context)
+        let legacy = DailyNote(date: "2026-10-02")
+        legacy.content = "Late daily body"
+        context.insert(legacy)
+        try context.save()
+
+        try withTemporaryDefaults("CadenceTests.lateDailyStartup") { defaults in
+            PersistenceController.performStartupMaintenance(in: context, defaults: defaults)
+        }
+
+        let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(notes.count == 1)
+        #expect(notes.first?.id == placeholder.id)
+        #expect(notes.first?.content == "Late daily body")
+        #expect(!context.hasChanges)
+    }
+
+    @Test func deferredPlaceholderRestorationRemainsUncommittedAndCanBeRetried() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        _ = try NoteMigrationService.dailyNote(for: "2026-10-02", in: context)
+        let legacy = DailyNote(date: "2026-10-02")
+        legacy.content = "Recoverable body"
+        context.insert(legacy)
+        try context.save()
+
+        let report = try NoteMigrationService.migrateIfNeeded(in: context, source: "deferred-placeholder", saveChanges: false)
+        #expect(report.restoredEmptyNotes == 1)
+        let fresh = ModelContext(container)
+        #expect(try fresh.fetch(FetchDescriptor<Note>()).first?.content == "")
+        #expect(try fresh.fetch(FetchDescriptor<DailyNote>()).first?.content == "Recoverable body")
+        context.rollback()
+
+        let retry = try NoteMigrationService.migrateIfNeeded(in: fresh, source: "deferred-placeholder-retry")
+        #expect(retry.restoredEmptyNotes == 1)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<Note>()).first?.content == "Recoverable body")
+    }
+
     /// The guard itself, both ways round, on every key it claims to cover: a key that was there
     /// goes back with its original bytes, and a key that was absent goes back to absent rather
     /// than to whatever the body wrote.
