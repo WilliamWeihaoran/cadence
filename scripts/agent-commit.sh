@@ -1261,8 +1261,8 @@ cmd_commit() {
   Every agent in this session writes into the same scratchpad directory, so a generic name is one
   file with several writers: 938cdb7 carried one agent's whole diff under another agent's subject
   line, because both had written msg.txt and -F read whichever landed last (T-1222).
-  The id has to be a whole COMPONENT of the name, not a fragment inside a longer word: agent `sync`
-  passing `msg-async-T-1.txt` is exactly the mix-up above, spelled so a substring test accepts it.
+  The id has to be a whole COMPONENT of the name, not a fragment inside a longer word: agent \`sync\`
+  passing \`msg-async-T-1.txt\` is exactly the mix-up above, spelled so a substring test accepts it.
   Rename it so the name says whose it is -- msg-$id-<ticket>.txt -- and pass that:
       mv ${2} ${2:h}/msg-$id-<ticket>.txt
   Or pass the message inline with -m, which reads no file at all."
@@ -3947,6 +3947,12 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ $rc == 3 && "$out" == *MESSAGE-FILE-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
     check "and the refusal spells the name it should have had" \
         $( [[ "$out" == *"msg-k1-"* ]] && print 1 || print 0 ) "$out"
+    # T-1991: the backticks in this refusal's prose sat unescaped inside a double-quoted string, so
+    # every firing ran `sync` and then failed on `msg-async-T-1.txt` -- "command not found", with
+    # both names printed blank. A guard runs nothing from its prose; the names must come out literally.
+    check "and the refusal's prose runs nothing: its quoted names print literally (T-1991)" \
+        $( [[ "$out" == *'agent `sync`'* && "$out" == *'passing `msg-async-T-1.txt`'* \
+              && "$out" != *"command not found"* ]] && print 1 || print 0 ) "$out"
     check "nothing was committed" \
         $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
               && $( cd "$ws" && git show HEAD:mine.txt ) != *"message-file mode"* ]] \
