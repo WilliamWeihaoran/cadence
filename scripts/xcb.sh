@@ -10,6 +10,8 @@
 #   ./scripts/xcb.sh check-warnings <log>                      # the diagnostic counters, on their own
 #   ./scripts/xcb.sh check-host-launch <log> [xcodebuild-exit] # the refused-relaunch report (T-1992)
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
+#   ./scripts/xcb.sh last-green                                # is HEAD still the last full green? (T-2042)
+#   ./scripts/xcb.sh release-dd <id|path>                      # delete a DerivedData no live build uses
 #   ./scripts/xcb.sh check-destination <-destination value>   # resolve a simulator, no build
 #   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
 #
@@ -894,8 +896,37 @@ screen_lock_time() {
   print -r -- "$session" | sed -nE 's/.*"CGSSessionScreenLockedTime"[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' | head -1
 }
 
-screen_lock_report() {
+# WHICH RUNS IT IS ABOUT (T-2041). Everything below explains UI-test reds, and a unit-only run has
+# none of those to explain: `CadenceTests` hosts in the app but reads no accessibility tree, and the
+# preflight deliberately lets such a run through a locked screen. Measured 2026-10-03 (heartbeat,
+# `b3b28b3b`): a GREEN `-only-testing:CadenceTests` run -- exit 0, 0 failed cases -- ended on the
+# full banner, "THESE REDS ARE NOT EVIDENCE ABOUT THE CODE" over no reds at all, and "the preflight
+# refuses this outright" about a run the preflight correctly admitted. So the banner is kept for a
+# selection that can reach `CadenceUITests` and a unit-only selection gets one informational line.
+# Fails toward the banner: no `-only-testing:` at all is the whole scheme, which includes the UI
+# target, unless that target is `-skip-testing:`'d wholesale.
+selection_reaches_ui_tests() {  # $@ = the run's own arguments. 0 = can reach CadenceUITests.
+  local -a vals; vals=(${(f)"$(only_testing_values "$@")"})
+  local v
+  local -i i
+  if (( ${#vals} == 0 )); then
+    for (( i = 1; i <= $#; i++ )); do
+      case "${argv[i]}" in
+        -skip-testing:CadenceUITests) return 1 ;;
+        -skip-testing) [[ "${argv[i+1]:-}" == CadenceUITests ]] && return 1 ;;
+      esac
+    done
+    return 0
+  fi
+  for v in $vals; do
+    [[ "${v%%/*}" == CadenceUITests ]] && return 0
+  done
+  return 1
+}
+
+screen_lock_report() {  # $1 = run start (epoch s), $2... = the run's own arguments (T-2041)
   local -i run_start=${1:-0}
+  shift
   local session; session="$(session_dictionary)"
   local -i locked_now=0
   [[ "$session" == *'"CGSSessionScreenIsLocked"=Yes'* ]] && locked_now=1
@@ -905,6 +936,13 @@ screen_lock_report() {
     locked_during=1
   fi
   (( locked_now || locked_during )) || return 0
+
+  if ! selection_reaches_ui_tests "$@"; then
+    say "  note: SCREEN-LOCKED (unit-only, informational; T-2041): the screen was locked around this run" \
+        "(locked at $( [[ -n "$lock_time" ]] && { date -r "$lock_time" '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || print -rn -- "$lock_time"; } || print -rn -- unknown)," \
+        "still locked: $( (( locked_now )) && print -n yes || print -n no)); this selection runs no CadenceUITests and a unit test needs no foreground, so it says nothing about the result."
+    return 0
+  fi
 
   say ""
   say "!! SCREEN-LOCKED-MID-RUN (T-1890): the Mac's screen was locked around this run."
@@ -1313,6 +1351,151 @@ selection_launches_an_app() {   # $@ = the -only-testing: values, flag already s
     suite="${rest%%/*}"
     ui_suite_launches_an_app "$suite" && return 0
   done
+  return 1
+}
+
+# --- one DerivedData, one live build; and the last full green (T-2042) -------
+# Measured 2026-10-03: heartbeat runs started 04:16, 04:36, 04:56 and 05:16 under ONE id, so all four
+# built into ONE `cadence-dd-heartbeat`. The 04:56 run's closing "delete <dd> when you are done" was
+# followed, and removed the directory 56 s into the 05:16 run -- whose result was then no evidence
+# about the code. The hint was printed when nothing else used the path; the delete came later, so a
+# check at print time alone cannot carry it. Three pieces, all reading the same process list:
+#   * a run REFUSES (exit 12, DD-IN-USE) when a live xcodebuild already names its -derivedDataPath --
+#     in preflight, again just before launch (a run can queue 40 minutes for the test host), and
+#     before the iOS leg (the lease is given back before it, so a same-id sibling can start then);
+#   * `release-dd` is the delete the hint now points at, and it refuses while one does;
+#   * a green full unscoped `-only-testing:CadenceTests` macOS run records HEAD plus a fingerprint
+#     of the working tree, and `last-green` says whether the tree is still exactly that, so a
+#     heartbeat can skip a 16-minute re-run of an unchanged tree.
+# CADENCE_PS_FIXTURE (a `ps -o pid= -o args=` capture) and CADENCE_XCB_STATE_DIR /
+# CADENCE_TREE_ROOT are the testing seams, the way CADENCE_SESSION_FIXTURE is for the lock.
+DD_IN_USE_EXIT=12
+
+# The pids of live xcodebuild processes whose -derivedDataPath is $1, one per line. Returns 2 when
+# the process list could not be read at all: this process is always in it, so empty is a failure,
+# and the callers treat it as "cannot prove free", never as "free".
+dd_live_users() {
+  local want="${${1:A}%/}" listing line
+  local -a w
+  local -i i
+  if [[ -n "${CADENCE_PS_FIXTURE:-}" ]]; then
+    listing="$(cat -- "$CADENCE_PS_FIXTURE" 2>/dev/null)"
+  else
+    listing="$(ps -axww -o pid= -o args= 2>/dev/null)"
+  fi
+  [[ -n "$listing" ]] || return 2
+  for line in ${(f)listing}; do
+    w=(${=line})
+    (( ${#w} >= 4 )) || continue
+    # The binary itself, or a script interpreter running something named xcodebuild (a stub).
+    [[ "${w[2]:t}" == xcodebuild || "${w[3]:t}" == xcodebuild ]] || continue
+    for (( i = 3; i < ${#w}; i++ )); do
+      if [[ "${w[i]}" == -derivedDataPath && "${${w[i+1]:A}%/}" == "$want" ]]; then
+        print -r -- "${w[1]}"
+        break
+      fi
+    done
+  done
+  return 0
+}
+
+# Prints the refusal and returns 0 when $1 is in use; returns 1 when it is provably free.
+# $2 = where in the run this is asked. An unreadable process list is NOT a refusal here: refusing
+# every run on a host whose `ps` is denied would be the T-986 shape. It is said, and the run goes on.
+dd_in_use_refusal() {
+  local dd=$1 stage=$2 users
+  local -i prc
+  users="$(dd_live_users "$dd")"; prc=$?
+  if (( prc != 0 )); then
+    say "  derivedData in use: not answered (could not read the process list) -- proceeding"
+    return 1
+  fi
+  [[ -n "$users" ]] || return 1
+  say ""
+  say "!! REFUSING: DD-IN-USE (T-2042, $stage): live xcodebuild pid(s) ${(j:, :)${(f)users}} already build"
+  say "   into $dd. Two builds in one DerivedData corrupt each other ('build.db is locked', a"
+  say "   Build/Products deleted underneath a running host), and a red from either is then no"
+  say "   evidence about the code. Wait for that pid, or give this run its own id (e.g. '<id>-\$\$')."
+  return 0
+}
+
+# "<HEAD> <clean|hash of the tracked diff and the untracked files>" for the git checkout rooted at
+# $1, or return 1 when $1 is not the top of one (an archive tree has no .git, and a directory
+# inside some OTHER checkout must not borrow that one's HEAD).
+tree_fingerprint() {
+  local root=$1 top head files dirt
+  top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [[ -n "$top" && "${top:A}" == "${root:A}" ]] || return 1
+  head="$(git -C "$root" rev-parse --verify -q HEAD 2>/dev/null)" || return 1
+  files="$(git -C "$root" ls-files --others --exclude-standard 2>/dev/null)"
+  dirt="$(git -C "$root" diff HEAD --binary --no-ext-diff --no-textconv 2>/dev/null)"
+  if [[ -n "$files" ]]; then
+    dirt+=$'\n'"$files"$'\n'"$(print -r -- "$files" | git -C "$root" hash-object --stdin-paths 2>/dev/null)"
+  fi
+  if [[ -z "$dirt" ]]; then
+    print -r -- "$head clean"
+  else
+    print -r -- "$head $(print -r -- "$dirt" | shasum | cut -c1-16)"
+  fi
+}
+
+# 0 when $@ (the run's own arguments, action included) is the run a heartbeat repeats: a `test` of
+# scheme Cadence on the Mac over the WHOLE CadenceTests target and nothing else. Anything narrower
+# or wider is not that answer, so a green one records nothing.
+full_unit_run() {
+  local -a vals dests
+  local scheme=""
+  local -i i has_test=0
+  vals=(${(f)"$(only_testing_values "$@")"})
+  dests=()
+  for (( i = 1; i <= $#; i++ )); do
+    case "${argv[i]}" in
+      test) has_test=1 ;;
+      -scheme) scheme="${argv[i+1]:-}" ;;
+      -destination) dests+=("${argv[i+1]:-}") ;;
+      -destination=*) dests+=("${argv[i]#-destination=}") ;;
+      -skip-testing*|-testPlan|-only-test-configuration|-skip-test-configuration) return 1 ;;
+    esac
+  done
+  (( has_test )) || return 1
+  [[ "$scheme" == Cadence ]] || return 1
+  (( ${#vals} == 1 )) && [[ "${vals[1]}" == CadenceTests ]] || return 1
+  (( ${#dests} == 1 )) && [[ "${dests[1]}" == platform=macOS || "${dests[1]}" == platform=macOS,* ]] || return 1
+  return 0
+}
+
+# One record per tree root, so a scratch tree's green never answers for the checkout's.
+last_green_file() {  # $1 = tree root
+  local dir="${CADENCE_XCB_STATE_DIR:-$TMP_BASE}"
+  [[ "$dir" != */ ]] && dir="$dir/"
+  print -r -- "${dir}cadence-xcb-last-green.$(print -rn -- "${1:A}" | shasum | cut -c1-12)"
+}
+
+# `last-green`: exit 0 UNCHANGED (HEAD and the working tree are exactly the recorded green),
+# 1 CHANGED, 3 NO-RECORD. Run from the tree it asks about.
+last_green_report() {  # $1 = tree root
+  local root=$1 file rec_sha rec_fp now now_sha now_fp
+  file="$(last_green_file "$root")"
+  if [[ ! -f "$file" ]]; then
+    say "last-green: NO-RECORD -- no full green -only-testing:CadenceTests macOS run recorded for $root"
+    return 3
+  fi
+  rec_sha="$(sed -n 's/^sha=//p' "$file" | head -1)"
+  rec_fp="$(sed -n 's/^tree=//p' "$file" | head -1)"
+  say "last-green record ($file):"
+  sed 's/^/  /' "$file"
+  if ! now="$(tree_fingerprint "$root")"; then
+    say "last-green: CHANGED -- $root is not a git checkout now, so it cannot be compared"
+    return 1
+  fi
+  now_sha="${now%% *}"; now_fp="${now#* }"
+  if [[ "$now_sha" == "$rec_sha" && "$now_fp" == "$rec_fp" ]]; then
+    say "last-green: UNCHANGED -- HEAD $now_sha and the working tree ($now_fp) are the recorded green."
+    return 0
+  fi
+  say "last-green: CHANGED -- now HEAD $now_sha, tree $now_fp" \
+      "($( [[ "$now_sha" == "$rec_sha" ]] && print -rn -- "same HEAD, working tree differs" \
+           || print -rn -- "$(git -C "$root" diff --name-only "$rec_sha" "$now_sha" 2>/dev/null | grep -c .) path(s) differ from $rec_sha"))."
   return 1
 }
 
@@ -1812,6 +1995,35 @@ selftest_only_testing() {
   check "...and the report never gates: it exits 0 whatever it found" \
     $( (( lrc == 0 )) && print 1 || print 0 ) "exit $lrc"
 
+  # T-2041. The banner explains UI-test reds; a unit-only selection has none, so it gets one line.
+  # The arguments go on the command line exactly as the run's own do, so this is the production
+  # reading. The UI and no-narrowing cases are the CONTROLS that the banner was not simply deleted.
+  run_lock_sel() { lout=$(CADENCE_SESSION_FIXTURE="$1" zsh "$here" check-screen-lock-window "${@:2}" 2>&1); lrc=$?; }
+  run_lock_sel "$ws/sess-locked-midrun.txt" "$sstart" -scheme Cadence -only-testing:CadenceTests test
+  check "UNIT-ONLY (T-2041): a locked -only-testing:CadenceTests run does NOT print the UI banner" \
+    $( [[ "$lout" != *SCREEN-LOCKED-MID-RUN* && "$lout" != *"NOT EVIDENCE"* && "$lout" != *"refuses this outright"* ]] && print 1 || print 0 ) "$lout"
+  check "...but still says, in ONE informational line, that the screen was locked" \
+    $( (( lrc == 0 )) && [[ "$lout" == *"SCREEN-LOCKED (unit-only, informational; T-2041)"* \
+         && $(print -r -- "$lout" | grep -c .) == 1 ]] && print 1 || print 0 ) "exit $lrc: $lout"
+  run_lock_sel "$ws/sess-locked-before-run.txt" "$sstart" -only-testing:CadenceTests/SoloTests
+  check "UNIT-ONLY: a suite-scoped CadenceTests run on an already-locked Mac gets the note, not the banner" \
+    $( [[ "$lout" == *"SCREEN-LOCKED (unit-only"* && "$lout" != *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "$lout"
+  run_lock_sel "$ws/sess-locked-midrun.txt" "$sstart" -only-testing:CadenceUITests/CadenceUITests
+  check "CONTROL (T-2041): a locked CadenceUITests run still gets the full SCREEN-LOCKED-MID-RUN banner" \
+    $( [[ "$lout" == *SCREEN-LOCKED-MID-RUN* && "$lout" == *"NOT EVIDENCE"* && "$lout" != *"unit-only"* ]] && print 1 || print 0 ) "$lout"
+  run_lock_sel "$ws/sess-locked-midrun.txt" "$sstart" -only-testing:CadenceTests -only-testing:CadenceUITests
+  check "CONTROL: a selection reaching BOTH targets gets the banner (fails toward the warning)" \
+    $( [[ "$lout" == *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "$lout"
+  run_lock_sel "$ws/sess-locked-midrun.txt" "$sstart" -scheme Cadence test
+  check "CONTROL: no -only-testing: at all is the whole scheme, UI target included: the banner" \
+    $( [[ "$lout" == *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "$lout"
+  run_lock_sel "$ws/sess-locked-midrun.txt" "$sstart" -scheme Cadence -skip-testing:CadenceUITests test
+  check "...unless the UI target is -skip-testing:'d wholesale, which is unit-only again" \
+    $( [[ "$lout" == *"SCREEN-LOCKED (unit-only"* && "$lout" != *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "$lout"
+  run_lock_sel "$ws/sess-old-lock.txt" "$sstart" -only-testing:CadenceTests
+  check "CONTROL: a unit-only run with no lock in its window is SILENT, note included" \
+    $( (( lrc == 0 )) && [[ -z "$lout" ]] && print 1 || print 0 ) "exit $lrc: $lout"
+
   say ""
   say " 8b. a test host macOS refused to relaunch is named, not filed under the lock note (T-1992)"
   # The refusal lines are verbatim from the 2026-10-02 heartbeat log (`a037faa3`); the test that
@@ -2111,7 +2323,10 @@ selftest_only_testing() {
   mkdir -p "$ws/leg/tmp"
   print -rl -- '#!/bin/zsh' \
     'print -r -- "${(j: :)@}" >> "$FAKE_XCB_CALLS"' \
-    'if (( $(grep -c . "$FAKE_XCB_CALLS") == 1 )); then cat -- "$FAKE_XCB_PRIMARY_LOG"; exit 0; fi' \
+    'if (( $(grep -c . "$FAKE_XCB_CALLS") == 1 )); then' \
+    '  [[ -n "${FAKE_XCB_PS_AFTER:-}" ]] && cp -- "$FAKE_XCB_PS_AFTER" "$CADENCE_PS_FIXTURE"' \
+    '  cat -- "$FAKE_XCB_PRIMARY_LOG"; exit 0' \
+    'fi' \
     'cat -- "$FAKE_XCB_IOS_LOG"; exit ${FAKE_XCB_IOS_EXIT:-0}' > "$ws/leg/xcodebuild"
   chmod +x "$ws/leg/xcodebuild"
   print -rl -- \
@@ -2206,6 +2421,120 @@ selftest_only_testing() {
     say "  skip  CI checks: no .github/workflows/ci.yml under $ROOT_DIR"
   fi
 
+  say ""
+  say " 12. one DerivedData, one live build; and the last full green (T-2042)"
+  # The whole run again, through `raw` (no drift check, no test-host lease -- both would read the
+  # live checkout and the live lock), with `$XCODEBUILD` the section-11 stub. The process list is a
+  # fixture, the tree is a throwaway git repository, and the record lands under $ws.
+  mkdir -p "$ws/lg/tree" "$ws/lg/state" "$ws/lg/state2"
+  local lgout lgcalls lgsha lgdd="$ws/lg/cadence-dd-lg" lgps=""
+  local -i lgrc
+  local -a lgfull
+  git -C "$ws/lg/tree" init -q 2>/dev/null
+  print -r -- "one" > "$ws/lg/tree/a.txt"
+  git -C "$ws/lg/tree" add a.txt 2>/dev/null
+  git -C "$ws/lg/tree" -c user.name=selftest -c user.email=selftest@invalid -c core.hooksPath=/dev/null \
+    -c commit.gpgsign=false commit -qm one 2>/dev/null
+  lgsha="$(git -C "$ws/lg/tree" rev-parse HEAD 2>/dev/null)"
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/Cadence/macOS/Views/Probe.swift (in target 'Cadence' from project 'Cadence')" \
+    "◇ Test run started." \
+    "✔ Test aUnitTestThatPassed() passed after 0.001 seconds." \
+    "** TEST SUCCEEDED **" > "$ws/lg/green.log"
+  print -rl -- "4242 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project P -derivedDataPath $lgdd/ test" \
+    > "$ws/lg/ps-live.txt"
+  print -rl -- "4242 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project P -derivedDataPath $ws/lg/cadence-dd-other test" \
+    "4243 /bin/zsh ./scripts/xcb.sh lg raw -derivedDataPath $lgdd test" > "$ws/lg/ps-other.txt"
+  : > "$ws/lg/ps-empty.txt"
+  run_lg() {  # $1 = state dir, $2 = primary log, $3... = xcb.sh arguments after the id
+    : > "$ws/leg/calls"
+    lgout=$(XCODEBUILD="$ws/leg/xcodebuild" FAKE_XCB_CALLS="$ws/leg/calls" FAKE_XCB_PRIMARY_LOG="$2" \
+      FAKE_XCB_IOS_LOG="$ws/leg/ios-ok.log" TMPDIR="$ws/leg/tmp/" CADENCE_STALL_POLL=1 \
+      CADENCE_XCB_STATE_DIR="$1" CADENCE_TREE_ROOT="$ws/lg/tree" CADENCE_PS_FIXTURE="$lgps" \
+      CADENCE_SESSION_FIXTURE="$ws/sess-locked-midrun.txt" CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 \
+      CADENCE_ALLOW_WARNINGS= zsh "$here" selftest-lg raw "${@:3}" 2>&1); lgrc=$?
+    lgcalls=$(grep -c . "$ws/leg/calls" | tr -d ' ')
+  }
+  run_lg_green() { lgout=$(CADENCE_XCB_STATE_DIR="$ws/lg/state" CADENCE_TREE_ROOT="$ws/lg/tree" zsh "$here" last-green 2>&1); lgrc=$?; }
+  lgfull=(-scheme Cadence -destination 'platform=macOS' -only-testing:CadenceTests -derivedDataPath "$lgdd" test)
+
+  lgps="$ws/lg/ps-live.txt"
+  run_lg "$ws/lg/state" "$ws/lg/green.log" "${lgfull[@]}"
+  check "DD-IN-USE: a run whose -derivedDataPath a live xcodebuild names is REFUSED (exit $DD_IN_USE_EXIT)" \
+    $( [[ $lgrc == $DD_IN_USE_EXIT && "$lgout" == *DD-IN-USE* && "$lgout" == *"pid(s) 4242"* ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  check "...before anything is built: xcodebuild was never called" \
+    $( [[ $lgcalls == 0 ]] && print 1 || print 0 ) "$lgcalls call(s)"
+  lgps="$ws/lg/ps-other.txt"
+  run_lg "$ws/lg/state" "$ws/lg/green.log" "${lgfull[@]}"
+  check "CONTROL: another DerivedData, or a non-xcodebuild process naming this one, does not refuse" \
+    $( [[ $lgrc == 0 && $lgcalls == 1 ]] && print 1 || print 0 ) "exit $lgrc, $lgcalls call(s): $lgout"
+  check "GREEN full unscoped CadenceTests run records HEAD as the last green" \
+    $( [[ "$lgout" == *"last-green: recorded $lgsha (tree clean)"* && "$(sed -n 's/^sha=//p' "$ws/lg/state"/cadence-xcb-last-green.* 2>/dev/null)" == "$lgsha" ]] && print 1 || print 0 ) "$lgout"
+  check "...and the result block points at release-dd, not at a bare delete" \
+    $( [[ "$lgout" == *"./scripts/xcb.sh release-dd $lgdd"* && "$lgout" != *"delete $lgdd when you are done"* ]] && print 1 || print 0 ) "$lgout"
+  check "WIRING (T-2041): the real run hands its arguments to the lock report -- unit-only gets the note" \
+    $( [[ "$lgout" == *"SCREEN-LOCKED (unit-only"* && "$lgout" != *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "$lgout"
+  lgps=""
+
+  run_lg_green
+  check "last-green: an untouched tree is UNCHANGED (exit 0) -- a heartbeat may skip the re-run" \
+    $( [[ $lgrc == 0 && "$lgout" == *"last-green: UNCHANGED"* ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  print -r -- "edited" >> "$ws/lg/tree/a.txt"
+  run_lg_green
+  check "last-green: an uncommitted edit on the same HEAD is CHANGED (exit 1)" \
+    $( [[ $lgrc == 1 && "$lgout" == *"working tree differs"* ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  git -C "$ws/lg/tree" checkout -q -- a.txt 2>/dev/null
+  print -r -- "new" > "$ws/lg/tree/b.txt"
+  run_lg_green
+  check "last-green: a new untracked file is CHANGED too" \
+    $( [[ $lgrc == 1 ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  git -C "$ws/lg/tree" add b.txt 2>/dev/null
+  git -C "$ws/lg/tree" -c user.name=selftest -c user.email=selftest@invalid -c core.hooksPath=/dev/null \
+    -c commit.gpgsign=false commit -qm two 2>/dev/null
+  run_lg_green
+  check "last-green: a new commit is CHANGED, and says how many paths differ" \
+    $( [[ $lgrc == 1 && "$lgout" == *"1 path(s) differ from $lgsha"* ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  lgout=$(CADENCE_XCB_STATE_DIR="$ws/lg/state2" CADENCE_TREE_ROOT="$ws/lg/tree" zsh "$here" last-green 2>&1); lgrc=$?
+  check "last-green: no record is NO-RECORD (exit 3), never UNCHANGED" \
+    $( [[ $lgrc == 3 && "$lgout" == *NO-RECORD* ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+
+  run_lg "$ws/lg/state2" "$ws/lg/green.log" -scheme Cadence -destination 'platform=macOS' \
+    -only-testing:CadenceTests -skip-testing:CadenceTests/SomeSuite -derivedDataPath "$lgdd" test
+  check "CONTROL: a green NARROWED run records nothing (it is not the run a heartbeat repeats)" \
+    $( [[ $lgrc == 0 && "$lgout" != *last-green* && -z "$(print -r -- "$ws/lg/state2"/cadence-xcb-last-green.*(N))" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  run_lg "$ws/lg/state2" "$ws/noop.log" "${lgfull[@]}"
+  check "CONTROL: a full run that is NOT green records nothing, and says why" \
+    $( [[ $lgrc != 0 && "$lgout" == *"last-green: not recorded -- this full CadenceTests run is not green"* \
+         && -z "$(print -r -- "$ws/lg/state2"/cadence-xcb-last-green.*(N))" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+
+  # The iOS leg runs after the lease is given back, which is when a same-id sibling can start: the
+  # stub swaps the process list in AFTER the primary build, so only the pre-leg check can see it.
+  cp -- "$ws/lg/ps-other.txt" "$ws/lg/ps-swapped.txt"
+  : > "$ws/leg/calls"
+  lgout=$(XCODEBUILD="$ws/leg/xcodebuild" FAKE_XCB_CALLS="$ws/leg/calls" FAKE_XCB_PRIMARY_LOG="$ws/leg/mac.log" \
+    FAKE_XCB_IOS_LOG="$ws/leg/ios-ok.log" FAKE_XCB_PS_AFTER="$ws/lg/ps-live.txt" TMPDIR="$ws/leg/tmp/" \
+    CADENCE_STALL_POLL=1 CADENCE_PS_FIXTURE="$ws/lg/ps-swapped.txt" CADENCE_SKIP_IOS_LEG= CADENCE_ALLOW_WARNINGS= \
+    zsh "$here" selftest-lg build -scheme Cadence -destination 'platform=macOS' -derivedDataPath "$lgdd" 2>&1); lgrc=$?
+  lgcalls=$(grep -c . "$ws/leg/calls" | tr -d ' ')
+  check "DD-IN-USE before the iOS leg: the leg is NOT built into a live sibling's DerivedData, and it gates" \
+    $( [[ $lgrc == $DD_IN_USE_EXIT && $lgcalls == 1 && "$lgout" == *"IOS-LEG-SKIPPED (DD-IN-USE)"* ]] && print 1 || print 0 ) "exit $lgrc, $lgcalls call(s): $lgout"
+  check "...and the result block says not to delete it, naming the pid" \
+    $( [[ "$lgout" == *"do NOT delete $lgdd: live xcodebuild pid(s) 4242"* ]] && print 1 || print 0 ) "$lgout"
+
+  mkdir -p "$lgdd"
+  lgout=$(CADENCE_PS_FIXTURE="$ws/lg/ps-live.txt" zsh "$here" release-dd "$lgdd" 2>&1); lgrc=$?
+  check "release-dd REFUSES (exit $DD_IN_USE_EXIT) while a live xcodebuild names the path, and deletes nothing" \
+    $( [[ $lgrc == $DD_IN_USE_EXIT && "$lgout" == *DD-IN-USE* && -d "$lgdd" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  lgout=$(CADENCE_PS_FIXTURE="$ws/lg/ps-empty.txt" zsh "$here" release-dd "$lgdd" 2>&1); lgrc=$?
+  check "release-dd fails CLOSED when the process list cannot be read" \
+    $( [[ $lgrc == $DD_IN_USE_EXIT && -d "$lgdd" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  lgout=$(zsh "$here" release-dd "$ws/lg/tree" 2>&1); lgrc=$?
+  check "release-dd deletes nothing that is not a cadence-dd-* directory" \
+    $( [[ $lgrc == 2 && -d "$ws/lg/tree" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  lgout=$(CADENCE_PS_FIXTURE="$ws/lg/ps-other.txt" zsh "$here" release-dd "$lgdd" 2>&1); lgrc=$?
+  check "release-dd deletes a DerivedData no live xcodebuild names" \
+    $( [[ $lgrc == 0 && ! -e "$lgdd" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -2286,9 +2615,9 @@ fi
 # run's start time ask whether the screen went out underneath it. It never gates, so it exits 0.
 if [[ "${1:-}" == "check-screen-lock-window" ]]; then
   if [[ -z "${2:-}" ]]; then
-    say "usage: ./scripts/xcb.sh check-screen-lock-window <run-start-epoch-seconds>"; exit 2
+    say "usage: ./scripts/xcb.sh check-screen-lock-window <run-start-epoch-seconds> [the run's own args...]"; exit 2
   fi
-  screen_lock_report "$2"
+  screen_lock_report "$2" "${@:3}"
   exit 0
 fi
 
@@ -2342,6 +2671,43 @@ if [[ "${1:-}" == "check-destination" ]]; then
   fi
   resolve_destinations "${@:#-destination}"
   exit $?
+fi
+
+# The last full green on its own (T-2042): what a heartbeat asks before paying 16 minutes to re-run
+# an unchanged tree. 0 UNCHANGED, 1 CHANGED, 3 NO-RECORD.
+if [[ "${1:-}" == "last-green" ]]; then
+  last_green_report "${CADENCE_TREE_ROOT:-$ROOT_DIR}"
+  exit $?
+fi
+
+# The delete the result block points at (T-2042). It takes an id or a path, deletes only a
+# `cadence-dd-*` directory, and refuses -- exit 12, naming the pids -- while a live xcodebuild
+# names that path, or when the process list cannot be read to prove it does not.
+if [[ "${1:-}" == "release-dd" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    say "usage: ./scripts/xcb.sh release-dd <id|derived-data-path>"; exit 2
+  fi
+  RDD="$2"
+  [[ "$RDD" == */* ]] || RDD="${TMP_BASE}cadence-dd-$RDD"
+  if [[ "${RDD:t}" != cadence-dd-* ]]; then
+    say "REFUSING: '$RDD' is not a cadence-dd-* DerivedData; release-dd deletes nothing else."; exit 2
+  fi
+  RDD_USERS="$(dd_live_users "$RDD")"; RDD_RC=$?
+  if (( RDD_RC != 0 )); then
+    say "REFUSING: could not read the process list, so nothing proves $RDD is free. Not deleted."
+    exit $DD_IN_USE_EXIT
+  fi
+  if [[ -n "$RDD_USERS" ]]; then
+    say "!! REFUSING: DD-IN-USE (T-2042): live xcodebuild pid(s) ${(j:, :)${(f)RDD_USERS}} build into $RDD."
+    say "   Deleting it now would pull it out from under that run. Not deleted."
+    exit $DD_IN_USE_EXIT
+  fi
+  if [[ ! -e "$RDD" ]]; then
+    say "release-dd: $RDD does not exist; nothing to delete."; exit 0
+  fi
+  rm -rf -- "$RDD"
+  say "release-dd: deleted $RDD (no live xcodebuild named it)."
+  exit 0
 fi
 
 if [[ "${1:-}" == "selftest" ]]; then
@@ -2416,6 +2782,8 @@ say "  log (latest):    $LOG_LATEST -> ${LOG:t}"
 # and every wait loop whose own command text spells the word.
 others=$(pgrep -f '^/Applications/.*/xcodebuild' 2>/dev/null | grep -vx "$$" | wc -l | tr -d ' ')
 say "  other xcodebuild processes: $others"
+# Before anything else is paid for: a second build into a live one's DerivedData (T-2042).
+dd_in_use_refusal "$DD" "preflight" && exit $DD_IN_USE_EXIT
 if (( $(pgrep -x Xcode 2>/dev/null | wc -l) > 0 )); then
   say "  WARNING: Xcode is running. T-117's mitigation is to quit it while a batch of agents"
   say "           builds; an open project is a standing claimant on Cadence.xcodeproj."
@@ -2638,6 +3006,17 @@ done
 
 # Taken immediately before the run so a lock landing any time after this point is inside the
 # window `screen_lock_report` tests at postflight (T-1890).
+# Asked again here, after the test-host lease, because the queue for it has reached forty minutes and
+# a same-id sibling can start building into this DerivedData at any point in that wait (T-2042).
+dd_in_use_refusal "$DD" "before launch, after the test-host lease" && exit $DD_IN_USE_EXIT
+# A full unscoped CadenceTests run fingerprints its tree NOW and again at the end; only a run whose
+# tree did not move underneath it may be recorded as the last green (T-2042).
+LG_ROOT="${CADENCE_TREE_ROOT:-$ROOT_DIR}"
+LG_FULL=0; LG_START=""
+if full_unit_run "${run_args[@]}"; then
+  LG_FULL=1
+  LG_START="$(tree_fingerprint "$LG_ROOT")"
+fi
 RUN_START_EPOCH=$(date +%s)
 "$XCODEBUILD" -project "$ROOT_DIR/Cadence.xcodeproj" "${run_args[@]}" > "$LOG" 2>&1 &
 XCB_PID=$!
@@ -2680,19 +3059,28 @@ if (( IS_TEST_RUN )); then
   # The refused host relaunch first, so its note sits above the lock note that would otherwise
   # be the only explanation offered for it (T-1992).
   host_launch_refusal_report "$LOG" "$XCODEBUILD_STATUS"
-  screen_lock_report "$RUN_START_EPOCH"
+  screen_lock_report "$RUN_START_EPOCH" "${run_args[@]}"
 fi
 # --- the iOS leg (T-1956) ----------------------------------------------------
 # After every primary-run report and before the leak check, so a shared entry the leg's own
 # `xcodebuild` created is reported too. The reasoning, and the four things it must get right, are
 # beside `ios_leg_decide` above. Read DIAG_COMPILED NOW: the leg's own report overwrites it.
 ios_leg_decide "$ACTION" "$STATUS" "$DIAG_COMPILED" "${args[@]}"
+# The lease is given back before the leg, so this is the moment a same-id sibling can be mid-build
+# in this DerivedData (T-2042). A leg that cannot run is not a green iOS surface: it gates.
+if [[ -z "$IOS_LEG_SKIP" ]] && dd_in_use_refusal "$DD" "before the iOS leg"; then
+  IOS_LEG_SKIP=DD-IN-USE
+  IOS_LEG_WHY="another live xcodebuild is building into $DD, so the leg was not run"
+  (( STATUS == 0 )) && STATUS=$DD_IN_USE_EXIT
+fi
 if [[ "$IOS_LEG_SKIP" == CARVED-OUT ]]; then
   say ""
   say "!! IOS-LEG-SKIPPED: CADENCE_SKIP_IOS_LEG=1 is set, so this run did NOT compile the iOS surface"
   say "   (T-1956). A macOS build compiles none of \`#if os(iOS)\`, so nothing above says anything about"
   say "   it. That is right only where something else builds iOS -- CI's \`ios-build\` job beside"
   say "   \`macos-tests\`. Anywhere else, unset it."
+elif [[ "$IOS_LEG_SKIP" == DD-IN-USE ]]; then
+  say "!! IOS-LEG-SKIPPED (DD-IN-USE): $IOS_LEG_WHY -- the iOS surface is NOT compiled (T-2042)."
 elif [[ -n "$IOS_LEG_SKIP" ]]; then
   say "  ios leg: skipped ($IOS_LEG_SKIP) -- $IOS_LEG_WHY (T-1956)"
 else
@@ -2786,5 +3174,35 @@ declined_backstop() {
 }
 declined_backstop
 
-say "  (delete $DD when you are done; a full one is ~1.7 GB)"
+# --- the last full green (T-2042) --------------------------------------------
+if (( LG_FULL )); then
+  if (( STATUS != 0 )); then
+    say "  last-green: not recorded -- this full CadenceTests run is not green (exit $STATUS)."
+  elif [[ -z "$LG_START" ]]; then
+    say "  last-green: not recorded -- $LG_ROOT is not the top of a git checkout."
+  elif LG_END="$(tree_fingerprint "$LG_ROOT")" && [[ "$LG_END" == "$LG_START" ]]; then
+    LG_FILE="$(last_green_file "$LG_ROOT")"
+    if print -rl -- "sha=${LG_START%% *}" "tree=${LG_START#* }" "root=${LG_ROOT:A}" \
+         "when=$(date '+%Y-%m-%dT%H:%M:%S%z')" "id=$ID" "log=$LOG" \
+         "ios_leg=${IOS_LEG_SKIP:-compiled}" > "$LG_FILE.$$" 2>/dev/null && mv -f "$LG_FILE.$$" "$LG_FILE"; then
+      say "  last-green: recorded ${LG_START%% *} (tree ${LG_START#* }) -- ./scripts/xcb.sh last-green"
+      say "              exits 0 while HEAD and the working tree are still exactly this (T-2042)."
+    else
+      rm -f "$LG_FILE.$$" 2>/dev/null
+      say "  last-green: not recorded -- could not write $LG_FILE."
+    fi
+  else
+    say "  last-green: not recorded -- the tree changed during the run (${LG_START} -> ${LG_END:-unreadable})."
+  fi
+fi
+
+# The delete is asked of `release-dd`, which re-reads the process list AT DELETE TIME: what is
+# true now says nothing about a run a later heartbeat starts into this path (T-2042).
+DD_USERS="$(dd_live_users "$DD")"
+if [[ -n "$DD_USERS" ]]; then
+  say "  !! do NOT delete $DD: live xcodebuild pid(s) ${(j:, :)${(f)DD_USERS}} use it (T-2042)."
+else
+  say "  (when you are done: ./scripts/xcb.sh release-dd $DD -- it refuses while a live"
+  say "   xcodebuild uses that path, which a bare rm does not; a full one is ~1.7 GB)"
+fi
 exit $STATUS
