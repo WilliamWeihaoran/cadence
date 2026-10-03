@@ -202,6 +202,14 @@ jobs:
     name: CadenceTests (macOS)
     runs-on: macos-latest
     timeout-minutes: 75
+    # T-1956: `xcb.sh` follows a green macOS build/test with an iOS Simulator build of the same tree.
+    # Here that would compile iOS a second time beside the `ios-build` job, so this job opts out --
+    # loudly: every `xcb.sh` run below prints `!! IOS-LEG-SKIPPED` naming this variable. Job level,
+    # so the sweep-manifest step's own `xcb.sh test` is covered too. A literal is legal here; only
+    # the `runner` context is not (see the TMPDIR note in mcp-server). `xcb.sh selftest` reads this
+    # line, so moving it into a step fails that check.
+    env:
+      CADENCE_SKIP_IOS_LEG: '1'
     steps:
       - uses: actions/checkout@v4
       - name: Assert toolchain

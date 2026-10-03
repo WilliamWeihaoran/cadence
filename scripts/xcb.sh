@@ -84,6 +84,13 @@
 #    17b5b61: 0 anchored warnings over 669 + 345 compile tasks, so this fires on nobody's normal
 #    day, which is the T-986 test a gate has to pass before it is allowed to gate.
 #
+# 8. AN iOS SURFACE NOTHING LOCAL COMPILED (T-1956). A macOS build compiles none of `#if os(iOS)`,
+#    so a green macOS run said nothing about 146 fenced files until CI's `ios-build` job did, after
+#    a push. A green `build`/`test` of `-scheme Cadence` that compiled Swift is now followed by a
+#    `generic/platform=iOS Simulator` build into the same DerivedData, gated like the primary one:
+#    a warning exits 9, a compile failure exits 11. It never runs when the destination is already
+#    iOS, and `CADENCE_SKIP_IOS_LEG=1` skips it with a `!!` banner (CI's `macos-tests` sets it).
+#
 # It never kills anything. The user's Cadence, the user's Xcode and other agents' builds are all
 # off limits; a stall is reported, and the decision to wait or abandon stays with the caller.
 
@@ -1103,6 +1110,111 @@ resolve_destinations() {
   return $SIMULATOR_GATE_EXIT
 }
 
+# --- the iOS leg (T-1956) ----------------------------------------------------
+# A macOS build compiles none of `#if os(iOS)` (T-1781), and 146 files carry that fence (T-1921),
+# so a green macOS `build`/`test` says nothing about the iOS surface -- and CI's `ios-build` job is
+# the first thing that does, after a push, on a batch nobody can attribute it to. T-1921 measured
+# the price of asking here instead: 88 s / 1392 swift compile tasks cold, 5 s / 0 tasks repeated,
+# because DerivedData is keyed on the AGENT ID, so the iOS leg is cold once per agent session.
+#
+# So after a GREEN primary `build` or `test` that ACTUALLY COMPILED SWIFT, the same `-scheme Cadence`
+# is built for `generic/platform=iOS Simulator` into the same DerivedData, and that log goes through
+# `diagnostic_report` -- one iOS warning breaks the zero-warning baseline exactly as a macOS one does.
+# It compiles only; no iOS test runs, so T-535's hole is narrowed to its warning half, not closed.
+#
+# FOUR THINGS IT MUST GET RIGHT, each a measured failure somewhere in this repository:
+#   1. IT NEVER RECURSES. A run whose destination (or `-sdk`) is already iOS IS the iOS build --
+#      CI's `ios-build` job is exactly that -- and building it a second time buys nothing.
+#   2. THE ESCAPE HATCH ANNOUNCES ITSELF. `CADENCE_SKIP_IOS_LEG=1` skips it with a `!!` banner on
+#      every run, the `CADENCE_ALLOW_WARNINGS` way, because a quiet carve-out is T-1921's latency
+#      back with nothing saying so. CI's `macos-tests` sets it: `ios-build` compiles iOS beside it.
+#   3. EVERY SKIP SAYS WHY. It fires on every run, which is T-986's shape, so a skip is one printed
+#      line naming its reason and `selftest` induces the run AND each skip.
+#   4. A VACUOUS iOS BUILD CERTIFIES NOTHING. `diagnostic_report` already says VACUOUS-COUNT at 0
+#      tasks (T-1147); this goes one step further and reads the APP target, because a leg that
+#      compiled a handful of `CadenceWidgets` files and no file of target `Cadence` is a tiny count
+#      over nothing the iOS surface is made of. It is reported as IOS-LEG-VACUOUS and never gated,
+#      exactly as the macOS vacuous count is not.
+#
+# It is NOT taken for `raw` (`mutate.sh`'s route, whose trees are non-baseline by construction), for a
+# scheme other than `Cadence` (`CadenceMCPServer` has no iOS surface), or after a red primary run.
+IOS_LEG_EXIT=11
+IOS_LEG_DESTINATION='generic/platform=iOS Simulator'
+# The app target's own compile tasks, in the line shape Xcode 26.6/27 writes:
+# `SwiftCompile normal arm64 /…/File.swift (in target 'Cadence' from project 'Cadence')`.
+IOS_LEG_APP_TASK_PATTERN="(in target 'Cadence' from project"
+
+# Sets IOS_LEG_SKIP (a token, empty when the leg must run) and IOS_LEG_WHY (one plain sentence).
+# $1 = action, $2 = the primary run's status after its gates, $3 = its compile-task count,
+# $4... = the run's own arguments.
+IOS_LEG_SKIP=""; IOS_LEG_WHY=""
+ios_leg_decide() {
+  local action=$1 primary_status=$2 compiled=$3; shift 3
+  local -a a; a=("$@")
+  local i v scheme=""
+  IOS_LEG_SKIP=""; IOS_LEG_WHY=""
+  if [[ "$action" != build && "$action" != test ]]; then
+    IOS_LEG_SKIP=NOT-BUILD-OR-TEST; IOS_LEG_WHY="the action is '$action', not build or test"; return 0
+  fi
+  for (( i = 1; i <= ${#a}; i++ )); do
+    v=""
+    case "${a[i]}" in
+      -scheme)        scheme="${a[i+1]:-}" ;;
+      -destination)   v="${a[i+1]:-}" ;;
+      -destination=*) v="${a[i]#-destination=}" ;;
+      -sdk)           [[ "${${a[i+1]:-}:l}" == iphone* ]] && v="-sdk ${a[i+1]}" ;;
+    esac
+    if [[ "${v:l}" == *platform=ios* || "$v" == "-sdk "* ]]; then
+      IOS_LEG_SKIP=ALREADY-IOS
+      IOS_LEG_WHY="this run's destination is already iOS ('$v') -- it IS the iOS build, so a second one would only repeat it"
+      return 0
+    fi
+  done
+  if [[ "$scheme" != "Cadence" ]]; then
+    IOS_LEG_SKIP=NO-IOS-SCHEME
+    IOS_LEG_WHY="the scheme is '${scheme:-<none>}', not 'Cadence' -- only the app scheme has an iOS surface"
+    return 0
+  fi
+  if [[ "${CADENCE_SKIP_IOS_LEG:-}" == "1" ]]; then
+    IOS_LEG_SKIP=CARVED-OUT; IOS_LEG_WHY="CADENCE_SKIP_IOS_LEG=1 is set"; return 0
+  fi
+  if (( primary_status != 0 )); then
+    IOS_LEG_SKIP=PRIMARY-RED; IOS_LEG_WHY="the primary run is red (exit $primary_status) -- fix that first"; return 0
+  fi
+  if (( compiled == 0 )); then
+    IOS_LEG_SKIP=PRIMARY-VACUOUS
+    IOS_LEG_WHY="the primary run compiled 0 Swift files, so there is no change here for an iOS build to check"
+    return 0
+  fi
+  return 0
+}
+
+# The primary run's arguments, cut down to what an iOS `build` of the same tree needs: the scheme,
+# configuration, xcconfig, DerivedData and build settings. A whitelist, deliberately -- the test-only
+# flags (`-only-testing:`, `-testPlan`, `-resultBundlePath`, ...) are many and a `build` refuses or
+# ignores them, and `-quiet` would strip the SwiftCompile lines the vacuity reading needs.
+# $@ = the run's own arguments. Prints one argument per line.
+ios_leg_args() {
+  local -a a; a=("$@")
+  local i
+  for (( i = 1; i <= ${#a}; i++ )); do
+    case "${a[i]}" in
+      -scheme|-configuration|-xcconfig|-derivedDataPath)
+        print -r -- "${a[i]}"; print -r -- "${a[i+1]:-}"; (( i++ )) ;;
+      # A flag's VALUE is never a build setting, however it is spelt: `-destination platform=macOS`
+      # reads as `platform=macOS`, and the first selftest run of this caught exactly that leaking
+      # into the iOS argv. So the value-taking flags consume their value, and a setting must be
+      # UPPER_SNAKE, which every setting xcodebuild takes is.
+      -destination|-sdk|-arch|-resultBundlePath|-testPlan|-only-testing|-skip-testing|-xctestrun|-test-iterations)
+        (( i++ )) ;;
+      # `=~`, not a `[[ == ]]` glob: `#` needs EXTENDED_GLOB, and without it that matches literally (T-1074).
+      *=*)
+        [[ "${a[i]}" =~ '^[A-Z_][A-Z0-9_]*=' ]] && print -r -- "${a[i]}" ;;
+    esac
+  done
+  print -r -- -destination; print -r -- "$IOS_LEG_DESTINATION"; print -r -- build
+}
+
 # --- does this selection launch an app? (T-1933) -----------------------------
 # ONE QUESTION, TWO DECISIONS. The locked-screen guard (T-563) and the test-host lock (T-236) were
 # each written against a different proxy for the same fact, and both proxies are the target name:
@@ -1898,6 +2010,112 @@ selftest_only_testing() {
     $( [[ "$(grep -A4 'REFUSING: the screen is locked' "$here")" == *"test runner failed to"* ]] && print 1 || print 0 ) \
     "the refusal no longer says why a screen-free suite is refused too"
 
+  say ""
+  say " 11. the iOS leg after a green macOS run (T-1956)"
+  # THE WHOLE RUN, NOT A HELPER. Every case below is a real `xcb.sh <id> build` through the real main
+  # flow, with `$XCODEBUILD` pointed at a stub that records its argv and replays a fixture log --
+  # the first call gets the primary's log, every later call the iOS one. So "the leg ran" is read
+  # off the stub's call count and argv, not off a banner, and a mutation that unwires the leg from
+  # the main flow goes red here even with `ios_leg_decide` intact. Logs land under `$ws` (TMPDIR),
+  # and CADENCE_STALL_POLL=1 keeps the watchdog's orphaned `sleep` from holding the pipe 30 s.
+  mkdir -p "$ws/leg/tmp"
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- "${(j: :)@}" >> "$FAKE_XCB_CALLS"' \
+    'if (( $(grep -c . "$FAKE_XCB_CALLS") == 1 )); then cat -- "$FAKE_XCB_PRIMARY_LOG"; exit 0; fi' \
+    'cat -- "$FAKE_XCB_IOS_LOG"; exit ${FAKE_XCB_IOS_EXIT:-0}' > "$ws/leg/xcodebuild"
+  chmod +x "$ws/leg/xcodebuild"
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/Cadence/macOS/Views/Probe.swift (in target 'Cadence' from project 'Cadence')" \
+    "** BUILD SUCCEEDED **" > "$ws/leg/mac.log"
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/Cadence/iOS/iOSProbe.swift (in target 'Cadence' from project 'Cadence')" \
+    "** BUILD SUCCEEDED **" > "$ws/leg/ios-ok.log"
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/Cadence/iOS/iOSProbe.swift (in target 'Cadence' from project 'Cadence')" \
+    "/repo/Cadence/iOS/iOSProbe.swift:7:13: warning: initialization of immutable value 'p' was never used; consider replacing with assignment to '_'" \
+    "** BUILD SUCCEEDED **" > "$ws/leg/ios-warn.log"
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/Cadence/iOS/iOSProbe.swift (in target 'Cadence' from project 'Cadence')" \
+    "/repo/Cadence/iOS/iOSProbe.swift:7:13: error: cannot find 'zzMissing' in scope" \
+    "** BUILD FAILED **" > "$ws/leg/ios-fail.log"
+  # Real line shape (a widget-only compile, measured in an iOS log 2026-10-02): a non-zero count
+  # that holds no file of the app target -- the "tiny count over nothing" case.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/Cadence/Services/CadenceWidgetIntents.swift (in target 'CadenceWidgets' from project 'Cadence')" \
+    "** BUILD SUCCEEDED **" > "$ws/leg/ios-widgets.log"
+  local lout lrc lcalls lsecond leg_skip=""
+  run_leg() {  # $1 = primary log, $2 = iOS log, $3 = iOS exit, $4... = xcb.sh arguments after the id
+    : > "$ws/leg/calls"
+    lout=$(XCODEBUILD="$ws/leg/xcodebuild" FAKE_XCB_CALLS="$ws/leg/calls" FAKE_XCB_PRIMARY_LOG="$1" \
+      FAKE_XCB_IOS_LOG="$2" FAKE_XCB_IOS_EXIT="$3" TMPDIR="$ws/leg/tmp/" CADENCE_STALL_POLL=1 \
+      CADENCE_SKIP_IOS_LEG="$leg_skip" CADENCE_ALLOW_WARNINGS= \
+      zsh "$here" selftest-ios-leg "${@:4}" 2>&1); lrc=$?
+    lcalls=$(grep -c . "$ws/leg/calls" | tr -d ' ')
+    lsecond=$(sed -n 2p "$ws/leg/calls")
+  }
+  local -a mac_args
+  mac_args=(build -scheme Cadence -destination 'platform=macOS' -derivedDataPath "$ws/leg/dd"
+            -resultBundlePath "$ws/leg/r.xcresult" CODE_SIGN_IDENTITY=-)
+
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-ok.log" 0 "${mac_args[@]}"
+  check "RUN: a green macOS build that compiled Swift is followed by a second xcodebuild" \
+    $( [[ $lrc == 0 && $lcalls == 2 ]] && print 1 || print 0 ) "exit $lrc, $lcalls call(s): $lout"
+  check "...and that call builds generic/platform=iOS Simulator, not macOS again" \
+    $( [[ "$lsecond" == *"-destination generic/platform=iOS Simulator build" && "$lsecond" != *platform=macOS* ]] && print 1 || print 0 ) "argv: $lsecond"
+  check "...into the SAME DerivedData, keeping the build settings and dropping test-only flags" \
+    $( [[ "$lsecond" == *"-derivedDataPath $ws/leg/dd"* && "$lsecond" == *"CODE_SIGN_IDENTITY=-"* && "$lsecond" != *resultBundlePath* ]] && print 1 || print 0 ) "argv: $lsecond"
+  check "...and reports both XCODEBUILD_EXIT= lines and that the iOS surface COMPILED" \
+    $( [[ $(print -r -- "$lout" | grep -c 'XCODEBUILD_EXIT=0') == 2 && "$lout" == *"ios leg: COMPILED -- 1 app-target"* ]] && print 1 || print 0 ) "$lout"
+
+  run_leg "$ws/leg/ios-ok.log" "$ws/leg/ios-ok.log" 0 build -scheme Cadence \
+    -destination "$IOS_LEG_DESTINATION" -derivedDataPath "$ws/leg/dd"
+  check "SKIP (no recursion): a run whose destination is already iOS builds iOS ONCE (CI's ios-build)" \
+    $( [[ $lrc == 0 && $lcalls == 1 && "$lout" == *"ios leg: skipped (ALREADY-IOS)"* ]] && print 1 || print 0 ) "exit $lrc, $lcalls call(s): $lout"
+
+  leg_skip=1
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-ok.log" 0 "${mac_args[@]}"
+  leg_skip=""
+  check "SKIP (carve-out): CADENCE_SKIP_IOS_LEG=1 skips the second build" \
+    $( [[ $lrc == 0 && $lcalls == 1 ]] && print 1 || print 0 ) "exit $lrc, $lcalls call(s): $lout"
+  check "...and ANNOUNCES it, the CADENCE_ALLOW_WARNINGS way, rather than going quiet" \
+    $( [[ "$lout" == *"!! IOS-LEG-SKIPPED: CADENCE_SKIP_IOS_LEG=1"* ]] && print 1 || print 0 ) "$lout"
+
+  run_leg "$ws/noop.log" "$ws/leg/ios-ok.log" 0 "${mac_args[@]}"
+  check "SKIP: a primary run that compiled nothing does not pay for an iOS build, and says so" \
+    $( [[ $lcalls == 1 && "$lout" == *"ios leg: skipped (PRIMARY-VACUOUS)"* ]] && print 1 || print 0 ) "$lcalls call(s): $lout"
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-ok.log" 0 build -scheme CadenceMCPServer \
+    -destination 'platform=macOS' -derivedDataPath "$ws/leg/dd"
+  check "SKIP: a scheme with no iOS surface (CadenceMCPServer) is not built for iOS, and says so" \
+    $( [[ $lcalls == 1 && "$lout" == *"ios leg: skipped (NO-IOS-SCHEME)"* ]] && print 1 || print 0 ) "$lcalls call(s): $lout"
+
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-warn.log" 0 "${mac_args[@]}"
+  check "GATE: one iOS-only warning breaks the zero-warning baseline (exit $WARNING_GATE_EXIT)" \
+    $( [[ $lrc == $WARNING_GATE_EXIT && "$lout" == *WARNING-BASELINE* && "$lout" == *"iOSProbe.swift:7:13"* ]] && print 1 || print 0 ) "exit $lrc: $lout"
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-fail.log" 65 "${mac_args[@]}"
+  check "GATE: an iOS compile failure under a green macOS run exits $IOS_LEG_EXIT and quotes the error" \
+    $( [[ $lrc == $IOS_LEG_EXIT && "$lout" == *IOS-LEG-FAILED* && "$lout" == *"cannot find 'zzMissing'"* && "$lout" == *"XCODEBUILD_EXIT=65"* ]] && print 1 || print 0 ) "exit $lrc: $lout"
+
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-widgets.log" 0 "${mac_args[@]}"
+  check "VACUOUS: a leg that compiled no app-target file certifies NOTHING (IOS-LEG-VACUOUS)" \
+    $( [[ "$lout" == *IOS-LEG-VACUOUS* && "$lout" != *"ios leg: COMPILED"* ]] && print 1 || print 0 ) "$lout"
+  check "...and, like the macOS vacuous count, it does not gate" \
+    $( (( lrc == 0 )) && print 1 || print 0 ) "exit $lrc"
+
+  # The carve-out is only honest where something else builds iOS. CI is that place, so the
+  # workflow is read: `macos-tests` must set it and `ios-build` must be the iOS build.
+  local ciyml="$ROOT_DIR/.github/workflows/ci.yml"
+  if [[ -f "$ciyml" ]]; then
+    local cijob
+    cijob=$(awk '/^  macos-tests:/{on=1; next} /^  [a-z][a-z0-9-]*:$/{on=0} on' "$ciyml")
+    check "CI: macos-tests sets CADENCE_SKIP_IOS_LEG, so it does not rebuild iOS beside ios-build" \
+      $( print -r -- "$cijob" | grep -qE "^ +CADENCE_SKIP_IOS_LEG: *'?1'?$" && print 1 || print 0 ) "macos-tests job does not set it"
+    cijob=$(awk '/^  ios-build:/{on=1; next} /^  [a-z][a-z0-9-]*:$/{on=0} on' "$ciyml")
+    check "CI: ...and ios-build really is an iOS build, so the carve-out loses nothing" \
+      $( [[ "$cijob" == *"-destination '$IOS_LEG_DESTINATION'"* ]] && print 1 || print 0 ) "ios-build no longer builds $IOS_LEG_DESTINATION"
+  else
+    say "  skip  CI checks: no .github/workflows/ci.yml under $ROOT_DIR"
+  fi
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -2267,15 +2485,16 @@ if [[ "$ACTION" == "test" ]] && ! selection_launches_an_app "${only_testing[@]}"
 elif [[ "$ACTION" == "test" ]]; then
   "$ROOT_DIR/scripts/test-host-lock.sh" acquire "${CADENCE_LOCK_TIMEOUT:-5400}" "xcb-$ID" || exit 1
   trap "\"$ROOT_DIR/scripts/test-host-lock.sh\" release 'xcb-$ID'" EXIT INT TERM
+  LOCK_HELD=1
 fi
 
 # --- the T-117 stall watchdog ------------------------------------------------
 # Reports, never kills. `sample` on our own child is what turns silence into a verdict.
-watchdog() {
-  local target="$1" still=0 last=-1
+watchdog() {  # $1 = pid, $2 = the log it writes (the primary run's when omitted; T-1956's leg passes its own)
+  local target="$1" log="${2:-$LOG}" still=0 last=-1
   while sleep "$STALL_POLL"; do
     kill -0 "$target" 2>/dev/null || return 0
-    local size=$(wc -c < "$LOG" 2>/dev/null | tr -d ' ')
+    local size=$(wc -c < "$log" 2>/dev/null | tr -d ' ')
     local cpu=$(ps -o %cpu= -p "$target" 2>/dev/null | tr -d ' ')
     if [[ "$size" == "$last" && "${cpu%%.*}" == "0" ]]; then
       (( still += STALL_POLL ))
@@ -2358,6 +2577,61 @@ if (( IS_TEST_RUN )); then
   # produces BOTH shapes -- an empty-tree run full of reds (RAN > 0) and a skipped-out one
   # (RAN == 0) -- depending only on whether the lock beat `setUpWithError` to it (T-1890).
   screen_lock_report "$RUN_START_EPOCH"
+fi
+# --- the iOS leg (T-1956) ----------------------------------------------------
+# After every primary-run report and before the leak check, so a shared entry the leg's own
+# `xcodebuild` created is reported too. The reasoning, and the four things it must get right, are
+# beside `ios_leg_decide` above. Read DIAG_COMPILED NOW: the leg's own report overwrites it.
+ios_leg_decide "$ACTION" "$STATUS" "$DIAG_COMPILED" "${args[@]}"
+if [[ "$IOS_LEG_SKIP" == CARVED-OUT ]]; then
+  say ""
+  say "!! IOS-LEG-SKIPPED: CADENCE_SKIP_IOS_LEG=1 is set, so this run did NOT compile the iOS surface"
+  say "   (T-1956). A macOS build compiles none of \`#if os(iOS)\`, so nothing above says anything about"
+  say "   it. That is right only where something else builds iOS -- CI's \`ios-build\` job beside"
+  say "   \`macos-tests\`. Anywhere else, unset it."
+elif [[ -n "$IOS_LEG_SKIP" ]]; then
+  say "  ios leg: skipped ($IOS_LEG_SKIP) -- $IOS_LEG_WHY (T-1956)"
+else
+  # The leg needs no test host. Give the lease back now rather than hold it across a build that
+  # was measured at 88 s cold (T-1921) while siblings queue FIFO behind it.
+  if (( ${LOCK_HELD:-0} )); then
+    "$ROOT_DIR/scripts/test-host-lock.sh" release "xcb-$ID" >/dev/null 2>&1
+    trap - EXIT INT TERM
+    LOCK_HELD=0
+  fi
+  IOS_LOG="${TMP_BASE}cadence-xcb-$ID-ios.$(date +%Y%m%d-%H%M%S)-$$.log"
+  ln -sf "${IOS_LOG:t}" "${TMP_BASE}cadence-xcb-$ID-ios.log" 2>/dev/null
+  ios_args=("${(@f)$(ios_leg_args "${args[@]}")}")
+  say ""
+  say "== xcb ios leg ($ID): -destination '$IOS_LEG_DESTINATION' build (T-1956) =="
+  say "  log:             $IOS_LOG"
+  "$XCODEBUILD" -project "$ROOT_DIR/Cadence.xcodeproj" "${ios_args[@]}" > "$IOS_LOG" 2>&1 &
+  IOS_PID=$!
+  watchdog "$IOS_PID" "$IOS_LOG" &
+  IOS_WATCHDOG_PID=$!
+  wait "$IOS_PID"; IOS_STATUS=$?
+  kill "$IOS_WATCHDOG_PID" 2>/dev/null
+  say "  XCODEBUILD_EXIT=$IOS_STATUS"
+  diagnostic_report "$IOS_LOG"; IOS_GATE=$?
+  IOS_APP_TASKS=$(grep -E "$SWIFT_COMPILE_TASK_PATTERN" "$IOS_LOG" 2>/dev/null \
+    | grep -cF "$IOS_LEG_APP_TASK_PATTERN" | tr -d ' ')
+  say "  app-target ('Cadence') compile tasks: $IOS_APP_TASKS"
+  if (( IOS_STATUS != 0 )); then
+    say ""
+    say "!! IOS-LEG-FAILED: the primary run was green and the iOS build of the SAME tree exited"
+    say "   $IOS_STATUS (T-1956). A macOS build compiles none of \`#if os(iOS)\`; this is what it hid:"
+    grep -E "$SWIFT_ERROR_PATTERN|^error:|\*\* BUILD FAILED" "$IOS_LOG" 2>/dev/null | head -20 | sed 's/^/     /'
+    say "   Read the rest in $IOS_LOG."
+    (( STATUS == 0 )) && STATUS=$IOS_LEG_EXIT
+  elif (( IOS_GATE != 0 )); then
+    (( STATUS == 0 )) && STATUS=$IOS_GATE
+  elif (( IOS_APP_TASKS == 0 )); then
+    say "  !! IOS-LEG-VACUOUS: the iOS leg compiled no file of the app target 'Cadence' ($DIAG_COMPILED"
+    say "     compile task(s) in all), so it certifies NOTHING about the iOS surface -- an incremental"
+    say "     leg reuses object files. Not gated (T-1147); it is not evidence your change builds on iOS."
+  else
+    say "  ios leg: COMPILED -- $IOS_APP_TASKS app-target Swift compile task(s), 0 warnings."
+  fi
 fi
 if [[ "$(shared_cadence_entries)" != "$before_entries" ]]; then
   say ""
