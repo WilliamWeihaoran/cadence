@@ -2521,6 +2521,29 @@ selftest_only_testing() {
   check "...and the result block says not to delete it, naming the pid" \
     $( [[ "$lgout" == *"do NOT delete $lgdd: live xcodebuild pid(s) 4242"* ]] && print 1 || print 0 ) "$lgout"
 
+  # The check after the test-host lease (T-2043). Every case above is refused at preflight first, so
+  # deleting that call alone left this section green. A `test` through a copy of this script whose
+  # `$ROOT_DIR` holds a stub test-host-lock.sh: its `acquire` swaps the live list in, so preflight
+  # reads a free DerivedData and only the post-lease check can see the sibling.
+  mkdir -p "$ws/lg/root/scripts"
+  cp -- "$here" "$ws/lg/root/scripts/xcb.sh"
+  print -rl -- '#!/bin/zsh' \
+    '[[ "$1" == acquire ]] && cp -- "$FAKE_LEASE_PS_AFTER" "$CADENCE_PS_FIXTURE"' \
+    'exit 0' > "$ws/lg/root/scripts/test-host-lock.sh"
+  chmod +x "$ws/lg/root/scripts/test-host-lock.sh"
+  cp -- "$ws/lg/ps-other.txt" "$ws/lg/ps-swapped.txt"
+  : > "$ws/leg/calls"
+  lgout=$(XCODEBUILD="$ws/leg/xcodebuild" FAKE_XCB_CALLS="$ws/leg/calls" FAKE_XCB_PRIMARY_LOG="$ws/lg/green.log" \
+    FAKE_XCB_IOS_LOG="$ws/leg/ios-ok.log" FAKE_LEASE_PS_AFTER="$ws/lg/ps-live.txt" TMPDIR="$ws/leg/tmp/" \
+    CADENCE_STALL_POLL=1 CADENCE_PS_FIXTURE="$ws/lg/ps-swapped.txt" CADENCE_XCB_STATE_DIR="$ws/lg/state2" \
+    CADENCE_TREE_ROOT="$ws/lg/tree" CADENCE_SESSION_FIXTURE="$ws/sess-locked-midrun.txt" \
+    CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS= zsh "$ws/lg/root/scripts/xcb.sh" selftest-lg test \
+    -scheme Cadence -destination 'platform=macOS' -only-testing:CadenceTests -derivedDataPath "$lgdd" 2>&1); lgrc=$?
+  lgcalls=$(grep -c . "$ws/leg/calls" | tr -d ' ')
+  check "DD-IN-USE before launch: a sibling that starts during the test-host lease wait is REFUSED (exit $DD_IN_USE_EXIT)" \
+    $( [[ $lgrc == $DD_IN_USE_EXIT && "$lgout" == *"DD-IN-USE (T-2042, before launch"* \
+         && "$lgout" != *"T-2042, preflight"* && $lgcalls == 0 ]] && print 1 || print 0 ) "exit $lgrc, $lgcalls call(s): $lgout"
+
   mkdir -p "$lgdd"
   lgout=$(CADENCE_PS_FIXTURE="$ws/lg/ps-live.txt" zsh "$here" release-dd "$lgdd" 2>&1); lgrc=$?
   check "release-dd REFUSES (exit $DD_IN_USE_EXIT) while a live xcodebuild names the path, and deletes nothing" \
