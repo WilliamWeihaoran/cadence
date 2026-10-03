@@ -60,6 +60,18 @@
 # flag. Guessing between them from the text is what [[T-1325]] is a whole ticket about; this view
 # declines to guess and points at the entry instead.
 #
+# CANCELLED IS READ IN TWO PLACES, both narrower than the word (T-2040). An entry under
+# `## Cancelled` is cancelled by its section. An entry left in place in an open section is cancelled
+# by a bold run OPENING a line of its block with the token and a date -- `**CANCELLED 2026-09-28` --
+# either right after the id on the first line (the `**PARTIAL` anchoring) or one indent in on a
+# continuation line. [[T-1493]] is the witness: the owner cancelled it, the coordinator kept the
+# finding as the record and wrote the cancellation as its own paragraph below it, and this view
+# listed it OPEN to every heartbeat preferring owner-reported work. The word loose in prose, the
+# token without a date, and the marker quoted inside inline code read as nothing, and a first-line
+# CLOSED or PARTIAL wins over a cancellation further down. This is the view's reading only:
+# `agent-commit.sh` and `ledger-lag-check.sh` still read such an entry as not closed, which is the
+# safe direction for them (landing code under a cancelled id is refused, not waved through).
+#
 # IDS vs ENTRIES. An id can have more than one formal entry ([[T-1303]]: T-1043 had a closed twin
 # and an open one). Entries are listed individually and flagged `DUP`; the id census follows
 # `ledger_closed_ids`' set reading -- an id is active only while NO entry of it is closed -- so the
@@ -131,6 +143,13 @@ function first_line_closed(s) {
 function first_line_partial(s) {
     return s ~ /^- \[T-[0-9]+\] \*\*PARTIAL([^A-Za-z]|$)/
 }
+# T-2040. A cancellation is a bold run OPENING a line with the token and a date: right after the id
+# on the first line, or one indent in on a continuation line. Inline code is stripped first, so a
+# line that QUOTES the marker cannot match; the date is required, so neither can a bold sentence
+# that merely begins with the word.
+function cancel_lead(s) {
+    return closure_visible(s) ~ /^(- \[T-[0-9]+\] |[ \t]+)\*\*CANCELLED [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+}
 function trim(s) { sub(/^[ \t\n]+/, "", s); sub(/[ \t\n]+$/, "", s); return s }
 function plain(s) { gsub(/\*\*/, "", s); gsub(/\[\[/, "", s); gsub(/\]\]/, "", s); return trim(s) }
 function trunc(s, n) { return (length(s) <= n) ? s : (substr(s, 1, n - 1) "\342\200\246") }
@@ -156,6 +175,7 @@ function finish() {
     n++
     e_id[n] = cur_id; e_file[n] = cur_file; e_line[n] = cur_line
     e_sec[n] = cur_sec; e_first[n] = cur_first; e_body[n] = cur_body; e_buried[n] = cur_buried
+    e_cancel[n] = cur_cancel
     seen[cur_id] = seen[cur_id] + 1
     cur = 0
 }
@@ -173,6 +193,7 @@ FILENAME != prevfile { finish(); sec = ""; prevfile = FILENAME }
     finish()
     cur = 1; cur_id = entry_id($0); cur_file = (FILENAME == f_todo) ? todo_label : done_label
     cur_line = FNR; cur_sec = sec; cur_first = $0; cur_body = ""; cur_buried = 0
+    cur_cancel = cancel_lead($0)
     # `inopen` in `agent-commit.sh`'s reading: a closure run deeper in the block only MEANS anything
     # while the first line is still open. Without this every closed entry that also records a
     # sub-closure -- 33 of them at HEAD -- would carry the flag, and a flag 33 entries wear is not
@@ -188,6 +209,7 @@ cur == 1 {
     # this exact shape over 471 entries (T-1106): it names the fourteen genuinely buried closures
     # and nothing else -- not the entry whose body says "deleted the CLOSED copy".
     if (cur_open_first && closure_visible($0) ~ /^[ \t]+\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/) cur_buried = 1
+    if (cancel_lead($0)) cur_cancel = 1
     next
 }
 
@@ -200,6 +222,7 @@ function status_of(i,   first, sect) {
     if (sect ~ /^Cancelled/) return "CANCELLED"
     if (first_line_closed(first)) return "CLOSED"
     if (first_line_partial(first)) return "PARTIAL"
+    if (e_cancel[i]) return "CANCELLED"
     if (park_of(i) != "") return "PARKED"
     return "OPEN"
 }
@@ -457,6 +480,14 @@ FIXTURE
   `**CLOSED 2026-09-21**` is what a closure looks like, and writing that down must not bury one.
 - [T-26] **A finding whose buried closure sentence opens with an inline-code span.**
   `2026-09-22` **CLOSED (`5555555`) — the closure an agent put in the wrong place, after a date.**
+- [T-27] **A finding the owner cancelled, kept in place with the cancellation below it.**
+  The finding as it was filed, still the record.
+  **CANCELLED 2026-09-28 — the owner decided this is fine; the reasoning above is kept.**
+- [T-28] **CANCELLED 2026-09-28 — a cancellation written on the first line, after the id.**
+- [T-29] **An open finding that only TALKS about cancellation.** It was nearly cancelled once.
+  `**CANCELLED 2026-09-28**` is what a cancellation line looks like, quoted here as the format.
+  **CANCELLED by nobody** -- a bold run with the word and no date is not the status.
+  The owner said it is not **CANCELLED 2026-09-28** -- mid-line, so not a lead either.
 - [T-110] **A longer id that must not be matched by a lookup for T-11.**
 
 ## Done
@@ -506,6 +537,15 @@ FIXTURE
     check "$rc" 0 "$out" "a buried closure whose bold run follows a code span is still buried" \
         "T-26     OPEN" BODY-CLOSURE
 
+    # T-2040: a cancellation written as its own paragraph below the finding ([[T-1493]]'s shape)
+    # leaves 'brief'; one that only quotes, names without a date, or mentions mid-line does not.
+    out=$(run brief); rc=$?
+    checkno "$rc" 0 "$out" "a bold-led CANCELLED <date> on a continuation line cancels the entry ([[T-1493]])" \
+        "T-27     "
+    checkno "$rc" 0 "$out" "so does one opening the first line right after the id" "T-28     "
+    out=$(run brief | grep '^T-29 '); rc=$?
+    check "$rc" 0 "$out" "a quoted, dateless or mid-line CANCELLED leaves the entry open" "T-29     OPEN"
+
     out=$(run all); rc=$?
     check "$rc" 0 "$out" "'all' shows the mid-line closure as CLOSED, not merely absent from 'brief'" \
         "T-24     CLOSED"
@@ -513,6 +553,8 @@ FIXTURE
         "T-20     OPEN" DUP
     check "$rc" 0 "$out" "'all' shows closed entries too, which 'brief' deliberately does not" \
         "T-12     CLOSED" "T-30     DONE" "T-31     CANCELLED" "T-40     ARCHIVED"
+    check "$rc" 0 "$out" "'all' names an in-place cancellation CANCELLED, not merely absent (T-2040)" \
+        "T-27     CANCELLED" "T-28     CANCELLED"
 
     # --- mode 2: status, next action, park reason, source location ----------
     echo; echo " mode 2 (the columns) -- status, the one-line next action, the source location"
