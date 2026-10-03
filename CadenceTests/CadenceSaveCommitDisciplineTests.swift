@@ -2719,7 +2719,269 @@ enum CadenceSaveCommitRule {
                 index = save.end
             }
         }
+        names += directBoolClosureReportOffenders(in: source).map {
+            String($0.split(separator: ".").last ?? "")
+        }
         return names.uniqued()
+    }
+
+    // MARK: - Direct Bool closure actions
+
+    static func directBoolClosureReportOffenders(in source: String) -> [String] {
+        let code = CadenceSourceScan.codeOnly(source)
+        let swallowed = directMatches(swallowedSave, in: code)
+        guard !swallowed.isEmpty else { return [] }
+        let characters = Array(code)
+        let extents = declarationExtents(in: code)
+        let types = enclosingTypeNames(in: code, for: extents.map(\.start))
+        let contracts = directClosureContracts(in: code)
+        let closures = directActionClosures(in: code, contracts: contracts)
+        func owner(at offset: Int) -> Int? {
+            extents.indices.filter { extents[$0].start < offset && offset < extents[$0].end }
+                .max { extents[$0].start < extents[$1].start }
+        }
+        func action(at offset: Int) -> DirectActionClosure? {
+            closures.filter { $0.open < offset && offset < $0.close }
+                .max { $0.open < $1.open }
+        }
+        func name(at index: Int) -> String {
+            types[index].isEmpty ? extents[index].name : types[index] + "." + extents[index].name
+        }
+        var found: Set<String> = []
+        for range in swallowed {
+            if let closure = action(at: range.lowerBound), closure.answersBool,
+               let declaration = owner(at: closure.open), owner(at: range.lowerBound) == declaration {
+                found.insert(name(at: declaration))
+            }
+        }
+        // A private helper is provable only when EVERY reference is a direct action call.
+        // Method values, other callers and overloads deliberately invalidate that proof.
+        let calls = callSites(in: code)
+        for index in extents.indices {
+            let declaration = extents[index]
+            let lineStart = characters[..<declaration.start].lastIndex(of: "\n").map { $0 + 1 } ?? 0
+            let prefix = String(characters[lineStart..<declaration.start])
+            guard directMatches(#"\b(?:private|fileprivate)\b"#, in: prefix).count == 1,
+                  declaration.signature.hasPrefix("func "),
+                  !declaration.signature.contains("throws"),
+                  let parameterOpen = declaration.signature.firstIndex(of: "(") else { continue }
+            let signature = Array(declaration.signature)
+            let open = declaration.signature.distance(from: declaration.signature.startIndex, to: parameterOpen)
+            guard let close = directDelimiterEnd(in: signature, from: open) else { continue }
+            let answer = String(signature[(close + 1)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard answer.isEmpty || answer == "-> Void" || answer == "-> ()" else { continue }
+            let saves = swallowed.filter {
+                owner(at: $0.lowerBound) == index && action(at: $0.lowerBound) == nil
+            }
+            guard !saves.isEmpty else { continue }
+            let references = directMatches("\\b" + NSRegularExpression.escapedPattern(for: declaration.name) + "\\b", in: code)
+            let invocations = calls.filter { $0.callee == declaration.name }
+                .filter { !((declaration.start)..<(declaration.start + declaration.signature.count)).contains($0.end - 1) }
+            guard !invocations.isEmpty, references.count == invocations.count + 1,
+                  invocations.allSatisfy({ call in
+                      guard let caller = owner(at: call.end), types[caller] == types[index],
+                            call.qualifier == nil || call.qualifier == "self" || call.qualifier == types[index] else { return false }
+                      guard let closure = action(at: call.end), closure.answersBool else { return false }
+                      return owner(at: closure.open) == caller
+                  }) else { continue }
+            found.insert(name(at: index))
+        }
+        return found.sorted()
+    }
+
+    /// This is a conservative lexical proof, not a Swift type checker: literal local
+    /// contracts and the two-argument legacy drop action only, with an own return true.
+    /// Unknown types, method-value escapes, overload ambiguity and stored Void forwarding
+    /// remain outside it. Non-action nested closures are masked before reading reports.
+    private struct DirectActionClosure {
+        let open: Int
+        let close: Int
+        var answersBool: Bool
+    }
+
+    /// Only literal closure parameter types in this file; no stored callback transport.
+    /// Conflicting overloads do not establish a contract. Framework actions need a separate
+    /// overload witness because SwiftUI also declares a Void dropDestination(action:).
+    private static func directClosureContracts(in code: String) -> [String: Set<Bool>] {
+        var result: [String: Set<Bool>] = [:]
+        let extents = declarationExtents(in: code)
+        let owners = enclosingTypeNames(in: code, for: extents.map(\.start))
+        for (declaration, owner) in zip(extents, owners) where declaration.signature.hasPrefix("func ") {
+            let signature = Array(declaration.signature)
+            guard let open = signature.firstIndex(of: "("),
+                  let close = directDelimiterEnd(in: signature, from: open) else { continue }
+            for argument in directArguments(in: signature, range: (open + 1)..<close) {
+                let text = String(signature[argument])
+                guard let colon = text.firstIndex(of: ":") else { continue }
+                let label = text[..<colon].split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+                if let answer = directClosureAnswer(in: String(text[text.index(after: colon)...])) {
+                    result[owner + "." + declaration.name + ":" + label, default: []].insert(answer)
+                }
+            }
+        }
+        let characters = Array(code)
+        let typeRanges = typeExtents(in: code)
+        for type in typeRanges {
+            let text = String(characters[type.start..<type.end])
+            guard text.hasPrefix("struct ") else { continue }
+            // Explicit initializers can change the memberwise parameter's type or label.
+            guard directMatches(#"\binit\s*\("#, in: text).isEmpty else { continue }
+            for range in directMatches(#"\b(?:let|var)\s+\w+\s*:\s*"#, in: text) {
+                let offset = type.start + range.lowerBound
+                let innermost = typeRanges.filter { $0.start < offset && offset < $0.end }
+                    .max { $0.start < $1.start }
+                guard innermost?.start == type.start,
+                      !extents.contains(where: { $0.start < offset && offset < $0.end }) else { continue }
+                let head = String(Array(text)[range])
+                let words = head.split { !$0.isLetter && !$0.isNumber && $0 != "_" }
+                guard words.count == 2,
+                      let answer = directClosureAnswer(in: String(Array(text)[range.upperBound...])) else { continue }
+                result[type.name + ":" + words[1], default: []].insert(answer)
+            }
+        }
+        return result
+    }
+
+    private static func directClosureAnswer(in text: String) -> Bool? {
+        let characters = Array(text)
+        var open = 0
+        while open < characters.count && characters[open].isWhitespace { open += 1 }
+        while open < characters.count && characters[open] == "@" {
+            while open < characters.count && !characters[open].isWhitespace { open += 1 }
+            while open < characters.count && characters[open].isWhitespace { open += 1 }
+        }
+        guard open < characters.count, characters[open] == "(",
+              let close = directDelimiterEnd(in: characters, from: open) else { return nil }
+        let tail = String(characters[(close + 1)...])
+        guard directMatches(#"^\s*(?:async\s+)?(?:throws\s+)?->"#, in: tail).count == 1 else { return nil }
+        return directMatches(#"^\s*->\s*Bool(?=\s*(?:[=,;}\n]|$))"#, in: tail).count == 1
+    }
+
+    private static func directActionClosures(in code: String, contracts: [String: Set<Bool>]) -> [DirectActionClosure] {
+        let characters = Array(code)
+        let extents = declarationExtents(in: code)
+        let typeRanges = typeExtents(in: code)
+        var closures: [DirectActionClosure] = []
+        var dropCandidates: Set<Int> = []
+        func skipSpace(_ start: Int) -> Int {
+            var index = start
+            while index < characters.count && characters[index].isWhitespace { index += 1 }
+            return index
+        }
+        func register(_ open: Int, bool: Bool, drop: Bool = false) -> Int? {
+            guard open < characters.count, characters[open] == "{",
+                  let close = directDelimiterEnd(in: characters, from: open) else { return nil }
+            if !closures.contains(where: { $0.open == open }) {
+                closures.append(DirectActionClosure(open: open, close: close, answersBool: bool))
+            }
+            if drop { dropCandidates.insert(open) }
+            return close
+        }
+        for call in callSites(in: code) {
+            guard !extents.contains(where: { $0.start <= call.end - 1 && call.end - 1 <= $0.start + $0.signature.count }),
+                  let close = directDelimiterEnd(in: characters, from: call.end - 1) else { continue }
+            let owner = typeRanges.filter { $0.start < call.end && call.end < $0.end }.max { $0.start < $1.start }?.name ?? ""
+            let key = call.qualifier == nil || call.qualifier == "self"
+                ? owner + "." + call.callee : (call.qualifier ?? "") + "." + call.callee
+            let arguments = directArguments(in: characters, range: call.end..<close)
+            let labels = arguments.compactMap { range -> String? in
+                let text = String(characters[range])
+                return text.firstIndex(of: ":").map { String(text[..<$0]).trimmingCharacters(in: .whitespacesAndNewlines) }
+            }
+            func contract(_ label: String) -> Bool {
+                let answers = contracts[key + ":" + label] ?? contracts[call.callee + ":" + label]
+                return answers == [true]
+            }
+            let legacyDrop = call.callee == "dropDestination" && labels.contains("for") && !labels.contains("isEnabled")
+            for range in arguments {
+                let argument = String(characters[range])
+                guard let colon = argument.firstIndex(of: ":") else { continue }
+                let label = String(argument[..<colon]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let afterColon = range.lowerBound + argument.distance(from: argument.startIndex, to: colon) + 1
+                _ = register(skipSpace(afterColon), bool: contract(label), drop: legacyDrop && label == "action")
+            }
+            // A single trailing closure fills the last closure parameter; multiple trailing
+            // closures retain explicit labels. Never let isTargeted inherit action's contract.
+            let possible = contracts.keys.filter { $0.hasPrefix(key + ":") || $0.hasPrefix(call.callee + ":") }
+            let firstLabel = possible.count == 1 ? String(possible[0].split(separator: ":").last ?? "") : ""
+            var next = skipSpace(close + 1)
+            let statementStart = characters[..<(call.end - 1)].lastIndex(where: { $0.isNewline || ";{}".contains($0) }).map { $0 + 1 } ?? 0
+            let statement = String(characters[statementStart..<(call.end - 1)])
+            let control = !directMatches(#"\b(?:if|guard|for|while|switch|catch)\b"#, in: statement).isEmpty
+            if !control, let end = register(next, bool: contract(firstLabel), drop: legacyDrop) { next = skipSpace(end + 1) }
+            while next < characters.count {
+                let tail = String(characters[next...])
+                guard let labelRange = directMatches(#"^\w+\s*:\s*"#, in: tail).first else { break }
+                let label = String(Array(tail)[labelRange]).split(separator: ":")[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let end = register(next + labelRange.upperBound, bool: contract(label)) else { break }
+                next = skipSpace(end + 1)
+            }
+        }
+        // Unparenthesized trailing calls (Task {}, onAppear {}) are nested boundaries too.
+        for range in directMatches(#"\b\w+\s*\{"#, in: code) {
+            let open = range.upperBound - 1
+            guard !extents.contains(where: { $0.start + $0.signature.count == open }) else { continue }
+            let lineStart = characters[..<range.lowerBound].lastIndex(where: { $0.isNewline || ";{}".contains($0) }).map { $0 + 1 } ?? 0
+            let line = String(characters[lineStart..<open])
+            guard directMatches(#"\b(?:if|else|guard|for|while|switch|do|catch|defer|repeat|struct|class|enum|actor|extension|protocol)\b"#, in: line).isEmpty else { continue }
+            _ = register(open, bool: false)
+        }
+        for index in closures.indices {
+            let closure = closures[index]
+            var own = Array(characters[(closure.open + 1)..<closure.close])
+            for nested in closures where closure.open < nested.open && nested.close < closure.close {
+                for offset in nested.open...nested.close { own[offset - closure.open - 1] = " " }
+            }
+            for nested in extents where closure.open < nested.start && nested.end < closure.close {
+                for offset in nested.start...nested.end { own[offset - closure.open - 1] = " " }
+            }
+            let text = String(own)
+            let returnsTrue = !directMatches(#"\breturn\s+true\b"#, in: text).isEmpty
+            if dropCandidates.contains(closure.open) {
+                let separator = directMatches(#"\bin\b"#, in: text).first
+                let header = separator.map { String(Array(text)[..<$0.lowerBound]) } ?? ""
+                closures[index].answersBool = returnsTrue && separator != nil && header.split(separator: ",").count == 2
+            } else {
+                closures[index].answersBool = closure.answersBool && returnsTrue
+            }
+        }
+        return closures
+    }
+
+    private static func directMatches(_ pattern: String, in text: String) -> [Range<Int>] {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            guard let range = Range($0.range, in: text) else { return nil }
+            return text.distance(from: text.startIndex, to: range.lowerBound)..<text.distance(from: text.startIndex, to: range.upperBound)
+        }
+    }
+
+    private static func directDelimiterEnd(in characters: [Character], from open: Int) -> Int? {
+        let delimiters: [Character: Character] = ["(": ")", "{": "}", "[": "]"]
+        guard open < characters.count, let close = delimiters[characters[open]] else { return nil }
+        var depth = 0
+        for index in open..<characters.count {
+            if characters[index] == characters[open] { depth += 1 }
+            if characters[index] == close { depth -= 1; if depth == 0 { return index } }
+        }
+        return nil
+    }
+
+    private static func directArguments(in characters: [Character], range: Range<Int>) -> [Range<Int>] {
+        var arguments: [Range<Int>] = []
+        var start = range.lowerBound
+        var index = start
+        while index < range.upperBound {
+            if "({[".contains(characters[index]), let close = directDelimiterEnd(in: characters, from: index) {
+                index = close + 1
+            } else if characters[index] == "," {
+                arguments.append(start..<index)
+                index += 1
+                start = index
+            } else { index += 1 }
+        }
+        if start < range.upperBound { arguments.append(start..<range.upperBound) }
+        return arguments
     }
 
     // MARK: - Half 4: a commit the needle cannot name ([[T-1299]])

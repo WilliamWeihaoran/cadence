@@ -67,7 +67,6 @@ Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
 Cadence/Shared/CadenceTypography.swift
 Cadence/Shared/Components/CadenceTagChip.swift
 Cadence/iOS/iOSTaskInspectorMetrics.swift
-CadenceTests/CadenceSaveCommitDisciplineTests.swift
 CLAUDE.md
 scripts/codex-inbox.sh
 docs/CODEX_REQUESTS.md
@@ -151,6 +150,11 @@ bundle card, which is correct.
 widen or add an exemption.
 
 ### `CadenceSaveCommitDisciplineTests.swift` is leased for T-1990 only (2026-10-02)
+
+**LEASE ENDED 2026-10-03: the direct-only detector ([[T-1457]]) landed on `main` from
+`codex/save-report-closure-detector`, and this path is out of the `lease` block above.** [[T-1990]]
+stays PARTIAL for the stored-callback transport sites; a later grant for them is a new lease.
+The section below is kept as the record of what was asked.
 
 Codex asked for this rather than assuming it, which is the behaviour the lease exists to produce.
 [[T-1990]] is a change to the **detector**, and `CadenceSaveCommitRule` and its file-private parser
