@@ -45,44 +45,74 @@ Patterns are shell globs matched against repository-relative paths. `docs/CODEX_
 always allowed and never needs listing.
 
 ```lease
-Cadence/iOS/iOSInbox*.swift
-Cadence/iOS/iOSToday*.swift
 Cadence/iOS/iOSList*.swift
-Cadence/iOS/iOSSearch*.swift
-Cadence/iOS/iOSTaskCollection*.swift
-Cadence/iOS/iOSTaskViews.swift
-Cadence/iOS/iOSTaskRowActionViews.swift
-Cadence/iOS/iOSTaskGroupSection.swift
-Cadence/iOS/iOSTasksPageView.swift
-Cadence/iOS/iOSTasksTabView.swift
-Cadence/iOS/iOSSwipeActionRow.swift
-Cadence/iOS/iOSFloatingCreateTaskButton.swift
-Cadence/iOS/iOSBoardCards.swift
-Cadence/Shared/Components/CadenceBoardColumnHeader.swift
-Cadence/Shared/Components/CadenceBoardMetadataChip.swift
-Cadence/iOS/iOSDesignSystem.swift
-Cadence/Shared/Components/EmptyStateView.swift
-Cadence/Shared/Components/CadenceTaskGroupHeading.swift
-Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
 Cadence/Shared/CadenceTypography.swift
-Cadence/Shared/Components/CadenceTagChip.swift
-Cadence/iOS/iOSTaskInspectorMetrics.swift
-CLAUDE.md
-scripts/codex-inbox.sh
-docs/CODEX_REQUESTS.md
-Cadence/iOS/iOSFeatureComponents.swift
-Cadence/iOS/iPadTodaySupportViews.swift
-CadenceTests/CadenceCodex*.swift
-CadenceTests/CadencePickerLargeTextLayoutTests.swift
-CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 CadenceTests/CadenceTypographyScaleTests.swift
-CadenceTests/CadenceTagChipStyleTests.swift
-CadenceTests/CadenceSharedBoardChromeTests.swift
-CadenceTests/CadenceSharedTaskRowJobsTests.swift
-CadenceTests/CadenceTodayUnificationTests.swift
+CadenceTests/CadenceCodex*.swift
 ```
 
+### LEASE NARROWED 2026-10-04 — 35 patterns to 4, because every Codex branch is spent
+
+**Measured, not read off the branch names.** `./scripts/codex-land.sh review` was run against all
+seven `codex/*` branches in this repository on 2026-10-04 at `24c671c4`. **Not one of them has a
+single code file that is not already in `main`:**
+
+| branch | `review` verdict | exit |
+| --- | --- | --- |
+| `codex/archive-typography-20261002` | `CODEX-ONLY-THE-INBOX-IS-UNLANDED` — 30 of 31 files already in main | 3 |
+| `codex/calendar-day-drop-commit` | `CODEX-ONLY-THE-INBOX-IS-UNLANDED` — 6 of 7 files already in main | 3 |
+| `codex/archive-large-text-20261002` | `CODEX-BRANCH-ALREADY-LANDED` — all 18 files | 5 |
+| `codex/context-budget` | `CODEX-BRANCH-ALREADY-LANDED` — all 4 files | 5 |
+| `codex/save-report-closure-detector` | `CODEX-BRANCH-ALREADY-LANDED` — all 3 files | 5 |
+| `codex/task-page-large-text` | `CODEX-REVIEW-VACUOUS` — 0 commits over main | 4 |
+| `codex/task-page-typography-finish` | `CODEX-REVIEW-VACUOUS` — 0 commits over main | 4 |
+
+The Codex worktree at `~/.codex/worktrees/9e4a/Cadence` was read at the same time: `git status` is
+**empty**, so no path in this fence was mid-edit. Nothing was reset, deleted or force-pushed; the
+branches are left exactly as Codex left them, and the two that still carry unlanded
+`docs/CODEX_LEDGER_INBOX.md` entries carry ids the ledger already has formal entries for, which is
+the T-1800 shape and not pending work.
+
+**This is the rule in this file being kept rather than cited:** *a lease granting paths nobody is
+working on is a lease that will eventually be believed.* It had been believed. [[T-2058]] designed
+the three row indicator glyphs and wrote **no code**, on the stated evidence that
+`codex/archive-typography-20261002` was "3 commits ahead of `main` and UNLANDED". The commit count
+is three; the content is zero. `git log main..<branch>` answers a different question from
+`codex-land.sh review`, and only the second one is the lease's question.
+
+**What came back, and why.** Twenty-six paths whose assignment is closed in the inbox
+([[T-1440]], [[T-1442]], [[T-1450]], [[T-1454]], [[T-1457]]) and whose branches `review` calls
+spent — every converted iOS page surface, every shared component T-1442 closed, the three
+context-budget paths, and the guards written for that closed work. Four of them were named by
+T-2058 as the thing blocking it: `Cadence/iOS/iOSTaskViews.swift`,
+`CadenceTests/CadenceTodayUnificationTests.swift`, `CadenceTests/CadenceSharedTaskRowJobsTests.swift`
+and `CadenceTests/CadenceTagChipStyleTests.swift`.
+
+**What stayed, and why — this is the conservative half.** [[T-1411]] is still **PARTIAL** and is
+still Codex's standing first assignment under R66; [[T-1453]] says Lists is the one task page not
+yet declared. So `Cadence/iOS/iOSList*.swift` stays, and with it the two files any further
+conversion must edit: `Cadence/Shared/CadenceTypography.swift`, which is where the roles and the
+scaling environment are decided, and `CadenceTests/CadenceTypographyScaleTests.swift`, which carries
+the "exactly N declared roots" sweep that this file's own *one converter at a time* rule is about.
+`CadenceTests/CadenceCodex*.swift` stays because it is Codex's reserved **namespace**, not a file:
+a new conversion writes a new guard there, and dropping the glob would make `codex-land.sh` refuse
+Codex's next branch with `CODEX-LEASE-VIOLATION` for doing exactly what it was asked to do.
+
+**One edit was made inside that namespace at the same time, deliberately and under the permission
+[[T-2061]] names.** `CadenceTests/CadenceCodexTaskSummaryTypographyTests.swift:74` required
+`.cadenceFont(` in `CadenceTaskGroupHeading`, and [[T-2056]] deleted the count capsule that was that
+file's only call of it. That is the *re-point, never weaken* case below, T-2061 asked the
+coordinator to land it rather than route it to Codex, and `main` had been red on it for a day. The
+check is not deleted: the heading keeps every other assertion in the loop and gains the stronger
+`SectionEyebrowLabel` source read. **If Codex is mid-edit on that file when it reads this, say so
+and the coordinator rebases it — the worktree was clean when this was written.**
+
 ### The context-budget grant (2026-10-02), and the two things it does not permit
+
+**LEASE ENDED 2026-10-04: [[T-1454]] landed on `main` and `codex/context-budget` reviews as
+`CODEX-BRANCH-ALREADY-LANDED` (all four files). `CLAUDE.md`, `scripts/codex-inbox.sh` and
+`docs/CODEX_REQUESTS.md` are out of the `lease` block above.** The section below is kept as the
+record of what was asked, and its two boundaries still describe what those files are for.
 
 `CLAUDE.md`, `scripts/codex-inbox.sh` and `docs/CODEX_REQUESTS.md` are leased to Codex for the
 context-budget work Codex itself scoped. Measured at `74c1d186`: the request document is **306 KB**
@@ -201,6 +231,13 @@ So, while a lease is in force:
 
 ### The four paths T-1451 asked for, and the two embedded surfaces
 
+**LEASE ENDED 2026-10-04: all four are out of the `lease` block above**, along with
+`CadenceTests/CadenceSharedTaskRowJobsTests.swift` and `CadenceTests/CadenceTodayUnificationTests.swift`
+— `codex/archive-typography-20261002` reviews with every one of its code files already in `main`.
+The section below is kept as the record of what was asked. Its *re-point, never delete or loosen*
+direction still binds whoever edits those guards next; it is a property of the guards, not of the
+lease.
+
 Three of the four are granted above. The fourth was already granted and Codex could not see it:
 `CadenceTests/CadenceSharedTaskRowJobsTests.swift` and `CadenceTests/CadenceTodayUnificationTests.swift`
 entered the lease **after** `codex/task-page-typography-finish` branched from `4e6f4feb`, so the
@@ -270,6 +307,11 @@ is the moment to stop and say so, because `project.pbxproj` is the single highes
 the repository and a merge there is not reviewable.
 
 ### A leased guard may be re-pointed, never weakened
+
+**`CadenceTests/CadenceSharedBoardChromeTests.swift` left the `lease` block on 2026-10-04**, and
+this rule did not leave with it. It is why the two [[T-2061]] re-points landed as re-points: a guard
+whose subject moved is pointed at where the subject went, never deleted, loosened, or routed around,
+and the assertions bracketing it that stop it going vacuous stay.
 
 `CadenceTests/CadenceSharedBoardChromeTests.swift` is leased because converting
 `CadenceTodayOverdueSummaryCards.swift` invalidates a source-substring assertion in it
