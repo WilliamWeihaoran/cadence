@@ -196,19 +196,61 @@ requested_suite_names() {  # $@ = the run's own arguments; one suite name per li
 # The sentence is matched exactly; it is xcodebuild's text, not ours, so nothing else writes it.
 AUTOMATION_MODE_TIMEOUT='Timed out while enabling automation mode'
 
+# T-2049's second sentence, and it is NOT UI-only: measured 2026-10-03, from 20:43 EDT every test
+# run on this Mac died with it -- `escapefix`'s UI run and `calcrash`'s UNIT runs alike, in
+# different DerivedData, on different tickets, while the same unit suite had run 5520 tests at
+# 20:19. The test host (a UI run's `CadenceUITests-Runner`, a unit run's `Cadence`) launches, asks
+# `testmanagerd` for transport, and is never answered. xcodebuild exits 65 having compiled and
+# linked everything, so the counters read NON-vacuous and only the test result lines are zero --
+# which is why this reads like a wrong suite name and is not one. It is the same shape as the
+# automation-mode timeout and belongs in the same refusal.
+RUNNER_HUNG_BEFORE_CONNECTION='The test runner hung before establishing connection'
+
 runner_never_started() {  # $1 = log, $2 = xcodebuild's exit status ("" when unknown)
-  [[ "${2:-}" != "0" ]] && grep -qF -- "$AUTOMATION_MODE_TIMEOUT" "$1" 2>/dev/null
+  [[ "${2:-}" != "0" ]] || return 1
+  grep -qF -- "$AUTOMATION_MODE_TIMEOUT" "$1" 2>/dev/null && return 0
+  grep -qF -- "$RUNNER_HUNG_BEFORE_CONNECTION" "$1" 2>/dev/null
 }
 
-automation_mode_refusal() {
+automation_mode_refusal() {  # $1 = the log, so the refusal can name WHICH sentence fired
+  if [[ -n "${1:-}" ]] && ! grep -qF -- "$AUTOMATION_MODE_TIMEOUT" "$1" 2>/dev/null; then
+    runner_hung_refusal
+    return 0
+  fi
   say ""
   say "!! REFUSING: this test run executed 0 tests because the UI-test RUNNER never initialized."
   say "   This is an ENVIRONMENTAL refusal -- not evidence about the code, and not about the"
   say "   -only-testing: filter (T-2021). The log says: \"$AUTOMATION_MODE_TIMEOUT.\""
   say "   That is the ~70s timeout macOS returns when enabling automation turns into an"
-  say "   authentication request, which a DISABLED developer mode does (T-1953, T-1957)."
-  say "   Check:  DevToolsSecurity -status    -- it must say developer mode is currently enabled."
-  say "   Enabling it is an admin change to this Mac and the owner's call; re-run once it reads enabled."
+  say "   authentication request. There are TWO causes and they need DIFFERENT fixes (T-2049)."
+  say "   (1) Developer mode is disabled (T-1953, T-1957)."
+  say "       Check:  DevToolsSecurity -status  -- it must say developer mode is currently enabled."
+  say "       Enabling it is an admin change to this Mac and the owner's call."
+  say "   (2) Developer mode READS ENABLED and it still times out: automationmode-writer is asking"
+  say "       for the device owner's Touch ID / password and nobody answered. Measured 2026-10-03."
+  say "       Check:  log show --last 10m --predicate 'eventMessage CONTAINS \"automation mode\"'"
+  say "       The giveaway is: \"Writer daemon requires authentication to enable automation mode\","
+  say "       and /var/db/com.apple.dt.automationmode/automation-enabled is absent afterwards."
+  say "       Only the owner can clear this, by answering the prompt while the run is starting."
+  say "   Either way it is the owner's to clear; re-run once it is."
+}
+
+runner_hung_refusal() {
+  say ""
+  say "!! REFUSING: this test run executed 0 tests because the TEST HOST never connected."
+  say "   This is an ENVIRONMENTAL refusal -- not evidence about the code, and NOT about the"
+  say "   -only-testing: filter (T-2049). The log says: \"$RUNNER_HUNG_BEFORE_CONNECTION.\""
+  say "   It hits UNIT runs as well as UI runs, so do not read it as a UI-only problem, and the"
+  say "   build counters stay non-vacuous, so VACUOUS-COUNT will not catch it."
+  say "   It is a state of this MAC, not of your change. Before you debug anything of yours:"
+  say "     1. Look for the same sentence in a SIBLING agent's log --"
+  say "        grep -l '$RUNNER_HUNG_BEFORE_CONNECTION' /var/folders/*/*/T/cadence-xcb-*.log"
+  say "        If another agent's run died the same way, it is the Mac. Say so and stop."
+  say "     2. log show --last 20m --predicate 'process == \"testmanagerd\"'"
+  say "        \"requested transport for IDE\" with no reply after it is this failure."
+  say "   Measured 2026-10-03: it began at 20:43 EDT and took every agent's runs, unit and UI,"
+  say "   after a full 5520-test unit run had passed at 20:19. Restarting testmanagerd or"
+  say "   rebooting is an admin change to this Mac and the OWNER's call -- report it and stop."
 }
 
 # Everything the caller needs to fix an empty run, printed where the empty run happened.
@@ -216,7 +258,7 @@ automation_mode_refusal() {
 empty_run_diagnostic() {
   local log="$1"; shift
   if runner_never_started "$log" "${EMPTY_RUN_EXIT:-}"; then
-    automation_mode_refusal
+    automation_mode_refusal "$log"
     return 0
   fi
   say ""
@@ -2212,6 +2254,34 @@ selftest_only_testing() {
     $( (( arc == 4 )) && [[ "$aout" == *ENVIRONMENTAL* && "$aout" == *"DevToolsSecurity -status"* ]] && print 1 || print 0 ) "exit $arc: $aout"
   check "...and it does NOT hand out the T-552 suite-name advice" \
     $( [[ "$aout" != *"takes a SUITE name"* && "$aout" != *"called that a success"* ]] && print 1 || print 0 ) "$aout"
+  # T-2049: developer mode reading enabled does NOT exhaust this symptom. The refusal must name the
+  # second cause too, or the reader runs `DevToolsSecurity -status`, sees "enabled", and is stuck
+  # with no next check -- which is what happened to agent `escapefix` on 2026-10-03.
+  check "...and it names the second cause as well as developer mode (T-2049)" \
+    $( [[ "$aout" == *"automationmode-writer"* && "$aout" == *"Writer daemon requires authentication"* ]] && print 1 || print 0 ) "$aout"
+  # T-2049's SECOND sentence. The fixture line is verbatim from
+  # `cadence-xcb-escapefix.20261003-211849-1974.log`, whose run compiled 1105 Swift files, linked
+  # and code-signed -- so the counters were non-vacuous and ONLY the result lines were zero. The
+  # controls carry the weight again: this must NOT be answered with the suite-name advice, and it
+  # must NOT be answered with the developer-mode advice, which is about a different sentence.
+  print -rl -- \
+    "Command line invocation:" \
+    "    xcodebuild test -scheme Cadence -destination platform=macOS -only-testing:CadenceTests/CadenceGuardScriptSelftestTests" \
+    "Testing failed:" \
+    "	Cadence (97324) encountered an error (The test runner hung before establishing connection.)" \
+    "** TEST FAILED **" > "$ws/runner-hung.log"
+  run_tlog "$ws/runner-hung.log" 65
+  check "a test host that never connected is an ENVIRONMENTAL refusal too (T-2049)" \
+    $( (( arc == 4 )) && [[ "$aout" == *ENVIRONMENTAL* && "$aout" == *"TEST HOST never connected"* ]] && print 1 || print 0 ) "exit $arc: $aout"
+  check "...and it does NOT hand out the T-552 suite-name advice either" \
+    $( [[ "$aout" != *"takes a SUITE name"* && "$aout" != *"called that a success"* ]] && print 1 || print 0 ) "$aout"
+  check "...and it does NOT send the reader to DevToolsSecurity, which is a different sentence" \
+    $( [[ "$aout" != *DevToolsSecurity* ]] && print 1 || print 0 ) "$aout"
+  check "...and it says this hits UNIT runs too, so it is not read as UI-only" \
+    $( [[ "$aout" == *"UNIT runs as well as UI runs"* ]] && print 1 || print 0 ) "$aout"
+  run_tlog "$ws/runner-hung.log" 0
+  check "CONTROL: the hung-runner sentence under exit 0 is not the environmental refusal" \
+    $( (( arc == 4 )) && [[ "$aout" == *"takes a SUITE name"* && "$aout" != *"TEST HOST never connected"* ]] && print 1 || print 0 ) "exit $arc: $aout"
   run_tlog "$ws/automation.log"
   check "a log handed over alone (exit unknown) is read the same way" \
     $( (( arc == 4 )) && [[ "$aout" == *"DevToolsSecurity -status"* ]] && print 1 || print 0 ) "exit $arc: $aout"
