@@ -49,23 +49,33 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
-Cadence/Shared/CadenceSearchMatcher.swift
-Cadence/macOS/Views/GlobalSearchIndexSupport.swift
-Cadence/macOS/Views/GlobalSearchDataSupport.swift
-Cadence/macOS/Views/GlobalSearchView.swift
-Cadence/Services/MCPReadOnly/CadenceReadService.swift
-Cadence/Models/GoalContributionSummary.swift
-Cadence/Services/MCPReadOnly/CadenceMCPAuditLog.swift
-Cadence/Services/CadenceWidgetRefreshCenter.swift
-Cadence/Services/CadenceHabitWidgetSupport.swift
-Cadence/Services/CadenceTodayWidgetSupport.swift
-CadenceWidgets/WidgetChrome.swift
-CadenceWidgets/TodayTasksWidget.swift
-CadenceWidgets/TodayTasksWidgetView.swift
-CadenceWidgets/HabitCheckInWidget.swift
-CadenceWidgets/CalendarSnapshotWidget.swift
-CadenceWidgets/MilestoneMomentumWidget.swift
 ```
+
+### LEASE RETRACTED 2026-10-04 — the 16 T-1458 paths are back, because the work landed
+
+`7bdb0c32` landed Codex's T-1458 work: the prepared-query search, the single-pass goal
+next-action, the chunk-bounded MCP audit reader and the four widget follow-ups. `codex-land.sh
+review codex/search-widget-followups` now answers **`CODEX-BRANCH-ALREADY-LANDED` — all 20 files
+already in main, 20 identical, 0 where main moved past**, which is the terminal state a spent
+branch is supposed to reach.
+
+So the sixteen production paths granted on 2026-10-04 are retracted and free for any writer.
+Retracted rather than left standing because this file's own warning applies: *a lease granting
+paths nobody is working on is a lease that will eventually be believed*, and [[T-2069]] is the
+precedent — four separate agents were blocked or forced to edit through a fence that was
+protecting branches with nothing in them.
+
+**What stays open does NOT need these paths.** [[T-1461]]'s native widget visual checks are device
+work, not source edits. [[T-1458]]'s file-extraction half is still deferred and still needs an
+owner decision about `project.pbxproj` target registration, not a lease. [[T-1462]], the midnight
+habit-intent race, names `Cadence/Services/CadenceWidgetIntents.swift` — a path that was **never in
+this grant** and is unchanged by the landing, so it would be a fresh request if Codex picks it up.
+
+The four patterns above are untouched and still live: `iOSList*.swift` and the typography trio
+remain [[T-1411]]'s standing assignment, and `CadenceTests/CadenceCodex*.swift` is a namespace
+rather than a file -- dropping it would make `codex-land.sh` refuse Codex's next branch for doing
+exactly what it was asked.
+
 
 ### LEASE GRANTED 2026-10-04 — 16 paths for T-1458, on `codex/search-widget-followups`
 

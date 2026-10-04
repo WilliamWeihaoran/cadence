@@ -3,6 +3,12 @@ import Foundation
 /// The one search scorer. macOS's command palette (`Cmd+K`), the iOS search surface, and the
 /// MCP read service all rank through this.
 ///
+/// It used to live in `Services/MCPReadOnly/`, which every guide tells agents not to touch, so
+/// when macOS needed a matcher a second one -- `GlobalSearchMatcher` -- was written beside it with
+/// the same algorithm and the same magic numbers, and only this one had tests. The fork was
+/// verified identical before being removed. Keeping the file here, in `Shared/`, is what stops
+/// the next surface from forking it again.
+///
 /// Pure and `nonisolated`: safe to call from widget timeline providers and the MCP server, both
 /// of which run off the main actor.
 nonisolated enum CadenceSearchMatcher {
