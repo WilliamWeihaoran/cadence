@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import Testing
 @testable import Cadence
@@ -628,4 +629,200 @@ struct CadenceSyncActivitySurfaceParityTests {
         let mac = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/SettingsSyncSection.swift")
         #expect(mac.contains(#"Text("Check iCloud Status")"#))
     }
+}
+
+/// The half of [[T-2000]] that was taken entirely on trust: the `NotificationCenter` subscription
+/// that feeds `CadenceSyncActivityLog`.
+///
+/// **What changed to make this testable, and the line it does not cross ([[T-2010]]).**
+/// `CadenceCloudKitMirroringEventStream` now takes its notification centre as a parameter, so a
+/// test can read back *how* it subscribes. That is a different claim from "mirroring posts this
+/// notification for this store", and nothing below asserts the second one. It cannot:
+/// `NSPersistentCloudKitContainerEvent` declares `+new` and `-init` as `NS_UNAVAILABLE` in
+/// `CoreData/NSPersistentCloudKitContainerEvent.h`, and the only public way to obtain one is an
+/// `NSPersistentCloudKitContainerEventRequest` against a real mirrored store — which is the
+/// owner's container, which is off limits. So **no test in this repository can hand this stream a
+/// notification it would decode**, and every assertion here about the handler is therefore
+/// one-sided: it can catch a stream that fires when it should not, never confirm one that fires
+/// when it should. [[T-2010]] stays open for exactly that step.
+///
+/// **What it does catch**, which is the realistic regression rather than the hypothetical one: the
+/// three arguments of the subscription. A wrong notification name, an `object:` filter narrowing
+/// to something this app never names (it opens its store through `ModelConfiguration` and never
+/// holds the `NSPersistentCloudKitContainer`, so **any** object filter is a permanent silence),
+/// and a queue other than `.main` — which would not even fail loudly, because
+/// `MainActor.assumeIsolated` in the handler is only sound while the block is scheduled onto the
+/// main queue. All three compile, all three leave every downstream test in this file green, and
+/// all three turn Settings → iCloud into a row that says "No sync activity yet" forever.
+@MainActor
+struct CadenceCloudKitMirroringEventStreamTests {
+
+    /// The three arguments, read back off the centre the stream was handed.
+    ///
+    /// `object` being `nil` is the load-bearing one and it is asserted as a *negative*: the app
+    /// never names the Core Data container, so a filter on any object at all would match nothing.
+    @Test func theMirroringStreamSubscribesByNameAloneOnTheMainQueue() throws {
+        let centre = CadenceRecordingNotificationCentre()
+        let stream = CadenceCloudKitMirroringEventStream(center: centre)
+
+        #expect(centre.registrations.isEmpty, "nothing may be observed before start()")
+
+        stream.start { _ in }
+
+        let registration = try #require(centre.registrations.first)
+        #expect(centre.registrations.count == 1)
+        #expect(registration.name == NSPersistentCloudKitContainer.eventChangedNotification)
+        #expect(
+            registration.object == nil,
+            "an object filter here is a permanent silence: the app never holds the container"
+        )
+        #expect(
+            registration.queue === OperationQueue.main,
+            "the handler's MainActor.assumeIsolated is only sound on the main queue"
+        )
+
+        stream.stop()
+    }
+
+    /// Idempotence and its inverse, in one test so the second half is a control on the first:
+    /// starting twice must subscribe once, and that must be because `start` refused — not because
+    /// the stream can only ever subscribe once in its life.
+    @Test func theMirroringStreamSubscribesOnceAndResubscribesAfterStopping() throws {
+        let centre = CadenceRecordingNotificationCentre()
+        let stream = CadenceCloudKitMirroringEventStream(center: centre)
+
+        stream.start { _ in }
+        stream.start { _ in }
+        #expect(centre.registrations.count == 1, "subscribed \(centre.registrations.count) times")
+        #expect(centre.removedTokens.isEmpty)
+
+        let firstToken = try #require(centre.registrations.first).token
+        stream.stop()
+        #expect(centre.removedTokens.count == 1)
+        #expect(
+            centre.removedTokens.first.map { $0 === firstToken } == true,
+            "stop() must hand back the token it was given, not some other observer"
+        )
+
+        // The control: a stream that had simply lost the ability to subscribe would also have
+        // passed the count assertion above.
+        stream.start { _ in }
+        #expect(centre.registrations.count == 2)
+
+        stream.stop()
+    }
+
+    /// A notification of the right name whose payload this app cannot read must produce **no**
+    /// event rather than a fabricated one.
+    ///
+    /// This is the shape the surface fails worst in: a phantom pass would move the row off "No
+    /// sync activity yet" and report a sync that never happened, which is the one thing worse than
+    /// saying nothing. The three payloads are the three ways the key can be useless — absent
+    /// `userInfo`, a missing key, and a value of the wrong type — and a `fatalError`/force-unwrap
+    /// rewrite of the guard fails here by trapping.
+    @Test func aMirroringNotificationThisAppCannotDecodeProducesNoEvent() throws {
+        let centre = CadenceRecordingNotificationCentre()
+        let stream = CadenceCloudKitMirroringEventStream(center: centre)
+
+        let delivered = CadenceDeliveredEventCounter()
+        stream.start { _ in delivered.count += 1 }
+
+        let block = try #require(centre.registrations.first).block
+        let name = NSPersistentCloudKitContainer.eventChangedNotification
+        let key = NSPersistentCloudKitContainer.eventNotificationUserInfoKey
+
+        block(Notification(name: name, object: nil, userInfo: nil))
+        block(Notification(name: name, object: nil, userInfo: ["unrelated": 1]))
+        block(Notification(name: name, object: nil, userInfo: [key: "not an event"]))
+
+        #expect(
+            delivered.count == 0,
+            "\(delivered.count) undecodable notification(s) reached the fold as sync activity"
+        )
+
+        // And the same three, read through the decoder directly, so the assertion above is not
+        // green merely because the handler was never reachable.
+        #expect(CadenceSyncActivityEvent(notification: Notification(name: name)) == nil)
+        #expect(
+            CadenceSyncActivityEvent(
+                notification: Notification(name: name, object: nil, userInfo: [key: "not an event"])
+            ) == nil
+        )
+
+        stream.stop()
+    }
+
+    /// The translation table, including the branch a future OS reaches.
+    ///
+    /// Core Data's `EventType` is an `NS_ENUM`, so `init(rawValue:)` succeeds on a value no SDK
+    /// defines — which is how `@unknown default` is reachable from a test at all. The three real
+    /// cases are asserted as three *different* answers rather than three right-looking ones,
+    /// because the plausible regression here is a transposition: map `.export` onto `.import` and
+    /// Settings reports the wrong direction while every downstream test stays green.
+    @Test func eachMirroringEventTypeMapsToItsOwnPhaseAndAFutureOneIsDropped() throws {
+        #expect(CadenceSyncActivityPhase(eventType: .setup) == .setup)
+        #expect(CadenceSyncActivityPhase(eventType: .import) == .import)
+        #expect(CadenceSyncActivityPhase(eventType: .export) == .export)
+
+        let mapped = [
+            CadenceSyncActivityPhase(eventType: .setup),
+            CadenceSyncActivityPhase(eventType: .import),
+            CadenceSyncActivityPhase(eventType: .export)
+        ]
+        #expect(Set(mapped.compactMap { $0 }).count == 3, "two event types collapsed onto one phase")
+
+        let future = try #require(NSPersistentCloudKitContainer.EventType(rawValue: 7777))
+        #expect(
+            CadenceSyncActivityPhase(eventType: future) == nil,
+            "an unrecognised pass must be dropped, not filed under a heading it did not come from"
+        )
+    }
+}
+
+/// A `NotificationCenter` that subscribes to nothing and records what it was asked for.
+///
+/// Subclassing a Foundation singleton-shaped class for a test is the same move
+/// `CalendarDateMemoryTests`' `CountingDefaults` makes. The recorded `block` is invoked by the
+/// tests **directly** rather than through `OperationQueue.main`: this centre never posts anything,
+/// which is the point — a real centre would schedule the block asynchronously and the assertion
+/// would need a clock.
+private final class CadenceRecordingNotificationCentre: NotificationCenter, @unchecked Sendable {
+    struct Registration {
+        let name: NSNotification.Name?
+        let object: AnyObject?
+        let queue: OperationQueue?
+        let block: @Sendable (Notification) -> Void
+        let token: NSObject
+    }
+
+    private(set) var registrations: [Registration] = []
+    private(set) var removedTokens: [AnyObject] = []
+
+    override func addObserver(
+        forName name: NSNotification.Name?,
+        object obj: Any?,
+        queue: OperationQueue?,
+        using block: @escaping @Sendable (Notification) -> Void
+    ) -> any NSObjectProtocol {
+        let token = NSObject()
+        registrations.append(
+            Registration(
+                name: name,
+                object: obj.map { $0 as AnyObject },
+                queue: queue,
+                block: block,
+                token: token
+            )
+        )
+        return token
+    }
+
+    override func removeObserver(_ observer: Any) {
+        removedTokens.append(observer as AnyObject)
+    }
+}
+
+/// A mutable counter the stream's `@Sendable` handler can close over.
+private final class CadenceDeliveredEventCounter: @unchecked Sendable {
+    var count = 0
 }

@@ -82,13 +82,32 @@ final class CadenceSyncActivityLog {
 /// are both dishonest: touching a record schedules an *export* and pulls nothing down, and deleting
 /// the local store metadata to force a re-import is destructive. Neither is a button. If one is
 /// ever added it must be named for what it does.
+///
+/// **What `center:` buys, and what it does not ([[T-2010]]).** The notification source is injected
+/// so a test can read back *how this subscribes* — the name it asks for, that it asks with no
+/// `object:` filter, and that it asks for the main queue. Those are the three things a later edit
+/// could get wrong while everything still compiles and every downstream test stays green, and they
+/// are now pinned by `CadenceCloudKitMirroringEventStreamTests`. **It does not prove the other
+/// end.** That Core Data actually posts this notification for a SwiftData store opened with
+/// `cloudKitDatabase:` is still taken from the platform, not measured: `NSPersistentCloudKitContainer.Event`
+/// declares `init` as `NS_UNAVAILABLE` and the only public way to obtain one is a real mirrored
+/// store, so no test here can hand this stream a notification it would decode. The seam moves the
+/// untested part from "the whole subscription" down to "whether anything ever arrives", and that
+/// last step is [[T-2010]]'s own two-minute check on a debug build.
 @MainActor
 final class CadenceCloudKitMirroringEventStream: CadenceSyncActivityEventStream {
+    private let center: NotificationCenter
     private var observer: NSObjectProtocol?
+
+    /// `center` is the test seam and nothing in the app passes it — the same shape as
+    /// `CadenceSyncActivityLog`'s `stream:`.
+    init(center: NotificationCenter = .default) {
+        self.center = center
+    }
 
     func start(_ handler: @escaping @MainActor (CadenceSyncActivityEvent) -> Void) {
         guard observer == nil else { return }
-        observer = NotificationCenter.default.addObserver(
+        observer = center.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: nil,
             // `.main` is the contract `CadenceSyncActivityEventStream` states. Core Data does not
@@ -105,7 +124,7 @@ final class CadenceCloudKitMirroringEventStream: CadenceSyncActivityEventStream 
 
     func stop() {
         guard let observer else { return }
-        NotificationCenter.default.removeObserver(observer)
+        center.removeObserver(observer)
         self.observer = nil
     }
 }
