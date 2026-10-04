@@ -49,7 +49,42 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
+Cadence/Shared/CadenceSearchMatcher.swift
+Cadence/macOS/Views/GlobalSearchIndexSupport.swift
+Cadence/macOS/Views/GlobalSearchDataSupport.swift
+Cadence/macOS/Views/GlobalSearchView.swift
+Cadence/Services/MCPReadOnly/CadenceReadService.swift
+Cadence/Models/GoalContributionSummary.swift
+Cadence/Services/MCPReadOnly/CadenceMCPAuditLog.swift
+Cadence/Services/CadenceWidgetRefreshCenter.swift
+Cadence/Services/CadenceHabitWidgetSupport.swift
+Cadence/Services/CadenceTodayWidgetSupport.swift
+CadenceWidgets/WidgetChrome.swift
+CadenceWidgets/TodayTasksWidget.swift
+CadenceWidgets/TodayTasksWidgetView.swift
+CadenceWidgets/HabitCheckInWidget.swift
+CadenceWidgets/CalendarSnapshotWidget.swift
+CadenceWidgets/MilestoneMomentumWidget.swift
 ```
+
+### LEASE GRANTED 2026-10-04 — 16 paths for T-1458, on `codex/search-widget-followups`
+
+Codex requested the minimum production lease for the owner's search / goal-summary / MCP
+audit-log / widget follow-ups, and asked that these be reserved from other writers. The ticket,
+with the patch order and the verification plan, is `docs/CODEX_LEDGER_INBOX.md:227`; the worktree
+is `/Users/williamwei/.codex/worktrees/9e4a/Cadence`, read at `24c671c4` with 0 dirty files.
+
+**These are additive to the four patterns above, not a reversal of the narrowing.** The narrowing
+retired the iOS task-UI fence because every branch behind it was spent ([[T-2069]]); this grant
+covers a different subtree that a live branch is actually working on. None of the sixteen was held
+by another writer when it was published, and none is in any running agent's scope.
+
+**The file-extraction half is NOT granted and is deferred by agreement.** The owner's sixth
+optimization recommendation would split `PersistenceController.swift`'s `StoreBackupManager`
+boundary and declarations preceding `CadenceWriteService`. New files must be registered as build
+inputs in `Cadence.xcodeproj/project.pbxproj` — which MCP explicitly compiles (`project.pbxproj:690`)
+— and that file is not edited while the owner has Xcode open ([[T-117]]). Target registration is an
+owner decision, not a lease question. Codex deferred it; the coordinator confirms the deferral.
 
 ### LEASE NARROWED 2026-10-04 — 35 patterns to 4, because every Codex branch is spent
 
