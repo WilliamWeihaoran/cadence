@@ -9,6 +9,10 @@
 #   ./scripts/ci-run-coverage.sh attribution <manifest>
 #                                                   # T-1950: does every code-bearing commit in a
 #                                                   #   push have a run of its OWN? exit 1 if not
+#   ./scripts/ci-run-coverage.sh push-attribution <before> <after>
+#                                                   # T-1993: the same reading over a push
+#                                                   #   event's own commit range; the only
+#                                                   #   place the grouping is still visible
 #   ./scripts/ci-run-coverage.sh selftest           # prove the classification discriminates
 #
 # WHY THIS EXISTS
@@ -98,6 +102,7 @@ usage() {
     say "usage: ./scripts/ci-run-coverage.sh report [<limit>]"
     say "       ./scripts/ci-run-coverage.sh classify <pushed|unpushed> <paths-file> <runs-file>"
     say "       ./scripts/ci-run-coverage.sh attribution <manifest>"
+    say "       ./scripts/ci-run-coverage.sh push-attribution <before-sha> <after-sha>"
     say "       ./scripts/ci-run-coverage.sh selftest"
 }
 
@@ -272,6 +277,87 @@ say_attribution() {
     fi
     say "push attribution: ATTRIBUTED -- all $seen commit(s) either have a run of their own or compile nothing"
     return 0
+}
+
+# --- the caller: a push event's own commit list (T-1993) -----------------------
+#
+# `attribution` above is deterministic and proved, and until now nothing called it. THE ONLY PLACE
+# THAT CAN SEE WHICH COMMITS ARRIVED TOGETHER IS THE PUSH EVENT ITSELF: `gh api /actions/runs`
+# records the pushed TIP only, which is the entire mechanism T-1950 is about, so after the fact the
+# grouping is gone and no later reading can reconstruct it. `<before>..<after>` is that list.
+#
+# THE RUNS HALF IS NOT ASKED OF GITHUB, and that is the point rather than a shortcut. On a push
+# event Actions creates exactly ONE run, for the tip, and it is the run this is executing inside.
+# So the tip has a run of its own -- in flight, because it has not finished -- and no other commit
+# in the range has one. That is a property of the event, not a query that can flake, and it needs
+# no token, no network and no `gh`.
+#
+# `IN-FLIGHT` for the tip rather than a conclusion: `classify` already treats an in-flight run as a
+# run (selftest mode 7, "an in-flight run is a run"), and the question here is whether a commit has
+# a run of its OWN, never whether that run was green. Everything else in the range gets an empty
+# runs file, so a docs-only commit still reads CI-SKIPPED and is not lumped in with a code one --
+# the fifth state T-1640 added, which is what keeps this from flagging an ordinary ledger edit.
+#
+# THE EXIT STATUS IS HONEST: 1 when a code-bearing commit rode behind another. Whether the CALLER
+# fails its job on that is the caller's decision and not this script's; `.github/workflows/ci.yml`
+# deliberately does not (see that job's comment). Making it a gate is a one-line change there.
+cmd_push_attribution() {
+    local before="${1:-}" after="${2:-}"
+    [[ -n "$before" && -n "$after" ]] || { usage; return 2 }
+
+    # A ref creation pushes the null sha as `before`, so there is no range to walk. It gets a
+    # verdict of its OWN rather than an all-clear: "nothing was read" and "nothing is wrong" are
+    # the two readings this whole file exists to keep apart.
+    if [[ -z "${before//0/}" ]]; then
+        say "push attribution: NOT-READ -- 'before' is the null sha, so this push created the ref"
+        say "  rather than adding commits to one. There is no range to walk, and this is NOT a"
+        say "  statement that every commit has a run."
+        return 0
+    fi
+
+    local tip
+    tip=$(git -C "$REPO_ROOT" rev-parse --verify "${after}^{commit}" 2>/dev/null) || {
+        say "push attribution: NOT-READ -- the pushed tip '$after' does not resolve here."
+        return 2
+    }
+    git -C "$REPO_ROOT" cat-file -e "${before}^{commit}" 2>/dev/null || {
+        say "push attribution: NOT-READ -- '$before' is not in this checkout."
+        say "  A shallow clone is the usual cause. This reading needs the commits the push ADDED,"
+        say "  so its checkout has to be deep enough to contain them; an unreachable 'before' is a"
+        say "  reading failure and not a clean push."
+        return 2
+    }
+
+    local -a shas
+    # Unquoted `${(f)"…"}` for the same reason cmd_report uses it (T-2044): the quoted form splits
+    # an empty rev-list into one empty element, and here that would be a one-commit phantom push.
+    shas=(${(f)"$(git -C "$REPO_ROOT" rev-list --reverse "$before..$after" 2>/dev/null)"})
+    if (( ${#shas} == 0 )); then
+        say "push attribution: NOTHING-READ -- '${before[1,8]}..${after[1,8]}' names no commit."
+        return 2
+    fi
+
+    local ws; ws=$(mktemp -d "${TMPDIR:-/tmp}/cadence-ci-push.XXXXXX") || return 2
+    : > "$ws/no-runs"
+    print -r -- $'in_progress\t' > "$ws/tip-run"
+    local sha runs i=0
+    : > "$ws/manifest"
+    for sha in $shas; do
+        (( i = i + 1 ))
+        git -C "$REPO_ROOT" diff-tree --no-commit-id --name-only -r "$sha" > "$ws/paths-$i" 2>/dev/null
+        if [[ "$sha" == "$tip" ]]; then runs="$ws/tip-run"; else runs="$ws/no-runs"; fi
+        print -r -- "$sha"$'\tpushed\t'"$ws/paths-$i"$'\t'"$runs" >> "$ws/manifest"
+    done
+
+    say "ci-run-coverage: push attribution over ${before[1,8]}..${after[1,8]} -- ${#shas} commit(s)"
+    say "  Actions created ONE run for this push and it is the tip's, ${tip[1,8]}. No other commit"
+    say "  in a push gets one, which is read off the event rather than asked of the API -- the API"
+    say "  records the tip only, and that is the whole mechanism of T-1950."
+    say ""
+    cmd_attribution "$ws/manifest"
+    local rc=$?
+    rm -rf "$ws"
+    return $rc
 }
 
 # --- report --------------------------------------------------------------------
@@ -602,6 +688,58 @@ cmd_selftest() {
         $( [[ -n "$c1" && "$two_behind" == *"last COMPLETED run: ${c1[1,8]}  -- 2 commit(s) after it"* ]] && print 1 || print 0 ) \
         "floor=HEAD~2 read: ${two_behind//$'\n'/ | }"
 
+    say ""
+    say " 9. the-push-event-is-the-only-caller-that-can-see-the-group -- T-1993"
+    # T-1950's guard had no caller; this is it. The mode is mode 7's one-candidate discharge again,
+    # but over a real `<before>..<after>` range WALKED OUT OF GIT rather than a hand-written
+    # manifest -- the walk is the part the workflow step adds and therefore the part that can be
+    # wrong. The fixture is the real `4e00a5a6`-behind-`74e9394a` shape in miniature: a code commit
+    # and then a docs-only ledger correction as the tip. The SAME code commit is read twice, once
+    # riding behind that tip and once as the tip of a single-commit push, and the two readings must
+    # DIFFER -- a step that answered one constant would satisfy exactly one of the two checks.
+    local prepo="$ws/push-repo" pbase pcode pdocs
+    (
+        mkdir -p "$prepo" && cd "$prepo" || exit 1
+        git init -q .
+        git config user.email selftest@example.com
+        git config user.name Selftest
+        git config commit.gpgsign false
+        mkdir -p docs Cadence
+        print -r -- base > Cadence/App.swift; print -r -- base > docs/TODO.md
+        git add . >/dev/null && git commit -qm base || exit 1
+        print -r -- changed > Cadence/App.swift; git commit -qam 'the code commit' || exit 1
+        print -r -- changed > docs/TODO.md; git commit -qam 'a ledger correction' || exit 1
+    ) > "$ws/push-repo.log" 2>&1
+    pbase=$(git -C "$prepo" rev-parse HEAD~2 2>/dev/null)
+    pcode=$(git -C "$prepo" rev-parse HEAD~1 2>/dev/null)
+    pdocs=$(git -C "$prepo" rev-parse HEAD 2>/dev/null)
+
+    local pgrouped psingle pgrouped_rc psingle_rc
+    pgrouped=$(REPO_ROOT="$prepo"; cmd_push_attribution "$pbase" "$pdocs" 2>&1); pgrouped_rc=$?
+    psingle=$(REPO_ROOT="$prepo";  cmd_push_attribution "$pbase" "$pcode" 2>&1); psingle_rc=$?
+    check "the-push-event-is-the-only-caller-that-can-see-the-group" \
+        $( [[ -n "$pcode" && "$pgrouped" == *UNATTRIBUTED* && "$pgrouped" == *"${pcode[1,8]}"* && $pgrouped_rc -eq 1 ]] && print 1 || print 0 ) \
+        "a code commit riding behind a docs-only tip read rc=$pgrouped_rc: ${pgrouped//$'\n'/ | }$( [[ -n "$pcode" ]] || print -n " [fixture repo failed: $(<"$ws/push-repo.log")]")"
+    check "the-push-event-is-the-only-caller-that-can-see-the-group: the same commit pushed alone is attributed" \
+        $( [[ "$psingle" == *ATTRIBUTED* && "$psingle" != *UNATTRIBUTED* && $psingle_rc -eq 0 ]] && print 1 || print 0 ) \
+        "the same commit as a single-commit push read rc=$psingle_rc: ${psingle//$'\n'/ | }"
+    check "the-push-event-is-the-only-caller-that-can-see-the-group: the two readings differ" \
+        $( [[ "$pgrouped_rc" -ne "$psingle_rc" ]] && print 1 || print 0 ) \
+        "grouped rc=$pgrouped_rc and single rc=$psingle_rc are the same reading"
+    # The two ways this step can read NOTHING, both of which must stay distinguishable from a clean
+    # push -- the same rule as the empty manifest in mode 7. A ref creation has no range at all; a
+    # `before` the checkout does not contain is the shallow-clone failure, and it is an ERROR
+    # rather than a verdict.
+    local pnull pnull_rc pshallow pshallow_rc
+    pnull=$(REPO_ROOT="$prepo"; cmd_push_attribution 0000000000000000000000000000000000000000 "$pdocs" 2>&1); pnull_rc=$?
+    check "the-push-event-is-the-only-caller-that-can-see-the-group: a null 'before' is not an all-clear" \
+        $( [[ "$pnull" == *NOT-READ* && "$pnull" != *"ATTRIBUTED --"* ]] && print 1 || print 0 ) \
+        "a ref-creation push read rc=$pnull_rc: ${pnull//$'\n'/ | }"
+    pshallow=$(REPO_ROOT="$prepo"; cmd_push_attribution 0123456789012345678901234567890123456789 "$pdocs" 2>&1); pshallow_rc=$?
+    check "the-push-event-is-the-only-caller-that-can-see-the-group: a 'before' this checkout lacks is a reading failure" \
+        $( [[ $pshallow_rc -eq 2 && "$pshallow" != *"ATTRIBUTED --"* ]] && print 1 || print 0 ) \
+        "an unreachable 'before' read rc=$pshallow_rc: ${pshallow//$'\n'/ | }"
+
     rm -rf "$ws"
     say ""
     say "checks: $(( ${#performed} - ${#failures} )) passed, ${#failures} failed"
@@ -617,6 +755,7 @@ case "${1:-}" in
     report)   shift; cmd_report "$@" ;;
     classify) shift; (( $# == 3 )) || { usage; exit 2 }; classify "$@" ;;
     attribution) shift; (( $# == 1 )) || { usage; exit 2 }; cmd_attribution "$@" ;;
+    push-attribution) shift; (( $# == 2 )) || { usage; exit 2 }; cmd_push_attribution "$@" ;;
     selftest) cmd_selftest ;;
     *)        usage; exit 2 ;;
 esac

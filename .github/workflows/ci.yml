@@ -391,3 +391,61 @@ jobs:
         run: zsh -f ./scripts/test-host-lock.sh selftest
       - name: ci-run-coverage.sh selftest (T-1640)
         run: zsh -f ./scripts/ci-run-coverage.sh selftest
+
+  # ---------------------------------------------------------------------------
+  # T-1993: the caller T-1950's attribution guard never had.
+  #
+  # `scripts/ci-run-coverage.sh attribution` is deterministic and proved -- it exits 1 over the
+  # real `4e00a5a6`-behind-`74e9394a` push -- and until now nothing ran it on a schedule or an
+  # event. THE ONLY PLACE THAT CAN SEE WHICH COMMITS ARRIVED TOGETHER IS THE PUSH EVENT ITSELF:
+  # `gh api /actions/runs` records the pushed TIP only, which is the whole mechanism T-1950 is
+  # about, so after the fact the grouping is gone and no later reading reconstructs it.
+  # `github.event.before..github.event.after` is that list, and this step is the only place in the
+  # repository that has it.
+  #
+  # A NOTICE, NOT A GATE, and deliberately so rather than for want of nerve. `main` is linear and
+  # the tip's tree carries the intermediate commit's bytes, so a grouped push costs ATTRIBUTION,
+  # not coverage: failing the job would redden a push whose code is fine, which is a DIFFERENT lie
+  # from the one T-1950 is about rather than the same one fixed. `ci-run-coverage.sh report` keeps
+  # exit 0 for the same stated reason. The script's own exit status is honest (1 = unattributed);
+  # only this step tolerates it, so making this a gate later is deleting the `|| rc=$?` tolerance
+  # and nothing else. Whether it SHOULD become a gate is filed as a decision in T-1993, not
+  # shipped quietly here -- the commit that added this already changes one CI reading, and two new
+  # ways to go red in one commit is the shape that makes the next red run unreadable.
+  #
+  # `macos-latest`, not the cheap ubuntu runner: `ci-run-coverage.sh` is `#!/bin/zsh`, and the
+  # GitHub Ubuntu runner images do not ship zsh (checked against the Ubuntu 24.04 image manifest
+  # 2026-10-03 -- it lists bash and dash and no zsh), so ubuntu would need an apt install to run a
+  # one-second script. `guard-script-selftests` above already runs this same script under the
+  # macOS image's zsh with the same `zsh -f`.
+  #
+  # `fetch-depth: 0` is load-bearing: the reading is over the commits the push ADDED, and
+  # checkout's default depth of 1 contains none of them. An unreachable `before` is reported BY
+  # NAME as a reading failure rather than read as a clean push, which is the one thing a
+  # notice-only step must still get right.
+  #
+  # `push` only: `github.event.before` does not exist on a pull_request or a workflow_dispatch,
+  # and a push is the only event that groups commits. A docs-only push never starts this workflow
+  # at all (`paths-ignore` above) and needs no notice: if every file in the push is ignored, no
+  # commit in it is code-bearing and there is nothing to attribute.
+  # ---------------------------------------------------------------------------
+  push-attribution:
+    name: Every code commit in this push has a run of its own (notice)
+    runs-on: macos-latest
+    timeout-minutes: 10
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: ci-run-coverage.sh push-attribution (T-1950/T-1993)
+        env:
+          # Through the environment rather than interpolated into the script body: these are the
+          # two values this step exists to read, and a `${{ }}` inside `run:` is a string splice.
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          rc=0
+          zsh -f ./scripts/ci-run-coverage.sh push-attribution "$BEFORE" "$AFTER" || rc=$?
+          echo "push-attribution exit: $rc  (0 = attributed, 1 = unattributed, 2 = nothing read)"
+          echo "NOTICE ONLY: this step does not fail the job. See the comment in ci.yml."
