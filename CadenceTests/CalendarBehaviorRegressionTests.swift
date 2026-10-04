@@ -93,13 +93,10 @@ struct CalendarBehaviorRegressionTests {
     // implicitly-unwrapped `EKCalendar!` as `EKEvent.calendar`. The helper now lives in the shared
     // implementation both platforms forward to.
     //
-    // The repo-wide sweep that would keep it the only one is NOT here yet, and the reason is
-    // [[T-2049]] rather than a decision: a real-tree sweep has to be on
-    // `CadenceRealTreeSweepManifest.txt`, that file is derived by a full suite run, and this Mac
-    // stopped running tests at 20:43. `agent-commit.sh` refused the commit for exactly that
-    // (SWEEP-MANIFEST-MISSING) and `--not-a-sweep` would have been a false statement about it.
-    // T-2052 carries the sweep's whole specification -- pattern, both witnesses, the walk floor and
-    // its `including:` witness -- so it can be written back verbatim on a host that can run it.
+    // Two guards, because one kind cannot reach all five: the behavioural test below covers the
+    // shared helper and its two forwarding faces, and `noEventKitCalendarIsReadThroughTheImplicitUnwrap`
+    // is the only thing that reaches the other four -- the iOS row is behind `#if os(iOS)` and
+    // `makeItem` is `private`, so neither is compiled into this macOS test target at all.
 
     @Test func everyCalendarIdentifierFaceReadsTheOneSharedHelper() throws {
         let calendar = Calendar.current
@@ -125,6 +122,40 @@ struct CalendarBehaviorRegressionTests {
         #expect(CadenceEventNoteSupport.calendarIdentifier(of: owned) == ownedID)
         #expect(CalendarEventIdentity.calendarIdentifier(of: owned) == ownedID)
         #expect(CalendarEventEditPopover.calendarIdentifier(of: owned) == ownedID)
+    }
+
+    /// **T-2052.** No product source reads `EKEvent.calendar` or `EKReminder.calendar` -- both the
+    /// implicitly-unwrapped `EKCalendar!` -- through the bare `.calendar.` spelling.
+    ///
+    /// The receiver list is deliberate rather than a bare `\.calendar\.`, which
+    /// `CadenceFeatureDestination.calendar.systemImage` and the `ios.calendar.zoomLevel` defaults
+    /// keys would both trip without being this defect. The reader is `codeOnly`, so the doc
+    /// comments that quote the old spelling (this file's own, `CadenceEventNoteSupport`'s,
+    /// `CalendarPageBoardSupportViews`') are not hits. `including:` names
+    /// `CadenceRemindersManager.swift`, which held three of the five, so a walk that reached only
+    /// the tree T-2047 touched cannot report the repository clean.
+    @Test func noEventKitCalendarIsReadThroughTheImplicitUnwrap() throws {
+        let pattern = try NSRegularExpression(pattern: #"\b(?:ekEvent|event|reminder)\.calendar\."#)
+        let instrument = try CadenceScanInstrument(
+            "bare EventKit calendar read",
+            fires: "let id = event.calendar.calendarIdentifier",
+            andNotOn: "let id = event.calendar?.calendarIdentifier ?? \"\"; let key = event.calendarItemIdentifier",
+            by: { source in
+                pattern.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)) != nil
+            }
+        )
+        // The other two receivers the pattern names, so a narrowed alternation cannot pass quietly.
+        #expect(instrument.fires(on: "let title = reminder.calendar.title"))
+        #expect(instrument.fires(on: "let id = item.ekEvent.calendar.calendarIdentifier"))
+        #expect(!instrument.fires(on: "let image = CadenceFeatureDestination.calendar.systemImage"))
+
+        let hits = try instrument.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence"),
+            atLeast: 300,
+            including: "Cadence/Services/CadenceRemindersManager.swift",
+            read: { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }
+        )
+        #expect(hits.isEmpty, "these files read an EventKit calendar through the implicit unwrap: \(hits)")
     }
 
 
