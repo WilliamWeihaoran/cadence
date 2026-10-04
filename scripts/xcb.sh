@@ -10,6 +10,7 @@
 #   ./scripts/xcb.sh check-warnings <log>                      # the diagnostic counters, on their own
 #   ./scripts/xcb.sh check-host-launch <log> [xcodebuild-exit] # the refused-relaunch report (T-1992)
 #   ./scripts/xcb.sh check-entitlements <log> [exit] [dd-path] # the poisoned-DerivedData report (T-2046)
+#   ./scripts/xcb.sh check-sleep <start> <end> [exit]          # did the Mac sleep in that window (T-2048)
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
 #   ./scripts/xcb.sh last-green                                # is HEAD still the last full green? (T-2042)
 #   ./scripts/xcb.sh release-dd <id|path>                      # delete a DerivedData no live build uses
@@ -1087,6 +1088,49 @@ entitlements_poisoned_dd_report() {  # $1 = log, $2 = xcodebuild's exit status (
   return 0
 }
 
+# --- a run the Mac slept through (T-2048) ------------------------------------
+# Measured 2026-10-03 (heartbeat, 3a5a43af): a full CadenceTests run on battery with the screen
+# locked stopped advancing at 653 of 5518 tests, `pmset -g log` shows `Entering Sleep state due to
+# 'Maintenance Sleep'` at 20:01, and the caller's 60-minute cap killed it. All the result block said
+# was `XCODEBUILD_EXIT=143`. This counts the `Entering Sleep state` entries whose local timestamps
+# fall inside [start, end] and names the COUNT -- never a duration, which the log does not state
+# reliably. Never gates; a green run has nothing to explain and is not read.
+# `CADENCE_PMSET_LOG_FIXTURE` is the testing seam: a file in `pmset -g log` format, so `selftest`
+# drives the reading without the Mac ever sleeping. The live read costs ~24 s (166k lines on this
+# Mac, measured 2026-10-04), which is why the result block asks `pmset -g stats` first.
+pmset_log() {
+  if [[ -n "${CADENCE_PMSET_LOG_FIXTURE:-}" ]]; then
+    cat -- "$CADENCE_PMSET_LOG_FIXTURE" 2>/dev/null
+    return 0
+  fi
+  pmset -g log 2>/dev/null
+}
+# Sleep + dark-wake + user-wake counters: a cheap "did any sleep/wake happen" reading. Any sleep that
+# ended before postflight is followed by a wake of one kind or the other, so an unchanged sum means
+# the 24-second log read can be skipped. Empty when unreadable, and empty never skips the read.
+pmset_sleep_wake_sum() {
+  pmset -g stats 2>/dev/null | awk -F: '/Count/ { s += $2; n++ } END { if (n) print s }'
+}
+system_sleep_report() {  # $1 = run start (epoch s), $2 = run end (epoch s), $3 = xcodebuild's exit ("" when unknown)
+  local -i start=${1:-0} end=${2:-0}
+  local xstatus=${3:-}
+  [[ "$xstatus" == "0" ]] && return 0   # a green run has no red to explain
+  (( start > 0 && end >= start )) || return 0
+  local from to
+  from=$(date -r "$start" '+%Y-%m-%d %H:%M:%S') || return 0
+  to=$(date -r "$end" '+%Y-%m-%d %H:%M:%S') || return 0
+  # `pmset -g log` stamps local wall time as `YYYY-MM-DD HH:MM:SS -0400`; the first 19 characters
+  # compare lexically in the same local time the bounds were formatted in.
+  local -i slept
+  slept=$(pmset_log | awk -v from="$from" -v to="$to" '
+    /Entering Sleep state/ { t = substr($0, 1, 19); if (t >= from && t <= to) n++ }
+    END { print n + 0 }')
+  (( slept > 0 )) || return 0
+  say ""
+  say "!! SYSTEM-SLEPT (T-2048): \`pmset -g log\` shows $slept 'Entering Sleep state' entr$( (( slept == 1 )) && print -n y || print -n ies) between this run's start ($from) and end ($to) -- a stall, a kill (exit 143) or a timeout here is not evidence about the code. Re-run awake, on AC, lid open."
+  return 0
+}
+
 
 # --- the iOS Simulator destination guard (T-1282) ----------------------------
 # The zero-test guard above refuses a run that executed nothing. This refuses a run that COMPILED
@@ -2161,6 +2205,47 @@ selftest_only_testing() {
     $( (( erc == 0 )) && [[ -z "$eout" ]] && print 1 || print 0 ) "exit $erc: $eout"
 
   say ""
+  say " 8d. a run the Mac slept through is named, not read as a bare exit 143 (T-2048)"
+  # Fixture lines in `pmset -g log` format, stamped from epochs through `date -r` so the window is
+  # right in whatever timezone the selftest runs. COUNTS only, never durations. One fixture per
+  # bound, so ignoring either the start or the end bound turns a specific check red.
+  local -i s0=1790000000 s1=$(( 1790000000 + 3600 ))
+  pm_line() {  # $1 = epoch, $2 = category, $3 = message
+    print -r -- "$(date -r "$1" '+%Y-%m-%d %H:%M:%S %z') $2               	$3"
+  }
+  local sleepmsg="Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using Batt (Charge:42%) 341 secs"
+  {
+    print -r -- "PM ASL data store: /var/log/powermanagement"
+    pm_line $(( s0 - 600 )) Sleep "$sleepmsg"
+    pm_line $(( s0 + 600 )) Sleep "$sleepmsg"
+    pm_line $(( s0 + 700 )) DarkWake "DarkWake from Deep Idle [CDNP] : due to SMC.OutboxNotEmpty/Maintenance Using Batt (Charge:42%) 58 secs"
+    pm_line $(( s0 + 1800 )) Sleep "$sleepmsg"
+    pm_line $(( s0 + 3000 )) Sleep "$sleepmsg"
+    pm_line $(( s1 + 600 )) Sleep "$sleepmsg"
+  } > "$ws/pm-three-inside.log"
+  { pm_line $(( s0 - 60 )) Sleep "$sleepmsg"; pm_line $(( s0 + 60 )) Wake "Wake from Deep Idle [CDNP] : due to UserActivity" } > "$ws/pm-before.log"
+  { pm_line $(( s0 + 60 )) Wake "Wake from Deep Idle [CDNP] : due to UserActivity"; pm_line $(( s1 + 60 )) Sleep "$sleepmsg" } > "$ws/pm-after.log"
+  { pm_line $(( s0 + 60 )) Assertions "PID 1(launchd) Created PreventUserIdleSystemSleep \"x\" 00:00:00"; pm_line $(( s0 + 120 )) Wake "Wake from Deep Idle [CDNP] : due to UserActivity" } > "$ws/pm-none.log"
+  local slout slrc
+  run_sleep() { local f=$1; shift; slout=$(CADENCE_PMSET_LOG_FIXTURE="$f" zsh "$here" check-sleep "$@" 2>&1); slrc=$?; }
+  run_sleep "$ws/pm-three-inside.log" $s0 $s1 143
+  check "three Sleep entries inside the window (and two outside) say SYSTEM-SLEPT with a count of 3" \
+    $( [[ "$slout" == *"!! SYSTEM-SLEPT (T-2048): \`pmset -g log\` shows 3 'Entering Sleep state' entries between"* ]] && print 1 || print 0 ) "exit $slrc: $slout"
+  check "...and never gates (exit 0)" $( (( slrc == 0 )) && print 1 || print 0 ) "exit $slrc: $slout"
+  run_sleep "$ws/pm-before.log" $s0 $s1 143
+  check "CONTROL: a Sleep entry only BEFORE the run's start is silent" \
+    $( (( slrc == 0 )) && [[ -z "$slout" ]] && print 1 || print 0 ) "exit $slrc: $slout"
+  run_sleep "$ws/pm-after.log" $s0 $s1 143
+  check "CONTROL: a Sleep entry only AFTER the run's end is silent" \
+    $( (( slrc == 0 )) && [[ -z "$slout" ]] && print 1 || print 0 ) "exit $slrc: $slout"
+  run_sleep "$ws/pm-none.log" $s0 $s1 143
+  check "CONTROL: zero Sleep entries (wake and assertion lines only) is silent" \
+    $( (( slrc == 0 )) && [[ -z "$slout" ]] && print 1 || print 0 ) "exit $slrc: $slout"
+  run_sleep "$ws/pm-three-inside.log" $s0 $s1 0
+  check "CONTROL: Sleep entries under exit 0 (nothing red to explain) are silent" \
+    $( (( slrc == 0 )) && [[ -z "$slout" ]] && print 1 || print 0 ) "exit $slrc: $slout"
+
+  say ""
   say " 9. the per-requested-suite guard, and which of its two inputs it trusts (T-667 / T-1326)"
   # ONE LOG, TWO ARGUMENT SETS, TWO VERDICTS. That is the whole of T-1326: the log below holds the
   # literal string `-only-testing:CadenceTests/NotASuite` -- as a failing test's own prose, with the
@@ -2786,6 +2871,17 @@ if [[ "${1:-}" == "check-entitlements" ]]; then
   exit 0
 fi
 
+# The slept-through-it report on its own (T-2048): what `selftest` drives (with
+# CADENCE_PMSET_LOG_FIXTURE), and how anyone holding a red run's start/end asks whether the Mac
+# slept in between. Never gates; exits 0.
+if [[ "${1:-}" == "check-sleep" ]]; then
+  if [[ "${2:-}" != <-> || "${3:-}" != <-> ]]; then
+    say "usage: ./scripts/xcb.sh check-sleep <start-epoch> <end-epoch> [xcodebuild-exit]"; exit 2
+  fi
+  system_sleep_report "$2" "$3" "${4:-}"
+  exit 0
+fi
+
 # The resolver on its own, the way `check-test-log` exposes the zero-test guard: it is what
 # `selftest` drives, and what a caller can point at a filter it is unsure of without paying for a
 # build. Accepts the value with or without the `-only-testing:` prefix.
@@ -3171,13 +3267,24 @@ if full_unit_run "${run_args[@]}"; then
   LG_FULL=1
   LG_START="$(tree_fingerprint "$LG_ROOT")"
 fi
+SLEEP_WAKE_START="$(pmset_sleep_wake_sum)"   # T-2048: the cheap reading the postflight compares against
 RUN_START_EPOCH=$(date +%s)
 "$XCODEBUILD" -project "$ROOT_DIR/Cadence.xcodeproj" "${run_args[@]}" > "$LOG" 2>&1 &
 XCB_PID=$!
 watchdog "$XCB_PID" &
 WATCHDOG_PID=$!
+# A test run holds an idle- and (on AC) system-sleep assertion for exactly xcodebuild's lifetime
+# (T-2048): `-w` ends it with the pid, so nothing outlives the run. It does NOT stop a lid-close or
+# a forced sleep, and it is not `-d` -- the screen can still lock (see SCREEN-LOCKED-MID-RUN).
+CAFFEINATE_PID=""
+if (( IS_TEST_RUN )) && command -v caffeinate >/dev/null 2>&1; then
+  caffeinate -i -s -w "$XCB_PID" >/dev/null 2>&1 &
+  CAFFEINATE_PID=$!
+fi
 wait "$XCB_PID"; STATUS=$?
+RUN_END_EPOCH=$(date +%s)
 kill "$WATCHDOG_PID" 2>/dev/null
+[[ -n "$CAFFEINATE_PID" ]] && kill "$CAFFEINATE_PID" 2>/dev/null
 
 # --- postflight --------------------------------------------------------------
 say ""
@@ -3218,6 +3325,14 @@ fi
 # Outside the test-run branch: a `build` dies the same way (T-2046). Last of the primary-run
 # reports, so it sits below the VACUOUS-COUNT and 0-tests readings it explains.
 entitlements_poisoned_dd_report "$LOG" "$XCODEBUILD_STATUS" "$DD"
+# Any action can be slept through (T-2048). The ~24 s log read happens only on a red run whose
+# sleep/wake counters moved, or could not be read at either end.
+if (( XCODEBUILD_STATUS != 0 )); then
+  SLEEP_WAKE_END="$(pmset_sleep_wake_sum)"
+  if [[ -z "$SLEEP_WAKE_START" || -z "$SLEEP_WAKE_END" || "$SLEEP_WAKE_START" != "$SLEEP_WAKE_END" ]]; then
+    system_sleep_report "$RUN_START_EPOCH" "$RUN_END_EPOCH" "$XCODEBUILD_STATUS"
+  fi
+fi
 # --- the iOS leg (T-1956) ----------------------------------------------------
 # After every primary-run report and before the leak check, so a shared entry the leg's own
 # `xcodebuild` created is reported too. The reasoning, and the four things it must get right, are
