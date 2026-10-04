@@ -196,6 +196,58 @@ enum CadenceTaskDropSupport {
         return "list:\(containerKey(for: .inbox))"
     }
 
+    // MARK: What a sidebar context group offers
+
+    /// A drop that makes a **list** rather than a task.
+    ///
+    /// `contextID` is the group the new list joins, and `nil` is a real answer rather than a
+    /// failure: a list belongs to no context until one is picked, which is exactly what the
+    /// catch-all "Other" section collects. See `CadenceSidebarLists.Section.contextID`, which is
+    /// `nil` for the same reason and spells the same fact.
+    struct NewListDrop: Equatable {
+        var contextID: UUID?
+    }
+
+    /// `newlist:<uuid>`, or `newlist:none` for a list in no group.
+    ///
+    /// **It is a `dropKey` part, not a parallel channel**, so the sidebar's targets register in
+    /// the same `iOSNewTaskDropFrameRegistry`, are hit-tested by the same
+    /// `CadenceCaptureDropHitTest` and draw the same ghost as every other destination. The one
+    /// thing that differs is what the released finger commits to, and that is decided once — see
+    /// `CadenceCaptureSeedResolver.creation(for:dropKey:todayKey:)`.
+    static func newListDropKey(contextID: UUID?) -> String {
+        "\(newListPrefix)\(contextID?.uuidString ?? newListNoContextValue)"
+    }
+
+    /// The list-creation a key asks for, or `nil` when the key asks for a task like every other.
+    ///
+    /// A `newlist:` part naming something that is neither `none` nor a UUID resolves to `nil`
+    /// rather than falling back to "no context": an unreadable group is not the same answer as no
+    /// group, and the registry already treats "nothing to hand over" as "not a target" — the rule
+    /// `dropKey(forGroup:)` states with `nil` and `candidates()` restates with the empty key.
+    static func newListDrop(forDropKey key: String) -> NewListDrop? {
+        for part in key.split(separator: separator).map(String.init) where part.hasPrefix(newListPrefix) {
+            let value = String(part.dropFirst(newListPrefix.count))
+            if value == newListNoContextValue { return NewListDrop(contextID: nil) }
+            guard let id = UUID(uuidString: value) else { return nil }
+            return NewListDrop(contextID: id)
+        }
+        return nil
+    }
+
+    /// What the ghost calls the thing that is about to exist.
+    ///
+    /// The ghost used to print "New task" as a literal, which was true while a task was the only
+    /// thing a dropped `+` could make. It is derived from the key now for the same reason the
+    /// caption always has been: the words under the finger and what the release commits to come
+    /// from one answer, so they cannot come apart.
+    static func ghostTitle(forDropKey key: String) -> String {
+        newListDrop(forDropKey: key) == nil ? "New task" : "New list"
+    }
+
+    static let newListPrefix = "newlist:"
+    private static let newListNoContextValue = "none"
+
     // MARK: What a surface knows about itself
 
     /// The `list:` value for a container a *page* is scoped to, in the `inbox` / `a_<uuid>` /
@@ -376,6 +428,17 @@ enum CadenceTaskDropSupport {
         todayKey: String,
         listName: String
     ) -> String {
+        // **A list-creating key says where the list goes and nothing else.** Running it through
+        // the seed below would print "Inbox" — `CadenceTaskComposerSeed.container` defaults there
+        // and a `newlist:` part sets none of it — which is a task's field on a thing that is not a
+        // task. The group's own name is the whole claim, and it arrives the way every name does,
+        // through `listName`, because a key carries a UUID and this layer cannot resolve one.
+        if let newList = newListDrop(forDropKey: key) {
+            guard newList.contextID != nil else { return "" }
+            let trimmed = listName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "" : "in \(trimmed)"
+        }
+
         let seed = seed(forDropKey: key, todayKey: todayKey)
         var placement: [String] = []
 

@@ -31,10 +31,25 @@ enum CadenceRootShellLayout {
     /// window that is simultaneously horizontally-regular and narrow, which is exactly what
     /// **a 2/3 Split View on the 11" Pro in landscape is — ~782–795pt depending on generation** —
     /// and what Stage Manager produces at any size the user drags to. Delete this and that
-    /// configuration gets a 188pt labelled column out of a 780pt window, or no navigation at all.
+    /// configuration gets a 216pt labelled column out of a 780pt window, or no navigation at all.
     static let railWidth: CGFloat = 58
     /// The labelled column.
-    static let expandedWidth: CGFloat = 188
+    ///
+    /// **216, and the number is measured rather than chosen (T-2054).** At 188 the owner's own
+    /// list names truncated in the column that exists to show them — "China shopping list" drew as
+    /// "Chi…". A list row spends `2 × 10` of region padding, `2 × 10` of row padding, three 8pt
+    /// gaps between the name, the `Spacer`'s minimum and the count, and up to 21pt for a
+    /// three-digit count; the name itself measures **120.7pt** at 13pt semibold, the weight a
+    /// selected row draws in. That sums to 205.7, and 216 clears it by ~10pt.
+    ///
+    /// **It cannot grow much further, and this is the binding constraint.** Every pane in the app
+    /// is the window less this number. An 11" iPad in portrait is 834pt, and
+    /// `CadenceNotesListSupport.twoColumnMinimumWidth` is 601 — so the Notes surface keeps two
+    /// columns only while this stays **at or below 233**. At 216 it clears that cliff by 17pt.
+    /// Today and the calendar are unaffected: 834 − 216 = 618 was already below
+    /// `CadenceTodayLayoutSupport.twoPaneMinimumWidth` at 188, and the landscape panes stay over
+    /// `inspectorWidePaneThreshold`. Raise this again and check that sentence first, not the column.
+    static let expandedWidth: CGFloat = 216
     /// Folded away. **Zero, not a stub.** The point of folding is that the detail pane gets the
     /// whole window — an 11" Pro in portrait hands the detail 646pt, and 188pt back is the
     /// difference between a cramped pane and a usable one. Leaving a residual strip would spend

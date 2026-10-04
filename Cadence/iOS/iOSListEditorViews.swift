@@ -20,6 +20,13 @@ enum iOSListEditorMode: Identifiable {
 
 struct iOSListEditorSheet: View {
     let mode: iOSListEditorMode
+    /// The group a `.newArea` / `.newProject` opens on, when something already knew one — today
+    /// that is a `+` dragged onto a context group in the iPad sidebar (T-2054). It is the iOS
+    /// spelling of `CreateListSheet(context:)`'s argument and carries that type's rule: **the
+    /// context this sheet opens on, not the context it creates in.** `selectedContextID` is the
+    /// sheet's one answer after `load()`, the picker states and changes it, and `nil` — every
+    /// existing call site — opens on "No context" exactly as before.
+    var seededContext: Context?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Context.order) private var contexts: [Context]
@@ -359,6 +366,12 @@ struct iOSListEditorSheet: View {
         mutate(&sectionDrafts[index])
     }
 
+    /// `selectedContextID`'s spelling of `seededContext`. The picker speaks `"none"` rather than
+    /// an empty string, so an absent seed has to resolve to that one word and not to `""`.
+    private var seededContextValue: String {
+        seededContext?.id.uuidString ?? "none"
+    }
+
     private func load() {
         guard !hasLoaded else { return }
         hasLoaded = true
@@ -372,6 +385,7 @@ struct iOSListEditorSheet: View {
             hasProjectDueDate = false
             projectDueDate = Date()
             hideEmptySectionDueDates = true
+            selectedContextID = seededContextValue
         case .newProject:
             name = ""
             details = ""
@@ -380,6 +394,7 @@ struct iOSListEditorSheet: View {
             hasProjectDueDate = false
             projectDueDate = Date()
             hideEmptySectionDueDates = true
+            selectedContextID = seededContextValue
         case .editArea(let area):
             name = area.name
             details = area.desc

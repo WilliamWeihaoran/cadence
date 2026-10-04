@@ -323,6 +323,14 @@ struct iOSCaptureRequest: Identifiable {
         case task(CadenceTaskComposerSeed)
         case event
         case note
+        /// A new list in the sidebar context group a drag came down on, or — `nil` — in none.
+        ///
+        /// **No palette segment produces this and none ever will.** The palette is a choice about
+        /// *what*; this is a consequence of *where*, and the iPad sidebar's context groups are the
+        /// only region in the app that implies a list rather than a task. See
+        /// `CadenceCaptureSeedResolver.creation(for:dropKey:todayKey:)`, which is the one place
+        /// the two readings are told apart.
+        case list(contextID: UUID?)
     }
 
     let id = UUID()
@@ -415,7 +423,7 @@ struct iOSCaptureRadialMenuButton: View {
         case .action(let action):
             interaction.request(kind(for: action))
         case .drop:
-            interaction.request(.task(seed(for: .drop, droppedOn: target, atMinute: slotMinute)))
+            interaction.request(kind(forCreation: creation(droppedOn: target, atMinute: slotMinute)))
         case .dismissed, .none:
             break
         }
@@ -427,6 +435,34 @@ struct iOSCaptureRadialMenuButton: View {
         case .event: return .event
         case .note: return .note
         }
+    }
+
+    /// A released drag, routed by what the destination *is*. See `CadenceCaptureCreation`.
+    private func kind(forCreation creation: CadenceCaptureCreation) -> iOSCaptureRequest.Kind {
+        switch creation {
+        case .task(let seed): return .task(seed)
+        case .list(let contextID): return .list(contextID: contextID)
+        }
+    }
+
+    private func creation(droppedOn target: UUID?, atMinute slotMinute: Int?) -> CadenceCaptureCreation {
+        CadenceCaptureSeedResolver.creation(
+            for: .drop,
+            dropKey: dropKey(droppedOn: target, atMinute: slotMinute),
+            todayKey: DateFormatters.todayKey()
+        )
+    }
+
+    /// The destination's key with the minute a slotted target resolved, or `nil` when the drag came
+    /// down on nothing. One spelling, read by both the seed and the list branch.
+    ///
+    /// The minute is appended to the key rather than written onto the seed afterwards, so it
+    /// travels the same `dropKey` → `seed` → caption path as everything else a drop inherits —
+    /// which is what stops the ghost's words and the composer's chips disagreeing about the hour.
+    /// `key(_:appendingSlotMinute:)` is a no-op on every target without a slot rule.
+    private func dropKey(droppedOn target: UUID?, atMinute slotMinute: Int?) -> String? {
+        let placement = target.flatMap { iOSNewTaskDropFrameRegistry.shared.placement(for: $0) }
+        return placement.map { CadenceTaskDropSupport.key($0.dropKey, appendingSlotMinute: slotMinute) }
     }
 
     /// **The button contributes nothing; the target contributes everything** (T-337). All three
@@ -443,14 +479,9 @@ struct iOSCaptureRadialMenuButton: View {
         droppedOn target: UUID?,
         atMinute slotMinute: Int?
     ) -> CadenceTaskComposerSeed {
-        let placement = target.flatMap { iOSNewTaskDropFrameRegistry.shared.placement(for: $0) }
-        // The minute is appended to the key rather than written onto the seed afterwards, so it
-        // travels the same `dropKey` → `seed` → caption path as everything else a drop inherits —
-        // which is what stops the ghost's words and the composer's chips disagreeing about the
-        // hour. `key(_:appendingSlotMinute:)` is a no-op on every target without a slot rule.
-        return CadenceCaptureSeedResolver.seed(
+        CadenceCaptureSeedResolver.seed(
             for: outcome,
-            dropKey: placement.map { CadenceTaskDropSupport.key($0.dropKey, appendingSlotMinute: slotMinute) },
+            dropKey: dropKey(droppedOn: target, atMinute: slotMinute),
             todayKey: DateFormatters.todayKey()
         )
     }
@@ -581,7 +612,12 @@ extension View {
 /// It presents from the request mailbox on `iOSCaptureInteraction` rather than from a closure,
 /// because the button's placement is the caller's business and its presentations are not: on iPhone
 /// the button is four levels down inside a tab bar row, on iPad it is an overlay on a page, and both
-/// want the same three composers.
+/// want the same composers.
+///
+/// **The fourth is the list editor, and no palette segment opens it (T-2054).** It is reached only
+/// by a drag that came down on an iPad sidebar context group — the one region in the app that
+/// implies a list rather than a task — so it is a consequence of *where*, not a choice of *what*.
+/// The arc is unchanged and stays three segments.
 private struct iOSCaptureHostModifier: ViewModifier {
     let interaction: iOSCaptureInteraction
     let onCreated: ((AppTask) -> Void)?
@@ -602,6 +638,12 @@ private struct iOSCaptureHostModifier: ViewModifier {
                     iOSCreateTaskSheet(seed: seed, onCreated: onCreated)
                 case .event:
                     iOSCalendarQuickCreateSheet(dateKey: DateFormatters.todayKey(), initialKind: .event)
+                case .list(let contextID):
+                    // The iOS twin of macOS's `CreateListSheet(context:)`: the drop decides which
+                    // group the list joins and nothing else, and the editor states that group in
+                    // its own control so it can be overruled before anything is written — the same
+                    // "a seed is a starting point, not a constraint" rule the task composer keeps.
+                    iOSListEditorSheet(mode: .newArea, seededContext: context(withID: contextID))
                 case .note:
                     // Unreachable: `present(_:)` routes `.note` to the cover below, because that
                     // editor needs a note to exist first. Spelled out rather than defaulted so
@@ -618,9 +660,22 @@ private struct iOSCaptureHostModifier: ViewModifier {
             }
     }
 
+    /// The group a sidebar drop landed on.
+    ///
+    /// Fetched here rather than carried from the drag, because the drop registry is a value layer:
+    /// it publishes a key, and a key holds a UUID — see
+    /// `CadenceTaskDropSupport.newListDropKey(contextID:)`. A context deleted mid-drag resolves to
+    /// `nil`, which opens the editor on "No context" rather than on a dangling one.
+    private func context(withID id: UUID?) -> Context? {
+        guard let id else { return nil }
+        var descriptor = FetchDescriptor<Context>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
+    }
+
     private func present(_ request: iOSCaptureRequest) {
         switch request.kind {
-        case .task, .event:
+        case .task, .event, .list:
             composer = request
         case .note:
             guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }

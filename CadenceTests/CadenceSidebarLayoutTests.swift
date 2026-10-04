@@ -474,9 +474,18 @@ struct SidebarStaticDestinationBridgeTests {
     /// half: macOS has no Lists page, and its column heads its own list region with nothing.
     @Test func theIPadListsRegionIsHeadedByNothingAndTheListsPageKeepsItsRow() throws {
         let code = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSRootSidebar.swift"))
-        #expect(code.contains("private var listsRegion: some View"), "non-vacuity: wrong file read")
+        #expect(code.contains("struct iOSSidebar: View"), "non-vacuity: wrong file read")
 
-        let region = try cadenceFunctionBody("private var listsRegion: some View", in: code)
+        // **The region is a `struct` now and still lives in this file (T-2054).** It was a private
+        // computed property of `iOSSidebar`; the iPhone Tasks index will draw the same region, and
+        // a private property cannot be shared. The *path* is pinned here on purpose — seven suites
+        // read this file by name, so moving the type out is a seven-suite edit, not a view change.
+        #expect(code.contains("struct iOSSidebarListsRegion: View"),
+                "the lists region left iOSRootSidebar.swift — seven suites read it at this path")
+        #expect(code.contains("iOSSidebarListsRegion("),
+                "the sidebar stopped rendering the region it declares")
+
+        let region = try cadenceFunctionBody("struct iOSSidebarListsRegion: View", in: code)
         #expect(!region.contains("iOSSidebarButton("),
                 "the lists region is headed by a nav row again — that row is the heading T-1275 removed")
         #expect(region.contains("emptyListsRow"),

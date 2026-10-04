@@ -136,6 +136,11 @@ extension View {
 /// The caption is the honest half. See `CadenceTaskDropSupport.placementCaption(forDropKey:…)` for
 /// why the *position* of this block promises nothing and the words have to carry the claim.
 private struct iOSNewTaskGhostRow: View {
+    /// What is about to exist — "New task", or "New list" on a sidebar context group. Passed in
+    /// rather than written here because it is derived from the same key the caption is, which is
+    /// what stops the two halves of one sentence disagreeing. See
+    /// `CadenceTaskDropSupport.ghostTitle(forDropKey:)`.
+    let title: String
     let caption: String
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
@@ -151,7 +156,7 @@ private struct iOSNewTaskGhostRow: View {
                 .foregroundStyle(Theme.blue)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("New task")
+                Text(title)
                     .cadenceFont(.rowTitle, base: 14, weight: .semibold)
                     .foregroundStyle(Theme.blue)
                     .fixedSize(horizontal: false, vertical: scaling == .enabled)
@@ -180,7 +185,7 @@ private struct iOSNewTaskGhostRow: View {
                         )
                 }
         }
-        .accessibilityLabel(caption.isEmpty ? "New task" : "New task, \(caption)")
+        .accessibilityLabel(caption.isEmpty ? title : "\(title), \(caption)")
     }
 }
 
@@ -392,9 +397,11 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// The caption is rebuilt from the same key the drop will commit, minute included, so the words
     /// under the finger and the chips in the composer cannot come apart.
     private func ghostRow(slotMinute: Int?) -> some View {
-        iOSNewTaskGhostRow(
+        let key = CadenceTaskDropSupport.key(dropKey(), appendingSlotMinute: slotMinute)
+        return iOSNewTaskGhostRow(
+            title: CadenceTaskDropSupport.ghostTitle(forDropKey: key),
             caption: CadenceTaskDropSupport.placementCaption(
-                forDropKey: CadenceTaskDropSupport.key(dropKey(), appendingSlotMinute: slotMinute),
+                forDropKey: key,
                 todayKey: DateFormatters.todayKey(),
                 listName: listName()
             )

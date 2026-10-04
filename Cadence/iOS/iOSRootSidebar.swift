@@ -373,26 +373,67 @@ struct iOSSidebar: View {
 
     // MARK: - Lists
 
-    /// The single scrolling region, and **nothing above it (T-1275).**
-    ///
-    /// It was pinned under a row reading "Lists", which the owner read as a heading over the rows
-    /// it sat on: *"there shouldnt be a section called just lists cuz we're gonna show all the
-    /// lists there anyways"*. It is the standing page-header rule at sidebar scale, and the macOS
-    /// column already heads its own list region with nothing. The Lists *destination* is still a
-    /// row — it is the first of the secondary nav rows below the region now, because it is the
-    /// only door to the one surface that can make a list. See `secondaryRowDestinations`.
-    ///
-    /// The context headers inside the region stay: those name something the rows under them do not
-    /// say, which is the difference between a heading and a label.
+    /// The sidebar's one scrolling region. See `iOSSidebarListsRegion`, which is where it lives.
     private var listsRegion: some View {
+        iOSSidebarListsRegion(
+            sections: listSections,
+            style: style,
+            isSelected: { selection == $0.selectionItem },
+            onSelect: { selection = $0.selectionItem },
+            onEdit: { item in editorMode(for: item).map(onCreateList) }
+        )
+    }
+
+    private func editorMode(for item: CadenceSidebarLists.Item) -> iOSListEditorMode? {
+        switch item.kind {
+        case .area:
+            return areas.first { $0.id == item.id }.map(iOSListEditorMode.editArea)
+        case .project:
+            return projects.first { $0.id == item.id }.map(iOSListEditorMode.editProject)
+        }
+    }
+}
+
+// MARK: - The lists region
+
+/// The sidebar's single scrolling region: every context's lists, grouped under the context's name,
+/// and **nothing above them (T-1275).**
+///
+/// It was pinned under a row reading "Lists", which the owner read as a heading over the rows it
+/// sat on: *"there shouldnt be a section called just lists cuz we're gonna show all the lists there
+/// anyways"*. It is the standing page-header rule at sidebar scale, and the macOS column already
+/// heads its own list region with nothing. The Lists *destination* is still a row — it is the first
+/// of the secondary nav rows below the region now, because it is the only door to the one surface
+/// that can make a *project*. See `iOSSidebar.secondaryRowDestinations`.
+///
+/// The context headers inside the region stay: those name something the rows under them do not say,
+/// which is the difference between a heading and a label.
+///
+/// **A `struct`, and deliberately one declared in this file.** It was a computed property of
+/// `iOSSidebar`, which made it unreachable from anywhere else; the iPhone Tasks index will draw
+/// this same region, and a private computed property cannot be shared while a view can. Moving it
+/// to a file of its own is the change *not* made: seven test suites read this path by name, so a
+/// move would turn a view change into a seven-suite edit.
+///
+/// It takes closures rather than a `Binding` to the selection for the same reason the row below it
+/// does: the region neither owns the selection nor knows what a selection means on the host that
+/// draws it, and a second host is exactly what this struct exists for.
+struct iOSSidebarListsRegion: View {
+    let sections: [CadenceSidebarLists.Section]
+    let style: iOSSidebarStyle
+    let isSelected: (CadenceSidebarLists.Item) -> Bool
+    let onSelect: (CadenceSidebarLists.Item) -> Void
+    let onEdit: (CadenceSidebarLists.Item) -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: iOSSidebarMetrics.sectionSpacing) {
-                    ForEach(listSections) { section in
+                    ForEach(sections) { section in
                         listSection(section)
                     }
 
-                    if listSections.isEmpty {
+                    if sections.isEmpty {
                         emptyListsRow
                     }
                 }
@@ -403,8 +444,42 @@ struct iOSSidebar: View {
             .scrollIndicators(.hidden)
             .frame(maxHeight: .infinity)
         }
+        // **The outermost of the region's three drop layers, and the one that is always there.**
+        //
+        // A `+` released on a context section makes a list in that context; on a list row, a task
+        // in that list; and here — on the gap under the last section, on the catch-all "Other", or
+        // on a column that has no sections at all because nothing has been made yet — a list in no
+        // group. `CadenceCaptureDropHitTest` takes the smallest containing frame, so the inner two
+        // win wherever they are and no registration order has to be arranged, which is the same
+        // thing `theMoreSpecificTargetWinsHoweverTheyWereRegistered` already pins.
+        //
+        // The third case is the load-bearing one. A fresh install draws `emptyListsRow` and
+        // nothing else, and a create-door that only appears once something has been created is
+        // T-1113's shape exactly: a region that drew nothing on a fresh install took the only
+        // route to a list sheet with it.
+        .iOSNewTaskDropTarget(
+            horizontalInset: style.horizontalPadding,
+            ghost: .region,
+            dropKey: { CadenceTaskDropSupport.newListDropKey(contextID: nil) }
+        )
     }
 
+    /// A context's header and the rows under it — and, since T-2054, **a create-door**: a `+`
+    /// dragged onto the group makes a list *in* that group.
+    ///
+    /// *"when i drag the blue + button onto the side bar lists, it should create a list there… the
+    /// blue add button on ios and ipados should create things with inherited context when dragged
+    /// into some region"*. A context group is the one region in this app that implies a list rather
+    /// than a task, which is why it is the only thing that emits
+    /// `CadenceTaskDropSupport.newListDropKey(contextID:)`.
+    ///
+    /// **The catch-all "Other" registers nothing**, and that is the rule
+    /// `CadenceSidebarLists.Section.contextID` already states with `nil` and
+    /// `CadenceTaskDropSupport.dropKey(forGroup:)` states for Overdue and Completed: a header with
+    /// nothing to hand over does not light up. The empty key is how a call site says that — see
+    /// `iOSNewTaskDropFrameRegistry.candidates()` — so a drop on "Other" falls through to the
+    /// region's own target, which is "a list in no group", which is precisely what "Other"
+    /// collects.
     @ViewBuilder
     private func listSection(_ section: CadenceSidebarLists.Section) -> some View {
         VStack(alignment: .leading, spacing: iOSSidebarMetrics.rowSpacing) {
@@ -418,19 +493,44 @@ struct iOSSidebar: View {
             ForEach(section.items) { item in
                 iOSSidebarListRow(
                     item: item,
-                    isSelected: selection == item.selectionItem,
+                    isSelected: isSelected(item),
                     style: style,
-                    onSelect: { selection = item.selectionItem },
-                    onEdit: { editorMode(for: item).map(onCreateList) }
+                    onSelect: { onSelect(item) },
+                    onEdit: { onEdit(item) }
+                )
+                // A row is a list, so it offers what every other list row in the app offers: a
+                // task in it. Same identity, same key, same ghost — this column joins the table
+                // rather than minting a second spelling of "which list".
+                .iOSNewTaskDropTarget(
+                    group: .list(key: Self.dropListKey(for: item), name: item.name),
+                    horizontalInset: iOSSidebarMetrics.rowHorizontalPadding
                 )
             }
+        }
+        .iOSNewTaskDropTarget(
+            horizontalInset: iOSSidebarMetrics.rowHorizontalPadding,
+            ghost: .region,
+            listName: { section.title },
+            dropKey: {
+                guard let contextID = section.contextID else { return "" }
+                return CadenceTaskDropSupport.newListDropKey(contextID: contextID)
+            }
+        )
+    }
+
+    /// The `list:` value a sidebar row hands a dropped `+`, in the one spelling
+    /// `CadenceTaskDropSupport.containerKey(for:)` owns.
+    static func dropListKey(for item: CadenceSidebarLists.Item) -> String {
+        switch item.kind {
+        case .area: return CadenceTaskDropSupport.containerKey(for: .area(item.id))
+        case .project: return CadenceTaskDropSupport.containerKey(for: .project(item.id))
         }
     }
 
     /// A statement, not a button. The way to make a list is the Lists row below the region, which
-    /// is pinned and so is always on screen — a second create affordance here would be two doors to
-    /// one page. It said "directly above it" until T-1275 moved that row under the region; what it
-    /// says about what is missing is unchanged, and still `CadenceEmptyStateCopy`'s one spelling.
+    /// is pinned and so is always on screen — and, since T-2054, a `+` dropped on this region.
+    /// A third create affordance drawn here would be a button on an empty state that already says
+    /// what is missing, and still `CadenceEmptyStateCopy`'s one spelling of that sentence.
     @ViewBuilder
     private var emptyListsRow: some View {
         if style == .expanded {
@@ -439,15 +539,6 @@ struct iOSSidebar: View {
                 .foregroundStyle(Theme.dim)
                 .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
                 .padding(.vertical, 6)
-        }
-    }
-
-    private func editorMode(for item: CadenceSidebarLists.Item) -> iOSListEditorMode? {
-        switch item.kind {
-        case .area:
-            return areas.first { $0.id == item.id }.map(iOSListEditorMode.editArea)
-        case .project:
-            return projects.first { $0.id == item.id }.map(iOSListEditorMode.editProject)
         }
     }
 }

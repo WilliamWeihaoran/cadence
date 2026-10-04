@@ -432,6 +432,24 @@ struct CadenceCaptureDropSlotRule: Equatable, Sendable {
 
 // MARK: - What a finished press seeds
 
+/// What a finished press actually makes.
+///
+/// **The `+` made one kind of thing until the sidebar became a destination**, so the gesture could
+/// hand back a seed and the host could present one composer. A context group in the iPad sidebar is
+/// not a place a task goes — it is a place a *list* goes — and the owner's rule for the whole
+/// feature is that the `+` creates whatever the region it was dropped on implies. That makes "what
+/// is being created" a second answer the drop has to carry, and it is carried as a value here
+/// rather than as a branch at the button, so the one place that decides is testable without a view.
+///
+/// There is deliberately no `.event` / `.note` case: those are *palette* choices, which the button
+/// already routes by segment and which no drop target can name. This enum is what a **destination**
+/// implies, and a destination implies either a task or a list.
+enum CadenceCaptureCreation: Equatable {
+    case task(CadenceTaskComposerSeed)
+    /// A list in the named group, or — `nil` — in none. See `CadenceTaskDropSupport.NewListDrop`.
+    case list(contextID: UUID?)
+}
+
 /// The composer seed a finished capture press commits to.
 ///
 /// **T-337: context comes from where you drop it, not from where you started.** A tap is just a
@@ -467,5 +485,24 @@ enum CadenceCaptureSeedResolver {
         case .tap, .action, .dismissed, .none:
             return CadenceTaskComposerSeed()
         }
+    }
+
+    /// What this press commits to: a seeded task, or a new list in the group a drop landed on.
+    ///
+    /// **Only a `.drop` can ask for a list.** A tap and a palette segment name the thing being
+    /// created and nothing about where it goes — that is T-337's rule, that the button contributes
+    /// nothing and the target contributes everything — so a key reaching this function by any
+    /// other route is a key no destination produced, and it is ignored rather than honoured.
+    static func creation(
+        for outcome: CadenceCapturePressOutcome,
+        dropKey: String?,
+        todayKey: String
+    ) -> CadenceCaptureCreation {
+        if case .drop = outcome,
+           let dropKey,
+           let newList = CadenceTaskDropSupport.newListDrop(forDropKey: dropKey) {
+            return .list(contextID: newList.contextID)
+        }
+        return .task(seed(for: outcome, dropKey: dropKey, todayKey: todayKey))
     }
 }

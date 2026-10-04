@@ -43,7 +43,7 @@ struct CadenceRootShellLayoutTests {
     /// and runs the tab shell, and the target iPad is 834 in portrait and 1210 in landscape. What
     /// reaches it is a window that is horizontally regular *and* under 820 — a 2/3 Split View on
     /// the 11" Pro in landscape, ~782–795pt depending on generation, and any Stage Manager window
-    /// dragged into the band. Delete the rail and 188pt of labelled column comes out of a 780pt
+    /// dragged into the band. Delete the rail and 216pt of labelled column comes out of a 780pt
     /// window.
     @Test
     func aSplitViewPaneIsWhatTheRailIsFor() {
@@ -58,13 +58,19 @@ struct CadenceRootShellLayoutTests {
     }
 
     /// The widths the clipping was reported at, spelled out rather than derived: the target iPad
-    /// gives the detail 646pt in portrait and 1022 in landscape, and no pane it hosts may exceed
-    /// that. 820 is the threshold, where the column first becomes the labelled one.
+    /// gives the detail **618pt** in portrait and **994** in landscape, and no pane it hosts may
+    /// exceed that. 820 is the threshold, where the column first becomes the labelled one.
+    ///
+    /// **These were 646 and 1022 until T-2054 widened the column to 216.** They are spelled rather
+    /// than computed on purpose — a literal is what makes a column change show up as a *pane*
+    /// change, which is the ripple worth seeing. Both readings still sit on the same side of every
+    /// floor they face: 618 was already under `CadenceTodayLayoutSupport.twoPaneMinimumWidth`
+    /// (761) at 646, and 994 is still over `inspectorWidePaneThreshold` (900).
     @Test
     func theDetailPaneIsTheWindowLessTheLabelledColumn() {
-        #expect(CadenceRootShellLayout.detailWidth(windowWidth: 820) == 632)
-        #expect(CadenceRootShellLayout.detailWidth(windowWidth: 834) == 646)
-        #expect(CadenceRootShellLayout.detailWidth(windowWidth: 1210) == 1022)
+        #expect(CadenceRootShellLayout.detailWidth(windowWidth: 820) == 604)
+        #expect(CadenceRootShellLayout.detailWidth(windowWidth: 834) == 618)
+        #expect(CadenceRootShellLayout.detailWidth(windowWidth: 1210) == 994)
     }
 
     // MARK: - Folding
@@ -101,17 +107,18 @@ struct CadenceRootShellLayoutTests {
         }
     }
 
-    /// The 188pt the target iPad reclaims in portrait, spelled out: 646pt of detail becomes 834.
+    /// The 216pt the target iPad reclaims in portrait, spelled out: 618pt of detail becomes 834.
     ///
     /// This is not only a nicety — it is the case that puts a full-screen portrait iPad *over*
-    /// `CadenceTodayLayoutSupport.twoPaneMinimumWidth` (761), which 646 is under. Today's two-pane
-    /// layout and its narrow inspector floor are reachable because of this fold.
+    /// `CadenceTodayLayoutSupport.twoPaneMinimumWidth` (761), which 618 is under. Today's two-pane
+    /// layout and its narrow inspector floor are reachable because of this fold, and widening the
+    /// column to 216 (T-2054) made that more true rather than less.
     @Test
     func foldingHandsTheElevenInchPortraitPaneTheColumnsWidthBack() {
         let unfolded = CadenceRootShellLayout.detailWidth(windowWidth: 834)
         let folded = CadenceRootShellLayout.detailWidth(windowWidth: 834, isCollapsed: true)
 
-        #expect(unfolded == 646)
+        #expect(unfolded == 618)
         #expect(folded == 834)
         #expect(folded - unfolded == CadenceRootShellLayout.expandedWidth)
     }
