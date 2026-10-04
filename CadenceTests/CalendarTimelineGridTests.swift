@@ -675,20 +675,119 @@ struct CadenceCalendarWeekVisibleColumnTests {
         #expect(CadenceCalendarWeekGridLayout.visibleDayCount(for: .twoWeeks) == 14)
     }
 
-    /// The phone is deliberately not in the list above. 393pt divided seven ways is 49, under the
-    /// touch floor, so it keeps the preferred width and scrolls — which is what it has always done
-    /// and what infinite scrolling now makes navigable rather than merely truncated.
+    /// The phone is deliberately not in the list above, and this is **the arithmetic that used to
+    /// decide what a phone showed**. Ask for seven on a 393pt iPhone and you get 49pt a column,
+    /// under the touch floor, so `dayColumnWidth` abandons the fitted branch for the 104pt
+    /// preference and the grid scrolls.
+    ///
+    /// The assertion to read is the last one: that fallback put **exactly three** columns on the
+    /// phone, and three was never a figure anyone picked — it is `345 / 104`, an emergent remainder.
+    /// It is pinned here so that the number the owner was looking at when they asked for two has a
+    /// name and a derivation, rather than being hunted for as a literal that does not exist.
     @Test
-    func aPhoneScrollsRatherThanCompressingAWeekIntoNothing() {
+    func aSevenColumnWeekOnAPhoneFallsBackToThreeNobodyChose() {
         let available = 393 - CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: false)
         let column = CadenceCalendarWeekGridLayout.dayColumnWidth(
             availableWidth: available,
-            dayCount: CadenceCalendarWeekGridLayout.visibleDayCount(for: .week),
+            dayCount: CadenceCalendarWeekGridLayout.visibleDayCount(for: .week, isCompact: false),
             isRegularWidth: false
         )
         #expect(column == CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: false))
-        #expect(
-            CadenceCalendarWeekGridLayout.visibleColumnCount(availableWidth: available, columnWidth: column) < 7
+        let visible = CadenceCalendarWeekGridLayout.visibleColumnCount(
+            availableWidth: available, columnWidth: column
         )
+        #expect(visible < 7)
+        #expect(visible == 3, "the cramped phone week was three columns of 104pt, not a chosen count")
+    }
+
+    /// Two columns, and they **fill** the phone — the same guarantee the iPad's seven carry, stated
+    /// at the width a phone actually has.
+    ///
+    /// The point is not that two is smaller. It is that two is back on the *fitted* branch: 345
+    /// divided two ways is 172.5, over `minimumDayColumnWidth`, so the width is derived from the
+    /// pane again instead of from a preference the pane cannot afford. Three was the remainder of a
+    /// fallback; two is a division.
+    @Test
+    func aPhonesWeekIsTwoColumnsThatDivideTheCanvasExactly() {
+        let available: CGFloat = 393 - CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: false)
+        let count = CadenceCalendarWeekGridLayout.visibleDayCount(for: .week, isCompact: true)
+        #expect(count == 2)
+
+        let column = CadenceCalendarWeekGridLayout.dayColumnWidth(
+            availableWidth: available,
+            dayCount: count,
+            isRegularWidth: false
+        )
+        // The fitted branch, not the preference — this is the whole difference from the test above.
+        #expect(column == available / 2)
+        #expect(column != CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: false))
+        #expect(column >= CadenceCalendarWeekGridLayout.minimumDayColumnWidth)
+        #expect(
+            CadenceCalendarWeekGridLayout.visibleColumnCount(availableWidth: available, columnWidth: column) == 2
+        )
+    }
+
+    /// The control, and the half that matters most: **narrowing the phone must not reach the iPad.**
+    ///
+    /// Written as a sweep over the real pane widths rather than one reading, so it cannot pass for
+    /// the one-candidate reason the standing verification bar warns about. `isCompact` defaults to
+    /// `false`, so a caller that forgets to ask is answered at regular width — this is what pins
+    /// that default, and it is what reddens if the narrowing is ever moved into the `.week` case
+    /// unconditionally.
+    @Test
+    func narrowingTheCompactWeekLeavesTheRegularWeekAtSeven() {
+        #expect(CadenceCalendarWeekGridLayout.visibleDayCount(for: .week) == 7)
+        #expect(CadenceCalendarWeekGridLayout.visibleDayCount(for: .week, isCompact: false) == 7)
+
+        for paneWidth in Self.realPaneWidths {
+            let visible = CadenceCalendarWeekGridLayout.visibleColumnCount(
+                availableWidth: availableWidth(paneWidth: paneWidth),
+                columnWidth: columnWidth(paneWidth: paneWidth)
+            )
+            #expect(visible >= 7, "the iPad pane \(paneWidth) lost a day to the phone's narrowing")
+        }
+
+        // The other two modes answer the same at both widths. `.twoWeeks` is unreachable from the
+        // picker and `.month` does not use this grid at all; neither is the phone's problem.
+        for mode in [CadenceCalendarViewMode.twoWeeks, .month] {
+            #expect(
+                CadenceCalendarWeekGridLayout.visibleDayCount(for: mode, isCompact: true)
+                    == CadenceCalendarWeekGridLayout.visibleDayCount(for: mode, isCompact: false),
+                "\(mode) changed with the size class and nothing asked it to"
+            )
+        }
+    }
+
+    /// The two consumers of the count that are not the column width, at two columns.
+    ///
+    /// `selectionKeptInView`'s doc used to say the count was "never below a week", which the
+    /// arithmetic never actually needed — `visibleDayCount - 1` is a valid offset at two, and one
+    /// is the only value that would have made the span empty. `renderedIndexRange` still builds a
+    /// margin either side, so a fling has somewhere to land.
+    @Test
+    func theOtherConsumersOfTheCountSurviveATwoColumnWeek() {
+        let calendar = Calendar(identifier: .gregorian)
+        let leading = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_790_000_000))
+        let secondColumn = calendar.date(byAdding: .day, value: 1, to: leading)!
+        let thirdColumn = calendar.date(byAdding: .day, value: 2, to: leading)!
+
+        // Both visible columns are left alone; the first one off the edge is pulled back.
+        for onScreen in [leading, secondColumn] {
+            #expect(CadenceCalendarTimelineWindow.selectionKeptInView(
+                selectedDate: onScreen, leadingDate: leading, visibleDayCount: 2, calendar: calendar
+            ) == nil)
+        }
+        #expect(CadenceCalendarTimelineWindow.selectionKeptInView(
+            selectedDate: thirdColumn, leadingDate: leading, visibleDayCount: 2, calendar: calendar
+        ) == leading)
+
+        #expect(CadenceCalendarTimelineWindow.visibleDates(
+            leadingDate: leading, visibleDayCount: 2, calendar: calendar
+        ) == [leading, secondColumn])
+
+        // Still a margin either side of the two, so the window is not the visible span.
+        let range = CadenceCalendarTimelineWindow.renderedIndexRange(leadingIndex: 40, visibleDayCount: 2)
+        #expect(range.contains(40) && range.contains(41))
+        #expect(range.count > 2)
     }
 }

@@ -184,8 +184,10 @@ enum CadenceCalendarTimelineWindow {
     ///
     /// Whether the rule applies at all stays with the caller: only the timed grids scroll their own
     /// days, and `presentation`/`viewMode` are the page's state, not a date. `visibleDayCount` is
-    /// `CadenceRegularPaneLayout.visibleDayCount(for:)`, which is never below a week, so the span
-    /// below is never empty in practice.
+    /// `CadenceCalendarWeekGridLayout.visibleDayCount(for:isCompact:)`, whose smallest answer is a
+    /// phone's two-column Week, so the span below is never empty in practice. It used to be "never
+    /// below a week"; the arithmetic never needed that, and `visibleDayCount - 1` is still a valid
+    /// offset at two. One is the number this guard would have to care about, and nothing returns it.
     static func selectionKeptInView(
         selectedDate: Date,
         leadingDate: Date,

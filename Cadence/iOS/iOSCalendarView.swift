@@ -95,8 +95,11 @@ struct iOSCalendarView: View {
         CadenceCalendarTimelineWindow.eventWindowDates(leadingDate: anchorDate, calendar: calendar)
     }
 
+    /// Two columns on a phone's Week, seven on an iPad's. See
+    /// `CadenceCalendarWeekGridLayout.visibleDayCount(for:isCompact:)` for why the phone is the
+    /// exception and why three was never chosen.
     private var visibleDayCount: Int {
-        CadenceCalendarWeekGridLayout.visibleDayCount(for: viewMode)
+        CadenceCalendarWeekGridLayout.visibleDayCount(for: viewMode, isCompact: isCompact)
     }
 
     private var selectedTasks: [AppTask] {

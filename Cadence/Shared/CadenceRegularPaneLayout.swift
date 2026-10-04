@@ -258,14 +258,35 @@ enum CadenceCalendarWeekGridLayout {
         return fitted >= minimumDayColumnWidth ? fitted : preferred
     }
 
+    /// How many day columns a phone's Week puts on screen. See `visibleDayCount(for:isCompact:)`.
+    static let compactWeekDayCount = 2
+
     /// How many day columns a view mode wants on screen at once.
     ///
     /// This is the whole of what a timed view mode means now. It used to also decide which days
     /// existed — Week built seven `Date`s and the chevrons rebuilt them a week at a time — and with
     /// the grid scrolling through a wide window that half of the job is gone.
-    static func visibleDayCount(for viewMode: CadenceCalendarViewMode) -> Int {
+    ///
+    /// **`isCompact` is the phone, and it is the one place Week is not seven columns.** The count
+    /// is a *width* decision wearing a view mode's name: at regular width seven columns divide the
+    /// pane into legible days, and `dayColumnWidth` is written so that at seven they fill it
+    /// exactly. A 393pt iPhone cannot pay for that — seven columns of its 345pt canvas are 49pt
+    /// each, under `minimumDayColumnWidth`, so `dayColumnWidth` falls back to the 104pt preference
+    /// and the grid scrolls. That fallback is what put **three** cramped columns on the phone, and
+    /// three was never a number anyone chose: it is `345 / 104`, and it is why a phone's events
+    /// read `[Sampl…`. Asking for two gets 172pt a column, which is over the floor, so the fitted
+    /// branch is taken again and two columns fill the phone exactly — the same guarantee the iPad
+    /// has at seven, stated at the width the phone actually has.
+    ///
+    /// The default is `false`, so every caller that does not ask is answered at regular width and
+    /// the iPad's week stays seven columns by construction rather than by remembering to.
+    static func visibleDayCount(for viewMode: CadenceCalendarViewMode, isCompact: Bool = false) -> Int {
         switch viewMode {
-        case .week:     return daysInWeek
+        case .week:     return isCompact ? compactWeekDayCount : daysInWeek
+        // Not narrowed. `.twoWeeks` is not in `pickerCases` — it is only reachable from a value a
+        // previous build persisted — and it is documented above as a span that scrolls by design at
+        // `multiWeekDayColumnWidth`, which is the behaviour a phone already got. Halving it would
+        // change a surface nobody can navigate to.
         case .twoWeeks: return daysInWeek * 2
         // Month does not use the timed grid at all; it has its own. Answering with a week keeps
         // this total rather than trapping, and nothing reaches it.
