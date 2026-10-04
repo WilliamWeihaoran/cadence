@@ -267,6 +267,25 @@ struct iOSCalendarTimelineGrid: View {
                 }
                 .frame(height: canvasHeight)
                 .scrollIndicators(.hidden)
+                // **The corner `+`'s clearance, restated here because the page's copy cannot reach
+                // this far (T-2066).** `iOSFloatingCreateTaskLayer` writes
+                // `contentMargins(.bottom, iOSCircularAddButton.scrollClearance, for: .scrollContent)`
+                // once, on the page, and that is enough everywhere else: a page's bottom-reaching
+                // list is the first scroll view the value meets. Here it is not. The canvas is a
+                // vertical scroll view **nested inside** the horizontal one above, and the outer
+                // scroller consumes the inherited value — measured on `Cadence-iPadPro11` with the
+                // page-level write alone in place, the grid still stopped dead on midnight and the
+                // button sat over Saturday 22:37–23:35 with nothing able to bring it out.
+                //
+                // So the clearance is applied where it was aimed. It is the layer's own constant,
+                // not a second number, and the gate is the layer's own: at compact width the tab
+                // bar's centre `+` is the capture affordance, no page floats one, and a canvas that
+                // ran past midnight there would be clearance for a button that is not on the page.
+                //
+                // This is `D-104`'s mirror image. `iOSListSupportViews` and the markdown accessory
+                // strips *cancel* an inherited clearance that landed on a scroll view too short to
+                // need it; this restores one that never arrived at the scroll view that does.
+                .contentMargins(.bottom, isRegularWidth ? iOSCircularAddButton.scrollClearance : 0, for: .scrollContent)
                 .scrollPosition($verticalScrollPosition)
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     geometry.contentOffset.y

@@ -140,6 +140,22 @@ struct iOSCalendarToolbar: View {
                 .padding(.trailing, 1)
             }
             .scrollIndicators(.hidden)
+            // **`D-104`, fourth instance — and the first one a *measurement* caught rather than a
+            // bug report (T-2066).** The Calendar page now carries the floating `+`, which writes
+            // `contentMargins(.bottom, iOSCircularAddButton.scrollClearance, for: .scrollContent)`
+            // — 100pt — once, for the page's own bottom-reaching content. Sibling scroll views
+            // inherit it, and this one is a single row of pills: the inherited 100pt became 100pt of
+            // empty content region *below* the controls, the toolbar grew by that much, and Month's
+            // whole grid, divider and agenda were pushed down a hundred points under a band of
+            // nothing. Week never showed it, because at that width `ViewThatFits` accepts the
+            // single-row toolbar above and this scroll view is not built at all — which is exactly
+            // how a reset written only where the symptom appeared would have been missed.
+            //
+            // Same reset and same reasoning as `iOSListDetailPagePicker` and the markdown accessory
+            // strips: a short single-row horizontal scroll view is never a page's bottom-reaching
+            // content, so it should never inherit a page's clearance for a button it does not sit
+            // under.
+            .contentMargins(.vertical, 0, for: .scrollContent)
         }
     }
 

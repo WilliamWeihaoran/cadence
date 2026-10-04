@@ -283,6 +283,33 @@ struct iOSCalendarView: View {
             paneWidth = newWidth
         }
         .background(Theme.bg.ignoresSafeArea())
+        // The fifth page to carry the corner `+`, and the reason it had to be a page rather than a
+        // branch of `iOSRootView`: the button is only half of what is being added. The other half
+        // is `iOSCaptureHost`, which is mounted **per page** so that the one page under the finger
+        // owns the live touch — and a host mounted at the shell would be a third capture host, which
+        // `theCaptureHostIsAppliedOncePerPlacement` pins against.
+        //
+        // **Why this page gets one at all, having its own create gesture.** A tap on an empty slot
+        // opens the quick-create sheet *seeded with that minute*, which is a different thing from
+        // capture: it cannot make an untimed task, it cannot make a note, and it cannot be dragged.
+        // Since T-2065 the calendar's day columns are drop targets that seed an **event** at the
+        // dropped minute — and on iPad there was no `+` anywhere on this page to pick up, so the
+        // owner's drag was live on the phone and unreachable on the tablet ([[T-2066]]).
+        //
+        // **The bottom margin is kept, deliberately, and it is not enough on its own.** The layer
+        // writes `contentMargins(.bottom, scrollClearance, for: .scrollContent)`, which on this page
+        // is a calendar-layout change and not just chrome. Measured on `Cadence-iPadPro11`: Month's
+        // agenda and Board's columns gain the 100pt of run-out they wanted — Board's pinned
+        // "Completed" row came out from under the button by exactly that — the pinned day-header
+        // band still tracks its columns, the hour rail still agrees with the grid, and the "now"
+        // line stays on its minute. Nothing here is dead space.
+        //
+        // What it does **not** do is reach the timed canvas, which is a vertical scroll view nested
+        // inside the grid's horizontal one, and the outer scroller consumes the value. With this
+        // line alone the grid still stopped dead on midnight and the `+` sat over the trailing
+        // column's last hour — the thing keeping the margin was supposed to avoid. The canvas states
+        // the same clearance itself; see `iOSCalendarTimelineGrid.gridScroller`.
+        .iOSFloatingCreateTaskButton()
         .iOSHidesCompactNavigationBar()
         .onAppear(perform: restorePersistedCalendarDates)
         // A calendar link that arrives while this page is already standing. `onAppear` covers the
