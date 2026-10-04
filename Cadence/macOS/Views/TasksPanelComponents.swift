@@ -55,6 +55,13 @@ struct MacTaskRow: View {
     /// the figures macOS keeps to itself and the ones it deliberately does not read.
     private var metrics: CadenceTaskRowMetrics { .desktop }
 
+    /// The note / checklist / tag glyphs this row draws after its title — the shared answer, asked
+    /// once so the strip and the padding beside it cannot disagree about whether there is anything
+    /// to pad. `iOSTaskRow` asks the same function.
+    private var rowIndicators: [CadenceTaskRowIndicator] {
+        CadenceTaskRowIndicatorSupport.indicators(for: task)
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             TaskCompletionButton(task: task)
@@ -85,12 +92,18 @@ struct MacTaskRow: View {
                 // moment it appeared. `CadenceTodayRowCrushUITests` reads this element's width.
                 .accessibilityIdentifier(CadenceAccessibilityIdentifiers.taskRowTitle(title: task.title))
 
-            // `CadenceTaskPresentationSupport.rowTagLimit`, not a local 2. iOS showed three tags
-            // on the same row of the same task; `ViewThatFits` here already drops to one chip or
-            // to a bare `+N` when the column is genuinely narrow, so a fixed 2 was hiding a tag
-            // the row had room for.
-            CompactTagStrip(tags: task.sortedTags, limit: CadenceTaskPresentationSupport.rowTagLimit)
-                .padding(.leading, task.sortedTags.isEmpty ? 0 : metrics.badgeSpacing)
+            // **The tag chips are gone from here and a glyph stands in for them (T-2058).** The
+            // owner asked for note / checklist / tag icons after the title on all three platforms
+            // and, asked directly whether the icon should replace the named chips, chose replace:
+            // you no longer see *which* tags without opening the task. The side benefit is the one
+            // this row needed most — `CompactTagStrip` shed chips through `ViewThatFits` as the
+            // pane narrowed, so what the row said about a task changed with the window; three
+            // glyphs are the same 48pt at every width.
+            //
+            // It attaches **here**, with the title, rather than in `metadataStrip` below, for the
+            // same reason: that strip is where things go to be shed.
+            CadenceTaskRowIndicatorStrip(indicators: rowIndicators)
+                .padding(.leading, rowIndicators.isEmpty ? 0 : metrics.badgeSpacing)
 
             if task.isCancelled {
                 // The fifth chip on this row, drawn like the other four. It set its own `10` and

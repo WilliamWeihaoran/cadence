@@ -346,19 +346,63 @@ struct CadenceTodayUnificationTests {
 
     // MARK: - The row: iOS wins
 
-    /// Three, and iOS had it. `MacTaskRow` capped at two for the same strip of the same chips on
-    /// the same task, and macOS's strip already collapses itself through `ViewThatFits` when the
-    /// column is genuinely narrow — so the lower cap was hiding a tag the row had room for.
-    @Test func bothRowsShowTheSameNumberOfTags() throws {
+    /// **Re-pointed by T-2058, not weakened.** This used to assert that
+    /// `CadenceTaskPresentationSupport.rowTagLimit` appeared exactly once in each row file — the
+    /// right guard while both rows drew a capped strip of named tag chips. The owner replaced those
+    /// chips with a single `tag` glyph (*"for tasks with subtasks, comments, and tags, show
+    /// corresponding icons after the title"*), and asked directly whether the glyph should replace
+    /// the named chips, chose replace. So the count in both files is now **zero**, and asserting
+    /// `1` would have been asserting the old product.
+    ///
+    /// The claim the old test was making — *neither row decides for itself what it shows about a
+    /// task's tags* — is the one kept, over the thing that decides it now. Both counts are exact
+    /// for the reason `expectCallSites` exists: a file that reverts one of two call sites still
+    /// "contains" the shared name.
+    ///
+    /// `rowTagLimit` itself is untouched and still pinned at three: the two **board cards** still
+    /// read it, and `CadenceSharedTaskRowJobsTests.bothBoardCardsListTagsAndSubtasksFromTheSharedFigures`
+    /// is the guard on those. Cards stack vertically and have room for chips; rows do not.
+    @Test func bothRowsReplaceTheirTagChipsWithTheSharedIndicatorGlyphs() throws {
+        // The figure survives its row call sites, because the cards still ask for it.
         #expect(CadenceTaskPresentationSupport.rowTagLimit == 3)
 
         try expectCallSites(
-            of: "CadenceTaskPresentationSupport.rowTagLimit",
+            of: "CadenceTaskRowIndicatorStrip(",
             at: [
                 "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
                 "Cadence/iOS/iOSTaskViews.swift": 1,
             ]
         )
+        try expectCallSites(
+            of: "CadenceTaskRowIndicatorSupport.indicators(for: task)",
+            at: [
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 1,
+            ]
+        )
+
+        // And neither row kept a second vocabulary for the same fact: no cap, no chip, no strip.
+        for needle in [
+            "CadenceTaskPresentationSupport.rowTagLimit",
+            "CompactTagStrip",
+            "CadenceTagChip(",
+            "CadenceTagOverflowBadge(",
+        ] {
+            try expectCallSites(
+                of: needle,
+                at: [
+                    "Cadence/macOS/Views/TasksPanelComponents.swift": 0,
+                    "Cadence/iOS/iOSTaskViews.swift": 0,
+                ]
+            )
+        }
+
+        // Non-vacuity: the two files this test claims to have read are the two task rows, so the
+        // four zeros above are zeros about the right source.
+        #expect(try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+            .contains("struct MacTaskRow: View"))
+        #expect(try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+            .contains("struct iOSTaskRow: View"))
     }
 
     /// **The estimate chip crosses to macOS.** `docs/CLAUDE_REFERENCE.md` records that the old

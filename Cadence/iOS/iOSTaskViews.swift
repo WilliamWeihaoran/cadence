@@ -228,16 +228,30 @@ struct iOSTaskRow: View {
 
     private var taskSummary: some View {
         VStack(alignment: .leading, spacing: metrics.summarySpacing) {
-            // `CadenceTaskRowMetrics.titleLineLimit`, not a per-width or per-host number. Today used
-            // to truncate to one line while the next tab along wrapped to two, and it is the day's
-            // planning screen that could least afford to hide half a title.
-            Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                .cadenceFont(.rowTitle, base: metrics.titleFontSize)
-                .foregroundStyle(isSettled ? Theme.dim : Theme.text)
-                .strikethrough(isSettled, color: Theme.dim)
-                .lineLimit(wraps ? nil : CadenceTaskRowMetrics.titleLineLimit)
-                .fixedSize(horizontal: false, vertical: wraps)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // The glyphs sit **with** the title, as they do on macOS, which is what the owner's
+            // reference shot shows: title, then the note / checklist / tag icons, then the row's
+            // red overdue flag further along. `Spacer(minLength: 0)` keeps the old
+            // `.frame(maxWidth: .infinity, alignment: .leading)` behaviour for the pair while
+            // leaving the glyphs against the title's trailing edge rather than against the row's.
+            HStack(alignment: .firstTextBaseline, spacing: metrics.badgeSpacing) {
+                // `CadenceTaskRowMetrics.titleLineLimit`, not a per-width or per-host number. Today used
+                // to truncate to one line while the next tab along wrapped to two, and it is the day's
+                // planning screen that could least afford to hide half a title.
+                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                    .cadenceFont(.rowTitle, base: metrics.titleFontSize)
+                    .foregroundStyle(isSettled ? Theme.dim : Theme.text)
+                    .strikethrough(isSettled, color: Theme.dim)
+                    .lineLimit(wraps ? nil : CadenceTaskRowMetrics.titleLineLimit)
+                    .fixedSize(horizontal: false, vertical: wraps)
+                    // The title identifies the task; the glyphs are chrome over facts you can
+                    // reach by opening it. Same priority split as `MacTaskRow` (T-1432(3)).
+                    .layoutPriority(1)
+
+                CadenceTaskRowIndicatorStrip(indicators: rowIndicators)
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if let secondaryLine {
                 Text(secondaryLine)
@@ -254,12 +268,11 @@ struct iOSTaskRow: View {
                 iOSTaskRowEstimateChip(task: task)
             }
 
-            // Both widths carry the same *elements*; only spacing and type scale change. Tags used
-            // to be dropped at compact width, which meant an iPhone's Today row and an iPad's
-            // Today row disagreed about what a task has on it rather than about how much room it
-            // gets to say it.
-            tagScroller
-
+            // The tag strip used to be here, wrapping onto its own line. It is one glyph beside
+            // the title now (T-2058) — see `CadenceTaskRowIndicatorStrip`. The property it was
+            // keeping alive, "both widths carry the same *elements*", is kept by construction: a
+            // glyph that is neither capped nor shed cannot differ between an iPhone row and an
+            // iPad row.
             subtaskRows
         }
     }
@@ -440,27 +453,16 @@ struct iOSTaskRow: View {
         return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
     }
 
-    /// Tags keep the user's own colour — a tag colour is identity they chose, not decoration — so
-    /// the strip is capped at three. `CadenceTagChip` spends that colour on the dot, the fill tint
-    /// and the border and keeps the label on a `Theme` token, which is what lets three of them sit
-    /// in a row without being the loudest thing on screen, and what leaves the label free to say
-    /// **archived** — a fact this row could not show at all while the chip was a coloured capsule.
-    @ViewBuilder
-    private var tagScroller: some View {
-        if !task.sortedTags.isEmpty {
-            // Wraps, for the same reason `taskBadges` does: a horizontal `ScrollView` in a row this
-            // gesture-heavy cannot be scrolled, so a long tag name pushed its neighbours somewhere
-            // no touch could reach them.
-            CadenceWrappingHStack(spacing: 6, lineSpacing: 4) {
-                ForEach(task.sortedTags.prefix(visibleTagLimit)) { tag in
-                    CadenceTagChip(tag: tag, size: .compact)
-                }
-
-                if task.sortedTags.count > visibleTagLimit {
-                    CadenceTagOverflowBadge(count: task.sortedTags.count - visibleTagLimit, size: .compact)
-                }
-            }
-        }
+    /// The note / checklist / tag glyphs this row draws after its title — the shared answer, asked
+    /// once so the strip and the layout around it cannot disagree. `MacTaskRow` asks the same
+    /// function (T-2058).
+    ///
+    /// This replaced `tagScroller`, a wrapping strip of up to three `CadenceTagChip`s plus a `+N`.
+    /// The tags are still on the task and still editable from the inspector; the row no longer
+    /// names them. The chips were a line of their own on a phone row, which is what made the
+    /// trade worth taking.
+    private var rowIndicators: [CadenceTaskRowIndicator] {
+        CadenceTaskRowIndicatorSupport.indicators(for: task)
     }
 
     /// Which date chips this row draws — **`CadenceTaskPresentationSupport.rowDatePlan`'s answer,
@@ -501,10 +503,6 @@ struct iOSTaskRow: View {
     private var dueUrgency: CadenceDueUrgency? {
         CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
     }
-
-    /// `CadenceTaskPresentationSupport.rowTagLimit`, not a local 3. macOS's row capped at 2, and a
-    /// figure that lives in one row's `private var` is a figure the other row cannot read.
-    private var visibleTagLimit: Int { CadenceTaskPresentationSupport.rowTagLimit }
 
     private func toggleCompletion() {
         CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
