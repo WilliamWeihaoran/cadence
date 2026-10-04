@@ -727,7 +727,17 @@ struct CadenceCapturePaletteTests {
             in: button
         )
         #expect(commit.contains("seed(for: .tap, droppedOn: nil, atMinute: nil)"))
-        #expect(commit.contains("seed(for: .drop, droppedOn: target, atMinute: slotMinute)"))
+        // **T-2054 routed the drop arm through `creation(droppedOn:atMinute:)`**, because a drop on
+        // a sidebar section makes a list rather than a task. The pin is the same one token wide:
+        // the arm still hands over the target and minute it really got, and only it does.
+        #expect(commit.contains("creation(droppedOn: target, atMinute: slotMinute)"))
+        #expect(commit.contains("droppedOn: target") && commit.components(separatedBy: "droppedOn: target").count == 2)
+        let creation = try cadenceFunctionBody(
+            "private func creation(droppedOn target: UUID?, atMinute slotMinute: Int?) -> CadenceCaptureCreation",
+            in: button
+        )
+        #expect(creation.contains("for: .drop"))
+        #expect(creation.contains("dropKey: dropKey(droppedOn: target, atMinute: slotMinute)"))
 
         let kind = try cadenceFunctionBody(
             "private func kind(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind",
