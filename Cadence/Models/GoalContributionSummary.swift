@@ -170,7 +170,7 @@ nonisolated enum GoalContributionResolver {
         let actionableTasks = openTasks.filter(\.isInActiveContainer)
 
         let nextAction = actionableTasks
-            .sorted { lhs, rhs in
+            .min { lhs, rhs in
                 // Guarded on the *ranks*, not on the enum cases. Those are the same question
                 // only while `TaskPriority.rank` stays injective, and a comparator that asks the
                 // wrong one does not merely mis-sort when it stops being: it answers `false` in
@@ -189,13 +189,12 @@ nonisolated enum GoalContributionResolver {
                 let lhsDo = TaskOrdering.dateSortKey(lhs.scheduledDate)
                 let rhsDo = TaskOrdering.dateSortKey(rhs.scheduledDate)
                 if lhsDo != rhsDo { return lhsDo < rhsDo }
-                // This sort feeds `.first`, so an incomplete tie-break does not merely reorder a
+                // This selection names one task, so an incomplete tie-break does not merely reorder a
                 // list — it changes *which task the goal card names as your next action* between
                 // one render and the next. `order` alone was not enough: it is per-container, and
                 // a goal's tasks come from several lists.
                 return TaskOrdering.fallbackPrecedes(lhs, rhs)
             }
-            .first
 
         let overdueTaskIDs = overdueTasks(among: tasks, now: now).map(\.id)
 

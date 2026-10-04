@@ -85,6 +85,7 @@ nonisolated enum CadenceWidgetRefreshCenter {
         var states = loadRecentlyChangedHabitStates(userDefaults: userDefaults)
         states[habitID.uuidString] = HabitCompletionState(
             timestamp: now.timeIntervalSince1970,
+            dateKey: CadenceWidgetDateSupport.dateKey(from: now),
             isDoneToday: isDoneToday
         )
         storeRecentlyChangedHabitStates(states, userDefaults: userDefaults)
@@ -92,11 +93,13 @@ nonisolated enum CadenceWidgetRefreshCenter {
 
     static func recentHabitCompletionStates(
         now: Date = Date(),
+        dateKey: String? = nil,
         userDefaults: UserDefaults? = nil
     ) -> [UUID: Bool] {
         let cutoff = now.timeIntervalSince1970 - completionSuppressionInterval
         let states = loadRecentlyChangedHabitStates(userDefaults: userDefaults)
-        let filtered = states.filter { $0.value.timestamp >= cutoff }
+        let currentDateKey = dateKey ?? CadenceWidgetDateSupport.dateKey(from: now)
+        let filtered = states.filter { $0.value.timestamp >= cutoff && $0.value.dateKey == currentDateKey }
 
         if filtered.count != states.count {
             storeRecentlyChangedHabitStates(filtered, userDefaults: userDefaults)
@@ -156,6 +159,7 @@ nonisolated enum CadenceWidgetRefreshCenter {
 
     private struct HabitCompletionState {
         let timestamp: TimeInterval
+        let dateKey: String
         let isDoneToday: Bool
     }
 
@@ -175,6 +179,8 @@ nonisolated enum CadenceWidgetRefreshCenter {
             if let timestamp, let isDoneToday {
                 states[key] = HabitCompletionState(
                     timestamp: timestamp,
+                    dateKey: payload["dateKey"] as? String
+                        ?? CadenceWidgetDateSupport.dateKey(from: Date(timeIntervalSince1970: timestamp)),
                     isDoneToday: isDoneToday
                 )
             }
@@ -198,6 +204,7 @@ nonisolated enum CadenceWidgetRefreshCenter {
                     key,
                     [
                         "timestamp": value.timestamp,
+                        "dateKey": value.dateKey,
                         "isDoneToday": value.isDoneToday,
                     ] as [String: Any]
                 )

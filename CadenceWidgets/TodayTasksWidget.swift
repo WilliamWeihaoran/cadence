@@ -158,18 +158,7 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
     }
 
     private func snapshotLimit(for family: WidgetFamily) -> Int {
-        switch family {
-        case .systemSmall:
-            return 1
-        case .systemMedium:
-            return 3
-        case .systemLarge:
-            return 6
-        case .systemExtraLarge:
-            return 8
-        default:
-            return 3
-        }
+        family.cadenceLayout.todayTaskLimit
     }
 }
 

@@ -3,6 +3,47 @@ import Dispatch
 import Foundation
 import SwiftData
 
+/// Fixed-format content budgets shared by providers and views; these count selected entries,
+/// not pixels measured after WidgetKit lays out the view.
+nonisolated enum CadenceWidgetFamilyLayout: CaseIterable, Sendable {
+    case small, medium, large, extraLarge
+
+    var todayTaskLimit: Int {
+        switch self {
+        case .small: 1
+        case .medium: 3
+        case .large: 2
+        case .extraLarge: 8
+        }
+    }
+
+    var habitLimit: Int {
+        switch self {
+        case .small: 2
+        case .medium: 3
+        case .large, .extraLarge: 8
+        }
+    }
+
+    var habitColumns: Int { self == .small ? 2 : 3 }
+
+    var calendarDayLimit: Int {
+        switch self {
+        case .small: 3
+        case .medium: 6
+        case .large, .extraLarge: 14
+        }
+    }
+
+    var milestoneGoalLimit: Int {
+        switch self {
+        case .small: 1
+        case .medium: 3
+        case .large, .extraLarge: 5
+        }
+    }
+}
+
 nonisolated enum CadenceTodayWidgetSnapshotState: String, Hashable {
     case ready
     case empty

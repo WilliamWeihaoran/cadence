@@ -85,7 +85,7 @@ struct TodayTasksWidgetView: View {
                 emptyState(alignment: .center)
             } else {
                 VStack(spacing: scale.compactSectionSpacing) {
-                    ForEach(entry.snapshot.tasks.prefix(3)) { task in
+                    ForEach(entry.snapshot.tasks.prefix(widgetFamily.cadenceLayout.todayTaskLimit)) { task in
                         taskRow(task, dense: false)
                     }
                 }
@@ -113,7 +113,7 @@ struct TodayTasksWidgetView: View {
                         .frame(width: 132)
                 }
 
-                let queueTasks = Array(entry.snapshot.tasks.dropFirst().prefix(1))
+                let queueTasks = Array(entry.snapshot.tasks.dropFirst().prefix(widgetFamily.cadenceLayout.todayTaskLimit - 1))
                 if !queueTasks.isEmpty {
                     taskStackCard(
                         title: "Actionable queue",
@@ -516,7 +516,7 @@ struct TodayTasksWidgetView: View {
     }
 
     private var extraLargeQueueTasks: [CadenceTodayWidgetTask] {
-        Array(entry.snapshot.tasks.dropFirst())
+        Array(entry.snapshot.tasks.prefix(widgetFamily.cadenceLayout.todayTaskLimit).dropFirst())
     }
 
     private var leadingColumnTasks: [CadenceTodayWidgetTask] {

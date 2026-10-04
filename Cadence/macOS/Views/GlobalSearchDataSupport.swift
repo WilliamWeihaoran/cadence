@@ -45,36 +45,8 @@ enum GlobalSearchDataSupport {
         )
     }
 
-    static func areaResults(areas: [Area], query: String) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.areaResults(areas: areas, query: query)
-    }
-
-    static func projectResults(projects: [Project], query: String) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.projectResults(projects: projects, query: query)
-    }
-
-    static func taskResults(tasks: [AppTask], query: String) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.taskResults(tasks: tasks, query: query)
-    }
-
-    static func goalResults(goals: [Goal], query: String) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.goalResults(goals: goals, query: query)
-    }
-
-    static func habitResults(habits: [Habit], query: String) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.habitResults(habits: habits, query: query)
-    }
-
     static func eventResults(from events: [EKEvent], query: String) -> [GlobalSearchResult] {
         GlobalSearchIndexSupport.eventResults(from: events, query: query)
-    }
-
-    static func eventNoteResults(
-        notes: [Note],
-        query: String,
-        taskTitles: [UUID: String]
-    ) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.eventNoteResults(notes: notes, query: query, taskTitles: taskTitles)
     }
 
     static func syncedHighlightID(current: String?, availableResults: [GlobalSearchResult]) -> String? {
