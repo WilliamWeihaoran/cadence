@@ -176,10 +176,14 @@ struct CadenceTodayUnificationTests {
     /// left to govern here and the metrics type that carried it is deleted.
     ///
     /// **Re-pointed, not weakened.** The size rule itself is live and still pinned, one component
-    /// along, by `CadenceSharedBoardChromeTests.theCountBesideAnEyebrowIsTheEyebrowsOwnSize` — the
-    /// board column header still draws a count beside an eyebrow. What this now asserts is the
-    /// *absence*, from both headings' own source, so a capsule cannot come back on one platform
-    /// without failing here.
+    /// along, by
+    /// `CadenceSectionEyebrowConvergenceTests.theCountBesideAnEyebrowIsTheEyebrowsOwnSize` — the
+    /// board column header still draws a count beside an eyebrow. The qualifier is the enclosing
+    /// suite, not the file it sits in: that test is declared inside
+    /// `CadenceSectionEyebrowConvergenceTests`, which shares a file with several other suites, and
+    /// naming the file's first suite instead is what made this claim resolve to nothing (T-2061).
+    /// What this now asserts is the *absence*, from both headings' own source, so a capsule cannot
+    /// come back on one platform without failing here.
     @Test func neitherPlatformsGroupHeadingDrawsACount() throws {
         #expect(SectionEyebrowLabel.fontSize == 10, "non-vacuity: still the eyebrow this measured against")
         #expect(CadenceBoardColumnHeaderMetrics.countSize == SectionEyebrowLabel.fontSize)

@@ -71,11 +71,21 @@ struct CadenceCodexTaskSummaryTypographyTests {
         let overdue = try read("Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift")
         for source in [empty, group, rollover, overdue] {
             #expect(source.contains("@Environment(\\.cadenceTypographyScaling)"))
-            #expect(source.contains(".cadenceFont("))
             #expect(!source.contains(".font(.system(size:"))
             #expect(!source.contains(".cadenceScaledTypography()"))
             #expect(!source.contains(".cadenceFixedTypography()"))
             #expect(!source.contains("minimumScaleFactor"))
+        }
+        // **The heading is not in this list, and that is a re-point rather than a hole (T-2061).**
+        // The positive check was in the loop above until T-2056 deleted the count capsule, which
+        // was the only place `CadenceTaskGroupHeading` named a font at all. The heading now draws
+        // nothing of its own: it hands its whole type to `SectionEyebrowLabel`, which scales by a
+        // different spelling of the same mechanism, not by an unconverted one. So the heading keeps
+        // every negative check above, and what replaces the positive one for it is the
+        // `SectionEyebrowLabel` read below — strictly stronger, because it names the component the
+        // type comes from rather than that some scaled call exists somewhere in the file.
+        for source in [empty, rollover, overdue] {
+            #expect(source.contains(".cadenceFont("))
         }
         #expect(empty.contains("CadenceEmptyStateMetrics.iconSide(at: dynamicTypeSize, scaling: scaling)"))
         #expect(empty.contains(".cadenceFont(.bodyText, base: 26, weight: .regular)"))
