@@ -28,28 +28,72 @@ struct CadenceCompactTabTests {
     }
 
     /// The one that would have caught a screen going dark: a destination that is neither a tab root
-    /// nor listed in More has no door at all once the Home grid is gone.
-    @Test func everyDestinationIsEitherATabRootOrReachableFromMore() {
+    /// nor listed somewhere that pushes it has no door at all once the Home grid is gone.
+    ///
+    /// **There are two such lists since T-2072**, not one. The Tasks tab stopped being a root for
+    /// its three task surfaces when its switcher became an index, so Today, Tasks and Inbox are
+    /// pushes now — reached from `CadenceCompactTab.tasksIndexDestinations`, exactly as Goals is
+    /// reached from `compactMoreSections`. Asserting against More alone would now fail for three
+    /// destinations that are perfectly reachable, and — the half that matters — asserting against
+    /// neither would let a fourth go dark unnoticed.
+    @Test func everyDestinationIsEitherATabRootOrReachableFromAnIndex() {
         let moreRows = Set(CadenceFeatureDestination.compactMoreSections.flatMap(\.destinations))
+        let tasksRows = Set(CadenceCompactTab.tasksIndexDestinations())
+        let indexed = moreRows.union(tasksRows)
+
+        #expect(moreRows.isDisjoint(with: tasksRows), "a destination is listed by two indexes")
 
         for destination in CadenceFeatureDestination.allCases {
             if destination.isCompactTabRoot {
                 #expect(
-                    moreRows.contains(destination) == false,
-                    "\(destination.title) is both a tab root and a More row — two doors to one room"
+                    indexed.contains(destination) == false,
+                    "\(destination.title) is both a tab root and an index row — two doors to one room"
                 )
             } else {
                 #expect(
-                    moreRows.contains(destination),
-                    "\(destination.title) is not a tab root and is not in More: nothing can reach it"
+                    indexed.contains(destination),
+                    "\(destination.title) is not a tab root and no index lists it: nothing can reach it"
                 )
             }
         }
 
         #expect(moreRows == Set(CadenceCompactTab.more.destinations))
+        #expect(tasksRows == Set(CadenceCompactTab.tasks.destinations))
     }
 
-    @Test func theTasksTabOwnsExactlyTheThreeSegments() {
+    /// **The index is the sidebar's rows, filtered — not a fourth list of task surfaces** (T-2072).
+    ///
+    /// The order and the hidden set are the synced `SidebarLayoutPreference` ones (T-1274), so a
+    /// row hidden on the Mac is hidden on the phone's index too. Inbox is the single exception and
+    /// it is a derived one: `CadenceSidebarLayout` deliberately gives Inbox no row of its own —
+    /// `navRow(for: .inbox)` is `.allTasks` — so the index appends it to the Tasks row it belongs
+    /// to and hides it with that row rather than inventing a second rule.
+    @Test func theTasksIndexIsTheSidebarsOwnRowsWithInboxUnderTasks() {
+        #expect(CadenceCompactTab.tasksIndexDestinations() == [.today, .allTasks, .inbox])
+
+        // The user's order moves Today and Tasks; Inbox travels with the row that opens it.
+        #expect(
+            CadenceCompactTab.tasksIndexDestinations(storedOrder: [.allTasks, .today])
+                == [.allTasks, .inbox, .today]
+        )
+
+        // Hiding Today leaves the other two; hiding Tasks takes Inbox with it, because the
+        // sidebar's rule is that Inbox *is* one of the Tasks row's two views.
+        #expect(CadenceCompactTab.tasksIndexDestinations(hidden: [.today]) == [.allTasks, .inbox])
+        #expect(CadenceCompactTab.tasksIndexDestinations(hidden: [.allTasks]) == [.today])
+        #expect(CadenceCompactTab.tasksIndexDestinations(hidden: [.today, .allTasks]).isEmpty)
+
+        // Nothing another tab owns can be dragged into this index by reordering the sidebar.
+        let everythingReordered = CadenceCompactTab.tasksIndexDestinations(
+            storedOrder: [.calendar, .notes, .goals, .habits, .allTasks, .today]
+        )
+        #expect(everythingReordered.allSatisfy { $0.compactTab == .tasks })
+        #expect(everythingReordered == [.allTasks, .inbox, .today])
+    }
+
+    /// The three slices and the three destinations are the same three, however they are drawn —
+    /// a segmented control until T-2072, rows in the tab's index since.
+    @Test func theTasksTabOwnsExactlyTheThreeSlices() {
         #expect(
             Set(CadenceTasksSection.allCases.map(\.destination))
                 == Set(CadenceCompactTab.tasks.destinations)
@@ -73,6 +117,13 @@ struct CadenceCompactTabTests {
             #expect(route.tab == destination.compactTab)
             #expect(route.pushedDestination == nil, "\(destination.title) would stack on its own tab")
         }
+
+        // Calendar and Notes are the whole of that set now. Stated as a literal rather than
+        // derived, because "which tabs show their destination without a push" is precisely what
+        // T-2072 changed and precisely what a widget tap depends on.
+        #expect(
+            CadenceFeatureDestination.allCases.filter(\.isCompactTabRoot) == [.calendar, .notes]
+        )
     }
 
     @Test func aMoreDestinationRoutesToMoreWithItselfPushed() {
@@ -84,18 +135,24 @@ struct CadenceCompactTabTests {
         }
     }
 
-    @Test func theThreeTaskDestinationsSelectTheirSegment() {
+    /// **The three task destinations are pushes now, and the push is the whole of T-2072's
+    /// routing.** They used to select a segment and stop — the tab's root *was* the screen — so a
+    /// Today widget tap could land on the Tasks tab and be finished. The root is an index of rows
+    /// now, so a route that asked for no push would open that index and claim to have arrived at
+    /// Today. The slice is still recorded: it is what a widening size class reads when the stack
+    /// is empty (`CadenceShellNavigationBridge`).
+    @Test func theThreeTaskDestinationsPushOntoTheTasksIndex() {
         #expect(
             CadenceFeatureDestination.today.compactRoute
-                == CadenceCompactRoute(tab: .tasks, tasksSection: .today, pushedDestination: nil)
+                == CadenceCompactRoute(tab: .tasks, tasksSection: .today, pushedDestination: .today)
         )
         #expect(
             CadenceFeatureDestination.allTasks.compactRoute
-                == CadenceCompactRoute(tab: .tasks, tasksSection: .all, pushedDestination: nil)
+                == CadenceCompactRoute(tab: .tasks, tasksSection: .all, pushedDestination: .allTasks)
         )
         #expect(
             CadenceFeatureDestination.inbox.compactRoute
-                == CadenceCompactRoute(tab: .tasks, tasksSection: .inbox, pushedDestination: nil)
+                == CadenceCompactRoute(tab: .tasks, tasksSection: .inbox, pushedDestination: .inbox)
         )
     }
 
@@ -137,9 +194,9 @@ struct CadenceCompactTabTests {
 
     // MARK: - The desktop scope, against these segments
 
-    /// **The iPhone is out of scope for the All Tasks / Inbox merge and must stay that way.** Its
-    /// Tasks tab has been this design in tab-bar form since it shipped — three segments, Today
-    /// among them — and `ios.compact.tasksSection` persists these raw values, so a rename here
+    /// **The three slices outlived the control that drew them.** They were a segmented switcher in
+    /// the Tasks tab's header until T-2072 and are rows in that tab's index now; what has not
+    /// changed is that `ios.compact.tasksSection` persists these raw values, so a rename here
     /// silently resets every phone to Today.
     ///
     /// Spelled as literal raw values rather than derived from the enum: a test that reads
@@ -149,8 +206,8 @@ struct CadenceCompactTabTests {
     /// `today, inbox, all` — a narrowing, with the widest slice last — and this test failed on that
     /// change, which is what it is for. What must **not** move is the raw values: they are
     /// persisted as `ios.compact.tasksSection`, so reordering the cases has to be presentation
-    /// only. A change that alters the second assertion is a change that silently resets which tab
-    /// every existing install opens on.
+    /// only. A change that alters the second assertion is a change that silently resets which
+    /// slice every existing install widens into.
     @Test func theThreeTasksSegmentsAndTheirStoredSpellingsAreFixed() {
         #expect(CadenceTasksSection.allCases == [.today, .inbox, .all])
         #expect(Set(CadenceTasksSection.allCases.map(\.rawValue)) == ["today", "all", "inbox"])
@@ -188,7 +245,7 @@ struct CadenceCompactTabTests {
 
     /// Both destinations still exist and still route on their own, which is the whole reason the
     /// merge stayed a sidebar-and-page change: the command palette names them separately, the
-    /// phone's segments select them separately, and widgets deep-link to them.
+    /// phone's index gives each a row of its own, and widgets deep-link to them.
     @Test func theMergeDidNotCollapseTheTwoDestinations() {
         #expect(CadenceFeatureDestination.allCases.contains(.allTasks))
         #expect(CadenceFeatureDestination.allCases.contains(.inbox))

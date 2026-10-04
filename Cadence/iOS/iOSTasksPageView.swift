@@ -9,18 +9,25 @@ import SwiftUI
 /// so without this page the iPad would have no door to the Inbox at all.
 ///
 /// The switcher is `iOSSegmentedPillGroup`, the control the Calendar tab uses for Week / Month /
-/// Board and the iPhone's Tasks tab uses for Today / All / Inbox, so nothing new is being taught.
-/// Its two labels come from `CadenceTasksPageScope`, which takes them from `CadenceTasksSection` —
-/// the phone's segments — so the two shells cannot end up calling the same view different things.
+/// Board, so nothing new is being taught. Its two labels come from `CadenceTasksPageScope`, which
+/// takes them from `CadenceTasksSection` — the three slices the phone's Tasks index lists — so the
+/// two shells cannot end up calling the same view different things.
 ///
 /// **No mode switcher.** The List / Kanban axis is macOS-only: iOS has never had the All Tasks
 /// board, and adding one is a feature rather than a merge.
+///
+/// **Since T-2072 the iPhone pushes it too.** The Tasks tab's index has a Tasks row and an Inbox
+/// row, and both open this page — so the phone stopped drawing the two halves as bare views under
+/// a three-segment control that existed nowhere else. That is why the header takes a back control
+/// at compact width and none at regular: pushed on the phone, hosted with no stack around it on
+/// the iPad, exactly the rule `iOSTaskCollectionPage` and `iOSCompactTodayView` already follow.
 struct iOSTasksPageView: View {
     /// Non-`nil` when the selection named a view outright, the way `TasksPageView` takes it.
     var requestedScope: CadenceTasksPageScope?
 
     @AppStorage("ios.tasksPage.scope") private var scopeRaw = CadenceTasksPageScope.defaultScope.rawValue
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dismiss) private var dismiss
 
     private var scope: CadenceTasksPageScope { CadenceTasksPageScope.resolved(scopeRaw) }
 
@@ -33,6 +40,10 @@ struct iOSTasksPageView: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .cadenceScaledTypography()
+        // Pushed on the phone since T-2072, where the header above carries the back control, so
+        // the navigation bar would be a 44pt row holding a second one. No-op at regular width,
+        // where the iPad shell hosts this page with no stack around it.
+        .iOSHidesCompactNavigationBar()
         .onChange(of: requestedScope, initial: true) { _, requested in
             guard let requested else { return }
             scopeRaw = requested.rawValue
@@ -58,7 +69,8 @@ struct iOSTasksPageView: View {
         iOSPageHeader(
             eyebrow: "Tasks",
             title: scope.pageTitle,
-            color: Theme.blue
+            color: Theme.blue,
+            onBack: horizontalSizeClass == .compact ? { dismiss() } : nil
         ) {
             iOSSegmentedPillGroup(density: horizontalSizeClass == .regular ? .standard : .compact) {
                 ForEach(CadenceTasksPageScope.allCases) { option in

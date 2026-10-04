@@ -172,14 +172,21 @@ struct TodayAndInboxNamingTests {
 
         // The two renamed types, at every caller the ticket listed — including the compact shell,
         // which is the width the old names claimed could not reach them.
+        //
+        // **The phone reaches the Inbox through the merged page now (T-2072).** Its Tasks tab is
+        // an index of rows rather than a three-segment switcher, so `iOSTasksTabView` builds
+        // neither view directly: the Today row pushes `iOSTodayView()` through the shell's one
+        // destination switch, and the Tasks and Inbox rows both push `iOSTasksPageView`, which is
+        // where `iOSInboxView(showsCompactHeader: false)` is drawn on both shells. The claim this
+        // test exists for is unchanged and is still checked at compact width — it just has one
+        // fewer caller and one more hop.
         let callers = [
-            "Cadence/iOS/iOSCompactTabShell.swift": ["iOSTodayView()", "iOSInboxView()"],
+            "Cadence/iOS/iOSCompactTabShell.swift": [
+                "iOSTodayView()",
+                "iOSTasksPageView(requestedScope: .inbox)"
+            ],
             "Cadence/iOS/iOSRootView.swift": ["iOSTodayView()"],
             "Cadence/iOS/iOSSearchView.swift": ["iOSTodayView()", "iOSInboxView()"],
-            "Cadence/iOS/iOSTasksTabView.swift": [
-                "iOSTodayView(showsCompactHeader: false)",
-                "iOSInboxView(showsCompactHeader: false)"
-            ],
             "Cadence/iOS/iOSTasksPageView.swift": ["iOSInboxView(showsCompactHeader: false)"]
         ]
         for (path, needles) in callers {
@@ -273,8 +280,14 @@ struct TodayAndInboxNamingTests {
     /// the two views that is true and the sweep above holds it. For the side-panel enum it was
     /// false: `iOSTodayView` names it in the **default value of a stored property**
     /// (`@AppStorage("ios.today.sidePanel")`), which every construction of that view evaluates —
-    /// and `iOSCompactTabShell`, `iOSTasksTabView` and `iOSSearchView` all construct it at compact
-    /// width. So the enum is reached on an iPhone.
+    /// and `iOSCompactTabShell` and `iOSSearchView` both construct it at compact width. So the
+    /// enum is reached on an iPhone.
+    ///
+    /// **It was three hosts until T-2072** — `iOSTasksTabView` built the view itself, under a
+    /// segmented switcher. Its Tasks tab is an index of rows now and the Today row pushes through
+    /// `iOSCompactTabShell`'s one destination switch, so the compact construction sites went from
+    /// three to two. The reach the rename rests on is unchanged: the shell is a compact host, and
+    /// `iOSSearchView` is reachable from every tab on the phone.
     ///
     /// The reach is what got the enum renamed rather than the sentence softened, so this test
     /// outlives the rename: it is the reason. If the stored property ever moves into the two-pane
@@ -303,7 +316,6 @@ struct TodayAndInboxNamingTests {
         // above is a fact about the app rather than about one file.
         for path in [
             "Cadence/iOS/iOSCompactTabShell.swift",
-            "Cadence/iOS/iOSTasksTabView.swift",
             "Cadence/iOS/iOSSearchView.swift"
         ] {
             let caller = CadenceSourceScan.codeOnly(try misfiledSourceFile(path))

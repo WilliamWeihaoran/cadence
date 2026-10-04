@@ -11,8 +11,10 @@ import SwiftUI
 // The enum below is `iOSTodaySidePanel`, and this paragraph used to count it as a third (T-493).
 // It was `iPadTodaySidePanel`, and the claim was false for it: `iOSTodayView` names it in the
 // default value of an `@AppStorage` stored property, which every construction of that view
-// evaluates — and `iOSCompactTabShell`, `iOSTasksTabView` and `iOSSearchView` all construct that
-// view at compact width. So a phone does reach the enum, and by T-283's own rule the prefix there
+// evaluates — and `iOSCompactTabShell` and `iOSSearchView` both construct that view at compact
+// width. (`iOSTasksTabView` was a third until T-2072 turned its switcher into an index of rows;
+// its Today row pushes through the shell's one destination switch now.) So a phone does reach the
+// enum, and by T-283's own rule the prefix there
 // was the defect it exists to remove rather than an exception to it. Renaming was preferred to
 // softening this paragraph because the prefix has exactly one meaning in this repo and an
 // "iPad-only, except when it is not" is not a meaning; the storage key was already the honest

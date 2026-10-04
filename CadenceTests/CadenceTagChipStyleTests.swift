@@ -399,8 +399,11 @@ struct CadenceTagChipScaleTests {
                     "Cadence/iOS/iOSSearchSupportViews.swift",
                     "Cadence/iOS/iPadTodaySupportViews.swift",
                 ], [
+                    // T-2072 took the third caller off this list: the iPhone Tasks tab's
+                    // Today / All / Inbox switcher became an index of rows, so `iOSTasksTabView`
+                    // draws no pill at all. The two that remain are the merged Tasks page's
+                    // All / Inbox switch.
                     "Cadence/iOS/iOSTasksPageView.swift",
-                    "Cadence/iOS/iOSTasksTabView.swift",
                 ]
             ),
             (

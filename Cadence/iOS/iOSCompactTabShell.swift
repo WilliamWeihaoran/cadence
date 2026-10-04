@@ -168,12 +168,18 @@ struct iOSCompactFeatureDestinationView: View {
         switch destination {
         case .today:
             iOSTodayView()
+        // **Both land on the merged page, which is the step that makes phone and iPad the same
+        // screen (T-2072).** `iOSTasksPageView` is the iPad shell's Tasks destination — one header
+        // over an All / Inbox switcher — and the phone used to reach its two halves as two bare
+        // views under a third, phone-only segmented control. The index pushes the destination and
+        // the page opens on the matching scope, so the Tasks row and the Inbox row are one page
+        // seen two ways rather than two pages.
         case .allTasks:
-            iOSAllTasksView()
+            iOSTasksPageView(requestedScope: .all)
         case .focus:
             iOSFocusView()
         case .inbox:
-            iOSInboxView()
+            iOSTasksPageView(requestedScope: .inbox)
         case .calendar:
             iOSCalendarView()
         case .notes:
