@@ -189,7 +189,7 @@ enum EventNoteSupport {
         let metadata = eventDateMetadata(from: event)
         updateMetadata(
             note,
-            calendarID: event.calendar.calendarIdentifier,
+            calendarID: CalendarEventIdentity.calendarIdentifier(of: event),
             eventDateKey: metadata.dateKey,
             eventStartMin: metadata.startMin,
             eventEndMin: metadata.endMin

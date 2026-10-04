@@ -84,6 +84,50 @@ struct CalendarBehaviorRegressionTests {
         #expect(CalendarEventEditPopover.calendarIdentifier(of: owned) == ownedID)
     }
 
+    // MARK: - The same implicit unwrap outside that one file (T-2052)
+    //
+    // T-2047 converged the three readers *inside* `TimelineEventBlockSupportViews` onto a helper
+    // of its own and left the spelling itself at large. Five more readers were still writing the
+    // bare `.calendar.`: `EventNoteSupportViews.backfillMetadataIfPossible`, the iOS inspector's
+    // event summary row, and three on `EKReminder.calendar`, which is the same
+    // implicitly-unwrapped `EKCalendar!` as `EKEvent.calendar`. The helper now lives in the shared
+    // implementation both platforms forward to.
+    //
+    // The repo-wide sweep that would keep it the only one is NOT here yet, and the reason is
+    // [[T-2049]] rather than a decision: a real-tree sweep has to be on
+    // `CadenceRealTreeSweepManifest.txt`, that file is derived by a full suite run, and this Mac
+    // stopped running tests at 20:43. `agent-commit.sh` refused the commit for exactly that
+    // (SWEEP-MANIFEST-MISSING) and `--not-a-sweep` would have been a false statement about it.
+    // T-2052 carries the sweep's whole specification -- pattern, both witnesses, the walk floor and
+    // its `including:` witness -- so it can be written back verbatim on a host that can run it.
+
+    @Test func everyCalendarIdentifierFaceReadsTheOneSharedHelper() throws {
+        let calendar = Calendar.current
+        let start = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9)))
+        let calendarless = Self.scratchEvent(title: "Calendarless fixture", start: start)
+        #expect(calendarless.calendar == nil)
+
+        #expect(CadenceEventNoteSupport.calendarIdentifier(of: calendarless).isEmpty)
+        #expect(CalendarEventIdentity.calendarIdentifier(of: calendarless).isEmpty)
+        #expect(CalendarEventEditPopover.calendarIdentifier(of: calendarless).isEmpty)
+
+        // The control against the one-candidate trap: a second, unobliged event that *does* carry
+        // a calendar has to report that calendar's own identifier, so a helper hardcoded to `""`
+        // — or one whose fallback swallowed the real value — cannot pass this.
+        let store = EKEventStore()
+        let owned = EKEvent(eventStore: store)
+        owned.title = "Owned fixture"
+        owned.startDate = start
+        owned.endDate = start.addingTimeInterval(1_800)
+        owned.calendar = EKCalendar(for: .event, eventStore: store)
+        let ownedID = try #require(owned.calendar?.calendarIdentifier)
+        #expect(!ownedID.isEmpty)
+        #expect(CadenceEventNoteSupport.calendarIdentifier(of: owned) == ownedID)
+        #expect(CalendarEventIdentity.calendarIdentifier(of: owned) == ownedID)
+        #expect(CalendarEventEditPopover.calendarIdentifier(of: owned) == ownedID)
+    }
+
+
     @Test func detachedOccurrenceIsASeriesMemberEvenWithoutRulesOfItsOwn() {
         // `isDetached` is read-only on EKEvent, so the flag combination is asserted directly.
         #expect(CadenceEventNoteSupport.isRecurringSeriesMember(hasRecurrenceRules: false, isDetached: true))

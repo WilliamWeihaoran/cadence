@@ -188,7 +188,7 @@ struct iOSCalendarEventSummaryRow: View {
         iOSFeatureSummaryRow(
             title: iOSCalendarEventSupport.title(for: event),
             subtitle: subtitle,
-            detail: event.calendar.title,
+            detail: event.calendar?.title ?? CadenceAppleCalendarNaming.unnamedCalendarTitle,
             icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
             color: color
         )

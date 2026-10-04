@@ -88,6 +88,24 @@ enum CadenceEventNoteSupport {
         identifier.components(separatedBy: occurrenceSeparator).first ?? identifier
     }
 
+    /// The event's calendar identifier, or `""` when it has none.
+    ///
+    /// **T-2052, after [[T-2047]].** `EKEvent.calendar` is an implicitly-unwrapped `EKCalendar!`,
+    /// so a bare `event.calendar.` read compiles and then traps on an event that has none. T-2047
+    /// found that in the macOS event edit popover — a board card drew, tinted and titled itself
+    /// from the surrounding optional reads and then killed the app the instant it was clicked —
+    /// and converged that *one file*'s three readers onto a helper of its own. Two readers outside
+    /// it kept the bare spelling. This is that helper hoisted to the implementation both platforms
+    /// already forward to, so there is one definition rather than a per-file habit.
+    ///
+    /// **Deliberately not `fallbackIdentifier`'s `?? "calendar"`.** That one is a *segment* of a
+    /// composite synthetic key, where an empty string collapses two `|` delimiters into one and
+    /// lets two different events agree. This one fills a `calendarID` metadata field whose empty
+    /// value already means "no calendar", which is what every caller here is typed for.
+    static func calendarIdentifier(of event: EKEvent) -> String {
+        event.calendar?.calendarIdentifier ?? ""
+    }
+
     static func matches(_ event: EKEvent, identifier: String) -> Bool {
         identifier == self.identifier(for: event) || identifier == rawIdentifier(for: event)
     }

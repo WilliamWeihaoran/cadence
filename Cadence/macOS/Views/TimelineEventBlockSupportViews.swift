@@ -66,7 +66,7 @@ struct CalendarEventEditPopover: View {
     /// `init` the moment such an event's card was clicked. All three readers in this popover go
     /// through this one function so none of them can drift back to the bare read.
     static func calendarIdentifier(of event: EKEvent) -> String {
-        event.calendar?.calendarIdentifier ?? ""
+        CalendarEventIdentity.calendarIdentifier(of: event)
     }
 
     private var durationMinutes: Int { max(0, endMin - startMin) }

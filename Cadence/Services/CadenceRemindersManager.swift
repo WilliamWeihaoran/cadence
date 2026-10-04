@@ -294,7 +294,7 @@ final class RemindersManager {
         if let refusal = AppleReminderCompletionOutcome.refusal(
             isAuthorized: isAuthorized,
             reminderResolves: reminder != nil,
-            allowsContentModifications: reminder?.calendar.allowsContentModifications ?? false
+            allowsContentModifications: reminder?.calendar?.allowsContentModifications ?? false
         ) {
             reconcile(after: refusal)
             return refusal
@@ -359,15 +359,23 @@ final class RemindersManager {
     /// `nonisolated` because `fetchReminders` already calls this from EventKit's background
     /// completion queue — the annotation states where the work actually happens rather than
     /// moving it. Both helpers are pure functions over their arguments.
+    /// **T-2052.** `EKReminder.calendar` is the same implicitly-unwrapped `EKCalendar!` as
+    /// `EKEvent.calendar`, so the two reads below were force-unwraps wearing no `!`. Both
+    /// fallbacks are the ones the surrounding lines of this same initializer already use — `?? ""`
+    /// for a string, `?? false` for a capability — rather than new ones invented here. If a
+    /// reminder with no list should instead show a *named* fallback the way an event with no
+    /// calendar does, that is a product decision and it belongs beside
+    /// `CadenceAppleCalendarNaming.unnamedCalendarTitle`, not inline here: `listTitle` is also the
+    /// grouping key in `CadenceRemindersPresentationSupport`, so the empty string is load-bearing.
     nonisolated private static func makeItem(from reminder: EKReminder) -> AppleReminderItem {
         AppleReminderItem(
             id: reminder.calendarItemIdentifier,
             title: reminder.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             notes: reminder.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            listTitle: reminder.calendar.title,
+            listTitle: reminder.calendar?.title ?? "",
             dueDate: reminder.dueDateComponents.flatMap { Calendar.current.date(from: $0) },
             priority: reminder.priority,
-            allowsCompletion: reminder.calendar.allowsContentModifications
+            allowsCompletion: reminder.calendar?.allowsContentModifications ?? false
         )
     }
 

@@ -260,6 +260,10 @@ enum CalendarEventIdentity {
         CadenceEventNoteSupport.lookupIdentifier(from: identifier)
     }
 
+    static func calendarIdentifier(of event: EKEvent) -> String {
+        CadenceEventNoteSupport.calendarIdentifier(of: event)
+    }
+
     static func matches(_ event: EKEvent, identifier: String) -> Bool {
         CadenceEventNoteSupport.matches(event, identifier: identifier)
     }
