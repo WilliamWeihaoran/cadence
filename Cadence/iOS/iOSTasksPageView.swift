@@ -39,24 +39,28 @@ struct iOSTasksPageView: View {
         }
     }
 
-    /// Header over switcher, the shape `iOSTasksTabView` already uses on the phone. The two
-    /// children draw with `showsCompactHeader: false` so the page heads itself once — the
-    /// alternative, letting each keep its own header under the segment, would put the words
-    /// "All Tasks" one row below a segment already reading "All".
+    /// Header **row**, switcher at its trailing end. The two children draw with
+    /// `showsCompactHeader: false` so the page heads itself once — the alternative, letting each
+    /// keep its own header beside the segment, would put the words "All Tasks" next to a segment
+    /// already reading "All".
+    ///
+    /// **It used to be header *over* switcher**, which is the shape the phone's Tasks tab still
+    /// uses. One row is what the owner chose for both this page and the Calendar's, and the reason
+    /// is the same on each: a full-width row carrying two short pills is a row of chrome spent on
+    /// a control that fits in the slack an `iOSPageHeader` already has. `trailing` is that slack —
+    /// a single deliberate slot, documented as such — so this is the header row doing the job it
+    /// was built for rather than a second row being tolerated beneath it.
+    ///
+    /// The group is `.compact` at compact width for the reason `iOSSegmentedPillDensity` gives:
+    /// an iPhone row cannot pay for the standard density beside a title, and this page is reachable
+    /// at compact width whenever an iPad shell is in a narrow split.
     private var header: some View {
-        let metrics = CadencePageHeaderMetrics.metrics(
-            role: .page,
-            isRegularWidth: horizontalSizeClass == .regular
-        )
-
-        return VStack(alignment: .leading, spacing: 0) {
-            iOSPageHeader(
-                eyebrow: "Tasks",
-                title: scope.pageTitle,
-                color: Theme.blue
-            )
-
-            iOSSegmentedPillGroup {
+        iOSPageHeader(
+            eyebrow: "Tasks",
+            title: scope.pageTitle,
+            color: Theme.blue
+        ) {
+            iOSSegmentedPillGroup(density: horizontalSizeClass == .regular ? .standard : .compact) {
                 ForEach(CadenceTasksPageScope.allCases) { option in
                     iOSSegmentedPill(
                         title: option.title,
@@ -66,8 +70,6 @@ struct iOSTasksPageView: View {
                     }
                 }
             }
-            .padding(.horizontal, metrics.horizontalPadding)
-            .padding(.bottom, metrics.bottomPadding)
         }
     }
 

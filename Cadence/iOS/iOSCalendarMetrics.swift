@@ -239,11 +239,58 @@ nonisolated enum iOSCalendarToolbarMetrics {
     /// Between the title row and the control row when the two wrap.
     static let stackSpacing: CGFloat = 11
 
-    /// The least the date title may be squeezed to. 208 was the iPad's, and it is the one with a
-    /// reason on it — under it the title starts truncating, which is as true on a phone in landscape
-    /// (where the single-row layout is now reachable) as it is on an iPad.
+    /// The least the date title may be squeezed to at **regular** width. 208 was the iPad's, and it
+    /// is the one with a reason on it — under it the title starts truncating.
     static let titleMinWidth: CGFloat = 208
+
+    /// The same floor on a phone, where it is a different number because the title is drawn at a
+    /// different size and the row has a third less of it to give.
+    ///
+    /// `iOSDateJumpTitleMetrics.page` draws this title at **18pt** compact against 21pt regular,
+    /// and the longest label either timed surface produces is Month's `October 2026` — about 118pt
+    /// at 18pt bold, plus the 4pt gap and the chevron. 140 clears that with room to spare, and
+    /// `minimumScaleFactor` is the backstop under it rather than truncation, because this metrics
+    /// set scales: "August 2026" losing its year names no month.
+    ///
+    /// **Carrying the iPad's 208 onto the phone is what cost the switcher its place on this row.**
+    /// 208 + 8 + a 238pt standard-density mode group is 454 against 361pt of iPhone row, so
+    /// `ViewThatFits` could never accept the single-row layout and always wrapped — spending a
+    /// whole row of a 852pt screen on three pills, above a grid that was already too cramped to
+    /// show an event's title.
+    static let titleCompactMinWidth: CGFloat = 140
+
+    /// The floor for the width the row is actually being laid out at. Overloads the constant above
+    /// rather than renaming it, so `iOSCalendarMetricsTests`' pin on the regular figure still reads
+    /// the same name the rest of the app does.
+    static func titleMinWidth(isRegularWidth: Bool) -> CGFloat {
+        let regular: CGFloat = titleMinWidth
+        return isRegularWidth ? regular : titleCompactMinWidth
+    }
+
     static let titleIdealWidth: CGFloat = 246
+
+    /// What the title asks for on a phone — and **the number `ViewThatFits` actually reads.**
+    ///
+    /// Lowering `titleMinWidth` alone did not move the switcher onto the date's row, and the
+    /// screenshot is what said so: on a 393pt iPhone the toolbar still drew `Oct 4` over a wrapped
+    /// `Week | Month | Board`. `ViewThatFits` measures each candidate at its **ideal** width, not at
+    /// its floor, so the single-row branch was asking for `titleIdealWidth` 246 + `controlSpacing` 8
+    /// + a ~163pt `.compact` mode group = ~417 against 361pt of row, and went on taking the wrapped
+    /// fallback while the floor arithmetic said it should not have. Measured on `Cadence-iPhone15`
+    /// at 393x852, 2026-10-04.
+    ///
+    /// A phone's title asks for exactly its floor, so the row's slack belongs to the controls —
+    /// the same priority `singleRowToolbar` already states with `layoutPriority(1)`. `titleMaxWidth`
+    /// is untouched: the title still grows into whatever the controls leave.
+    static let titleCompactIdealWidth: CGFloat = titleCompactMinWidth
+
+    /// The ideal for the width the row is actually being laid out at. Overloads the constant above
+    /// for the same reason `titleMinWidth(isRegularWidth:)` does.
+    static func titleIdealWidth(isRegularWidth: Bool) -> CGFloat {
+        let regular: CGFloat = titleIdealWidth
+        return isRegularWidth ? regular : titleCompactIdealWidth
+    }
+
     static let titleMaxWidth: CGFloat = 312
 
     /// The single-row layout's floor, so the row is a full touch target even with a short title.

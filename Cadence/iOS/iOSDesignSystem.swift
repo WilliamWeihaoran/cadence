@@ -346,11 +346,51 @@ struct iOSIconButton: View {
 
 // MARK: - Segmented pill group
 
+/// How much room the pills inside a group are allowed to ask for.
+///
+/// **The group has never filled its width** — it is a plain stack that sizes to its pills, and
+/// `iOSSegmentedPill.fillsWidth` is the opt-in that makes a *pill* span a form row. So a group can
+/// already sit at the trailing end of a header row. What it could not do is sit there on a
+/// **phone**: at `.standard` the calendar's three pills come to about 238pt, which against a 361pt
+/// iPhone row leaves 123 for a date title whose floor is 208, and `iOSCalendarToolbar`'s
+/// `ViewThatFits` therefore took its wrapped fallback and spent a second row on the switcher.
+///
+/// `.compact` is that same control at the density a phone can pay for: no leading glyph, a shorter
+/// segment floor and tighter side padding. It is a property of the **group**, pushed down through
+/// the environment, so a call site moves one control rather than re-spelling every pill inside it —
+/// and `.standard` stays the default, so every existing caller renders exactly as it did.
+enum iOSSegmentedPillDensity {
+    case standard
+    case compact
+
+    /// The glyph is the first thing to go. It is decoration beside a word that already says the
+    /// same thing — "Week", "Month", "Board" — and it costs about 22pt a pill, which is the
+    /// single largest saving available without touching the labels.
+    var showsGlyph: Bool { self == .standard }
+
+    /// 44 rather than 58: still the touch floor (`CadenceCalendarWeekGridLayout.minimumTouchTarget`),
+    /// so a narrowed segment is never a smaller target, only a less padded one.
+    var segmentMinWidth: CGFloat { self == .standard ? 58 : 44 }
+
+    var segmentHorizontalPadding: CGFloat { self == .standard ? 10 : 8 }
+}
+
+extension EnvironmentValues {
+    /// Set by `iOSSegmentedPillGroup` and read by the pills inside it. An environment value rather
+    /// than an argument on every pill, because the group is a `@ViewBuilder` of arbitrary content:
+    /// the alternative is each call site repeating the density on each of its segments, which is
+    /// the drift this type exists to prevent.
+    @Entry var iosSegmentedPillDensity: iOSSegmentedPillDensity = .standard
+}
+
 /// iOS counterpart of `CommitmentFilterBar`: a recessed track holding one pill per option. Used for
 /// the calendar's view-mode switch, so the mode picker and macOS's read as one control family.
 struct iOSSegmentedPillGroup<Content: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
+    /// See `iOSSegmentedPillDensity`. The default is the density every caller had before there was
+    /// a choice, so adding this parameter changed nothing that renders.
+    var density: iOSSegmentedPillDensity = .standard
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -360,6 +400,7 @@ struct iOSSegmentedPillGroup<Content: View>: View {
         layout {
             content()
         }
+        .environment(\.iosSegmentedPillDensity, density)
         .padding(3)
         .background(Theme.bg.opacity(0.55))
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
@@ -375,6 +416,8 @@ struct iOSSegmentedPillGroup<Content: View>: View {
 struct iOSSegmentedPill: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
+    /// Written by the enclosing `iOSSegmentedPillGroup`. See `iOSSegmentedPillDensity`.
+    @Environment(\.iosSegmentedPillDensity) private var density
     let title: String
     var systemImage: String? = nil
     let isSelected: Bool
@@ -409,7 +452,10 @@ struct iOSSegmentedPill: View {
 
         Button(action: action) {
             HStack(spacing: 6) {
-                if let systemImage {
+                // `fillsWidth` keeps its glyph whatever the density says: a form segment is sized
+                // by its row rather than by its content, so dropping its icon would save a width
+                // it never had to find.
+                if let systemImage, density.showsGlyph || fillsWidth {
                     Image(systemName: systemImage)
                         .cadenceFont(.metadata, base: 11, weight: .semibold)
                 }
@@ -426,10 +472,10 @@ struct iOSSegmentedPill: View {
             // every surface, so it is a hierarchy call now: `dim` is for genuinely de-emphasised
             // content, and an unselected segment is not that.
             .foregroundStyle(isSelected ? tint : Theme.muted)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, fillsWidth ? 10 : density.segmentHorizontalPadding)
             .padding(.vertical, stacks ? 6 : 0)
             .frame(
-                minWidth: fillsWidth ? nil : minWidth,
+                minWidth: fillsWidth ? nil : min(minWidth, density.segmentMinWidth),
                 maxWidth: fillsWidth || stacks ? .infinity : nil,
                 minHeight: iOSTaskPageTypographyMetrics.segmentHeight(fillsWidth: fillsWidth, at: dynamicTypeSize, scaling: scaling)
             )

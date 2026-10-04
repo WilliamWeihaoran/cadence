@@ -489,15 +489,78 @@ struct iOSCalendarMetricsTests {
     /// tile the toolbar drew beside the title. Page headers no longer draw one on either platform
     /// (the user asked for them dropped everywhere), and `tileSize` went with the tile — so what is
     /// left beside the title is the row's own spacing, and the floor has to clear that.
+    ///
+    /// **It reads the width-aware floor now.** It used to read the bare `titleMinWidth` constant
+    /// inside a loop over both widths, so the compact iteration was measuring the iPad's number
+    /// and the loop proved nothing the single reading did not. The phone has its own floor since
+    /// the mode switcher moved onto this row; this is the assertion that covers it.
     @Test func theTitleFloorLeavesRoomForWhatSitsBesideIt() {
         for isRegular in Self.widths {
             let page = CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
+            let floor = iOSCalendarToolbarMetrics.titleMinWidth(isRegularWidth: isRegular)
 
-            #expect(
-                iOSCalendarToolbarMetrics.titleMinWidth - page.rowSpacing > 120,
-                "title floor at isRegular=\(isRegular)"
-            )
+            #expect(floor - page.rowSpacing > 120, "title floor at isRegular=\(isRegular)")
         }
+    }
+
+    /// The phone's floor is **lower than the iPad's, and that is the point of it.**
+    ///
+    /// Carrying 208 onto a 361pt iPhone row is what kept `iOSCalendarToolbar`'s `ViewThatFits`
+    /// from ever accepting its single-row layout, so the Week / Month / Board switcher spent a
+    /// whole row of a 852pt screen sitting under the date instead of beside it. The two numbers
+    /// are allowed to differ; what they may not do is converge back.
+    ///
+    /// The upper bound is the other half: the floor still has to clear the longest label either
+    /// timed surface produces at the 18pt compact title size — `October 2026` and its chevron —
+    /// and `titleIdealWidth` is what the row asks for when it has the room.
+    @Test func thePhonesTitleFloorIsBelowTheTabletsAndAboveItsLongestLabel() {
+        let compact = iOSCalendarToolbarMetrics.titleMinWidth(isRegularWidth: false)
+        let regular = iOSCalendarToolbarMetrics.titleMinWidth(isRegularWidth: true)
+
+        #expect(compact < regular, "the phone is back on the iPad's floor and the row will wrap again")
+        #expect(regular == iOSCalendarToolbarMetrics.titleMinWidth)
+        #expect(compact >= 130)
+        #expect(compact < iOSCalendarToolbarMetrics.titleIdealWidth)
+    }
+
+    /// **The width `ViewThatFits` actually reads is the ideal, not the floor**, and this is the
+    /// assertion that was missing when the floor alone was lowered.
+    ///
+    /// Dropping `titleMinWidth` from 208 to 140 on a phone was correct and was not sufficient: the
+    /// fit test above `iOSCalendarToolbar.toolbar` measures each candidate at its ideal size, so
+    /// the single-row branch went on asking for `titleIdealWidth` (246) + `controlSpacing` (8) + a
+    /// `.compact` mode group of about 163 — roughly 417 against the 361pt a 393pt iPhone has once
+    /// the page gutter is taken — and kept taking the wrapped fallback. Every metric read correctly
+    /// in isolation and the owner's request was still unmet on the device; a screenshot of
+    /// `Cadence-iPhone15` is what caught it.
+    ///
+    /// So the phone's title asks for exactly its floor, and what this pins is the consequence: the
+    /// row keeps enough width for the switcher to sit beside the date rather than under it.
+    @Test func thePhonesTitleAsksForItsFloorSoTheSwitcherKeepsTheRowsSlack() {
+        #expect(
+            iOSCalendarToolbarMetrics.titleIdealWidth(isRegularWidth: false)
+                == iOSCalendarToolbarMetrics.titleMinWidth(isRegularWidth: false),
+            "a phone's title asks for more than its floor again, so ViewThatFits may wrap the row"
+        )
+        #expect(
+            iOSCalendarToolbarMetrics.titleIdealWidth(isRegularWidth: false)
+                < iOSCalendarToolbarMetrics.titleIdealWidth(isRegularWidth: true)
+        )
+        #expect(iOSCalendarToolbarMetrics.titleIdealWidth(isRegularWidth: true)
+            == iOSCalendarToolbarMetrics.titleIdealWidth)
+
+        // The narrowest phone Cadence supports, less the page gutter on both sides.
+        let row: CGFloat = 393 - 2 * iOSCalendarPageMetrics.horizontalPadding(isRegularWidth: false)
+        let leftForControls = row
+            - iOSCalendarToolbarMetrics.titleIdealWidth(isRegularWidth: false)
+            - iOSCalendarToolbarMetrics.controlSpacing
+
+        // 163 is the measured width of the three `.compact` pills on `Cadence-iPhone15`; the margin
+        // is what keeps a label change from silently wrapping the row again.
+        #expect(
+            leftForControls >= 180,
+            "the mode switcher no longer fits beside the date and will wrap under it: \(leftForControls)"
+        )
     }
 
     // MARK: - The Board

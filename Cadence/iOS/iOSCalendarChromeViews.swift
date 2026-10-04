@@ -55,15 +55,26 @@ struct iOSCalendarToolbar: View {
 
     private let calendar = Calendar.current
 
+    private var isRegularWidth: Bool { horizontalSizeClass == .regular }
+
+    /// The phone draws the mode switcher at `.compact` density. See `iOSSegmentedPillDensity` for
+    /// what that is worth in points and `iOSCalendarToolbarMetrics.titleCompactMinWidth` for the
+    /// other half of the arithmetic — together they are what lets `ViewThatFits` below accept the
+    /// single row on an iPhone, which is where this control belongs: beside the date it changes the
+    /// reading of, not on a row of its own under it.
+    private var pillDensity: iOSSegmentedPillDensity {
+        isRegularWidth ? .standard : .compact
+    }
+
     private var headerMetrics: CadencePageHeaderMetrics {
-        CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: horizontalSizeClass == .regular)
+        CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegularWidth)
     }
 
     var body: some View {
         toolbar
             .padding(
                 .horizontal,
-                iOSCalendarPageMetrics.horizontalPadding(isRegularWidth: horizontalSizeClass == .regular)
+                iOSCalendarPageMetrics.horizontalPadding(isRegularWidth: isRegularWidth)
             )
             .padding(.vertical, iOSCalendarToolbarMetrics.verticalPadding)
             .background(Theme.surface)
@@ -84,6 +95,14 @@ struct iOSCalendarToolbar: View {
     /// had no fitting layout, so the mode group was compressed to `iOSSegmentedPill`'s 58pt
     /// `minWidth` and "Week", "Month" and "Board" all rendered as a bare "…". A chooser whose options
     /// are indistinguishable is worse than one that has wrapped, so the fallback wraps.
+    ///
+    /// **The phone reaches the single row now, and that was a sizing fix rather than a layout one.**
+    /// Asking the question once was already right; the phone simply never fitted, because the row
+    /// was measured with the iPad's 208pt title floor and the iPad's `.standard` pill density —
+    /// 454pt of demand against 361pt of iPhone row. `titleCompactMinWidth` and
+    /// `iOSSegmentedPillDensity.compact` bring that to about 313, so the first child is accepted and
+    /// the wrapped fallback goes back to being what it was written as: the answer for a pane too
+    /// narrow for either, at whichever width that turns out to be.
     private var toolbar: some View {
         ViewThatFits(in: .horizontal) {
             // One single-row option, not two. There used to be a wider one that also carried the
@@ -170,8 +189,8 @@ struct iOSCalendarToolbar: View {
             dateTitle
         }
         .frame(
-            minWidth: iOSCalendarToolbarMetrics.titleMinWidth,
-            idealWidth: iOSCalendarToolbarMetrics.titleIdealWidth,
+            minWidth: iOSCalendarToolbarMetrics.titleMinWidth(isRegularWidth: isRegularWidth),
+            idealWidth: iOSCalendarToolbarMetrics.titleIdealWidth(isRegularWidth: isRegularWidth),
             maxWidth: iOSCalendarToolbarMetrics.titleMaxWidth,
             alignment: .leading
         )
@@ -216,7 +235,7 @@ struct iOSCalendarToolbar: View {
     }
 
     private var modeControl: some View {
-        iOSSegmentedPillGroup {
+        iOSSegmentedPillGroup(density: pillDensity) {
             ForEach(CadenceCalendarViewMode.pickerCases, id: \.self) { mode in
                 iOSSegmentedPill(
                     title: mode.rawValue,
