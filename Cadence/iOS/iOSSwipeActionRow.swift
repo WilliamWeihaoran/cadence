@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 
 /// Keeps at most one row open across the whole app.
 ///
@@ -49,14 +50,6 @@ struct iOSSwipeActionsModifier: ViewModifier {
     let trailingActions: [CadenceSwipeAction]
     var metrics: CadenceSwipeActionMetrics = .standard
 
-    /// Which axis this drag turned out to be. Undecided until the translation is unambiguous, so
-    /// the row never claims a gesture the enclosing scroll view should have had.
-    private enum DragClaim {
-        case undecided
-        case horizontal
-        case vertical
-    }
-
     @State private var rowID = UUID()
     /// The finger's travel, uncapped. Thresholds read this rather than the drawn offset because
     /// the drawn offset is deliberately rubber-band-capped and would put a full swipe out of reach.
@@ -65,7 +58,6 @@ struct iOSSwipeActionsModifier: ViewModifier {
     @State private var offset: CGFloat = 0
     @State private var restingOffset: CGFloat = 0
     @State private var rowWidth: CGFloat = 0
-    @State private var claim: DragClaim = .undecided
     @State private var isFullSwipeArmed = false
 
     func body(content: Content) -> some View {
@@ -109,21 +101,37 @@ struct iOSSwipeActionsModifier: ViewModifier {
             }
         }
         .clipped()
-        // `.highPriorityGesture`: outrank the row's **own** controls, never the scroll view above.
+        // **A `DragGesture` here cannot give a vertical drag back, so there is no `DragGesture`
+        // here any more** (T-2059). Measured on the simulator 2026-10-04: one upward 168pt drag
+        // starting on a row scrolled the page when its opening sample was dead vertical and
+        // scrolled *nothing at all* when the same path opened with 14pt of sideways travel. That
+        // is the owner's "scrolling in the tasks page sometimes doesn't work", and the
+        // intermittence is just whether the first few points of a thumb's arc happen to be
+        // straight. Every SwiftUI-side lever was ruled out by its own build: `.highPriorityGesture`,
+        // `.simultaneousGesture` and `minimumDistance: 30` all stayed dead, and the page scrolled
+        // again only when the drag gesture itself was switched off. Returning early out of
+        // `onChanged` does not hand the touch back, and neither does deciding the drag is vertical:
+        // by then the enclosing `ScrollView`'s pan has already stood down for this touch.
         //
-        // `.simultaneousGesture` was the obvious choice and shipped a real bug — a swipe begun on
-        // the completion circle *completed the task*. The button stays tracking under a
-        // simultaneous drag, and because it rides along with the offset content it never sees the
-        // finger leave its bounds, so it fired on release 190pt from where it started. Gating the
-        // content's `allowsHitTesting` on the claim did not help: hit testing is resolved at
-        // touch-down, and the button had already taken the touch. Both verified on device.
+        // A `UIGestureRecognizer` can say the one thing `DragGesture` cannot — *I refuse this
+        // touch* — while it is still `.possible`, which is before the scroll view is asked to give
+        // way. So the axis test moved into `iOSRowHorizontalPanRecognizer`, where it is enforceable,
+        // and a vertical drag now scrolls exactly as if this row carried no gesture.
         //
-        // High priority denies descendants the gesture outright, which is the semantic actually
-        // wanted here. It does not contest the enclosing `ScrollView`/`List` pan — that is a
-        // separate arbitration — and `minimumDistance` means a plain tap never reaches this
-        // gesture at all, so the completion circle and the row's detail tap still work. Vertical
-        // scrolling was re-verified on Today, Inbox, and All Tasks after this change.
-        .highPriorityGesture(dragGesture)
+        // This also keeps the bug the old `.simultaneousGesture` shipped from coming back: a swipe
+        // begun on the completion circle *completed the task*, because the button stayed tracking
+        // and rode along with the offset content so it never saw the finger leave. A UIKit
+        // recognizer cancels the touches it takes over (`cancelsTouchesInView`), so the button
+        // stops tracking the moment the swipe is claimed — and a plain tap never reaches the
+        // decision distance, so tapping the circle and tapping the row still work.
+        .gesture(
+            iOSRowHorizontalPan(
+                metrics: metrics,
+                onChanged: { dragChanged(translation: $0) },
+                onEnded: { dragEnded(translation: $0, velocity: $1) },
+                onCancelled: { dragCancelled() }
+            )
+        )
     }
 
     // MARK: - Tray
@@ -204,63 +212,61 @@ struct iOSSwipeActionsModifier: ViewModifier {
 
     // MARK: - Gesture
 
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .onChanged { value in
-                if claim == .undecided {
-                    if CadenceSwipeActionSupport.isHorizontal(translation: value.translation, metrics: metrics) {
-                        claim = .horizontal
-                    } else if abs(value.translation.height) > abs(value.translation.width) {
-                        claim = .vertical
-                    }
-                }
-                guard claim == .horizontal else { return }
+    /// Only ever called for a drag the recognizer has already decided is horizontal.
+    private func dragChanged(translation: CGSize) {
+        // Always recomputed from `restingOffset`, which only `open`/`close` ever write.
+        // That makes an interrupted drag self-healing: whatever offset it stranded, the
+        // next drag snaps back to a settled position instead of accumulating drift.
+        let raw = restingOffset + translation.width
+        rawOffset = raw
+        offset = CadenceSwipeActionSupport.resolvedOffset(
+            rawOffset: raw,
+            leadingActionCount: leadingActions.count,
+            trailingActionCount: trailingActions.count,
+            metrics: metrics
+        )
+        isFullSwipeArmed = CadenceSwipeActionSupport.isFullSwipeArmed(
+            rawOffset: raw,
+            rowWidth: rowWidth,
+            leadingActionCount: leadingActions.count,
+            trailingActionCount: trailingActions.count,
+            leadingIsDestructive: leadingActions.map(\.isDestructive),
+            trailingIsDestructive: trailingActions.map(\.isDestructive),
+            metrics: metrics
+        )
+    }
 
-                // Always recomputed from `restingOffset`, which only `open`/`close` ever write.
-                // That makes an interrupted drag self-healing: whatever offset it stranded, the
-                // next drag snaps back to a settled position instead of accumulating drift.
-                let raw = restingOffset + value.translation.width
-                rawOffset = raw
-                offset = CadenceSwipeActionSupport.resolvedOffset(
-                    rawOffset: raw,
-                    leadingActionCount: leadingActions.count,
-                    trailingActionCount: trailingActions.count,
-                    metrics: metrics
-                )
-                isFullSwipeArmed = CadenceSwipeActionSupport.isFullSwipeArmed(
-                    rawOffset: raw,
-                    rowWidth: rowWidth,
-                    leadingActionCount: leadingActions.count,
-                    trailingActionCount: trailingActions.count,
-                    leadingIsDestructive: leadingActions.map(\.isDestructive),
-                    trailingIsDestructive: trailingActions.map(\.isDestructive),
-                    metrics: metrics
-                )
-            }
-            .onEnded { value in
-                defer { claim = .undecided }
-                guard claim == .horizontal else { return }
+    private func dragEnded(translation: CGSize, velocity: CGFloat) {
+        let outcome = CadenceSwipeActionSupport.release(
+            rawOffset: restingOffset + translation.width,
+            velocity: velocity,
+            rowWidth: rowWidth,
+            leadingActionCount: leadingActions.count,
+            trailingActionCount: trailingActions.count,
+            leadingIsDestructive: leadingActions.map(\.isDestructive),
+            trailingIsDestructive: trailingActions.map(\.isDestructive),
+            metrics: metrics
+        )
 
-                let outcome = CadenceSwipeActionSupport.release(
-                    rawOffset: restingOffset + value.translation.width,
-                    velocity: value.velocity.width,
-                    rowWidth: rowWidth,
-                    leadingActionCount: leadingActions.count,
-                    trailingActionCount: trailingActions.count,
-                    leadingIsDestructive: leadingActions.map(\.isDestructive),
-                    trailingIsDestructive: trailingActions.map(\.isDestructive),
-                    metrics: metrics
-                )
+        switch outcome {
+        case .closed:
+            close()
+        case .open(let edge):
+            open(edge)
+        case .fullSwipe(let edge):
+            commitFullSwipe(edge)
+        }
+    }
 
-                switch outcome {
-                case .closed:
-                    close()
-                case .open(let edge):
-                    open(edge)
-                case .fullSwipe(let edge):
-                    commitFullSwipe(edge)
-                }
-            }
+    /// A cancelled drag never reaches `dragEnded`, so without this the row would keep whatever
+    /// half-revealed offset the interruption stranded it at. Settling on `restingOffset` — the
+    /// only value `open`/`close` ever write — puts it back on a position the row actually has.
+    private func dragCancelled() {
+        guard restingOffset != 0 else {
+            close()
+            return
+        }
+        open(restingOffset > 0 ? .leading : .trailing)
     }
 
     // MARK: - State transitions
@@ -305,6 +311,170 @@ struct iOSSwipeActionsModifier: ViewModifier {
     private func perform(_ action: CadenceSwipeAction) {
         close()
         action.perform()
+    }
+}
+
+/// The axis arbitration, in the one place it can be enforced.
+///
+/// `DragGesture` has no way to decline a touch: by the time its `onChanged` can look at the
+/// translation, the enclosing `ScrollView` has already given the touch up for good. A
+/// `UIGestureRecognizer` fails itself while it is still `.possible`, which the scroll view's own
+/// pan treats as "never happened" — so a vertical drag over a row scrolls the page.
+///
+/// It holds no geometry of its own: the direction test is
+/// `CadenceSwipeActionSupport.isHorizontal`, the same function the macOS-built `CadenceTests`
+/// target already pins, so the threshold has exactly one definition.
+final class iOSRowHorizontalPanRecognizer: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    /// The finger's travel since touch-down, in this row's own coordinates.
+    private(set) var translation: CGSize = .zero
+    /// Horizontal speed in points per second, which is what `release` arbitrates a flick on.
+    private(set) var horizontalVelocity: CGFloat = 0
+
+    var metrics: CadenceSwipeActionMetrics = .standard
+
+    private var startLocation: CGPoint = .zero
+    private var lastLocation: CGPoint = .zero
+    private var lastTimestamp: TimeInterval = 0
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        // The arbitration this recognizer needs is not the same against the scroll view as against
+        // the row's own controls, and both halves were measured rather than assumed.
+        delegate = self
+    }
+
+    /// The scroll view's pan must keep tracking while this recognizer is still undecided —
+    /// that is the whole point of failing from `.possible` — but the row's own controls must not.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        other is UIPanGestureRecognizer
+    }
+
+    /// **A swipe begun on a chip must be a swipe.** Measured: with no relationship at all, an
+    /// identical 260pt swipe left committed the full swipe from the row's text and was *ignored*
+    /// from the "45m" estimate chip — which sits at the trailing edge, exactly where a
+    /// right-to-left swipe starts. Letting the two recognize simultaneously fixed that and
+    /// re-opened the bug this container was built to close: the swipe opened the tray *and* the
+    /// chip's popover. So the control waits for this recognizer instead. On a tap there is no
+    /// movement, this fails at touch-up, and the control fires as it always did.
+    ///
+    /// The scroll view is exempt: making a vertical pan wait on a row would undo the fix above.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldBeRequiredToFailBy other: UIGestureRecognizer
+    ) -> Bool {
+        !(other is UIPanGestureRecognizer)
+    }
+
+    override func reset() {
+        super.reset()
+        translation = .zero
+        horizontalVelocity = 0
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        guard numberOfTouches == 1, let touch = touches.first else {
+            // A second finger is a pinch or a system gesture, never a row swipe.
+            state = .failed
+            return
+        }
+        startLocation = touch.location(in: view)
+        lastLocation = startLocation
+        lastTimestamp = touch.timestamp
+        translation = .zero
+        horizontalVelocity = 0
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesMoved(touches, with: event)
+        guard let touch = touches.first else { return }
+
+        let location = touch.location(in: view)
+        translation = CGSize(
+            width: location.x - startLocation.x,
+            height: location.y - startLocation.y
+        )
+
+        let elapsed = touch.timestamp - lastTimestamp
+        if elapsed > 0 {
+            horizontalVelocity = (location.x - lastLocation.x) / CGFloat(elapsed)
+        }
+        lastLocation = location
+        lastTimestamp = touch.timestamp
+
+        switch state {
+        case .possible:
+            // The decision itself is `CadenceSwipeActionSupport.axisClaim`, where the macOS-built
+            // test target can reach it. All this adds is the thing only a UIKit recognizer can do:
+            // `.failed` from `.possible` never asks the scroll view's pan to stand down, so a drag
+            // this row declines scrolls the page as if the row carried no gesture at all.
+            switch CadenceSwipeActionSupport.axisClaim(translation: translation, metrics: metrics) {
+            case .horizontal: state = .began
+            case .vertical: state = .failed
+            case .undecided: break
+            }
+        case .began, .changed:
+            state = .changed
+        default:
+            break
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesEnded(touches, with: event)
+        state = (state == .began || state == .changed) ? .ended : .failed
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesCancelled(touches, with: event)
+        state = .cancelled
+    }
+}
+
+/// Bridges `iOSRowHorizontalPanRecognizer` into the row. `.gesture` is the only priority this
+/// bridge offers and it is the right one: UIKit arbitration, not SwiftUI's, is what decides
+/// between this recognizer and the row's own controls.
+private struct iOSRowHorizontalPan: UIGestureRecognizerRepresentable {
+    typealias UIGestureRecognizerType = iOSRowHorizontalPanRecognizer
+    typealias Coordinator = Void
+
+    var metrics: CadenceSwipeActionMetrics
+    var onChanged: (CGSize) -> Void
+    var onEnded: (CGSize, CGFloat) -> Void
+    var onCancelled: () -> Void
+
+    func makeUIGestureRecognizer(
+        context: UIGestureRecognizerRepresentableContext<iOSRowHorizontalPan>
+    ) -> iOSRowHorizontalPanRecognizer {
+        let recognizer = iOSRowHorizontalPanRecognizer()
+        recognizer.metrics = metrics
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(
+        _ recognizer: iOSRowHorizontalPanRecognizer,
+        context: UIGestureRecognizerRepresentableContext<iOSRowHorizontalPan>
+    ) {
+        recognizer.metrics = metrics
+    }
+
+    func handleUIGestureRecognizerAction(
+        _ recognizer: iOSRowHorizontalPanRecognizer,
+        context: UIGestureRecognizerRepresentableContext<iOSRowHorizontalPan>
+    ) {
+        switch recognizer.state {
+        case .began, .changed:
+            onChanged(recognizer.translation)
+        case .ended:
+            onEnded(recognizer.translation, recognizer.horizontalVelocity)
+        case .cancelled, .failed:
+            onCancelled()
+        default:
+            break
+        }
     }
 }
 

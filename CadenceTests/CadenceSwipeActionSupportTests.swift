@@ -245,6 +245,45 @@ struct CadenceSwipeActionSupportTests {
         #expect(CadenceSwipeActionSupport.isHorizontal(translation: CGSize(width: 0, height: 0), metrics: metrics) == false)
     }
 
+    @Test func aDragIsUndecidedUntilOneAxisHasTravelledFarEnough() {
+        // The row draws nothing while this lasts, and on iOS the recognizer stays `.possible`,
+        // which is what leaves the scroll view free to take the drag if it turns out to be one.
+        #expect(CadenceSwipeActionSupport.axisClaim(translation: CGSize(width: 14, height: 0), metrics: metrics) == .undecided)
+        #expect(CadenceSwipeActionSupport.axisClaim(translation: CGSize(width: 16, height: -8), metrics: metrics) == .undecided)
+        #expect(CadenceSwipeActionSupport.axisClaim(translation: CGSize(width: 0, height: 0), metrics: metrics) == .undecided)
+    }
+
+    @Test func aThumbArcThatOpensSidewaysAndThenGoesUpIsAScroll() {
+        // T-2059, and these are the measured samples of the drag the owner reported: 14pt sideways
+        // and then straight up the page. Reading the axis at the old 12pt threshold called this
+        // horizontal and the page would not scroll at all. The control is the SAME opening
+        // translation continuing sideways instead, which must still be a swipe — otherwise this
+        // test would pass with the row simply never claiming anything.
+        #expect(CadenceSwipeActionSupport.axisClaim(translation: CGSize(width: 16, height: -30), metrics: metrics) == .vertical)
+        #expect(CadenceSwipeActionSupport.axisClaim(translation: CGSize(width: 16, height: -168), metrics: metrics) == .vertical)
+        #expect(CadenceSwipeActionSupport.axisClaim(translation: CGSize(width: 60, height: -8), metrics: metrics) == .horizontal)
+    }
+
+    @Test func theRatioDecidesTheDirectionAndTheDistanceOnlyDecidesWhen() {
+        // Both of these have travelled past the claim distance on both axes, so the distance
+        // cannot be what separates them; the ratio is. `(60, -40)` clears 1.4 and stays a swipe
+        // however far up the page it has also gone, and `(40, -40)` does not and is a scroll.
+        let swipe = CGSize(width: 60, height: -40)
+        let scroll = CGSize(width: 40, height: -40)
+        #expect(CadenceSwipeActionSupport.isHorizontal(translation: swipe, metrics: metrics))
+        #expect(CadenceSwipeActionSupport.isHorizontal(translation: scroll, metrics: metrics) == false)
+        #expect(CadenceSwipeActionSupport.axisClaim(translation: swipe, metrics: metrics) == .horizontal)
+        #expect(CadenceSwipeActionSupport.axisClaim(translation: scroll, metrics: metrics) == .vertical)
+    }
+
+    @Test func theClaimDistanceIsFarEnoughPastTheNoiseAndWellInsideAnOpenSwipe() {
+        // A relation, not a pinned number: the axis must be read on more travel than the 12pt the
+        // old gesture used, and on less than it takes to open a single action — otherwise a real
+        // swipe would commit before the row had agreed it was one.
+        #expect(metrics.claimDistance > 12)
+        #expect(metrics.claimDistance < CadenceSwipeActionSupport.openWidth(actionCount: 1, metrics: metrics))
+    }
+
     // MARK: - Helpers
 
     private func releaseLeading(rawOffset: CGFloat, velocity: CGFloat) -> CadenceSwipeRelease {

@@ -26,6 +26,15 @@ nonisolated enum CadenceSwipeEdge: Equatable, Hashable {
     }
 }
 
+/// What a drag in progress has turned out to be. `undecided` is not a failure: it is the state a
+/// drag is in before either axis has travelled far enough to mean anything, and the row draws
+/// nothing while it lasts.
+nonisolated enum CadenceSwipeAxisClaim: Equatable {
+    case undecided
+    case horizontal
+    case vertical
+}
+
 /// What releasing the finger means. Kept separate from "which edge is open" because a full swipe
 /// is a one-shot commit, not a resting state.
 nonisolated enum CadenceSwipeRelease: Equatable {
@@ -88,6 +97,15 @@ nonisolated struct CadenceSwipeActionMetrics: Equatable {
     /// How much more horizontal than vertical a drag has to be before the row claims it. Anything
     /// flatter than this belongs to the enclosing scroll view.
     var horizontalClaimRatio: CGFloat = 1.4
+    /// How far the finger has to travel **along one axis** before that axis may claim the drag.
+    ///
+    /// The ratio above is only half the arbitration; this is the other half, and it is the one the
+    /// owner's "scrolling sometimes doesn't work" turned on (T-2059). A thumb swiping up the page
+    /// pivots at its base, so the opening points of its arc are sideways even though the gesture is
+    /// a scroll: read the axis at 12pt and that drag is *horizontal*, read it at 24 and it is
+    /// vertical, and only the second reading is what the user meant. A deliberate swipe travels
+    /// 76pt to open a single action, so waiting for 24 costs it nothing.
+    var claimDistance: CGFloat = 24
 
     static let standard = CadenceSwipeActionMetrics()
 }
@@ -248,6 +266,35 @@ nonisolated enum CadenceSwipeActionSupport {
     }
 
     // MARK: - Gesture arbitration
+
+    /// The whole axis decision: which way a drag has turned out to go, or that it is still too
+    /// short to say.
+    ///
+    /// **`horizontalClaimRatio` decides the direction; `claimDistance` decides when.** The two
+    /// branches below are mutually exclusive — they disagree about nothing, because both read the
+    /// same ratio — and each waits only on the axis it is about. That is the part a single radius
+    /// gets wrong: a radius reads the direction at whatever angle the finger happened to be at
+    /// when it crossed the circle, which for an arcing thumb is its sideways opening rather than
+    /// its intent, and 12pt of circle is nearly all opening.
+    ///
+    /// Note what this does **not** say: a drag that is horizontal by the ratio stays horizontal
+    /// however far up the page it has also travelled. `(60, -40)` is a swipe. A test asserting
+    /// otherwise was written here first and was wrong — the measured behaviour is this one.
+    ///
+    /// `vertical` and `undecided` both mean *the row does not take this touch*, and on iOS that
+    /// distinction is enforced by `iOSRowHorizontalPanRecognizer` failing while it is still
+    /// `.possible`. A SwiftUI `DragGesture` cannot express it: measured 2026-10-04, by the time its
+    /// `onChanged` can look at the translation the enclosing `ScrollView` has already given the
+    /// touch up for the rest of the gesture, at every gesture priority.
+    static func axisClaim(
+        translation: CGSize,
+        metrics: CadenceSwipeActionMetrics = .standard
+    ) -> CadenceSwipeAxisClaim {
+        let horizontal = isHorizontal(translation: translation, metrics: metrics)
+        if abs(translation.height) >= metrics.claimDistance, !horizontal { return .vertical }
+        if abs(translation.width) >= metrics.claimDistance, horizontal { return .horizontal }
+        return .undecided
+    }
 
     /// Whether a drag is horizontal enough for the row to claim it. Everything else is handed back
     /// to the enclosing `ScrollView`/`List`, which is what keeps vertical scrolling alive.
