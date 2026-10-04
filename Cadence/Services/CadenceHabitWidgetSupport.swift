@@ -86,7 +86,8 @@ nonisolated enum CadenceHabitWidgetSupport {
         recentCompletionStates: [UUID: Bool]? = nil
     ) -> CadenceHabitWidgetSnapshot {
         let todayKey = CadenceWidgetDateSupport.dateKey(from: today)
-        let recentStates = recentCompletionStates ?? CadenceWidgetRefreshCenter.recentHabitCompletionStates()
+        let recentStates = recentCompletionStates
+            ?? CadenceWidgetRefreshCenter.recentHabitCompletionStates(dateKey: todayKey)
         let dueHabits = dueHabits(
             from: habits,
             today: today,

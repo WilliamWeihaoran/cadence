@@ -21,7 +21,7 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
         completion(
             MilestoneMomentumWidgetEntry(
                 date: Date(),
-                snapshot: currentSnapshot()
+                snapshot: currentSnapshot(for: context.family)
             )
         )
     }
@@ -29,7 +29,7 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
     func getTimeline(in context: TimelineProviderContext, completion: @escaping (Timeline<MilestoneMomentumWidgetEntry>) -> Void) {
         let entry = MilestoneMomentumWidgetEntry(
             date: Date(),
-            snapshot: currentSnapshot()
+            snapshot: currentSnapshot(for: context.family)
         )
         completion(
             Timeline(
@@ -62,7 +62,7 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
     /// three providers. `CadenceMilestoneWidgetSupport`'s contribution traversal is the fanout the
     /// audit points at, and it is now timed as this record's `derive` stage instead of being folded
     /// into a total that said only that the generation happened.
-    private func currentSnapshot() -> CadenceMilestoneWidgetSnapshot {
+    private func currentSnapshot(for family: WidgetFamily) -> CadenceMilestoneWidgetSnapshot {
         let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.milestoneWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
@@ -78,7 +78,7 @@ struct MilestoneMomentumWidgetProvider: TimelineProvider {
             )
             probe.recordGeneration(
                 outcome: snapshot.state == .empty ? .empty : .ready,
-                renderedCount: snapshot.visibleGoals.count,
+                renderedCount: min(snapshot.visibleGoals.count, family.cadenceLayout.milestoneGoalLimit),
                 sourceSnapshotAt: snapshot.date
             )
             return snapshot
@@ -172,7 +172,7 @@ struct MilestoneMomentumWidgetView: View {
                 emptyState
             } else {
                 VStack(spacing: scale.compactSectionSpacing) {
-                    ForEach(entry.snapshot.visibleGoals.prefix(3)) { goal in
+                    ForEach(entry.snapshot.visibleGoals.prefix(widgetFamily.cadenceLayout.milestoneGoalLimit)) { goal in
                         goalRow(goal, compact: false)
                     }
                 }
@@ -193,7 +193,7 @@ struct MilestoneMomentumWidgetView: View {
                 }
 
                 VStack(spacing: scale.compactSectionSpacing) {
-                    ForEach(entry.snapshot.visibleGoals.dropFirst()) { goal in
+                    ForEach(entry.snapshot.visibleGoals.prefix(widgetFamily.cadenceLayout.milestoneGoalLimit).dropFirst()) { goal in
                         goalRow(goal, compact: true)
                     }
                 }
@@ -222,7 +222,7 @@ struct MilestoneMomentumWidgetView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     VStack(spacing: scale.compactSectionSpacing) {
-                        ForEach(entry.snapshot.visibleGoals.dropFirst()) { goal in
+                        ForEach(entry.snapshot.visibleGoals.prefix(widgetFamily.cadenceLayout.milestoneGoalLimit).dropFirst()) { goal in
                             goalRow(goal, compact: true)
                         }
                     }

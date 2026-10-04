@@ -22,7 +22,7 @@ struct HabitCheckInWidgetProvider: TimelineProvider {
         completion(
             HabitCheckInWidgetEntry(
                 date: Date(),
-                snapshot: currentSnapshot()
+                snapshot: currentSnapshot(for: context.family)
             )
         )
     }
@@ -30,7 +30,7 @@ struct HabitCheckInWidgetProvider: TimelineProvider {
     func getTimeline(in context: TimelineProviderContext, completion: @escaping (Timeline<HabitCheckInWidgetEntry>) -> Void) {
         let entry = HabitCheckInWidgetEntry(
             date: Date(),
-            snapshot: currentSnapshot()
+            snapshot: currentSnapshot(for: context.family)
         )
         completion(
             Timeline(
@@ -68,7 +68,7 @@ struct HabitCheckInWidgetProvider: TimelineProvider {
     /// records now say how much of a generation was the store and how much was the filtering —
     /// which they could not while the support type was outside T-1366's file ownership and the two
     /// stages were absent rather than measured.
-    private func currentSnapshot() -> CadenceHabitWidgetSnapshot {
+    private func currentSnapshot(for family: WidgetFamily) -> CadenceHabitWidgetSnapshot {
         let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.habitWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
@@ -79,7 +79,7 @@ struct HabitCheckInWidgetProvider: TimelineProvider {
             let modelContext = ModelContext(container)
             let snapshot = try CadenceHabitWidgetSupport.snapshot(
                 modelContext: modelContext,
-                limit: 8,
+                limit: family.cadenceLayout.habitLimit,
                 probe: probe
             )
             probe.recordGeneration(
@@ -126,6 +126,7 @@ struct CadenceHabitCheckInWidget: Widget {
         .configurationDisplayName("Habit Check-In")
         .description("Tap habits to log today's check-ins without opening Cadence.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 
@@ -147,6 +148,7 @@ struct HabitCheckInWidgetView: View {
             }
         }
         .cadenceWidgetBackground(accent: Theme.green)
+        .widgetURL(entry.snapshot.habitsURL)
     }
 
     private var smallLayout: some View {
@@ -158,7 +160,7 @@ struct HabitCheckInWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                habitGrid(columns: 2, cellCount: 4, compact: true)
+                habitGrid(compact: true)
             }
         }
         .padding(scale.outerPadding)
@@ -173,11 +175,7 @@ struct HabitCheckInWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                HStack(alignment: .top, spacing: scale.sectionSpacing) {
-                    habitGrid(columns: 3, cellCount: 6, compact: false)
-                    summaryRail
-                        .frame(width: 98)
-                }
+                habitGrid(compact: false)
             }
         }
         .padding(scale.outerPadding)
@@ -192,17 +190,8 @@ struct HabitCheckInWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                HStack(alignment: .top, spacing: scale.sectionSpacing) {
-                    habitGrid(columns: 4, cellCount: 8, compact: false)
-
-                    VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
-                        CadenceWidgetMetricCard(title: "Done", value: "\(entry.snapshot.doneCount)")
-                        CadenceWidgetMetricCard(title: "Open", value: "\(entry.snapshot.openCount)")
-                        CadenceWidgetMetricCard(title: "Due", value: "\(entry.snapshot.totalDueCount)")
-                        CadenceWidgetFooterLink(label: "Open Habits", url: entry.snapshot.habitsURL)
-                    }
-                    .frame(width: 108, alignment: .topLeading)
-                }
+                habitGrid(compact: false)
+                CadenceWidgetFooterLink(label: "Open Habits", url: entry.snapshot.habitsURL)
             }
         }
         .padding(scale.outerPadding)
@@ -229,18 +218,10 @@ struct HabitCheckInWidgetView: View {
         }
     }
 
-    private var summaryRail: some View {
-        VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
-            CadenceWidgetMetricCard(title: "Checked in", value: "\(entry.snapshot.doneCount)")
-            CadenceWidgetMetricCard(title: "Left today", value: "\(entry.snapshot.openCount)")
-            CadenceWidgetMetricCard(title: "Due habits", value: "\(entry.snapshot.totalDueCount)")
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
-
-    private func habitGrid(columns: Int, cellCount: Int, compact: Bool) -> some View {
-        let items = paddedHabits(count: cellCount)
-        let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: max(columns, 1))
+    private func habitGrid(compact: Bool) -> some View {
+        let layout = widgetFamily.cadenceLayout
+        let items = paddedHabits(count: layout.habitLimit)
+        let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: layout.habitColumns)
 
         return LazyVGrid(columns: gridColumns, spacing: 6) {
             ForEach(items.indices, id: \.self) { index in

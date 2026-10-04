@@ -21,7 +21,7 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
         completion(
             CalendarSnapshotWidgetEntry(
                 date: Date(),
-                snapshot: currentSnapshot()
+                snapshot: currentSnapshot(for: context.family)
             )
         )
     }
@@ -29,7 +29,7 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
     func getTimeline(in context: TimelineProviderContext, completion: @escaping (Timeline<CalendarSnapshotWidgetEntry>) -> Void) {
         let entry = CalendarSnapshotWidgetEntry(
             date: Date(),
-            snapshot: currentSnapshot()
+            snapshot: currentSnapshot(for: context.family)
         )
         completion(
             Timeline(
@@ -70,13 +70,13 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
     }
 
     /// Instrumented for [[T-1366]]; see `TodayTasksWidgetProvider` for what the probe records and
-    /// why it is off until the app group says otherwise. `renderedCount` here is the day strip,
-    /// which is a fixed 14 — the number worth watching on this widget is `rowsFetched`, which is
+    /// why it is off until the app group says otherwise. `renderedCount` is the family-sized day
+    /// strip, not the full 14-day snapshot. `rowsFetched` is
     /// where the cost was: this fetch carried no predicate until [[T-1366]]'s sweep measured what
     /// the rows it could not use were costing, and it now materialises the dated open population
     /// alone. `CadenceCalendarWidgetSupport.snapshot(modelContext:dayCount:probe:)` carries the
     /// numbers and the equivalence argument.
-    private func currentSnapshot() -> CadenceCalendarWidgetSnapshot {
+    private func currentSnapshot(for family: WidgetFamily) -> CadenceCalendarWidgetSnapshot {
         let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.calendarWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
@@ -92,7 +92,8 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
             )
             probe.recordGeneration(
                 outcome: snapshot.state == .empty ? .empty : .ready,
-                renderedCount: snapshot.days.count,
+                renderedCount: snapshot.state == .ready
+                    ? min(snapshot.days.count, family.cadenceLayout.calendarDayLimit) : 0,
                 sourceSnapshotAt: snapshot.date
             )
             return snapshot
@@ -137,6 +138,7 @@ struct CalendarSnapshotWidgetView: View {
             }
         }
         .cadenceWidgetBackground(accent: Theme.blue, anchor: .bottomTrailing)
+        .widgetURL(entry.snapshot.calendarURL)
     }
 
     private var smallLayout: some View {
@@ -147,7 +149,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                dayStrip(days: Array(entry.snapshot.days.prefix(3)), compact: true)
+                dayStrip(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)), compact: true)
                 agendaLabel
             }
         }
@@ -162,7 +164,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                dayStrip(days: Array(entry.snapshot.days.prefix(6)), compact: false)
+                dayStrip(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)), compact: false)
                 HStack(spacing: scale.compactSectionSpacing) {
                     CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
                     CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
@@ -181,7 +183,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                twoWeekGrid(days: Array(entry.snapshot.days.prefix(14)))
+                twoWeekGrid(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)))
                 HStack(spacing: scale.compactSectionSpacing) {
                     CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
                     CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
@@ -202,7 +204,7 @@ struct CalendarSnapshotWidgetView: View {
                 emptyState
             } else {
                 HStack(alignment: .top, spacing: scale.sectionSpacing) {
-                    twoWeekGrid(days: Array(entry.snapshot.days.prefix(14)))
+                    twoWeekGrid(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)))
                         .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
                         agendaPanel

@@ -44,19 +44,69 @@ nonisolated struct CadenceMCPAuditLogger: Sendable {
         }
     }
 
-    /// The audit log newest-first, paged rather than silently windowed.
-    ///
-    /// The window itself is unchanged — newest `limit` entries, newest first. What is new is that
-    /// the response says how many entries the log actually holds, so a caller that asked for 50
-    /// and received 50 can tell a complete log from a tail. Lines are counted before any decoding
-    /// and only the paged slice is decoded, so the total costs a scan, not a parse.
+    /// Exact totals still cost a scan, but memory is bounded by a chunk, one line and the page.
+    /// Capture EOF once so an append between the count and page passes cannot shift the page.
     static func recentEntries(limit: Int, offset: Int = 0, logURL: URL) throws -> CadencePage<CadenceMCPAuditEntry> {
         guard FileManager.default.fileExists(atPath: logURL.path) else { return .empty(offset: max(offset, 0)) }
-        let content = try String(contentsOf: logURL, encoding: .utf8)
-        let decoder = JSONDecoder()
-        let newestFirst = Array(content.split(separator: "\n").reversed())
-        return try CadencePage.paging(newestFirst, offset: offset, limit: limit) { line in
-            try decoder.decode(CadenceMCPAuditEntry.self, from: Data(line.utf8))
+        let handle = try FileHandle(forReadingFrom: logURL)
+        defer { try? handle.close() }
+        let endOfFile = try handle.seekToEnd()
+        var totalCount = 0
+        try scanLines(in: handle, through: endOfFile) { line in
+            guard String(data: line, encoding: .utf8) != nil else {
+                throw CocoaError(.fileReadInapplicableStringEncoding)
+            }
+            totalCount += 1
         }
+
+        let start = min(max(offset, 0), totalCount)
+        let end = start + min(CadenceMCPServiceSupport.cappedLimit(limit), totalCount - start)
+        let selected = (totalCount - end)..<(totalCount - start)
+        let decoder = JSONDecoder()
+        var items: [CadenceMCPAuditEntry] = []
+        if !selected.isEmpty {
+            var index = 0
+            try scanLines(in: handle, through: endOfFile) { line in
+                if selected.contains(index) {
+                    items.append(try decoder.decode(CadenceMCPAuditEntry.self, from: line))
+                }
+                index += 1
+            }
+        }
+        return CadencePage(
+            items: items.reversed(), offset: start, returnedCount: items.count,
+            totalCount: totalCount, hasMore: end < totalCount,
+            nextOffset: end < totalCount ? end : nil
+        )
+    }
+
+    private static func scanLines(
+        in handle: FileHandle,
+        through endOfFile: UInt64,
+        visit: (Data) throws -> Void
+    ) throws {
+        try handle.seek(toOffset: 0)
+        var remaining = endOfFile
+        var line = Data()
+        while remaining > 0 {
+            var chunk = try handle.read(upToCount: Int(min(remaining, 64 * 1024))) ?? Data()
+            guard !chunk.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+            let firstChunk = remaining == endOfFile
+            remaining -= UInt64(chunk.count)
+            // Foundation's UTF-8 file reader consumes an initial BOM, including a BOM-only file.
+            if firstChunk, chunk.starts(with: [0xEF, 0xBB, 0xBF]) { chunk.removeFirst(3) }
+            var fragmentStart = chunk.startIndex
+            for index in chunk.indices where chunk[index] == 0x0A {
+                // String.split on a newline Character does not split the CRLF grapheme.
+                let previous = index == chunk.startIndex ? line.last : chunk[index - 1]
+                if previous == 0x0D { continue }
+                line.append(chunk[fragmentStart..<index])
+                if !line.isEmpty { try visit(line) }
+                line.removeAll(keepingCapacity: true)
+                fragmentStart = index + 1
+            }
+            line.append(chunk[fragmentStart..<chunk.endIndex])
+        }
+        if !line.isEmpty { try visit(line) }
     }
 }

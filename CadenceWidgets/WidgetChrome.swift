@@ -1,6 +1,18 @@
 import SwiftUI
 import WidgetKit
 
+extension WidgetFamily {
+    var cadenceLayout: CadenceWidgetFamilyLayout {
+        switch self {
+        case .systemSmall: .small
+        case .systemMedium: .medium
+        case .systemLarge: .large
+        case .systemExtraLarge: .extraLarge
+        default: .medium
+        }
+    }
+}
+
 struct CadenceWidgetScale {
     let outerPadding: CGFloat
     let sectionSpacing: CGFloat

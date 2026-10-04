@@ -78,12 +78,11 @@ struct GlobalSearchOverlay: View {
                 Divider()
                     .background(Theme.borderSubtle)
 
-                GlobalSearchSectionsList(
+                GlobalSearchHighlightList(
                     sections: sections,
                     query: query,
-                    highlightedResultID: highlightedResultID,
-                    onSelect: onSelect,
-                    onHover: { highlightedResultID = $0 }
+                    highlightedResultID: $highlightedResultID,
+                    onSelect: onSelect
                 )
             }
             .onAppear {
@@ -158,6 +157,25 @@ struct GlobalSearchOverlay: View {
             highlightedResultID: highlightedResultID,
             flattenedResults: flattenedResults,
             onSelect: onSelect
+        )
+    }
+}
+
+/// Read selection in the child, so hover does not make the query-owning parent read this state
+/// while deriving its sections. Keyboard and submit callbacks still share the same binding.
+struct GlobalSearchHighlightList: View {
+    let sections: [GlobalSearchSection]
+    let query: String
+    @Binding var highlightedResultID: String?
+    let onSelect: (GlobalSearchResult) -> Void
+
+    var body: some View {
+        GlobalSearchSectionsList(
+            sections: sections,
+            query: query,
+            highlightedResultID: highlightedResultID,
+            onSelect: onSelect,
+            onHover: { highlightedResultID = $0 }
         )
     }
 }

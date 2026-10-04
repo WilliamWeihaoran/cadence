@@ -850,6 +850,7 @@ final class CadenceReadService {
     func search(query: String, scopes: [String]? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceSearchHit> {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .empty(offset: max(offset, 0)) }
+        let preparedQuery = CadenceSearchMatcher.PreparedQuery(trimmed)
 
         let selectedScopes = try validateScopes(scopes ?? ["tasks", "containers", "contexts", "documents", "core_notes", "event_notes", "goals", "habits", "links", "tags"])
         let noteScopes = Set(["documents", "notes", "core_notes", "event_notes"])
@@ -861,7 +862,7 @@ final class CadenceReadService {
             hits += tasks.compactMap { task in
                 let tagText = task.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
                 let fields = [task.title, task.notes, task.area?.name ?? "", task.project?.name ?? "", task.context?.name ?? "", tagText]
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: fields) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: fields) else { return nil }
                 return CadenceSearchHit(
                     entityType: "task",
                     entityId: task.id.uuidString,
@@ -875,18 +876,18 @@ final class CadenceReadService {
 
         if selectedScopes.contains("containers") {
             hits += try fetchAreas().compactMap { area in
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [area.name, area.desc, area.context?.name ?? ""]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [area.name, area.desc, area.context?.name ?? ""]) else { return nil }
                 return CadenceSearchHit(entityType: "area", entityId: area.id.uuidString, title: area.name, subtitle: area.context?.name ?? "No context", excerpt: excerpt(area.desc), score: score)
             }
             hits += try fetchProjects().compactMap { project in
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [project.name, project.desc, project.context?.name ?? "", project.area?.name ?? ""]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [project.name, project.desc, project.context?.name ?? "", project.area?.name ?? ""]) else { return nil }
                 return CadenceSearchHit(entityType: "project", entityId: project.id.uuidString, title: project.name, subtitle: project.context?.name ?? "No context", excerpt: excerpt(project.desc), score: score)
             }
         }
 
         if selectedScopes.contains("contexts") {
             hits += try fetchContexts().compactMap { context in
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [context.name, context.icon]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [context.name, context.icon]) else { return nil }
                 let areaCount = (context.areas ?? []).count
                 let projectCount = (context.projects ?? []).count
                 let goalCount = (context.goals ?? []).count
@@ -906,7 +907,7 @@ final class CadenceReadService {
             let noteDocs = notes.filter { $0.kind == .list }
             hits += noteDocs.compactMap { doc in
                 let tagText = doc.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? "", tagText]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [doc.title, doc.content, doc.area?.name ?? "", doc.project?.name ?? "", tagText]) else { return nil }
                 return CadenceSearchHit(entityType: "document", entityId: doc.id.uuidString, title: doc.displayTitle, subtitle: documentContainer(doc)?.name ?? "No container", excerpt: excerpt(doc.content), score: score)
             }
         }
@@ -915,7 +916,7 @@ final class CadenceReadService {
             hits += notes.filter { [.daily, .weekly, .permanent].contains($0.kind) }.compactMap { note in
                 let key = note.kind == .daily ? note.dateKey : (note.kind == .weekly ? note.weekKey : "notepad permanent note")
                 let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [key, note.title, note.content, tagText]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [key, note.title, note.content, tagText]) else { return nil }
                 return CadenceSearchHit(entityType: noteEntityType(note), entityId: note.id.uuidString, title: note.displayTitle, subtitle: noteSubtitle(note), excerpt: excerpt(note.content), score: score)
             }
         }
@@ -926,7 +927,7 @@ final class CadenceReadService {
                 let title = note.displayTitle
                 let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
                 let fields = [title, note.content, note.eventDateKey, tagText]
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: fields) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: fields) else { return nil }
                 return CadenceSearchHit(
                     entityType: "event_note",
                     entityId: note.id.uuidString,
@@ -941,14 +942,14 @@ final class CadenceReadService {
         if selectedScopes.contains("notes") {
             hits += notes.compactMap { note in
                 let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [note.displayTitle, note.content, noteKey(note) ?? "", tagText]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [note.displayTitle, note.content, noteKey(note) ?? "", tagText]) else { return nil }
                 return CadenceSearchHit(entityType: noteEntityType(note), entityId: note.id.uuidString, title: note.displayTitle, subtitle: noteSubtitle(note), excerpt: excerpt(note.content), score: score)
             }
         }
 
         if selectedScopes.contains("goals") {
             hits += try fetchGoals().compactMap { goal in
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [goal.title, goal.desc, goal.context?.name ?? "", goal.statusRaw]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [goal.title, goal.desc, goal.context?.name ?? "", goal.statusRaw]) else { return nil }
                 return CadenceSearchHit(
                     entityType: "goal",
                     entityId: goal.id.uuidString,
@@ -962,7 +963,7 @@ final class CadenceReadService {
 
         if selectedScopes.contains("habits") {
             hits += try fetchHabits().compactMap { habit in
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [habit.title, habit.context?.name ?? "", habit.goal?.title ?? "", habit.frequencyTypeRaw]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [habit.title, habit.context?.name ?? "", habit.goal?.title ?? "", habit.frequencyTypeRaw]) else { return nil }
                 return CadenceSearchHit(
                     entityType: "habit",
                     entityId: habit.id.uuidString,
@@ -981,7 +982,7 @@ final class CadenceReadService {
 
         if selectedScopes.contains("links") {
             hits += try fetchLinks().compactMap { link in
-                guard let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [link.title, link.url, link.area?.name ?? "", link.project?.name ?? ""]) else { return nil }
+                guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [link.title, link.url, link.area?.name ?? "", link.project?.name ?? ""]) else { return nil }
                 return CadenceSearchHit(
                     entityType: "saved_link",
                     entityId: link.id.uuidString,
@@ -996,7 +997,7 @@ final class CadenceReadService {
         if selectedScopes.contains("tags") {
             hits += try fetchTags().compactMap { tag in
                 guard !tag.isArchived,
-                      let score = CadenceSearchMatcher.matchScore(query: trimmed, fields: [tag.name, tag.slug, tag.desc]) else { return nil }
+                      let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [tag.name, tag.slug, tag.desc]) else { return nil }
                 return CadenceSearchHit(
                     entityType: "tag",
                     entityId: tag.id.uuidString,
