@@ -166,14 +166,60 @@ struct CadenceTodayUnificationTests {
 
     // MARK: - The group heading
 
-    /// 10 wins, and it is the app's one eyebrow size rather than a number chosen for this row. iOS
-    /// drew its group count at 11pt above a 10pt eyebrow — the same exception `7e5459c` closed for
-    /// the board column header, in a second place. A count is already demoted by weight and by the
-    /// capsule around it and must not also be *bigger* than the label it counts.
-    @Test func theGroupCountIsTheAppsOneEyebrowSize() {
-        #expect(CadenceTaskGroupHeadingMetrics.countSize == 10)
-        #expect(CadenceTaskGroupHeadingMetrics.countSize == SectionEyebrowLabel.fontSize)
-        #expect(CadenceTaskGroupHeadingMetrics.countSize == CadencePageHeaderMetrics.metrics(role: .page, surface: .desktop).eyebrowSize)
+    /// **There is no group count on either platform any more (T-2056), and this is what holds it
+    /// off.**
+    ///
+    /// This used to assert the capsule's digits were the app's one eyebrow size — 10, not the 11
+    /// iOS drew above a 10pt eyebrow — because a count is already demoted by weight and by the
+    /// capsule around it and must not also be bigger than the label it counts. The owner asked for
+    /// the per-section count off iOS and iPadOS and then off macOS as well, so the rule has nothing
+    /// left to govern here and the metrics type that carried it is deleted.
+    ///
+    /// **Re-pointed, not weakened.** The size rule itself is live and still pinned, one component
+    /// along, by `CadenceSharedBoardChromeTests.theCountBesideAnEyebrowIsTheEyebrowsOwnSize` — the
+    /// board column header still draws a count beside an eyebrow. What this now asserts is the
+    /// *absence*, from both headings' own source, so a capsule cannot come back on one platform
+    /// without failing here.
+    @Test func neitherPlatformsGroupHeadingDrawsACount() throws {
+        #expect(SectionEyebrowLabel.fontSize == 10, "non-vacuity: still the eyebrow this measured against")
+        #expect(CadenceBoardColumnHeaderMetrics.countSize == SectionEyebrowLabel.fontSize)
+
+        let shared = try strippingComments(
+            sourceFile("Cadence/Shared/Components/CadenceTaskGroupHeading.swift")
+        )
+        #expect(shared.contains("struct CadenceTaskGroupHeading: View"), "non-vacuity: still the heading's file")
+        #expect(!shared.contains("count"), "the shared task group heading draws a count again")
+        #expect(!shared.contains("Capsule()"), "the shared task group heading draws a capsule again")
+
+        let mac = try strippingComments(
+            sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")
+        )
+        #expect(mac.contains("struct TaskListGroupHeader<LeadingContent: View>: View"), "non-vacuity")
+        #expect(!mac.contains("taskCount"), "macOS's group header takes a task count again")
+        // `overdueCount` is deliberately untouched: a red flag that hides itself at zero is a
+        // warning, not a tally, and the owner's request named the quantities.
+        #expect(mac.contains("let overdueCount: Int?"), "the overdue flag was removed with the count")
+    }
+
+    /// **`CadenceTaskGroupHeading` spans its container, and that is load-bearing (T-2056).**
+    ///
+    /// The heading used to be an `HStack` of the eyebrow, a `Spacer` and the count badge, and the
+    /// `Spacer` is what made the row as wide as the group. `iOSTaskGroupHeader` wraps it in
+    /// `iOSNewTaskDropTarget`, whose `.contentShape(Rectangle())` is documented against exactly
+    /// that geometry — the whole header block accepts a dropped `+`, not just the glyphs. Taking
+    /// the capsule out without replacing the `Spacer` would have collapsed the heading to its own
+    /// text width and shrunk the drop target with it, silently, which is the defect `contentShape`
+    /// was added to fix in the first place.
+    @Test func theGroupHeadingStillSpansItsGroupSoTheDropTargetDoesToo() throws {
+        let shared = try strippingComments(
+            sourceFile("Cadence/Shared/Components/CadenceTaskGroupHeading.swift")
+        )
+        #expect(shared.contains("struct CadenceTaskGroupHeading: View"), "non-vacuity")
+        #expect(shared.contains(".frame(maxWidth: .infinity, alignment: .leading)"))
+
+        let header = try strippingComments(sourceFile("Cadence/iOS/iOSTaskGroupSection.swift"))
+        #expect(header.contains("struct iOSTaskGroupHeader: View"), "non-vacuity")
+        #expect(header.contains(".iOSNewTaskDropTarget(group: dropIdentity)"))
     }
 
     /// One capsule fill for the whole app. iOS's group badge drew 0.11 and the page header 0.12 —
@@ -225,17 +271,12 @@ struct CadenceTodayUnificationTests {
         // left in the file is the same fork with a longer fuse.
         try expectNoLiveMention(of: "TasksPanelIntentSectionHeader")
 
-        // The rule that did *not* fork: both headings still ask one function whether a count may be
-        // drawn at all, so the divergence is in the drawing and not in the semantics.
-        #expect(!CadenceTaskGroupHeadingMetrics.showsCapsule(for: nil))
-        #expect(CadenceTaskGroupHeadingMetrics.showsCapsule(for: 0))
-        try expectCallSites(
-            of: "CadenceTaskGroupHeadingMetrics.showsCapsule",
-            at: [
-                "Cadence/Shared/Components/CadenceTaskGroupHeading.swift": 1,
-                "Cadence/macOS/Views/ListDetailSupportViews.swift": 1,
-            ]
-        )
+        // The rule the two headings used to share — one function deciding whether a count may be
+        // drawn at all — is gone because neither heading draws a count any more (T-2056). What
+        // replaces it as the cross-platform pin is the *absence*, asserted on both files by
+        // `neitherPlatformsGroupHeadingDrawsACount` above. The function's own name must not come
+        // back without that pin coming back with it.
+        try expectNoLiveMention(of: "CadenceTaskGroupHeadingMetrics")
     }
 
     /// **Today asks for no counts at all, and the surfaces that still show them share one pair.**
@@ -263,14 +304,11 @@ struct CadenceTodayUnificationTests {
         )
         #expect(sections.contains("struct TasksPanelIntentSectionView: View"), "non-vacuity")
 
-        // How the capsules are suppressed: `overdueCount` is simply not passed (it defaults to
-        // `nil`) and `taskCount` is passed `nil`, which `TaskListGroupHeader` already understood.
-        // Pinned positively so that a revert to a count, or a restructuring of the component into
-        // something that draws `0`, is a red test rather than a silent one.
-        #expect(
-            occurrences(of: "taskCount: nil", in: sections) == 1,
-            "Today's list-group heading no longer suppresses its count capsule with taskCount: nil"
-        )
+        // How the capsules stay off. T-1495 suppressed them here, per-call-site: `overdueCount`
+        // simply not passed, and `taskCount: nil`. T-2056 took `taskCount` off `TaskListGroupHeader`
+        // outright, so the suppression is now structural for the count and remains per-call-site
+        // for the flag. Both are pinned negatively, so a revert on either axis is a red test.
+        #expect(!sections.contains("taskCount"), "Today's list-group heading takes a count again")
         #expect(!sections.contains("overdueCount:"), "Today's list-group heading asks for the overdue flag again")
 
         try expectCallSites(
@@ -290,15 +328,15 @@ struct CadenceTodayUnificationTests {
             ]
         )
 
-        // Today's Completed group **keeps** its single number. T-1495 named "the section headings
-        // of lists"; Completed is not a list, so it was left alone and still heads itself with
-        // `count: tasks.count` — the convenience init, which `TasksListCompletedSectionView` on All
-        // Tasks takes too. It never took the split in the first place: the split counts *open*
-        // work, so on a group where every row is done it would report "0 tasks" over a list of
-        // finished ones. If the owner asks for this one off as well, this is the assertion to move.
+        // Today's Completed group used to **keep** its single number: T-1495 named "the section
+        // headings of lists", Completed is not a list, so it was left alone and still headed itself
+        // with `count: tasks.count`. The comment here said "if the owner asks for this one off as
+        // well, this is the assertion to move" — and they did (T-2056), so it is moved rather than
+        // deleted. The same assertion, inverted: the Completed group must not re-acquire a number
+        // the groups above it no longer have.
         #expect(
-            CadenceSourceScan.matchCount(#"count: tasks\.count"#, in: sections) == 1,
-            "the Completed group no longer heads itself with a single number"
+            CadenceSourceScan.matchCount(#"count: tasks\.count"#, in: sections) == 0,
+            "Today's Completed group heads itself with a number again"
         )
     }
 

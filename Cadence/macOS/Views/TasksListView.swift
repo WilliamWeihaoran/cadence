@@ -288,7 +288,6 @@ struct TasksListView: View {
                         showsContainer: options.showsContainerChip,
                         isCollapsed: collapsedSectionIDs.contains(section.id),
                         overdueCount: overdueCount(in: section.tasks),
-                        taskCount: openCount(in: section.tasks),
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
@@ -330,7 +329,6 @@ struct TasksListView: View {
                     TasksListCompletedSectionView(
                         tasks: visibleCompletedTasks,
                         showsContainer: options.showsContainerChip,
-                        count: completedCount,
                         isCollapsed: isCompletedCollapsed,
                         contexts: contexts,
                         areas: areas,
@@ -516,7 +514,6 @@ private struct TasksListSectionView: View {
     let showsContainer: Bool
     let isCollapsed: Bool
     let overdueCount: Int?
-    let taskCount: Int
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -535,7 +532,6 @@ private struct TasksListSectionView: View {
                 title: section.title,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
-                taskCount: taskCount,
                 accent: section.accent,
                 onToggle: onToggle
             ) {
@@ -586,7 +582,6 @@ private struct TasksListSectionView: View {
 private struct TasksListCompletedSectionView: View {
     let tasks: [AppTask]
     let showsContainer: Bool
-    let count: Int
     let isCollapsed: Bool
     let contexts: [Context]
     let areas: [Area]
@@ -598,7 +593,6 @@ private struct TasksListCompletedSectionView: View {
         VStack(alignment: .leading, spacing: 0) {
             TaskListGroupHeader(
                 title: "Completed",
-                count: count,
                 isCollapsed: isCollapsed,
                 accent: Theme.green,
                 onToggle: onToggle

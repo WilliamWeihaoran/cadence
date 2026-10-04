@@ -52,6 +52,39 @@ struct iOSTaskCollectionMetricsTests {
         }
     }
 
+    /// **The between-group gap is derived, not picked (T-2056).**
+    ///
+    /// The owner asked for more vertical space between sections and gave no number. The number is
+    /// 22, and these are the two facts it comes out of:
+    ///
+    /// - The constant is **not** the gap the eye sees. `iOSTaskSectionHeader.topPadding` is
+    ///   documented as "the inset between a group's rows and the eyebrow of the next group", and
+    ///   every group header adds it above its eyebrow. The visible gap is `groupSpacing + 6`.
+    /// - The app's own settled answer to "how far apart are two groups" is
+    ///   `iOSEditorSheetMetrics.groupSpacing`, which put five editor surfaces on 16 and recorded
+    ///   what 16 *measures* once a ruled section adds its own 12 above the hairline: **28 between
+    ///   ruled groups, 16 between cards**, "because the rule needs air around it and a card edge
+    ///   does not". A task group draws neither a rule nor a card — `85809ff` deleted the card and
+    ///   nothing replaced it — so white space is its only separator and it takes the 28.
+    ///
+    /// `22 + 6 == 28` is the assertion, spelled as the arithmetic rather than as a bare `== 22`,
+    /// so that moving `iOSEditorSheetMetrics.groupSpacing` or the header's inset without revisiting
+    /// this is red rather than silent. `iOSTaskSectionHeader` lives inside `#if os(iOS)` and this
+    /// target cannot see it, which is why its 6 is read out of the iOS source rather than called.
+    @Test func theGapBetweenTwoGroupsIsTheRuledGroupGapLessTheHeadersOwnInset() throws {
+        #expect(iOSTaskCollectionMetrics.groupSpacing == 22)
+
+        let ruledGroupGap = iOSEditorSheetMetrics.groupSpacing + 12
+        #expect(ruledGroupGap == 28, "the editor sheets' ruled-group gap moved; re-derive this one")
+
+        let views = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift")
+        #expect(
+            views.contains("static let topPadding: CGFloat = 6"),
+            "iOSTaskSectionHeader.topPadding moved; the visible gap is no longer 28"
+        )
+        #expect(iOSTaskCollectionMetrics.groupSpacing + 6 == ruledGroupGap)
+    }
+
     /// **The header's two figures are the only ones that vary, and there is no card inset at all
     /// now (T-613).** This test used to read `cardPadding > 0` at both widths, justified as "the
     /// whole card is drawn on a `Theme.bg` page at both widths" — and the card had been deleted by

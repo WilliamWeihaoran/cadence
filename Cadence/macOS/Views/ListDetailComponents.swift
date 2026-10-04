@@ -105,7 +105,6 @@ struct ListTasksView: View {
                     group: group,
                     isCollapsed: collapsedGroupIDs.contains(group.id),
                     overdueCount: overdueCount(in: group.tasks),
-                    taskCount: openCount(in: group.tasks),
                     dragOverTaskID: $dragOverTaskID,
                     onToggle: { toggleGroup(group.id) },
                     onReorderTask: reorderTask

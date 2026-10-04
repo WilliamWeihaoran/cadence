@@ -17,13 +17,14 @@ struct SectionEyebrowLabel: View {
     ///
     /// `nonisolated` members throughout, matching the static `fontSize` below — but **not for the
     /// same reason, and this tier's annotation is not load-bearing today (T-477).** The static has
-    /// to carry it: `CadenceTaskGroupHeadingMetrics` is a `nonisolated struct`, this target defaults
-    /// declarations to `@MainActor` (`SWIFT_APPROACHABLE_CONCURRENCY`), and a nonisolated static
-    /// cannot initialise from a main-actor-isolated one. `Size`'s members are read by
-    /// `SidebarMetrics`, `TaskInspectorFieldRowMetrics`, the notes list's group header and this
-    /// view's own `body`, every one of which is main-actor already — dropping `nonisolated` from
-    /// these three still builds, measured, so it stays for the tier to be reachable from the same
-    /// readers the bare `fontSize` is, not because something breaks without it.
+    /// to carry it: `CadenceBoardColumnHeaderMetrics` and `CadenceCalendarWeekdayHeaderMetrics` are
+    /// `nonisolated struct`s whose `labelKerning` initialises from `kerningRatio` below, this
+    /// target defaults declarations to `@MainActor` (`SWIFT_APPROACHABLE_CONCURRENCY`), and a
+    /// nonisolated static cannot initialise from a main-actor-isolated one. `Size`'s members are
+    /// read by `SidebarMetrics`, `TaskInspectorFieldRowMetrics`, the notes list's group header and
+    /// this view's own `body`, every one of which is main-actor already — dropping `nonisolated`
+    /// from these three still builds, measured, so it stays for the tier to be reachable from the
+    /// same readers the bare `fontSize` is, not because something breaks without it.
     ///
     /// The wording this replaces justified the annotation by CadenceEyebrowMetrics' readers — a
     /// type that has never existed in this repo, left behind when T-284's conversion renamed the
@@ -49,11 +50,13 @@ struct SectionEyebrowLabel: View {
     }
 
     /// The app's one eyebrow size. Exposed because things drawn *beside* an eyebrow have to agree
-    /// with it — `CadenceBoardColumnHeaderMetrics.labelSize` and
-    /// `CadenceTaskGroupHeadingMetrics.countSize` are both this number, and both were a
-    /// hand-typed 10 or 11 before somebody noticed which one they were meant to match.
-    /// `nonisolated` because `CadenceTaskGroupHeadingMetrics` is, and a nonisolated value type
-    /// cannot read a main-actor-isolated static. A literal, so there is nothing to initialise from.
+    /// with it — `CadenceBoardColumnHeaderMetrics.labelSize` and `.countSize` are both this number,
+    /// and both were a hand-typed 10 or 11 before somebody noticed which one they were meant to
+    /// match. The task group heading's own count capsule used to be a third reader and is gone:
+    /// T-2056 took the per-section count off both platforms, so a task group heading is an eyebrow
+    /// and nothing else. `nonisolated` because `CadenceBoardColumnHeaderMetrics` is, and a
+    /// nonisolated value type cannot read a main-actor-isolated static. A literal, so there is
+    /// nothing to initialise from.
     nonisolated static let fontSize: CGFloat = 10
 
     /// The sub-label tier. One point smaller, and only that — every other property of an eyebrow is

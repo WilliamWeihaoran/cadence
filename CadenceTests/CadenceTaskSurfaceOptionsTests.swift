@@ -513,6 +513,12 @@ struct CadenceTouchCompletedSectionTests {
     /// The group counts what the section holds, not what it drew, and draws the caption that
     /// explains the difference. `count: tasks.count` is the exact spelling that made the header
     /// disagree with the options bar above it.
+    ///
+    /// **The header no longer draws that total, and the caption is what carries it now (T-2056).**
+    /// The owner had the per-section count capsule removed on both platforms, so `totalCount` has
+    /// exactly one reader left: `overflowCaption`. That makes this test the *only* thing standing
+    /// between a capped section and silence about the cap, which is why the capsule's departure
+    /// tightened these assertions rather than loosening them.
     @Test func theTouchGroupCountsTheWholeSectionAndSaysWhatItIsShowing() throws {
         let raw = try desktopSurfaceSourceFile("Cadence/iOS/iOSTaskGroupSection.swift")
         let code = try desktopSurfaceStrippingComments(raw)
@@ -527,8 +533,9 @@ struct CadenceTouchCompletedSectionTests {
         #expect(normalized.contains("var hiddenCount: Int?"))
         #expect(normalized.contains("private var totalCount: Int { tasks.count + (hiddenCount ?? 0) }"))
 
-        // The header counts the section, and the old spelling is gone.
-        #expect(normalized.contains("count: totalCount"))
+        // The header draws no count at all, and the old spelling that counted the capped array is
+        // still gone.
+        #expect(!normalized.contains("count: totalCount"), "the group header draws a count again")
         #expect(section.contains("count: tasks.count") == false, "the header counts the capped array again")
 
         // And the difference is stated on screen, in the shared wording.

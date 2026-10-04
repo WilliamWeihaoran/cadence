@@ -266,10 +266,12 @@ struct CadenceTodayOverdueSummaryHeading: View {
             // The count is the eyebrow's own size, not a point larger. It used to inherit an 11pt
             // font applied to the whole `HStack` — the one place in the app where the eyebrow tier
             // was 11 — so adopting the shared label dropped both to 10 together. That is the rule
-            // `CadenceBoardColumnHeaderMetrics` and `CadenceTaskGroupHeadingMetrics.countSize`
-            // already state: a count is demoted by weight and by its capsule, and must never be
-            // bigger than the label it counts. No capsule here on purpose — this heading sits over
-            // cards that already carry their own chrome.
+            // `CadenceBoardColumnHeaderMetrics.countSize` already states: a count is demoted by
+            // weight and by its colour, and must never be bigger than the label it counts. (The
+            // task group heading used to state it too; T-2056 took its capsule off both platforms,
+            // so this and the board column are the two counts beside an eyebrow that are left.)
+            // No capsule here on purpose — this heading sits over cards that already carry their
+            // own chrome.
             Text("\(count)")
                 .cadenceFont(.sectionLabel, base: SectionEyebrowLabel.fontSize, weight: .semibold)
                 .foregroundStyle(Theme.dim)

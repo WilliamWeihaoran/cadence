@@ -33,8 +33,12 @@ struct CadenceTodaySectionMetricsTests {
 
     /// The same figure Inbox and All Tasks stack their groups at, so the three segments of one tab
     /// bar agree about what a gap between groups is.
+    ///
+    /// **22 since T-2056**, where it was 14. `iOSTaskCollectionMetrics.groupSpacing` carries the
+    /// derivation and `iOSTaskCollectionMetricsTests` pins it; this side only has to agree.
     @Test func theGroupSpacingIsTheSpacingTheOtherTaskSurfacesUse() {
-        #expect(Self.metrics(.compact).groupSpacing == 14)
+        #expect(Self.metrics(.compact).groupSpacing == 22)
+        #expect(Self.metrics(.compact).groupSpacing == iOSTaskCollectionMetrics.groupSpacing)
     }
 
     // MARK: - What varies, and why

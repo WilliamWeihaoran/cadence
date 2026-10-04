@@ -253,88 +253,62 @@ struct CadenceInboxRemindersSurfaceTests {
         )
     }
 
-    // MARK: - T-264: the count capsule is not a lie above the access card
+    // MARK: - T-264: the count capsule, and the question it answered going away
 
-    /// **T-264.** Both Inbox headers used to pass `reminders.count` unconditionally, so
-    /// not-determined, denied and restricted all rendered "APPLE REMINDERS 0" directly above a
-    /// card admitting Cadence cannot see the reminders at all — a count of zero states a fact the
-    /// app does not have. The fix is the count becoming `nil` (not `0`) whenever the section is not
-    /// connected, and `CadenceTaskGroupHeading` / `TaskListGroupHeader` suppress the capsule for a
-    /// `nil` count rather than drawing it.
-    @Test func neitherInboxHeaderPassesTheRawReminderCountUnconditionally() throws {
+    /// **T-264 is closed by deletion rather than by suppression now (T-2056).**
+    ///
+    /// Both Inbox headers used to pass `reminders.count` unconditionally, so not-determined,
+    /// denied and restricted all rendered "APPLE REMINDERS 0" directly above a card admitting
+    /// Cadence cannot see the reminders at all — a count of zero states a fact the app does not
+    /// have. T-264's fix was the count becoming `nil` (not `0`) whenever the section was not
+    /// connected, with both headings suppressing the capsule for a `nil`.
+    ///
+    /// The owner then asked for the per-section count capsule off iOS and iPadOS, and off macOS
+    /// too. A heading that draws no count cannot assert one it does not have, so the gate, the
+    /// optional, and the shared `showsCapsule` rule are all deleted. **The defect this ticket was
+    /// about stays pinned, from the other side:** neither Inbox header may pass a reminder count
+    /// at all, and no live source may re-grow the suppression vocabulary that only existed to make
+    /// passing one safe.
+    @Test func neitherInboxHeaderPassesAReminderCountAtAll() throws {
         let macSource = try strippingComments(sourceFile("Cadence/macOS/Views/InboxSupportViews.swift"))
+        #expect(macSource.contains("TaskListGroupHeader("), "non-vacuity: still the header's call site")
         #expect(
-            macSource.range(of: "taskCount:\\s*reminders\\.count\\s*,", options: .regularExpression) == nil,
-            "macOS's Inbox header passes the raw reminder count again, with no gate on authorization"
+            !macSource.contains("reminders.count"),
+            "macOS's Inbox header passes a reminder count again"
         )
-        #expect(
-            macSource.range(
-                of: "taskCount:\\s*state\\.isConnected\\s*\\?\\s*reminders\\.count\\s*:\\s*nil",
-                options: .regularExpression
-            ) != nil,
-            "macOS's Inbox header stopped hiding the count while unauthorized"
-        )
+        #expect(!macSource.contains("taskCount"), "macOS's Inbox header takes a task count again")
 
         let iosSource = try strippingComments(sourceFile("Cadence/iOS/iOSInboxRemindersSection.swift"))
+        #expect(iosSource.contains("iOSTaskGroupHeader("), "non-vacuity: still the header's call site")
         #expect(
-            iosSource.range(of: "count:\\s*remindersManager\\.reminders\\.count\\s*\\n", options: .regularExpression) == nil,
-            "iOS's Inbox header passes the raw reminder count again, with no gate on authorization"
-        )
-        #expect(
-            iosSource.range(
-                of: "count:\\s*state\\.isConnected\\s*\\?\\s*remindersManager\\.reminders\\.count\\s*:\\s*nil",
-                options: .regularExpression
-            ) != nil,
-            "iOS's Inbox header stopped hiding the count while unauthorized"
+            !iosSource.contains("remindersManager.reminders.count"),
+            "iOS's Inbox header passes a reminder count again"
         )
     }
 
-    /// The heading component itself must be able to suppress the capsule, or the two call-site
-    /// fixes above have nowhere to route a `nil` to. Pins the declaration rather than the call
-    /// sites, so a future revert of either component (not just the two headers) is caught here.
-    ///
-    /// **This test pins the *type*, not the decision, and that is not enough on its own.** A
-    /// verifier rewrote `CadenceTaskGroupHeading.body` from `if let count` to
-    /// `countBadge(count ?? 0)` — restoring "APPLE REMINDERS 0" over the access card — and the
-    /// whole suite stayed green, because `let count: Int?` still read exactly as before. The two
-    /// tests below are what close that: `onlyAnUnknownCountSuppressesTheCapsule` states the rule
-    /// on a value, and `bothGroupHeadersReadTheOneCapsuleRule` says both bodies ask for it.
-    @Test func theSharedHeadingComponentsAcceptAnOptionalCount() throws {
+    /// **The components cannot be handed a count to get wrong.** T-264's shape was an optional on
+    /// each heading plus one shared rule for reading it; the `?? 0` mutation that defeated an
+    /// earlier version of this test — restoring "APPLE REMINDERS 0" over the access card — needed
+    /// that optional to exist. With no count parameter on either heading there is nothing for a
+    /// body to mis-unwrap, which is a stronger guarantee than the rule was, and this is what says
+    /// so. Both declarations, and the whole tree for the retired rule.
+    @Test func neitherGroupHeadingTakesACountToBeWrongAbout() throws {
         let heading = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTaskGroupHeading.swift"))
-        #expect(heading.contains("let count: Int?"), "CadenceTaskGroupHeading.count is no longer optional")
+        #expect(heading.contains("struct CadenceTaskGroupHeading: View"), "non-vacuity")
+        #expect(!heading.contains("count"), "CadenceTaskGroupHeading takes a count again")
 
+        // The iOS file still counts rows — `hiddenCount` feeds the overflow caption — so what is
+        // pinned here is the one line that could hand a count to a heading.
         let iosHeader = try strippingComments(sourceFile("Cadence/iOS/iOSTaskGroupSection.swift"))
-        #expect(iosHeader.contains("let count: Int?"), "iOSTaskGroupHeader.count is no longer optional")
+        #expect(iosHeader.contains("struct iOSTaskGroupHeader: View"), "non-vacuity")
+        #expect(
+            iosHeader.contains("CadenceTaskGroupHeading(title: title, tint: color)"),
+            "iOSTaskGroupHeader hands the shared heading something other than a title and a tint"
+        )
 
         let macHeader = try strippingComments(sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift"))
-        #expect(macHeader.contains("let taskCount: Int?"), "TaskListGroupHeader.taskCount is no longer optional")
-    }
-
-    /// The rule itself, exercised directly. `nil` is "cannot say" and draws nothing; every real
-    /// count — **including zero**, which is a real answer — keeps its capsule.
-    @Test func onlyAnUnknownCountSuppressesTheCapsule() {
-        #expect(!CadenceTaskGroupHeadingMetrics.showsCapsule(for: nil))
-        #expect(CadenceTaskGroupHeadingMetrics.showsCapsule(for: 0))
-        for count in [1, 2, 7, 99, Int.max] {
-            #expect(CadenceTaskGroupHeadingMetrics.showsCapsule(for: count))
-        }
-    }
-
-    /// **The half that catches a rewritten view body.** `onlyAnUnknownCountSuppressesTheCapsule`
-    /// above says what the rule is; nothing in a macOS-built test target can watch a SwiftUI
-    /// `body` decide to obey it, so this asserts that both bodies *ask*. That makes it a source
-    /// scan — the thing that failed here before — but a **positive** one, which is the polarity
-    /// `Cadence/Shared/AGENTS.md` recommends: the `?? 0` rewrite that survived the old assertion
-    /// deletes the call and fails this, and a header that keeps the behaviour with its own private
-    /// copy of the rule fails it too. Both mutations were run and both fail here.
-    @Test func bothGroupHeadersReadTheOneCapsuleRule() throws {
-        try expectCallSites(
-            of: "CadenceTaskGroupHeadingMetrics.showsCapsule",
-            at: [
-                "Cadence/Shared/Components/CadenceTaskGroupHeading.swift": 1,
-                "Cadence/macOS/Views/ListDetailSupportViews.swift": 1,
-            ]
-        )
+        #expect(macHeader.contains("struct TaskListGroupHeader<LeadingContent: View>: View"), "non-vacuity")
+        #expect(!macHeader.contains("taskCount"), "TaskListGroupHeader takes a task count again")
     }
 
     // MARK: - T-256: isRestricted reaches every live consumer

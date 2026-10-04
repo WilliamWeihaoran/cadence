@@ -18,7 +18,6 @@ struct ListTasksGroupSectionView: View {
     let group: ListTasksGroup
     let isCollapsed: Bool
     let overdueCount: Int?
-    let taskCount: Int
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     /// Answers whether the new order is in the store (T-869). `Void` until then, over a renumber
@@ -31,7 +30,6 @@ struct ListTasksGroupSectionView: View {
                 title: group.title,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
-                taskCount: taskCount,
                 accent: group.accent,
                 onToggle: onToggle
             )
@@ -71,7 +69,6 @@ struct ListTasksCompletedSectionView: View {
         Group {
             TaskListGroupHeader(
                 title: "Completed",
-                count: tasks.count,
                 isCollapsed: isCollapsed,
                 accent: Theme.green,
                 onToggle: onToggle
@@ -95,20 +92,25 @@ struct ListTasksCompletedSectionView: View {
     }
 }
 
+/// macOS's task-group header: the accent bar, the disclosure chevron, the group's name, and — when
+/// a group is late — the red flag.
+///
+/// **It does not say how many rows are under it any more (T-2056).** The capsule read "2 tasks",
+/// in the group's accent inside a bordered pill, and the owner asked for the per-section count
+/// gone on iOS and iPadOS and then on macOS too, so that the two platforms keep saying the same
+/// thing about the same group. The `taskCount` parameter went with the drawing rather than being
+/// left inert, and so did the shared `showsCapsule` rule it asked — T-264's answer to when a count
+/// may be drawn at all, which a heading that draws none cannot break. macOS's own
+/// Today had already stopped passing a count (`TasksPanelIntentSectionView`); this is the rest of
+/// the desktop catching up with it.
+///
+/// **`overdueCount` stays, and that is the line this change does not cross.** It is not the
+/// group's size: it is a warning that some of this work is late, drawn as a red flag rather than a
+/// neutral tally, and it hides itself at zero. The owner circled quantities, not alarms.
 struct TaskListGroupHeader<LeadingContent: View>: View {
     let title: String
     let isCollapsed: Bool
     let overdueCount: Int?
-    /// **The group's size**, and it was `regularCount` — the not-done total *minus* `overdueCount`.
-    /// See `TasksPanelSupport.openCount`: the capsule labelled itself "tasks" while holding the
-    /// remainder after the flag, so a group whose open work was all late read `0 tasks` over its
-    /// own visible rows.
-    ///
-    /// `nil` suppresses the capsule entirely, through the same function `CadenceTaskGroupHeading`
-    /// asks — `CadenceTaskGroupHeadingMetrics.showsCapsule` (T-264). A group standing for reminders
-    /// Cadence has not been allowed to look at does not know its own count, and `0` states a fact it
-    /// does not have. Every group that always knows its size keeps passing a plain `Int`.
-    let taskCount: Int?
     var accent: Color = Theme.dim
     var isToggleEnabled: Bool = true
     let onToggle: () -> Void
@@ -118,7 +120,6 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         title: String,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
-        taskCount: Int?,
         accent: Color = Theme.dim,
         isToggleEnabled: Bool = true,
         onToggle: @escaping () -> Void,
@@ -127,32 +128,10 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         self.title = title
         self.isCollapsed = isCollapsed
         self.overdueCount = overdueCount
-        self.taskCount = taskCount
         self.accent = accent
         self.isToggleEnabled = isToggleEnabled
         self.onToggle = onToggle
         self.leadingContent = leadingContent
-    }
-
-    init(
-        title: String,
-        count: Int,
-        isCollapsed: Bool,
-        accent: Color,
-        isToggleEnabled: Bool = true,
-        onToggle: @escaping () -> Void,
-        @ViewBuilder leadingContent: @escaping () -> LeadingContent
-    ) {
-        self.init(
-            title: title,
-            isCollapsed: isCollapsed,
-            overdueCount: nil,
-            taskCount: count,
-            accent: accent,
-            isToggleEnabled: isToggleEnabled,
-            onToggle: onToggle,
-            leadingContent: leadingContent
-        )
     }
 
     var body: some View {
@@ -194,29 +173,6 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
                     .clipShape(Capsule())
                 }
 
-                // Same rule as the shared heading's, asked of the same function — see
-                // `CadenceTaskGroupHeadingMetrics.showsCapsule`. The `let` after it is only the
-                // unwrap; do not collapse the two back into a bare `if let taskCount`.
-                // (`overdueCount` above is a *different* rule on purpose: a group that knows it is
-                // zero days late is stating a fact, so it hides a flag it has no reason to raise.)
-                if CadenceTaskGroupHeadingMetrics.showsCapsule(for: taskCount), let taskCount {
-                    HStack(spacing: 4) {
-                        Text("\(taskCount)")
-                            .font(.system(size: 11, weight: .bold))
-                        Text(taskCount == 1 ? "task" : "tasks")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                    }
-                    .foregroundStyle(accent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(accent.opacity(0.11))
-                    .clipShape(Capsule())
-                    .overlay {
-                        Capsule()
-                            .strokeBorder(accent.opacity(0.2), lineWidth: 1)
-                    }
-                }
             }
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
             .padding(.horizontal, 6)
@@ -242,7 +198,6 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
         title: String,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
-        taskCount: Int?,
         accent: Color = Theme.dim,
         isToggleEnabled: Bool = true,
         onToggle: @escaping () -> Void
@@ -251,26 +206,6 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
             title: title,
             isCollapsed: isCollapsed,
             overdueCount: overdueCount,
-            taskCount: taskCount,
-            accent: accent,
-            isToggleEnabled: isToggleEnabled,
-            onToggle: onToggle,
-            leadingContent: { EmptyView() }
-        )
-    }
-
-    init(
-        title: String,
-        count: Int,
-        isCollapsed: Bool,
-        accent: Color,
-        isToggleEnabled: Bool = true,
-        onToggle: @escaping () -> Void
-    ) {
-        self.init(
-            title: title,
-            count: count,
-            isCollapsed: isCollapsed,
             accent: accent,
             isToggleEnabled: isToggleEnabled,
             onToggle: onToggle,

@@ -46,9 +46,10 @@ struct InboxAppleRemindersSectionView: View {
             TaskListGroupHeader(
                 title: "Apple Reminders",
                 isCollapsed: false,
-                // **T-264.** `nil`, not `0`, whenever Cadence has not been allowed to look —
-                // the same `state.isConnected` gate `iOSInboxRemindersSection` reads.
-                taskCount: state.isConnected ? reminders.count : nil,
+                // **T-264 is answered rather than gated now (T-2056).** This used to pass `nil`,
+                // not `0`, whenever Cadence had not been allowed to look — the same
+                // `state.isConnected` gate `iOSInboxRemindersSection` read. The header draws no
+                // count at all on either platform, so there is nothing left to suppress.
                 accent: Theme.purple,
                 isToggleEnabled: false,
                 onToggle: { }

@@ -80,8 +80,13 @@ struct CadenceCodexTaskSummaryTypographyTests {
         #expect(empty.contains("CadenceEmptyStateMetrics.iconSide(at: dynamicTypeSize, scaling: scaling)"))
         #expect(empty.contains(".cadenceFont(.bodyText, base: 26, weight: .regular)"))
         #expect(empty.contains(".fixedSize(horizontal: false, vertical: scaling == .enabled)"))
-        #expect(group.contains(".cadenceFont(.sectionLabel, base: CadenceTaskGroupHeadingMetrics.countSize, weight: .bold)"))
-        #expect(group.contains("if CadenceTaskGroupHeadingMetrics.showsCapsule(for: count), let count"))
+        // The group heading drew a count capsule at `CadenceTaskGroupHeadingMetrics.countSize`,
+        // behind that type's `showsCapsule` rule. T-2056 took the capsule off both platforms at the
+        // owner's request, so what is pinned here is that the heading is the eyebrow and nothing
+        // else — and that it still spans its group, which is what keeps the drop target whole.
+        #expect(group.contains("SectionEyebrowLabel(text: title, tint: tint)"))
+        #expect(group.contains(".frame(maxWidth: .infinity, alignment: .leading)"))
+        #expect(!group.contains("Capsule()"))
         #expect(rollover.contains("CadenceTodayRolloverMetrics.iconSide(at: dynamicTypeSize, scaling: scaling)"))
         #expect(rollover.contains("CadenceTodayRolloverMetrics.dotSide(at: dynamicTypeSize, scaling: scaling)"))
         #expect(rollover.contains(".cadenceFont(.controlLabel, base: 14, weight: .semibold)"))

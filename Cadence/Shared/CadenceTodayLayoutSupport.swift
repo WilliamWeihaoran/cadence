@@ -196,7 +196,11 @@ nonisolated struct CadenceTodaySectionMetrics: Equatable, Sendable {
         }
     }
 
-    private static let groupSpacing: CGFloat = 14
+    /// **22 (T-2056).** One number, still, and still the same one All Tasks and Inbox stack at —
+    /// `iOSTaskCollectionMetrics.groupSpacing` carries the derivation, and
+    /// `iOSTaskCollectionMetricsTests.theTasksTabAgreesWithTodayOnGroupSpacing` is what stops one
+    /// of the two moving alone.
+    private static let groupSpacing: CGFloat = 22
 
     /// The one gutter the two hosts had **not** drifted on. It is not the page gutter
     /// (`CadencePageHeaderMetrics` ramps 16/20): Today's header sits inside the same capped column

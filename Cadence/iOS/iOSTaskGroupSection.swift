@@ -1,26 +1,24 @@
 #if os(iOS)
 import SwiftUI
 
-/// A task group's header: the section eyebrow and how many rows are under it.
+/// A task group's header: the section eyebrow, and the drop target under it.
 ///
 /// There were three private near-copies of this — one each in the compact Today, Inbox and All
 /// Tasks views, at spacings 9/7, 9/7 and 10/8 — and the iPad versions of the same three screens
-/// drew the eyebrow with no count at all. So "Active" told you how many on the phone and not on
-/// the tablet, and the two phone screens that agreed only agreed by coincidence.
+/// drew the eyebrow differently again. The row is `CadenceTaskGroupHeading` now; only the drop
+/// target below is iOS's.
 ///
-/// macOS was the fourth copy and the furthest out: its Today drew section titles in sentence case
-/// at 11pt in neutral `Theme.dim`, with a red/neutral "3 / 7" pair beside them, so the same group
-/// neither said the same thing nor looked the same. The row is `CadenceTaskGroupHeading` now and
-/// both platforms draw it; only the drop target below is iOS's.
+/// **It no longer draws how many rows are under it (T-2056).** The owner asked for the per-section
+/// count capsule off iOS and iPadOS, and then off macOS too, so `CadenceTaskGroupHeading` has no
+/// `count` to pass. What the capsule was the only surface for — a group whose rows are capped —
+/// is still stated, by `CadenceTaskSurfaceOptions.overflowCaption` under the rows; see
+/// `iOSTaskGroupSection.hiddenCount`.
 ///
 /// Usable as a `List` section header as well as inside a `VStack`, which is what lets the
 /// `List`-hosted iPad panels and the `ScrollView`-hosted compact ones share it.
 struct iOSTaskGroupHeader: View {
     let title: String
     let color: Color
-    /// `nil` suppresses the count capsule — see `CadenceTaskGroupHeading.count` (T-264). Every
-    /// group that always knows its size keeps passing a plain `Int`, which converts implicitly.
-    let count: Int?
     /// What this group is, so a dropped `+` knows what to inherit from it. `nil` — or an identity
     /// that resolves to nothing — means the header is not a drop target and takes no highlight.
     /// See `CadenceTaskDropSupport.dropKey(forGroup:)`.
@@ -31,7 +29,7 @@ struct iOSTaskGroupHeader: View {
         // draws the same one. What stays here is the drop target below, which is iOS's alone.
         // The eyebrow keeps `iOSTaskSectionHeader`'s 6pt top inset, which the shared heading does
         // not carry because it is this host's spacing and not the heading's.
-        CadenceTaskGroupHeading(title: title, tint: color, count: count)
+        CadenceTaskGroupHeading(title: title, tint: color)
             .padding(.top, iOSTaskSectionHeader.topPadding)
         // The second half of drag-to-create, and the half that reaches an **empty** group. A row
         // carries its group's attribute by construction, which covers every grouping — but a group
@@ -76,9 +74,16 @@ struct iOSTaskGroupSection: View {
     ///
     /// **The group counts what it has, not what it drew (T-386).** `tasks` arrives already capped,
     /// so counting it made the header disagree with the options bar above it — "Completed 40" over
-    /// a header reading 24. Adding the remainder back gives the header the section's true size and
-    /// puts the difference in a caption under the rows, so the screen states all three numbers and
-    /// none of them contradicts another.
+    /// a header reading 24. Adding the remainder back gives the section's true size and puts the
+    /// difference in a caption under the rows.
+    ///
+    /// **This is now the *only* thing the true size feeds, and that is why it had to stay
+    /// (T-2056).** The header's count capsule is gone on both platforms; the caption under the rows
+    /// is what is left saying "there are more of these than you can see", and it is the better of
+    /// the two for that job — "Showing 24 of 40" names both numbers, where the capsule named one
+    /// and left the reader to count the rows. Deleting the cap instead was considered and is filed
+    /// rather than done: these rows are built in a plain `VStack`, so an uncapped Completed section
+    /// on All Tasks eagerly constructs one row per finished task, for as many as the store holds.
     var hiddenCount: Int?
 
     /// The section's true size: the rows drawn plus the rows the cap withheld.
@@ -102,7 +107,6 @@ struct iOSTaskGroupSection: View {
                 iOSTaskGroupHeader(
                     title: title,
                     color: color,
-                    count: totalCount,
                     dropIdentity: dropIdentity
                 )
 

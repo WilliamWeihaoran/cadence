@@ -664,7 +664,9 @@ struct CadenceSectionEyebrowConvergenceTests {
     /// board column header and the task group heading already state.
     @Test func theCountBesideAnEyebrowIsTheEyebrowsOwnSize() throws {
         #expect(SectionEyebrowLabel.fontSize == 10)
-        #expect(CadenceTaskGroupHeadingMetrics.countSize == SectionEyebrowLabel.fontSize)
+        // The task group heading used to be the third reader of this rule. T-2056 removed its
+        // count capsule on both platforms at the owner's request, so the two counts left beside an
+        // eyebrow are the board column's and the overdue summary heading's below.
         #expect(CadenceBoardColumnHeaderMetrics.countSize == SectionEyebrowLabel.fontSize)
 
         let card = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift"))
@@ -1106,8 +1108,8 @@ struct CadenceCompactEyebrowConvergenceTests {
     /// cannot find, which is how the annotation survived unexamined until somebody grepped the name.
     ///
     /// Deliberately narrow — this one file, and only backticked `…Metrics` identifiers. That is the
-    /// naming shape the eyebrow's neighbours use (`CadenceTaskGroupHeadingMetrics`,
-    /// `CadenceBoardColumnHeaderMetrics`, `SidebarMetrics`, `TaskInspectorFieldRowMetrics`), and a
+    /// naming shape the eyebrow's neighbours use (`CadenceBoardColumnHeaderMetrics`,
+    /// `CadenceCalendarWeekdayHeaderMetrics`, `SidebarMetrics`, `TaskInspectorFieldRowMetrics`), and a
     /// checker for every capitalised word in every doc comment in the app is a different, much
     /// noisier ticket. Live *code* is the corpus, so a name that survives only in this file's own
     /// prose does not vouch for itself.
@@ -1116,8 +1118,13 @@ struct CadenceCompactEyebrowConvergenceTests {
         let named = backtickedMetricsNames(inProseOf: try sourceFile(eyebrowPath))
 
         #expect(named.count >= 3, "non-vacuity: read \(named.count) backticked metrics names out of the eyebrow's prose")
+        // **Re-pointed, not weakened (T-2056).** The anchor was `CadenceTaskGroupHeadingMetrics`,
+        // which the eyebrow's prose named and which this change deleted along with the task group
+        // heading's count capsule. The anchor moves to a name the same prose still carries — and
+        // that it carries for the same reason, as the nonisolated reader whose existence is the
+        // justification for the `nonisolated` annotations in this file.
         #expect(
-            named.contains("CadenceTaskGroupHeadingMetrics"),
+            named.contains("CadenceBoardColumnHeaderMetrics"),
             "non-vacuity: the extractor missed a name this file demonstrably carries"
         )
 

@@ -133,7 +133,32 @@ nonisolated struct iOSTaskCollectionMetrics: Equatable, Sendable {
 
     /// **One number for both widths**, and the same one Today stacks its groups at
     /// (`CadenceTodaySectionMetrics`), so the three segments of the Tasks tab agree.
-    static let groupSpacing: CGFloat = 14
+    ///
+    /// **22, and derived rather than picked (T-2056).** The owner asked for more air between
+    /// sections and gave no figure. The figure comes from the two things the app had already
+    /// decided and this surface had not been measured against:
+    ///
+    /// - **The number here is not the gap the eye sees.** `iOSTaskSectionHeader.topPadding` is
+    ///   documented as "the inset between a group's rows and the eyebrow of the next group", and
+    ///   the header adds it above every eyebrow. So the visible gap was `14 + 6 = 20`, and what
+    ///   has to be chosen is 20's replacement, not 14's.
+    /// - **The app's own answer for "how far apart are two groups" is `iOSEditorSheetMetrics
+    ///   .groupSpacing`**, which settled five editor surfaces on 16 and recorded what that 16
+    ///   actually measures once a ruled section adds its own 12 above the hairline: **28 between
+    ///   ruled groups, 16 between cards**, "because the rule needs air around it and a card edge
+    ///   does not". A task group draws **neither** a rule nor a card — `85809ff` deleted the card
+    ///   and nothing replaced it — so white space is the only separator it has, and it needs at
+    ///   least what a separator-bearing group needs. That is the 28 end of that pair.
+    ///
+    /// `28 - iOSTaskSectionHeader.topPadding` is 22. Written as a literal rather than as that
+    /// expression because `iOSTaskSectionHeader` lives inside `#if os(iOS)` and this type is
+    /// deliberately outside it, so the macOS-built test target can read it;
+    /// `iOSTaskCollectionMetricsTests` pins the relation instead.
+    ///
+    /// Removing the count capsule in the same change took `2 × 4` points of capsule padding out of
+    /// every header, so the net gain per section is 6pt rather than 8 — the page gets looser
+    /// without the header rhythm going slack.
+    static let groupSpacing: CGFloat = 22
 
     /// Today's page stack, which is the sibling segment of the same tab. All Tasks stacked its
     /// header, bar and groups 12pt apart and Inbox 11; neither was chosen.

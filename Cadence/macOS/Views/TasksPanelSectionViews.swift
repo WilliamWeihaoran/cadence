@@ -84,9 +84,9 @@ private let todayRowLeadingInset: CGFloat = TasksPanelMetrics.horizontalInset
 /// `CadenceTaskGroupHeading`, and that stays: a 3pt bar plus a chevron plus two capsules is a
 /// pointer-density row, and the eyebrow is the phone's. `CadenceTaskGroupHeading`'s own doc used to
 /// call itself "one heading for Today on both platforms" and no longer does. **This divergence is
-/// the decision, not drift — do not re-file it.** What is still shared is the *rule* about counts:
-/// both headings ask `CadenceTaskGroupHeadingMetrics.showsCapsule`, so neither invents a `0` for a
-/// group that does not know its own size.
+/// the decision, not drift — do not re-file it.** What the two headings now agree on is simpler
+/// than the rule they used to share: neither draws a count at all (T-2056), so there is no `0` for
+/// either of them to invent.
 ///
 /// **The rows are `TaskListInteractiveRow`, not a fourth copy of it (T-608).** This drew
 /// `MacTaskRow` and then re-implemented the shared row's whole chain around it — `.draggable`, the
@@ -195,21 +195,26 @@ struct TasksPanelIntentSectionView: View {
 
     /// **No count capsules, by the owner's decision (T-1495):** *"remove these pills from the
     /// section headings of lists in today's view"* — both the red overdue flag and the `n tasks`
-    /// capsule. It is done by asking `TaskListGroupHeader` for neither figure, not by restructuring
-    /// it: `overdueCount` defaults to `nil`, and `taskCount: nil` is the same suppression a group
-    /// standing for unread reminders already uses (`CadenceTaskGroupHeadingMetrics.showsCapsule`).
+    /// capsule. This header asked for neither figure rather than restructuring the component.
     ///
-    /// This file therefore no longer calls `TasksPanelSupport.overdueCount` / `.openCount`. Those
-    /// two are **not** dead and must not be deleted — All Tasks (`TasksListView`) and list detail
-    /// (`ListDetailComponents`) still show the split and still share the one pair, which is the
-    /// rule that stopped a fourth private copy of "how many of these are late". Today has simply
-    /// stopped asking the question; Today's *Completed* group below still shows its own plain
-    /// `count:`, which the owner's request did not name.
+    /// **T-2056 generalised it: the `n tasks` capsule is gone from `TaskListGroupHeader` outright**,
+    /// after the owner asked for the same pills off iOS and iPadOS and then said to take them off
+    /// the Mac too. So there is no `taskCount:` left to pass here or anywhere, and Today's
+    /// *Completed* group below — the one surface the T-1495 request did not name and which
+    /// therefore kept its plain `count:` — has lost it as well. `overdueCount` survives as a
+    /// parameter, because a late-work flag is a warning rather than a tally; this header still
+    /// declines it.
+    ///
+    /// This file therefore still does not call `TasksPanelSupport.overdueCount` / `.openCount`.
+    /// `overdueCount` is **not** dead and must not be deleted — All Tasks (`TasksListView`) and
+    /// list detail (`ListDetailComponents`) still raise the red flag and still share the one
+    /// helper, which is the rule that stopped a fourth private copy of "how many of these are
+    /// late". `openCount` has no caller left; it is left in place rather than deleted here because
+    /// pruning `TasksPanelSupport` is not this change.
     private var header: some View {
         TaskListGroupHeader(
             title: title,
             isCollapsed: isCollapsed,
-            taskCount: nil,
             accent: accent,
             onToggle: onToggle
         )
@@ -252,7 +257,6 @@ struct TasksPanelCompletedSectionView: View {
             // list of finished ones. Done work has one number.
             TaskListGroupHeader(
                 title: CadenceTodayPresentationSupport.completedSectionTitle,
-                count: tasks.count,
                 isCollapsed: isCollapsed,
                 accent: CadenceTodayPresentationSupport.completedSectionAccent,
                 onToggle: onToggle
