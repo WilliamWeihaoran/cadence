@@ -151,15 +151,28 @@ enum CadenceTaskDropSupport {
             // is exactly the back door T-1276 was told to keep shut.
             return "priority:\(priority.rawValue)"
         case .timelineDay(let dateKey):
-            // The day and nothing else. The column names no list — a timeline draws work from
-            // every list at once — so there is nothing else here that is true of every block in
-            // it. The *time* is appended at drop time by `key(_:appendingSlotMinute:)`.
+            // The day, and the marker that says a drop here makes an **event** (T-2065). The
+            // column names no list — a timeline draws work from every list at once — so there is
+            // nothing else here that is true of every block in it. The *time* is appended at drop
+            // time by `key(_:appendingSlotMinute:)`.
+            //
+            // **`newevent` is a part of the key, not a parallel channel**, for the same reason
+            // `newlist:` is: the column registers in the same `iOSNewTaskDropFrameRegistry`, is
+            // hit-tested by the same `CadenceCaptureDropHitTest`, and draws the same ghost as
+            // every other destination. The one thing that differs is what the released finger
+            // commits to, and that is decided once — see
+            // `CadenceCaptureSeedResolver.creation(for:dropKey:todayKey:)`.
+            //
+            // It carries no value of its own because a `date:` and a `time:` already say
+            // everything an event needs from this destination, in the spelling every other
+            // destination already writes them in. A second encoding of "which day" is the wart
+            // `container(fromListKey:)` documents and this had no reason to repeat.
             //
             // A day already gone by resolves to nothing, through the same `dateValue` guard a row
             // in an Overdue group goes through, so the key is still emitted and the caption comes
             // back empty. The call site is what must not register a past column at all — see
             // `iOSCalendarTimelineDayColumn`.
-            return "date:\(dateKey)"
+            return "\(newEventPart)\(separator)date:\(dateKey)"
         }
     }
 
@@ -235,17 +248,54 @@ enum CadenceTaskDropSupport {
         return nil
     }
 
+    /// A drop that makes an **event** rather than a task: the calendar timeline, and nothing else.
+    ///
+    /// `startMinute` is optional because the day is the part the *destination* owns and the minute
+    /// is the part the *release point* owns — see `CadenceCaptureDropSlotRule`. A column whose slot
+    /// rule never resolved a minute still names a real day, and an event composer opened on that
+    /// day with its own default hour is a better answer than refusing the drop.
+    struct NewEventDrop: Equatable {
+        var dateKey: String
+        var startMinute: Int?
+    }
+
+    /// The event-creation a key asks for, or `nil` when the key asks for a task like every other.
+    ///
+    /// **It reads the day and the minute back through `seed(forDropKey:todayKey:)` rather than
+    /// off the raw parts**, so the past-date guard in `dateValue` and the "a time with no day is
+    /// not a time" rule apply here exactly as they apply to a task. A column whose day has since
+    /// gone by therefore answers `nil` — not "an event today", and not "an event at an hour with
+    /// no day" — and the drop degrades to the unscoped composer a fizzled drag already opens.
+    static func newEventDrop(forDropKey key: String, todayKey: String) -> NewEventDrop? {
+        guard key.split(separator: separator).contains(Substring(newEventPart)) else { return nil }
+        let seed = seed(forDropKey: key, todayKey: todayKey)
+        guard !seed.doDateKey.isEmpty else { return nil }
+        return NewEventDrop(
+            dateKey: seed.doDateKey,
+            startMinute: seed.scheduledStartMin >= 0 ? seed.scheduledStartMin : nil
+        )
+    }
+
     /// What the ghost calls the thing that is about to exist.
     ///
     /// The ghost used to print "New task" as a literal, which was true while a task was the only
     /// thing a dropped `+` could make. It is derived from the key now for the same reason the
     /// caption always has been: the words under the finger and what the release commits to come
     /// from one answer, so they cannot come apart.
+    ///
+    /// The event arm asks only for the marker, not for a resolvable day, because the title names
+    /// the *kind* of thing and a stale column is still a calendar. `placementCaption` is where the
+    /// day has to resolve, and it answers "" for a stale key — which is the same pair "New list"
+    /// already makes with an unreadable context group.
     static func ghostTitle(forDropKey key: String) -> String {
-        newListDrop(forDropKey: key) == nil ? "New task" : "New list"
+        if newListDrop(forDropKey: key) != nil { return "New list" }
+        if key.split(separator: separator).contains(Substring(newEventPart)) { return "New event" }
+        return "New task"
     }
 
     static let newListPrefix = "newlist:"
+    /// The whole part, not a prefix: it carries no value. See `dropKey(forGroup:)`.
+    static let newEventPart = "newevent"
     private static let newListNoContextValue = "none"
 
     // MARK: What a surface knows about itself
@@ -437,6 +487,19 @@ enum CadenceTaskDropSupport {
             guard newList.contextID != nil else { return "" }
             let trimmed = listName.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? "" : "in \(trimmed)"
+        }
+
+        // **An event-creating key says when the event starts, in event words.** Running it through
+        // the task branch below would print "Do Today at 2:15 PM" — `Do` is the do-date field of a
+        // task, and an event has no do date, so the caption would name a field the thing being
+        // created does not have. The day and the hour are the whole claim, and they are read back
+        // through `newEventDrop`, which is the same resolution the release will commit to.
+        if let newEvent = newEventDrop(forDropKey: key, todayKey: todayKey) {
+            var text = dayLabel(newEvent.dateKey, todayKey: todayKey)
+            if let minute = newEvent.startMinute {
+                text += " at \(TimeFormatters.timeString(from: minute))"
+            }
+            return text
         }
 
         let seed = seed(forDropKey: key, todayKey: todayKey)

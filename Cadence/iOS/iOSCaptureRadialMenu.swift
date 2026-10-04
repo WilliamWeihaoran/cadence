@@ -321,7 +321,14 @@ extension EnvironmentValues {
 struct iOSCaptureRequest: Identifiable {
     enum Kind {
         case task(CadenceTaskComposerSeed)
-        case event
+        /// An event composer opened on `dateKey`, at `startMinute` when a drop resolved one.
+        ///
+        /// **The palette's Event segment and a timeline drop reach the same case** (T-2065). The
+        /// segment names a kind and nothing about when, so it passes today and no minute — which
+        /// is exactly what it opened before this case carried anything. A day column names both,
+        /// because its whole vertical axis is a time. Two cases would have been two composers to
+        /// keep in step for one composer's worth of behaviour.
+        case event(dateKey: String, startMinute: Int?)
         case note
         /// A new list in the sidebar context group a drag came down on, or — `nil` — in none.
         ///
@@ -385,7 +392,7 @@ struct iOSCaptureRadialMenuButton: View {
             // VoiceOver cannot slide around a radial menu, so the segments are also plain actions.
             // Same three commitments, reached without the gesture.
             .accessibilityAction(named: Text(CadenceCaptureAction.event.title)) {
-                interaction.request(.event)
+                interaction.request(kind(for: .event))
             }
             .accessibilityAction(named: Text(CadenceCaptureAction.note.title)) {
                 interaction.request(.note)
@@ -432,7 +439,10 @@ struct iOSCaptureRadialMenuButton: View {
     private func kind(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind {
         switch action {
         case .task: return .task(seed(for: .action(.task), droppedOn: nil, atMinute: nil))
-        case .event: return .event
+        // Today, with no minute. **A segment is a choice about *what*, never about *when***, which
+        // is the same rule that keeps a tap unscoped: the palette opens from any page and the
+        // composer's own controls say the rest. Only a drop names an hour.
+        case .event: return .event(dateKey: DateFormatters.todayKey(), startMinute: nil)
         case .note: return .note
         }
     }
@@ -442,6 +452,8 @@ struct iOSCaptureRadialMenuButton: View {
         switch creation {
         case .task(let seed): return .task(seed)
         case .list(let contextID): return .list(contextID: contextID)
+        case .event(let dateKey, let startMinute):
+            return .event(dateKey: dateKey, startMinute: startMinute)
         }
     }
 
@@ -636,8 +648,13 @@ private struct iOSCaptureHostModifier: ViewModifier {
                 switch request.kind {
                 case .task(let seed):
                     iOSCreateTaskSheet(seed: seed, onCreated: onCreated)
-                case .event:
-                    iOSCalendarQuickCreateSheet(dateKey: DateFormatters.todayKey(), initialKind: .event)
+                case .event(let dateKey, let startMinute):
+                    // The day and the hour come from the request, so the palette's Event segment
+                    // and a `+` dropped on a calendar day column open one composer rather than
+                    // two. `initialStartMinute` is what puts the dropped hour into the sheet's
+                    // start-time row; `nil` leaves the sheet on its own default, which is what the
+                    // segment has always done.
+                    iOSCalendarQuickCreateSheet(dateKey: dateKey, initialStartMinute: startMinute, initialKind: .event)
                 case .list(let contextID):
                     // The iOS twin of macOS's `CreateListSheet(context:)`: the drop decides which
                     // group the list joins and nothing else, and the editor states that group in

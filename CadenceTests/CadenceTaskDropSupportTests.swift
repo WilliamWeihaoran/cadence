@@ -437,12 +437,18 @@ struct CadenceTaskDropSupportTests {
 
     /// A day column names its day; the minute is appended once the finger has come down, because a
     /// column is one target and every minute in it is the same one.
+    ///
+    /// **T-2065 put `newevent` in front of the day** and left the day and the minute spelled
+    /// exactly as they were. The `date:`/`time:` half is still asserted here rather than moved to
+    /// the event suite, because it is what proves the marker was added *beside* the existing
+    /// vocabulary rather than instead of it — a column that stopped naming its day would still
+    /// read as an event drop and would open the composer on the wrong one.
     @Test func aTimelineColumnOffersItsDayAndTheDroppedMinute() {
         let key = CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-20"))
-        #expect(key == "date:2026-09-20")
+        #expect(key == "newevent|date:2026-09-20")
 
         let withMinute = CadenceTaskDropSupport.key(key ?? "", appendingSlotMinute: 9 * 60 + 30)
-        #expect(withMinute == "date:2026-09-20|time:570")
+        #expect(withMinute == "newevent|date:2026-09-20|time:570")
 
         let seed = CadenceTaskDropSupport.seed(forDropKey: withMinute, todayKey: "2026-09-18")
         #expect(seed.doDateKey == "2026-09-20")
@@ -502,5 +508,106 @@ struct CadenceTaskDropSupportTests {
         #expect(CadenceTaskDropSupport.key("list:inbox", appendingSlotMinute: nil) == "list:inbox")
         #expect(CadenceTaskDropSupport.key("", appendingSlotMinute: 600).isEmpty)
         #expect(CadenceTaskDropSupport.key("list:inbox", appendingSlotMinute: -1) == "list:inbox")
+    }
+
+    // MARK: - A timeline drop makes an event (T-2065)
+
+    /// **A calendar day column is not a place work goes — it is a place time goes.** The owner's
+    /// rule for the whole feature is that the `+` creates whatever the region it was dropped on
+    /// implies, and a column at 2:15 PM implies a 2:15 PM commitment rather than a task carrying
+    /// one. The day comes from the destination and the minute from the release point, and both
+    /// arrive through the same `dropKey` → `key(_:appendingSlotMinute:)` composition every other
+    /// drop uses.
+    @Test func aTimelineDropAsksForAnEventAtTheMinuteItLandedOn() {
+        let key = CadenceTaskDropSupport.key(
+            CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-20")) ?? "",
+            appendingSlotMinute: 14 * 60 + 15
+        )
+
+        #expect(
+            CadenceTaskDropSupport.newEventDrop(forDropKey: key, todayKey: "2026-09-18")
+                == CadenceTaskDropSupport.NewEventDrop(dateKey: "2026-09-20", startMinute: 14 * 60 + 15)
+        )
+    }
+
+    /// A column that resolved no minute still names a real day, so it is still an event drop —
+    /// with `nil` for the hour, which is what leaves the composer on its own default rather than
+    /// inventing midnight. `startMinute` being **optional** rather than clamped is the whole point:
+    /// a `0` here would open every unresolved drop at 12:00 AM.
+    @Test func aTimelineDropWithNoMinuteStillNamesItsDay() {
+        let key = CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-20")) ?? ""
+
+        #expect(
+            CadenceTaskDropSupport.newEventDrop(forDropKey: key, todayKey: "2026-09-18")
+                == CadenceTaskDropSupport.NewEventDrop(dateKey: "2026-09-20", startMinute: nil)
+        )
+    }
+
+    /// **A column whose day has gone by is not an event drop at all**, for the same reason it is
+    /// not a task drop: `dateValue` refuses the day, and an event composer opened on "no day" is
+    /// the accept-then-hand-over-nothing the group-header rule forbids. The marker alone must not
+    /// be enough — a `newEventDrop` that answered on the marker and then defaulted the day would
+    /// put the event on today, which is a day nobody pointed at.
+    @Test func aStaleTimelineColumnIsNotAnEventDrop() {
+        let stale = CadenceTaskDropSupport.key(
+            CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-01")) ?? "",
+            appendingSlotMinute: 600
+        )
+        #expect(CadenceTaskDropSupport.newEventDrop(forDropKey: stale, todayKey: "2026-09-18") == nil)
+    }
+
+    /// Every key the rest of the app already speaks still means a task. The `date:today` row is the
+    /// control the empty-denominator trap needs — it carries a day *and* an hour, so a reader that
+    /// decided by "has a time" rather than by the marker would pass the suite above and fail here.
+    @Test func everyOrdinaryDropKeyStillMeansSomethingOtherThanAnEvent() {
+        let ordinary = [
+            "list:inbox",
+            "date:today",
+            CadenceTaskDropSupport.key("date:today", appendingSlotMinute: 600),
+            "list:a_\(UUID().uuidString)|section:Doing",
+            CadenceTaskDropSupport.newListDropKey(contextID: UUID()),
+            ""
+        ]
+        for key in ordinary {
+            #expect(
+                CadenceTaskDropSupport.newEventDrop(forDropKey: key, todayKey: "2026-09-18") == nil,
+                "\(key) read as an event drop"
+            )
+            #expect(CadenceTaskDropSupport.ghostTitle(forDropKey: key) != "New event")
+        }
+    }
+
+    /// The ghost names the kind, and the caption names the hour in **event** words.
+    ///
+    /// "Do Today at 2:15 PM" is what the task branch prints, and `Do` is a task's do-date field —
+    /// a field an event does not have. The two assertions are kept together because the title and
+    /// the caption are two halves of one sentence, and the whole reason both are derived from the
+    /// key is that they cannot be allowed to come apart.
+    @Test func theTimelineGhostSaysNewEventAndNamesTheHourWithoutATasksVocabulary() {
+        let key = CadenceTaskDropSupport.key(
+            CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-18")) ?? "",
+            appendingSlotMinute: 14 * 60 + 15
+        )
+        #expect(CadenceTaskDropSupport.ghostTitle(forDropKey: key) == "New event")
+
+        let caption = CadenceTaskDropSupport.placementCaption(
+            forDropKey: key,
+            todayKey: "2026-09-18",
+            listName: ""
+        )
+        #expect(caption == "Today at \(TimeFormatters.timeString(from: 14 * 60 + 15))")
+        #expect(!caption.contains("Do "))
+        // A timeline names no list, and the caption must not invent the composer's default.
+        #expect(!caption.contains("Inbox"))
+    }
+
+    /// A column with no resolved minute captions the day alone rather than printing an hour it
+    /// does not have.
+    @Test func aTimelineGhostWithNoMinuteCaptionsTheDayAlone() {
+        let key = CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-18")) ?? ""
+        #expect(
+            CadenceTaskDropSupport.placementCaption(forDropKey: key, todayKey: "2026-09-18", listName: "")
+                == "Today"
+        )
     }
 }

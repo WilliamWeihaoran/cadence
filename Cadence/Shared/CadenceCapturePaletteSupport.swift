@@ -441,13 +441,23 @@ struct CadenceCaptureDropSlotRule: Equatable, Sendable {
 /// is being created" a second answer the drop has to carry, and it is carried as a value here
 /// rather than as a branch at the button, so the one place that decides is testable without a view.
 ///
-/// There is deliberately no `.event` / `.note` case: those are *palette* choices, which the button
-/// already routes by segment and which no drop target can name. This enum is what a **destination**
-/// implies, and a destination implies either a task or a list.
+/// There is deliberately no `.note` case: a note is a *palette* choice, which the button already
+/// routes by segment and which no drop target can name. This enum is what a **destination**
+/// implies, and the three destinations that imply anything are a task surface, the iPad sidebar's
+/// context groups, and a calendar day column.
+///
+/// **`.event` is here because a calendar timeline is not a place work goes — it is a place time
+/// goes** (T-2065). The owner's rule for the whole feature is that the `+` creates whatever the
+/// region it was dropped on implies, and a day column at 2:15 PM implies a 2:15 PM commitment, not
+/// a task that happens to carry one. It is the same reading that made a sidebar context group
+/// produce a list rather than a task filed into one.
 enum CadenceCaptureCreation: Equatable {
     case task(CadenceTaskComposerSeed)
     /// A list in the named group, or — `nil` — in none. See `CadenceTaskDropSupport.NewListDrop`.
     case list(contextID: UUID?)
+    /// An event on the named day, starting at the minute the drop resolved — or, with no minute,
+    /// on that day at the composer's own default hour. See `CadenceTaskDropSupport.NewEventDrop`.
+    case event(dateKey: String, startMinute: Int?)
 }
 
 /// The composer seed a finished capture press commits to.
@@ -487,21 +497,27 @@ enum CadenceCaptureSeedResolver {
         }
     }
 
-    /// What this press commits to: a seeded task, or a new list in the group a drop landed on.
+    /// What this press commits to: a seeded task, a new list in the group a drop landed on, or an
+    /// event at the minute a calendar day column resolved.
     ///
-    /// **Only a `.drop` can ask for a list.** A tap and a palette segment name the thing being
-    /// created and nothing about where it goes — that is T-337's rule, that the button contributes
-    /// nothing and the target contributes everything — so a key reaching this function by any
-    /// other route is a key no destination produced, and it is ignored rather than honoured.
+    /// **Only a `.drop` can ask for a list or an event.** A tap and a palette segment name the
+    /// thing being created and nothing about where it goes — that is T-337's rule, that the button
+    /// contributes nothing and the target contributes everything — so a key reaching this function
+    /// by any other route is a key no destination produced, and it is ignored rather than
+    /// honoured. The gate is written once, around both branches, so a third destination kind
+    /// cannot be added outside it by accident.
     static func creation(
         for outcome: CadenceCapturePressOutcome,
         dropKey: String?,
         todayKey: String
     ) -> CadenceCaptureCreation {
-        if case .drop = outcome,
-           let dropKey,
-           let newList = CadenceTaskDropSupport.newListDrop(forDropKey: dropKey) {
-            return .list(contextID: newList.contextID)
+        if case .drop = outcome, let dropKey {
+            if let newList = CadenceTaskDropSupport.newListDrop(forDropKey: dropKey) {
+                return .list(contextID: newList.contextID)
+            }
+            if let newEvent = CadenceTaskDropSupport.newEventDrop(forDropKey: dropKey, todayKey: todayKey) {
+                return .event(dateKey: newEvent.dateKey, startMinute: newEvent.startMinute)
+            }
         }
         return .task(seed(for: outcome, dropKey: dropKey, todayKey: todayKey))
     }

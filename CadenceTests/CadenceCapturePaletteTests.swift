@@ -1111,6 +1111,94 @@ struct CadenceCapturePaletteTests {
             "the palette overlay now takes touches, so its scrim's extent is a capability difference between the two shells, not a visual one — re-read T-491"
         )
     }
+
+    // MARK: - A drop on a calendar day column makes an event (T-2065)
+
+    /// **Three destinations, three commitments, asserted from one release each so none can be read
+    /// as another.** A calendar day column makes an event at the minute it resolved; a task row
+    /// still makes a task filed where the row sits; a sidebar context group still makes a list.
+    ///
+    /// The task row is the control the one-candidate trap needs. A resolver that answered `.event`
+    /// to *everything* — or that dropped the event branch entirely and answered `.task` to
+    /// everything — would pass a suite with only one row in it.
+    @Test func aCalendarColumnMakesAnEventWhileARowStillMakesATaskAndAGroupStillMakesAList() {
+        let todayKey = "2026-09-18"
+        let onColumn = CadenceCaptureSeedResolver.creation(
+            for: .drop,
+            dropKey: CadenceTaskDropSupport.key(
+                CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-20")) ?? "",
+                appendingSlotMinute: 14 * 60 + 15
+            ),
+            todayKey: todayKey
+        )
+        #expect(onColumn == .event(dateKey: "2026-09-20", startMinute: 14 * 60 + 15))
+
+        let onRow = CadenceCaptureSeedResolver.creation(
+            for: .drop,
+            dropKey: "list:inbox|date:today",
+            todayKey: todayKey
+        )
+        guard case .task(let seed) = onRow else {
+            Issue.record("a task row stopped making a task")
+            return
+        }
+        #expect(seed.doDateKey == todayKey)
+
+        let context = UUID()
+        #expect(
+            CadenceCaptureSeedResolver.creation(
+                for: .drop,
+                dropKey: CadenceTaskDropSupport.newListDropKey(contextID: context),
+                todayKey: todayKey
+            ) == .list(contextID: context)
+        )
+    }
+
+    /// **Only a `.drop` can ask for an event**, the same gate `.list` goes through. A tap and a
+    /// palette segment name the thing being created and nothing about where it goes, so a key
+    /// reaching the resolver by any other route is a key no destination produced. A `.action(.task)`
+    /// arm that consulted the key would compile and would put a calendar hour on a task nobody
+    /// dragged anywhere.
+    @Test func onlyADropCanAskForAnEvent() {
+        let key = CadenceTaskDropSupport.key(
+            CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-20")) ?? "",
+            appendingSlotMinute: 600
+        )
+        for outcome: CadenceCapturePressOutcome in [.tap, .action(.task), .action(.event), .dismissed, .none] {
+            #expect(
+                CadenceCaptureSeedResolver.creation(for: outcome, dropKey: key, todayKey: "2026-09-18")
+                    == .task(CadenceTaskComposerSeed()),
+                "\(outcome) inherited a calendar column"
+            )
+        }
+    }
+
+    /// **One event composer, reached two ways.** The palette's Event segment names a kind and
+    /// nothing about when; a day column names a day and an hour. Both land on the same
+    /// `iOSCaptureRequest.Kind.event`, and `neitherPlacementSpellsTheComposersItself` already
+    /// pins that `iOSCalendarQuickCreateSheet(` is stated exactly once in this file — so this is
+    /// the half that says the one statement actually carries the drop's day and minute rather than
+    /// re-reading today.
+    @Test func theEventComposerOpensOnTheDayAndMinuteTheDropResolved() throws {
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
+        #expect(host.contains("iOSCalendarQuickCreateSheet(dateKey: dateKey, initialStartMinute: startMinute, initialKind: .event)"))
+        // The segment's own arm is the one place `today` may still be named, and it passes no
+        // minute: a segment is a choice about *what*, never about *when*.
+        let button = try cadenceFunctionBody("struct iOSCaptureRadialMenuButton: View", in: host)
+        let kind = try cadenceFunctionBody(
+            "private func kind(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind",
+            in: button
+        )
+        #expect(kind.contains("case .event: return .event(dateKey: DateFormatters.todayKey(), startMinute: nil)"))
+
+        // And the drop arm routes the destination's own answer through rather than re-deciding.
+        let forCreation = try cadenceFunctionBody(
+            "private func kind(forCreation creation: CadenceCaptureCreation) -> iOSCaptureRequest.Kind",
+            in: button
+        )
+        #expect(forCreation.contains("return .event(dateKey: dateKey, startMinute: startMinute)"))
+        #expect(forCreation.contains("DateFormatters.todayKey()") == false)
+    }
 }
 
 // MARK: - Source access
