@@ -544,34 +544,14 @@ struct CadenceSeedColourSourceTests {
         )
     }
 
-    /// The goal sheet held the same value **twice** — the property initialiser and the `init` seed
-    /// that overwrites it when editing. Both arms, for the reason `CreateListSheet`'s two switch
-    /// arms are both asserted: one arm still spelling its own hex beside one that does not is how
-    /// `#4ecb71` outlived `projectDefault` being pointed at `Theme.greenHex`.
-    @Test func theCreateGoalSheetSeedsBothOfItsColourStatesFromTheAccent() throws {
-        let sheet = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Sheets/CreateGoalSheet.swift"))
-        #expect(sheet.contains("struct CreateGoalSheet: View"), "non-vacuity: still the sheet")
-
-        #expect(sheet.contains("@State private var selectedColor = Theme.blueHex"))
-        #expect(sheet.contains("_selectedColor = State(initialValue: goal?.colorHex ?? Theme.blueHex)"))
-        #expect(palettteRegexMatches(#"Theme\.blueHex"#, in: sheet).count == 2, "both seeds, not one")
-        #expect(
-            palettteRegexMatches(paletteHexLiteralPattern, in: sheet).isEmpty,
-            "CreateGoalSheet hand-types a colour: \(palettteRegexMatches(paletteHexLiteralPattern, in: sheet))"
-        )
-    }
-
-    /// A new habit's seed.
-    @Test func theCreateHabitSheetSeedsFromTheAccentRatherThanItsValue() throws {
-        let sheet = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Views/HabitsFormSheets.swift"))
-        #expect(sheet.contains("struct CreateHabitSheet: View"), "non-vacuity: still the sheet")
-
-        #expect(sheet.contains("@State private var selectedColor = Theme.blueHex"))
-        #expect(
-            palettteRegexMatches(paletteHexLiteralPattern, in: sheet).isEmpty,
-            "HabitsFormSheets hand-types a colour: \(palettteRegexMatches(paletteHexLiteralPattern, in: sheet))"
-        )
-    }
+    // **The goal and habit create sheets' colour seeds left with [[T-2079]].**
+    //
+    // `CreateGoalSheet` and `CreateHabitSheet` each seeded `selectedColor` from
+    // `Theme.blueHex` rather than a hand-typed hex, and the goal sheet held the value twice —
+    // the property initialiser and the `init` seed that overwrote it when editing — so both
+    // arms were asserted. Both sheets are deleted; nothing in the app picks a colour for a new
+    // goal or habit because nothing creates one. The rule they were instances of is unchanged
+    // and still has its own tests here: no file outside `Theme.swift` hand-types a hex.
 
     /// The odd one out: not an accent but the app's single neutral, on the "Unassigned" habit
     /// group's icon tile.

@@ -35,207 +35,16 @@ struct CadenceTrackingEditorSaveCommitTests {
 
     // MARK: - Goals
 
-    /// The success path, asserted from a **second context on the same container**: the first
-    /// context answers with the new goal whether or not the save landed, so a single-context
-    /// assertion passes against the bug.
-    @Test func acommittedGoalCreationIsInTheStoreBeforeTheEditorCouldClose() throws {
-        let modelContainer = try container()
-        let modelContext = ModelContext(modelContainer)
-
-        let goal = try CadenceTrackingMutationSupport.saveGoal(
-            nil,
-            title: "Ship the thing",
-            desc: "",
-            startDate: "2026-08-30",
-            endDate: "2026-09-30",
-            progressType: .subtasks,
-            targetHours: 0,
-            icon: "flag.fill",
-            colorHex: Theme.blueHex,
-            kind: .completable,
-            status: .active,
-            context: nil,
-            parentGoal: nil,
-            allGoals: [],
-            modelContext: modelContext
-        )
-
-        #expect(goal != nil)
-        #expect(!modelContext.hasChanges)
-        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Goal>()).map(\.title) == ["Ship the thing"])
-    }
-
-    /// A refused creation throws **and leaves nothing behind** — not in the store, and not pending
-    /// in the context, where the next unrelated `save()` from any other screen would commit it.
-    @Test func arefusedGoalCreationLeavesNothingPendingForSomeoneElseToCommit() throws {
-        let modelContainer = try container()
-        let modelContext = ModelContext(modelContainer)
-
-        #expect(throws: CommitRefused.self) {
-            _ = try CadenceTrackingMutationSupport.saveGoal(
-                nil,
-                title: "Ship the thing",
-                desc: "",
-                startDate: "2026-08-30",
-                endDate: "2026-09-30",
-                progressType: .subtasks,
-                targetHours: 0,
-                icon: "flag.fill",
-                colorHex: Theme.blueHex,
-                kind: .completable,
-                status: .active,
-                context: nil,
-                parentGoal: nil,
-                allGoals: [],
-                modelContext: modelContext,
-                commit: { _ in throw CommitRefused() }
-            )
-        }
-
-        #expect(try modelContext.fetch(FetchDescriptor<Goal>()).isEmpty)
-        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Goal>()).isEmpty)
-    }
-
-    /// A refused **edit** puts every field back. Without the undo, the live `Goal` keeps answering
-    /// with the new title while the store holds the old one, and every `@Query` list on screen
-    /// shows a rename that did not happen.
-    @Test func arefusedGoalEditPutsEveryFieldBackTheWayItWasFound() throws {
-        let modelContainer = try container()
-        let modelContext = ModelContext(modelContainer)
-        let goal = Goal(title: "Old")
-        goal.desc = "Old definition"
-        goal.startDate = "2026-01-01"
-        goal.endDate = "2026-02-01"
-        goal.icon = "flag.fill"
-        goal.colorHex = Theme.blueHex
-        goal.kind = .completable
-        goal.status = .active
-        goal.targetHours = 3
-        modelContext.insert(goal)
-        try modelContext.save()
-
-        #expect(throws: CommitRefused.self) {
-            _ = try CadenceTrackingMutationSupport.saveGoal(
-                goal,
-                title: "New",
-                desc: "New definition",
-                startDate: "2026-03-01",
-                endDate: "2026-04-01",
-                progressType: .hours,
-                targetHours: 40,
-                icon: "sparkles",
-                colorHex: Theme.redHex,
-                kind: .ongoing,
-                status: .paused,
-                context: nil,
-                parentGoal: nil,
-                allGoals: [goal],
-                modelContext: modelContext,
-                commit: { _ in throw CommitRefused() }
-            )
-        }
-
-        #expect(goal.title == "Old")
-        #expect(goal.desc == "Old definition")
-        #expect(goal.startDate == "2026-01-01")
-        #expect(goal.endDate == "2026-02-01")
-        #expect(goal.progressType == .subtasks)
-        #expect(goal.targetHours == 3)
-        #expect(goal.icon == "flag.fill")
-        #expect(goal.colorHex == Theme.blueHex)
-        #expect(goal.kind == .completable)
-        #expect(goal.status == .active)
-    }
-
-    /// `nil` still means only what it always meant — the title was empty — and it is **not** a
-    /// throw. That separation is the whole of T-470: a caller that conflated the two would show a
-    /// store failure for a blank field, or swallow a refused store, depending which way it guessed.
-    @Test func anemptyGoalTitleAnswersNilRatherThanThrowingEvenWhenTheCommitWouldRefuse() throws {
-        let modelContext = ModelContext(try container())
-        let goal = try CadenceTrackingMutationSupport.saveGoal(
-            nil,
-            title: "   ",
-            desc: "",
-            startDate: "2026-08-30",
-            endDate: "2026-09-30",
-            progressType: .subtasks,
-            targetHours: 0,
-            icon: "flag.fill",
-            colorHex: Theme.blueHex,
-            kind: .completable,
-            status: .active,
-            context: nil,
-            parentGoal: nil,
-            allGoals: [],
-            modelContext: modelContext,
-            commit: { _ in throw CommitRefused() }
-        )
-        #expect(goal == nil)
-    }
+    // **The seven goal and habit editor tests left with [[T-2079]].**
+    //
+    // They covered `saveGoal` and `saveHabit`: that a committed create was in the store before
+    // the editor could close, that a refused one left nothing pending for someone else's
+    // `save()` to take, that a refused *edit* put every field back ([[T-322]]), that an empty
+    // title answered `nil` rather than throwing, and that macOS's goal sheet reached
+    // `dismiss()` only past a successful `try`. Both helpers and all three editors are gone.
+    // The block family below is untouched and is what still gives this suite its subject.
 
     // MARK: - Habits
-
-    @Test func arefusedHabitCreationLeavesNothingPendingForSomeoneElseToCommit() throws {
-        let modelContainer = try container()
-        let modelContext = ModelContext(modelContainer)
-
-        #expect(throws: CommitRefused.self) {
-            _ = try CadenceTrackingMutationSupport.saveHabit(
-                nil,
-                title: "Read",
-                icon: "book.fill",
-                colorHex: Theme.blueHex,
-                frequencyType: .daily,
-                frequencyDays: [],
-                targetCount: 1,
-                context: nil,
-                goal: nil,
-                allHabits: [],
-                modelContext: modelContext,
-                commit: { _ in throw CommitRefused() }
-            )
-        }
-
-        #expect(try modelContext.fetch(FetchDescriptor<Habit>()).isEmpty)
-        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Habit>()).isEmpty)
-    }
-
-    @Test func arefusedHabitEditPutsEveryFieldBackTheWayItWasFound() throws {
-        let modelContainer = try container()
-        let modelContext = ModelContext(modelContainer)
-        let habit = Habit(title: "Old")
-        habit.icon = "book.fill"
-        habit.colorHex = Theme.blueHex
-        habit.frequencyType = .daily
-        habit.frequencyDays = []
-        habit.targetCount = 1
-        modelContext.insert(habit)
-        try modelContext.save()
-
-        #expect(throws: CommitRefused.self) {
-            _ = try CadenceTrackingMutationSupport.saveHabit(
-                habit,
-                title: "New",
-                icon: "figure.run",
-                colorHex: Theme.redHex,
-                frequencyType: .daysOfWeek,
-                frequencyDays: [1, 3, 5],
-                targetCount: 3,
-                context: nil,
-                goal: nil,
-                allHabits: [habit],
-                modelContext: modelContext,
-                commit: { _ in throw CommitRefused() }
-            )
-        }
-
-        #expect(habit.title == "Old")
-        #expect(habit.icon == "book.fill")
-        #expect(habit.colorHex == Theme.blueHex)
-        #expect(habit.frequencyType == .daily)
-        #expect(habit.frequencyDays == [])
-        #expect(habit.targetCount == 1)
-    }
 
     // MARK: - Blocks
 
@@ -319,42 +128,27 @@ struct CadenceTrackingEditorSaveCommitTests {
 
     /// The notices are held beside the mutations that throw them, so a surface reaching for one
     /// cannot invent a sixth spelling of "that didn't work".
+    ///
+    /// **Two of the five went with [[T-2079]]**: `goalSaveFailureNotice` and
+    /// `habitSaveFailureNotice` named refusals of `saveGoal` and `saveHabit`, and neither helper
+    /// nor either notice exists. What the pair proved — that a *create* carries no "Nothing was
+    /// removed." clause and a *delete* does, because a refused creation has nothing to fear losing
+    /// — is still proved, by the block family that remains.
     @Test func eachRefusalNamesItsOwnObjectAndOnlyTheDeleteClaimsNothingWasRemoved() {
-        #expect(CadenceTrackingMutationSupport.goalSaveFailureNotice == "Couldn't save this goal.")
-        #expect(CadenceTrackingMutationSupport.habitSaveFailureNotice == "Couldn't save this habit.")
         #expect(CadenceTaskMutationSupport.bundleDeleteFailureNotice.contains("Nothing was removed."))
-        // The create family carries no such clause: a refused creation has nothing to fear losing.
-        #expect(!CadenceTrackingMutationSupport.goalSaveFailureNotice.contains("Nothing"))
         #expect(!CadenceTaskMutationSupport.bundleSaveFailureNotice.contains("Nothing"))
-    }
-
-    /// macOS's goal editor. A private method on a SwiftUI view, so this is a scan.
-    @Test func themacGoalSheetDismissesOnlyThroughASuccessfulTry() throws {
-        let body = try functionBody("save", in: "Cadence/macOS/Sheets/CreateGoalSheet.swift")
-        #expect(CadenceSourceScan.matchCount("try CadenceTrackingMutationSupport\\.saveGoal", in: body) == 1)
-        #expect(CadenceSourceScan.matchCount("saveError = CadenceTrackingMutationSupport\\.goalSaveFailureNotice", in: body) == 1)
-        #expect(
-            failureBranchReturnsBeforeReportingSuccess(body, report: "dismiss()"),
-            "CreateGoalSheet.save() can still reach dismiss() from the catch"
-        )
+        // Non-vacuity: the two notices really are different sentences about the same object, so the
+        // contrast above is a property of the pair rather than of one string.
+        #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice != CadenceTaskMutationSupport.bundleDeleteFailureNotice)
     }
 
     /// The three iOS call sites, which this target does not compile.
     @Test func theIOSTrackingEditorsAndBlockDeleteDismissOnlyThroughASuccessfulTry() throws {
-        for (name, path, notice) in [
-            ("save", "Cadence/iOS/iOSTrackingEditorSheets.swift", "goalSaveFailureNotice"),
-            ("save", "Cadence/iOS/iOSTrackingEditorSheets.swift", "habitSaveFailureNotice"),
-        ] {
-            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-            #expect(CadenceSourceScan.matchCount("actionError = CadenceTrackingMutationSupport\\.\(notice)", in: source) >= 1, "\(path) \(name)")
-        }
-
-        let editors = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTrackingEditorSheets.swift")
-        )
-        #expect(CadenceSourceScan.matchCount("try\\? modelContext\\.save\\(\\)", in: editors) == 0)
-        #expect(CadenceSourceScan.matchCount("try CadenceTrackingMutationSupport\\.save(Goal|Habit)", in: editors) == 2)
-
+        // **The two iOS tracking editors left with [[T-2079]].** `iOSTrackingEditorSheets.swift`
+        // held `iOSGoalEditorSheet` and `iOSHabitEditorSheet`, both of which saved through
+        // `CadenceTrackingMutationSupport`; the file is deleted, so the assertions that each one
+        // reached `actionError` before `dismiss()` have no subject. The block half below is
+        // untouched and is what still gives this test its name.
         let sheet = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
         )
@@ -459,12 +253,22 @@ struct CadenceTrackingEditorSaveCommitTests {
         )
     }
 
-    /// Non-vacuity for the three scans above: the reader really returned Swift.
+    /// Non-vacuity for the scans above: the reader really returned Swift.
+    ///
+    /// It read `iOSTrackingEditorSheets.swift` and `CreateGoalSheet.swift` until [[T-2079]] deleted
+    /// both — they were pure goal/habit write surfaces. It reads the block sheet instead, which is
+    /// the one this suite still scans, and **asserts the two deleted paths are gone**: a
+    /// non-vacuity check that silently started reading a file that no longer exists would throw
+    /// rather than report, and a re-added editor should fail here rather than slip past.
     @Test func thetrackingSaveCommitScansReadRealSource() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTrackingEditorSheets.swift")
-        #expect(raw.contains("struct iOSGoalEditorSheet: View"))
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
+        #expect(raw.contains("struct iOSCalendarBundleDetailSheet: View"))
         #expect(CadenceSourceScan.strippingComments(raw) != raw)
-        #expect(try functionBody("save", in: "Cadence/macOS/Sheets/CreateGoalSheet.swift").contains("do {"))
+
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        #expect(files.count > 300, "the sweep read \(files.count) files and cannot be doing its job")
+        #expect(!files.contains("Cadence/iOS/iOSTrackingEditorSheets.swift"))
+        #expect(!files.contains("Cadence/macOS/Sheets/CreateGoalSheet.swift"))
     }
 
     private func functionBody(_ name: String, in path: String) throws -> String {

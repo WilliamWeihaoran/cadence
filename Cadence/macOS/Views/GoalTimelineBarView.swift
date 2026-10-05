@@ -18,9 +18,6 @@ struct GoalTimelineBarView: View {
     let onSelect: () -> Void
     let onOpen: () -> Void
 
-    @State private var activeDragMode: GoalTimelineBarDragMode?
-    @State private var activeDeltaDays = 0
-
     private var goalRange: (start: Date, end: Date)? {
         guard let start = goal.startDateDate,
               let end = goal.endDateDate else {
@@ -29,33 +26,15 @@ struct GoalTimelineBarView: View {
         return (start, end)
     }
 
-    private var displayedRange: (start: Date, end: Date)? {
-        guard let goalRange else { return nil }
-        guard let activeDragMode else { return goalRange }
-
-        switch activeDragMode {
-        case .move:
-            return GoalTimelineDateMath.movedRange(
-                start: goalRange.start,
-                end: goalRange.end,
-                dayDelta: activeDeltaDays
-            )
-        case .leading:
-            return GoalTimelineDateMath.resizedRange(
-                start: goalRange.start,
-                end: goalRange.end,
-                edge: .leading,
-                dayDelta: activeDeltaDays
-            )
-        case .trailing:
-            return GoalTimelineDateMath.resizedRange(
-                start: goalRange.start,
-                end: goalRange.end,
-                edge: .trailing,
-                dayDelta: activeDeltaDays
-            )
-        }
-    }
+    /// Where the bar is drawn. **The goal's own dates, and only those, since [[T-2079]].**
+    ///
+    /// This used to be a live drag preview: `activeDragMode` and `activeDeltaDays` were set by the
+    /// bar's own `DragGesture` and ran `goalRange` through `GoalTimelineDateMath` so the bar
+    /// followed the pointer before the drop wrote the dates. The gesture is gone with the write it
+    /// committed, so nothing could ever set those two again and the switch was unreachable in every
+    /// arm — a `@State` that is only ever read is invisible to the compiler, which is why it is
+    /// removed by hand here rather than by a build error.
+    private var displayedRange: (start: Date, end: Date)? { goalRange }
 
     private var displayedFrame: GoalTimelineBarFrame? {
         guard let displayedRange else { return nil }
@@ -110,69 +89,31 @@ struct GoalTimelineBarView: View {
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
-        .gesture(dragGesture(mode: .move))
         .shadow(color: isSelected ? color.opacity(0.18) : Color.clear, radius: 8, y: 2)
     }
 
+    /// The resize handles, **inert since [[T-2079]]**.
+    ///
+    /// They are the only part of this bar that is not purely drawn: dragging one, or dragging the
+    /// bar itself, wrote `goal.startDate` and `goal.endDate` directly and committed with a bare
+    /// `try? modelContext.save()`. That made the roadmap a goal **editor** — the one in the app
+    /// that never went through the retired `saveGoal`, which is exactly why
+    /// emptying that helper did not produce a compile error here and why the write survived the
+    /// first sweep of this ticket. It was found by a field-write sweep afterwards.
+    ///
+    /// The handles keep their 10pt reservation because the bar's layout is measured against it;
+    /// they draw nothing and now do nothing.
     private func resizeHandle(edge: GoalTimelineBarDragMode) -> some View {
         Rectangle()
             .fill(Color.clear)
             .frame(width: 10)
-            .contentShape(Rectangle())
-            .gesture(dragGesture(mode: edge))
     }
 
-    private func dragGesture(mode: GoalTimelineBarDragMode) -> some Gesture {
-        DragGesture(minimumDistance: 3, coordinateSpace: .local)
-            .onChanged { value in
-                activeDragMode = mode
-                activeDeltaDays = GoalTimelineDateMath.dayDelta(
-                    for: value.translation.width,
-                    dayWidth: dayWidth
-                )
-            }
-            .onEnded { value in
-                let delta = GoalTimelineDateMath.dayDelta(
-                    for: value.translation.width,
-                    dayWidth: dayWidth
-                )
-                commit(mode: mode, deltaDays: delta)
-                activeDragMode = nil
-                activeDeltaDays = 0
-            }
-    }
-
-    private func commit(mode: GoalTimelineBarDragMode, deltaDays: Int) {
-        guard deltaDays != 0, let goalRange else { return }
-
-        let newRange: (start: Date, end: Date)?
-        switch mode {
-        case .move:
-            newRange = GoalTimelineDateMath.movedRange(
-                start: goalRange.start,
-                end: goalRange.end,
-                dayDelta: deltaDays
-            )
-        case .leading:
-            newRange = GoalTimelineDateMath.resizedRange(
-                start: goalRange.start,
-                end: goalRange.end,
-                edge: .leading,
-                dayDelta: deltaDays
-            )
-        case .trailing:
-            newRange = GoalTimelineDateMath.resizedRange(
-                start: goalRange.start,
-                end: goalRange.end,
-                edge: .trailing,
-                dayDelta: deltaDays
-            )
-        }
-
-        guard let newRange else { return }
-        goal.startDate = DateFormatters.dateKey(from: newRange.start)
-        goal.endDate = DateFormatters.dateKey(from: newRange.end)
-        try? modelContext.save()
-    }
+    // **The drag gesture and its `commit` were deleted by [[T-2079]].** `commit` ended in
+    // `goal.startDate = …`, `goal.endDate = …` and a bare `try? modelContext.save()` — a direct
+    // `Goal` write, open-coded rather than routed through the shared save helper, which is what
+    // made it invisible to the compiler when that helper was emptied. `GoalTimelineDateMath` is
+    // NOT removed: `movedRange`, `resizedRange` and `dayDelta` are pure arithmetic with their own
+    // tests, and the bar still reads them to draw its own position.
 }
 #endif

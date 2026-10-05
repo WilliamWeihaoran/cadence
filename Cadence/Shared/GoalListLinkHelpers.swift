@@ -80,13 +80,6 @@ enum GoalLinkTarget: Identifiable {
         case .project(let project): return link.pointsTo(project: project)
         }
     }
-
-    func makeLink(for goal: Goal) -> GoalListLink {
-        switch self {
-        case .area(let area): return GoalListLink(goal: goal, area: area)
-        case .project(let project): return GoalListLink(goal: goal, project: project)
-        }
-    }
 }
 
 /// One context's worth of attachable lists — areas first, then projects, matching the order the
@@ -198,7 +191,7 @@ enum GoalLinkPresentation {
     /// What a refused attach or detach says, on both platforms ([[T-1301]]).
     ///
     /// **One sentence for both directions**, for the reason
-    /// `CadenceTrackingMutationSupport.goalSaveFailureNotice` gives about create-versus-edit: the
+    /// the retired `goalSaveFailureNotice` gives about create-versus-edit: the
     /// control is one toggle and nobody experiences attaching and detaching as two operations. The
     /// "Nothing was changed." is earned either way — `attachList` un-inserts the row *and* puts
     /// `goal.listLinks` back, `detachGoalListLink` rolls the delete back — so the checkmark the
@@ -229,7 +222,7 @@ enum GoalLinkPresentation {
     /// A different sentence from `changeFailureNotice` because it is a different event, and both
     /// of the sentences this repo already had would have been false here. "Nothing was changed."
     /// denies the goal, which `CreateGoalSheet.save()` committed a few lines earlier and which the
-    /// store holds; `CadenceTrackingMutationSupport.goalSaveFailureNotice` denies it the other way
+    /// store holds; the retired `goalSaveFailureNotice` denies it the other way
     /// round and would send the user back to press Create for a goal that already exists — the
     /// second-goal hazard, arriving as a sentence rather than as code. So this states both halves
     /// in the order they happened and then the two ways out: the button beside it, which reads
@@ -351,148 +344,19 @@ enum GoalLinkPresentation {
     }
 }
 
-/// Creating and removing a goal↔list link.
+// MARK: - Retired writers
+
+/// **The three `GoalListLink` writers that lived here were removed by [[T-2079]].**
 ///
-/// **A link is a row, not a relationship toggle.** `GoalListLink` is its own `@Model`, so
-/// attaching is an `insert` and detaching is a `delete` — writing to `goal.listLinks` or
-/// `area.goalLinks` directly would leave a row with no owner. Both halves live here, on
-/// `ModelContext`, next to `TrackingDeleteHelpers`' `deleteGoal` / `deleteHabit` and for the same
-/// reason: the sites that need them are on both platforms, and nothing in them is AppKit-shaped.
-extension ModelContext {
-    /// **Throws when the store refuses the commit ([[T-1301]]).**
-    ///
-    /// The commit used to be a private `saveGoalLinkChange` helper ending `try? save()` — with
-    /// no qualifier, because on `ModelContext` the store is `self`, which is the spelling the
-    /// discipline sweep's needle could not read. An insert whose commit is refused stays pending in
-    /// the app's single `ModelContext`, and the row is already drawn: `processPendingChanges()`
-    /// below puts it in `goal.listLinks` for the very next render, so the attach sheet ticked the
-    /// list whatever the store said.
-    ///
-    /// `nil` still means only what it meant: the link already existed. That answer is not a report
-    /// — it is the idempotence below, and it commits nothing.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    @discardableResult
-    func attachList(
-        _ target: GoalLinkTarget,
-        to goal: Goal,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> GoalListLink? {
-        // Idempotent, but **not** because a duplicate would double the percentage — it cannot.
-        // `GoalContributionResolver.contributingTasks` ends in `dedupe(...)`, which filters by task
-        // `id`, so the same task reached through two links is counted once. That claim was written
-        // here and in three guides and was false; a mutation removing this early return left the
-        // test named for it passing, which is the same shape as the unkillable `isDone` guard on the
-        // goal Momentum count.
-        // What a duplicate actually breaks is anything counting *links* rather than tasks:
-        // `linkedListCount`, the "N lists" chip on both platforms, the attribution line, and two MCP
-        // DTOs — plus a second identical row in both goal inspectors, so unlinking once would leave
-        // one on screen.
-        if let existing = GoalLinkPresentation.existingLink(for: target, on: goal) {
-            return existing
-        }
-        let link = target.makeLink(for: goal)
-        // Captured before the insert and re-applied on a refusal, for the reason [[T-1280]]'s
-        // survey gives and the retired habit check-in `toggle` already needed: `commitInsert`
-        // undoes with `delete(model)`, which never reaches the *parent's* array — and
-        // `processPendingChanges()` below has by then put the link into `goal.listLinks`, which is
-        // exactly what both attach sheets draw their checkmark from.
-        let restored = goal.listLinks ?? []
-        insert(link)
-        processPendingChanges()
-        do {
-            try CadencePendingChangePersistence.commitInsert(of: link, in: self, commit: commit)
-        } catch {
-            // Processed, and not only assigned ([[T-1306]]). The assignment above is itself a
-            // pending change, so without this the array still answered with the pending-*deleted*
-            // link — count 1, `isDeleted` set — and both attach sheets kept the list ticked under
-            // an alert reading "Nothing was changed." This is the same call the insert above
-            // already needs, in the same place relative to the write it is making visible.
-            goal.listLinks = restored
-            processPendingChanges()
-            throw error
-        }
-        return link
-    }
-
-    /// Detaching deletes the join row and **makes no other change** — which is the whole of the
-    /// fix for [[T-1321]].
-    ///
-    /// Nothing on the other end of a link is orphaned by this: the goal, the list, and the list's
-    /// tasks are all the user's real work and outlive it, exactly as `deleteGoal` keeps them when
-    /// the goal goes.
-    ///
-    /// **Throws for the reason `attachList` gives**, undoing with `commitDelete`'s `rollback()`:
-    /// the row is already marked deleted and there is no object to hand back, which is the same
-    /// undo `deleteGoal`'s cascade takes ([[T-1301]]).
-    ///
-    /// **It used to null `goal`, `area` and `project` first, and that made the refusal
-    /// toolchain-dependent.** Every write made before the commit is a write `rollback()` has to
-    /// undo, and whether `rollback()` restores an already-materialised *reference* before something
-    /// refetches is the one question this repository's two Xcode majors answer differently
-    /// ([[T-1279]], [[T-1296]]): 27 restores it at once — measured, and correct — while through 26
-    /// an edit's undo waits for a refetch. `GoalLinkPresentation.links(of:)` drops a link with
-    /// neither an area nor a project by design, so on 26 a refused detach would have made the row
-    /// **vanish** from both goal inspectors under an alert reading "Nothing was changed." — the
-    /// exact inverse of [[T-1306]], and invisible to a green CI run, because the *store* is right
-    /// under either answer.
-    ///
-    /// **This shape cannot read either way, because there is no edit to restore.** A delete is all
-    /// that is pending; `rollback()` un-deletes unconditionally, which is what makes it the right
-    /// undo for `commitDelete` in the first place; and the three references still hold the values
-    /// the store holds, because nothing wrote them. That is a property of the *construction*, not a
-    /// measurement — which matters, since the 26 reading cannot be taken on the Mac this was
-    /// written on. **Re-assigning the three in a `catch` was rejected, not overlooked:** after
-    /// `rollback()` that is a *fresh* pending edit in the app's single `ModelContext` for the next
-    /// unrelated `save()` to take, and `hasChanges == false` after a refusal is the property the
-    /// whole `CadencePendingChangePersistence` family exists to keep.
-    ///
-    /// **What the nulling bought on the *success* path is bought by `isDeleted` instead, and bought
-    /// better.** `Models/AGENTS.md`'s delete-side rule is real — between `delete(row)` and the next
-    /// flush a parent's to-many still holds the row — and severing the link's own references was how
-    /// `goal.listLinks` came to drop it for the very next render. But that depended on SwiftData
-    /// having back-populated the inverse, which is the kind of timing [[T-1296]] says not to build
-    /// on. Every reader now asks the object instead: `GoalLinkPresentation.links(of:)` and
-    /// `existingLink(for:on:)` since [[T-1306]], and `GoalContributionResolver`'s two raw
-    /// `goal.listLinks` walks — the goal's progress bar and its "N lists" chip — since this ticket.
-    /// `deleteGoal` already takes a goal's links with a bare `delete(link)` and no nulling, so this
-    /// is `TrackingDeleteHelpers`' house style for *this* model rather than a departure from it;
-    /// what the house style nulls by hand is the reference on an object that **survives** the
-    /// delete (`habit.goal`, `task.goal`), and the link does not survive.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    func detachGoalListLink(
-        _ link: GoalListLink,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        delete(link)
-        // Kept: this is the forward direction of a delete, which both toolchains agree about, and
-        // it is what empties `goal.listLinks` for the next render on the success path. Nothing
-        // below depends on it having worked.
-        processPendingChanges()
-        try CadencePendingChangePersistence.commitDelete(in: self, commit: commit)
-    }
-
-    /// Attach if absent, detach if present. Returns whether the list is attached afterwards.
-    ///
-    /// **The answer is the report, which is why this throws rather than answering over a refusal**
-    /// ([[T-1301]]). Both goal attach sheets draw the row's checkmark from
-    /// `GoalLinkPresentation.isAttached`, and this `Bool` is what the tap promises that checkmark
-    /// will say — `AGENTS.md`'s report half, in its "the answer itself" clause. Neither branch
-    /// could keep that promise while its commit was swallowed one frame down.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    @discardableResult
-    func toggleGoalListLink(
-        _ target: GoalLinkTarget,
-        on goal: Goal,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> Bool {
-        if let existing = GoalLinkPresentation.existingLink(for: target, on: goal) {
-            try detachGoalListLink(existing, commit: commit)
-            return false
-        }
-        try attachList(target, to: goal, commit: commit)
-        return true
-    }
-}
+/// `attachList`, `detachGoalListLink` and `toggleGoalListLink` were the only code in the app that
+/// inserted or deleted a `GoalListLink` row — the join between a goal and a list. The owner retired
+/// goals at the depth *"remove the UI and stop writing, keep the schema"*, so the model, its
+/// CloudKit record type and every row already in the store stay, and nothing mints or removes one
+/// again. The two attach sheets that called them (`GoalAttachWorkSheet` on macOS,
+/// `iOSGoalAttachListsSheet` on iOS) are deleted with them, and so is `GoalLinkTarget`'s
+/// `makeLink`, which existed only to feed `attachList`.
+///
+/// **Everything above this line is a read and is deliberately untouched.** `GoalLinkPresentation`
+/// still resolves a link to its list, counts its contributing tasks and builds the attribution
+/// line, because the goal surfaces that *draw* existing links are a later increment's to remove and
+/// an existing link has to keep rendering correctly until they are.

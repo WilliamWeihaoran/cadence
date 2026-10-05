@@ -312,6 +312,10 @@ struct iOSEditorSheetMetricsTests {
     @Test func everySurfaceThatReadsTheEditorSheetRampsIsPresentedAsAPlainSheet() throws {
         /// Every file that reads a ramp on `iOSEditorSheetMetrics` with a live flag, plus every file
         /// that presents one of the views that do.
+        ///
+        /// `iOSFeatureViews.swift` was in the chain as the presenter of `iOSHabitEditorSheet(`;
+        /// [[T-2079]] deleted that editor and the goal one beside it, and the goals and habits
+        /// pages present no editor-ramp sheet at all now.
         let chain = [
             "Cadence/iOS/iOSAINoteActionsViews.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
@@ -321,15 +325,16 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSCalendarView.swift",
             "Cadence/iOS/iOSCaptureRadialMenu.swift",
             "Cadence/iOS/iOSEventNoteEditorSheet.swift",
-            "Cadence/iOS/iOSFeatureViews.swift",
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift",
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift",
             "Cadence/iOS/iOSNotesView.swift",
             "Cadence/iOS/iOSSearchView.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
             "Cadence/iOS/iOSTaskInspectorHost.swift",
-            "Cadence/iOS/iOSTrackingEditorComponents.swift",
-            "Cadence/iOS/iOSTrackingEditorSheets.swift"
+            "Cadence/iOS/iOSTrackingEditorComponents.swift"
+            // `iOSTrackingEditorSheets.swift` was the last link in this chain until [[T-2079]]
+            // deleted it with the goal and habit editors. `iOSTrackingEditorComponents` stays: it
+            // is the shared editor chrome, read by surfaces that are not goal or habit.
         ]
 
         /// The two covers in the chain, and the single editor behind both of them.
@@ -349,15 +354,13 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSCalendarView.swift": "iOSCalendarQuickCreateSheet(",
             "Cadence/iOS/iOSCaptureRadialMenu.swift": "iOSCalendarQuickCreateSheet(",
             "Cadence/iOS/iOSEventNoteEditorSheet.swift": "iOSNoteEditorSheetHeader(",
-            "Cadence/iOS/iOSFeatureViews.swift": "iOSHabitEditorSheet(",
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift": "iOSLinkedNoteEditorSheet(",
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift": "iOSEditorSheetMetrics.gutter(",
             "Cadence/iOS/iOSNotesView.swift": "iOSEventNoteEditorSheet(",
             "Cadence/iOS/iOSSearchView.swift": "iOSCalendarEventEditSheet(",
             "Cadence/iOS/iOSTaskDetailSheet.swift": "iOSTaskInspectorMetrics.sheetGutter(",
             "Cadence/iOS/iOSTaskInspectorHost.swift": "iOSTaskDetailSheet(",
-            "Cadence/iOS/iOSTrackingEditorComponents.swift": "iOSEditorSheetMetrics.gutter(",
-            "Cadence/iOS/iOSTrackingEditorSheets.swift": "iOSTrackingEditorShell("
+            "Cadence/iOS/iOSTrackingEditorComponents.swift": "iOSEditorSheetMetrics.gutter("
         ]
 
         for path in chain {

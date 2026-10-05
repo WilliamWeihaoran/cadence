@@ -207,14 +207,14 @@ struct CadenceContextPickerConsolidationTests {
         "Cadence/Shared/CadencePickerSupport.swift",
         "Cadence/Shared/CadenceContextPickerSupport.swift",
         "Cadence/macOS/Views/CadenceContextPicker.swift",
-        "Cadence/iOS/iOSListEditorViews.swift",
-        "Cadence/iOS/iOSTrackingEditorSheets.swift"
+        "Cadence/iOS/iOSListEditorViews.swift"
+        // `iOSTrackingEditorSheets.swift` was the fifth source and the third call site until
+        // [[T-2079]] deleted it with the goal and habit editors it held.
     ]
 
     private static let callSites = [
         "Cadence/macOS/Views/CadenceContextPicker.swift",
-        "Cadence/iOS/iOSListEditorViews.swift",
-        "Cadence/iOS/iOSTrackingEditorSheets.swift"
+        "Cadence/iOS/iOSListEditorViews.swift"
     ]
 
     private func readCodeOnly(_ path: String) throws -> String {
@@ -241,8 +241,10 @@ struct CadenceContextPickerConsolidationTests {
 
         let hits = try derives.sweep(
             Self.pickerSources,
-            atLeast: 5,
-            including: "Cadence/iOS/iOSTrackingEditorSheets.swift",
+            // The witness was `iOSTrackingEditorSheets.swift` until [[T-2079]] deleted it; the iOS
+            // list editor is the other iOS picker in this corpus and carries the same claim.
+            atLeast: 4,
+            including: "Cadence/iOS/iOSListEditorViews.swift",
             read: readCodeOnly
         )
 
@@ -272,7 +274,8 @@ struct CadenceContextPickerConsolidationTests {
 
         let hits = try reads.sweep(
             Self.callSites,
-            atLeast: 3,
+            // Three until [[T-2079]] deleted `iOSTrackingEditorSheets.swift`; see `callSites`.
+            atLeast: 2,
             including: "Cadence/iOS/iOSListEditorViews.swift",
             read: readCodeOnly
         )

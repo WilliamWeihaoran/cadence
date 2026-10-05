@@ -348,9 +348,15 @@ struct GoalSectionHeading: View {
     }
 }
 
+/// One list attached to a goal, **read-only since [[T-2079]]**.
+///
+/// It carried an `onDetach` closure and an `xmark` button, which was the only per-list unlink on
+/// macOS. `ModelContext.detachGoalListLink` — the one helper that deleted a `GoalListLink` row — is
+/// gone with the rest of the goal write surface, so the button had nothing to call. The row still
+/// draws the link, because an existing link has to keep rendering correctly until the goal *pages*
+/// are removed, which is a later increment.
 struct GoalLinkedListRow: View {
     let link: GoalListLink
-    let onDetach: () -> Void
 
     // T-673: `link.title` falls back to "Missing List" only when neither relationship is set —
     // an area or project with a blank *name* passes that empty string straight through. Route it
@@ -382,16 +388,6 @@ struct GoalLinkedListRow: View {
                     .foregroundStyle(Theme.dim)
             }
             Spacer()
-            Button(action: onDetach) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 22, height: 22)
-            }
-            .buttonStyle(.cadencePlain)
-            // T-673: the glyph already says what it removes; the subject is this row's own list.
-            .accessibilityLabel("Detach")
-            .accessibilityValue(normalizedTitle)
         }
         .padding(10)
         .background(Theme.surfaceElevated.opacity(0.5))

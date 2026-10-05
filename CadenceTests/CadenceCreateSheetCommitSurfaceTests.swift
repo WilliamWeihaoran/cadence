@@ -79,31 +79,14 @@ struct CadenceCreateSheetCommitSurfaceTests {
         #expect(sheet.contains("CadenceInlineFailureNotice(text: createFailureNotice)"))
     }
 
-    /// **Source shape.** This sheet reports success twice, and both reports have to move below the
-    /// `catch`. The reconcile is the one that is easy to miss and the one that reaches furthest:
-    /// it fetches the habit table back out of the context, so running it over an insert that is
-    /// about to be un-inserted schedules a reminder for a habit nothing holds.
-    @Test func theHabitCreatorReconcilesAndClosesOnlyOnACommittedInsert() throws {
-        let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/HabitsFormSheets.swift")
-        let create = try CadenceCommitSurfaceScan.declarationBody(named: "create", in: sheet)
-
-        #expect(create.contains("modelContext.insert(habit)"))
-        #expect(create.contains("CadencePendingChangePersistence.commitInsert(of: habit, in: modelContext)"))
-        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: create) == 0, "create still swallows its commit")
-        #expect(create.contains("createFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
-        #expect(
-            CadenceCommitSurfaceScan.reportFollowsTheCatch(
-                "HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)",
-                in: create
-            ),
-            "the reminder reconcile runs above the failure branch"
-        )
-        #expect(
-            CadenceCommitSurfaceScan.reportFollowsTheCatch("dismiss()", in: create),
-            "the sheet closes above its failure branch"
-        )
-        #expect(sheet.contains("CadenceInlineFailureNotice(text: createFailureNotice)"))
-    }
+    // **`theHabitCreatorReconcilesAndClosesOnlyOnACommittedInsert` left with [[T-2079]].**
+    //
+    // It read `CreateHabitSheet.create` and pinned that both of its success reports — the
+    // `dismiss()` and the notification reconcile — sat below the `catch`, because the
+    // reconcile fetched the habit table back out of the context and would otherwise have
+    // scheduled a reminder for a habit the store had refused. The sheet is deleted, so there
+    // is no create to report on. The discipline is unchanged and the sheets left in this
+    // suite still assert it.
 
     // MARK: - Source shape: the macOS twin of T-497's sharpest site
 
@@ -183,14 +166,14 @@ struct CadenceCreateSheetCommitSurfaceTests {
 
     // MARK: - Non-vacuity
 
-    /// Non-vacuity for every scan above: the reader really opened these four files, the ordering
+    /// Non-vacuity for every scan above: the reader really opened these three files (it was four
+    /// until [[T-2079]] deleted `HabitsFormSheets.swift`), the ordering
     /// helper really distinguishes the two orders it is asked about, the stripper really strips,
     /// and each needle matches the spelling it hunts and nothing else.
     @Test func thesourceScanActuallyReadsTheseCreateSheets() throws {
         for (path, marker) in [
             ("Cadence/macOS/Sheets/CreateContextSheet.swift", "struct CreateContextSheet: View"),
             ("Cadence/macOS/Sheets/CreateListSheet.swift", "struct CreateListSheet: View"),
-            ("Cadence/macOS/Views/HabitsFormSheets.swift", "struct CreateHabitSheet: View"),
             ("Cadence/macOS/Views/TimelineEventBlockSupportViews.swift", "struct CalendarEventEditPopover: View")
         ] {
             #expect(try CadenceCommitSurfaceScan.scanned(path).contains(marker), "\(path) did not read as itself")

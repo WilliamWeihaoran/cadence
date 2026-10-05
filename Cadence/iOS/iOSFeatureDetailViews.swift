@@ -17,19 +17,12 @@ struct iOSGoalDetail: View {
     let goal: Goal
     var milestones: [Goal] = []
     var habits: [Habit] = []
-    var onEdit: () -> Void = {}
-    var onNewMilestone: () -> Void = {}
-    var onNewHabit: () -> Void = {}
     /// Set on the compact push stack, where this view carries its own back control instead of a
     /// navigation bar holding one chevron and nothing else — the same trade every list pane in the
     /// iOS surface already makes (`iOSHidesCompactNavigationBar()`). Left off on iPad, where the
     /// detail sits beside its list and there is nothing to go back to.
     var showsBackControl = false
 
-    @State private var showAttachLists = false
-    /// Set when `detachGoalListLink` was refused ([[T-1301]]); see
-    /// `GoalLinkPresentation.changeFailureAlertTitle` for why it is an alert.
-    @State private var linkChangeFailed = false
 
     private var summary: GoalContributionSummary {
         GoalContributionResolver.summary(for: goal)
@@ -71,7 +64,6 @@ struct iOSGoalDetail: View {
 
                 hero
 
-                actions
 
                 metrics
 
@@ -118,25 +110,9 @@ struct iOSGoalDetail: View {
         .scrollIndicators(.hidden)
         .background(Theme.bg)
         .iOSHidesCompactNavigationBar()
-        .sheet(isPresented: $showAttachLists) {
-            iOSGoalAttachListsSheet(goal: goal)
-        }
-        .alert(GoalLinkPresentation.changeFailureAlertTitle, isPresented: $linkChangeFailed) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(GoalLinkPresentation.changeFailureNotice)
-        }
-    }
-
-    /// The unlink throws now ([[T-1301]]): it used to end in a `try? save()` written with no
-    /// qualifier, which the discipline sweep could not read, so a refused unlink left the row
-    /// marked deleted in the app's one context and this section redrawn without it.
-    private func detach(_ link: GoalListLink) {
-        do {
-            try modelContext.detachGoalListLink(link)
-        } catch {
-            linkChangeFailed = true
-        }
+        // The attach-lists sheet and the unlink-refusal alert left with [[T-2079]], along with
+        // the Edit / Milestone / Habit action row above: each called a write helper
+        // (`attachList`, `detachGoalListLink`, `saveGoal`, `saveHabit`) that no longer exists.
     }
 
     /// The section T-191 is about: the areas and projects whose tasks `GoalContributionResolver`
@@ -161,18 +137,9 @@ struct iOSGoalDetail: View {
                         systemImage: link.icon,
                         color: Color(hex: link.colorHex)
                     ) {
-                        HStack(spacing: 4) {
-                            trailingMetric(GoalLinkPresentation.contributionMetric(for: link))
-
-                            iOSIconButton(
-                                systemImage: "xmark",
-                                accessibilityLabel: "Unlink \(link.title)",
-                                plateSize: 30,
-                                iconSize: 11
-                            ) {
-                                detach(link)
-                            }
-                        }
+                        // The per-row unlink left with [[T-2079]]; the metric it sat beside is a
+                        // read and stays.
+                        trailingMetric(GoalLinkPresentation.contributionMetric(for: link))
                     }
                 }
             }
@@ -180,17 +147,9 @@ struct iOSGoalDetail: View {
             iOSEditorDivider()
 
             HStack(spacing: 10) {
-                iOSActionButton(
-                    title: "Attach List",
-                    systemImage: "plus",
-                    role: .secondary,
-                    size: .compact
-                ) {
-                    showAttachLists = true
-                }
-
-                Spacer(minLength: 0)
-
+                // The Attach List button left with [[T-2079]]. The inherited-list note beside it
+                // is a read and stays: it is what tells the user that links on this goal's
+                // milestones are counted in the percentage but are not rows here.
                 if let note = GoalLinkPresentation.inheritedListNote(
                     ownLinkCount: links.count,
                     totalLinkCount: summary.linkedListCount
@@ -380,49 +339,11 @@ struct iOSGoalDetail: View {
         }
     }
 
-    /// `.borderedProminent` / `.bordered` bring the OS's own material, radius and control height,
-    /// so the same three actions rendered differently here than anywhere else in the app — and at
-    /// well under 44pt. Same three actions, Cadence's own roles.
-    private var actions: some View {
-        HStack(spacing: 10) {
-            iOSActionButton(
-                title: "Edit",
-                systemImage: "square.and.pencil",
-                role: .primary,
-                size: .compact,
-                tint: tint,
-                action: onEdit
-            )
-
-            // Green and amber said nothing here — they were not the goal's colour, not a status,
-            // and not a warning. Two secondary actions, one secondary treatment.
-            //
-            // Only where a milestone can actually go. This detail serves milestones as well as
-            // directions, and the button was unconditional, so from a milestone it created a
-            // third-level goal that no screen draws — not in the list, not nested under anything,
-            // and absent from the habit editor's goal picker. On iPad the save then selected it
-            // and showed a detail pane for a goal with no row.
-            if GoalAssignmentRules.canOwnMilestones(goal) {
-                iOSActionButton(
-                    title: "Milestone",
-                    systemImage: "flag.fill",
-                    role: .secondary,
-                    size: .compact,
-                    action: onNewMilestone
-                )
-            }
-
-            iOSActionButton(
-                title: "Habit",
-                systemImage: "flame.fill",
-                role: .secondary,
-                size: .compact,
-                action: onNewHabit
-            )
-
-            Spacer(minLength: 0)
-        }
-    }
+    // **The `actions` row — Edit, Milestone, Habit — was deleted by [[T-2079]].** All three
+    // opened an editor that wrote through `saveGoal` or `saveHabit`, and both helpers are gone.
+    // The Milestone button carried its own measured guard (`GoalAssignmentRules.canOwnMilestones`,
+    // which stopped it minting a third-level goal no screen draws); that rule is a read and
+    // survives on `GoalAssignmentRules`, where the goal *pages* still ask it.
 
     /// Two tiles, not four. The "Milestones" and "Habits" tiles counted the two sections directly
     /// below them — so a goal with milestones stated the number twice, and a goal without them

@@ -114,7 +114,6 @@ struct HabitListCard: View {
 struct HabitDetailView: View {
     let habit: Habit
     let todayKey: String
-    let onEdit: () -> Void
 
     private var totalCompletions: Int {
         (habit.completions ?? []).count
@@ -186,30 +185,10 @@ struct HabitDetailView: View {
                 }
             }
 
-            Spacer(minLength: 16)
-
-            HStack(spacing: 8) {
-                Button(action: onEdit) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                        .frame(width: 34, height: 34)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 9))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9)
-                                .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.cadencePlain)
-                .cadenceControlLabel("Edit habit")
-
-                // **Check In Today left with [[T-2079]].** It called the retired habit check-in
-                // `toggle`, the one writer of a `HabitCompletion`. The chips two rows up already
-                // say whether the habit is due today and whether it is checked in, which is the
-                // reading half and is untouched.
-                Spacer(minLength: 0)
-            }
+            // **Edit and Check In Today left with [[T-2079]].** `EditHabitSheet` wrote through
+            // `saveHabit` and the check-in button through the shared habit toggle; both helpers
+            // are gone. Everything above is a read and is untouched — the chips two rows up still
+            // say whether the habit is due today and whether it is checked in.
         }
         .padding(22)
         .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel, shadowRadius: 16, shadowY: 6)

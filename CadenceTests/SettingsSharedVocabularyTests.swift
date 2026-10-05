@@ -478,24 +478,50 @@ private func t20LiveNativePickerCount(in code: String) -> Int {
     return expression.numberOfMatches(in: code, range: range)
 }
 
-/// `CreateGoalSheet` holds the app's one remaining styled `Picker`, and it is outside every corpus
-/// above — macOS Settings, `Cadence/iOS` and `Cadence/Shared` — which is what makes it usable as
-/// the witness for all of them. If it goes, re-anchor this on whatever replaced it or delete the
-/// rule; do not leave a needle nothing can match.
+/// The witness that both needles still match what they hunt.
+///
+/// It was a **file** — `CreateGoalSheet.swift`, which held the app's one remaining styled `Picker`
+/// and sat outside every corpus above (macOS Settings, `Cadence/iOS`, `Cadence/Shared`), which is
+/// what made it usable as the witness for all of them. The note here said: if it goes, re-anchor
+/// on whatever replaced it or drop the rule; do not leave a needle nothing can match. [[T-2079]]
+/// deleted that sheet with the rest of the goal write surface, and **measured on the tree it left
+/// behind there is no live styled `Picker` anywhere under `Cadence/`** — the two remaining
+/// `.pickerStyle(` occurrences, in `iOSChoicePicker.swift` and
+/// `SettingsCalendarWorkHoursSection.swift`, are both inside comments describing what was
+/// replaced. So there is nothing to re-anchor on.
+///
+/// Dropping the rule would be wrong — it is what keeps the settings panes off native pickers — so
+/// the witness becomes a pair of literals. That still catches the failure this whole mechanism was
+/// built for and measured against: blinding the needle to `.pickerStyleZZZ(` emptied the sweep and
+/// left the suite green, and a typo now fails here. What it no longer proves is that the *reader*
+/// opened a real file, which the corpus walk's own `scanned >= 15` floor carries instead.
 private func t20ExpectTheNativePickerNeedleStillMatchesSomething(
     sourceLocation: SourceLocation = #_sourceLocation
 ) throws {
-    let styledPickerElsewhere = try t20StrippingComments(
-        t20SourceFile("Cadence/macOS/Sheets/CreateGoalSheet.swift")
-    )
+    // `.pickerStyle(` is the needle the sweeps grep for; it must match a styled picker and must
+    // not match a bare one, or the sweep's zero is a zero nothing could have reached.
     #expect(
-        styledPickerElsewhere.contains(t20NativePickerNeedle),
-        "the needle no longer matches a live Picker anywhere; re-anchor it or drop the rule",
+        try t20StrippingComments(".pickerStyle(.menu)").contains(t20NativePickerNeedle),
+        "the needle no longer matches a styled Picker at all; it has been mistyped",
         sourceLocation: sourceLocation
     )
     #expect(
-        t20LiveNativePickerCount(in: styledPickerElsewhere) >= 1,
-        "the Picker needle no longer matches a live Picker anywhere; re-anchor it or drop the rule",
+        try !t20StrippingComments("Picker(\"Kind\", selection: $kind)").contains(t20NativePickerNeedle),
+        "the needle matches a bare Picker, so the sweep would fire on an unstyled one",
+        sourceLocation: sourceLocation
+    )
+
+    // The second needle is `t20LiveNativePickerCount`'s own, and it is a different question: it
+    // counts SwiftUI's `Picker(` while skipping the app's controls whose names merely end in
+    // `Picker`. Both halves of that guard are witnessed.
+    #expect(
+        t20LiveNativePickerCount(in: "Picker(\"Kind\", selection: $kind) { }") == 1,
+        "the live-Picker counter no longer counts a native Picker; it has drifted from the needle",
+        sourceLocation: sourceLocation
+    )
+    #expect(
+        t20LiveNativePickerCount(in: "CadenceDatePicker(selection: $date)") == 0,
+        "the live-Picker counter counts one of the app's own *Picker controls",
         sourceLocation: sourceLocation
     )
 }

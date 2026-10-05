@@ -56,6 +56,32 @@ struct CadenceGoalListLinkSurfaceTests {
         )
     }
 
+    /// A `GoalListLink` row, built **directly** rather than through a helper ([[T-2079]]).
+    ///
+    /// Every fixture here used to call `ModelContext.attachList`, the app's one link writer. That
+    /// helper is gone — the owner retired goals and nothing in the app creates or removes a link
+    /// any more — so a test that needs a link in the store builds one itself. **A test is allowed
+    /// to do this and `Cadence/` is not**, which is exactly what
+    /// `nothingUnderCadenceConstructsAGoalListLink` below now asserts: the scan it replaced said
+    /// "only the shared helper constructs a link", and with no helper left the stronger reading is
+    /// that no shipped file constructs one at all.
+    ///
+    /// It is deliberately **not** idempotent. `attachList`'s early return was a guard on a *user*
+    /// tapping the same list twice, and re-spelling it here would make a fixture quietly disagree
+    /// with the rows it says it inserted.
+    @discardableResult
+    private func link(_ target: GoalLinkTarget, to goal: Goal, in modelContext: ModelContext) -> GoalListLink {
+        let row: GoalListLink
+        switch target {
+        case .area(let area): row = GoalListLink(goal: goal, area: area)
+        case .project(let project): row = GoalListLink(goal: goal, project: project)
+        }
+        modelContext.insert(row)
+        goal.listLinks = (goal.listLinks ?? []) + [row]
+        modelContext.processPendingChanges()
+        return row
+    }
+
     private func summary(
         progressType: GoalProgressType = .subtasks,
         totalTasks: Int,
@@ -96,7 +122,7 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(before.totalTasks == 0)
         #expect(before.progress == 0)
 
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
+        link(.area(store.area), to: store.goal, in: store.modelContext)
 
         let after = GoalContributionResolver.summary(for: store.goal)
         #expect(after.totalTasks == 2)
@@ -108,61 +134,15 @@ struct CadenceGoalListLinkSurfaceTests {
 
     // MARK: - Attach / detach
 
-    @Test func attachingInsertsOneLinkAndIsIdempotent() throws {
-        let store = try makeStore()
-
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
-
-        let links = try store.modelContext.fetch(FetchDescriptor<GoalListLink>())
-        #expect(links.count == 1)
-        #expect(GoalLinkPresentation.links(of: store.goal).count == 1)
-        #expect(GoalLinkPresentation.isAttached(.area(store.area), to: store.goal))
-        #expect(!GoalLinkPresentation.isAttached(.project(store.project), to: store.goal))
-    }
-
-    /// A duplicate link cannot move the percentage — `contributingTasks` dedupes by task `id` — so
-    /// this asserts what a duplicate *would* actually break: anything counting links rather than
-    /// tasks. `linkedListCount` feeds the "N lists" chip, the attribution line and two MCP DTOs, and
-    /// a second row would appear in both inspectors.
-    ///
-    /// The previous name and comment here claimed the percentage was the symptom. It was not, and a
-    /// mutation removing `attachList`'s early return left this test **passing** — protected upstream,
-    /// exactly like the `isDone` guard on the goal Momentum count that was reverted for the same
-    /// reason.
-    @Test func aDuplicateAttachIsCollapsedSoLinkCountsStayTruthful() throws {
-        let store = try makeStore()
-
-        let task = AppTask(title: "Counted once")
-        task.area = store.area
-        store.modelContext.insert(task)
-
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
-
-        let summary = GoalContributionResolver.summary(for: store.goal)
-
-        // The assertions that actually fail when idempotency is removed. `totalTasks` is **not** one
-        // of them — `contributingTasks` dedupes by task `id`, so it stays 1 either way, which is why
-        // this test passed under a mutation removing the guard.
-        #expect(summary.linkedListCount == 1)
-        #expect(GoalLinkPresentation.links(of: store.goal).count == 1)
-
-        // Kept as documentation of what a duplicate does *not* break, so nobody restores the old
-        // rationale: the percentage is protected upstream regardless of this guard.
-        #expect(summary.totalTasks == 1)
-    }
-
-    @Test func togglingAttachesThenDetaches() throws {
-        let store = try makeStore()
-
-        #expect(try store.modelContext.toggleGoalListLink(.project(store.project), on: store.goal))
-        #expect(GoalLinkPresentation.links(of: store.goal).count == 1)
-
-        #expect(try store.modelContext.toggleGoalListLink(.project(store.project), on: store.goal) == false)
-        #expect(GoalLinkPresentation.links(of: store.goal).isEmpty)
-        #expect(try store.modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
-    }
+    // **The ten tests that drove the link writers left with [[T-2079]].**
+    //
+    // They covered `attachList`'s idempotence, `toggleGoalListLink`'s two directions,
+    // `detachGoalListLink`'s deliberate do-nothing-else shape ([[T-1321]]), the [[T-1301]]
+    // refusal discipline on all three, and `deleteGoal` taking a goal's links with it. All
+    // three helpers and `deleteGoal` are gone, so every one of those assertions is about a
+    // function that does not exist — obsolete rather than weakened. The replacement is
+    // `nothingUnderCadenceConstructsAGoalListLink` below, which is strictly stronger: not
+    // "only the shared helper may", but "no shipped file may".
 
     // MARK: - A refused attach, and what the two sheets say about it ([[T-1306]])
 
@@ -171,55 +151,6 @@ struct CadenceGoalListLinkSurfaceTests {
     private struct CommitRefused: Error {}
 
     private static func refuse(_ modelContext: ModelContext) throws { throw CommitRefused() }
-
-    /// [[T-1306]]: the checkmark has to agree with the alert.
-    ///
-    /// Both attach sheets draw from `GoalLinkPresentation.isAttached` and both goal inspectors from
-    /// `links(of:)`, and until this ticket both kept the list ticked after a refusal while
-    /// `changeFailureNotice` said "Nothing was changed." Measured on this Mac (Xcode 27,
-    /// 2026-09-20) before the fix: `(goal.listLinks ?? []).count == 1` with that link's `isDeleted`
-    /// set, `links(of:).count == 1`, `isAttached == true`.
-    ///
-    /// **Nothing here pins a toolchain answer ([[T-1296]]).** The array's count between the refusal
-    /// and the next processed pending change is exactly the framework timing this repository's two
-    /// Xcode majors disagree about, so it is not asserted. What is asserted is the pair of readings
-    /// the user is looking at — which `existingLink`'s `isDeleted` skip makes right whether or not
-    /// the array has caught up — and then the store, read forwards through the next unrelated
-    /// `save()` from a second context, in [[T-1295]]'s shape.
-    @Test func arefusedAttachLeavesBothSheetsAgreeingWithTheAlert() throws {
-        let store = try makeStore()
-        let task = AppTask(title: "Area task")
-        task.area = store.area
-        store.modelContext.insert(task)
-        try store.modelContext.save()
-
-        #expect(throws: CommitRefused.self) {
-            try store.modelContext.attachList(.area(store.area), to: store.goal, commit: Self.refuse)
-        }
-
-        #expect(
-            GoalLinkPresentation.isAttached(.area(store.area), to: store.goal) == false,
-            "both attach sheets still tick a list the alert says was not attached"
-        )
-        #expect(
-            GoalLinkPresentation.links(of: store.goal).isEmpty,
-            "both goal inspectors still draw a row for a link the store does not hold"
-        )
-
-        // **And the progress bar, which does not go through `GoalLinkPresentation` at all.**
-        // `GoalContributionSummary` reads `goal.listLinks` raw — twice, for the counted tasks and
-        // for the "N lists" chip — so this is the half that the restore has to actually *process*
-        // rather than merely assign. Measured before the fix: 1 list and 1 counted task, from a
-        // refusal.
-        let summary = GoalContributionResolver.summary(for: store.goal)
-        #expect(summary.linkedListCount == 0, "the goal's \"N lists\" chip counts a refused attach")
-        #expect(summary.totalTasks == 0, "the goal's progress bar counts a refused attach's work")
-
-        try store.modelContext.save()
-        let reader = ModelContext(store.container)
-        #expect(try reader.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
-        #expect(try reader.fetch(FetchDescriptor<Goal>()).count == 1)
-    }
 
     /// The `isDeleted` skip on its own, against the state it exists for — and **toolchain-free by
     /// construction** ([[T-1306]], [[T-1296]]).
@@ -234,7 +165,7 @@ struct CadenceGoalListLinkSurfaceTests {
     /// toolchain clears the array at the delete instead, every assertion below still holds.
     @Test func aDeletedLinkIsNotAnAttachedListInEitherReading() throws {
         let store = try makeStore()
-        let link = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
+        let link = link(.area(store.area), to: store.goal, in: store.modelContext)
         try store.modelContext.save()
         #expect(GoalLinkPresentation.isAttached(.area(store.area), to: store.goal))
 
@@ -272,7 +203,7 @@ struct CadenceGoalListLinkSurfaceTests {
         let task = AppTask(title: "Area task")
         task.area = store.area
         store.modelContext.insert(task)
-        let link = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
+        let link = link(.area(store.area), to: store.goal, in: store.modelContext)
         try store.modelContext.save()
 
         // The link is what the goal's progress is made of, so the assertions below are not
@@ -293,201 +224,6 @@ struct CadenceGoalListLinkSurfaceTests {
         )
     }
 
-    /// The second reading of the same state, and the one that is not cosmetic ([[T-1306]]).
-    ///
-    /// `attachList`'s idempotence guard returns any link already pointing at the target. Measured
-    /// on Xcode 27 before the fix, straight after a refusal it returned the *refused* link — the
-    /// deleted one — so the retry committed nothing, `toggleGoalListLink` answered `true`, and the
-    /// store ended with no row at all. `CreateGoalSheet`'s own retry never saw this, because
-    /// `saveGoal` runs a real `save()` before the attach is tried again; every other retry path on
-    /// both platforms went straight back into the guard.
-    @Test func theAttachAfterARefusedOneAttachesRatherThanReturningTheRefusedLink() throws {
-        let store = try makeStore()
-        try store.modelContext.save()
-
-        #expect(throws: CommitRefused.self) {
-            try store.modelContext.attachList(.area(store.area), to: store.goal, commit: Self.refuse)
-        }
-
-        let retried = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
-        #expect(!retried.isDeleted, "the retry handed back the link the refusal deleted")
-        #expect(!store.modelContext.hasChanges, "the retry left its attach pending")
-
-        let reader = ModelContext(store.container)
-        #expect(
-            try reader.fetch(FetchDescriptor<GoalListLink>()).count == 1,
-            "the retry reported an attach the store does not hold"
-        )
-        #expect(GoalLinkPresentation.isAttached(.area(store.area), to: store.goal))
-    }
-
-    /// The mirror, `commitDelete` + `rollback()` rather than `commitInsert` + `delete`.
-    ///
-    /// A refused detach must leave the link in the store and leave nothing pending, and both of
-    /// those hold on every toolchain. **The three references are asserted now, and they are the
-    /// only reading added — because after [[T-1321]] nothing writes them.**
-    ///
-    /// Before that, `detachGoalListLink` nulled `goal` / `area` / `project` before deleting, so
-    /// what `rollback()` had to undo was an *edit* — the one thing [[T-1296]] measured the two
-    /// Xcode majors disagreeing about. On 27 the live reference came back at once (measured
-    /// 2026-09-20: `link.goal` and `link.area` both non-`nil`, `isAttached == true`); through 26 an
-    /// edit's undo waits for a refetch, and `links(of:)` drops a link with neither an area nor a
-    /// project, so the row would have vanished from both goal inspectors under "Nothing was
-    /// changed." **That reading could not be taken** — this Mac has one toolchain — so the fix was
-    /// chosen to be right by construction rather than by measurement: the detach makes no edit, so
-    /// these three hold the values the store holds on any toolchain, for the same reason a variable
-    /// nobody assigns keeps its value.
-    ///
-    /// **`isDeleted` and `isAttached` are still not asserted, and that is still deliberate.**
-    /// Whether `rollback()`'s un-delete has reached this materialised object, and whether
-    /// `goal.listLinks` has taken the row back after the `processPendingChanges()` that emptied it,
-    /// are both framework timing. What *is* asserted is that the two cannot disagree: a row the
-    /// array still holds may not be a row the inspector drops. That is the vanishing row itself,
-    /// and it is a bound rather than a pin —
-    /// `CadenceStartupRecoveryReasonTests` is the shape this follows.
-    ///
-    /// **[[T-1349]]: the live bound is not the whole of what the user sees, and the construction
-    /// argument above is not a proof.** R65 corrects two things [[T-1321]] leaned on. `rollback()`'s
-    /// restoration is *documented* — Apple says it cancels unsaved insertions and deletions and
-    /// returns modified models to their last committed values — so this is a contract question, not
-    /// an undocumented one. And the 26-vs-27 difference is **not** an established Apple change:
-    /// zero rollback mentions across the inspected iOS/macOS 26 and 27 release notes, so T-1296's
-    /// readings stand as observations of a compatibility difference to contain, not as evidence
-    /// either toolchain restores every graph. What that costs T-1321 is the word *proof*: removing
-    /// the explicit `nil` writes removes the **application's** edits, but `delete` followed by
-    /// `processPendingChanges()` still asks SwiftData to alter relationship state, and a
-    /// SwiftData-backed property is not an ordinary variable that changes only where this method
-    /// assigns it. "Nothing writes them, so they hold" is a good reason and not a demonstration.
-    ///
-    /// So the reading below is added, and it is the one that answers *what the user sees* on both
-    /// toolchains: the app's own presentation reader, run over a goal fetched afresh. Every render
-    /// after any refetch — reopening the inspector, a `@Query` invalidation, the next launch — is
-    /// this reading, and it converges under either answer to the live-array question. It is also
-    /// strictly more than the row count it sits beside: a count of 1 is satisfied by a link
-    /// restored with a `nil` area, which `links(of:)` drops and the inspector therefore does not
-    /// draw. **A partial restoration fails here.** The derived "N lists" chip is asserted for the
-    /// same reason — it is the second thing the refusal must not have silently changed.
-    ///
-    /// What is still *not* asserted is `drawn == true` on the live reference. That is exactly the
-    /// measurement this Mac cannot take, and pinning one toolchain's answer to it is what turned CI
-    /// red in [[T-1279]] and again in [[T-1319]]. It stays in [[T-1336]] with the question narrowed
-    /// rather than guessed.
-    @Test func arefusedDetachKeepsTheLinkInTheStoreAndLeavesNothingPending() throws {
-        let store = try makeStore()
-        let link = try #require(try store.modelContext.attachList(.area(store.area), to: store.goal))
-        try store.modelContext.save()
-
-        #expect(throws: CommitRefused.self) {
-            try store.modelContext.detachGoalListLink(link, commit: Self.refuse)
-        }
-
-        #expect(!store.modelContext.hasChanges, "the refused detach left a change for the next save")
-
-        // Construction, not timing: the detach writes none of these three.
-        #expect(link.goal != nil, "the refused detach left the link severed from its goal")
-        #expect(link.area != nil, "the refused detach left the link pointing at no list")
-        #expect(link.project == nil, "an area link acquired a project")
-
-        // The bound. Either reading of the array is allowed; a row present and invisible is not.
-        let held = (store.goal.listLinks ?? []).contains { $0.id == link.id }
-        let drawn = GoalLinkPresentation.links(of: store.goal).contains { $0.id == link.id }
-        #expect(
-            held == drawn,
-            "the row is in goal.listLinks and dropped by links(of:) — the vanishing row T-1321 is about"
-        )
-
-        let reader = ModelContext(store.container)
-        #expect(
-            try reader.fetch(FetchDescriptor<GoalListLink>()).count == 1,
-            "the refusal said nothing was changed and the row is gone"
-        )
-
-        // What the user sees, on either toolchain: the app's own reader over a goal read afresh.
-        // A row count cannot distinguish a whole link from one restored without its area, and the
-        // second is drawn by nothing.
-        let refetchedGoal = try #require(
-            try reader.fetch(FetchDescriptor<Goal>()).first { $0.id == store.goal.id },
-            "the goal itself is gone from a store the refusal did not touch"
-        )
-        #expect(
-            GoalLinkPresentation.links(of: refetchedGoal).map(\.id) == [link.id],
-            "the inspector draws no link for a goal the refusal left attached to one"
-        )
-        #expect(
-            GoalLinkPresentation.isAttached(.area(store.area), to: refetchedGoal),
-            "the attach sheet's checkmark reads unattached after a refusal that changed nothing"
-        )
-        #expect(
-            GoalContributionResolver.summary(for: refetchedGoal).linkedListCount == 1,
-            "the goal's \"N lists\" chip dropped a list the refusal put back"
-        )
-    }
-
-    /// **The detach makes no edit for `rollback()` to undo, read from the source ([[T-1321]]).**
-    ///
-    /// This is the assertion the behavioural test above cannot make. The property that makes the
-    /// refusal correct on a toolchain nobody here can run is a property of the *construction* — the
-    /// three references are never written, so there is nothing for `rollback()` to be late about —
-    /// and the only way to pin a construction is to read it. Re-growing `link.goal = nil` fails
-    /// here, on 27, where the behavioural difference is invisible.
-    ///
-    /// Re-assigning them in a `catch` after the throw is the repair [[T-1321]] rejected by name:
-    /// it is a fresh pending edit in the app's one `ModelContext`, which is what the `hasChanges`
-    /// assertion above exists to forbid. So `nil` may not appear in the body at all.
-    @Test func theDetachWritesNothingForARollbackToPutBack() throws {
-        let helpers = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/GoalListLinkHelpers.swift")
-        let body = try #require(
-            CadenceSourceScan.functionBody(named: "detachGoalListLink", in: helpers),
-            "detachGoalListLink is no longer a function"
-        )
-
-        #expect(!body.contains("= nil"), "the detach assigns again: \(body)")
-        #expect(!body.contains("catch"), "the detach grew a catch, which can only hold a pending edit")
-        // Non-vacuity: this really is the detach's body, and it still deletes and still commits.
-        #expect(body.contains("delete(link)"))
-        #expect(body.contains("CadencePendingChangePersistence.commitDelete(in: self, commit: commit)"))
-    }
-
-    /// The reverse of `ListDeleteHelpers` cascading `goalLinks` when a list is deleted: detaching
-    /// removes the join row and **nothing else**. The list, its tasks and the goal are the user's
-    /// real work and outlive the link, exactly as they outlive a deleted goal.
-    @Test func detachingOrphansNothingButRemovesTheRow() throws {
-        let store = try makeStore()
-
-        let task = AppTask(title: "Area task")
-        task.area = store.area
-        store.modelContext.insert(task)
-
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
-        let link = try #require(GoalLinkPresentation.links(of: store.goal).first)
-
-        try store.modelContext.detachGoalListLink(link)
-
-        #expect(try store.modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
-        #expect(GoalLinkPresentation.links(of: store.goal).isEmpty)
-        #expect((store.goal.listLinks ?? []).isEmpty)
-        #expect((store.area.goalLinks ?? []).isEmpty)
-        // The far side survives.
-        #expect(try store.modelContext.fetch(FetchDescriptor<Area>()).count == 1)
-        #expect(try store.modelContext.fetch(FetchDescriptor<Goal>()).count == 1)
-        #expect(try store.modelContext.fetch(FetchDescriptor<AppTask>()).count == 1)
-        #expect(store.area.tasks?.count == 1)
-        // And the goal stops counting the list's work.
-        #expect(GoalContributionResolver.summary(for: store.goal).totalTasks == 0)
-    }
-
-    /// `deleteGoal` already removes a goal's links; this is the same guarantee read from the other
-    /// end, because a surviving link is a row whose `goal` is gone and whose `tasks` still resolve.
-    @Test func deletingAGoalTakesItsLinksWithIt() throws {
-        let store = try makeStore()
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
-
-        try store.modelContext.deleteGoal(store.goal)
-
-        #expect(try store.modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
-        #expect(try store.modelContext.fetch(FetchDescriptor<Area>()).count == 1)
-    }
-
     // MARK: - Which links a goal shows
 
     /// A link pointing at nothing is dropped, because `GoalContributionResolver.linkedListCount`
@@ -498,7 +234,7 @@ struct CadenceGoalListLinkSurfaceTests {
 
         let broken = GoalListLink(goal: store.goal)
         store.modelContext.insert(broken)
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
+        link(.area(store.area), to: store.goal, in: store.modelContext)
 
         #expect(GoalLinkPresentation.links(of: store.goal).count == 1)
         #expect(GoalContributionResolver.summary(for: store.goal).linkedListCount == 1)
@@ -514,9 +250,9 @@ struct CadenceGoalListLinkSurfaceTests {
         store.modelContext.insert(second)
         store.modelContext.insert(third)
 
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
-        try store.modelContext.attachList(.area(second), to: store.goal)
-        try store.modelContext.attachList(.area(third), to: store.goal)
+        link(.area(store.area), to: store.goal, in: store.modelContext)
+        link(.area(second), to: store.goal, in: store.modelContext)
+        link(.area(third), to: store.goal, in: store.modelContext)
 
         let titles = GoalLinkPresentation.links(of: store.goal).map(\.title)
         #expect(titles.first == "Admin")
@@ -541,7 +277,7 @@ struct CadenceGoalListLinkSurfaceTests {
         store.modelContext.insert(open)
         store.modelContext.insert(cancelled)
 
-        try store.modelContext.attachList(.area(store.area), to: store.goal)
+        link(.area(store.area), to: store.goal, in: store.modelContext)
         let link = try #require(GoalLinkPresentation.links(of: store.goal).first)
 
         #expect(GoalLinkPresentation.contributingTaskCount(for: link) == 1)
@@ -606,7 +342,7 @@ struct CadenceGoalListLinkSurfaceTests {
         milestone.parentGoal = store.goal
         store.modelContext.insert(milestone)
 
-        try store.modelContext.attachList(.area(store.area), to: milestone)
+        link(.area(store.area), to: milestone, in: store.modelContext)
 
         let summary = GoalContributionResolver.summary(for: store.goal)
         #expect(summary.linkedListCount == 1)
@@ -724,16 +460,32 @@ struct CadenceGoalListLinkSurfaceTests {
 
     // MARK: - Both platforms reach the one path
 
-    /// **The call-site half.** `GoalListLink` is constructed in exactly one place in the app now,
-    /// so neither platform can grow its own spelling of "attach a list" — which is what the macOS
-    /// sheet's four private `insert(GoalListLink(...))` lines were, and what iOS would otherwise
-    /// have had to copy.
-    @Test func onlyTheSharedHelperConstructsALink() throws {
+    /// **Nothing under `Cadence/` constructs a `GoalListLink` any more** ([[T-2079]]), and that is
+    /// strictly stronger than what it replaced.
+    ///
+    /// This was `onlyTheSharedHelperConstructsALink`: the app had exactly one link writer —
+    /// `GoalLinkTarget`'s `makeLink`, reached through `ModelContext.attachList` — so neither
+    /// platform could grow its own spelling of "attach a list", which is what the macOS sheet's
+    /// four private `insert(GoalListLink(...))` lines had been. The owner retired goals, the two
+    /// attach sheets are deleted and the helper with them, so the question is no longer *which*
+    /// file may construct one: it is that **no shipped file may**, which is a claim a scan can
+    /// make and a reviewer cannot forget to re-derive.
+    ///
+    /// **The archive importer is the one exemption, and it is narrower than it was.** It restores
+    /// rows the owner already had rather than authoring new ones, in two passes, because a link's
+    /// goal and list may arrive later in the same archive than the link does: pass one builds every
+    /// row bare and copies scalars, pass two resolves ids into relationships. So the exemption is
+    /// the **empty** construction, asserted as such — the importer may write `GoalListLink()` and
+    /// nothing else, and the day it writes `GoalListLink(goal:area:)` it has started authoring and
+    /// this goes red. Keeping the importer whole is what makes [[T-2077]]'s retirement reversible:
+    /// a backup that silently dropped the owner's links would be the opposite of the depth they
+    /// chose.
+    @Test func nothingUnderCadenceConstructsAGoalListLink() throws {
         // A plain substring count is wrong here, and finding that out was worth the run: every
-        // `modelContext.toggleGoalListLink(` and `detachGoalListLink(` call *contains*
-        // `GoalListLink(`, so a `components(separatedBy:)` count made the shared helper's own file
-        // report 5 and named all four call sites as offenders. The initializer needs a left word
-        // boundary.
+        // `modelContext.toggleGoalListLink(` call contained `GoalListLink(`, so a
+        // `components(separatedBy:)` count once made the shared helper's own file report 5 and
+        // named all four of its call sites as offenders. The initializer needs a left word
+        // boundary, and the needle keeps it.
         let pattern = "(?<![A-Za-z0-9_])GoalListLink\\("
         var offenders: [String] = []
         for path in try swiftFiles(under: "Cadence") {
@@ -742,19 +494,7 @@ struct CadenceGoalListLinkSurfaceTests {
             guard count > 0 else { continue }
             offenders.append("\(path):\(count)")
         }
-        // **The archive importer constructs one too, and it is an exception rather than a
-        // seventh hand-spelling of "attach a list".** What `GoalLinkTarget.makeLink(for:)` exists
-        // to make unspellable-wrong is the *choice* between `area` and `project`; the importer
-        // makes no choice. It restores rows, in two passes, because a link's goal and list may
-        // arrive later in the same archive than the link does: pass one builds every row bare and
-        // copies scalars, pass two resolves ids into relationships. `makeLink(for:)` needs a live
-        // `Goal` and an already-resolved target, so it is not available at construction time and
-        // would not be the right call if it were — a restore that re-derived which list a link
-        // pointed at would be authoring, not restoring.
-        //
-        // So the exemption is the *empty* construction, asserted as such. The importer may write
-        // `GoalListLink()` and nothing else; the day it writes `GoalListLink(goal:area:)` it has
-        // started spelling the invariant by hand and this goes red.
+
         #expect(
             offenders.contains("Cadence/Services/CadenceArchiveImportService.swift:1"),
             "the importer no longer constructs a link — delete this exemption: \(offenders)"
@@ -772,41 +512,10 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(importer.contains("model.area = record.areaID.flatMap { destination.areas[$0] }"))
         #expect(importer.contains("model.project = record.projectID.flatMap { destination.projects[$0] }"))
 
-        #expect(offenders == ["Cadence/Shared/GoalListLinkHelpers.swift:2"])
-    }
-
-    /// iOS's detach and macOS's are the same function, and iOS's attach sheet and macOS's are the
-    /// same toggle. Exact counts, not "contains": reverting *one* of these call sites has to fail.
-    @Test func bothPlatformsCallTheSharedAttachAndDetachPath() throws {
-        try expectCallSites(of: "toggleGoalListLink", at: [
-            // Declaration.
-            "Cadence/Shared/GoalListLinkHelpers.swift": 1,
-            "Cadence/iOS/iOSGoalAttachListsSheet.swift": 1,
-            "Cadence/macOS/Views/GoalAttachWorkSheet.swift": 1
-        ])
-
-        try expectCallSites(of: "detachGoalListLink", at: [
-            // Declaration, plus the call inside `toggleGoalListLink`.
-            "Cadence/Shared/GoalListLinkHelpers.swift": 2,
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
-            "Cadence/macOS/Views/GoalsView.swift": 1
-        ])
-
-        try expectCallSites(of: "attachList", at: [
-            // Declaration, plus the call inside `toggleGoalListLink`.
-            "Cadence/Shared/GoalListLinkHelpers.swift": 2,
-            // One, not two, since T-536 folded the `.area` / `.project` branches into a single
-            // call on the resolved `CadenceTaskComposerSupport.selection(fromToken:)` target.
-            // The property this test pins is that both platforms reach the shared path at all;
-            // the count fell because two branches became one, not because a caller was lost.
-            "Cadence/macOS/Sheets/CreateGoalSheet.swift": 1
-        ])
-
-        try expectCallSites(of: "candidateGroups", at: [
-            "Cadence/Shared/GoalListLinkHelpers.swift": 1,
-            "Cadence/iOS/iOSGoalAttachListsSheet.swift": 1,
-            "Cadence/macOS/Views/GoalAttachWorkSheet.swift": 1
-        ])
+        #expect(offenders.isEmpty, "a shipped file constructs a GoalListLink: \(offenders)")
+        // Non-vacuity: the sweep really walked the shipped tree. An empty offender list is what a
+        // broken walk also produces, which is the trap an inverted scan has to be built against.
+        #expect(try swiftFiles(under: "Cadence").count > 100, "the sweep read no tree")
     }
 
     /// The presentation decisions are read from one place on both platforms — the ordering rule,
@@ -843,8 +552,11 @@ struct CadenceGoalListLinkSurfaceTests {
         try expectOccurrences(of: "GoalLinkPresentation.inheritedListNote(", at: [
             "Cadence/iOS/iOSFeatureDetailViews.swift": 1
         ])
+        // The attach sheet's presentation was asserted here at exactly 1; the sheet is deleted
+        // ([[T-2079]]) and the presentation with it, so the count is 0 — stated rather than
+        // dropped, so a re-added attach surface fails this test rather than passing it silently.
         try expectOccurrences(of: "iOSGoalAttachListsSheet(", at: [
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 1
+            "Cadence/iOS/iOSFeatureDetailViews.swift": 0
         ])
         try expectOccurrences(of: "linkedListsSection", at: [
             // The declaration and the one place the body reads it.
@@ -863,19 +575,24 @@ struct CadenceGoalListLinkSurfaceTests {
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")
         #expect(files.contains("Cadence/Shared/GoalListLinkHelpers.swift"))
-        #expect(files.contains("Cadence/iOS/iOSGoalAttachListsSheet.swift"))
         #expect(files.contains("Cadence/iOS/iOSFeatureDetailViews.swift"))
-        #expect(files.contains("Cadence/macOS/Views/GoalAttachWorkSheet.swift"))
         #expect(files.contains("Cadence/macOS/Views/GoalInspectorView.swift"))
         #expect(files.contains("Cadence/macOS/Views/GoalsSupportViews.swift"))
         #expect(files.contains("Cadence/macOS/Views/GoalsView.swift"))
-        #expect(files.contains("Cadence/macOS/Sheets/CreateGoalSheet.swift"))
+
+        // **The three the sweep must NOT find ([[T-2079]]).** `iOSGoalAttachListsSheet.swift`,
+        // `GoalAttachWorkSheet.swift` and `CreateGoalSheet.swift` were each asserted present
+        // above; all three were pure write surfaces and are deleted. Asserted absent rather than
+        // simply dropped from the list, because "the line is gone" and "the file is gone" are
+        // different claims and only one of them is this ticket's.
+        #expect(!files.contains("Cadence/iOS/iOSGoalAttachListsSheet.swift"))
+        #expect(!files.contains("Cadence/macOS/Views/GoalAttachWorkSheet.swift"))
+        #expect(!files.contains("Cadence/macOS/Sheets/CreateGoalSheet.swift"))
 
         // And it must be reading *code*, not an empty string: a positive assertion over the same
         // reader the counts above use.
-        let sheet = try strippingComments(sourceFile("Cadence/iOS/iOSGoalAttachListsSheet.swift"))
-        #expect(sheet.contains("struct iOSGoalAttachListsSheet: View"))
-        #expect(!sheet.contains("Attach or detach the areas and projects"))
+        let detail = try strippingComments(sourceFile("Cadence/iOS/iOSFeatureDetailViews.swift"))
+        #expect(detail.contains("struct iOSGoalDetail: View"))
     }
 }
 

@@ -104,8 +104,10 @@ struct CadenceContextlessListSurfaceTests {
     ///
     /// The macOS sidebar and the iPad sidebar are one entry — since T-538 they are literally one
     /// call, and `CadenceSidebarListsSupportTests` pins that they still are. `CreateGoalSheet`'s
-    /// picker is *not* here and cannot be: its grouping is written inline in a SwiftUI `body`, so
-    /// nothing outside that view can call it. That is what the ledger below is for.
+    /// picker used to be named here as the example of what *cannot* be an entry — its grouping was
+    /// written inline in a SwiftUI `body`, so nothing outside that view could call it, which is
+    /// what the ledger below is for. [[T-2079]] deleted that sheet; the ledger is unchanged and
+    /// still carries every other inline site.
     private static let surfaces: [Surface] = [
         Surface(name: "TildeContainerPickerSupport.flatContainers") { fixture in
             TildeContainerPickerSupport.flatContainers(
@@ -311,14 +313,8 @@ struct CadenceContextlessListSurfaceTests {
         // from the tasks themselves and sorts them onto the tail. Correct today, and correct for a
         // reason that lives in a different function.
         "Cadence/Shared/CadenceTaskQuerySupport.swift": 2,
-        // Correct: catch-all keyed on the offered set (T-683). It was the sixth instance of the
-        // fold — a bucket keyed on `context == nil`, right for a list with no context and wrong
-        // for one whose context exists and was not offered. Latent rather than live even then,
-        // because every caller passes an unfiltered context query; fixed anyway, because the next
-        // caller is what latent means. Its heading now reads `ungroupedTitle` ("Other") rather
-        // than its own "No Context" literal (T-771), pinned by
-        // `theGoalSheetsCatchAllHeadingReadsTheSharedUngroupedTitle`.
-        "Cadence/macOS/Sheets/CreateGoalSheet.swift": 2,
+        // `CreateGoalSheet.swift` held two of these sites — the catch-all keyed on the offered
+        // set ([[T-683]]) — and was deleted by [[T-2079]] with the rest of the goal write surface.
         // Correct: the optional-to-optional comparison. `nil == nil` is the unfiled bucket, so the
         // new list is numbered against the siblings it will actually sit beside (T-559).
         "Cadence/macOS/Sheets/CreateListSheet.swift": 2,
@@ -364,8 +360,9 @@ struct CadenceContextlessListSurfaceTests {
 
         #expect(actual == Self.knownContextDerivedListSites, "measured: \(actual.sorted { $0.key < $1.key })")
         // The headline, so a report and the ledger cannot disagree.
-        #expect(actual.values.reduce(0, +) == 31)
-        #expect(actual.count == 10)
+        // 31 across 10 files until [[T-2079]] deleted `CreateGoalSheet.swift`, which held two.
+        #expect(actual.values.reduce(0, +) == 29)
+        #expect(actual.count == 9)
         // And the two columns that used to be the worst of them are off the list entirely: neither
         // derives its rows by walking contexts any more (T-538).
         #expect(actual["Cadence/macOS/Views/SidebarView.swift"] == nil)
@@ -375,54 +372,14 @@ struct CadenceContextlessListSurfaceTests {
 
     // MARK: - 3. T-683: the goal sheet's initial-linked-list picker
 
-    /// **The sixth instance, and the one the behavioural registry cannot reach.**
-    ///
-    /// `CreateGoalSheet` buckets lists inline in a SwiftUI `body`, so no test can call its
-    /// grouping — the ledger above exists precisely because of that. What is checkable is which
-    /// question the catch-all asks: `context == nil` is right for a list that belongs to no
-    /// context and wrong for one whose context exists and was not offered, which is the ordinary
-    /// state of a list under an archived context.
-    ///
-    /// Latent on this tree — `allContexts` is an unfiltered `@Query`, so nothing is dropped today —
-    /// and fixed anyway, because "latent" here names the caller that has not been written yet.
-    @Test func theGoalSheetsInitialListPickerBucketsOnTheOfferedContextsRatherThanOnNil() throws {
-        let raw = try cadenceTestSource("Cadence/macOS/Sheets/CreateGoalSheet.swift")
-        let code = CadenceSourceScan.codeOnly(raw)
-        #expect(code != raw, "the comment stripper read the wrong file")
-        #expect(code.contains("struct CreateGoalSheet: View"), "non-vacuity: still the sheet")
-        // The fold it is a catch-all for is still there; this is not a test that passed by the
-        // picker being deleted.
-        #expect(CadenceSourceScan.matchCount("\\.context\\?\\.id\\s*==\\s*ctx\\.id", in: code) == 2)
-
-        #expect(code.contains("let offered = Set(allContexts.map(\\.id))"))
-        #expect(
-            CadenceSourceScan.matchCount(
-                "!CadenceSidebarLists\\.isOffered\\(\\$0\\.context\\?\\.id, among: offered\\)",
-                in: code
-            ) == 2,
-            "the goal sheet's catch-all does not ask the offered-context question for both kinds"
-        )
-        // The pre-T-683 spelling, for both kinds.
-        #expect(CadenceSourceScan.matchCount("\\$0\\.context == nil", in: code) == 0)
-    }
-
-    /// **The heading is converged (T-771).** Two spellings of the same bucket used to be live in
-    /// the app: "Other" (`CadenceSidebarLists.ungroupedTitle`, both sidebars and the container
-    /// picker) and "No Context" (here and `GoalLinkCandidateGroup.title`). They are the same row
-    /// under the same rule, so both now read the shared constant rather than restating it.
-    /// "No context" — the macOS context picker's own none-row — is a different idea, an unset
-    /// *field*, and is deliberately untouched.
-    @Test func theGoalSheetsCatchAllHeadingReadsTheSharedUngroupedTitle() throws {
-        // `strippingComments`, not `codeOnly`: the pre-T-771 literal this guards against would
-        // have lived *inside* a string, and `codeOnly` blanks literal contents.
-        let raw = try cadenceTestSource("Cadence/macOS/Sheets/CreateGoalSheet.swift")
-        let code = CadenceSourceScan.strippingComments(raw)
-        #expect(code != raw, "the comment stripper read the wrong file")
-        // The pre-T-771 spelling.
-        #expect(CadenceSourceScan.matchCount("Section\\(\"No Context\"\\)", in: code) == 0)
-        #expect(CadenceSourceScan.matchCount("Section\\(CadenceSidebarLists\\.ungroupedTitle\\)", in: code) == 1)
-        #expect(CadenceSidebarLists.ungroupedTitle == "Other")
-    }
+    // **The goal sheet's two contextless-list tests left with [[T-2079]].**
+    //
+    // `CreateGoalSheet` is deleted. One asserted that its initial list picker bucketed on the
+    // *offered* contexts rather than on `context == nil` ([[T-683]]); the other that its
+    // catch-all heading read `CadenceSidebarLists.ungroupedTitle` rather than its own "No
+    // Context" literal ([[T-771]]). Both rules are unchanged and both still have tests in this
+    // suite over the surfaces that remain; what is gone is the one surface whose history held
+    // the pre-T-683 and pre-T-771 spellings.
 
     /// **The sweep that stops the second spelling coming back (T-771).** `ungroupedTitle`'s own
     /// value is "Other" — nine characters, under `CadenceSharedConstantReuseSweepTests`'
@@ -452,7 +409,7 @@ struct CadenceContextlessListSurfaceTests {
         let offenders = try noContextRespellingInstrument().sweep(
             try cadenceAppSwiftFiles(),
             atLeast: 400,
-            including: "Cadence/macOS/Sheets/CreateGoalSheet.swift",
+            including: "Cadence/macOS/Sheets/CreateListSheet.swift",
             read: cadenceTestSource
         )
         #expect(

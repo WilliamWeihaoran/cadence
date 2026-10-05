@@ -56,7 +56,6 @@ struct GoalTimelineView: View {
     @Binding var scale: TimeScale
     @Binding var searchText: String
     @Binding var statusFilter: GoalStatusFilter
-    let onCreateGoal: () -> Void
     /// Opens the goal's inspector. See `GoalsView.content(groups:)` — the roadmap has no inspector
     /// column to select into, so this is its only route to Edit, Attach List and per-list detach.
     let onOpenGoal: (Goal) -> Void
@@ -134,9 +133,16 @@ struct GoalTimelineView: View {
                     // had made one that the page they were still looking at needed dates. What
                     // dates actually buy is the bar, which `timelineBody` skips unless both are
                     // set — so that is what the second sentence now says.
+                    // **The first-run sentence no longer names a control ([[T-2079]]).** It read
+                    // "Create a goal with New Goal. Add dates to draw its bar." — correct until
+                    // the New Goal button went with the rest of the goal write surface, and an
+                    // instruction to press a button that is not on the page is worse than no
+                    // instruction. T-525's reading survives in what is *not* said: that sentence
+                    // once ended "then set its date range.", which was false, because `rows` is
+                    // built from `groups` alone and an undated goal still gets a rail row.
                     subtitle: isNarrowedToEmpty
                         ? "Try a different filter."
-                        : "Create a goal with New Goal. Add dates to draw its bar.",
+                        : "No goals to draw.",
                     icon: "chart.bar.xaxis"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -230,14 +236,6 @@ struct GoalTimelineView: View {
                 .frame(width: 280)
                 .background(Theme.surface)
             }
-
-            CadenceActionButton(
-                title: "New Goal",
-                systemImage: "plus",
-                role: .primary,
-                size: .compact,
-                action: onCreateGoal
-            )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)

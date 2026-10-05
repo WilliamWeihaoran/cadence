@@ -348,7 +348,6 @@ struct CadenceCalendarConsistencySurfaceTests {
             "Cadence/macOS/Sheets/EditListSheet.swift",
             "Cadence/macOS/Sheets/CreateContextSheet.swift",
             "Cadence/macOS/Views/SettingsSupportViews.swift",
-            "Cadence/macOS/Views/HabitsFormSheets.swift",
             "Cadence/macOS/Views/LinksView.swift"
         ]
 

@@ -126,7 +126,6 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/iOS/iOSTaskRowActionViews.swift": (3, 3),
             "Cadence/iOS/iOSTaskViews.swift": (1, 0),
             "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),
-            "Cadence/iOS/iOSTrackingEditorSheets.swift": (5, 0),
             "Cadence/macOS/Views/SettingsArchiveImportCard.swift": (1, 0),
             "Cadence/macOS/Views/SettingsCalendarWorkHoursSection.swift": (1, 0),
             "Cadence/macOS/Views/SettingsSectionViews.swift": (1, 0),
@@ -155,8 +154,10 @@ struct CadenceChoicePickerDismissalTests {
         }
         // The total is stated, not derived from `expected` — deriving it would make it agree with
         // the table by construction and stop being a second reading of the same population.
-        // 39 since the two archive-import mode pickers; 37 before them.
-        #expect(found.values.map(\.calls).reduce(0, +) == 39)
+        // 39 since the two archive-import mode pickers; 37 before them. [[T-2079]] made it 34:
+        // `iOSTrackingEditorSheets.swift` held five, none of them committing, and the file is
+        // deleted with the goal and habit editors it contained.
+        #expect(found.values.map(\.calls).reduce(0, +) == 34)
         #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 

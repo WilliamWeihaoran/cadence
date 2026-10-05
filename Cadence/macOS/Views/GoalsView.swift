@@ -12,15 +12,11 @@ struct GoalsView: View {
     @AppStorage("goalsViewMode") private var goalsViewModeRaw = GoalsViewMode.mission.rawValue
     @AppStorage("goalsTimelineScale") private var timelineScaleRaw = TimeScale.quarter.rawValue
     @State private var selectedGoalID: UUID?
-    @State private var showCreateGoal = false
-    @State private var showEditGoal = false
-    @State private var showAttachWork = false
     /// The narrow-width route to the inspector. See `GoalInspectorSheet`.
     @State private var showGoalDetail = false
     @State private var searchText = ""
     /// Set when `detachGoalListLink` was refused ([[T-1301]]). `GoalLinkPresentation`'s own doc
     /// records why this family reports in an alert rather than under the row.
-    @State private var linkChangeFailed = false
     @State private var statusFilter: GoalStatusFilter = .active
 
     private var trimmedQuery: String {
@@ -112,33 +108,12 @@ struct GoalsView: View {
 
         return content(groups: groups)
             .background(Theme.bg)
-            .sheet(isPresented: $showCreateGoal) {
-                CreateGoalSheet()
-            }
-            .sheet(isPresented: $showEditGoal) {
-                if let goal = selectedGoal {
-                    CreateGoalSheet(goal: goal)
-                }
-            }
-            .sheet(isPresented: $showAttachWork) {
-                if let goal = selectedGoal {
-                    AttachWorkSheet(
-                        goal: goal,
-                        contexts: allContexts,
-                        areas: areas,
-                        projects: projects
-                    )
-                }
-            }
+            // **Three sheets left with [[T-2079]]**: New Goal, Edit Goal and Attach Work. Each
+            // presented a pure write surface — `CreateGoalSheet` and `AttachWorkSheet`, both
+            // deleted. The goal detail sheet that remains is the inspector, which reads.
             .sheet(isPresented: $showGoalDetail) {
                 if let goal = selectedGoal {
-                    GoalInspectorSheet(
-                        goal: goal,
-                        contexts: allContexts,
-                        areas: areas,
-                        projects: projects,
-                        onDetachList: detachList
-                    )
+                    GoalInspectorSheet(goal: goal)
                 }
             }
             .onAppear {
@@ -155,11 +130,6 @@ struct GoalsView: View {
             }
             .onChange(of: allGoals.map(\.id)) {
                 normalizeSelection(visible: visibleGoals)
-            }
-            .alert(GoalLinkPresentation.changeFailureAlertTitle, isPresented: $linkChangeFailed) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(GoalLinkPresentation.changeFailureNotice)
             }
     }
 
@@ -185,7 +155,6 @@ struct GoalsView: View {
                 scale: timelineScaleBinding,
                 searchText: $searchText,
                 statusFilter: $statusFilter,
-                onCreateGoal: { showCreateGoal = true },
                 onOpenGoal: { select($0, showsInspector: false) },
                 hasAnyGoal: !allGoals.isEmpty
             )
@@ -221,12 +190,7 @@ struct GoalsView: View {
 
                 if showsInspector {
                     if let goal = selectedGoal {
-                        GoalInspectorView(
-                            goal: goal,
-                            onEdit: { showEditGoal = true },
-                            onAttachWork: { showAttachWork = true },
-                            onDetachList: detachList
-                        )
+                        GoalInspectorView(goal: goal)
                         .frame(
                             minWidth: CadenceDesktopSplitLayout.goalInspectorPaneMinWidth,
                             idealWidth: 400
@@ -250,15 +214,10 @@ struct GoalsView: View {
             title: "Goals"
         ) {
             HStack(spacing: 10) {
+                // **No New Goal button since [[T-2079]].** `CreateGoalSheet` is deleted and
+                // `saveGoal` with it, so there is nothing for a primary action to call. The mode
+                // toggle stays: switching between mission and timeline is a read.
                 GoalsViewModeToggle(selection: goalsViewModeBinding)
-                CadenceActionButton(
-                    title: "New Goal",
-                    systemImage: "plus",
-                    role: .primary,
-                    size: .regular
-                ) {
-                    showCreateGoal = true
-                }
             }
         } controls: {
             HStack(spacing: 12) {
@@ -332,21 +291,6 @@ struct GoalsView: View {
         selectedGoalID = goal.id
         if !showsInspector {
             showGoalDetail = true
-        }
-    }
-
-    /// `ModelContext.detachGoalListLink` rather than a bare `delete`: the shared helper severs the
-    /// link's own references first and commits, and it is the same call iOS's goal detail makes.
-    ///
-    /// **It throws now ([[T-1301]]).** The commit it used to swallow was `try? save()` inside a
-    /// `ModelContext` extension, which the discipline sweep's needle could not read at all, so a
-    /// refused unlink left the row marked deleted in the app's one context and the inspector
-    /// redrawn without it.
-    private func detachList(_ link: GoalListLink) {
-        do {
-            try modelContext.detachGoalListLink(link)
-        } catch {
-            linkChangeFailed = true
         }
     }
 

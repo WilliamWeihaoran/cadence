@@ -164,7 +164,7 @@ enum GoalAssignmentRules {
     ///
     /// **Both editors ask this one function now ([[T-1327]]).** It was `iOSGoalEditorSheet`'s own
     /// private computed property, so `CreateGoalSheet` offered a parent for a goal with milestones
-    /// under it and `CadenceTrackingMutationSupport.saveGoal` took the selection — that function
+    /// under it and the retired `saveGoal` took the selection — that function
     /// guards only the self-parenting *cycle*, never depth — which made the macOS editor the way a
     /// goal -> milestone -> sub-milestone tree came to exist at all. A rule enforced on one of two
     /// platforms is not a rule; it is a defect with a workaround.

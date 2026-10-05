@@ -16,7 +16,6 @@ struct CadenceSectionLabelGroupingTests {
 
     private static let fieldRowsFile = "Cadence/Shared/Components/CadenceFieldRows.swift"
     private static let contextsFile = "Cadence/macOS/Views/SettingsListManagementSections.swift"
-    private static let goalSheetFile = "Cadence/macOS/Sheets/CreateGoalSheet.swift"
     private static let dataSafetyFile = "Cadence/macOS/Views/SettingsDataSafetySection.swift"
     private static let aboutFile = "Cadence/macOS/Views/SettingsAboutSection.swift"
     private static let groupOpener = "CadenceSectionLabelMetrics.labelToNamedBlock"
@@ -59,35 +58,14 @@ struct CadenceSectionLabelGroupingTests {
         )
     }
 
-    /// **The R38 site.** Every label in the goal sheet is `fieldGroup`'s first child, and the two
-    /// date fields that were already grouped no longer spell their own `6`.
-    @Test func theGoalSheetGroupsEveryLabelWithTheControlItNames() throws {
-        let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.goalSheetFile))
-        #expect(code.contains("struct CreateGoalSheet: View"), "non-vacuity: still the sheet")
-
-        // The bare-label spelling is gone, not supplemented: there is nothing left to stack.
-        #expect(
-            CadenceSourceScan.matchCount("fieldLabel\\(", in: code) == 0,
-            "the goal sheet can still drop a bare label into the section stack"
-        )
-        // Eleven controls, plus the helper's own declaration.
-        #expect(CadenceSourceScan.matchCount("fieldGroup", in: code) == 12)
-        #expect(
-            code.contains("VStack(alignment: .leading, spacing: \(Self.groupOpener))"),
-            "the goal sheet's field group no longer reads the shared gap"
-        )
-
-        let body = try #require(
-            CadenceSourceScan.declarationBody("var body: some View", in: code),
-            "non-vacuity: the sheet's body was not found"
-        )
-        #expect(CadenceSourceScan.matchCount("VStack\\(alignment: \\.leading, spacing: 20\\)", in: body) == 1)
-        // The two date groups used to be the only grouped pair in the sheet, at their own 6.
-        #expect(
-            CadenceSourceScan.matchCount("VStack\\(alignment: \\.leading, spacing: 6\\)", in: body) == 0,
-            "a field group in the goal sheet still spells its own gap"
-        )
-    }
+    // **`theGoalSheetGroupsEveryLabelWithTheControlItNames` left with [[T-2079]].**
+    //
+    // It was R38's site: every label in `CreateGoalSheet` had to be `fieldGroup`'s first child
+    // rather than a bare `fieldLabel(` stacked as a sibling, and the sheet's two date fields
+    // had to stop spelling their own `6` instead of
+    // `CadenceSectionLabelMetrics.labelToNamedBlock`. The sheet is deleted. The metric has one
+    // definition and the shared titled group still reads it, which is the first test in this
+    // suite, and the other three sites are untouched.
 
     /// **T-1126.** The four panes that still hand-stacked the same pair, one positional check each.
     ///

@@ -504,7 +504,6 @@ struct CadenceSaveCommitDisciplineTests {
             "Cadence/Shared/CadenceTaskMutationSupport.swift",
             "Cadence/Services/TagSupport.swift",
             "Cadence/macOS/Views/SettingsTagsSection.swift",
-            "Cadence/iOS/iOSTrackingEditorSheets.swift",
         ] {
             #expect(files.contains(path), "the save-commit sweep never reaches \(path)")
         }
@@ -522,15 +521,25 @@ struct CadenceSaveCommitDisciplineTests {
     /// doc comments under `Cadence/` quote the retired `try? modelContext.save()` line as the thing
     /// they were fixed away from. A scan that read prose would report those tombstones as offences
     /// and would have to be silenced by deleting the institutional memory.
+    ///
+    /// **The anchor moved with [[T-2079]].** It was `CadenceTrackingMutationSupport.swift`, whose
+    /// `saveGoal` doc quoted the retired line and whose `static func saveGoal(` was the live code
+    /// beside it; that file is an empty shell now and carries neither. The anchor is
+    /// `CadenceListDeleteHelpers.swift`, which quotes the same retired line in `deleteContext`'s
+    /// cascade note and has a live declaration under it — the note above is unchanged, because
+    /// what it is about is the *reader*, not the file.
     @Test func theSweepReadsCodeRatherThanTheTombstoneCommentsThatQuoteTheRetiredLine() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTrackingMutationSupport.swift")
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Services/CadenceListDeleteHelpers.swift")
         #expect(
             raw.contains("try? modelContext.save()"),
             "the tombstone this test is about is gone; pick another file or drop this test"
         )
         let read = CadenceSourceScan.codeOnly(raw)
         #expect(!read.contains("try? modelContext.save()"))
-        #expect(read.contains("static func saveGoal("), "codeOnly blanked live code, not just prose")
+        #expect(
+            read.contains("func deleteContext(_ context: Context"),
+            "codeOnly blanked live code, not just prose"
+        )
     }
 
     // MARK: - The declaration split

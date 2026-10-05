@@ -1,300 +1,35 @@
 import Foundation
 import SwiftData
 
-enum CadenceTrackingMutationSupport {
-
-    /// Shown when a goal the user asked for could not be committed (T-322).
-    ///
-    /// One sentence for both halves of `saveGoal` — the create that inserts and the edit that
-    /// writes fields — because the *button* is one button and the user does not experience "new"
-    /// and "changed" as two operations. It carries no "Nothing was changed." clause for the same
-    /// reason the rest of the create family carries none
-    /// (`TaskCreationService.saveFailureNotice`, `CadenceTaskMutationSupport.bundleSaveFailureNotice`):
-    /// the sheet is still open over the user's own typed values, which live in the editor's
-    /// `@State` and were never the store's to lose.
-    static let goalSaveFailureNotice = "Couldn't save this goal."
-
-    /// `habitSaveFailureNotice` to `saveHabit` as `goalSaveFailureNotice` is to `saveGoal`.
-    ///
-    /// Two sentences rather than one shared "Couldn't save this." because every failure notice in
-    /// this repo names its own object — four screens, four nouns, one shape, per
-    /// `CadenceTaskMutationSupport.deleteFailureNotice`.
-    static let habitSaveFailureNotice = "Couldn't save this habit."
-
-    /// Shown when `ModelContext.deleteGoal` could not be committed ([[T-1301]]).
-    ///
-    /// It carries the delete family's second sentence, and the sentence is **earned**: the cascade
-    /// commits through `CadencePendingChangePersistence.commitDelete`, whose undo is `rollback()`,
-    /// so the goal and every milestone under it are back where the user can see them by the time
-    /// this appears. Before T-1301 the commit was a swallowed `try? save()` and the whole subtree
-    /// sat marked-deleted in the shared context — the state this sentence denies, which is the
-    /// same argument `CadenceTaskMutationSupport.deleteFailureNotice` records.
-    static let goalDeleteFailureNotice = "Couldn't delete this goal. Nothing was removed."
-
-    /// `goalDeleteFailureNotice` for `ModelContext.deleteHabit`, naming its own object for the
-    /// reason the two save notices above give.
-    static let habitDeleteFailureNotice = "Couldn't delete this habit. Nothing was removed."
-
-    /// The iOS alert title over `goalDeleteFailureNotice`.
-    ///
-    /// Beside the sentence rather than in the view, for the reason
-    /// `CadenceTaskMutationSupport.deleteFailureAlertTitle` gives. macOS does not use these two:
-    /// there the refusal lands inside the still-open `DeleteConfirmationManager` overlay, which has
-    /// a title already.
-    static let goalDeleteFailureAlertTitle = "Couldn't Delete Goal"
-
-    /// `goalDeleteFailureAlertTitle`'s sibling for a habit.
-    static let habitDeleteFailureAlertTitle = "Couldn't Delete Habit"
-
-    /// What macOS's goal-delete confirmation announces, counting the **whole subtree the delete
-    /// takes** ([[T-1327]]).
-    ///
-    /// **It is here rather than in `CreateGoalSheet.requestDelete` because the number was the part
-    /// that was wrong, and a number built inside a view body is a number no test can read.** The
-    /// sheet counted `(goal.subGoals ?? []).count` — direct children — while
-    /// `ModelContext.deleteGoal` walks `GoalAssignmentRules.deletionCascade(from:)`, so a
-    /// goal -> milestone -> sub-milestone tree was announced as "1 milestone" and lost two.
-    /// `deletionCascade`'s own doc comment already claimed the confirmation counts that walk *"so
-    /// the alert cannot promise less than the delete performs"*, and names counting direct children
-    /// as the defect it replaced; iOS's `deleteMessage` counts it, macOS did not, so the doc was
-    /// true of one platform. Under-promising a delete is the direction [[T-433]] forbids.
-    ///
-    /// **iOS keeps its own sentence rather than calling this one.** The two differ by surface and
-    /// always did: iOS's alert says nothing about undo and names the goal in its title row, while
-    /// this one quotes the title and ends with "This cannot be undone." — the line macOS's overlay
-    /// earns because nothing in this app installs an `UndoManager` on the model context. Folding
-    /// them into one string would be a copy change wearing a refactor's clothes. What has to agree
-    /// is the *count*, and both now read `GoalAssignmentRules.nestedGoalCount(under:)`.
-    static func goalDeleteConfirmationMessage(for goal: Goal) -> String {
-        let nested = GoalAssignmentRules.nestedGoalCount(under: goal)
-        let kept = "Linked lists, habits and tasks are kept. This cannot be undone."
-        guard nested > 0 else {
-            return "\"\(goal.title)\" will be deleted. \(kept)"
-        }
-        let phrase = CadencePluralization.phrase(nested, singular: "milestone", plural: "milestones")
-        return "\"\(goal.title)\" and its \(phrase) will be deleted. \(kept)"
-    }
-
-    /// The fields `saveGoal` writes, captured before it writes them.
-    ///
-    /// Every field below is one `saveGoal` assigns; `order` is not here because only the *create*
-    /// path sets it, and that path undoes itself by deleting the object rather than by restoring
-    /// fields. Adding a twelfth assignment to `saveGoal` without adding it here would make the undo
-    /// silently partial, which is why the two lists sit ten lines apart.
-    private struct GoalFieldSnapshot {
-        let title: String
-        let desc: String
-        let startDate: String
-        let endDate: String
-        let progressType: GoalProgressType
-        let targetHours: Double
-        let icon: String
-        let colorHex: String
-        let kind: GoalKind
-        let status: GoalStatus
-        let context: Context?
-        let parentGoal: Goal?
-
-        init(_ goal: Goal) {
-            title = goal.title
-            desc = goal.desc
-            startDate = goal.startDate
-            endDate = goal.endDate
-            progressType = goal.progressType
-            targetHours = goal.targetHours
-            icon = goal.icon
-            colorHex = goal.colorHex
-            kind = goal.kind
-            status = goal.status
-            context = goal.context
-            parentGoal = goal.parentGoal
-        }
-
-        func restore(to goal: Goal) {
-            goal.title = title
-            goal.desc = desc
-            goal.startDate = startDate
-            goal.endDate = endDate
-            goal.progressType = progressType
-            goal.targetHours = targetHours
-            goal.icon = icon
-            goal.colorHex = colorHex
-            goal.kind = kind
-            goal.status = status
-            goal.context = context
-            goal.parentGoal = parentGoal
-        }
-    }
-
-    /// `GoalFieldSnapshot`, for `saveHabit`.
-    private struct HabitFieldSnapshot {
-        let title: String
-        let icon: String
-        let colorHex: String
-        let frequencyType: HabitFrequency
-        let frequencyDays: [Int]
-        let targetCount: Int
-        let context: Context?
-        let goal: Goal?
-
-        init(_ habit: Habit) {
-            title = habit.title
-            icon = habit.icon
-            colorHex = habit.colorHex
-            frequencyType = habit.frequencyType
-            frequencyDays = habit.frequencyDays
-            targetCount = habit.targetCount
-            context = habit.context
-            goal = habit.goal
-        }
-
-        func restore(to habit: Habit) {
-            habit.title = title
-            habit.icon = icon
-            habit.colorHex = colorHex
-            habit.frequencyType = frequencyType
-            habit.frequencyDays = frequencyDays
-            habit.targetCount = targetCount
-            habit.context = context
-            habit.goal = goal
-        }
-    }
-
-    /// `parentGoal == nil` creates a top-level direction (what used to be a pursuit);
-    /// passing a parent nests this goal as a milestone of it.
-    ///
-    /// **Throws when the store refuses the write (T-322).** This was `try? modelContext.save()`
-    /// followed by `return resolved`, and all three of its callers — `CreateGoalSheet` on macOS,
-    /// `iOSGoalEditorSheet`, and the habit sibling below — read a non-`nil` answer as success and
-    /// `dismiss()`. A refused save therefore closed the editor over a goal the store had never
-    /// taken. Same defect and same fix as `insertBundle(title:…)` (T-471) and
-    /// `insertScheduledTask` (T-470).
-    ///
-    /// `nil` still means only what it always meant: **the title was empty**, so there was nothing to
-    /// make a goal out of. Keeping that answer distinct from a throw is the separation T-470 drew —
-    /// "you typed nothing" is not a failure to report, and a caller that conflates the two shows an
-    /// error for a blank field or swallows a refused store, depending which way it guesses.
-    ///
-    /// The two paths undo differently because they are different pending changes, which is the whole
-    /// of `CadencePendingChangePersistence`'s reason for existing: a create un-inserts, an edit puts
-    /// the fields back. Neither may be left pending — this app has one `ModelContext`, and an
-    /// uncommitted change sitting in it is committed by the next unrelated `save()` or discarded by
-    /// the next unrelated `rollback()`, so "swallow it and hope" is not a third outcome, it is a
-    /// coin flip on someone else's code path.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    @discardableResult
-    static func saveGoal(
-        _ goal: Goal?,
-        title: String,
-        desc: String,
-        startDate: String,
-        endDate: String,
-        progressType: GoalProgressType,
-        targetHours: Double,
-        icon: String,
-        colorHex: String,
-        kind: GoalKind,
-        status: GoalStatus,
-        context: Context?,
-        parentGoal: Goal?,
-        allGoals: [Goal],
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> Goal? {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let resolved = goal ?? Goal(title: trimmed)
-        let snapshot = goal.map { GoalFieldSnapshot($0) }
-        resolved.title = trimmed
-        resolved.desc = desc.trimmingCharacters(in: .whitespacesAndNewlines)
-        resolved.startDate = startDate
-        resolved.endDate = endDate < startDate ? startDate : endDate
-        resolved.progressType = progressType
-        resolved.targetHours = max(0, targetHours)
-        resolved.icon = icon
-        resolved.colorHex = colorHex
-        resolved.kind = kind
-        resolved.status = status
-        resolved.context = context ?? parentGoal?.context
-        // Guard against a goal becoming its own parent, which would make the subGoals
-        // recursion in GoalContributionResolver walk a cycle.
-        resolved.parentGoal = (parentGoal?.id == resolved.id) ? nil : parentGoal
-
-        if goal == nil {
-            resolved.order = nextOrder(in: allGoals)
-            modelContext.insert(resolved)
-            try CadencePendingChangePersistence.commitInsert(
-                of: resolved,
-                in: modelContext,
-                commit: commit
-            )
-        } else {
-            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-                snapshot?.restore(to: resolved)
-            }
-        }
-        return resolved
-    }
-
-    /// `saveGoal`'s sibling, throwing for the same reason and undoing the same two ways (T-322).
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    @discardableResult
-    static func saveHabit(
-        _ habit: Habit?,
-        title: String,
-        icon: String,
-        colorHex: String,
-        frequencyType: HabitFrequency,
-        frequencyDays: [Int],
-        targetCount: Int,
-        context: Context?,
-        goal: Goal?,
-        allHabits: [Habit],
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> Habit? {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let resolved = habit ?? Habit(title: trimmed)
-        let snapshot = habit.map { HabitFieldSnapshot($0) }
-        resolved.title = trimmed
-        resolved.icon = icon
-        resolved.colorHex = colorHex
-        resolved.frequencyType = frequencyType
-        resolved.frequencyDays = frequencyDays
-        resolved.targetCount = max(1, targetCount)
-        resolved.context = context ?? goal?.context
-        resolved.goal = goal
-
-        if habit == nil {
-            resolved.order = nextOrder(in: allHabits)
-            modelContext.insert(resolved)
-            try CadencePendingChangePersistence.commitInsert(
-                of: resolved,
-                in: modelContext,
-                commit: commit
-            )
-        } else {
-            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-                snapshot?.restore(to: resolved)
-            }
-        }
-        return resolved
-    }
-
-    private static func nextOrder<T>(in items: [T], order: (T) -> Int) -> Int {
-        CadenceOrderAllocation.nextOrder(after: items, order: order)
-    }
-
-    private static func nextOrder(in goals: [Goal]) -> Int {
-        nextOrder(in: goals, order: \.order)
-    }
-
-    private static func nextOrder(in habits: [Habit]) -> Int {
-        nextOrder(in: habits, order: \.order)
-    }
-}
+/// The retired `Goal` / `Habit` mutation helpers ([[T-2079]]).
+///
+/// `saveGoal(...)` and `saveHabit(...)` were the one write path for both models — the create that
+/// inserted and the edit that wrote fields — and every caller went through them rather than
+/// open-coding the rules they owned: `endDate` pulled forward to `startDate`, `targetHours` floored
+/// at zero, `targetCount` floored at one, a context inherited from the parent goal or the habit's
+/// goal, and a goal handed itself as a parent silently un-parented so `GoalContributionResolver`
+/// could not walk a cycle. The callers were `CreateGoalSheet` and `HabitsFormSheets` on macOS,
+/// `iOSTrackingEditorSheets` on iOS, and `CadenceWriteService`'s `create_goal` / `create_habit` MCP
+/// arms. None of them exists any more.
+///
+/// **Why the whole type emptied rather than the functions being guarded.** The owner retired goals
+/// and habits at the depth *"remove the UI and stop writing, keep the schema"*: the models, their
+/// CloudKit record types and every row already in the owner's store stay, untouched and
+/// recoverable, and no code path creates or edits one again. A `saveGoal` left in place with no
+/// caller is a write one `+` button away from being live again, and **the compiler is the only
+/// thing that can hold a removal like this** — a scan cannot. So the functions are gone and every
+/// call site had to be removed before the tree would build, which is what makes the removal
+/// provably complete rather than merely thorough.
+///
+/// The failure notices went with them. `goalSaveFailureNotice`, `habitSaveFailureNotice`,
+/// `goalDeleteFailureNotice`, `habitDeleteFailureNotice` and the two iOS alert titles each named a
+/// refusal that can no longer happen, and `goalDeleteConfirmationMessage` counted a cascade
+/// (`ModelContext.deleteGoal`) that no longer exists either — see `TrackingDeleteHelpers`.
+///
+/// **The type is kept rather than the file deleted**, and that is a constraint rather than a
+/// preference: this file is named in `CadenceMCPServer`'s **explicit** Sources phase in
+/// `Cadence.xcodeproj/project.pbxproj`, and removing it from that phase is a project-file edit
+/// [[T-117]] forbids while the owner has Xcode open. `CadenceHabitCompletionStore.swift` and
+/// `GoalAssignmentRules.swift` are in that phase for the same reason; the third is all reads and
+/// is untouched.
+enum CadenceTrackingMutationSupport {}

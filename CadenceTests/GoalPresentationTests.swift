@@ -101,7 +101,7 @@ struct GoalPresentationTests {
     /// `canOwnMilestones` above answers for a candidate *parent*. `mustStayTopLevel` answers for
     /// the goal that would be **nested**, and it is the half that keeps the third level from being
     /// built: give a goal that owns milestones a parent and its milestones land on a level nothing
-    /// draws. `CadenceTrackingMutationSupport.saveGoal` will not stop it — it guards the
+    /// draws. the retired `saveGoal` will not stop it — it guards the
     /// self-parenting cycle and says nothing about depth — so the picker is the only gate.
     ///
     /// The two answers are complements over a two-level tree and this asserts them as such: a goal
@@ -128,50 +128,18 @@ struct GoalPresentationTests {
         #expect(GoalAssignmentRules.mustStayTopLevel(direction) == false)
     }
 
-    /// **Both parent pickers ask that one function, which is the whole of [[T-1327]]'s second
-    /// half.**
-    ///
-    /// The rule was `iOSGoalEditorSheet.mustStayTopLevel`, a private computed property, and
-    /// `CreateGoalSheet.parentGoalChoices` had no equivalent — so macOS offered a parent for a goal
-    /// with milestones under it and was the way a three-deep tree came to exist at all. Neither
-    /// picker is reachable from this target (iOS is entirely inside `#if os(iOS)`, and both are
-    /// view bodies), so the call sites are read from source, exactly as
-    /// `CadenceGoalListLinkSurfaceTests` reads iOS's link calls.
-    @Test func bothGoalEditorsRefuseToNestAGoalThatOwnsMilestones() throws {
-        let macSheet = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Sheets/CreateGoalSheet.swift")
-        let iosSheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTrackingEditorSheets.swift")
-
-        // One spelling of the rule per platform, and it is the shared one.
-        for (name, source) in [("macOS", macSheet), ("iOS", iosSheet)] {
-            #expect(
-                CadenceSourceScan.matchCount("GoalAssignmentRules\\.mustStayTopLevel\\(", in: source) == 1,
-                "\(name) does not ask the shared rule exactly once"
-            )
-            #expect(
-                source.contains("GoalAssignmentRules.mustStayTopLevelNotice"),
-                "\(name) writes the notice out by hand instead of reading the one beside the rule"
-            )
-            #expect(
-                !source.contains("parentGoal == nil && !("),
-                "\(name) kept a hand-written copy of the rule"
-            )
-        }
-
-        // And the guard is in the choices, not only in the label: a picker that draws the notice
-        // and still offers the parents underneath it is the same defect with a caption.
-        let choices = try #require(
-            CadenceSourceScan.declarationBody("private var parentGoalChoices: [Goal]", in: macSheet),
-            "parentGoalChoices is no longer declared that way"
-        )
-        #expect(choices.contains("guard !mustStayTopLevel else { return [] }"))
-        #expect(choices.contains("GoalAssignmentRules"), "the scan read something other than the picker")
-
-        let iosChoices = try #require(
-            CadenceSourceScan.declarationBody("private var parentChoices: [Goal]", in: iosSheet),
-            "iOS's parentChoices is no longer declared that way"
-        )
-        #expect(iosChoices.contains("guard !mustStayTopLevel else { return [] }"))
-    }
+    // **`bothGoalEditorsRefuseToNestAGoalThatOwnsMilestones` left with [[T-2079]].**
+    //
+    // It read both goal editors from source — `CreateGoalSheet.swift` and
+    // `iOSTrackingEditorSheets.swift`, neither reachable from this target — and asserted that
+    // each asked `GoalAssignmentRules.mustStayTopLevel(` exactly once and drew
+    // `mustStayTopLevelNotice` rather than a hand-written copy. That mattered because macOS
+    // once had no equivalent of the rule at all and was how a three-deep goal tree came to
+    // exist. Both editors are deleted, so no surface offers a parent goal and the tree cannot
+    // deepen from the app at all — the stronger form of what this guarded.
+    //
+    // `GoalAssignmentRules.mustStayTopLevel` and `.mustStayTopLevelNotice` are NOT removed:
+    // the rule is still read by the goal pages, and the tests above cover it directly.
 
     // MARK: - T-541: the detail pane may not show what the list filtered away
 

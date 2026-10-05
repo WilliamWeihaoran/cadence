@@ -77,7 +77,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(project)
         modelContext.insert(task)
         try modelContext.save()
-        let link = try #require(try modelContext.attachList(.project(project), to: goal))
+        let link = makeGoalListLink(.project(project), to: goal, in: modelContext)
         try modelContext.save()
 
         let sweep = RecordingSweep()
@@ -122,7 +122,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(areaTask)
         modelContext.insert(projectTask)
         try modelContext.save()
-        let areaLink = try #require(try modelContext.attachList(.area(area), to: goal))
+        let areaLink = makeGoalListLink(.area(area), to: goal, in: modelContext)
         try modelContext.save()
 
         let sweep = RecordingSweep(refusing: [projectTask.id])
@@ -156,7 +156,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(project)
         modelContext.insert(task)
         try modelContext.save()
-        _ = try modelContext.attachList(.project(project), to: goal)
+        makeGoalListLink(.project(project), to: goal, in: modelContext)
         try modelContext.save()
         #expect(try modelContext.fetch(FetchDescriptor<GoalListLink>()).count == 1)
 
@@ -196,7 +196,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(projectTask)
         modelContext.insert(note)
         try modelContext.save()
-        _ = try modelContext.attachList(.area(area), to: goal)
+        makeGoalListLink(.area(area), to: goal, in: modelContext)
         try modelContext.save()
 
         let sweep = RecordingSweep(refusing: [projectTask.id])
@@ -232,7 +232,7 @@ struct CadenceListCascadeRollbackTests {
         modelContext.insert(area)
         modelContext.insert(task)
         try modelContext.save()
-        _ = try modelContext.attachList(.area(area), to: goal)
+        makeGoalListLink(.area(area), to: goal, in: modelContext)
         try modelContext.save()
 
         #expect(throws: CommitRefused.self) {
@@ -419,4 +419,24 @@ struct CadenceListCascadeRollbackTests {
             "the return needle matches a failure branch that falls through"
         )
     }
+}
+
+/// A `GoalListLink` row, built directly ([[T-2079]]).
+///
+/// These fixtures used to call `ModelContext.attachList`, the app's one link writer; it is gone
+/// with the rest of the goal write surface. A **test** may construct a link and `Cadence/` may not
+/// — `CadenceGoalListLinkSurfaceTests.nothingUnderCadenceConstructsAGoalListLink` holds the second
+/// half. The cascade under test here is unchanged: `ModelContext.deleteContext` still takes a
+/// context's goal links, which is exactly why these rows have to exist.
+@discardableResult
+private func makeGoalListLink(_ target: GoalLinkTarget, to goal: Goal, in modelContext: ModelContext) -> GoalListLink {
+    let row: GoalListLink
+    switch target {
+    case .area(let area): row = GoalListLink(goal: goal, area: area)
+    case .project(let project): row = GoalListLink(goal: goal, project: project)
+    }
+    modelContext.insert(row)
+    goal.listLinks = (goal.listLinks ?? []) + [row]
+    modelContext.processPendingChanges()
+    return row
 }

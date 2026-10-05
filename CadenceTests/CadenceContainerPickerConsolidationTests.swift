@@ -468,8 +468,8 @@ struct CadenceContainerPickerConsolidationTests {
 
         for path in [
             "Cadence/iOS/iOSTaskDetailSheet.swift",
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
-            "Cadence/macOS/Sheets/CreateGoalSheet.swift"
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift"
+            // `CreateGoalSheet.swift` was the third until [[T-2079]] deleted it.
         ] {
             let source = try CadenceSourceScan.strippingComments(CadenceSourceScan.sourceFile(path))
             #expect(

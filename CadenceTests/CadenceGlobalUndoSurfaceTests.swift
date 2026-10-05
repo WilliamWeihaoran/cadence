@@ -114,29 +114,40 @@ struct CadenceGlobalUndoSurfaceTests {
     /// sentences become false again — so the sentences are pinned next to the rule that makes them
     /// true, rather than in a suite that has never heard of it.
     ///
-    /// **The goal sentence moved out of `CreateGoalSheet` and into
-    /// `CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for:)`** ([[T-1327]]): the
-    /// milestone *count* in it was wrong, and a number built inside a view body is a number no test
-    /// can read. The path moved with the sentence and the claim did not — the second assertion is
-    /// what keeps it a claim about the alert rather than about a string nothing shows.
+    /// **The goal and habit sentences left with [[T-2079]].** They lived in
+    /// `CadenceTrackingMutationSupport` and in `HabitsFormSheets`, and both named deletes no
+    /// surface can perform any more — the owner retired goals and habits, and
+    /// `ModelContext.deleteGoal` / `.deleteHabit` went with the editors that called them.
+    ///
+    /// **The claim is re-pointed rather than dropped, and the replacement is wider.** What this
+    /// test is really for is that the app does not promise reversibility it cannot deliver: there
+    /// is no `UndoManager` on the model context, so every delete the app still offers has to say
+    /// so. The two retired sheets are replaced by the four destructive surfaces that remain, which
+    /// is a bigger corpus than the one it had.
     @Test func theDestructiveSheetsStillPromiseTheDeleteIsFinal() throws {
-        for path in [
-            "Cadence/Shared/CadenceTrackingMutationSupport.swift",
-            "Cadence/macOS/Views/HabitsFormSheets.swift"
-        ] {
+        let surfaces = [
+            "Cadence/iOS/iOSListDeletionSupport.swift",
+            "Cadence/iOS/iOSNoteDeletionSupport.swift",
+            "Cadence/iOS/iOSDataResetSettingsSection.swift",
+            "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+        ]
+        // No trailing period in the needle: the four surviving surfaces draw the sentence as a
+        // `Text("This cannot be undone")` line of its own, while the two retired ones interpolated
+        // it mid-sentence with one. The shorter form reads both.
+        for path in surfaces {
             let source = try cadenceTestSource(path)
             #expect(
-                source.contains("This cannot be undone."),
+                source.contains("This cannot be undone"),
                 "\(path) no longer tells the user the delete is final"
             )
         }
 
-        // And the goal sheet still puts it on screen: the promise is only made if it reaches the
-        // confirmation the user reads.
+        // Non-vacuity: the reader really opened files, and the needle really can fail. A path that
+        // never says it is what this would look like if `cadenceTestSource` started answering "".
+        #expect(surfaces.count == 4)
         #expect(
-            try cadenceTestSource("Cadence/macOS/Sheets/CreateGoalSheet.swift")
-                .contains("CadenceTrackingMutationSupport.goalDeleteConfirmationMessage(for: goal)"),
-            "the goal delete confirmation no longer reads the sentence that promises finality"
+            try !cadenceTestSource("Cadence/Shared/Theme.swift").contains("This cannot be undone"),
+            "the needle matches a file that has nothing to do with deleting anything"
         )
     }
 }

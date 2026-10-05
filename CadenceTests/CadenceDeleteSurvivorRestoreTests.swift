@@ -360,83 +360,16 @@ struct CadenceDeleteSurvivorRestoreTests {
         )
     }
 
-    /// [[T-1376]]: a refused goal delete leaves the direction it was filed under still holding it,
-    /// and leaves the habits and tasks it organised still naming it — on the rows the Goals page is
-    /// holding while the alert is up.
-    @Test func arefusedGoalDeleteLeavesItsMilestoneNestedAndItsWorkStillAssigned() throws {
-        let container = try makeContainer()
-        let modelContext = ModelContext(container)
-        let context = Context(name: "Work")
-        let direction = Goal(title: "Finish thesis", context: context)
-        let milestone = Goal(title: "Chapter 1", context: context)
-        milestone.parentGoal = direction
-        direction.subGoals = [milestone]
-        let habit = Habit(title: "Write daily", context: context, goal: milestone)
-        milestone.habits = [habit]
-        let task = AppTask(title: "Draft")
-        task.goal = milestone
-        milestone.tasks = [task]
-        for model in [context, direction, milestone, habit, task] as [any PersistentModel] {
-            modelContext.insert(model)
-        }
-        try modelContext.save()
+    // **The goal-delete survivor test left with [[T-2079]].** It asserted that a refused
+    // `ModelContext.deleteGoal` put `habit.goal`, `task.goal` and `goal.parentGoal` back
+    // ([[T-1376]]). That helper no longer exists. `CadenceDeleteSurvivorSnapshot`'s three
+    // capture methods are NOT dead: `ModelContext.deleteContext`'s cascade in
+    // `CadenceListDeleteHelpers` still calls `captureGoalAssignment` and `captureNesting`,
+    // and `CadenceListCascadeRollbackTests` is where that path is covered.
 
-        #expect(throws: CommitRefused.self) {
-            try modelContext.deleteGoal(milestone, commit: refuseTheCommit)
-        }
-
-        #expect(!modelContext.hasChanges, "the refused goal delete was left pending in the context")
-
-        let store = ModelContext(container)
-        #expect(try store.fetch(FetchDescriptor<Goal>()).count == 2)
-        #expect(try store.fetch(FetchDescriptor<Habit>()).first?.goal?.id == milestone.id)
-
-        // The rows the two Goals pages are drawing, read back without a refetch.
-        #expect(
-            (direction.subGoals ?? []).map(\.id) == [milestone.id],
-            "a refused goal delete took the milestone out of the direction it is drawn under"
-        )
-        #expect(milestone.parentGoal?.id == direction.id, "a refused goal delete promoted the milestone")
-        #expect(habit.goal?.id == milestone.id, "a refused goal delete unlinked a habit it did not remove")
-        #expect(task.goal?.id == milestone.id, "a refused goal delete severed a task it did not remove")
-        #expect((milestone.habits ?? []).map(\.id) == [habit.id], "the goal came back with no habits")
-        #expect((milestone.tasks ?? []).map(\.id) == [task.id], "the goal came back with no contributions")
-    }
-
-    /// The habit half, which the ticket expected to need nothing: the write lands on the doomed
-    /// row, but the **far** end of it is a surviving goal and a surviving context, and
-    /// `Goal.habits` / `Context.habits` are what those two pages count.
-    @Test func arefusedHabitDeleteLeavesItInItsGoalsAndItsContextsLists() throws {
-        let container = try makeContainer()
-        let modelContext = ModelContext(container)
-        let context = Context(name: "Health")
-        let goal = Goal(title: "Get healthy", context: context)
-        let habit = Habit(title: "Run", context: context, goal: goal)
-        goal.habits = [habit]
-        context.habits = [habit]
-        for model in [context, goal, habit] as [any PersistentModel] {
-            modelContext.insert(model)
-        }
-        try modelContext.save()
-
-        #expect(throws: CommitRefused.self) {
-            try modelContext.deleteHabit(habit, commit: refuseTheCommit)
-        }
-
-        #expect(!modelContext.hasChanges, "the refused habit delete was left pending in the context")
-        #expect(try ModelContext(container).fetch(FetchDescriptor<Habit>()).map(\.title) == ["Run"])
-
-        #expect(
-            (goal.habits ?? []).map(\.id) == [habit.id],
-            "a refused habit delete emptied the goal's habit list on screen"
-        )
-        #expect(
-            (context.habits ?? []).map(\.id) == [habit.id],
-            "a refused habit delete emptied the context's habit list on screen"
-        )
-        #expect(habit.goal?.id == goal.id, "the habit came back unlinked from the goal it tracks")
-        #expect(habit.context?.id == context.id, "the habit came back with no context")
-    }
+    // The habit-delete survivor test left with it: `ModelContext.deleteHabit` is gone for the
+    // same reason, and `captureContextAssignment` — the third capture, which it covered —
+    // is still reached by the list cascade through `Context.habits`.
 
     // MARK: - The deferred half, whose refusal is two frames up
 
@@ -577,8 +510,6 @@ struct CadenceDeleteSurvivorRestoreTests {
             ("Cadence/Shared/CadenceTaskMutationSupport.swift", "deleteTasks"),
             ("Cadence/Shared/CadenceTaskMutationSupport.swift", "deleteBundle"),
             ("Cadence/Shared/CadenceTodayRolloverSupport.swift", "rollOver"),
-            ("Cadence/Shared/TrackingDeleteHelpers.swift", "deleteGoal"),
-            ("Cadence/Shared/TrackingDeleteHelpers.swift", "deleteHabit")
         ]
 
         for site in sites {

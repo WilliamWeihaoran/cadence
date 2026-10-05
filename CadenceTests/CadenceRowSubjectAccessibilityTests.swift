@@ -81,20 +81,14 @@ struct CadenceRowSubjectAccessibilityTests {
 
     private static let goalsSupportPath = "Cadence/macOS/Views/GoalsSupportViews.swift"
 
-    @Test func goalLinkedListDetachButtonNamesTheListItDetaches() throws {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.goalsSupportPath))
-        let body = try #require(CadenceSourceScan.declarationBody("struct GoalLinkedListRow: View", in: source))
-
-        #expect(body.contains(#".accessibilityLabel("Detach")"#))
-        #expect(body.contains(".accessibilityValue(normalizedTitle)"))
-        // The normalisation itself: routed through `CadenceTitleNormalization.display`, keyed on
-        // which relationship is set, rather than interpolating `link.title` raw — an area or
-        // project with a blank *name* passes an empty string through `link.title` untouched.
-        #expect(body.contains("CadenceTitleNormalization.display("))
-        #expect(body.contains("link.area != nil"))
-        #expect(body.contains("CadenceTitleNormalization.defaultAreaName"))
-        #expect(body.contains("CadenceTitleNormalization.defaultProjectName"))
-    }
+    // **`goalLinkedListDetachButtonNamesTheListItDetaches` left with [[T-2079]].**
+    //
+    // It was [[T-673]]'s fourth site: `GoalLinkedListRow`'s `xmark` button announced
+    // "Detach" with the list's normalised title as its value, so eight identical
+    // announcements did not collapse into one. The button is gone — `detachGoalListLink`, the
+    // only helper that removed a `GoalListLink`, went with the goal write surface — and the
+    // row is read-only. The normalisation it also pinned is still there and is still asserted
+    // by `GoalTaskContributorRow`'s test below.
 
     /// **T-792.** T-673 fixed what the row *announces* and left what it *draws* untouched: the
     /// visible `Text` above the detach button still interpolated `link.title` raw, so a list with
@@ -200,12 +194,12 @@ struct CadenceRowSubjectAccessibilityTests {
             in: Self.quickCreatePath
         )
         total += try count("private func selectedTaskRow(_ task: AppTask) -> some View", in: Self.quickCreatePath)
-        total += try count("struct GoalLinkedListRow: View", in: Self.goalsSupportPath)
         total += try count("struct GoalTaskContributorRow: View", in: Self.goalsSupportPath)
         // Both subtask-row sites (the circle and the delete button) live in one struct.
         total += try count("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
-        // `HabitListCard` was the eighth site and left with [[T-2079]]; see the note above.
+        // `GoalLinkedListRow` and `HabitListCard` were the fourth and eighth sites and left with
+        // [[T-2079]]; see the two notes above.
 
-        #expect(total == 7)
+        #expect(total == 6)
     }
 }

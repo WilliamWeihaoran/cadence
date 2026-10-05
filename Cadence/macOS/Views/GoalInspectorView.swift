@@ -1,11 +1,14 @@
 #if os(macOS)
 import SwiftUI
 
+/// The goal inspector, **read-only since [[T-2079]]**.
+///
+/// It took `onEdit`, `onAttachWork` and `onDetachList` — an Edit button, an Attach List button and
+/// a per-row unlink. All three called write helpers that no longer exist: `saveGoal` through
+/// `CreateGoalSheet`, `attachList` through `AttachWorkSheet`, and `detachGoalListLink` directly.
+/// The inspector keeps everything it *draws*.
 struct GoalInspectorView: View {
     let goal: Goal
-    let onEdit: () -> Void
-    let onAttachWork: () -> Void
-    let onDetachList: (GoalListLink) -> Void
 
     private var summary: GoalContributionSummary {
         GoalContributionResolver.summary(for: goal)
@@ -77,24 +80,6 @@ struct GoalInspectorView: View {
                 }
                 GoalProgressBar(progress: summary.progress, color: Color(hex: goal.colorHex), height: 5)
             }
-
-            HStack(spacing: 8) {
-                CadenceActionButton(
-                    title: "Edit",
-                    systemImage: "pencil",
-                    role: .secondary,
-                    size: .compact,
-                    action: onEdit
-                )
-                CadenceActionButton(
-                    title: "Attach List",
-                    systemImage: "plus",
-                    role: .secondary,
-                    size: .compact,
-                    action: onAttachWork
-                )
-                Spacer()
-            }
         }
     }
 
@@ -148,7 +133,7 @@ struct GoalInspectorView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(linkedLists) { link in
-                        GoalLinkedListRow(link: link, onDetach: { onDetachList(link) })
+                        GoalLinkedListRow(link: link)
                     }
                 }
             }
@@ -200,14 +185,8 @@ struct GoalInspectorView: View {
 /// day it was written and stop following its part the next day.
 struct GoalInspectorSheet: View {
     let goal: Goal
-    let contexts: [Context]
-    let areas: [Area]
-    let projects: [Project]
-    let onDetachList: (GoalListLink) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var showEditGoal = false
-    @State private var showAttachWork = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -222,26 +201,10 @@ struct GoalInspectorSheet: View {
             .padding(.horizontal, 20)
             .padding(.top, 16)
 
-            GoalInspectorView(
-                goal: goal,
-                onEdit: { showEditGoal = true },
-                onAttachWork: { showAttachWork = true },
-                onDetachList: onDetachList
-            )
+            GoalInspectorView(goal: goal)
         }
         .frame(width: CadenceDesktopSplitLayout.goalInspectorPaneMinWidth, height: 660)
         .background(Theme.surface)
-        .sheet(isPresented: $showEditGoal) {
-            CreateGoalSheet(goal: goal)
-        }
-        .sheet(isPresented: $showAttachWork) {
-            AttachWorkSheet(
-                goal: goal,
-                contexts: contexts,
-                areas: areas,
-                projects: projects
-            )
-        }
     }
 }
 #endif

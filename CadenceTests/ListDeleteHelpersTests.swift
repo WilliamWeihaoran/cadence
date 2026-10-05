@@ -355,7 +355,7 @@ struct ListDeleteHelpersTests {
     /// every goal whose own context is this one is in it, and a goal whose context is not is
     /// somebody else's row. `deleteGoal`'s unfiltered walk is decided the other way, and why the
     /// two are not the same question is on
-    /// `TrackingDeleteHelpersTests.deletingAGoalTakesAMilestoneWhoseOwnContextIsElsewhere`.
+    /// the goal-cascade half of that pair, retired with `deleteGoal` by [[T-2079]].
     ///
     /// **The confirmation does not move, and this pins that it does not.**
     /// `CadenceListDeletionSummary.forContext` counts `context.goals.count`, which is exactly the

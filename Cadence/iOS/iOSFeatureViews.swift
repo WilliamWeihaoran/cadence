@@ -10,18 +10,6 @@ struct iOSGoalsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Goal.order) private var goals: [Goal]
     @State private var selectedID: UUID?
-    @State private var editorMode: iOSGoalEditorMode?
-    @State private var habitEditorMode: iOSHabitEditorMode?
-    @State private var pendingDeleteID: UUID?
-    /// Set when `deleteGoal` was refused ([[T-1301]]). The confirmation alert has already closed
-    /// itself by then — a `role: .destructive` button dismisses on tap — so the refusal needs its
-    /// own alert rather than a sentence inside the one the user was reading.
-    @State private var deleteFailed = false
-
-    private var pendingDelete: Goal? {
-        guard let pendingDeleteID else { return nil }
-        return goals.first { $0.id == pendingDeleteID }
-    }
 
     private var activeGoals: [Goal] {
         GoalAssignmentRules.activeGoals(from: goals)
@@ -63,64 +51,9 @@ struct iOSGoalsView: View {
         .onAppear {
             selectedID = selectedID ?? selected?.id
         }
-        .sheet(item: $editorMode) { mode in
-            iOSGoalEditorSheet(mode: mode) { goal in
-                selectedID = goal.id
-            }
-        }
-        .sheet(item: $habitEditorMode) { mode in
-            iOSHabitEditorSheet(mode: mode)
-        }
-        .alert(
-            "Delete \(pendingDelete?.isTopLevel == true ? "Goal" : "Milestone")?",
-            isPresented: Binding(get: { pendingDeleteID != nil }, set: { if !$0 { pendingDeleteID = nil } })
-        ) {
-            Button("Delete", role: .destructive, action: deletePendingGoal)
-            Button("Cancel", role: .cancel) { pendingDeleteID = nil }
-        } message: {
-            Text(deleteMessage)
-        }
-        .alert(CadenceTrackingMutationSupport.goalDeleteFailureAlertTitle, isPresented: $deleteFailed) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CadenceTrackingMutationSupport.goalDeleteFailureNotice)
-        }
-    }
-
-    /// Names what actually goes, because the cascade is asymmetric: milestones die with their
-    /// parent, but the tasks, habits and lists the goal organised are the user's real work and
-    /// survive with their link severed.
-    private var deleteMessage: String {
-        guard let goal = pendingDelete else { return "" }
-        // The whole nested subtree, which is what `deleteGoal` removes — counting direct children
-        // alone said "1 milestone" for a goal → milestone → sub-milestone tree and deleted two.
-        let milestoneCount = GoalAssignmentRules.nestedGoalCount(under: goal)
-        let nested = milestoneCount == 1 ? "its 1 milestone" : "its \(milestoneCount) milestones"
-        let scope = milestoneCount == 0 ? "This deletes the goal." : "This deletes the goal and \(nested)."
-        return "\(scope) Linked tasks, habits and lists are kept."
-    }
-
-    /// **The selection is cleared only once the store has taken the delete ([[T-1301]]).**
-    /// `deleteGoal` swallowed its commit before this, and clearing `selectedID` is the report half
-    /// in its plain spelling — the detail pane empties, which says the goal is gone. Both writes
-    /// now sit below the `try`, so a refusal leaves the row selected and the goal on screen, which
-    /// is what `goalDeleteFailureNotice`'s "Nothing was removed." promises.
-    private func deletePendingGoal() {
-        guard let goal = pendingDelete else { return }
-        // The confirmation closes because the button was tapped, not because the store agreed, and
-        // it has to close before the refusal alert can present — two `.alert`s contending for one
-        // view show one of them. The *outcome* is reported below, in the second alert or by the
-        // selection clearing.
-        pendingDeleteID = nil
-        do {
-            try modelContext.deleteGoal(goal)
-        } catch {
-            deleteFailed = true
-            return
-        }
-        if selectedID == goal.id || goal.subGoals?.contains(where: { $0.id == selectedID }) == true {
-            selectedID = nil
-        }
+        // **Two editor sheets and two alerts left with [[T-2079]]**: the goal editor, the habit
+        // editor it could open, the delete confirmation and the delete-refusal alert. All four
+        // reached `saveGoal` / `saveHabit` or `ModelContext.deleteGoal`, none of which exists.
     }
 
     /// `narrow` is the phone's own list, in its own `NavigationStack` — the rows push, so they need
@@ -157,9 +90,8 @@ struct iOSGoalsView: View {
             title: "Goals",
             count: activeGoals.count,
             empty: emptyState,
-            actionTitle: "New Goal",
-            actionSystemImage: "plus",
-            action: { editorMode = .new(nil) },
+            // No `actionTitle`/`action`: the New Goal button opened the goal editor sheet
+            // ([[T-2079]]). `iOSFeatureListPane` renders no button when both are omitted.
             isPage: pushes,
             onBack: pushes && horizontalSizeClass == .compact ? { dismiss() } : nil
         ) {
@@ -184,18 +116,7 @@ struct iOSGoalsView: View {
             }
         )
         .buttonStyle(.iosPressable)
-        .contextMenu { deleteMenuItem(for: goal) }
-    }
-
-    /// Long-press on the row rather than a button on the detail: in the compact push stack the
-    /// detail is the pushed view, so deleting from inside it would leave a screen bound to a row
-    /// that no longer exists.
-    private func deleteMenuItem(for goal: Goal) -> some View {
-        Button(role: .destructive) {
-            pendingDeleteID = goal.id
-        } label: {
-            Label(goal.isTopLevel ? "Delete Goal" : "Delete Milestone", systemImage: "trash")
-        }
+        // The long-press delete menu left with [[T-2079]]: `ModelContext.deleteGoal` is gone.
     }
 
     private func goalRow(_ goal: Goal, isSelected: Bool) -> some View {
@@ -222,9 +143,6 @@ struct iOSGoalsView: View {
             goal: goal,
             milestones: CadenceGoalGroupSupport.milestones(for: goal),
             habits: CadenceGoalGroupSupport.habits(for: goal),
-            onEdit: { editorMode = .edit(goal) },
-            onNewMilestone: { editorMode = .new(goal) },
-            onNewHabit: { habitEditorMode = .new(goal) },
             showsBackControl: showsBackControl
         )
     }
@@ -288,16 +206,6 @@ struct iOSHabitsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Habit.order) private var habits: [Habit]
     @State private var selectedID: UUID?
-    @State private var editorMode: iOSHabitEditorMode?
-    @State private var pendingDeleteID: UUID?
-    /// Set when `deleteHabit` was refused ([[T-1301]]); see `iOSGoalsView` for why it is a second
-    /// alert rather than a notice inside the confirmation.
-    @State private var deleteFailed = false
-
-    private var pendingDelete: Habit? {
-        guard let pendingDeleteID else { return nil }
-        return habits.first { $0.id == pendingDeleteID }
-    }
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -327,52 +235,7 @@ struct iOSHabitsView: View {
         .onAppear {
             selectedID = selectedID ?? selected?.id
         }
-        .sheet(item: $editorMode) { mode in
-            iOSHabitEditorSheet(mode: mode) { habit in
-                selectedID = habit.id
-            }
-        }
-        .alert(
-            "Delete Habit?",
-            isPresented: Binding(get: { pendingDeleteID != nil }, set: { if !$0 { pendingDeleteID = nil } })
-        ) {
-            Button("Delete", role: .destructive, action: deletePendingHabit)
-            Button("Cancel", role: .cancel) { pendingDeleteID = nil }
-        } message: {
-            Text(deleteMessage)
-        }
-        .alert(CadenceTrackingMutationSupport.habitDeleteFailureAlertTitle, isPresented: $deleteFailed) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CadenceTrackingMutationSupport.habitDeleteFailureNotice)
-        }
-    }
-
-    /// A habit's completion history has nowhere else to live, so it goes with the habit — unlike a
-    /// goal's tasks and lists, which survive. The reminder is cancelled by `deleteHabit`; habit
-    /// reminders repeat on time-of-day, so a surviving request would fire the deleted habit's
-    /// title every day until the next `scenePhase` reconcile.
-    private var deleteMessage: String {
-        guard let habit = pendingDelete else { return "" }
-        let count = (habit.completions ?? []).count
-        let history = count == 1 ? "1 recorded completion" : "\(count) recorded completions"
-        return "This deletes the habit and \(history)."
-    }
-
-    /// The habit twin of `iOSGoalsView.deletePendingGoal`, ordered the same way and for the same
-    /// reason ([[T-1301]]).
-    private func deletePendingHabit() {
-        guard let habit = pendingDelete else { return }
-        pendingDeleteID = nil
-        do {
-            try modelContext.deleteHabit(habit)
-        } catch {
-            deleteFailed = true
-            return
-        }
-        if selectedID == habit.id {
-            selectedID = nil
-        }
+        // The habit editor sheet and both delete alerts left with [[T-2079]] — see `iOSGoalsView`.
     }
 
     /// `narrow` is the phone's own list, in its own `NavigationStack` — the rows push, so they need
@@ -405,9 +268,7 @@ struct iOSHabitsView: View {
             title: "Habits",
             count: habits.count,
             empty: Self.emptyState,
-            actionTitle: "New Habit",
-            actionSystemImage: "plus",
-            action: { editorMode = .new(nil) },
+            // No `actionTitle`/`action`: see `iOSGoalsView.listPane` ([[T-2079]]).
             isPage: pushes,
             onBack: pushes && horizontalSizeClass == .compact ? { dismiss() } : nil
         ) {
@@ -446,14 +307,13 @@ struct iOSHabitsView: View {
             iOSHabitCheckInGlyph(habit: habit, todayKey: todayKey)
                 .padding(.trailing, 4)
         }
-        .contextMenu { deleteMenuItem(for: habit) }
+        // The long-press delete menu left with [[T-2079]]: `ModelContext.deleteHabit` is gone.
     }
 
     private func detailView(for habit: Habit, showsBackControl: Bool = false) -> some View {
         iOSHabitDetail(
             habit: habit,
             todayKey: todayKey,
-            onEdit: { editorMode = .edit(habit) },
             showsBackControl: showsBackControl
         )
     }
@@ -478,15 +338,6 @@ struct iOSHabitsView: View {
         }
     }
 
-    /// Long-press on the row, for the same reason goals use one: in the compact push stack the
-    /// detail *is* the pushed view.
-    private func deleteMenuItem(for habit: Habit) -> some View {
-        Button(role: .destructive) {
-            pendingDeleteID = habit.id
-        } label: {
-            Label("Delete Habit", systemImage: "trash")
-        }
-    }
 
 }
 #endif

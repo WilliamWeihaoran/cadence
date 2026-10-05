@@ -1488,41 +1488,12 @@ struct CadenceEmptyStateAuditTests {
         #expect(miss.isEmpty, "non-vacuity: the candidate builder never narrows")
     }
 
-    /// The sheet asks the shared rule, and no longer branches on the raw field.
-    ///
-    /// Source-shape, and stated as such: `Cadence/iOS/` is not compiled by this target.
-    @Test func theAttachListsSheetAsksTheSharedNarrowingRule() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSGoalAttachListsSheet.swift")
-        let code = CadenceSourceScan.strippingComments(raw)
-        #expect(code.contains("struct iOSGoalAttachListsSheet: View"), "non-vacuity: wrong file")
-        #expect(code != raw, "the file carries comments and the stripper blanked none of them")
-
-        #expect(
-            code.contains("CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: query, filterNarrows: false)"),
-            "the sheet re-rolls the narrowing rule instead of asking the shared one"
-        )
-
-        let empty = try #require(
-            CadenceEmptyStateAudit.callSegments(in: code).first,
-            "the sheet no longer draws an empty state"
-        )
-        #expect(empty.contains("isNarrowedToEmpty"), "the sheet's empty state does not ask the rule")
-        #expect(
-            empty.contains("query.isEmpty") == false,
-            "the sheet's empty state is back to reading the search field alone"
-        )
-        // T-699 converged the title onto `CadenceEmptyStateCopy.listsTitle(isNarrowed:)` — the
-        // shared helper `iOSRootSidebar` and `CadenceListsSummary.eyebrow` now read too — rather
-        // than spelling either branch here. The subtitle's two branches are a separate decision
-        // (T-699 left them, the way `goalsTitle`'s subtitles stay apart) and still read as literals.
-        #expect(empty.contains("CadenceEmptyStateCopy.listsTitle(isNarrowed: isNarrowedToEmpty)"),
-                "the title no longer reads the shared helper")
-        #expect(empty.contains("\"No matching lists\"") == false,
-                "the title fell back to a hand-spelled literal instead of the shared helper")
-        #expect(empty.contains("\"No lists yet\"") == false,
-                "the title fell back to a hand-spelled literal instead of the shared helper")
-        #expect(empty.contains("\"Nothing matches that search.\""), "non-vacuity: the subtitle moved too")
-    }
+    // **`theAttachListsSheetAsksTheSharedNarrowingRule` left with [[T-2079]].**
+    //
+    // `iOSGoalAttachListsSheet` is deleted with the rest of the goal write surface. It
+    // asserted that the sheet asked `GoalLinkPresentation.candidateGroups` rather than
+    // branching on the raw field. The narrowing rule itself is a read, is unchanged, and is
+    // still covered by `CadenceGoalListLinkSurfaceTests`' candidate tests.
 
     /// **T-699.** `listsTitle(isNarrowed:)`'s own two answers, and that the other two call sites —
     /// `CadenceListsSummary.eyebrow`'s fallback and `iOSRootSidebar.emptyListsRow` — read it rather
@@ -1617,7 +1588,11 @@ struct CadenceEmptyStateAuditTests {
             CadenceEmptyStateAudit.callSegments(in: code).first,
             "the roadmap no longer draws an empty state"
         )
-        #expect(empty.contains("\"Create a goal with New Goal. Add dates to draw its bar.\""))
+        #expect(empty.contains("\"No goals to draw.\""))
+        // The pre-[[T-2079]] sentence, stated as an absence: it named the New Goal button, which
+        // was removed with the goal write surface, and an empty state that tells the reader to
+        // press a control the page does not draw is the T-525 failure wearing a different word.
+        #expect(empty.contains("New Goal") == false)
         // Stated as an absence as well, so a revert wearing different words fails rather than
         // passing on a changed literal. The retired sentence itself is swept app-wide by
         // `cadenceRetiredCopy`.
@@ -1625,10 +1600,11 @@ struct CadenceEmptyStateAuditTests {
         // The narrowed half is untouched: this was a truth fix, not a rewrite of the branch.
         #expect(empty.contains("\"Try a different filter.\""))
 
-        // And the control the new sentence names is on this page, at the one width it has.
+        // And the symmetric half: the page really has no such control any more, so the sentence
+        // above is not merely silent about a button that is still there.
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceActionButton\(\s*title: "New Goal""#, in: code) == 1,
-            "the roadmap's copy names a New Goal button its own toolbar does not draw"
+            CadenceSourceScan.matchCount(#"CadenceActionButton\(\s*title: "New Goal""#, in: code) == 0,
+            "the roadmap draws a New Goal button its copy no longer names"
         )
     }
 

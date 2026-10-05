@@ -274,14 +274,17 @@ struct CadenceDesktopSplitLayoutTests {
         // The sheet re-presents the inspector rather than re-implementing it: exactly one call, and
         // `struct GoalInspectorView: View` carries no parenthesis, so this counts uses only.
         #expect(desktopSplitOccurrences(of: "GoalInspectorView(", in: sheet) == 1)
-        // …carrying all three of the commands the column used to be the only home for. Spelled with
-        // their bodies: `GoalInspectorView` declares `let onEdit: () -> Void` in the same file, so a
-        // bare `onEdit:` would count the property and pass whatever the sheet does.
-        #expect(desktopSplitOccurrences(of: "onEdit: { showEditGoal = true }", in: sheet) == 1)
-        #expect(desktopSplitOccurrences(of: "onAttachWork: { showAttachWork = true }", in: sheet) == 1)
-        #expect(desktopSplitOccurrences(of: "onDetachList: onDetachList", in: sheet) == 1)
-        #expect(desktopSplitOccurrences(of: "CreateGoalSheet(goal: goal)", in: sheet) == 1)
-        #expect(desktopSplitOccurrences(of: "AttachWorkSheet(", in: sheet) == 1)
+        // **The three commands the column used to be the only home for are gone ([[T-2079]]).**
+        // Edit, Attach List and the per-row unlink each opened or called a write helper that no
+        // longer exists, so the sheet carries the inspector and nothing else. Asserted as zero
+        // rather than deleted: what [[T-271]] is about is that the sheet and the column show the
+        // *same* thing at the width that drops the column, and a command that came back on one of
+        // them and not the other is exactly the drift this test exists to catch.
+        #expect(desktopSplitOccurrences(of: "onEdit:", in: sheet) == 0)
+        #expect(desktopSplitOccurrences(of: "onAttachWork:", in: sheet) == 0)
+        #expect(desktopSplitOccurrences(of: "onDetachList:", in: sheet) == 0)
+        #expect(desktopSplitOccurrences(of: "CreateGoalSheet(", in: sheet) == 0)
+        #expect(desktopSplitOccurrences(of: "AttachWorkSheet(", in: sheet) == 0)
 
         // And it is the column restored, not a second opinion about how wide an inspector is:
         // borrowed by reference, so raising the pane minimum raises the sheet with it.

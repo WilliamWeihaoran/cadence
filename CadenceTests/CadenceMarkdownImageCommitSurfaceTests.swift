@@ -473,7 +473,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // and a refused one is named above the board's rails — the first notice that board ever
         // drew. It is not dismissable for the reorder surfaces' reason: the retry is the drag
         // itself, and the next drop clears it whichever way it lands.
-        #expect(total == 70, "the inline notice has \(total) call sites, not the 70 this test was written over")
+        // [[T-2079]] made it 69: `GoalsView`'s goal-link change alert went with
+        // `detachGoalListLink`, the only write it could report on. The notice itself is unchanged
+        // and so is every other site — one surface stopped having a refusal to name.
+        #expect(total == 69, "the inline notice has \(total) call sites, not the 69 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

@@ -467,7 +467,6 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSFeatureComponents.swift",
             "Cadence/iOS/iOSFeatureDetailViews.swift",
             "Cadence/iOS/iOSFocusView.swift",
-            "Cadence/iOS/iOSGoalAttachListsSheet.swift",
             "Cadence/iOS/iOSInboxRemindersSection.swift",
             "Cadence/iOS/iOSListDeletionSupport.swift",
             "Cadence/iOS/iOSListEditorViews.swift",

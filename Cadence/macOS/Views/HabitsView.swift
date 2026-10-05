@@ -8,8 +8,6 @@ struct HabitsView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedHabitID: UUID? = nil
-    @State private var showCreateHabit = false
-    @State private var editingHabit: Habit? = nil
     @State private var searchText = ""
     @State private var filter: HabitListFilter = .today
 
@@ -83,22 +81,12 @@ struct HabitsView: View {
                 .background(Theme.surface)
 
             if let habit = selectedHabit {
-                HabitDetailView(
-                    habit: habit,
-                    todayKey: todayKey,
-                    onEdit: { editingHabit = habit }
-                )
+                HabitDetailView(habit: habit, todayKey: todayKey)
             } else {
                 HabitsEmptyDetail()
             }
         }
         .background(Theme.bg)
-        .sheet(isPresented: $showCreateHabit) {
-            CreateHabitSheet()
-        }
-        .sheet(item: $editingHabit) { habit in
-            EditHabitSheet(habit: habit)
-        }
         .onAppear {
             if selectedHabitID == nil { selectedHabitID = habits.first?.id }
         }
@@ -125,17 +113,13 @@ struct HabitsView: View {
 
     private var leftPane: some View {
         VStack(spacing: 0) {
+            // **No New Habit button since [[T-2079]].** `CreateHabitSheet` is deleted and
+            // `saveHabit` with it, so there is nothing for a primary action to call. The search
+            // field and filter bar below are reads and stay.
             CommitmentPageHeader(
                 title: "Habits"
             ) {
-                CadenceActionButton(
-                    title: "New Habit",
-                    systemImage: "plus",
-                    role: .primary,
-                    size: .compact
-                ) {
-                    showCreateHabit = true
-                }
+                EmptyView()
             } controls: {
                 HStack(spacing: 10) {
                     CommitmentSearchField(

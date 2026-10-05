@@ -278,7 +278,6 @@ struct CadenceSharedBoardChromeTests {
     @Test func bothPlatformsDrawTheSharedInlineEmpty() throws {
         let expectations: [(path: String, surface: String)] = [
             ("Cadence/macOS/Views/GoalsSupportViews.swift", "surface: .desktop"),
-            ("Cadence/macOS/Views/GoalAttachWorkSheet.swift", "surface: .desktop"),
             ("Cadence/iOS/iOSCalendarBoardView.swift", "surface: .touch"),
             ("Cadence/iOS/iOSCalendarInspectorView.swift", "surface: .touch"),
             ("Cadence/iOS/iOSMarkdownAccessoryViews.swift", "surface: .touch"),
@@ -625,7 +624,6 @@ struct CadenceSectionEyebrowConvergenceTests {
     /// bespoke spelling the detector does not model still fails something.
     @Test func theConvertedSitesCallTheSharedLabel() throws {
         try expectCallSites(of: "SectionEyebrowLabel", at: [
-            "Cadence/macOS/Sheets/CreateGoalSheet.swift": 1,
             "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 1,
             "Cadence/macOS/Views/FocusChromeSupportViews.swift": 1,
             "Cadence/macOS/Views/FocusPickerSupportViews.swift": 1,
@@ -1050,7 +1048,6 @@ struct CadenceCompactEyebrowConvergenceTests {
             "Cadence/macOS/CadenceCalendarPicker.swift": 1,
             "Cadence/macOS/Views/AIActionsSupportViews.swift": 1,
             "Cadence/macOS/Views/ContainerPickerSupportViews.swift": 1,
-            "Cadence/macOS/Views/GoalAttachWorkSheet.swift": 1,
             "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift": 1,
             "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift": 1,
             "Cadence/Shared/Components/EstimatePickerControl.swift": 1,
