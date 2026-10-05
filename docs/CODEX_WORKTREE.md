@@ -49,14 +49,23 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
-Cadence/macOS/Views/macOSRootShellViews.swift
-Cadence/iOS/iOSRootSidebar.swift
-Cadence/Shared/CadenceRootShellLayout.swift
-Cadence/Shared/CadenceRegularPaneLayout.swift
-CadenceTests/CadenceRootShellLayoutTests.swift
-CadenceTests/CadenceDesktopSplitLayoutTests.swift
-CadenceTests/CadencePaneWidthRuleHomesTests.swift
 ```
+
+### LEASE RETIRED 2026-10-05 — the seven T-1463 paths are out, because the work landed
+
+`189f7249` landed the sidebar drawer. `codex-land.sh review codex/sidebar-drawer` now answers **8 of
+10 files already in main, identical**, and the two it still reports as `NOT in main` are the two the
+coordinator deliberately resolved differently rather than taking from the branch:
+`CadenceTests/CadenceDesktopSplitLayoutTests.swift`, which was three-way merged so main's [[T-2079]]
+hunk survives alongside Codex's width fixtures and is therefore *not* byte-identical to either side,
+and this file, whose lease self-grant was declined. The two `CODEX-INBOX-ID-CLASH` refusals it also
+prints are the shape this file already documents: an id clash on a branch in this state is a
+consequence of the work having landed, not a blocker.
+
+Retired immediately rather than left standing, because the grant below said it would be and because
+this file's own warning is the thing [[T-2069]] and [[T-2058]] are about: *a lease granting paths
+nobody is working on is a lease that will eventually be believed.* The four standing globs are
+untouched, `CadenceTests/CadenceCodex*.swift` among them.
 
 ### LEASE WIDENED 2026-10-05 — seven paths for [[T-1463]]/[[T-1464]], the sidebar drawer
 
