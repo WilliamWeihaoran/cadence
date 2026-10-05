@@ -65,21 +65,68 @@ nonisolated enum TaskInspectorPanelMetrics {
     }
 }
 
+/// **T-1742: which key-down an open inspector child panel swallows.**
+///
+/// Split out of the modifier below so the rule is testable without a running app —
+/// `CadenceTaskInspectorChildPanelEscapeKeyTests` pins it. It is a predicate about an
+/// `NSEvent` and nothing more; **the delivery claim is the UI test's alone**, because no
+/// unit test can say which window AppKit hands a key-down to.
+///
+/// **Plain Escape only.** `⌘`, `⌥` and `⌃` compose other meanings with Escape (⌘⎋ is a system
+/// accelerator), and a panel that swallowed those would be eating keys that are not its. Shift
+/// is ignored: ⇧⎋ carries no separate meaning here and a user holding Shift still wants the
+/// panel gone.
+nonisolated enum TaskInspectorChildPanelEscapeKey {
+    /// AppKit's virtual key code for Escape. Named once; `NSEvent` publishes no symbol for it.
+    static let escapeKeyCode: UInt16 = 53
+
+    static func closesPanel(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard keyCode == escapeKeyCode else { return false }
+        return modifiers
+            .intersection(.deviceIndependentFlagsMask)
+            .isDisjoint(with: [.command, .option, .control])
+    }
+}
+
 /// **T-1742: Escape closes an inspector child panel.** One modifier for every `.popover` the
 /// inspector hangs off a control — the priority list, the estimate roller, Do / Due and Repeat —
 /// applied to the panel's content and given the same dismissal its own buttons already perform.
 ///
-/// **Both spellings, because the panels differ in focus.** `.onKeyPress` only reaches a view that
-/// holds keyboard focus or has a focused descendant: the estimate roller does (its columns are
-/// `.focusable()` and already answer ↑ ↓ ← → and Return), the recurrence panel only while its
-/// end-count field is being typed into, and the priority list and the Do / Due calendar never
-/// (`.focusable(false)` below). `onExitCommand` rides AppKit's `cancelOperation(_:)` and is seen
-/// from an ancestor without a focused descendant of its own — the difference
-/// `ListNotesListSupportViews` records for its title field. Whichever fires first closes the panel;
-/// the dismissal is idempotent, so the other is a no-op. Pinned on the running app by
+/// **The two SwiftUI spellings alone were measured closing exactly one panel of five.** On
+/// 2026-10-03 and again on 2026-10-04,
+/// `testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen` reported *"Escape closed
+/// only ["Estimate"] of ["Priority", "Estimate", "Do", "Due", "Repeat"]"*. Priority and Estimate
+/// are the decisive pair: they are the **same** `.popover(item:)`, with the **same** modifier, on
+/// the **same** content view in `SchedulePanelPopoverSupportViews` — so nothing about the popover,
+/// the modifier, the anchor or the key press can be what separates them. The difference is inside:
+/// the roller's columns are `.focusable()` and hold SwiftUI focus; the other four hold nothing
+/// focusable, and the Do / Due calendar is `.focusable(false)` outright.
+///
+/// **Why `onExitCommand` reaches none of them, measured rather than reasoned.** An instrumented
+/// run on 2026-10-04 logged `NSApp.keyWindow` and `event.window` as each panel appeared and as its
+/// Escape arrived. For all five panels, both read the app's **main** window — `(0, 0, 1512, 949)`,
+/// `isKey=true` — and **no popover window was ever key, the estimate roller's included.** So the
+/// earlier guess (that the roller works because *its* window becomes key) is wrong. `onExitCommand`
+/// rides AppKit's `cancelOperation(_:)` up the **key** window's responder chain, and that chain is
+/// the main window's, which does not contain any popover's content — so it fires for no panel at
+/// all, and it is not what saves Estimate. What saves Estimate is SwiftUI's own key dispatch,
+/// which routes to the view holding focus wherever it lives: `.onKeyPress` fires on a panel with a
+/// focused descendant and on no other.
+///
+/// **So the mechanism has to be one that does not care which window is key.**
+/// `NSEvent.addLocalMonitorForEvents` sees a key-down before any window dispatches it — the same
+/// bridge `ListDetailView` uses for ⌘⇧[ / ⌘⇧]. The monitor is held only for the life of the
+/// panel's content view, and it returns `nil` for the Escape it consumes so the key stops here
+/// instead of travelling on to close the inspector standing behind the panel.
+///
+/// The two SwiftUI spellings stay. They cost nothing, `.onKeyPress` keeps working on the roller,
+/// and the dismissal is idempotent — whichever fires first closes the panel and the rest are
+/// no-ops. Pinned on the running app by
 /// `CadenceInspectorHeaderPanelPlacementUITests.testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen`.
 struct TaskInspectorChildPanelEscapeDismissal: ViewModifier {
     let dismiss: () -> Void
+
+    @State private var keyMonitor: Any?
 
     func body(content: Content) -> some View {
         content
@@ -88,6 +135,26 @@ struct TaskInspectorChildPanelEscapeDismissal: ViewModifier {
                 dismiss()
                 return .handled
             }
+            .onAppear { installKeyMonitorIfNeeded() }
+            .onDisappear { removeKeyMonitor() }
+    }
+
+    private func installKeyMonitorIfNeeded() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard TaskInspectorChildPanelEscapeKey.closesPanel(
+                keyCode: event.keyCode,
+                modifiers: event.modifierFlags
+            ) else { return event }
+            dismiss()
+            return nil
+        }
+    }
+
+    private func removeKeyMonitor() {
+        guard let keyMonitor else { return }
+        NSEvent.removeMonitor(keyMonitor)
+        self.keyMonitor = nil
     }
 }
 
