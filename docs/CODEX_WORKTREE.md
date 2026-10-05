@@ -49,7 +49,26 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
+Cadence/iOS/iOSMarkdownStylingLineSupport.swift
+Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift
+Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift
+Cadence/macOS/Editor/MarkdownEditorLayoutManager.swift
+CadenceTests/CadenceRealTreeSweepManifest.txt
+docs/CODEX_WORKTREE.md
 ```
+
+### Owner grant 2026-10-05 - continuous quote rails
+
+The owner authorized the quote-rail fix and the appropriate editor files after the
+three-path request, and then requested the macOS check. The three iOS markdown files
+above are reserved for `codex/continuous-quote-rail`: join adjacent quote paragraphs, follow wrapped lines,
+and keep separate blocks separate. Regression tests use the existing `CadenceCodex*`
+namespace. The macOS layout-manager scope is only quote gutter positioning and full-block
+range recovery after the rendered check exposed the clipped rail. The test-manifest
+grant is only the generated registration of the new quote wiring guard. This protocol
+file's grant is limited to recording that scope. The unlanded sidebar branch retains its
+separate assignment; do not sweep its files into this branch. Primary ledgers,
+project registration and landing rules remain unchanged.
 
 ### LEASE RETRACTED 2026-10-04 — the 16 T-1458 paths are back, because the work landed
 
