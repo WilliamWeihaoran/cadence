@@ -331,7 +331,6 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         for word in [
             "CadenceTaskControlAccessibility.list",
             "CadenceTaskControlAccessibility.recurrence",
-            "CadenceTaskControlAccessibility.milestone",
             "CadenceTaskControlAccessibility.estimate",
         ] {
             #expect(row.contains("field: \(word)"), "\(word) is not on the row")
@@ -341,12 +340,13 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         #expect(row.contains("case .doDate: return CadenceTaskControlAccessibility.doDate"))
         #expect(row.contains("case .dueDate: return CadenceTaskControlAccessibility.dueDate"))
 
-        // Five chips, and the five names above are five. That the *sixth* would also have to name
+        // Four chips after T-1466 removed the milestone chip. A fifth would also have to name
         // itself is the initialiser's job, not this test's — see
         // `theSharedIOSChipCannotBeBuiltWithoutNamingItsField`.
-        #expect(CadenceSourceScan.matchCount(#"iOSTaskAttributeChip\("#, in: row) == 5)
+        #expect(CadenceSourceScan.matchCount(#"iOSTaskAttributeChip\("#, in: row) == 4)
+        #expect(!row.contains("field: CadenceTaskControlAccessibility.milestone"))
 
-        // The three new words, and that they are the words the app already uses out loud.
+        // Keep the shared words, including the retired label retained for future restoration.
         #expect(CadenceTaskControlAccessibility.recurrence == "Repeat")
         #expect(CadenceTaskControlAccessibility.milestone == "Milestone")
         #expect(CadenceTaskControlAccessibility.section == "Section")

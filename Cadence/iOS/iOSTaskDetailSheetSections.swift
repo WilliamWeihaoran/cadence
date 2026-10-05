@@ -3,7 +3,7 @@ import SwiftData
 import SwiftUI
 
 /// **The inspector's one quiet field list** — do date, due date, time, estimate, repeat (and its end
-/// condition), milestone, and whatever the focus timer has logged.
+/// condition), and whatever the focus timer has logged.
 ///
 /// **T-1278, chosen by the owner from three drawn mockups.** It was two groups: an untitled
 /// "properties" pair (Priority, Milestone) above a "SCHEDULE" well. Two of the three drafts — a chip
@@ -27,7 +27,6 @@ import SwiftUI
 /// picker below it showed a day the task did not have.
 struct iOSTaskFieldListSection: View {
     @Bindable var task: AppTask
-    let availableGoals: [Goal]
     let recurrenceSelection: Binding<TaskRecurrenceRule>
     /// The one way this section writes an end condition, and deliberately a callback rather than
     /// three bindings: every end edit has to reach
@@ -50,7 +49,6 @@ struct iOSTaskFieldListSection: View {
     @State private var showEndModePicker = false
     @State private var showEndCountPicker = false
     @State private var showEstimatePicker = false
-    @State private var showMilestonePicker = false
 
     /// Colour is spent only on what is wrong. A do date in the past and an overdue deadline are the
     /// two things in this list that are, so everything else — including a do date of *today*, which
@@ -68,7 +66,6 @@ struct iOSTaskFieldListSection: View {
         task.scheduledStartMin >= 0
     }
 
-    private var selectedGoal: Goal? { task.goal }
 
     var body: some View {
         // Divider-separated rows, so no `contentSpacing`: `iOSEditorDivider` already pads itself by
@@ -113,9 +110,6 @@ struct iOSTaskFieldListSection: View {
                     endCountRow
                 }
             }
-
-            iOSEditorDivider()
-            milestoneRow
 
             loggedRow
         }
@@ -372,52 +366,6 @@ struct iOSTaskFieldListSection: View {
         Binding(
             get: { CadenceTaskRecurrenceEndPresentation.resolvedEndCount(task.recurrenceEndCount) },
             set: { applyRecurrenceEnd(.afterCount, "", CadenceTaskRecurrenceEndPresentation.normalizedEndCount($0)) }
-        )
-    }
-
-    // MARK: - Milestone
-
-    /// **Labelled "Milestone", which is the mockup's "Goal" in this app's own words.** The model
-    /// type is `Goal` and the drawn mockup said Goal; every surface that names one to a *user* says
-    /// milestone — `CadenceTitleNormalization.defaultMilestoneTitle` is "Untitled Milestone" and
-    /// `CadenceTaskControlAccessibility.milestone` exists precisely so a chip cannot be the one
-    /// place it is called something else. A row reading "Goal" over a picker offering "Untitled
-    /// Milestone" would be that place.
-    private var milestoneRow: some View {
-        iOSEditorFieldRow(label: "Milestone", systemImage: "target", color: Theme.dim) {
-            iOSChoiceValueButton(
-                title: selectedGoal.map { $0.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : $0.title } ?? "None",
-                color: selectedGoal == nil ? Theme.dim : Theme.text,
-                minHeight: 44
-            ) {
-                showMilestonePicker = true
-            }
-            .popover(isPresented: $showMilestonePicker) {
-                iOSChoicePopoverList(
-                    rows: [iOSChoiceRow<UUID?>(value: nil, title: "None", systemImage: "circle.dashed", color: Theme.dim)]
-                        + availableGoals.map { goal in
-                            iOSChoiceRow(
-                                value: Optional(goal.id),
-                                title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultMilestoneTitle),
-                                systemImage: goal.icon,
-                                // A goal's colour is the user's own, and it is what tells two
-                                // milestones apart in a list of them.
-                                color: Color(hex: goal.colorHex)
-                            )
-                        },
-                    selection: goalSelection,
-                    isPresented: $showMilestonePicker
-                )
-            }
-        }
-    }
-
-    private var goalSelection: Binding<UUID?> {
-        Binding(
-            get: { task.goal?.id },
-            set: { goalID in
-                task.goal = goalID.flatMap { id in availableGoals.first { $0.id == id } }
-            }
         )
     }
 
