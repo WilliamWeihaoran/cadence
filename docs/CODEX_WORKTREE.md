@@ -71,6 +71,7 @@ Cadence/macOS/Views/NotePanel.swift
 Cadence/macOS/Views/NoteEditorPane.swift
 Cadence/macOS/Views/ListNotesSupportViews.swift
 Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift
+CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift
 ```
 
 ### LEASE WIDENED 2026-10-05 — four editor paths for [[T-1465]], the continuous quote rail
@@ -591,3 +592,27 @@ will need a merge-base check at landing rather than a take-theirs.
 
 **Retire it when T-3003 lands**, in the same session that lands it, as [[T-1464]]'s seven paths were
 retired by `387ebca1` and the four quote paths are owed the same.
+
+### LEASE WIDENED 2026-10-05 — one test file for [[T-3003]], and ONE assertion inside it
+
+Granted at the owner's instruction, relayed in chat. `Cadence/macOS/Services/TaskCompletionAnimationManager.swift`
+was already in the T-3003 block; this is its test half, and without it the widget fix cannot land
+the reopen it needs.
+
+**The single permitted edit.** `CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift:759`
+currently reads `expectOccurrences(of: "TaskWorkflowService.markTodo(task)", at: [path: 1])`.
+It may become the committed spelling, `TaskWorkflowService.commitMarkTodo(task, in: $0)`, at 1.
+**Nothing else in that test may move**: the surrounding transition counts, the direct-assignment
+negatives, the funnel counts (`private func write(`, `write(.restored, to: task)` and its pair) and
+the non-vacuity controls at the end all stay exactly as they are.
+
+**One condition the request did not state, and it is required.** Two lines above, `markDone` and
+`markCancelled` have already made this exact move, and each left its UNCOMMITTED spelling pinned at
+zero — `expectOccurrences(of: "TaskWorkflowService.markDone(", at: [path: 0])` — so the old call
+cannot come back beside the new one. `markTodo` must gain the same zero-pin
+(`"TaskWorkflowService.markTodo("` at 0) in the same edit. Re-pointing the 1 without adding the 0
+would leave `markTodo` the only one of the three transitions whose uncommitted spelling is
+unguarded, which is a weakening wearing the shape of a re-point.
+
+**Retire this path with the other eighteen** when T-3003 lands.
+
