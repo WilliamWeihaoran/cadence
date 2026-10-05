@@ -152,6 +152,40 @@ check is not deleted: the heading keeps every other assertion in the loop and ga
 `SectionEyebrowLabel` source read. **If Codex is mid-edit on that file when it reads this, say so
 and the coordinator rebases it — the worktree was clean when this was written.**
 
+**A SECOND edit was made inside that namespace on 2026-10-05, under the same permission and the
+same rule ([[T-2080]]).** `CadenceTests/CadenceCodexWidgetFollowupTests.swift:70`'s
+`codexWidgetProvidersAndViewsShareFamilyBudgets` walked five widget sources, and [[T-2078]]
+(`7b686a76`) deleted two of them — `CadenceWidgets/HabitCheckInWidget.swift` and
+`CadenceWidgets/MilestoneMomentumWidget.swift` — when the owner retired Habits and Goals.
+`CadenceScanInstrument.sweep` *reads* every path it is handed, so this did not fail an assertion:
+it threw `NSCocoaErrorDomain 260` and `main` was red on a missing file. `cutwidgets` saw it, named
+it in T-2078's closure and correctly did **not** touch it, because this namespace is Codex's lease.
+The coordinator landed it instead, exactly as T-2061 asked for the first one.
+
+**Re-pointed, never weakened, and the index was the trap.** `atLeast:` moved 5 -> 3, re-derived
+from the three survivors (`TodayTasksWidget.swift`, `TodayTasksWidgetView.swift`,
+`CalendarSnapshotWidget.swift`) rather than relaxed to a floor — a floor would let a *second* widget
+stop sharing the family budget unnoticed, which is the whole thing this guard is for. The witness
+was `including: paths[2]`, i.e. the habit widget; deleting the two dead entries without re-deriving
+it would have silently re-pointed the non-vacuity claim at `CalendarSnapshotWidget.swift` while
+still reading like the old check. The witness is now a **named constant**, not an index, so the next
+edit to that list cannot repeat it. The habit and milestone assertion blocks lost their subject and
+are gone, but not silently: a doc comment on the test names each dead assertion, which widget it
+died with, and where its surviving equivalent is asserted — and the one claim that had **no**
+surviving assertion at all, the view-side "the family budget reaches the drawn content" half, is
+added as a new `TodayTasksWidgetView` block. That file was in the sweep list all along and was never
+actually read; the re-point closed that gap rather than just shrinking the array. Mutation-tested:
+replacing `widgetFamily.cadenceLayout.todayTaskLimit` with the literal `8` in
+`TodayTasksWidgetView.swift:88` compiled and turned the test red; restored from a `cp` backup, green.
+
+**`CadenceWidgetFamilyLayout.habitLimit` / `.habitColumns` / `.milestoneGoalLimit` were NOT
+deleted.** After T-2078 their only readers in the tree are the model assertions in
+`codexWidgetFamilyBudgetsMatchTheSelectedContent`, one test above — i.e. they are dead to
+production. Retiring them is an owner decision about the kept schema, not a side effect of fixing a
+red run, and it is recorded in T-2080 rather than done here. **If Codex is mid-edit on
+`CadenceCodexWidgetFollowupTests.swift` when it reads this, say so and the coordinator rebases it —
+the worktree held no uncommitted change to that file when this was written.**
+
 ### The context-budget grant (2026-10-02), and the two things it does not permit
 
 **LEASE ENDED 2026-10-04: [[T-1454]] landed on `main` and `codex/context-budget` reviews as

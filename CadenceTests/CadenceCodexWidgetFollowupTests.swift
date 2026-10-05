@@ -67,38 +67,70 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(try route.sweep(paths, atLeast: 1, including: paths[0], read: CadenceSourceScan.strippedSourceReader()) == paths)
     }
 
+    /// **Re-pointed for [[T-2078]], not weakened, and not deleted.** This guard used to walk five
+    /// widget sources. `7b686a76` deleted two of them with the Habit Check-In and Milestone
+    /// Momentum widgets, and `sweep` *reads* every path it is handed — so the stale list did not
+    /// fail an assertion, it threw `NSCocoaErrorDomain 260` and `main` was red on an I/O error
+    /// rather than on the thing this test is for. The three survivors are walked, `atLeast:` is
+    /// re-derived 5 -> 3 rather than relaxed to a floor, and the witness is **named rather than
+    /// indexed**: `including: paths[2]` used to be `HabitCheckInWidget.swift`, so deleting array
+    /// entries alone would have silently re-pointed the non-vacuity claim at a different file.
+    ///
+    /// **Which assertions died with which widget, and where the equivalent went.**
+    /// - `HabitCheckInWidget.swift`: `limit: family.cadenceLayout.habitLimit` and
+    ///   `paddedHabits(count: layout.habitLimit)` were the provider-side and the view-side halves
+    ///   of one claim — the family budget reaches the drawn content. **Both halves survive and are
+    ///   asserted below**: the provider half on `TodayTasksWidget` and `CalendarSnapshotWidget`,
+    ///   and the view half as the new `TodayTasksWidgetView` block, which this test walked in its
+    ///   sweep but never actually read. That gap is the reason the view block is added here rather
+    ///   than the habit block merely being dropped.
+    /// - `count: layout.habitColumns` and `.contentMarginsDisabled()` have **no equivalent** and
+    ///   are gone. No surviving widget lays content out in a family-sized grid, and
+    ///   `.contentMarginsDisabled()` now appears nowhere under `CadenceWidgets/`.
+    /// - `!habit.contains("summaryRail")` is gone and **was already vacuous before T-2078**:
+    ///   `summaryRail` occurs nowhere in this repository and did not occur in
+    ///   `HabitCheckInWidget.swift` either, so it was true of any file including an empty one. It
+    ///   is replaced by a negative control that can actually fire — the Today view must not
+    ///   hardcode a row count equal to any family's `todayTaskLimit`.
+    /// - `MilestoneMomentumWidget.swift`'s two `milestoneGoalLimit` reads were the clamp-then-
+    ///   prefix pair. The identical pair on `calendarDayLimit` is asserted below and is untouched,
+    ///   so the shape those two lines guarded is still guarded.
+    ///
+    /// `habitLimit`, `habitColumns` and `milestoneGoalLimit` still exist on
+    /// `CadenceWidgetFamilyLayout` and are deliberately **not** removed here. After T-2078 their
+    /// only readers anywhere in the tree are the model assertions in
+    /// `codexWidgetFamilyBudgetsMatchTheSelectedContent` above; retiring the properties is a
+    /// separate decision and a separate ticket, not a side effect of fixing a red run.
     @Test func codexWidgetProvidersAndViewsShareFamilyBudgets() throws {
         let rule = try CadenceScanInstrument(
             "widget family content budget",
-            fires: "family.cadenceLayout.habitLimit",
-            andNotOn: "// family.cadenceLayout.habitLimit\nlet limit = 8",
+            fires: "family.cadenceLayout.todayTaskLimit",
+            andNotOn: "// family.cadenceLayout.todayTaskLimit\nlet limit = 8",
             by: { CadenceSourceScan.codeOnly($0).contains(".cadenceLayout.") }
         )
-        let paths = [
-            "CadenceWidgets/TodayTasksWidget.swift", "CadenceWidgets/TodayTasksWidgetView.swift",
-            "CadenceWidgets/HabitCheckInWidget.swift", "CadenceWidgets/CalendarSnapshotWidget.swift",
-            "CadenceWidgets/MilestoneMomentumWidget.swift",
-        ]
+        // Named, not indexed: the witness must survive an edit to this list, not follow its order.
+        let todayProviderPath = "CadenceWidgets/TodayTasksWidget.swift"
+        let todayViewPath = "CadenceWidgets/TodayTasksWidgetView.swift"
+        let calendarPath = "CadenceWidgets/CalendarSnapshotWidget.swift"
+        let paths = [todayProviderPath, todayViewPath, calendarPath]
         let read = CadenceSourceScan.strippedSourceReader()
-        #expect(try rule.sweep(paths, atLeast: 5, including: paths[2], read: read) == paths.sorted())
-        let habit = CadenceSourceScan.codeOnly(try read(paths[2]))
-        #expect(habit.contains("limit: family.cadenceLayout.habitLimit"))
-        #expect(habit.contains("paddedHabits(count: layout.habitLimit)"))
-        #expect(habit.contains("count: layout.habitColumns"))
-        #expect(habit.contains(".contentMarginsDisabled()"))
-        #expect(!habit.contains("summaryRail"))
-        let calendar = CadenceSourceScan.codeOnly(try read(paths[3]))
+        #expect(try rule.sweep(paths, atLeast: 3, including: calendarPath, read: read) == paths.sorted())
+        let calendar = CadenceSourceScan.codeOnly(try read(calendarPath))
         #expect(calendar.contains("renderedCount: snapshot.state == .ready"))
         #expect(calendar.contains("min(snapshot.days.count, family.cadenceLayout.calendarDayLimit)"))
         #expect(calendar.contains("family.cadenceLayout.calendarDayLimit) : 0"))
         #expect(calendar.contains("entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)"))
-        let milestone = CadenceSourceScan.codeOnly(try read(paths[4]))
-        #expect(milestone.contains("min(snapshot.visibleGoals.count, family.cadenceLayout.milestoneGoalLimit)"))
-        #expect(milestone.contains("entry.snapshot.visibleGoals.prefix(widgetFamily.cadenceLayout.milestoneGoalLimit)"))
-        let today = CadenceSourceScan.codeOnly(try read(paths[0]))
+        let today = CadenceSourceScan.codeOnly(try read(todayProviderPath))
         #expect(today.contains("family.cadenceLayout.todayTaskLimit"))
         #expect(today.contains("limit: snapshotLimit(for: family)"))
         #expect(today.contains("renderedCount: snapshot.tasks.count"))
+        let todayView = CadenceSourceScan.codeOnly(try read(todayViewPath))
+        #expect(todayView.contains("entry.snapshot.tasks.prefix(widgetFamily.cadenceLayout.todayTaskLimit)"))
+        #expect(todayView.contains("prefix(widgetFamily.cadenceLayout.todayTaskLimit - 1)"))
+        let hardcodedBudgets = CadenceWidgetFamilyLayout.allCases
+            .map { "prefix(\($0.todayTaskLimit))" }
+            .filter { todayView.contains($0) }
+        #expect(hardcodedBudgets.isEmpty, "the Today view's row budget must come from cadenceLayout, not a literal")
     }
 
     @Test func codexHabitSnapshotRequestsOverridesForItsOwnDate() throws {
