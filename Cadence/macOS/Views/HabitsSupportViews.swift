@@ -6,7 +6,6 @@ struct HabitGoalSectionView: View {
     let todayKey: String
     let selectedHabitID: UUID?
     let onSelect: (Habit) -> Void
-    let onToggle: (Habit) -> Void
 
     private var doneCount: Int {
         group.habits.filter { $0.isDone(on: todayKey) }.count
@@ -28,8 +27,7 @@ struct HabitGoalSectionView: View {
                         habit: habit,
                         todayKey: todayKey,
                         isSelected: selectedHabitID == habit.id,
-                        onSelect: { onSelect(habit) },
-                        onToggle: { onToggle(habit) }
+                        onSelect: { onSelect(habit) }
                     )
                 }
             }
@@ -42,7 +40,6 @@ struct HabitListCard: View {
     let todayKey: String
     let isSelected: Bool
     let onSelect: () -> Void
-    let onToggle: () -> Void
 
     private var isDoneToday: Bool {
         habit.isDone(on: todayKey)
@@ -83,20 +80,18 @@ struct HabitListCard: View {
 
                 Spacer(minLength: 8)
 
-                Button(action: onToggle) {
-                    Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
-                        .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.dim.opacity(0.55))
-                }
-                .buttonStyle(.cadencePlain)
-                // T-673: same shared action label the task row and subtask circle read, plus the
-                // habit's own normalised title so eight identical announcements don't collapse
-                // into one indistinguishable "Complete task".
-                .accessibilityLabel((isDoneToday ? CadenceTaskCompletionState.done : .todo).accessibilityActionLabel)
-                .accessibilityValue(CadenceTitleNormalization.display(
-                    habit.title,
-                    fallback: CadenceTitleNormalization.defaultHabitTitle
-                ))
+                // **The check-in circle was a button until [[T-2079]].** It called the retired
+                // habit check-in `toggle`, the one writer of a `HabitCompletion`, which is gone
+                // with the rest of the habit write surface. The glyph stays and still reports the
+                // day's state, because reading a habit is not what was retired — and it is
+                // `accessibilityHidden` rather than announced, because [[T-673]]'s label said
+                // "Complete task"/"Mark todo" over a control that now completes nothing. The row's
+                // own text already says whether the habit is done today.
+                Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.dim.opacity(0.55))
+                    .frame(width: 22, height: 22)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 13)
@@ -119,7 +114,6 @@ struct HabitListCard: View {
 struct HabitDetailView: View {
     let habit: Habit
     let todayKey: String
-    let onToggle: () -> Void
     let onEdit: () -> Void
 
     private var totalCompletions: Int {
@@ -210,14 +204,11 @@ struct HabitDetailView: View {
                 .buttonStyle(.cadencePlain)
                 .cadenceControlLabel("Edit habit")
 
-                CadenceActionButton(
-                    title: isDoneToday ? "Undo" : "Check In Today",
-                    systemImage: isDoneToday ? "arrow.uturn.backward" : "checkmark",
-                    role: .primary,
-                    size: .regular,
-                    tint: isDoneToday ? Theme.green : Color(hex: habit.colorHex),
-                    action: onToggle
-                )
+                // **Check In Today left with [[T-2079]].** It called the retired habit check-in
+                // `toggle`, the one writer of a `HabitCompletion`. The chips two rows up already
+                // say whether the habit is due today and whether it is checked in, which is the
+                // reading half and is untouched.
+                Spacer(minLength: 0)
             }
         }
         .padding(22)

@@ -27,7 +27,7 @@ extension HabitCompletion {
     /// came to satisfy a `targetCount` of 2 or a `.timesPerWeek` target (T-359).
     ///
     /// **`max` rather than `sum`, because of what the app actually writes.** Every check-in path
-    /// goes through `CadenceHabitCompletionStore.toggle`, and it is binary: if the day already has
+    /// goes through the retired habit check-in `toggle`, and it is binary: if the day already has
     /// a row it deletes the day's rows, otherwise it inserts exactly one row at the default
     /// `count` of 1. Nothing in the app increments an existing row, so a second row for one
     /// habit-day is never a second deliberate increment — the second tap is an *un*-check. `sum`

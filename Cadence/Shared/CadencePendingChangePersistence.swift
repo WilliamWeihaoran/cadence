@@ -30,7 +30,7 @@ import SwiftData
 /// the app and leave it nonisolated in `CadenceMCPServer`, whose build does not set it — two
 /// isolations for one file. Everything below touches only `ModelContext` and `PersistentModel`,
 /// both nonisolated, so the annotation costs nothing and makes the helper reachable from the
-/// `nonisolated` writers that need it: `CadenceHabitCompletionStore.toggle` is compiled into the
+/// `nonisolated` writers that need it: the retired habit check-in `toggle` is compiled into the
 /// widget extension, and calling a main-actor `commitInsert` from it was four warnings against a
 /// zero baseline. Nonisolated members stay callable from every main-actor caller here unchanged.
 nonisolated enum CadencePendingChangePersistence {

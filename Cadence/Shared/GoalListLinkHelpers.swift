@@ -393,7 +393,7 @@ extension ModelContext {
         }
         let link = target.makeLink(for: goal)
         // Captured before the insert and re-applied on a refusal, for the reason [[T-1280]]'s
-        // survey gives and `CadenceHabitCompletionStore.toggle` already needed: `commitInsert`
+        // survey gives and the retired habit check-in `toggle` already needed: `commitInsert`
         // undoes with `delete(model)`, which never reaches the *parent's* array — and
         // `processPendingChanges()` below has by then put the link into `goal.listLinks`, which is
         // exactly what both attach sheets draw their checkmark from.

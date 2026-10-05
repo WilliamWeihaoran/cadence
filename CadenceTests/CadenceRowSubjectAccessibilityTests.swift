@@ -168,20 +168,14 @@ struct CadenceRowSubjectAccessibilityTests {
 
     private static let habitsSupportPath = "Cadence/macOS/Views/HabitsSupportViews.swift"
 
-    /// Same shared label as the subtask circle, plus the habit's own normalised title — the ledger
-    /// grouped this with the subtask circle as "two completion circles tick one" (T-673), so both
-    /// take the same fix shape.
-    @Test func habitToggleCircleReadsTheSharedCompletionStateLabelAndNamesTheHabit() throws {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.habitsSupportPath))
-        let body = try #require(CadenceSourceScan.declarationBody("struct HabitListCard: View", in: source))
-
-        #expect(body.contains(
-            ".accessibilityLabel((isDoneToday ? CadenceTaskCompletionState.done : .todo).accessibilityActionLabel)"
-        ))
-        #expect(body.contains(".accessibilityValue(CadenceTitleNormalization.display("))
-        #expect(body.contains("habit.title,"))
-        #expect(body.contains("fallback: CadenceTitleNormalization.defaultHabitTitle"))
-    }
+    // **`habitToggleCircleReadsTheSharedCompletionStateLabelAndNamesTheHabit` left with
+    // [[T-2079]].** It was one half of [[T-673]]'s "two completion circles tick one" pair:
+    // `HabitListCard`'s circle read the shared `accessibilityActionLabel` and named the habit,
+    // so eight identical announcements did not collapse into one. The circle is no longer a
+    // button — the shared habit check-in toggle is gone — so it is `accessibilityHidden`
+    // rather than announced, which is the right answer for a glyph that reports state and
+    // performs nothing. The subtask circle, the other half of the pair, is untouched and
+    // still asserted above.
 
     // MARK: - The count itself, exact rather than a floor
 
@@ -210,8 +204,8 @@ struct CadenceRowSubjectAccessibilityTests {
         total += try count("struct GoalTaskContributorRow: View", in: Self.goalsSupportPath)
         // Both subtask-row sites (the circle and the delete button) live in one struct.
         total += try count("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
-        total += try count("struct HabitListCard: View", in: Self.habitsSupportPath)
+        // `HabitListCard` was the eighth site and left with [[T-2079]]; see the note above.
 
-        #expect(total == 8)
+        #expect(total == 7)
     }
 }

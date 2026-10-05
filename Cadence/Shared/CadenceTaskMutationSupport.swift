@@ -1544,7 +1544,7 @@ enum CadenceTaskMutationSupport {
 /// load-bearing, and both available orders were considered:
 ///
 /// - **Restore *after* the rollback** is what the three captured-array repairs that predate this
-///   type do (`CadenceHabitCompletionStore.toggle`, both `deleteSubtask` hosts). It repairs the
+///   type do (the retired habit check-in `toggle`, both `deleteSubtask` hosts). It repairs the
 ///   reference, but it writes *into a context the rollback has just made clean* — so on the
 ///   toolchain where the repair is needed it is also a fresh pending edit, and
 ///   `!modelContext.hasChanges` after a refusal is a clause half the delete suites assert. Pinning

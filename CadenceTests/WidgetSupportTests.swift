@@ -318,67 +318,56 @@ struct WidgetSupportTests {
         #expect(today?.order == 6)
     }
 
-    /// **The habit toggle the Habit Check-In widget drove is gone, and the store it drove is not.**
+    /// **Both halves of the retired widget check-in are gone now, and the override store is not.**
     ///
-    /// [[T-2078]] retired that widget and `ToggleHabitCompletionIntent` with it. The test this
-    /// replaces drove `ToggleHabitCompletionIntent.toggleHabitCompletionResult` and then the
-    /// override write `perform()` made with its result; it is re-pointed rather than deleted
-    /// because both halves it covered still exist separately and both still have to hold:
+    /// [[T-2078]] retired the Habit Check-In widget and `ToggleHabitCompletionIntent` with it, and
+    /// this test was re-pointed then onto the two halves that outlived the intent: the shared habit
+    /// toggle, and the optimistic-override pair `CadenceWidgetRefreshCenter.markHabitCompletion` /
+    /// `recentHabitCompletionStates`. [[T-2079]] then removed the toggle as well — the owner
+    /// retired habits and nothing writes a `HabitCompletion` any more — so the round trip has no
+    /// writer to drive.
     ///
-    /// - the toggle itself is `CadenceHabitCompletionStore.toggle`, which the macOS and iOS habits
-    ///   lists still call and which must keep round-tripping a check-in (asserted here);
-    /// - the optimistic-override pair is `CadenceWidgetRefreshCenter.markHabitCompletion` /
-    ///   `recentHabitCompletionStates`, kept because `CadenceHabitWidgetSupport` still reads it and
-    ///   the `Habit` schema is kept (asserted here).
+    /// **The override pair is kept and is still asserted here, which is why this is re-pointed
+    /// again rather than deleted.** `CadenceHabitWidgetSupport` still reads
+    /// `recentHabitCompletionStates`, the `Habit` schema is kept, and the store is a `UserDefaults`
+    /// payload with its own staleness window — none of which depends on anything writing a row. So
+    /// the override is written directly, which is what the retired intent's `perform()` did with
+    /// the toggle's answer, and read back through the accessor
+    /// `habitWidgetSnapshotPrefersOpenHabitsAndComputesCounts` below consumes.
     ///
-    /// What it no longer asserts — and cannot, because the type is gone — is that a *widget tap*
-    /// runs the two together. `CadenceExternalWriteReconcileTests.theExtensionShipsNoHabitWritingIntent`
-    /// is the guard that this is deliberate: it fails if any habit-writing App Intent comes back
-    /// into the widget extension without a widget.
-    @Test func habitCompletionStoreAndWidgetOverrideStillRoundTripWithoutTheRetiredIntent() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let modelContext = ModelContext(container)
-
+    /// What no longer has a guard here is "a tap round-trips a check-in". That is deliberate and
+    /// is covered from the other side: `CadenceHabitCompletionDuplicateTests
+    /// .nothingUnderCadenceConstructsAHabitCompletion` fails if any shipped file writes one.
+    @Test func theWidgetOverrideStoreStillRoundTripsWithoutAnyHabitWriter() throws {
         try withTemporaryDefaults("cadence.widget.tests") { defaults in
             let now = Date(timeIntervalSince1970: 1_000)
 
             let habit = Habit(title: "Read")
-            modelContext.insert(habit)
             // A second habit nobody touches, so "the override names this one" cannot pass by
-            // there being only one row to name.
+            // there being only one id to name.
             let untouched = Habit(title: "Walk")
-            modelContext.insert(untouched)
-            try modelContext.save()
 
-            func toggle() throws -> Bool {
-                let isDoneToday = try CadenceHabitCompletionStore.toggle(
-                    habit,
-                    on: "2026-05-11",
-                    modelContext: modelContext
-                )
-                CadenceWidgetRefreshCenter.markHabitCompletion(
-                    habit.id,
-                    isDoneToday: isDoneToday,
-                    now: now,
-                    userDefaults: defaults
-                )
-                return isDoneToday
-            }
-
-            #expect(try toggle())
-            #expect(habit.isDone(on: "2026-05-11"))
+            CadenceWidgetRefreshCenter.markHabitCompletion(
+                habit.id,
+                isDoneToday: true,
+                now: now,
+                userDefaults: defaults
+            )
             #expect(
                 CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)
                     == [habit.id: true]
             )
 
-            #expect(try toggle() == false)
-            #expect(habit.isDone(on: "2026-05-11") == false)
-            #expect(
-                CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)
-                    == [habit.id: false]
+            // The other direction, which is what the retired intent's second tap recorded.
+            CadenceWidgetRefreshCenter.markHabitCompletion(
+                habit.id,
+                isDoneToday: false,
+                now: now,
+                userDefaults: defaults
             )
-            #expect(untouched.isDone(on: "2026-05-11") == false)
+            let states = CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults)
+            #expect(states == [habit.id: false])
+            #expect(states[untouched.id] == nil, "the override named a habit nothing marked")
         }
     }
 

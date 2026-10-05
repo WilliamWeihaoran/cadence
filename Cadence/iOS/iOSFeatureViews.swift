@@ -440,10 +440,11 @@ struct iOSHabitsView: View {
             )
             .buttonStyle(.plain)
 
-            iOSHabitCheckInButton(habit: habit, todayKey: todayKey) {
-                toggle(habit)
-            }
-            .padding(.trailing, 4)
+            // **The check-in button left with [[T-2079]].** The row keeps the trailing space it
+            // reserved, because `iOSHabitSummaryRow` lays out against `iOSHabitCheckInSize` and
+            // that is its own measurement rather than this control's.
+            iOSHabitCheckInGlyph(habit: habit, todayKey: todayKey)
+                .padding(.trailing, 4)
         }
         .contextMenu { deleteMenuItem(for: habit) }
     }
@@ -452,7 +453,6 @@ struct iOSHabitsView: View {
         iOSHabitDetail(
             habit: habit,
             todayKey: todayKey,
-            toggle: { toggle(habit) },
             onEdit: { editorMode = .edit(habit) },
             showsBackControl: showsBackControl
         )
@@ -488,8 +488,5 @@ struct iOSHabitsView: View {
         }
     }
 
-    private func toggle(_ habit: Habit) {
-        _ = try? CadenceHabitCompletionStore.toggle(habit, on: todayKey, modelContext: modelContext)
-    }
 }
 #endif

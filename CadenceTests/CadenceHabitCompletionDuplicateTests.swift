@@ -10,13 +10,20 @@ import Testing
 /// reached with half the check-ins it names.
 ///
 /// **The collapse rule is `max`, not `sum`, and this suite is where that is said out loud.** Every
-/// check-in the app writes goes through `CadenceHabitCompletionStore.toggle`, and it is binary: an
-/// unchecked day gets exactly one row at the default `count` of 1, and a checked day's second tap
-/// *deletes*. Nothing increments an existing row, so a second row for one habit-day is never a
-/// second deliberate increment — it is the same check-in recorded twice. `sum` prices a fiction
-/// (two increments the product cannot produce) at the cost of mis-scoring the real case; `max`
-/// reads the duplicate as what it is, and leaves a genuine multi-count day alone because that day
-/// lives in one row's `count`.
+/// check-in the app ever wrote went through one shared toggle, and it was binary: an unchecked day
+/// got exactly one row at the default `count` of 1, and a checked day's second tap *deleted*.
+/// Nothing ever incremented an existing row, so a second row for one habit-day is never a second
+/// deliberate increment — it is the same check-in recorded twice. `sum` prices a fiction (two
+/// increments the product could not produce) at the cost of mis-scoring the real case; `max` reads
+/// the duplicate as what it is, and leaves a genuine multi-count day alone because that day lives
+/// in one row's `count`.
+///
+/// **[[T-2079]] removed the writer, which makes this a read suite.** The owner retired habits at
+/// the depth *"remove the UI and stop writing, keep the schema"*, so the toggle is gone and so is
+/// the startup collapse [[T-2077]] removed before it. The rule above is carried entirely by
+/// `HabitCompletion.collapsedCount(of:)` on the read path, which is where the user-visible half
+/// always lived; the owner's rows stay on disk, duplicates included, and still report as one day.
+/// The scan that policed the constructor is **inverted** rather than deleted.
 @Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceHabitCompletionDuplicateTests {
@@ -265,203 +272,33 @@ struct CadenceHabitCompletionDuplicateTests {
 
     // MARK: - The one writer
 
-    @Test func theSharedToggleWritesOneRowAndClearsEveryRowForTheDay() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-
-        let habit = Habit(title: "Meditate")
-        context.insert(habit)
-        try context.save()
-
-        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context))
-        #expect((habit.completions ?? []).count == 1, "a check-in wrote something other than one row")
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 1)
-
-        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context) == false)
-        #expect((habit.completions ?? []).isEmpty)
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).isEmpty)
-
-        // A day another device has already duplicated: unchecking has to take every row, or the
-        // habit still reads as done immediately after the user cleared it.
-        Self.syncedRow(habit, on: "2026-03-09", context: context)
-        Self.syncedRow(habit, on: "2026-03-09", context: context)
-        try context.save()
-
-        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context) == false)
-        #expect(habit.isDone(on: "2026-03-09") == false)
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).isEmpty)
-    }
-
-    // MARK: - A refused commit (T-1295)
-
-    /// A commit that refuses. `ModelContext.save()` cannot be made to throw out of an in-memory
-    /// container, which is why `toggle` takes its commit as a parameter at all — the same reason
-    /// `CadencePendingChangePersistence` gives for its own `commit:`.
-    private struct CommitRefused: Error {}
-
-    private static func refuse(_ modelContext: ModelContext) throws {
-        throw CommitRefused()
-    }
-
-    /// [[T-1295]]: a refused check-in used to leave the insert **pending** in the app's one
-    /// `ModelContext`, with `habit.completions` already holding the row.
-    ///
-    /// Both in-app callers spell this `_ = try? CadenceHabitCompletionStore.toggle(…)`, and
-    /// [[T-322]] settled that they may — a tick the user can retry with a second tap is not a
-    /// failure they can act on. What [[T-322]] did not settle is what is left behind: this app has
-    /// one context, so a swallowed refusal handed the row to whichever unrelated `save()` ran
-    /// next, from a screen that never mentioned habits, while the day was already drawn checked
-    /// in. The last two assertions are that event, run forwards.
-    ///
-    /// **Toolchain-independent by construction.** The insert side undoes through `commitInsert`,
-    /// which deletes the objects it was handed and never calls `rollback()`, and the array is
-    /// re-applied by `toggle` itself. Nothing here reads a relationship that a rollback might or
-    /// might not have restored, so there is no Xcode 26 / 27 answer to pick between ([[T-1296]]).
-    @Test func arefusedCheckInLeavesNothingPendingAndTheDayUnchecked() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-
-        let habit = Habit(title: "Meditate")
-        context.insert(habit)
-        try context.save()
-
-        // Somebody else's uncommitted edit, open in the same single context. `commitInsert` undoes
-        // only what it was handed, so this must survive — a refused habit tick that rolled the
-        // context back would take the rename with it.
-        habit.title = "Meditate for ten minutes"
-
-        #expect(throws: CommitRefused.self) {
-            try CadenceHabitCompletionStore.toggle(
-                habit,
-                on: "2026-03-09",
-                modelContext: context,
-                commit: Self.refuse
-            )
-        }
-
-        #expect(
-            habit.isDone(on: "2026-03-09") == false,
-            "the day still reads as checked in off a row the store refused"
-        )
-        #expect((habit.completions ?? []).isEmpty, "the refused row is still on the habit")
-        #expect(
-            habit.title == "Meditate for ten minutes",
-            "the refused check-in discarded an unrelated pending edit"
-        )
-
-        // The defect itself: the next unrelated save anywhere in the app must not commit it.
-        try context.save()
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).isEmpty)
-    }
-
-    /// The uncheck direction, which is the same defect with the rows pending-*deleted*.
-    ///
-    /// **The captured array, and why this stays green on both toolchains.** `commitDelete` undoes
-    /// with `rollback()`, and `rollback()` is where Xcode 26 and 27 disagree: through 26 an
-    /// already-materialised relationship stayed as the delete left it until something refetched,
-    /// and 27 restores it immediately ([[T-1279]], [[T-1296]]). `toggle` re-applies the habit's
-    /// own captured array for the reason [[T-1280]]'s survey kept the one in `deleteSubtask` — it
-    /// repairs *this* habit without depending on what else the rollback swept up — and re-applying
-    /// it leaves exactly one row whether the rollback had already put it back or not. So the count
-    /// below is pinned at 1 rather than bounded: no toolchain can make it 0 or 2.
-    ///
-    /// The final `save()` is the invariant that needs no such argument: after a refused uncheck
-    /// there must be nothing pending for it to commit.
-    ///
-    /// **T-1318 re-read this one and kept it strict.** It is on R47's list, and it is the entry on
-    /// that list whose observation is already bounded by construction rather than by tolerance:
-    /// the count is 1 on a runtime that restores the relationship and 1 on a runtime that does
-    /// not, so there is no toolchain answer left for it to pin. The fresh-context row count after
-    /// the final `save()` is the store's own half and is strict on both.
-    @Test func arefusedUncheckLeavesTheRowInTheStoreAndTheDayStillChecked() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-
-        let habit = Habit(title: "Stretch")
-        context.insert(habit)
-        try context.save()
-        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context))
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 1)
-
-        #expect(throws: CommitRefused.self) {
-            try CadenceHabitCompletionStore.toggle(
-                habit,
-                on: "2026-03-09",
-                modelContext: context,
-                commit: Self.refuse
-            )
-        }
-
-        #expect(habit.isDone(on: "2026-03-09"), "the day was drawn clear over a delete the store refused")
-        #expect(
-            (habit.completions ?? []).count == 1,
-            "the captured array put the row back twice, or not at all"
-        )
-
-        try context.save()
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 1)
-    }
-
-    /// The uncheck undo has to reach **every** row for the day, not just the first.
-    ///
-    /// Clearing a day deletes each duplicate a second device contributed, so a refusal has to hand
-    /// all of them back — a repair that restored one row would leave the habit reading as done off
-    /// a shorter array than the store holds, which is the [[T-359]] disagreement re-created by the
-    /// failure path instead of by CloudKit.
-    @Test func arefusedUncheckOfADuplicatedDayHandsBackEveryRow() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-
-        let habit = Habit(title: "Read")
-        context.insert(habit)
-        Self.syncedRow(habit, on: "2026-03-09", context: context)
-        Self.syncedRow(habit, on: "2026-03-09", context: context)
-        try context.save()
-
-        #expect(throws: CommitRefused.self) {
-            try CadenceHabitCompletionStore.toggle(
-                habit,
-                on: "2026-03-09",
-                modelContext: context,
-                commit: Self.refuse
-            )
-        }
-
-        #expect((habit.completions ?? []).count == 2, "the refused uncheck lost a duplicate row")
-        #expect(habit.isDone(on: "2026-03-09"))
-
-        try context.save()
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 2)
-    }
-
-    /// Non-vacuity for the seam: the default `commit:` really is `ModelContext.save()`, so the
-    /// three refusals above are testing the same path the app takes and not a parameter nobody
-    /// uses. `theSharedToggleWritesOneRowAndClearsEveryRowForTheDay` calls `toggle` without a
-    /// `commit:` throughout; this asserts the store agrees, from a second context.
-    @Test func theDefaultCommitIsARealSaveAndNotTheTestSeam() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-
-        let habit = Habit(title: "Walk")
-        context.insert(habit)
-        try context.save()
-
-        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context))
-        #expect(!context.hasChanges, "the default commit left the check-in pending in the context")
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).count == 1)
-
-        #expect(try CadenceHabitCompletionStore.toggle(habit, on: "2026-03-09", modelContext: context) == false)
-        #expect(!context.hasChanges, "the default commit left the uncheck pending in the context")
-        #expect(try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>()).isEmpty)
-    }
+    // **The six tests that drove the writer left with [[T-2079]].**
+    //
+    // They covered the toggle itself — one row per habit-day, every row for a day taken when
+    // it is cleared — and the [[T-1295]] refusal discipline around it: a refused check-in left
+    // nothing pending and the day unchecked, a refused uncheck left the row in the store and
+    // the day still checked, and a refused uncheck of a duplicated day handed every row back.
+    // `everyHabitToggleCallSiteNamesTheSharedStore` was [[T-374]]'s call-site half. The writer
+    // is gone, so all seven assertions are about a function that does not exist; they are not
+    // weakened, they are obsolete. What replaces them is strictly stronger and is the next
+    // test down: *nothing* under `Cadence/` constructs a `HabitCompletion` at all.
 
     // MARK: - Every call site goes through it
 
-    /// The [[T-374]] half. Four files used to open-code this toggle, and the property that matters
-    /// is not "the shared helper exists" but "nothing else writes a check-in" — which is a claim
-    /// about files this target does not compile (`Cadence/iOS/` is behind `#if os(iOS)`), so it is
-    /// a scan.
-    @Test func onlyTheHabitCompletionStoreConstructsAHabitCompletion() throws {
+    /// **Nothing under `Cadence/` constructs a `HabitCompletion`** ([[T-2079]]) — the strongest
+    /// guard this retirement has, and strictly stronger than the one it replaces.
+    ///
+    /// It was `onlyTheHabitCompletionStoreConstructsAHabitCompletion`, the [[T-374]] half: four
+    /// files had open-coded the insert-if-none-exists toggle, the property that mattered was not
+    /// "the shared helper exists" but "nothing *else* writes a check-in", and because
+    /// `Cadence/iOS/` is behind `#if os(iOS)` and this target does not compile it, the only way to
+    /// ask was a scan. The owner retired habits, the shared toggle is gone, and the question
+    /// collapses into its own stronger form: **no shipped file may write one at all.** A scan is
+    /// still the only instrument that can ask it, and now it has a claim worth asking.
+    ///
+    /// The non-vacuity list below is what proves the enumerator descended into `Models/`,
+    /// `Services/`, `Shared/`, `macOS/Views/` and `iOS/`, which is its whole job.
+    @Test func nothingUnderCadenceConstructsAHabitCompletion() throws {
         let root = CadenceSourceScan.repositoryRoot().appendingPathComponent("Cadence")
         let enumerator = try #require(
             FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil),
@@ -484,7 +321,8 @@ struct CadenceHabitCompletionDuplicateTests {
         #expect(scanned.count > 150, "the scan read only \(scanned.count) Swift files under Cadence/")
         for reached in [
             "Habit.swift",                          // Models/
-            "CadenceHabitCompletionStore.swift",    // Services/
+            "HabitCompletion.swift",                // Models/
+            "CadenceHabitCompletionStore.swift",    // Services/ -- now an empty enum
             "CadenceFocusPlanningSupport.swift",    // Shared/
             "HabitsView.swift",                     // macOS/Views/
             "iOSFeatureViews.swift",                // iOS/
@@ -504,12 +342,14 @@ struct CadenceHabitCompletionDuplicateTests {
         // construction time — its rows carry ids and `createdAt` values that must survive, and the
         // habit each one hangs off is resolved in the importer's second pass.
         //
-        // A merge *can* still land a second row on a day the destination already has, which is not
-        // a hole this exemption opens: `DataIntegrityRepairService` collapses duplicate habit-days
-        // at every launch, and `aSyncedDuplicateIsCollapsedByTheStartupRepair` is that path. What
-        // the exemption must not become is a second toggle, so it is stated as the shape rather
-        // than the name — the importer may construct with `date:` alone, and the habit must arrive
-        // through the wiring pass. `HabitCompletion(date:habit:)` here would be red.
+        // **A merge can still land a second row on a day the destination already has, and since
+        // [[T-2077]] nothing collapses it.** That startup collapse used to be the answer here, and
+        // it was itself a launch-time *delete* of a check-in the owner can no longer see on any
+        // surface, which is why it went. The read carries the rule instead:
+        // `HabitCompletion.collapsedCount(of:)` is a `max` over the day's rows, so a duplicated
+        // day still reports as one. What the exemption must not become is a second writer, so it
+        // is stated as the shape rather than the name — the importer may construct with `date:`
+        // alone, and `HabitCompletion(date:habit:)` here would be red.
         #expect(
             constructing.remove("CadenceArchiveImportService.swift") != nil,
             "the importer no longer constructs a completion — delete this exemption"
@@ -530,64 +370,15 @@ struct CadenceHabitCompletionDuplicateTests {
             "the importer stopped wiring the habit, so its rows belong to nobody"
         )
 
-        #expect(constructing == ["CadenceHabitCompletionStore.swift"])
-    }
-
-    /// The positive half: each surface that used to own a copy now names the shared store. Without
-    /// this, deleting a habit toggle entirely would leave the test above green.
-    ///
-    /// **Two surfaces, not three, since [[T-2078]].** The third was
-    /// `ToggleHabitCompletionIntent.toggleHabitCompletionResult`, retired with the Habit Check-In
-    /// widget that was its only button. Its row is not simply dropped — that is exactly the
-    /// "deleted entirely and nobody noticed" shape this test guards against. It is replaced by the
-    /// assertion below that the widget extension's intents file now contains **no** habit toggle at
-    /// all, so the surface is gone on purpose rather than gone unnoticed, and re-adding one without
-    /// the shared store fails here.
-    @Test func everyHabitToggleCallSiteNamesTheSharedStore() throws {
-        for (path, function) in [
-            ("Cadence/macOS/Views/HabitsView.swift", "toggleHabit"),
-            ("Cadence/iOS/iOSFeatureViews.swift", "toggle")
-        ] {
-            let raw = try CadenceSourceScan.sourceFile(path)
-            #expect(raw.count > 400, "\(path) read as \(raw.count) characters")
-
-            let stripped = CadenceSourceScan.strippingComments(raw)
-            #expect(stripped != raw, "the comment stripper removed nothing from \(path)")
-            #expect(stripped.count == raw.count, "the stripper changed the length of \(path)")
-
-            let body = try #require(
-                CadenceSourceScan.functionBody(named: function, in: stripped),
-                "could not find \(function)() in \(path)"
-            )
-            #expect(
-                body.contains("CadenceHabitCompletionStore.toggle("),
-                "\(function)() in \(path) no longer goes through the shared store"
-            )
-        }
-
-        // The retired copy is gone rather than merely unused.
-        let shared = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceFocusPlanningSupport.swift")
+        #expect(
+            constructing.isEmpty,
+            "a shipped file constructs a HabitCompletion: \(constructing.sorted())"
         )
-        #expect(CadenceSourceScan.matchCount(#"enum CadenceHabitSupport"#, in: shared) == 0)
-
-        // [[T-2078]]: and so is the widget extension's toggle, which is the third row this loop
-        // used to carry. Asserted as the whole class rather than the one function name, so a habit
-        // toggle re-added to the extension under any name fails here.
-        let intents = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceWidgetIntents.swift")
-        )
-        #expect(intents.count > 400, "the intents file read as \(intents.count) characters")
-        #expect(CadenceSourceScan.matchCount(#"CadenceHabitCompletionStore"#, in: intents) == 0)
-        #expect(CadenceSourceScan.matchCount(#"toggleHabitCompletionResult"#, in: intents) == 0)
-        // Control: the same read still finds the task write that file does still ship, so a zero
-        // above is an absence and not an unreadable file.
-        #expect(CadenceSourceScan.matchCount(#"CadenceTaskRecurrenceWorkflowSupport\.markDone"#, in: intents) == 1)
     }
 
     /// The needle matches the constructor it hunts and misses the names it sits beside — otherwise
-    /// the `== ["CadenceHabitCompletionStore.swift"]` above is a claim about a pattern that never
-    /// matches anything.
+    /// the `constructing.isEmpty` above is a claim about a pattern that never matches anything,
+    /// which is exactly how an inverted scan goes quietly vacuous.
     @Test func theHabitCompletionNeedleMatchesTheConstructorAndNotItsNeighbours() {
         let needle = #"(?<![A-Za-z0-9_])HabitCompletion\("#
         #expect(CadenceSourceScan.matchCount(needle, in: "HabitCompletion(date: key, habit: habit)") == 1)
@@ -606,7 +397,7 @@ struct CadenceHabitCompletionDuplicateTests {
     /// 3. Nothing in the app can produce that split, and this is the assertion that says so: the
     /// initializer has no `count` parameter, so every construction gets the model default of `1`,
     /// and the only assignment to a row's `count` anywhere under `Cadence/` is the one in
-    /// `CadenceHabitCompletionStore.collapseDuplicates`, which writes `collapsedCount` — a `max`
+    /// the retired collapse, which wrote `collapsedCount` — a `max`
     /// over rows that are all already `1`, so it cannot raise anything either.
     ///
     /// If this test goes red, T-391 has stopped being hypothetical and the decision below has to
@@ -640,13 +431,13 @@ struct CadenceHabitCompletionDuplicateTests {
 
         // Non-vacuity: the same shape the constructor scan above uses.
         #expect(scanned.count > 150, "the scan read only \(scanned.count) Swift files under Cadence/")
-        for reached in ["Habit.swift", "HabitCompletion.swift", "CadenceHabitCompletionStore.swift", "DataIntegrityRepairService.swift"] {
+        for reached in ["Habit.swift", "HabitCompletion.swift", "CadenceArchiveImportService.swift", "DataIntegrityRepairService.swift"] {
             #expect(scanned.contains(reached), "the scan never reached \(reached)")
         }
 
         // **The archive importer assigns one too, and it is the frontier this test's premise
         // now has.** Everything above is still true of anything the *app* can write: the
-        // initializer takes no `count`, so every construction is `1`, and `collapseDuplicates`
+        // initializer takes no `count`, so every construction is `1`, and the retired collapse
         // takes a `max` over rows that are all already `1`. What has changed is that a store can
         // now be handed a quantity from outside — an archive exported from a device whose rows
         // arrived by sync — and a restore has to put back what it was given rather than flattening
@@ -678,13 +469,17 @@ struct CadenceHabitCompletionDuplicateTests {
             "the importer's count is no longer a verbatim copy of the archived value"
         )
 
-        #expect(assigning == ["CadenceHabitCompletionStore.swift"])
-        let store = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceHabitCompletionStore.swift")
-        )
+        // **Nothing else writes a row's `count` at all now** ([[T-2079]]). This asserted
+        // `== ["CadenceHabitCompletionStore.swift"]`, whose one write was the retired collapse's
+        // `survivor.count = collapsed` — the `max` it stored into the surviving row of a
+        // duplicated day. [[T-2077]] removed that pass and T-2079 emptied the store, so the only
+        // assignment left in the shipped tree is the importer's verbatim copy, exempted above.
+        // The `max` itself did not go anywhere: it moved from a stored value to the read,
+        // `HabitCompletion.collapsedCount(of:)`, which
+        // `theDayCountAHabitReportsIsTheCollapsedCountOfItsRows` asserts on behaviour.
         #expect(
-            CadenceSourceScan.matchCount(#"survivor\.count = collapsed"#, in: store) == 1,
-            "the one write to a row's count is no longer the collapsed (max) value"
+            assigning.isEmpty,
+            "a shipped file outside the importer writes a habit-day count: \(assigning.sorted())"
         )
     }
 
@@ -841,7 +636,7 @@ struct CadenceHabitCompletionDuplicateTests {
     /// **The asymmetry T-1088 rests on does not exist: the repair sees a whole habit-day too.**
     ///
     /// `DataIntegrityRepairService` groups by `(habit.id, date)` and hands
-    /// `CadenceHabitCompletionStore.collapseDuplicates` the entire group, so it has exactly what an
+    /// the retired collapse the entire group, so it had exactly what an
     /// importer scanning `archive.habitCompletions` would have. The proof is behavioural rather
     /// than a reading of the grouping code: the survivor's count is the maximum over **all three**
     /// rows, and the largest is neither the first nor the last, so a collapse that saw them one at

@@ -448,25 +448,31 @@ let iOSHabitCheckInSize: CGFloat = 44
 /// rather than a button nested inside its label: a nested button never receives the tap on iOS
 /// (the enclosing `Button`/`NavigationLink` swallows it), so checking a habit off from the list
 /// silently did nothing and just opened the detail instead.
-struct iOSHabitCheckInButton: View {
+/// The habit-day glyph, **read-only since [[T-2079]]**.
+///
+/// It was `iOSHabitCheckInButton`: a `Button` calling the retired habit check-in `toggle`, the one
+/// writer of a `HabitCompletion`, layered over the row's navigation control because a nested button
+/// never sees the tap on iOS. The writer is gone with the rest of the habit write surface, so this
+/// draws the same glyph at the same `iOSHabitCheckInSize` and does nothing.
+///
+/// **It keeps the frame and loses the accessibility label**, which is the pair that matters:
+/// `iOSHabitSummaryRow` lays out against `iOSHabitCheckInSize` and the row would reflow without it,
+/// while an announcement reading "Check in <habit>" over a control that checks nothing in is worse
+/// than silence. The row already says in text whether the habit is done today.
+struct iOSHabitCheckInGlyph: View {
     let habit: Habit
     let todayKey: String
-    let action: () -> Void
 
     private var isDoneToday: Bool {
         habit.isDone(on: todayKey)
     }
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 22, weight: .regular))
-                .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.dim.opacity(0.55))
-                .frame(width: iOSHabitCheckInSize, height: iOSHabitCheckInSize)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel(isDoneToday ? "Undo check-in for \(habit.title)" : "Check in \(habit.title)")
+        Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 22, weight: .regular))
+            .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.dim.opacity(0.55))
+            .frame(width: iOSHabitCheckInSize, height: iOSHabitCheckInSize)
+            .accessibilityHidden(true)
     }
 }
 
@@ -565,7 +571,6 @@ struct iOSHabitDetail: View {
 
     let habit: Habit
     let todayKey: String
-    let toggle: () -> Void
     var onEdit: () -> Void = {}
     /// Set on the compact push stack. See `iOSGoalDetail.showsBackControl`.
     var showsBackControl = false
@@ -642,15 +647,11 @@ struct iOSHabitDetail: View {
 
             chips
 
+            // **Check In Today left with [[T-2079]].** It called the retired habit check-in
+            // `toggle`; `chips` above already reports whether the habit is due today and whether
+            // it is checked in.
             HStack(spacing: 10) {
-                iOSActionButton(
-                    title: isDoneToday ? "Undo Check-In" : "Check In Today",
-                    systemImage: isDoneToday ? "arrow.uturn.backward" : "checkmark",
-                    role: isDoneToday ? .secondary : .primary,
-                    tint: isDoneToday ? Theme.green : tint,
-                    fullWidth: true,
-                    action: toggle
-                )
+                Spacer(minLength: 0)
 
                 iOSIconButton(
                     systemImage: "square.and.pencil",
