@@ -72,15 +72,15 @@ struct CadenceShellNavigationBridgeTests {
             CadenceShellNavigationBridge.visibleDestination(
                 tab: .more,
                 tasksSection: .today,
-                pushedDestination: .goals
-            ) == .goals
+                pushedDestination: .lists
+            ) == .lists
         )
 
         #expect(
             CadenceShellNavigationBridge.visibleDestination(
                 tab: .calendar,
                 tasksSection: .today,
-                pushedDestination: .goals
+                pushedDestination: .lists
             ) == .calendar,
             "a stale More push answered for the Calendar tab"
         )

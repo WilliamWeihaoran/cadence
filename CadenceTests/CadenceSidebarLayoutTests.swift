@@ -11,11 +11,14 @@ import Testing
 struct CadenceSidebarLayoutTests {
     // MARK: - Structure
 
-    /// **Goals and Habits are in the nav group, not a stack below the lists (T-1274).** The owner:
-    /// *"can you actually put goals and habits to the same place as today, tasks, calendar, and
-    /// notes"*. What is left below the lists is the footer pair and nothing else.
-    @Test func theNavGroupIsTheSixRowsTheOwnerNamedAndTheFooterIsWhatIsLeft() {
-        #expect(CadenceSidebarLayout.primaryDestinations == [.today, .allTasks, .calendar, .notes, .goals, .habits])
+    /// **The nav group is four rows, and what is left below the lists is the footer pair.**
+    ///
+    /// It was six from T-1274, when the owner asked for *"goals and habits to the same place as
+    /// today, tasks, calendar, and notes"* and both moved up out of a second stack. T-2076 removed
+    /// those two features from the navigation entirely, so the group is back to four — and the
+    /// second stack it emptied is still empty, which is the half this keeps asserting.
+    @Test func theNavGroupIsTheFourRowsLeftAndTheFooterIsWhatIsBelowThem() {
+        #expect(CadenceSidebarLayout.primaryDestinations == [.today, .allTasks, .calendar, .notes])
         #expect(CadenceSidebarLayout.secondaryDestinations == [.focus, .settings])
         #expect(CadenceSidebarLayout.secondaryRowDestinations.isEmpty)
     }
@@ -29,10 +32,10 @@ struct CadenceSidebarLayoutTests {
     /// A verifier recently reverted a committed fix with the whole suite green, because the tests
     /// pinned a helper while nothing observed the call site. This is the call site.
     @Test func theTasksRowIsOneRowAndInboxIsNotASecondOne() {
-        #expect(CadenceSidebarLayout.primaryDestinations.count == 6)
+        #expect(CadenceSidebarLayout.primaryDestinations.count == 4)
         #expect(!CadenceSidebarLayout.primaryDestinations.contains(.inbox))
         #expect(!CadenceSidebarLayout.navigationDestinations.contains(.inbox))
-        #expect(CadenceSidebarLayout.navigationDestinations.count == 8)
+        #expect(CadenceSidebarLayout.navigationDestinations.count == 6)
 
         // And the row that replaced them is reachable from both destinations.
         #expect(CadenceSidebarLayout.navRow(for: .inbox) == .allTasks)
@@ -141,17 +144,17 @@ struct CadenceSidebarLayoutTests {
     }
 
     /// The regression this rule exists for: the *stored default* order lists Focus third, so
-    /// feeding a defaults-filled list in would push Focus above Goals and Habits for a user who
+    /// feeding a defaults-filled list in would push Focus above the last nav rows for a user who
     /// has never dragged anything. Only rows the user actually moved may move.
     @Test func aStoredOrderNamingOnlySomeRowsLeavesTheRestWhereTheyWereDeclared() {
         #expect(resolved(.secondary, storedOrder: [.focus]) == [.focus, .settings])
         #expect(
             resolved(.primary, storedOrder: [.calendar])
-                == [.calendar, .today, .allTasks, .notes, .goals, .habits]
+                == [.calendar, .today, .allTasks, .notes]
         )
         #expect(
-            resolved(.primary, storedOrder: [.habits])
-                == [.habits, .today, .allTasks, .calendar, .notes, .goals]
+            resolved(.primary, storedOrder: [.notes])
+                == [.notes, .today, .allTasks, .calendar]
         )
     }
 
@@ -162,14 +165,16 @@ struct CadenceSidebarLayoutTests {
     /// layout declares it. The alternative — storing the *visible* list — would hide every new row
     /// on every device still holding an older list.
     @Test func aRowTheStoredLayoutHasNeverHeardOfKeepsItsSlotAndStaysVisible() {
-        // Stand-in for "a case this stored order predates": every row but Habits is named, in a
-        // deliberately scrambled order, and Habits still lands where the layout declares it.
-        let named: [CadenceFeatureDestination] = [.notes, .goals, .calendar, .allTasks, .today]
+        // Stand-in for "a case this stored order predates": every row but Calendar is named, in a
+        // deliberately scrambled order, and Calendar still lands where the layout declares it.
+        let named: [CadenceFeatureDestination] = [.notes, .allTasks, .today]
 
-        #expect(resolved(.primary, storedOrder: named) == [.notes, .goals, .calendar, .allTasks, .today, .habits])
-        #expect(resolved(.primary, storedOrder: named, hidden: [.notes]).contains(.habits))
-        // And an unknown token in the stored string is simply not a destination: the parse drops it.
-        #expect(CadenceSidebarLayoutPreferenceStore.destinations(fromRaw: "today,quarterlyReview,goals") == [.today, .goals])
+        #expect(resolved(.primary, storedOrder: named) == [.notes, .allTasks, .today, .calendar])
+        #expect(resolved(.primary, storedOrder: named, hidden: [.notes]).contains(.calendar))
+        // And an unknown token in the stored string is simply not a destination: the parse drops
+        // it. `goals` is one of those since T-2076 — a token real synced records still carry.
+        #expect(CadenceSidebarLayoutPreferenceStore.destinations(fromRaw: "today,quarterlyReview,notes") == [.today, .notes])
+        #expect(CadenceSidebarLayoutPreferenceStore.destinations(fromRaw: "today,goals,habits,notes") == [.today, .notes])
     }
 
     /// A user who reorders in Settings must not lose that. The stored order sorts *within* a
@@ -177,12 +182,12 @@ struct CadenceSidebarLayoutTests {
     /// group.
     @Test func theStoredOrderSortsWithinAGroup() {
         let reordered: [CadenceFeatureDestination] = [
-            .calendar, .today, .allTasks, .habits, .goals, .notes, .focus
+            .calendar, .today, .allTasks, .notes, .focus
         ]
 
         #expect(
             resolved(.primary, storedOrder: reordered)
-                == [.calendar, .today, .allTasks, .habits, .goals, .notes]
+                == [.calendar, .today, .allTasks, .notes]
         )
         // Focus is the group's only customisable member and the footer draws the pair in its own
         // order, so nothing it is given here moves anything. Settings holds its slot regardless.
@@ -193,7 +198,7 @@ struct CadenceSidebarLayoutTests {
     /// instead of being swept to the front or the back of whatever the movable rows do.
     @Test func theRowsSettingsCannotMoveKeepTheirSlot() {
         let reversed: [CadenceFeatureDestination] = [
-            .habits, .goals, .calendar, .focus, .allTasks, .today, .notes
+            .calendar, .focus, .allTasks, .today, .notes
         ]
 
         // Settings is the one row with no handle at all, in either direction: it is the only door
@@ -205,8 +210,8 @@ struct CadenceSidebarLayoutTests {
     // MARK: - Visibility
 
     @Test func hidingARowRemovesItAndLeavesTheRestInOrder() {
-        #expect(resolved(.primary, hidden: [.allTasks]) == [.today, .calendar, .notes, .goals, .habits])
-        #expect(resolved(.primary, hidden: [.goals, .notes]) == [.today, .allTasks, .calendar, .habits])
+        #expect(resolved(.primary, hidden: [.allTasks]) == [.today, .calendar, .notes])
+        #expect(resolved(.primary, hidden: [.calendar, .notes]) == [.today, .allTasks])
         #expect(resolved(.secondary, hidden: [.focus]) == [.settings])
     }
 
@@ -227,16 +232,12 @@ struct CadenceSidebarLayoutTests {
 
     private let counts = CadenceSidebarCountInputs(
         todayOverdueCount: 3,
-        openTaskCount: 41,
-        activeGoalCount: 4,
-        habitCount: 2
+        openTaskCount: 41
     )
 
     @Test func eachRowReadsItsOwnNumber() {
         #expect(CadenceSidebarLayout.count(for: .today, counts: counts)?.value == 3)
         #expect(CadenceSidebarLayout.count(for: .allTasks, counts: counts)?.value == 41)
-        #expect(CadenceSidebarLayout.count(for: .goals, counts: counts)?.value == 4)
-        #expect(CadenceSidebarLayout.count(for: .habits, counts: counts)?.value == 2)
 
         for destination in [CadenceFeatureDestination.calendar, .notes, .focus, .settings] {
             #expect(
@@ -327,27 +328,27 @@ struct CadenceSidebarLayoutTests {
         let rows = CadenceSidebarLayoutPreferenceStore.orderedCustomisableDestinations(for: .declared)
         let orderable = rows.filter(CadenceSidebarLayout.isOrderable)
 
-        #expect(rows == [.today, .allTasks, .calendar, .notes, .goals, .habits, .focus])
-        #expect(orderable == [.today, .allTasks, .calendar, .notes, .goals, .habits])
+        #expect(rows == [.today, .allTasks, .calendar, .notes, .focus])
+        #expect(orderable == [.today, .allTasks, .calendar, .notes])
 
         // The two ends, in the list the menu now measures in.
-        #expect(CadenceOrderReassignment.neighbourStep(moving: .habits, by: 1, within: orderable) == nil)
+        #expect(CadenceOrderReassignment.neighbourStep(moving: .notes, by: 1, within: orderable) == nil)
         #expect(CadenceOrderReassignment.neighbourStep(moving: .today, by: -1, within: orderable) == nil)
 
         // And the step above the boundary still exists, so disabling the end did not disable the
-        // list: Habits rises past Goals, which is the same move read from the other row.
-        let up = try #require(CadenceOrderReassignment.neighbourStep(moving: .habits, by: -1, within: orderable))
+        // list: Notes rises past Calendar, which is the same move read from the other row.
+        let up = try #require(CadenceOrderReassignment.neighbourStep(moving: .notes, by: -1, within: orderable))
         let raised = try #require(
             CadenceSidebarLayoutPreferenceStore.order(in: .declared, moving: up.dragged, before: up.target)
         )
-        #expect(raised == [.today, .allTasks, .calendar, .notes, .habits, .goals, .focus])
+        #expect(raised == [.today, .allTasks, .notes, .calendar, .focus])
 
         // The defect, spelled out: over the whole list the step exists and targets the glyph.
         let overTheWholeList = try #require(
-            CadenceOrderReassignment.neighbourStep(moving: .habits, by: 1, within: rows)
+            CadenceOrderReassignment.neighbourStep(moving: .notes, by: 1, within: rows)
         )
         #expect(overTheWholeList.dragged == .focus)
-        #expect(overTheWholeList.target == .habits)
+        #expect(overTheWholeList.target == .notes)
 
         // And Focus's own Move Up was the **same** pair, which is why one fix answers both halves
         // of the ticket: the two enabled items a user could reach for wrote one identical order.
@@ -526,9 +527,9 @@ struct SidebarStaticDestinationBridgeTests {
             #expect(CadenceSidebarLayout.isOrderable(destination) == expected)
         }
 
-        // The six labelled nav rows order; the two footer glyphs do not.
+        // The four labelled nav rows order; the two footer glyphs do not.
         #expect(CadenceSidebarLayout.navigationDestinations.filter(CadenceSidebarLayout.isOrderable)
-                == [.today, .allTasks, .calendar, .notes, .goals, .habits])
+                == [.today, .allTasks, .calendar, .notes])
         #expect(!CadenceSidebarLayout.isOrderable(.focus))
         #expect(!CadenceSidebarLayout.isOrderable(.settings))
 

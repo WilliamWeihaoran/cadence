@@ -63,7 +63,7 @@ nonisolated enum CadenceTasksPageScope: String, CaseIterable, Identifiable, Hash
         switch destination {
         case .allTasks: self = .all
         case .inbox: self = .inbox
-        case .today, .focus, .calendar, .notes, .lists, .goals, .habits, .search, .settings:
+        case .today, .focus, .calendar, .notes, .lists, .search, .settings:
             return nil
         }
     }

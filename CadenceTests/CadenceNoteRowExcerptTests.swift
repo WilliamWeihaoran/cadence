@@ -175,19 +175,20 @@ struct CadenceFeatureDestinationCopyTests {
         }
     }
 
-    /// **The three that repeated, and what they say now.** Inbox and Goals take the wording the
+    /// **The three that repeated, and what they say now.** Inbox and Goals took the wording the
     /// macOS command palette already uses for the same pages (`GlobalSearchPageDefinition.all`),
     /// rather than a fourth phrasing invented here; Lists has no palette entry, so its summary
     /// names the sections the page actually draws — Areas, Projects, Archived.
-    @Test func theThreeRepeatedDestinationsNowNameTheirContents() {
+    ///
+    /// Goals is gone (T-2076), so two of the three remain. The claim is unchanged for them: a
+    /// destination's `subtitle` says what you go there to *do* and its `searchSummary` says what
+    /// is *in* it, and the two are drawn on consecutive lines of one search row.
+    @Test func theRepeatedDestinationsNowNameTheirContents() {
         #expect(CadenceFeatureDestination.inbox.subtitle == "Capture and triage")
         #expect(CadenceFeatureDestination.inbox.searchSummary == "Unsorted capture tasks")
 
         #expect(CadenceFeatureDestination.lists.subtitle == "Areas, projects, and lists")
         #expect(CadenceFeatureDestination.lists.searchSummary == "Active and archived lists")
-
-        #expect(CadenceFeatureDestination.goals.subtitle == "Directions and milestones")
-        #expect(CadenceFeatureDestination.goals.searchSummary == "Directions, milestones, and progress")
     }
 
     /// Both sentences are matched against, so neither may quietly drop out of `searchAliases` —

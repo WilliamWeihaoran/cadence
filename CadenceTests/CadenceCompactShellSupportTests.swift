@@ -44,37 +44,38 @@ struct CadenceCompactShellSupportTests {
 
     // MARK: - Destination counts
 
+    /// **The fraction arm went with T-2076, not the rule.** `countLabel` used to take a
+    /// `habitProgress` and answer `2/5` for the Habits row alone; Habits is no longer a row, so
+    /// every destination the More list draws is one the badge snapshot can answer and the whole
+    /// label is a tally again. What is still asserted is the original claim — a number appears
+    /// only where it means something — over the rows that remain, with Calendar, Notes and Focus
+    /// as the unobliged controls that prove the `nil` arm is doing work.
     @Test func countsAppearOnlyWhereANumberMeansSomething() {
         let badges = CadenceFeatureBadgeSupport.Snapshot(
             tasks: [task("open"), task("also open", due: todayKey)],
             todayKey: todayKey,
-            activeGoalCount: 3,
-            habitCount: 5,
             activeListCount: 4
         )
-        let progress = CadenceCompactShellSupport.HabitProgress(completed: 2, due: 5)
 
         func label(_ destination: CadenceFeatureDestination) -> String? {
-            CadenceCompactShellSupport.countLabel(for: destination, badges: badges, habitProgress: progress)
+            CadenceCompactShellSupport.countLabel(for: destination, badges: badges)
         }
 
         #expect(label(.allTasks) == "2")
         #expect(label(.inbox) == "2")
-        #expect(label(.goals) == "3")
         #expect(label(.lists) == "4")
-        // Habits read as a fraction, not as a total — the badge snapshot's plain `5` is overridden.
-        #expect(label(.habits) == "2/5")
         #expect(label(.calendar) == nil)
         #expect(label(.notes) == nil)
         #expect(label(.focus) == nil)
     }
 
-    @Test func aHabitRowWithNothingDueTodayShowsNoCountAtAll() {
-        let badges = CadenceFeatureBadgeSupport.Snapshot(tasks: [], todayKey: todayKey, habitCount: 5)
+    /// A tally of zero draws nothing: the absence of a badge *is* the zero state, which is the
+    /// half of the rule the row with no lists and no open tasks exercises.
+    @Test func aRowWithNothingToCountShowsNoCountAtAll() {
+        let badges = CadenceFeatureBadgeSupport.Snapshot(tasks: [], todayKey: todayKey)
 
-        #expect(
-            CadenceCompactShellSupport.countLabel(for: .habits, badges: badges, habitProgress: nil) == nil
-        )
+        #expect(CadenceCompactShellSupport.countLabel(for: .lists, badges: badges) == nil)
+        #expect(CadenceCompactShellSupport.countLabel(for: .allTasks, badges: badges) == nil)
     }
 
     // MARK: - Habit progress

@@ -210,14 +210,19 @@ struct CadenceDeepLinkTests {
     }
 
     /// Singleton routes are untouched by resolution and never read the store.
+    ///
+    /// `.habits` and `.goals` answer Today since T-2076, which removed both features from the
+    /// navigation. The point of keeping them here is that resolution still *answers* for them —
+    /// a route that resolved to nothing would be a widget tap that opens the app onto whatever
+    /// was last on screen, or onto nothing at all.
     @Test func nonTaskDeepLinksResolveToTheirOwnDestinations() throws {
         let (modelContext, todayKey) = try makeStore()
         let manager = resetManager()
 
         for (link, expected) in [
             (CadenceDeepLink.today, CadenceFeatureDestination.today),
-            (.habits, .habits),
-            (.goals, .goals),
+            (.habits, .today),
+            (.goals, .today),
             (.calendar(dateKey: nil), .calendar)
         ] {
             #expect(
@@ -261,6 +266,8 @@ struct CadenceDeepLinkGrammarAndRevealTests {
 
         // The authority-less shape, for every route.
         #expect(CadenceDeepLink(url: try #require(URL(string: "cadence:///today"))) == .today)
+        // Still parsed after T-2076: the pages are gone, the URLs are not — they are on two
+        // shipped widgets. A route that stopped parsing would make the tap do nothing at all.
         #expect(CadenceDeepLink(url: try #require(URL(string: "cadence:///habits"))) == .habits)
         #expect(CadenceDeepLink(url: try #require(URL(string: "cadence:///goals"))) == .goals)
         #expect(
@@ -515,9 +522,10 @@ struct CadenceDeepLinkGrammarAndRevealTests {
 
     /// **The `?? .today` fallback, pinned case by case.** The root mapped a resolved destination
     /// through `SidebarStaticDestination.allCases`, which is the *Settings customisation* table —
-    /// six of the eleven destinations — so `.notes`, `.inbox` and `.settings` found no match and
-    /// fell silently to Today. It was correct only because no resolver returned one of those three
-    /// yet, which is a fact about today's `resolvedDestination` rather than about the mapping.
+    /// a strict subset of the destinations — so `.notes`, `.inbox` and `.settings` found no match
+    /// and fell silently to Today. It was correct only because no resolver returned one of those
+    /// three yet, which is a fact about today's `resolvedDestination` rather than about the
+    /// mapping.
     @Test func everyDestinationThatIsAPageOpensItsOwnPageRatherThanToday() {
         let expected: [CadenceFeatureDestination: SidebarItem] = [
             .today: .today,
@@ -526,8 +534,6 @@ struct CadenceDeepLinkGrammarAndRevealTests {
             .inbox: .inbox,
             .calendar: .calendar,
             .notes: .notes,
-            .goals: .goals,
-            .habits: .habits,
             .settings: .settings
         ]
         for (destination, item) in expected {

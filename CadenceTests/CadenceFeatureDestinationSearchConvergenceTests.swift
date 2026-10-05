@@ -45,7 +45,7 @@ struct CadenceFeatureDestinationSearchConvergenceTests {
         )
         // Non-vacuity: a loop over nothing passes, and so does a lookup that never hits.
         #expect(rows.count == GlobalSearchPageDefinition.all.count)
-        #expect(rows.count >= 9, "read \(rows.count) palette page rows")
+        #expect(rows.count >= 7, "read \(rows.count) palette page rows")
 
         var matched = 0
         for page in GlobalSearchPageDefinition.all {
@@ -118,7 +118,8 @@ struct CadenceFeatureDestinationSearchConvergenceTests {
     @Test func theWordsThatReachAPageAreTheSameOnBothPlatforms() {
         let strandedOnTheDesktop: [(CadenceFeatureDestination, [String])] = [
             (.today, ["dashboard", "daily"]),
-            (.goals, ["targets", "stages"]),
+            // Goals' two stranded words — "targets", "stages" — went with the destination in
+            // T-2076; there is no page left for them to reach.
             (.notes, ["docs"]),
             (.allTasks, ["tasks", "all"]),
             (.calendar, ["schedule", "events"])

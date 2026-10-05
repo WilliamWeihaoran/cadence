@@ -81,18 +81,6 @@ struct iOSSearchListCandidate {
     }
 }
 
-/// A Goals-and-Habits row plus the key its **idle** window is cut on.
-///
-/// That section merges two tables behind one destination apiece, so — unlike the other four — its
-/// candidates are already finished `iOSSearchResult`s by the time they are concatenated, and the
-/// `Goal.order` / `Habit.order` they were drawn in is gone. This carries it the two lines to the
-/// cut. The searching branch reads `result` alone and ignores the rank, which is correct: a typed
-/// query is scored, not arranged.
-struct iOSSearchProgressCandidate {
-    let result: iOSSearchResult
-    let suggestionRank: CadenceSearchSuggestionRank
-}
-
 struct iOSSearchFeatureCandidate {
     let title: String
     let subtitle: String

@@ -17,12 +17,15 @@ enum CadenceSidebarLayout {
         var id: String { rawValue }
     }
 
-    /// Six rows, and **Goals and Habits are among them** (T-1274). They used to be a second stack
-    /// below the lists, which read as a lesser tier of the app rather than as two more places to
-    /// go; the owner asked for one group — *"can you actually put goals and habits to the same
-    /// place as today, tasks, calendar, and notes"* — and this list is that group. They are
-    /// appended rather than interleaved because the declared order is only the starting point now:
-    /// the user's own order sorts this list (`resolvedDestinations`).
+    /// Four rows. Goals and Habits were the fifth and sixth from T-1274 until **T-2076**, which
+    /// removed both features from the navigation at the owner's request — *"we should just remove
+    /// habits and milestones cuz i just wont need them that often"*. Their models and CloudKit
+    /// record types are untouched; what went is every way to reach them.
+    ///
+    /// A synced `SidebarLayoutPreference` written before that still names `goals` and `habits` in
+    /// its order or hidden set. Those raw values no longer decode and are dropped on read, which
+    /// is the behaviour `CadenceSidebarLayoutPreferenceStore.destinations(fromRaw:)` has always
+    /// had for an unrecognised token; the rows that do decode keep their relative order.
     ///
     /// `.inbox` is still not here. It was never a separate universe — Inbox is All Tasks with one
     /// predicate, and the All Tasks *board* had already merged the two by rendering Inbox as one of
@@ -30,7 +33,7 @@ enum CadenceSidebarLayout {
     /// this one row. Today stays its own row: it is a three-pane dashboard, not a filter over the
     /// same rows.
     static let primaryDestinations: [CadenceFeatureDestination] = [
-        .today, .allTasks, .calendar, .notes, .goals, .habits
+        .today, .allTasks, .calendar, .notes
     ]
 
     /// What is left below the lists: the two footer glyphs and nothing else. Both members are in
@@ -55,7 +58,7 @@ enum CadenceSidebarLayout {
     /// Spelled here rather than derived from macOS's `SidebarStaticDestination`, which is not
     /// visible to iOS; `CadenceSidebarLayoutTests` pins the two against each other.
     static let customisableDestinations: Set<CadenceFeatureDestination> = [
-        .today, .allTasks, .calendar, .notes, .goals, .habits, .focus
+        .today, .allTasks, .calendar, .notes, .focus
     ]
 
     /// The two **both** sidebars render as glyphs in one footer row rather than as labelled rows —
@@ -70,10 +73,11 @@ enum CadenceSidebarLayout {
     /// It stays a *view* of `secondaryDestinations` for the half of the original reasoning that
     /// still holds: both platforms have to agree about which destinations exist and in what order,
     /// and the footer split is a rendering decision on top of that, not a second list. Since
-    /// T-1274 the two lists have the same members — Goals and Habits moved up into the nav group —
-    /// so `secondaryRowDestinations` is empty and both columns draw nothing between the lists and
-    /// the footer. That is a coincidence of the current membership, not a licence to delete either
-    /// list: a future destination placed below the lists goes in `secondaryDestinations` alone.
+    /// T-1274 the two lists have the same members — Goals and Habits moved up into the nav group,
+    /// and T-2076 removed both — so `secondaryRowDestinations` is empty and both columns draw
+    /// nothing between the lists and the footer. That is a coincidence of the current membership,
+    /// not a licence to delete either list: a future destination placed below the lists goes in
+    /// `secondaryDestinations` alone.
     static let footerGlyphDestinations: [CadenceFeatureDestination] = [.settings, .focus]
 
     /// Whether Settings may offer this destination a **place in the order**, as distinct from the
@@ -262,8 +266,6 @@ struct CadenceSidebarCount: Equatable {
 struct CadenceSidebarCountInputs: Equatable {
     var todayOverdueCount: Int = 0
     var openTaskCount: Int = 0
-    var activeGoalCount: Int = 0
-    var habitCount: Int = 0
 }
 
 extension CadenceSidebarLayout {
@@ -284,10 +286,6 @@ extension CadenceSidebarLayout {
             return badge(counts.todayOverdueCount, emphasis: .urgent, singular: "overdue", plural: "overdue")
         case .allTasks:
             return badge(counts.openTaskCount, singular: "open task", plural: "open tasks")
-        case .goals:
-            return badge(counts.activeGoalCount, singular: "active goal", plural: "active goals")
-        case .habits:
-            return badge(counts.habitCount, singular: "habit", plural: "habits")
         case .calendar, .notes, .focus, .inbox, .lists, .search, .settings:
             return nil
         }

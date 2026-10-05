@@ -3,8 +3,11 @@ import SwiftUI
 import SwiftData
 
 /// The sidebar is one column, top to bottom: app header, primary nav (Today, Tasks,
-/// Calendar, Notes), lists, secondary nav (Goals, Habits) and a footer row of two glyphs
-/// (Settings leading, Focus trailing).
+/// Calendar, Notes), lists, and a footer row of two glyphs (Settings leading, Focus trailing).
+///
+/// The secondary nav group draws no labelled rows: both its members are footer glyphs. It drew
+/// Goals and Habits until T-1274 moved them into the primary group, and T-2076 removed both
+/// features from the navigation.
 ///
 /// **Only the lists region scrolls.** Everything else is pinned. Navigation and lists
 /// share a column, and if the whole column scrolled, a long list collection would push
@@ -22,8 +25,6 @@ struct SidebarView: View {
     @Query private var areas: [Area]
     @Query private var projects: [Project]
     @Query private var allTasks: [AppTask]
-    @Query private var habits: [Habit]
-    @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
     /// The synced layout (T-1274). One row for the whole account; `@Query` rather than a fetch so
     /// a change made on the iPad redraws this column without anything here asking.
     @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
@@ -53,9 +54,7 @@ struct SidebarView: View {
             ),
             openTaskCount: CadenceTaskQuerySupport.openTaskCount(
                 from: allTasks.filter(\.isInActiveContainer)
-            ),
-            activeGoalCount: activeGoals.count,
-            habitCount: habits.count
+            )
         )
     }
 
@@ -123,9 +122,9 @@ struct SidebarView: View {
         }
     }
 
-    /// The secondary group: Goals and Habits as labelled rows, then Settings and Focus as one
-    /// row of two glyphs. Pinned to the bottom of the column by the lists region above it,
-    /// which is the only part that flexes.
+    /// The secondary group: any labelled rows it has, then Settings and Focus as one row of two
+    /// glyphs. Pinned to the bottom of the column by the lists region above it, which is the only
+    /// part that flexes. It has no labelled rows today — see `secondaryRowDestinations`.
     ///
     /// **The glyph row is `CadenceSidebarLayout.footerGlyphDestinations`, which macOS now honours
     /// too.** It drew four labelled rows here until the user asked for the two columns to match,
@@ -265,7 +264,8 @@ struct SidebarView: View {
     ///
     /// What it carries is **only what the user actually dragged or hid**, never a defaults-filled
     /// sequence: a defaults-filled order would silently reorder a group nobody has customised —
-    /// Focus climbed above Goals and Habits on a fresh install the one time that was tried.
+    /// Focus climbed above the then-last two nav rows on a fresh install the one time that was
+    /// tried.
     var sidebarLayout: CadenceSidebarLayoutPreferenceStore.Layout {
         CadenceSidebarLayoutPreferenceStore.layout(
             from: sidebarLayoutPreferences,
@@ -295,7 +295,7 @@ struct SidebarView: View {
     /// Moves the selection off a row that has just been hidden.
     ///
     /// The rule is `CadenceSidebarLayout.selectionFallback(for:visibleRows:)` — shared with iOS,
-    /// because a detail pane still showing Habits on one device and the first visible row on the
+    /// because a detail pane still showing Notes on one device and the first visible row on the
     /// other is the same preference read two ways. Hiding the page you are on is not rare: it is
     /// the most likely thing to hide, since it is the one in front of you.
     private func moveSelectionOffAHiddenRow() {

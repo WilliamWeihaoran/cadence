@@ -86,8 +86,8 @@ extension CadenceCompactTab {
     /// Hiding Tasks therefore hides Inbox with it: the sidebar's own rule is that Inbox's row *is*
     /// the Tasks row, so a hidden Tasks row cannot leave one of its two views on screen.
     ///
-    /// Only destinations this tab owns survive the filter, so Calendar, Notes, Goals and Habits
-    /// stay where their own tabs put them however the user reorders the sidebar.
+    /// Only destinations this tab owns survive the filter, so Calendar and Notes stay where their
+    /// own tabs put them however the user reorders the sidebar.
     static func tasksIndexDestinations(
         storedOrder: [CadenceFeatureDestination] = [],
         hidden: Set<CadenceFeatureDestination> = []
@@ -172,7 +172,7 @@ nonisolated extension CadenceFeatureDestination {
             return .calendar
         case .notes:
             return .notes
-        case .focus, .lists, .goals, .habits, .search, .settings:
+        case .focus, .lists, .search, .settings:
             return .more
         }
     }
@@ -184,7 +184,7 @@ nonisolated extension CadenceFeatureDestination {
         case .today: return .today
         case .allTasks: return .all
         case .inbox: return .inbox
-        case .calendar, .notes, .focus, .lists, .goals, .habits, .search, .settings: return nil
+        case .calendar, .notes, .focus, .lists, .search, .settings: return nil
         }
     }
 
@@ -222,11 +222,23 @@ nonisolated extension CadenceDeepLink {
     /// the row and overrides it (and disarms `pendingTaskID`) when Today will not show it. This
     /// property remains the answer for every singleton route, and the pre-resolution answer for
     /// `.task`.
+    ///
+    /// **A `cadence://goals`, `cadence://milestones` or `cadence://habits` link opens Today**
+    /// (T-2076). Those two features are gone from the navigation, so there is no page for the
+    /// route to name any more — but the URLs are still out in the world, on the two widgets that
+    /// shipped them and in anything the owner saved, and the link is still a request to open the
+    /// app.
+    ///
+    /// Three answers were on the table and only this one is both. Dropping the cases from
+    /// `CadenceDeepLink.init(url:)` would make the URL fail to parse, `handle(_:)` return early,
+    /// and the tap do nothing at all — the silent dead end, which is exactly what T-369 and T-370
+    /// each refused for their own routes. Keeping a page to land on is not available. So the link
+    /// degrades to Today, the same answer `CadenceDeepLinkResolutionSupport.resolveTaskLink`
+    /// gives a `.task` link whose task no longer exists: the app opens, on the page a bare
+    /// `cadence://today` would have opened, with no error surface needed and nothing armed.
     var featureDestination: CadenceFeatureDestination {
         switch self {
-        case .today, .task: return .today
-        case .habits: return .habits
-        case .goals: return .goals
+        case .today, .task, .habits, .goals: return .today
         case .calendar: return .calendar
         }
     }
@@ -239,8 +251,13 @@ nonisolated extension CadenceDeepLink {
 nonisolated extension CadenceFeatureDestination {
     /// The More tab's contents, under quiet eyebrows. Search sits under Workspace next to
     /// Settings rather than beside the task surfaces, because from here it searches everything.
+    ///
+    /// The Progress section is Focus alone since T-2076 took Goals and Habits out of the
+    /// navigation. It keeps its eyebrow rather than folding Focus in with the lists: Focus is a
+    /// timer, not a place you organise things in, and a one-row section reads as a one-row section
+    /// rather than as a mislabelled row.
     static let compactMoreSections: [CadenceFeatureSection] = [
-        CadenceFeatureSection(kind: .progress, destinations: [.focus, .goals, .habits]),
+        CadenceFeatureSection(kind: .progress, destinations: [.focus]),
         CadenceFeatureSection(kind: .organize, destinations: [.lists]),
         CadenceFeatureSection(kind: .workspace, destinations: [.search, .settings])
     ]

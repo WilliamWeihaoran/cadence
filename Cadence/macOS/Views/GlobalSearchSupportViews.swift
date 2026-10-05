@@ -9,8 +9,6 @@ enum GlobalSearchCategory: String, CaseIterable {
     case tasks = "Tasks"
     case events = "Calendar Events"
     case meetingNotes = "Event Notes"
-    case goals = "Goals"
-    case habits = "Habits"
 }
 
 enum GlobalSearchDestination: Hashable {
@@ -21,8 +19,6 @@ enum GlobalSearchDestination: Hashable {
     case task(UUID)
     case event(String)
     case eventNote(UUID)
-    case goals
-    case habits
 }
 
 /// `CaseIterable` since T-1940, so "every command the palette declares has a row" is a claim a
@@ -169,7 +165,8 @@ struct GlobalSearchPageDefinition {
     /// on iOS, Notes "Workspace notes" against "Daily, weekly, and permanent notes", and so on.
     /// T-1701 had already taken two of them — Inbox's and Goals' — *from* this list into the
     /// destination precisely so it would not invent an eleventh phrasing; this is the rest of that
-    /// move, in the same direction.
+    /// move, in the same direction. (Goals and Habits have since left the app's navigation
+    /// altogether, T-2076, so this list is two entries shorter than T-1782 left it.)
     ///
     /// **Deleted rather than left stored-and-equal**, which is the rule `icon` below was already
     /// fixed by: a second copy that currently matches is the exact state this one was in before
@@ -299,8 +296,6 @@ extension GlobalSearchPageDefinition {
             .init(feature: .inbox),
             .init(feature: .focus),
             .init(feature: .calendar),
-            .init(feature: .goals),
-            .init(feature: .habits),
             .init(feature: .notes),
             .init(feature: .settings)
         ]
@@ -350,7 +345,7 @@ struct GlobalSearchEmptyState: View {
             Text(query.isEmpty ? "Start typing to search or run a command" : "No matches found")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
-            Text(query.isEmpty ? "Pages, lists, tasks, events, goals, habits, and quick commands all show up here." : "Try a cleaner title, list name, or command like new task.")
+            Text(query.isEmpty ? "Pages, lists, tasks, events, and quick commands all show up here." : "Try a cleaner title, list name, or command like new task.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
         }

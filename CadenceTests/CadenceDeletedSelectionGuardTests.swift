@@ -325,8 +325,8 @@ struct CadenceDeletedSelectionGuardTests {
     /// state a fresh install and a full data reset both land in.
     @Test func staticDestinationsAreNeverRetargeted() {
         for item in [
-            SidebarItem.today, .allTasks, .inbox, .goals,
-            .habits, .notes, .calendar, .focus, .settings
+            SidebarItem.today, .allTasks, .inbox,
+            .notes, .calendar, .focus, .settings
         ] {
             #expect(
                 macOSRootSelectionNormalization.normalized(item, areaIDs: [], projectIDs: []) == item,

@@ -66,16 +66,18 @@ enum CadenceCompactShellSupport {
     }
 
     /// The count a More row shows, or `nil` for the rows where no number is worth the space
-    /// (Focus, Search, Settings). Everything but habits forwards to the existing badge snapshot —
-    /// the same numbers the iPad sidebar and the workspace drawer show.
+    /// (Focus, Search, Settings). Forwards to the badge snapshot — the same numbers the iPad
+    /// sidebar shows.
+    ///
+    /// It used to take a `habitProgress` and answer `2/5` for the one row whose count was a
+    /// fraction rather than a tally. T-2076 removed the Habits row, so there is no destination
+    /// left that the snapshot cannot answer, and the parameter went with it rather than being
+    /// kept as an argument every caller passes `nil` for. `habitProgress(for:on:)` above is
+    /// untouched: it reads `Habit`, which stays in the schema.
     static func countLabel(
         for destination: CadenceFeatureDestination,
-        badges: CadenceFeatureBadgeSupport.Snapshot,
-        habitProgress: HabitProgress?
+        badges: CadenceFeatureBadgeSupport.Snapshot
     ) -> String? {
-        if destination == .habits {
-            return habitProgress?.label
-        }
-        return badges.count(for: destination).map(String.init)
+        badges.count(for: destination).map(String.init)
     }
 }

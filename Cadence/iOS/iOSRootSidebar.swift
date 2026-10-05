@@ -129,8 +129,6 @@ struct iOSSidebar: View {
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @Query private var habits: [Habit]
-    @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
     /// The same preference macOS's Settings → Sidebar colour picker writes. This column has no
     /// picker of its own, so in practice this is empty and every row falls back to its
     /// destination's default — but reading it is what makes the two columns one sidebar rather
@@ -177,9 +175,7 @@ struct iOSSidebar: View {
             ),
             openTaskCount: CadenceTaskQuerySupport.openTaskCount(
                 from: allTasks.filter(\.isInActiveContainer)
-            ),
-            activeGoalCount: activeGoals.count,
-            habitCount: habits.count
+            )
         )
     }
 
@@ -571,8 +567,6 @@ extension iOSSidebarItem {
         case .focus: return .focus
         case .inbox: return .inbox
         case .calendar: return .calendar
-        case .goals: return .goals
-        case .habits: return .habits
         case .notes: return .notes
         case .lists, .area, .project: return .lists
         case .search: return .search
@@ -589,8 +583,6 @@ extension CadenceFeatureDestination {
         case .focus: return .focus
         case .inbox: return .inbox
         case .calendar: return .calendar
-        case .goals: return .goals
-        case .habits: return .habits
         case .notes: return .notes
         case .lists: return .lists
         case .search: return .search

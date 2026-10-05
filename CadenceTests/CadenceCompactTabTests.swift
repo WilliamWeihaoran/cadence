@@ -32,7 +32,7 @@ struct CadenceCompactTabTests {
     ///
     /// **There are two such lists since T-2072**, not one. The Tasks tab stopped being a root for
     /// its three task surfaces when its switcher became an index, so Today, Tasks and Inbox are
-    /// pushes now — reached from `CadenceCompactTab.tasksIndexDestinations`, exactly as Goals is
+    /// pushes now — reached from `CadenceCompactTab.tasksIndexDestinations`, exactly as Lists is
     /// reached from `compactMoreSections`. Asserting against More alone would now fail for three
     /// destinations that are perfectly reachable, and — the half that matters — asserting against
     /// neither would let a fourth go dark unnoticed.
@@ -85,7 +85,7 @@ struct CadenceCompactTabTests {
 
         // Nothing another tab owns can be dragged into this index by reordering the sidebar.
         let everythingReordered = CadenceCompactTab.tasksIndexDestinations(
-            storedOrder: [.calendar, .notes, .goals, .habits, .allTasks, .today]
+            storedOrder: [.calendar, .notes, .allTasks, .today]
         )
         #expect(everythingReordered.allSatisfy { $0.compactTab == .tasks })
         #expect(everythingReordered == [.allTasks, .inbox, .today])
@@ -163,17 +163,26 @@ struct CadenceCompactTabTests {
 
         #expect(CadenceDeepLink.today.featureDestination == .today)
         #expect(CadenceDeepLink.task(taskID).featureDestination == .today)
-        #expect(CadenceDeepLink.habits.featureDestination == .habits)
-        #expect(CadenceDeepLink.goals.featureDestination == .goals)
         #expect(CadenceDeepLink.calendar(dateKey: nil).featureDestination == .calendar)
 
         #expect(CadenceDeepLink.today.compactRoute.tab == .tasks)
         #expect(CadenceDeepLink.task(taskID).compactRoute.tasksSection == .today)
         #expect(CadenceDeepLink.calendar(dateKey: nil).compactRoute.tab == .calendar)
         #expect(CadenceDeepLink.calendar(dateKey: nil).compactRoute.pushedDestination == nil)
-        #expect(CadenceDeepLink.habits.compactRoute.tab == .more)
-        #expect(CadenceDeepLink.habits.compactRoute.pushedDestination == .habits)
-        #expect(CadenceDeepLink.goals.compactRoute.pushedDestination == .goals)
+
+        // **T-2076.** `goals`, `milestones` and `habits` are still parsed — the URLs are on two
+        // shipped widgets and cannot be recalled — and they now open Today, because the pages they
+        // named are gone. A link that resolved to nothing would leave the tap doing nothing at all,
+        // which is the one outcome a deep link must not have.
+        #expect(CadenceDeepLink.habits.featureDestination == .today)
+        #expect(CadenceDeepLink.goals.featureDestination == .today)
+        #expect(CadenceDeepLink.habits.compactRoute.tab == .tasks)
+        #expect(CadenceDeepLink.habits.compactRoute == CadenceDeepLink.today.compactRoute)
+        #expect(CadenceDeepLink.goals.compactRoute == CadenceDeepLink.today.compactRoute)
+        // And they still parse, rather than failing `init(url:)` and being dropped by `handle(_:)`.
+        #expect(CadenceDeepLink(url: URL(string: "cadence://goals")!) == .goals)
+        #expect(CadenceDeepLink(url: URL(string: "cadence://milestones")!) == .goals)
+        #expect(CadenceDeepLink(url: URL(string: "cadence://habits")!) == .habits)
     }
 
     /// The widget URLs are the deep links, so this pins that a widget tap cannot land on a tab the
@@ -182,8 +191,9 @@ struct CadenceCompactTabTests {
         let urls: [(URL, CadenceCompactTab)] = [
             (CadenceDeepLink.today.url, .tasks),
             (CadenceDeepLink.calendar(dateKey: nil).url, .calendar),
-            (CadenceDeepLink.habits.url, .more),
-            (CadenceDeepLink.goals.url, .more)
+            // Both retired routes land on the Tasks tab, which is where Today lives.
+            (CadenceDeepLink.habits.url, .tasks),
+            (CadenceDeepLink.goals.url, .tasks)
         ]
 
         for (url, expected) in urls {
@@ -322,8 +332,8 @@ struct CadenceMoreTabGroupingTests {
     /// `compactMoreSections` and asserts something about what it read agrees with any regrouping by
     /// construction, which is the failure mode this is for. The shape is
     /// `CadenceMobileSettingsLayout.groups`' — the precedent the ticket named — and the contents are
-    /// not: what a phone does *with* the app (Focus, Goals, Habits), what it organises the app
-    /// *with* (Lists), and what it does *to* the app (Search, Settings). Search sits beside Settings
+    /// not: what a phone does *with* the app (Focus — Goals and Habits were here until T-2076),
+    /// what it organises the app *with* (Lists), and what it does *to* the app (Search, Settings). Search sits beside Settings
     /// rather than beside the task surfaces because from here it searches everything, not tasks.
     @Test func theMoreTabIsThreeNamedGroupsRatherThanOneFlatRun() {
         let sections = CadenceFeatureDestination.compactMoreSections
@@ -333,7 +343,7 @@ struct CadenceMoreTabGroupingTests {
         #expect(sections.map(\.title) == ["Progress", "Organize", "Workspace"])
         #expect(
             sections.map(\.destinations) == [
-                [.focus, .goals, .habits],
+                [.focus],
                 [.lists],
                 [.search, .settings]
             ]

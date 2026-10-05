@@ -668,15 +668,13 @@ struct CadenceFirstLaunchEmptyStoreTests {
         #expect(calendar.days.count == 14)
     }
 
-    /// No badge anywhere in the sidebar or the More list renders a zero. `badgeCount` and the three
-    /// `> 0 ? … : nil` arms are what make that true; this states it for the store that would break
+    /// No badge anywhere in the sidebar or the More list renders a zero. `badgeCount` and the
+    /// `> 0 ? … : nil` arm are what make that true; this states it for the store that would break
     /// it if anything went back to reporting the raw count.
     @Test func noSidebarBadgeRendersAZeroOnAnEmptyStore() throws {
         let snapshot = CadenceFeatureBadgeSupport.Snapshot(
             tasks: [],
             todayKey: "2026-08-30",
-            activeGoalCount: 0,
-            habitCount: 0,
             activeListCount: 0
         )
         for destination in CadenceFeatureDestination.allCases {
@@ -834,9 +832,12 @@ struct CadenceFirstLaunchEmptyStoreTests {
     /// **A launch. The real one** — `PersistenceController.performStartupMaintenance`, called, not
     /// imitated (T-1108). See the type comment above for what the imitation had drifted into.
     ///
-    /// The only argument a launch does not pass is `defaults`, and only because
-    /// `PursuitToGoalMigration` latches its completion flag there: a test writing that into the
-    /// real suite would decide the next unrelated test's migration for it.
+    /// The only argument a launch does not pass is `defaults`. It is passed here because the
+    /// pursuit migration used to latch a completion flag into it, and a test writing that into the
+    /// real suite would have decided the next unrelated test's migration for it. [[T-2077]]
+    /// retired that pass and it writes no flag any more, but the parameter stays: it is the one
+    /// thing a launch and a test cannot share, and the next pass to want a flag should find the
+    /// seam already in place rather than rediscover why it is needed.
     private static func launchStartupMaintenance(in context: ModelContext, defaults: UserDefaults) {
         PersistenceController.performStartupMaintenance(in: context, defaults: defaults)
     }

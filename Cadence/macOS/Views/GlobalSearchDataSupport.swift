@@ -10,8 +10,6 @@ enum GlobalSearchDataSupport {
         projects: [Project],
         tasks: [AppTask],
         notes: [Note],
-        goals: [Goal],
-        habits: [Habit],
         eventResults: [GlobalSearchResult],
         sidebarTabColorsRaw: String
     ) -> [GlobalSearchSection] {
@@ -22,8 +20,6 @@ enum GlobalSearchDataSupport {
             projects: projects,
             tasks: tasks,
             notes: notes,
-            goals: goals,
-            habits: habits,
             eventResults: eventResults,
             sidebarTabColorsRaw: sidebarTabColorsRaw
         ).sections

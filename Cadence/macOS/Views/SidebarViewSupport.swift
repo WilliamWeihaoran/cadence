@@ -15,6 +15,11 @@ import SwiftUI
 /// Today, Tasks, Calendar, Notes, Goals, Habits — and "which one they wanna see" had to include the
 /// one row that had never had a toggle. It is a new raw value, so no stored string changes meaning.
 ///
+/// **`.goals` and `.habits` left in T-2076**, which removed both features from the navigation. A
+/// stored `goals` or `habits` in `sidebarHiddenTabs` / `sidebarTabOrder` / `sidebarTabColors` now
+/// fails to decode and is dropped, exactly as `inbox` is, and the same is true of the synced
+/// `SidebarLayoutPreference` — see `CadenceSidebarLayoutPreferenceStore.destinations(fromRaw:)`.
+///
 /// The set is mirrored, not derived, by `CadenceSidebarLayout.customisableDestinations`, which is
 /// what iOS reads; `CadenceSidebarLayoutTests` pins the two against each other.
 enum SidebarStaticDestination: String, CaseIterable, Identifiable {
@@ -23,8 +28,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     case focus
     case calendar
     case notes
-    case goals
-    case habits
 
     var id: String { rawValue }
 
@@ -35,8 +38,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .focus: return .focus
         case .calendar: return .calendar
         case .notes: return .notes
-        case .goals: return .goals
-        case .habits: return .habits
         }
     }
 
@@ -47,8 +48,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .focus: return .focus
         case .calendar: return .calendar
         case .notes: return .notes
-        case .goals: return .goals
-        case .habits: return .habits
         }
     }
 
@@ -127,8 +126,6 @@ extension CadenceFeatureDestination {
         case .inbox: return .inbox
         case .calendar: return .calendar
         case .notes: return .notes
-        case .goals: return .goals
-        case .habits: return .habits
         case .settings: return .settings
         case .lists, .search: return nil
         }
@@ -143,7 +140,7 @@ extension CadenceFeatureDestination {
     /// opening the wrong page. It was correct only because no resolver returned one of those three
     /// yet, which is a fact about today's `resolvedDestination` rather than about this mapping.
     ///
-    /// `macSidebarItem` is the sidebar's real feature-to-page table and answers all nine. The
+    /// `macSidebarItem` is the sidebar's real feature-to-page table and answers all seven. The
     /// fallback survives for the two destinations that genuinely are not pages — `.lists` is the
     /// scrolling region and `.search` is the header button — and `CadenceDeepLinkTests` pins each
     /// case by name, so widening the resolver can no longer route somewhere quiet by default.

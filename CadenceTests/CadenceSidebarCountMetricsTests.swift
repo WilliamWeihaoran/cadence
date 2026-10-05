@@ -155,17 +155,13 @@ struct CadenceSidebarTodayCountMeaningTests {
     @Test func everySidebarCountNamesWhatItIsCounting() {
         let counts = CadenceSidebarCountInputs(
             todayOverdueCount: 2,
-            openTaskCount: 7,
-            activeGoalCount: 3,
-            habitCount: 1
+            openTaskCount: 7
         )
 
         #expect(CadenceSidebarLayout.count(for: .today, counts: counts)?.description == "2 overdue")
         #expect(CadenceSidebarLayout.count(for: .allTasks, counts: counts)?.description == "7 open tasks")
-        #expect(CadenceSidebarLayout.count(for: .goals, counts: counts)?.description == "3 active goals")
-        // Singular, because a row reading "1 habits" is the sort of thing a shared phrase exists
-        // to prevent.
-        #expect(CadenceSidebarLayout.count(for: .habits, counts: counts)?.description == "1 habit")
+        // Singular, because a row reading "1 open tasks" is the sort of thing a shared phrase
+        // exists to prevent.
         #expect(CadenceSidebarLayout.listCount(openTaskCount: 1)?.description == "1 open task")
         #expect(CadenceSidebarLayout.listCount(openTaskCount: 4)?.description == "4 open tasks")
 
@@ -218,9 +214,7 @@ struct CadenceSidebarTodayCountMeaningTests {
     @Test func todaysCountIsStillTheOnlyUrgentOneInTheColumn() {
         let counts = CadenceSidebarCountInputs(
             todayOverdueCount: 2,
-            openTaskCount: 7,
-            activeGoalCount: 3,
-            habitCount: 1
+            openTaskCount: 7
         )
         for destination in CadenceFeatureDestination.allCases {
             guard let count = CadenceSidebarLayout.count(for: destination, counts: counts) else { continue }
@@ -338,7 +332,7 @@ struct CadenceSidebarTintTests {
 
         #expect(CadenceSidebarTint.hex(for: .today, overridesRaw: raw) == "#112233")
         #expect(CadenceSidebarTint.hex(for: .calendar, overridesRaw: raw) == "#445566")
-        #expect(CadenceSidebarTint.hex(for: .habits, overridesRaw: raw) == CadenceFeatureDestination.habits.defaultColorHex)
+        #expect(CadenceSidebarTint.hex(for: .notes, overridesRaw: raw) == CadenceFeatureDestination.notes.defaultColorHex)
     }
 
     /// Garbage in the preference must not take a row's colour away, and an entry for a destination
@@ -360,8 +354,8 @@ struct CadenceSidebarTintTests {
         #expect(macMap[.focus] == "#445566")
         #expect(SidebarStaticDestination.today.resolvedColorHex(from: raw) == "#112233")
         #expect(
-            SidebarStaticDestination.habits.resolvedColorHex(from: raw)
-                == CadenceFeatureDestination.habits.defaultColorHex
+            SidebarStaticDestination.notes.resolvedColorHex(from: raw)
+                == CadenceFeatureDestination.notes.defaultColorHex
         )
     }
 }
@@ -398,18 +392,21 @@ struct CadenceFeatureDestinationTintTests {
     }
 
     /// The families are deliberate: two destinations sharing a token is how they read as related,
-    /// and this is what would fail if someone "de-duplicated" the switch by giving Habits its own
-    /// hue or split Notes from Search.
+    /// and this is what would fail if someone "de-duplicated" the switch by splitting Notes from
+    /// Search or Tasks from Inbox.
+    ///
+    /// Amber and green each lost their second member with T-2076 — Habits shared Today's amber and
+    /// Goals shared Lists' green — so the surviving pairs are blue (Tasks/Inbox/Settings) and
+    /// purple (Notes/Search). Both are asserted below; the singletons are asserted too, because
+    /// the claim is that each arm reads its token, not that each token is shared.
     @Test func theSharedHuesAreTheFamiliesThemeDocuments() {
         #expect(CadenceFeatureDestination.today.defaultColorHex == Theme.amberHex)
-        #expect(CadenceFeatureDestination.habits.defaultColorHex == Theme.amberHex)
         #expect(CadenceFeatureDestination.allTasks.defaultColorHex == Theme.blueHex)
         #expect(CadenceFeatureDestination.inbox.defaultColorHex == Theme.blueHex)
         #expect(CadenceFeatureDestination.settings.defaultColorHex == Theme.blueHex)
         #expect(CadenceFeatureDestination.notes.defaultColorHex == Theme.purpleHex)
         #expect(CadenceFeatureDestination.search.defaultColorHex == Theme.purpleHex)
         #expect(CadenceFeatureDestination.lists.defaultColorHex == Theme.greenHex)
-        #expect(CadenceFeatureDestination.goals.defaultColorHex == Theme.greenHex)
         #expect(CadenceFeatureDestination.calendar.defaultColorHex == Theme.redHex)
         #expect(CadenceFeatureDestination.focus.defaultColorHex == Theme.tealHex)
     }
@@ -551,7 +548,7 @@ struct GlobalSearchDestinationTintTests {
     @Test func thePaletteOffersEveryPageAndCommandItsCatalogDeclares() {
         let pages = pageRows(overridesRaw: "")
         #expect(pages.count == GlobalSearchPageDefinition.all.count)
-        #expect(pages.count >= 9, "read \(pages.count) page rows")
+        #expect(pages.count >= 7, "read \(pages.count) page rows")
         // `item` is derived from `feature` and `pageResults` drops a row whose destination the
         // sidebar cannot route to, so this is also the guard on that `guard let`.
         for page in GlobalSearchPageDefinition.all {
@@ -579,7 +576,7 @@ struct GlobalSearchDestinationTintTests {
     }
 
     /// **T-258 — glyph half.** The tint was made to follow the destination and the glyph was left
-    /// stored beside it, which is how eight of nine rows kept agreeing while Notes quietly did not:
+    /// stored beside it, which is how every row but one kept agreeing while Notes quietly did not:
     /// the palette drew `doc.text`, the sidebar drew `note.text`.
     ///
     /// Asserted on the **row the palette actually produces**, not on the catalog entry and not by
@@ -588,7 +585,7 @@ struct GlobalSearchDestinationTintTests {
     /// unreachable in the same file.
     @Test func everyPageRowDrawsTheSidebarsGlyphForItsDestination() {
         let pages = pageRows(overridesRaw: "")
-        #expect(pages.count >= 9, "non-vacuity: read \(pages.count) page rows")
+        #expect(pages.count >= 7, "non-vacuity: read \(pages.count) page rows")
 
         for (destination, result) in pages {
             #expect(

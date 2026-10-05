@@ -14,8 +14,6 @@ enum GlobalSearchIndexSupport {
         projects: [Project],
         tasks: [AppTask],
         notes: [Note],
-        goals: [Goal],
-        habits: [Habit],
         eventResults: [GlobalSearchResult],
         sidebarTabColorsRaw: String
     ) -> GlobalSearchIndexedSource {
@@ -44,8 +42,6 @@ enum GlobalSearchIndexSupport {
             ),
             into: &sections
         )
-        appendSection(.goals, results: goalResults(goals: goals, query: query), into: &sections)
-        appendSection(.habits, results: habitResults(habits: habits, query: query), into: &sections)
 
         return GlobalSearchIndexedSource(sections: sections)
     }
@@ -196,42 +192,6 @@ enum GlobalSearchIndexSupport {
         case .scheduled: "calendar.badge.clock"
         case .completed, .active: "checkmark.circle"
         }
-    }
-
-    static func goalResults(goals: [Goal], query: String) -> [GlobalSearchResult] {
-        let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return Array(rankedResults(goals.compactMap { goal in
-            let contextName = goal.context?.name ?? "No context"
-            let parentName = goal.parentGoal?.title ?? ""
-            guard matches(query: preparedQuery, fields: [goal.title, goal.desc, contextName, parentName, goal.kind.label]) else { return nil }
-            return GlobalSearchResult(
-                id: CadenceSearchIdentity.goal(goal.id),
-                category: .goals,
-                title: goal.title,
-                subtitle: "\(parentName.isEmpty ? contextName : parentName) • \(Int(goal.progress * 100))% complete",
-                icon: goal.icon,
-                tintHex: goal.colorHex,
-                destination: .goals
-            )
-        }, query: query, preparedQuery: preparedQuery).prefix(query.isEmpty ? 6 : 10))
-    }
-
-    static func habitResults(habits: [Habit], query: String) -> [GlobalSearchResult] {
-        let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return Array(rankedResults(habits.compactMap { habit in
-            let contextName = habit.context?.name ?? "No context"
-            let goalName = habit.goal?.title ?? ""
-            guard matches(query: preparedQuery, fields: [habit.title, contextName, goalName]) else { return nil }
-            return GlobalSearchResult(
-                id: CadenceSearchIdentity.habit(habit.id),
-                category: .habits,
-                title: habit.title,
-                subtitle: "\(goalName.isEmpty ? contextName : goalName) • \(habit.streakUnit.phrase(habit.currentStreak))",
-                icon: habit.icon,
-                tintHex: habit.colorHex,
-                destination: .habits
-            )
-        }, query: query, preparedQuery: preparedQuery).prefix(query.isEmpty ? 6 : 10))
     }
 
     /// `events` arrives from `searchEvents`, so it is already filtered against the query and

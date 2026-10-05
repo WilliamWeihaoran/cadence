@@ -186,10 +186,6 @@ struct iOSCompactFeatureDestinationView: View {
             iOSNotesView()
         case .lists:
             iOSListsView()
-        case .goals:
-            iOSGoalsView()
-        case .habits:
-            iOSHabitsView()
         case .search:
             iOSSearchView()
         case .settings:

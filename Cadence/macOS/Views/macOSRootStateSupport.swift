@@ -19,10 +19,6 @@ struct RootDetailContent: View {
             AreaDetailLoader(id: id)
         case .project(let id):
             ProjectDetailLoader(id: id)
-        case .goals:
-            GoalsView()
-        case .habits:
-            HabitsView()
         case .notes:
             NotesView()
         case .calendar:

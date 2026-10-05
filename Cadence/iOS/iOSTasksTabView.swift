@@ -159,8 +159,7 @@ struct iOSTasksTabView: View {
     // MARK: - Counts and tint
 
     /// Built once per render and handed to every row, the shape `iOSSidebar` and `SidebarView`
-    /// both use. Goals and Habits are zero because this index draws neither row — it is the Tasks
-    /// tab, and those two have their own door in More.
+    /// both use.
     private var countInputs: CadenceSidebarCountInputs {
         CadenceSidebarCountInputs(
             todayOverdueCount: CadenceSidebarLayout.overdueTaskCount(

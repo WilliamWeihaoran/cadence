@@ -21,8 +21,6 @@ struct GlobalSearchOverlay: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var tasks: [AppTask]
     @Query(sort: \Note.updatedAt, order: .reverse) private var notes: [Note]
-    @Query(sort: \Goal.order) private var goals: [Goal]
-    @Query(sort: \Habit.order) private var habits: [Habit]
     /// The palette must not offer a page the sidebar is hiding, and since T-1274 what the sidebar
     /// hides is an account-wide record rather than this Mac's preference.
     @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
@@ -54,8 +52,6 @@ struct GlobalSearchOverlay: View {
             projects: projects,
             tasks: tasks,
             notes: notes,
-            goals: goals,
-            habits: habits,
             eventResults: eventResults,
             sidebarTabColorsRaw: sidebarTabColorsRaw
         )

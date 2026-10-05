@@ -352,7 +352,7 @@ struct CadenceSearchCandidateSupportTests {
                 subtitle: "Inbox • Active",
                 icon: "checkmark.circle",
                 tintHex: Theme.blueHex,
-                destination: .goals
+                destination: .sidebar(.allTasks)
             )
         }
         let descending = ["task-c", "task-b", "task-a"].map(result(id:))
@@ -370,8 +370,8 @@ struct CadenceSearchCandidateSupportTests {
 
     /// A UUID identifies a row only as long as no second table is in the list with it.
     ///
-    /// **Behavioural.** iOS's Lists section is areas *and* projects and its "Goals and Habits"
-    /// section is both; macOS's palette merges nine categories into one ranked list. So the
+    /// **Behavioural.** iOS's Lists section is areas *and* projects; macOS's palette merges several
+    /// categories into one ranked list. So the
     /// identity leg has to carry the entity **type**, which is the same conclusion
     /// `CadenceReadService.search` reached when it tied on `entityType:entityId` rather than on
     /// `entityId` (T-372a).
@@ -528,22 +528,29 @@ struct CadenceSearchCandidateSupportTests {
 
     /// **Source-shape, not behavioural.** `Cadence/iOS/` is behind `#if os(iOS)` and this bundle
     /// builds for macOS, so nothing here calls `iOSSearchIndexSupport.rankedResults`; the claim is
-    /// that all six scored sections reach it and that none of them still sorts on score alone.
+    /// that **every** scored section reaches it and that none of them still sorts on score alone.
+    ///
+    /// Five sections, not six, since T-2076 took the "Goals and Habits" section (`progressResults`)
+    /// off this screen with the two destinations it merged. The count is re-derived rather than
+    /// loosened: it is still "one call per scored section", and the removed section's call went
+    /// with it.
     @Test func everyScoredIOSSearchSectionRanksThroughTheOneFunnel() throws {
         let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
         let stripped = CadenceSourceScan.strippingComments(raw)
 
-        // Non-vacuity: the file was read, the stripper ran, and all six sections are still here.
+        // Non-vacuity: the file was read, the stripper ran, and all five sections are still here.
         #expect(raw.contains("struct iOSSearchView"))
         #expect(stripped != raw)
         #expect(stripped.count == raw.count)
-        for section in ["pageResults", "listResults", "noteResults", "progressResults", "eventResults", "rankedTaskResults"] {
+        for section in ["pageResults", "listResults", "noteResults", "eventResults", "rankedTaskResults"] {
             #expect(stripped.contains("private var \(section)"), "\(section) is no longer a section on this screen")
         }
+        // And the one that left is really gone, so this count cannot quietly be five of six.
+        #expect(!stripped.contains("private var progressResults"))
 
-        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 6)
+        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 5)
 
-        // The six bare comparators this ticket removed, and a self-check that the pattern still
+        // The bare comparators this ticket removed, and a self-check that the pattern still
         // matches the shape it is looking for.
         #expect(CadenceSourceScan.matchCount("\\.sorted \\{ \\$0\\.score", in: stripped) == 0)
         #expect(
@@ -583,9 +590,13 @@ struct CadenceSearchCandidateSupportTests {
         let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath))
         #expect(view.contains("CadenceSearchIdentity.task(task.id)"))
         #expect(view.contains("CadenceSearchIdentity.note(note.id)"))
-        #expect(view.contains("CadenceSearchIdentity.goal(goal.id)"))
-        #expect(view.contains("CadenceSearchIdentity.habit(habit.id)"))
         #expect(view.contains("CadenceSearchIdentity.event(CadenceEventNoteSupport.identifier(for: event))"))
+        // `.goal` and `.habit` were the other two spellings this screen used, in the "Goals and
+        // Habits" section T-2076 removed. The *enum* still declares them — `CadenceSearchIdentity`
+        // is schema-adjacent and the MCP read surface still uses it — so the claim here is that
+        // this view no longer mints either, which is what makes the section's removal complete.
+        #expect(!view.contains("CadenceSearchIdentity.goal("))
+        #expect(!view.contains("CadenceSearchIdentity.habit("))
     }
 
     // MARK: - T-498: the idle window
@@ -666,8 +677,11 @@ struct CadenceSearchCandidateSupportTests {
     }
 
     /// **Source-shape.** `Cadence/iOS/` is behind `#if os(iOS)`, so this bundle cannot call the
-    /// four idle branches; the claim is that each of them cuts its window through the shared
-    /// helper and that the two sections the ticket exempts are untouched.
+    /// idle branches; the claim is that each of them cuts its window through the shared helper and
+    /// that the two sections the ticket exempts are untouched.
+    ///
+    /// Three idle branches since T-2076, not four: the "Goals and Habits" section was one of them,
+    /// and it left with the two destinations it merged.
     @Test func everyIdleIOSSearchSectionCutsItsWindowFromATotalOrder() throws {
         let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
         let stripped = CadenceSourceScan.strippingComments(raw)
@@ -676,12 +690,13 @@ struct CadenceSearchCandidateSupportTests {
         #expect(raw.contains("struct iOSSearchView"))
         #expect(stripped != raw)
         #expect(stripped.count == raw.count)
-        for section in ["taskResults", "listResults", "noteResults", "progressResults", "eventResults", "pageResults"] {
+        for section in ["taskResults", "listResults", "noteResults", "eventResults", "pageResults"] {
             #expect(stripped.contains("private var \(section)"), "\(section) is no longer a section on this screen")
         }
+        #expect(!stripped.contains("private var progressResults"))
 
-        // Four idle branches, four windows.
-        #expect(CadenceSourceScan.matchCount("CadenceSearchSuggestionWindow\\.take\\(", in: stripped) == 4)
+        // Three idle branches, three windows.
+        #expect(CadenceSourceScan.matchCount("CadenceSearchSuggestionWindow\\.take\\(", in: stripped) == 3)
 
         // And the bare cuts they replaced are gone. `pageResults` takes its five off a static
         // catalog and `eventResults` its eight off `CadenceCalendarEventSearchSupport.precedes`,
@@ -697,15 +712,18 @@ struct CadenceSearchCandidateSupportTests {
         for identity in [
             "identity: { CadenceSearchIdentity.task($0.id) }",
             "identity: { CadenceSearchIdentity.note($0.id) }",
-            "identity: \\.identity",
-            "identity: { $0.result.id }"
+            "identity: \\.identity"
         ] {
             #expect(stripped.contains(identity), "an idle window ties on something else: \(identity)")
         }
+        // `identity: { $0.result.id }` was the fourth — the Goals-and-Habits window's, which tied
+        // on the merged row's own id because the two tables shared one section. It went with the
+        // section (T-2076).
+        #expect(!stripped.contains("identity: { $0.result.id }"))
 
-        // The score funnel is still the *searching* branches' and only theirs: six sections, six
+        // The score funnel is still the *searching* branches' and only theirs: five sections, five
         // calls. An idle list is chronological or manual on purpose, and routing it through the
-        // funnel would re-sort all four to alphabetical, since with no query every row scores 0.
-        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 6)
+        // funnel would re-sort all three to alphabetical, since with no query every row scores 0.
+        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 5)
     }
 }

@@ -8,27 +8,19 @@ import SwiftUI
 /// the case the subtitle rule was written for. The eyebrows are the headings this screen needs —
 /// they say what each group *is*, which the rows below them do not.
 ///
-/// Rows carry a count only where a number means something (`CadenceCompactShellSupport.countLabel`),
-/// and habits read as `2/5` rather than as a total, because being behind on two of today's habits
-/// is a different fact from owning five of them.
+/// Rows carry a count only where a number means something (`CadenceCompactShellSupport.countLabel`).
+/// The one row whose count was a fraction rather than a tally was Habits — `2/5`, today's
+/// check-ins over the habits due today — and it left with T-2076.
 struct iOSMoreTabView: View {
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @Query private var habits: [Habit]
-    @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
 
     private var badges: CadenceFeatureBadgeSupport.Snapshot {
         CadenceFeatureBadgeSupport.Snapshot(
             tasks: allTasks,
-            activeGoalCount: activeGoals.count,
-            habitCount: habits.count,
             activeListCount: areas.filter(\.isActive).count + projects.filter(\.isActive).count
         )
-    }
-
-    private var habitProgress: CadenceCompactShellSupport.HabitProgress? {
-        CadenceCompactShellSupport.habitProgress(for: habits)
     }
 
     var body: some View {
@@ -47,15 +39,13 @@ struct iOSMoreTabView: View {
                                         subtitle: destination.subtitle,
                                         detail: CadenceCompactShellSupport.countLabel(
                                             for: destination,
-                                            badges: badges,
-                                            habitProgress: habitProgress
+                                            badges: badges
                                         ),
                                         icon: destination.systemImage,
                                         // Chrome, not a colour code — the same call the iPad
                                         // sidebar makes in `iOSSidebarButton`, so the two lists of
                                         // the same destinations read alike. The hues encoded
-                                        // nothing anyway: Notes and Calendar shared purple, Lists
-                                        // and Goals green.
+                                        // nothing anyway: Notes and Calendar shared purple.
                                         color: Theme.dim,
                                         detailTint: Theme.muted
                                     )

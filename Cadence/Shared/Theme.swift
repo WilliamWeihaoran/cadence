@@ -407,8 +407,9 @@ nonisolated struct Theme {
 
     /// Added for Focus, and the only accent added since the palette was fixed.
     ///
-    /// The sidebar tints are a *family* system, not one hue per destination: amber is today and
-    /// habits, blue is tasks and settings, purple is notes and search, green is lists and goals.
+    /// The sidebar tints are a *family* system, not one hue per destination: blue is tasks and
+    /// settings, purple is notes and search, amber is today, green is lists. (Amber and green each
+    /// had a second member — habits and goals — until T-2076 removed both features.)
     /// Sharing a hue is how two related destinations read as related. What broke was Focus and
     /// Calendar landing on the same red when Calendar was retinted — those two are not a family,
     /// so the shared hue said something untrue. Every existing accent was already spoken for, so

@@ -8,8 +8,6 @@ enum iOSSidebarItem: Hashable {
     case focus
     case inbox
     case calendar
-    case goals
-    case habits
     case notes
     case lists
     case search
@@ -201,10 +199,6 @@ struct iOSRootView: View {
             iOSFocusView()
         case .calendar:
             iOSCalendarView()
-        case .goals:
-            iOSGoalsView()
-        case .habits:
-            iOSHabitsView()
         case .notes:
             NavigationStack {
                 iOSNotesView()

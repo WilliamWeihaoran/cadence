@@ -13,8 +13,6 @@ struct iOSSearchView: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Note.updatedAt, order: .reverse) private var notes: [Note]
-    @Query(sort: \Goal.order) private var goals: [Goal]
-    @Query(sort: \Habit.order) private var habits: [Habit]
 
     /// iOS Search draws a page row in the tint the sidebar draws that destination in, override
     /// included — the same `CadenceSidebarTint` reading `iOSRootSidebar` uses. It read
@@ -70,6 +68,11 @@ struct iOSSearchView: View {
         scope == .all || scope == .events
     }
 
+    /// The **More** chip's scope. It gated two sections — Pages, and the "Goals and Habits" one
+    /// that merged `Goal` and `Habit` behind a destination apiece — and T-2076 took the second
+    /// away with the two destinations. The chip stays, because Pages is what a reader looking for
+    /// a *screen* rather than a row is searching for, and it is the one section nothing else
+    /// shows.
     private var showsProgress: Bool {
         scope == .all || scope == .progress
     }
@@ -223,57 +226,6 @@ struct iOSSearchView: View {
         ).map { noteResult($0, score: 0, taskTitles: taskTitles) }
     }
 
-    private var progressResults: [iOSSearchResult] {
-        let candidates = goals.filter { $0.status != .done }.map { goal in
-            let summary = GoalContributionResolver.summary(for: goal)
-            return iOSSearchProgressCandidate(
-                result: iOSSearchResult(
-                    // The destination is the Goals *page* — this row navigates there rather than
-                    // to the goal — so it cannot supply the identity, and neither can
-                    // `.feature(.habits)` below. That is the whole reason `iOSSearchResult.id` is
-                    // stored rather than derived from `destination`: this one section merges two
-                    // tables behind one destination apiece, so deriving would give every goal
-                    // `page-goals`.
-                    id: CadenceSearchIdentity.goal(goal.id),
-                    destination: .feature(.goals),
-                    title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle),
-                    subtitle: goal.parentGoal?.title ?? goal.context?.name ?? goal.kind.label,
-                    detail: summary.percentLabel,
-                    icon: goal.icon,
-                    color: Color(hex: goal.colorHex),
-                    score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.parentGoal?.title ?? "", goal.context?.name ?? ""]) ?? 0
-                ),
-                suggestionRank: CadenceSearchSuggestionRank(table: 0, order: goal.order)
-            )
-        } + habits.map { habit in
-            iOSSearchProgressCandidate(
-                result: iOSSearchResult(
-                    id: CadenceSearchIdentity.habit(habit.id),
-                    destination: .feature(.habits),
-                    title: CadenceTitleNormalization.display(habit.title, fallback: CadenceTitleNormalization.defaultHabitTitle),
-                    subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
-                    detail: habit.isDueToday ? "Due today" : habit.frequencySummary,
-                    icon: "flame.fill",
-                    color: Color(hex: habit.colorHex),
-                    score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [habit.title, habit.goal?.title ?? "", habit.context?.name ?? "", habit.frequencySummary]) ?? 0
-                ),
-                suggestionRank: CadenceSearchSuggestionRank(table: 1, order: habit.order)
-            )
-        }
-
-        if isSearching {
-            return iOSSearchIndexSupport.rankedResults(candidates.map(\.result).filter { $0.score > 0 })
-        }
-
-        // Goals then habits, each in the user's arrangement, ties broken by identity (T-498).
-        return CadenceSearchSuggestionWindow.take(
-            candidates,
-            limit: 8,
-            identity: { $0.result.id },
-            orderedBefore: { $0.suggestionRank < $1.suggestionRank }
-        ).map(\.result)
-    }
-
     private var eventResults: [iOSSearchResult] {
         if isSearching {
             return iOSSearchIndexSupport.rankedResults(calendarSearchEvents.compactMap { event in
@@ -364,9 +316,6 @@ struct iOSSearchView: View {
                 calendarAccessSection
                 resultSection("Calendar Events", results: eventResults)
             }
-            if showsProgress {
-                resultSection("Goals and Habits", results: progressResults)
-            }
 
             if isSearching && visibleResultsAreEmpty && !(showsEvents && !calendarManager.isAuthorized) {
                 iOSEmptyPanel(
@@ -432,10 +381,6 @@ struct iOSSearchView: View {
                     iOSNotesView()
                 case .lists:
                     iOSListsView()
-                case .goals:
-                    iOSGoalsView()
-                case .habits:
-                    iOSHabitsView()
                 case .search:
                     iOSSearchView()
                 case .settings:
@@ -533,7 +478,7 @@ struct iOSSearchView: View {
         (!showsLists || listResults.isEmpty) &&
         (!showsNotes || noteResults.isEmpty) &&
         (!showsEvents || eventResults.isEmpty) &&
-        (!showsProgress || pageResults.isEmpty && progressResults.isEmpty)
+        (!showsProgress || pageResults.isEmpty)
     }
 
     private var searchableFeatureDestinations: [CadenceFeatureDestination] {

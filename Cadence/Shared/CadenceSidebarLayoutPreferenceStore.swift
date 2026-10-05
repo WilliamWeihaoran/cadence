@@ -34,6 +34,17 @@ enum CadenceSidebarLayoutPreferenceStore {
     /// Unrecognised raw values are dropped rather than kept: this build cannot place a row it has
     /// no case for, and carrying the token forward would mean writing back a string whose meaning
     /// this build does not know.
+    ///
+    /// **T-2076 turned that from a forward-compatibility note into a live case.** `goals` and
+    /// `habits` were real rows until this build, so a `SidebarLayoutPreference` already synced
+    /// from another device names them in `orderRaw`, in `hiddenRaw`, or in both. Dropping is the
+    /// whole handling and it is deliberately the *only* handling: the surviving destinations keep
+    /// their relative order, a hidden set naming only removed rows resolves to "nothing hidden"
+    /// rather than to a reset, and no stored string is rewritten until the user edits the layout
+    /// themselves. Nothing here throws, resets to defaults, or deletes the record, so a device
+    /// still on the older build keeps drawing its own six rows from the same row until it updates.
+    /// `CadenceSidebarLayoutPreferenceTests.aSyncedLayoutNamingRemovedDestinationsSurvivesIntact`
+    /// is the pin.
     static func destinations(fromRaw raw: String) -> [CadenceFeatureDestination] {
         raw.split(separator: ",")
             .compactMap { CadenceFeatureDestination(rawValue: String($0).trimmingCharacters(in: .whitespaces)) }

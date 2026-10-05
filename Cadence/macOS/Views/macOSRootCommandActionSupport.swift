@@ -100,10 +100,6 @@ enum RootCommandActionSupport {
             context.setSelection(.area(id))
         case .project(let id):
             context.setSelection(.project(id))
-        case .goals:
-            context.setSelection(.goals)
-        case .habits:
-            context.setSelection(.habits)
         case .task(let id):
             let descriptor = FetchDescriptor<AppTask>()
             guard let task = (try? context.modelContext.fetch(descriptor))?.first(where: { $0.id == id }) else { break }

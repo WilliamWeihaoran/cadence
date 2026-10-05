@@ -32,8 +32,6 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
     case calendar
     case notes
     case lists
-    case goals
-    case habits
     case search
     case settings
 
@@ -45,15 +43,18 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
     /// offering a control that moves nothing.
     ///
     /// It is `CadenceSidebarLayout`'s declared order, group by group, and
-    /// `CadenceSidebarLayoutTests` pins that: the nav group as the sidebar declares it — Notes and,
-    /// since T-1274, Goals and Habits included — then Focus, which is drawn in the footer.
+    /// `CadenceSidebarLayoutTests` pins that: the nav group as the sidebar declares it — Notes
+    /// included — then Focus, which is drawn in the footer.
+    ///
+    /// Goals and Habits were in this list until T-2076, which took both features out of the
+    /// navigation entirely. A stored order or hidden set naming either is dropped on read by
+    /// `CadenceSidebarLayoutPreferenceStore.destinations(fromRaw:)`; see that file for what a
+    /// synced record written by an older build does on this one.
     static let desktopSidebarOrder: [CadenceFeatureDestination] = [
         .today,
         .allTasks,
         .calendar,
         .notes,
-        .goals,
-        .habits,
         .focus
     ]
 
@@ -67,16 +68,7 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         switch self {
         case .today, .allTasks, .focus, .inbox, .calendar:
             return true
-        case .notes, .lists, .goals, .habits, .search, .settings:
-            return false
-        }
-    }
-
-    var isTrackingNavigation: Bool {
-        switch self {
-        case .goals, .habits:
-            return true
-        case .today, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .search, .settings:
+        case .notes, .lists, .search, .settings:
             return false
         }
     }
@@ -85,7 +77,7 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         switch self {
         case .search, .settings:
             return true
-        case .today, .allTasks, .focus, .inbox, .calendar, .notes, .lists, .goals, .habits:
+        case .today, .allTasks, .focus, .inbox, .calendar, .notes, .lists:
             return false
         }
     }
@@ -99,8 +91,6 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .calendar: return "Calendar"
         case .notes: return "Notes"
         case .lists: return "Lists"
-        case .goals: return "Goals"
-        case .habits: return "Habits"
         case .search: return "Search"
         case .settings: return "Settings"
         }
@@ -134,8 +124,6 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .calendar: return "Schedule tasks and events"
         case .notes: return "Daily and permanent notes"
         case .lists: return "Areas, projects, and lists"
-        case .goals: return "Directions and milestones"
-        case .habits: return "Recurring progress"
         case .search: return "Find tasks and notes"
         case .settings: return "Workspace preferences"
         }
@@ -165,8 +153,6 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .calendar: return "Timeline, month, and board"
         case .notes: return "Daily, weekly, and permanent notes"
         case .lists: return "Active and archived lists"
-        case .goals: return "Directions, milestones, and progress"
-        case .habits: return "Repeating commitments"
         case .search: return "Find anything in Cadence"
         case .settings: return "Preferences and diagnostics"
         }
@@ -194,10 +180,6 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
             return "notes daily weekly notepad markdown permanent meeting docs"
         case .lists:
             return "lists areas projects contexts organize kanban planning links"
-        case .goals:
-            return "goals milestones outcomes progress timeline pursuits aspirations directions targets stages"
-        case .habits:
-            return "habits routines streaks recurring commitments"
         case .search:
             return "search find lookup command"
         case .settings:
@@ -218,8 +200,6 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .calendar: return "calendar"
         case .notes: return "note.text"
         case .lists: return "folder.fill"
-        case .goals: return "flag.fill"
-        case .habits: return "flame.fill"
         case .search: return "magnifyingglass"
         case .settings: return "gearshape.fill"
         }
@@ -240,14 +220,17 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
     /// which derives its tint from `Theme.amber`, drew it in `#ffa94d`. `Theme.tealHex` existed
     /// precisely so `.focus` would not have to, and was the only arm getting it right.
     ///
-    /// The families are `Theme`'s, and they are documented on `Theme.tealHex`: amber is Today and
-    /// Habits, blue is Tasks/Inbox and Settings, purple is Notes and Search, green is Lists and
-    /// Goals, red is Calendar, teal is Focus. Two destinations sharing a token is how they read as
-    /// related — it is not a duplicate to be split.
+    /// The families are `Theme`'s, and they are documented on `Theme.tealHex`: amber is Today,
+    /// blue is Tasks/Inbox and Settings, purple is Notes and Search, green is Lists, red is
+    /// Calendar, teal is Focus. Two destinations sharing a token is how they read as related — it
+    /// is not a duplicate to be split.
     ///
     /// `CadenceFeatureDestinationTintTests` pins that no arm here is a literal. Adding one back —
     /// even one whose value matches its token exactly — reopens the drift, because the next hue
     /// change to `Theme` will not reach it.
+    ///
+    /// Goals (green) and Habits (amber) left this table with T-2076. Amber is still Today's and
+    /// green is still Lists', so no family lost its token.
     var defaultColorHex: String {
         switch self {
         case .today: return Theme.amberHex
@@ -261,8 +244,6 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .calendar: return Theme.redHex
         case .notes: return Theme.purpleHex
         case .lists: return Theme.greenHex
-        case .goals: return Theme.greenHex
-        case .habits: return Theme.amberHex
         case .search: return Theme.purpleHex
         case .settings: return Theme.blueHex
         }
@@ -274,22 +255,16 @@ nonisolated enum CadenceFeatureBadgeSupport {
         let todayCount: Int
         let allTaskCount: Int
         let inboxCount: Int
-        let activeGoalCount: Int
-        let habitCount: Int
         let activeListCount: Int
 
         init(
             tasks: [AppTask],
             todayKey: String = DateFormatters.todayKey(),
-            activeGoalCount: Int = 0,
-            habitCount: Int = 0,
             activeListCount: Int = 0
         ) {
             self.todayCount = CadenceTaskQuerySupport.scheduledOrDueTodayCount(from: tasks, todayKey: todayKey)
             self.allTaskCount = CadenceTaskQuerySupport.openTaskCount(from: tasks)
             self.inboxCount = CadenceTaskQuerySupport.openInboxTaskCount(from: tasks)
-            self.activeGoalCount = activeGoalCount
-            self.habitCount = habitCount
             self.activeListCount = activeListCount
         }
 
@@ -301,10 +276,6 @@ nonisolated enum CadenceFeatureBadgeSupport {
                 return CadenceTaskQuerySupport.badgeCount(allTaskCount)
             case .inbox:
                 return CadenceTaskQuerySupport.badgeCount(inboxCount)
-            case .goals:
-                return activeGoalCount > 0 ? activeGoalCount : nil
-            case .habits:
-                return habitCount > 0 ? habitCount : nil
             case .lists:
                 return activeListCount > 0 ? activeListCount : nil
             case .focus, .calendar, .notes, .search, .settings:
@@ -317,15 +288,11 @@ nonisolated enum CadenceFeatureBadgeSupport {
         for destination: CadenceFeatureDestination,
         tasks: [AppTask],
         todayKey: String = DateFormatters.todayKey(),
-        activeGoalCount: Int = 0,
-        habitCount: Int = 0,
         activeListCount: Int = 0
     ) -> Int? {
         Snapshot(
             tasks: tasks,
             todayKey: todayKey,
-            activeGoalCount: activeGoalCount,
-            habitCount: habitCount,
             activeListCount: activeListCount
         )
         .count(for: destination)

@@ -359,15 +359,16 @@ struct CadenceDestinationTintPaletteTests {
                 "\(destination.rawValue)'s default \(hex) is outside the menu that edits it"
             )
         }
-        #expect(CadenceFeatureDestination.allCases.count == 11, "non-vacuity: the loop ran")
+        #expect(CadenceFeatureDestination.allCases.count == 9, "non-vacuity: the loop ran")
 
-        // And the same check over the rows Settings → Sidebar actually draws an editor for. Seven
-        // since T-1274 gave Notes a handle, which is `CadenceSidebarLayout.customisableDestinations`
-        // — pinned against this enum in `SidebarLayoutCustomisableParityTests`.
+        // And the same check over the rows Settings → Sidebar actually draws an editor for. Five
+        // since T-2076 removed Goals and Habits, which is
+        // `CadenceSidebarLayout.customisableDestinations` — pinned against this enum in
+        // `SidebarLayoutCustomisableParityTests`.
         for destination in SidebarStaticDestination.allCases {
             #expect(CadenceColorPalette.destinationTints.contains { CadenceColorPalette.matches($0, destination.defaultColorHex) })
         }
-        #expect(SidebarStaticDestination.allCases.count == 7, "non-vacuity: the loop ran")
+        #expect(SidebarStaticDestination.allCases.count == 5, "non-vacuity: the loop ran")
     }
 
     /// The defect, stated as the failure of that same relation against the palette that used to be

@@ -19,21 +19,25 @@ struct CadenceSidebarLayoutPreferenceTests {
     @Test func theStoredStringIsAListOfDestinationsWithoutDuplicatesOrStrangers() {
         let parse = CadenceSidebarLayoutPreferenceStore.destinations(fromRaw:)
 
-        #expect(parse("today,goals,habits") == [.today, .goals, .habits])
+        #expect(parse("today,calendar,notes") == [.today, .calendar, .notes])
         // A repeat keeps its first position: an order is a sequence of slots, not a multiset.
-        #expect(parse("goals,today,goals") == [.goals, .today])
+        #expect(parse("notes,today,notes") == [.notes, .today])
         // Unrecognised tokens are dropped rather than carried: this build cannot place a row it has
         // no case for. The cost is stated in `SidebarLayoutPreference`'s own note.
         #expect(parse("today,somethingNewer,notes") == [.today, .notes])
+        // `goals` and `habits` are that case for real since T-2076 — they were rows in every build
+        // before it, so the strings naming them are already synced. See
+        // `aSyncedLayoutNamingRemovedDestinationsSurvivesIntact` for what that costs.
+        #expect(parse("today,goals,habits") == [.today])
         #expect(parse("") == [])
         #expect(parse(" today , notes ") == [.today, .notes])
     }
 
     @Test func theRawStringRoundTripsAnOrder() {
-        let order: [CadenceFeatureDestination] = [.habits, .today, .notes]
+        let order: [CadenceFeatureDestination] = [.calendar, .today, .notes]
         let raw = CadenceSidebarLayoutPreferenceStore.raw(from: order)
 
-        #expect(raw == "habits,today,notes")
+        #expect(raw == "calendar,today,notes")
         #expect(CadenceSidebarLayoutPreferenceStore.destinations(fromRaw: raw) == order)
     }
 
@@ -44,10 +48,10 @@ struct CadenceSidebarLayoutPreferenceTests {
     /// person means by changing a preference on the device in front of them.
     @Test func theMostRecentlyUpdatedRowIsTheOneEveryDeviceReads() {
         let old = SidebarLayoutPreference(orderRaw: "today", updatedAt: Date(timeIntervalSince1970: 100))
-        let recent = SidebarLayoutPreference(orderRaw: "habits", updatedAt: Date(timeIntervalSince1970: 900))
+        let recent = SidebarLayoutPreference(orderRaw: "calendar", updatedAt: Date(timeIntervalSince1970: 900))
 
-        #expect(CadenceSidebarLayoutPreferenceStore.current(from: [old, recent])?.orderRaw == "habits")
-        #expect(CadenceSidebarLayoutPreferenceStore.current(from: [recent, old])?.orderRaw == "habits")
+        #expect(CadenceSidebarLayoutPreferenceStore.current(from: [old, recent])?.orderRaw == "calendar")
+        #expect(CadenceSidebarLayoutPreferenceStore.current(from: [recent, old])?.orderRaw == "calendar")
         #expect(CadenceSidebarLayoutPreferenceStore.current(from: []) == nil)
     }
 
@@ -71,17 +75,17 @@ struct CadenceSidebarLayoutPreferenceTests {
     @Test func theDeviceLocalPreferenceIsReadOnlyUntilASyncedRowExists() {
         let fallback = CadenceSidebarLayoutPreferenceStore.layout(
             from: [],
-            legacyOrderRaw: "habits,today",
-            legacyHiddenRaw: "goals"
+            legacyOrderRaw: "calendar,today",
+            legacyHiddenRaw: "allTasks"
         )
-        #expect(fallback.order == [.habits, .today])
-        #expect(fallback.hidden == [.goals])
+        #expect(fallback.order == [.calendar, .today])
+        #expect(fallback.hidden == [.allTasks])
 
         let synced = SidebarLayoutPreference(orderRaw: "notes", hiddenRaw: "focus")
         let resolved = CadenceSidebarLayoutPreferenceStore.layout(
             from: [synced],
-            legacyOrderRaw: "habits,today",
-            legacyHiddenRaw: "goals"
+            legacyOrderRaw: "calendar,today",
+            legacyHiddenRaw: "allTasks"
         )
         #expect(resolved.order == [.notes])
         #expect(resolved.hidden == [.focus], "the local values outranked the synced row")
@@ -99,7 +103,7 @@ struct CadenceSidebarLayoutPreferenceTests {
 
         #expect(store.hidden(setting: .today, visible: false, in: layout) == nil)
         // Everything else still toggles: this is a floor, not a freeze.
-        #expect(store.hidden(setting: .goals, visible: true, in: layout)?.contains(.goals) == false)
+        #expect(store.hidden(setting: .calendar, visible: true, in: layout)?.contains(.calendar) == false)
         #expect(!store.lastVisibleRowNotice.isEmpty)
     }
 
@@ -107,9 +111,9 @@ struct CadenceSidebarLayoutPreferenceTests {
         let store = CadenceSidebarLayoutPreferenceStore.self
         let layout = CadenceSidebarLayoutPreferenceStore.Layout()
 
-        #expect(store.hidden(setting: .habits, visible: false, in: layout) == [.habits])
+        #expect(store.hidden(setting: .calendar, visible: false, in: layout) == [.calendar])
         // A no-op answers nil rather than writing the same set again.
-        #expect(store.hidden(setting: .habits, visible: true, in: layout) == nil)
+        #expect(store.hidden(setting: .calendar, visible: true, in: layout) == nil)
         // Settings has no handle at all, in either direction.
         #expect(store.hidden(setting: .settings, visible: false, in: layout) == nil)
     }
@@ -121,17 +125,17 @@ struct CadenceSidebarLayoutPreferenceTests {
         let layout = CadenceSidebarLayoutPreferenceStore.Layout()
         let declared = store.orderedCustomisableDestinations(for: layout)
 
-        #expect(declared == [.today, .allTasks, .calendar, .notes, .goals, .habits, .focus])
+        #expect(declared == [.today, .allTasks, .calendar, .notes, .focus])
         // Upwards: insert before the target.
         #expect(
-            store.order(in: layout, moving: .habits, before: .today)
-                == [.habits, .today, .allTasks, .calendar, .notes, .goals, .focus]
+            store.order(in: layout, moving: .notes, before: .today)
+                == [.notes, .today, .allTasks, .calendar, .focus]
         )
         // Downwards: the same primitive, one index lower, which is what
         // `CadenceOrderReassignment.moved` does for every other reorder in the app.
         #expect(
-            store.order(in: layout, moving: .today, before: .goals)
-                == [.allTasks, .calendar, .notes, .today, .goals, .habits, .focus]
+            store.order(in: layout, moving: .today, before: .notes)
+                == [.allTasks, .calendar, .today, .notes, .focus]
         )
         #expect(store.order(in: layout, moving: .today, before: .today) == nil)
     }
@@ -142,7 +146,7 @@ struct CadenceSidebarLayoutPreferenceTests {
     @Test func aDragWritesEveryRowSoTheArrangementSurvives() throws {
         let layout = CadenceSidebarLayoutPreferenceStore.Layout()
         let moved = try #require(
-            CadenceSidebarLayoutPreferenceStore.order(in: layout, moving: .goals, before: .allTasks)
+            CadenceSidebarLayoutPreferenceStore.order(in: layout, moving: .notes, before: .allTasks)
         )
 
         #expect(Set(moved) == CadenceSidebarLayout.customisableDestinations)
@@ -178,16 +182,16 @@ struct CadenceSidebarLayoutPreferenceTests {
     @Test func theFirstEditCreatesOneRowCarryingTheWholeLayout() throws {
         let context = ModelContext(try CadenceTestStore.container())
         let layout = CadenceSidebarLayoutPreferenceStore.Layout(
-            order: [.habits, .today],
-            hidden: [.goals]
+            order: [.calendar, .today],
+            hidden: [.allTasks]
         )
 
         try CadenceSidebarLayoutPreferenceStore.write(layout, records: [], in: context)
 
         let rows = try context.fetch(FetchDescriptor<SidebarLayoutPreference>())
         #expect(rows.count == 1)
-        #expect(rows.first?.orderRaw == "habits,today")
-        #expect(rows.first?.hiddenRaw == "goals")
+        #expect(rows.first?.orderRaw == "calendar,today")
+        #expect(rows.first?.hiddenRaw == "allTasks")
         #expect(CadenceSidebarLayoutPreferenceStore.layout(from: rows) == layout)
     }
 
@@ -204,7 +208,7 @@ struct CadenceSidebarLayoutPreferenceTests {
         let first = try context.fetch(FetchDescriptor<SidebarLayoutPreference>())
 
         try CadenceSidebarLayoutPreferenceStore.write(
-            .init(order: [.notes], hidden: [.habits]),
+            .init(order: [.notes], hidden: [.calendar]),
             records: first,
             in: context,
             now: Date(timeIntervalSince1970: 20)
@@ -213,7 +217,7 @@ struct CadenceSidebarLayoutPreferenceTests {
         let rows = try context.fetch(FetchDescriptor<SidebarLayoutPreference>())
         #expect(rows.count == 1, "a second row appeared instead of the first being edited")
         #expect(rows.first?.orderRaw == "notes")
-        #expect(rows.first?.hiddenRaw == "habits")
+        #expect(rows.first?.hiddenRaw == "calendar")
         #expect(rows.first?.updatedAt == Date(timeIntervalSince1970: 20))
     }
 
@@ -223,7 +227,7 @@ struct CadenceSidebarLayoutPreferenceTests {
     @Test func arefusedWriteLeavesTheStoredLayoutExactlyAsItWas() throws {
         let context = ModelContext(try CadenceTestStore.container())
         try CadenceSidebarLayoutPreferenceStore.write(
-            .init(order: [.today], hidden: [.goals]),
+            .init(order: [.today], hidden: [.allTasks]),
             records: [],
             in: context,
             now: Date(timeIntervalSince1970: 10)
@@ -232,7 +236,7 @@ struct CadenceSidebarLayoutPreferenceTests {
 
         #expect(throws: (any Error).self) {
             try CadenceSidebarLayoutPreferenceStore.write(
-                .init(order: [.habits], hidden: []),
+                .init(order: [.calendar], hidden: []),
                 records: rows,
                 in: context,
                 now: Date(timeIntervalSince1970: 20),
@@ -242,7 +246,7 @@ struct CadenceSidebarLayoutPreferenceTests {
 
         let after = CadenceSidebarLayoutPreferenceStore.layout(from: rows)
         #expect(after.order == [.today])
-        #expect(after.hidden == [.goals])
+        #expect(after.hidden == [.allTasks])
         #expect(rows.first?.updatedAt == Date(timeIntervalSince1970: 10))
     }
 
@@ -252,7 +256,7 @@ struct CadenceSidebarLayoutPreferenceTests {
 
         #expect(throws: (any Error).self) {
             try CadenceSidebarLayoutPreferenceStore.write(
-                .init(order: [.habits], hidden: []),
+                .init(order: [.calendar], hidden: []),
                 records: [],
                 in: context,
                 commit: { _ in throw CocoaError(.fileWriteUnknown) }
@@ -297,7 +301,7 @@ struct CadenceSidebarLayoutPreferenceTests {
         // The write half: the user's own drag lands and stays landed on this device.
         let container = try CadenceTestStore.container()
         try CadenceSidebarLayoutPreferenceStore.write(
-            .init(order: [.habits, .today], hidden: [.goals]),
+            .init(order: [.calendar, .today], hidden: [.allTasks]),
             records: [],
             in: ModelContext(container),
             now: Date(timeIntervalSince1970: 10)
@@ -310,8 +314,8 @@ struct CadenceSidebarLayoutPreferenceTests {
             legacyOrderRaw: "calendar,notes",
             legacyHiddenRaw: "today"
         )
-        #expect(drawn.order == [.habits, .today])
-        #expect(drawn.hidden == [.goals], "the device-local fallback outranked the row this device wrote")
+        #expect(drawn.order == [.calendar, .today])
+        #expect(drawn.hidden == [.allTasks], "the device-local fallback outranked the row this device wrote")
     }
 
     /// **And what happens on the day the schema is finally deployed.**
@@ -326,12 +330,12 @@ struct CadenceSidebarLayoutPreferenceTests {
         let container = try CadenceTestStore.container()
         let context = ModelContext(container)
         let fromTheMac = SidebarLayoutPreference(
-            orderRaw: "habits,today",
+            orderRaw: "calendar,today",
             updatedAt: Date(timeIntervalSince1970: 100)
         )
         let fromTheiPhone = SidebarLayoutPreference(
             orderRaw: "notes,today",
-            hiddenRaw: "goals",
+            hiddenRaw: "allTasks",
             updatedAt: Date(timeIntervalSince1970: 200)
         )
         context.insert(fromTheMac)
@@ -343,10 +347,10 @@ struct CadenceSidebarLayoutPreferenceTests {
         let resolved = CadenceSidebarLayoutPreferenceStore.layout(
             from: arrived,
             legacyOrderRaw: "calendar",
-            legacyHiddenRaw: "habits"
+            legacyHiddenRaw: "focus"
         )
         #expect(resolved.order == [.notes, .today], "the older row won")
-        #expect(resolved.hidden == [.goals])
+        #expect(resolved.hidden == [.allTasks])
 
         // The next edit goes to the row every device already agreed on, so no third row appears.
         try CadenceSidebarLayoutPreferenceStore.write(
@@ -359,10 +363,106 @@ struct CadenceSidebarLayoutPreferenceTests {
         let after = try ModelContext(container).fetch(FetchDescriptor<SidebarLayoutPreference>())
         #expect(after.count == 2, "the reconciliation minted or removed a row")
         #expect(
-            after.contains { $0.orderRaw == "habits,today" },
+            after.contains { $0.orderRaw == "calendar,today" },
             "the losing row was deleted instead of being left alone"
         )
         #expect(CadenceSidebarLayoutPreferenceStore.layout(from: after).order == [.today, .notes])
+    }
+
+    // MARK: - T-2076: a synced row naming a destination this build removed
+
+    /// **The hazard T-2076 had to clear.** The sidebar layout is CloudKit-synced and keyed against
+    /// `CadenceFeatureDestination` raw values, so the owner's iPhone and iPad already hold a record
+    /// whose `orderRaw` and `hiddenRaw` name `goals` and `habits` — rows every build before this one
+    /// drew. This build has no case for either.
+    ///
+    /// The requirement is not that the strings keep working; it is that a stale record must not
+    /// **corrupt or silently reset** a layout. So what is asserted here is survival of everything
+    /// around the removed tokens: the surviving rows keep their stored *sequence*, a hidden set
+    /// that named a removed row resolves to a smaller set rather than to "nothing is customised",
+    /// and the sidebar still resolves to a full column of drawable rows.
+    ///
+    /// The hidden half is where a reset would have shown: `hidden` is a `Set`, and a decoder that
+    /// threw or bailed on the first unknown token would have returned `Layout.declared` — a layout
+    /// with *nothing* hidden, which looks like the preference was wiped and would then be written
+    /// back as one on the user's next drag. `compactMap` drops the strangers and keeps the rest,
+    /// which is why the Calendar row below is still hidden.
+    @Test func aSyncedLayoutNamingRemovedDestinationsSurvivesIntact() {
+        // Exactly what T-1274 would have written on a device the owner had dragged Notes to the
+        // top of and hidden Calendar on, with Goals and Habits still in the column.
+        let fromAnOlderBuild = SidebarLayoutPreference(
+            orderRaw: "notes,goals,today,habits,allTasks,calendar",
+            hiddenRaw: "calendar,habits",
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+
+        let layout = CadenceSidebarLayoutPreferenceStore.layout(from: [fromAnOlderBuild])
+
+        // The order survives as a *subsequence* — Notes is still above Today, Today above Tasks —
+        // rather than collapsing to the declared order or to nothing.
+        #expect(layout.order == [.notes, .today, .allTasks, .calendar])
+        // And not as a reset: `.declared` is the empty layout, and reading this record as that is
+        // the failure this test exists for.
+        #expect(layout != .declared)
+        // Calendar is still hidden. `habits` was dropped, not treated as a parse failure that
+        // discards the rest of the set.
+        #expect(layout.hidden == [.calendar])
+
+        // The column the sidebar actually draws from it: Notes first because the user dragged it
+        // there, Calendar absent because the user hid it, and nothing missing or duplicated.
+        let drawn = CadenceSidebarLayout.resolvedDestinations(
+            in: .primary,
+            customisable: CadenceSidebarLayout.customisableDestinations,
+            storedOrder: layout.order,
+            hidden: layout.hidden
+        )
+        #expect(drawn == [.notes, .today, .allTasks])
+
+        // The Settings list the owner would see: every customisable row, none of them a stranger,
+        // and the dragged ones still in the order they were dragged into.
+        let settingsRows = CadenceSidebarLayoutPreferenceStore.orderedCustomisableDestinations(for: layout)
+        #expect(Set(settingsRows) == CadenceSidebarLayout.customisableDestinations)
+        #expect(settingsRows == [.notes, .today, .allTasks, .calendar, .focus])
+    }
+
+    /// **The record is not rewritten until the owner edits the layout themselves**, and when it is,
+    /// the removed tokens are simply absent rather than preserved.
+    ///
+    /// This is the deliberate cost named on `destinations(fromRaw:)`: a device still on the older
+    /// build keeps drawing Goals and Habits from this same row until it updates, because nothing
+    /// here deletes the row, and it loses their stored *slots* (not their visibility) the moment a
+    /// newer device writes. Visibility is opt-out, so an absent destination is a shown one — which
+    /// is why the older device re-shows them rather than losing them.
+    @Test func aLaterEditRewritesTheRowWithoutTheRemovedTokensAndWithoutDeletingIt() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let fromAnOlderBuild = SidebarLayoutPreference(
+            orderRaw: "notes,goals,today,habits",
+            hiddenRaw: "calendar,goals",
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        context.insert(fromAnOlderBuild)
+        try context.save()
+        let records = try context.fetch(FetchDescriptor<SidebarLayoutPreference>())
+
+        var layout = CadenceSidebarLayoutPreferenceStore.layout(from: records)
+        layout.order = try #require(
+            CadenceSidebarLayoutPreferenceStore.order(in: layout, moving: .today, before: .notes)
+        )
+        try CadenceSidebarLayoutPreferenceStore.write(
+            layout,
+            records: records,
+            in: context,
+            now: Date(timeIntervalSince1970: 2_000)
+        )
+
+        let rewritten = try context.fetch(FetchDescriptor<SidebarLayoutPreference>())
+        #expect(rewritten.count == 1, "the stale row was replaced instead of being edited")
+        // The whole customisable list, in the sidebar's own walk, with `goals` and `habits`
+        // simply absent — not preserved, and not standing in the way of the rows that remain.
+        #expect(rewritten.first?.orderRaw == "today,notes,allTasks,calendar,focus")
+        #expect(rewritten.first?.hiddenRaw == "calendar")
+        #expect(rewritten.first?.id == fromAnOlderBuild.id)
+        #expect(rewritten.first?.updatedAt == Date(timeIntervalSince1970: 2_000))
     }
 
     // MARK: - The model is additive
