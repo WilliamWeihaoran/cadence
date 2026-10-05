@@ -49,7 +49,52 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
+Cadence/iOS/iOSMarkdownStylingLineSupport.swift
+Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift
+Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift
+Cadence/macOS/Editor/MarkdownEditorLayoutManager.swift
 ```
+
+### LEASE WIDENED 2026-10-05 — four editor paths for [[T-1465]], the continuous quote rail
+
+Written by the coordinator (agent `codexquote`) while landing `codex/continuous-quote-rail`, which
+is [[T-1465]]. The owner authorized the quote-rail fix and the editor files it needs, and then
+asked for the macOS check that found the second defect; Codex asked for the minimum rather than
+assuming it, and the request with its scope and verification plan is `docs/CODEX_LEDGER_INBOX.md`'s
+T-1465 entry.
+
+**The four paths and why each one.** `Cadence/iOS/iOSMarkdownStylingLineSupport.swift` is where the
+mobile styler hides the `>` prefix and tags the paragraph, so it is where a per-paragraph tag
+becomes a run that spans its terminator; `Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift` held the
+18pt-per-paragraph bitmap that could not follow wrapped text, and is where the range/geometry layer
+grouping same-depth runs lands; `Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift` is the drawing
+pass that must stroke a vector rail instead of stamping one bitmap per paragraph.
+`Cadence/macOS/Editor/MarkdownEditorLayoutManager.swift` is granted **for quote gutter positioning
+and full-block range recovery on partial redraw only** — it measured the hidden `>` glyphs as the
+block's leading edge and put the rail outside AppKit's text-container clip. Regression tests need no
+new grant: they land in `CadenceTests/CadenceCodex*.swift`, Codex's standing reserved namespace.
+
+**`docs/CODEX_WORKTREE.md` is deliberately NOT granted, for the second branch running.** Codex's
+branch again adds this file to its own lease block; that hunk is declined again and this record is
+written by the coordinator in `main` instead, exactly as the T-1463/T-1464 grant above was. A writer
+that holds its own lease file can widen its own lease, and this block's whole value is that one
+party decides it. `codex-land.sh review codex/continuous-quote-rail` will keep reporting
+`CODEX-LEASE-VIOLATION` on this one path, and that report is correct.
+
+**`CadenceTests/CadenceRealTreeSweepManifest.txt` is NOT granted either**, for a different reason:
+it is generated, not authored, and the coordinator regenerates it with
+`real-tree-sweep-manifest.sh` *after* integration. The T-1463 grant above kept it outside for the
+same reason and the landing was unaffected. Codex's branch carries a manifest line; the coordinator
+re-derives it rather than taking it, so the registration is proved by the generator rather than
+trusted from the branch.
+
+**Nothing was dropped to make room.** The four standing globs are unchanged, and
+`CadenceTests/CadenceCodex*.swift` in particular stays — it is where
+`CadenceCodexQuoteRailTests.swift` lands with this very branch, and dropping it would make
+`codex-land.sh` refuse Codex's next branch for doing exactly what it was asked to do.
+
+**Retire these four when the assignment lands**, by the rule this file keeps rather than cites: *a
+lease granting paths nobody is working on is a lease that will eventually be believed.*
 
 ### LEASE RETIRED 2026-10-05 — the seven T-1463 paths are out, because the work landed
 
