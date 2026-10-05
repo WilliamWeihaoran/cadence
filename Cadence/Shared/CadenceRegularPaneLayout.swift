@@ -48,7 +48,8 @@ import CoreGraphics
 //   `CadenceNotesListSupport.swift`
 //     - `CadenceNotesListMetrics`       an *enum* (`CadenceNotesLayout`); the floor and the gate only.
 //   `CadenceRootShellLayout.swift`
-//     - `CadenceRootShellLayout`        a *Bool* (labelled column or icon rail), plus both widths.
+//     - `CadenceRootShellLayout`        a *Bool* (docked column or modal drawer), the reserved
+//                                       sidebar/detail widths, and the overlay drawer width.
 //
 // **They stay where they are, and this register is the consolidation.** Three reasons, in the order
 // that decided it:

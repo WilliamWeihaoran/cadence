@@ -47,12 +47,13 @@ struct CadencePaneWidthRuleHomesTests {
     ///   `availableWidth` note below draws.
     /// - `CadenceTodayLayoutSupport.swift` (5): `supportsTwoPane`, `layout`, `inspectorPaneFloor`,
     ///   `taskPaneWidth`, `inspectorPaneIdealWidth`.
-    /// - `CadenceRootShellLayout.swift` (3): `usesExpandedSidebar`, `sidebarWidth`, `detailWidth`.
+    /// - `CadenceRootShellLayout.swift` (4): `usesExpandedSidebar`, `sidebarWidth`, `detailWidth`,
+    ///   `drawerWidth`.
     /// - `CadenceNotesListSupport.swift` (2): `supportsTwoColumns`, `layout`.
     private static let registeredHomes: [String: Int] = [
         houseFile: 13,
         "Cadence/Shared/CadenceTodayLayoutSupport.swift": 5,
-        "Cadence/Shared/CadenceRootShellLayout.swift": 3,
+        "Cadence/Shared/CadenceRootShellLayout.swift": 4,
         "Cadence/Shared/CadenceNotesListSupport.swift": 2,
     ]
 
@@ -118,7 +119,7 @@ struct CadencePaneWidthRuleHomesTests {
     /// Nine expressions, twenty-four declarations, five files. The absolute total, so that a
     /// rename that happened to keep every per-file count intact while moving a function between two
     /// registered homes still trips something.
-    @Test func theInventoryIsStillTwentyFourDeclarationsAcrossFiveFiles() throws {
+    @Test func theInventoryIsStillTwentyFiveDeclarationsAcrossFiveFiles() throws {
         var total = 0
         var files: Set<String> = []
 
@@ -133,7 +134,7 @@ struct CadencePaneWidthRuleHomesTests {
             }
         }
 
-        #expect(total == 24, "the width rule is declared \(total) times, expected 24")
+        #expect(total == 25, "the width rule is declared \(total) times, expected 25")
         #expect(files.count == 5, "it is spread over \(files.count) files, expected 5")
         #expect(files == Set(Self.registeredHomes.keys).union([Self.delegatingReader]))
     }

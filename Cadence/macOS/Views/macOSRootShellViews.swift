@@ -2,14 +2,31 @@
 import AppKit
 import SwiftUI
 
+enum CadenceMainSidebarWidthPreference {
+    static let defaultWidth = 320.0
+    static let widthKey = "mainSidebarWidth"
+    static let resetKey = "mainSidebarWidth.reset320.v1"
+
+    /// Reset existing widths once; later resizing survives remounting and relaunching.
+    static func restore(in defaults: UserDefaults) -> Double {
+        if !defaults.bool(forKey: resetKey) {
+            defaults.set(defaultWidth, forKey: widthKey)
+            defaults.set(true, forKey: resetKey)
+        }
+        guard defaults.object(forKey: widthKey) != nil else { return defaultWidth }
+        return defaults.double(forKey: widthKey)
+    }
+}
+
 struct macOSRootMainShell<Content: View>: View {
     let columnVisibility: NavigationSplitViewVisibility
     @Binding var selection: SidebarItem?
     let showTimelineSidebar: Bool
     let timelineSidebarOverlay: AnyView
     @ViewBuilder let detailContent: () -> Content
-    @AppStorage("mainSidebarWidth") private var storedSidebarWidth = 264.0
-    @State private var sidebarWidth = 264.0
+    @AppStorage(CadenceMainSidebarWidthPreference.widthKey)
+    private var storedSidebarWidth = CadenceMainSidebarWidthPreference.defaultWidth
+    @State private var sidebarWidth = CadenceMainSidebarWidthPreference.defaultWidth
     @State private var isSidebarResizing = false
 
     private let minSidebarWidth = 220.0
@@ -56,7 +73,9 @@ struct macOSRootMainShell<Content: View>: View {
                 .frame(maxWidth: .infinity)
         }
         .onAppear {
-            sidebarWidth = clampedWidth(storedSidebarWidth)
+            sidebarWidth = clampedWidth(
+                CadenceMainSidebarWidthPreference.restore(in: CadenceDefaults.store)
+            )
             storedSidebarWidth = sidebarWidth
         }
         .onChange(of: storedSidebarWidth) { _, newValue in
