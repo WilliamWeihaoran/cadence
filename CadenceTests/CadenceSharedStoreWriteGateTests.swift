@@ -200,12 +200,18 @@ struct CadenceSharedStoreWriteGateTests {
 
     // MARK: - Nothing may open the shared store for writing around the gate
 
-    /// Scoped to each `perform()` **body**, not to the file: a file-wide count would pass for a
-    /// fourth intent that opened its own container as long as the totals happened to line up.
+    /// Scoped to each `perform()` **body**, not to the file: a file-wide count would pass for an
+    /// extra intent that opened its own container as long as the totals happened to line up.
+    ///
+    /// **Three bodies and two gated since [[T-2078]]**, down from four and three:
+    /// `ToggleHabitCompletionIntent` was retired with the Habit Check-In widget that was its only
+    /// button. The counts moved with the removal rather than being relaxed to floors — a floor is
+    /// what would let a *surviving* intent quietly open its own container, which is the whole
+    /// thing this gate exists to forbid.
     @Test func everyIntentThatOpensTheStoreOpensItThroughTheGate() throws {
         let source = try sourceWithoutCommentLines("Cadence/Services/CadenceWidgetIntents.swift")
         let bodies = functionBodies(startingWith: "func perform(", in: source)
-        #expect(bodies.count == 4, "found \(bodies.count) perform() bodies")
+        #expect(bodies.count == 3, "found \(bodies.count) perform() bodies")
 
         var gatedBodies = 0
         for body in bodies where body.contains("ModelContext(") {
@@ -213,19 +219,29 @@ struct CadenceSharedStoreWriteGateTests {
             #expect(!body.contains("makePrimaryContainer("))
             gatedBodies += 1
         }
-        // Three write intents; `OpenCadenceTodayIntent` opens the app and touches no store.
-        #expect(gatedBodies == 3)
+        // Two write intents; `OpenCadenceTodayIntent` opens the app and touches no store.
+        #expect(gatedBodies == 2)
         #expect(!source.contains("allowsSave: true"))
+        // And the retired one is gone rather than merely unregistered from a widget.
+        #expect(!source.contains("ToggleHabitCompletionIntent"))
     }
 
+    /// **Two read-only opens since [[T-2078]]**, down from four: the Habit Check-In and Milestone
+    /// Momentum providers were deleted with their widgets. The `allowsSave: true` half of this
+    /// test is unchanged and still sweeps every file under `CadenceWidgets/`, so a provider added
+    /// back with a writing open still fails here no matter what the count says.
     @Test func theWidgetsThemselvesStillOpenTheStoreReadOnly() throws {
         var readOnlyOpens = 0
+        var swept = 0
         for relativePath in try swiftFilesUnder("CadenceWidgets") {
             let source = try sourceWithoutCommentLines(relativePath)
             #expect(!source.contains("allowsSave: true"), "\(relativePath) opens the shared store for writing")
             readOnlyOpens += occurrences(of: "allowsSave: false", in: source)
+            swept += 1
         }
-        #expect(readOnlyOpens == 4)
+        // The sweep really read the folder, so `readOnlyOpens == 2` is a count and not an absence.
+        #expect(swept >= 6, "the CadenceWidgets sweep read \(swept) file(s)")
+        #expect(readOnlyOpens == 2)
     }
 
     // MARK: - Source scanning

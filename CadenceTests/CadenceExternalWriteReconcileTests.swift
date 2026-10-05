@@ -142,10 +142,15 @@ struct CadenceExternalWriteReconcileTests {
 
     // MARK: - The wiring, where the value is out of reach
 
-    /// Each intent's `perform()` opens the real app-group container, so the three call sites
-    /// cannot be driven from here — but a call site that stops publishing is the whole bug, and
-    /// exact counts are what catch one of three reverting (`CadenceSharedBoardChromeTests`'
-    /// lesson).
+    /// Each intent's `perform()` opens the real app-group container, so the call sites cannot be
+    /// driven from here — but a call site that stops publishing is the whole bug, and exact counts
+    /// are what catch one of them reverting (`CadenceSharedBoardChromeTests`' lesson).
+    ///
+    /// **Two, not three, since [[T-2078]].** `ToggleHabitCompletionIntent` was retired with the
+    /// Habit Check-In widget, and the count moved with it rather than being relaxed to a `>=`: a
+    /// floor would have let a *second* intent stop publishing without anybody noticing, which is
+    /// exactly the regression the exact count exists to catch. `theExtensionShipsNoHabitWritingIntent`
+    /// below holds the other half — that the retired one did not come back.
     @Test func everyWritingAppIntentEndsInTheSharedPublish() throws {
         let source = strippingComments(try sourceFile("Cadence/Services/CadenceWidgetIntents.swift"))
         let raw = try sourceFile("Cadence/Services/CadenceWidgetIntents.swift")
@@ -154,8 +159,8 @@ struct CadenceExternalWriteReconcileTests {
         #expect(source.count == raw.count, "the comment stripper changed the string's length")
 
         #expect(
-            source.components(separatedBy: "CadenceWidgetIntentWriteSupport.publish(").count - 1 == 3,
-            "one of the three writing App Intents stopped publishing its write"
+            source.components(separatedBy: "CadenceWidgetIntentWriteSupport.publish(").count - 1 == 2,
+            "one of the two writing App Intents stopped publishing its write"
         )
         // And none of them went back to spelling the tail out for themselves.
         #expect(
@@ -165,6 +170,29 @@ struct CadenceExternalWriteReconcileTests {
         // The trap: the extension must not reconcile, because it cannot see the app's setting.
         #expect(!source.contains("NotificationManager"))
         #expect(!source.contains("scheduleReconcile"))
+    }
+
+    /// **The widget extension declares no App Intent that writes a habit.**
+    ///
+    /// [[T-2078]] removed the Habit Check-In widget, and deleting a widget does *not* deregister an
+    /// intent: AppIntents metadata is extracted from the compiled target, so a surviving
+    /// `ToggleHabitCompletionIntent` would still have been offered in the Shortcuts app as a habit
+    /// write with no Cadence surface behind it. This asserts the whole class rather than the one
+    /// type name — no `Habit` fetch and no `CadenceHabitCompletionStore` call anywhere in the
+    /// intents file — so re-adding the write under a new name fails here too.
+    ///
+    /// The control is in the same read: `AppTask` writes are still there, so an empty answer means
+    /// the habit write is gone and not that the file was read wrong.
+    @Test func theExtensionShipsNoHabitWritingIntent() throws {
+        let source = strippingComments(try sourceFile("Cadence/Services/CadenceWidgetIntents.swift"))
+
+        #expect(!source.contains("ToggleHabitCompletionIntent"))
+        #expect(!source.contains("FetchDescriptor<Habit>"))
+        #expect(!source.contains("CadenceHabitCompletionStore"))
+
+        // Control: the task-writing intents this file still ships read exactly the same way.
+        #expect(source.contains("FetchDescriptor<AppTask>"))
+        #expect(source.components(separatedBy: ": AppIntent {").count - 1 == 3)
     }
 
     /// The MCP server's marker post and the widget extension's are the same implementation, not

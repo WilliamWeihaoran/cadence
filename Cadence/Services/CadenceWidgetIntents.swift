@@ -9,11 +9,20 @@ import SwiftData
 
 /// What every writing App Intent does *after* it has saved, in one place.
 ///
-/// There are three of them, and until T-312 each spelled its own tail: an optimistic widget
+/// There were three of them, and until T-312 each spelled its own tail: an optimistic widget
 /// override where it had one, then `reloadAllWidgets(force: true)`. That tail was incomplete in
 /// the same way at all three sites — a task completed from a widget button kept its pending
 /// "due today" reminder, and a task captured for today did not get one — because nothing told the
 /// app that its store had changed underneath it.
+///
+/// **Two of them ship now.** [[T-2078]] retired `ToggleHabitCompletionIntent` with the Habit
+/// Check-In widget that was its only button: an `AppIntent` compiled into this extension stays in
+/// the AppIntents metadata and keeps showing up in Shortcuts whether or not a widget draws it, so
+/// a habit *write* would have survived the widget's removal as a Shortcuts action. `habitCompletion:`
+/// below is deliberately **kept**: the optimistic-override pair it drives
+/// (`CadenceWidgetRefreshCenter.markHabitCompletion` / `recentHabitCompletionStates`) is still read
+/// by `CadenceHabitWidgetSupport`, and the `Habit` schema is kept, so the tail stays whole rather
+/// than being amputated halfway for a feature the owner asked to be recoverable.
 ///
 /// **The reconcile is deliberately not here.** These intents run in the widget extension.
 /// `NotificationManager.reconcile` reads `notificationsEnabled` through `CadenceDefaults.store` —
@@ -178,72 +187,6 @@ struct CaptureTaskIntent: AppIntent {
         let descriptor = FetchDescriptor<AppTask>()
         let tasks = try modelContext.fetch(descriptor)
         return (tasks.map(\.order).max() ?? -1) + 1
-    }
-}
-
-struct ToggleHabitCompletionIntent: AppIntent {
-    static var title: LocalizedStringResource { "Toggle Habit Check-In" }
-    static var description: IntentDescription { IntentDescription("Logs or removes today's check-in for a Cadence habit.") }
-    static var supportedModes: IntentModes { .background }
-
-    @Parameter(title: "Habit ID")
-    var habitID: String
-
-    init() {
-        self.habitID = ""
-    }
-
-    init(habitID: UUID) {
-        self.habitID = habitID.uuidString
-    }
-
-    func perform() async throws -> some IntentResult {
-        let container = try CadenceStoreSupport.makeSharedWriteContainer()
-        let modelContext = ModelContext(container)
-        let result = try Self.toggleHabitCompletionResult(habitID: habitID, in: modelContext)
-        if result.changed {
-            CadenceWidgetIntentWriteSupport.publish(
-                habitCompletion: result.habitID.map { (id: $0, isDoneToday: result.isDoneToday) }
-            )
-        }
-        return .result()
-    }
-
-    /// The toggle `perform()` runs. It returns the habit and its resulting state as well as
-    /// whether anything changed, because `perform()` needs both to write the optimistic widget
-    /// override — a `-> Bool` shim over this used to exist for the tests alone, which meant the
-    /// two things `perform()` does with the result were never asserted together.
-    static func toggleHabitCompletionResult(
-        habitID: String,
-        on dateKey: String = CadenceWidgetDateSupport.dateKey(from: Date()),
-        in modelContext: ModelContext
-    ) throws -> HabitToggleResult {
-        guard let uuid = UUID(uuidString: habitID) else {
-            return HabitToggleResult(changed: false, habitID: nil, isDoneToday: false)
-        }
-
-        let predicate = #Predicate<Habit> { habit in
-            habit.id == uuid
-        }
-        let descriptor = FetchDescriptor<Habit>(predicate: predicate)
-        guard let habit = try modelContext.fetch(descriptor).first else {
-            return HabitToggleResult(changed: false, habitID: nil, isDoneToday: false)
-        }
-
-        // The toggle itself is `CadenceHabitCompletionStore`'s, shared with the macOS habits list
-        // and iOS (T-359). It saves, and the throw is what `perform()` reports.
-        let isDoneToday = try CadenceHabitCompletionStore.toggle(habit, on: dateKey, modelContext: modelContext)
-        return HabitToggleResult(
-            changed: true,
-            habitID: habit.id,
-            isDoneToday: isDoneToday
-        )
-    }
-
-    struct HabitToggleResult {
-        let changed: Bool
-        let habitID: UUID?
-        let isDoneToday: Bool
     }
 }
 

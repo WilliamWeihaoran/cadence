@@ -527,11 +527,18 @@ struct CadenceHabitCompletionDuplicateTests {
 
     /// The positive half: each surface that used to own a copy now names the shared store. Without
     /// this, deleting a habit toggle entirely would leave the test above green.
+    ///
+    /// **Two surfaces, not three, since [[T-2078]].** The third was
+    /// `ToggleHabitCompletionIntent.toggleHabitCompletionResult`, retired with the Habit Check-In
+    /// widget that was its only button. Its row is not simply dropped — that is exactly the
+    /// "deleted entirely and nobody noticed" shape this test guards against. It is replaced by the
+    /// assertion below that the widget extension's intents file now contains **no** habit toggle at
+    /// all, so the surface is gone on purpose rather than gone unnoticed, and re-adding one without
+    /// the shared store fails here.
     @Test func everyHabitToggleCallSiteNamesTheSharedStore() throws {
         for (path, function) in [
             ("Cadence/macOS/Views/HabitsView.swift", "toggleHabit"),
-            ("Cadence/iOS/iOSFeatureViews.swift", "toggle"),
-            ("Cadence/Services/CadenceWidgetIntents.swift", "toggleHabitCompletionResult")
+            ("Cadence/iOS/iOSFeatureViews.swift", "toggle")
         ] {
             let raw = try CadenceSourceScan.sourceFile(path)
             #expect(raw.count > 400, "\(path) read as \(raw.count) characters")
@@ -555,6 +562,19 @@ struct CadenceHabitCompletionDuplicateTests {
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceFocusPlanningSupport.swift")
         )
         #expect(CadenceSourceScan.matchCount(#"enum CadenceHabitSupport"#, in: shared) == 0)
+
+        // [[T-2078]]: and so is the widget extension's toggle, which is the third row this loop
+        // used to carry. Asserted as the whole class rather than the one function name, so a habit
+        // toggle re-added to the extension under any name fails here.
+        let intents = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceWidgetIntents.swift")
+        )
+        #expect(intents.count > 400, "the intents file read as \(intents.count) characters")
+        #expect(CadenceSourceScan.matchCount(#"CadenceHabitCompletionStore"#, in: intents) == 0)
+        #expect(CadenceSourceScan.matchCount(#"toggleHabitCompletionResult"#, in: intents) == 0)
+        // Control: the same read still finds the task write that file does still ship, so a zero
+        // above is an absence and not an unreadable file.
+        #expect(CadenceSourceScan.matchCount(#"CadenceTaskRecurrenceWorkflowSupport\.markDone"#, in: intents) == 1)
     }
 
     /// The needle matches the constructor it hunts and misses the names it sits beside — otherwise

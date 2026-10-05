@@ -444,18 +444,85 @@ struct CadenceWidgetCostInstrumentTests {
         }
     }
 
-    /// The four widget kinds the ledger keeps slots for are the four the bundle ships, read from
-    /// `CadenceWidgetRefreshCenter` rather than written down twice.
-    @Test func theLedgerKeepsASlotForEveryWidgetKindTheBundleShips() {
-        #expect(
-            Set(CadenceWidgetGenerationLedger.instrumentedKinds) == [
-                CadenceWidgetRefreshCenter.todayWidgetKind,
-                CadenceWidgetRefreshCenter.calendarWidgetKind,
-                CadenceWidgetRefreshCenter.habitWidgetKind,
-                CadenceWidgetRefreshCenter.milestoneWidgetKind,
-            ]
+    /// **The ledger keeps a slot for every kind the bundle ships *and* for the two it used to.**
+    ///
+    /// Until [[T-2078]] these were the same four, and this test said so. The bundle now ships two:
+    /// `CadenceHabitCheckInWidget` and `CadenceMilestoneMomentumWidget` were retired with the
+    /// habits and goals surfaces. `instrumentedKinds` was deliberately **not** cut to match, and
+    /// the reason is the second half below rather than inertia — it is the list
+    /// `clearStoredState` sweeps, so dropping the two retired kinds would strand whatever rows an
+    /// *older build* of this app wrote under them in the app group, where the privacy reset could
+    /// never reach them again. The ledger's list is "has ever written here"; the bundle's is
+    /// "ships today".
+    ///
+    /// Both halves are read rather than written down twice: the shipping set comes out of
+    /// `CadenceWidgetsBundle.swift`, so putting a widget back without a ledger slot fails here.
+    @Test func theLedgerKeepsASlotForEveryWidgetKindTheBundleShipsAndEveryKindItRetired() throws {
+        let bundle = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("CadenceWidgets/CadenceWidgetsBundle.swift")
         )
+
+        // What the bundle body registers, which is what WidgetKit ships.
+        #expect(bundle.contains("CadenceTodayTasksWidget()"))
+        #expect(bundle.contains("CadenceCalendarSnapshotWidget()"))
+        #expect(!bundle.contains("CadenceHabitCheckInWidget()"))
+        #expect(!bundle.contains("CadenceMilestoneMomentumWidget()"))
+        // Exactly two registrations, so a third added without a ledger slot is not silent.
+        #expect(bundle.components(separatedBy: "Widget()").count - 1 == 2)
+
+        // Every shipping kind has a slot.
+        #expect(CadenceWidgetGenerationLedger.instrumentedKinds.contains(CadenceWidgetRefreshCenter.todayWidgetKind))
+        #expect(CadenceWidgetGenerationLedger.instrumentedKinds.contains(CadenceWidgetRefreshCenter.calendarWidgetKind))
+
+        // And so does every retired one, because the reset has to be able to erase their rows.
+        for retired in [CadenceWidgetRefreshCenter.habitWidgetKind, CadenceWidgetRefreshCenter.milestoneWidgetKind] {
+            #expect(CadenceWidgetGenerationLedger.instrumentedKinds.contains(retired))
+        }
         #expect(Set(CadenceWidgetGenerationLedger.instrumentedKinds).count == 4)
+    }
+
+    /// The claim above, driven rather than asserted from a list: a row an older build wrote under a
+    /// **retired** kind is still erased by `clearStoredState`.
+    ///
+    /// The control is the shipping kind written in the same breath — if both readings came back
+    /// `.silent` because the instrument was off, the first `#expect` would already have failed, so
+    /// the retired row's disappearance is an erasure and not an empty denominator.
+    @Test func clearingTheLedgerErasesRowsARetiredWidgetKindWrote() throws {
+        try withTemporaryDefaults("cadence.widget.cost.retired") { defaults in
+            CadenceWidgetGenerationLedger.setEnabled(true, userDefaults: defaults)
+
+            for kind in [CadenceWidgetRefreshCenter.habitWidgetKind, CadenceWidgetRefreshCenter.todayWidgetKind] {
+                let written = probe(kind: kind, defaults: defaults)
+                // A generation that measured no stage is deliberately not a record, so the stages
+                // have to be closed here or the fixture writes nothing and the erasure is vacuous.
+                written.finished(.containerOpen)
+                written.finished(.fetch, rows: 4)
+                written.finished(.derive)
+                written.recordGeneration(
+                    outcome: .ready,
+                    renderedCount: 3,
+                    sourceSnapshotAt: Date(timeIntervalSince1970: 1_700_000_000)
+                )
+            }
+
+            // Both rows are really there before the reset runs.
+            for kind in [CadenceWidgetRefreshCenter.habitWidgetKind, CadenceWidgetRefreshCenter.todayWidgetKind] {
+                guard case .recorded = CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults) else {
+                    Issue.record("no row recorded for \(kind), so the erasure below would be vacuous")
+                    return
+                }
+            }
+
+            CadenceWidgetGenerationLedger.clearStoredState(userDefaults: defaults)
+
+            for kind in [CadenceWidgetRefreshCenter.habitWidgetKind, CadenceWidgetRefreshCenter.todayWidgetKind] {
+                #expect(
+                    CadenceWidgetGenerationLedger.lastGeneration(kind: kind, userDefaults: defaults)
+                        == .silent(.nothingRecorded),
+                    "a row written under \(kind) survived the reset"
+                )
+            }
+        }
     }
 
     // MARK: - Fixtures

@@ -41,8 +41,8 @@ public enum CadenceWidgetDebugSnapshotRenderer {
 
         let todayTasks = [
             CadenceTodayWidgetTask(id: UUID(), title: "Finish polishing widget hierarchy", priorityRaw: TaskPriority.high.rawValue, dueDate: todayKey, scheduledDate: todayKey, containerName: "Cadence"),
-            CadenceTodayWidgetTask(id: UUID(), title: "Audit habit check-in pacing", priorityRaw: TaskPriority.medium.rawValue, dueDate: todayKey, scheduledDate: todayKey, containerName: "Habits"),
-            CadenceTodayWidgetTask(id: UUID(), title: "Trim milestone overflow copy", priorityRaw: TaskPriority.medium.rawValue, dueDate: "", scheduledDate: todayKey, containerName: "Roadmap"),
+            CadenceTodayWidgetTask(id: UUID(), title: "Audit today list ordering pacing", priorityRaw: TaskPriority.medium.rawValue, dueDate: todayKey, scheduledDate: todayKey, containerName: "Today"),
+            CadenceTodayWidgetTask(id: UUID(), title: "Trim calendar overflow copy", priorityRaw: TaskPriority.medium.rawValue, dueDate: "", scheduledDate: todayKey, containerName: "Roadmap"),
             CadenceTodayWidgetTask(id: UUID(), title: "Review calendar heat map density", priorityRaw: TaskPriority.low.rawValue, dueDate: "", scheduledDate: todayKey, containerName: "Planning"),
             CadenceTodayWidgetTask(id: UUID(), title: "Close quick follow-up tasks", priorityRaw: TaskPriority.none.rawValue, dueDate: "", scheduledDate: todayKey, containerName: "Ops"),
             CadenceTodayWidgetTask(id: UUID(), title: "Capture tomorrow's opener", priorityRaw: TaskPriority.none.rawValue, dueDate: "", scheduledDate: todayKey, containerName: "Inbox"),
@@ -60,46 +60,6 @@ public enum CadenceWidgetDebugSnapshotRenderer {
             dueTodayCount: 2,
             scheduledTodayCount: 5,
             tasks: todayTasks
-        )
-
-        // "Walk" is deliberately the one weekly habit in the sample: the debug sheet is where the
-        // streak line gets eyeballed, so it should show a `w` next to the `d`s rather than eight
-        // identical daily cells that would hide a unit regression.
-        let habits = [
-            CadenceHabitWidgetHabit(id: UUID(), title: "Water", icon: "drop.fill", colorHex: "#5DB9FF", frequencyLabel: "Daily", currentStreak: 8, streakUnit: .days, isDoneToday: true),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Read", icon: "book.fill", colorHex: "#FFB347", frequencyLabel: "Daily", currentStreak: 5, streakUnit: .days, isDoneToday: false),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Walk", icon: "figure.walk", colorHex: "#66D28A", frequencyLabel: "3x/week", currentStreak: 12, streakUnit: .weeks, isDoneToday: false),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Stretch", icon: "figure.cooldown", colorHex: "#FF7F7F", frequencyLabel: "Daily", currentStreak: 4, streakUnit: .days, isDoneToday: true),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Journal", icon: "square.and.pencil", colorHex: "#B690FF", frequencyLabel: "Daily", currentStreak: 3, streakUnit: .days, isDoneToday: false),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Meditate", icon: "sparkles", colorHex: "#8FE1D6", frequencyLabel: "Daily", currentStreak: 14, streakUnit: .days, isDoneToday: true),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Protein", icon: "fork.knife", colorHex: "#FF9F68", frequencyLabel: "Daily", currentStreak: 6, streakUnit: .days, isDoneToday: false),
-            CadenceHabitWidgetHabit(id: UUID(), title: "Sleep", icon: "moon.stars.fill", colorHex: "#7FA8FF", frequencyLabel: "Daily", currentStreak: 10, streakUnit: .days, isDoneToday: false),
-        ]
-
-        let habitSnapshot = CadenceHabitWidgetSnapshot(
-            date: todayDate,
-            dateKey: todayKey,
-            state: .ready,
-            statusMessage: nil,
-            totalDueCount: habits.count,
-            doneCount: habits.filter(\.isDoneToday).count,
-            habits: habits
-        )
-
-        let goals = [
-            CadenceMilestoneWidgetGoal(id: UUID(), title: "Ship the widget interaction pass", colorHex: "#6FA8FF", percentLabel: "68%", progress: 0.68, overdueTaskCount: 2, nextActionTitle: "Tighten spacing and status hierarchy across every family", linkedHabitCount: 4, dueTodayLabel: "2/4 habits today"),
-            CadenceMilestoneWidgetGoal(id: UUID(), title: "Summer reading rhythm", colorHex: "#FFB347", percentLabel: "42%", progress: 0.42, overdueTaskCount: 0, nextActionTitle: "Finish the weekly reading review", linkedHabitCount: 3, dueTodayLabel: "1/2 habits today"),
-            CadenceMilestoneWidgetGoal(id: UUID(), title: "Quarter planning reset", colorHex: "#8FE1D6", percentLabel: "21%", progress: 0.21, overdueTaskCount: 1, nextActionTitle: "Break down remaining planning work", linkedHabitCount: 1, dueTodayLabel: "No habits due"),
-            CadenceMilestoneWidgetGoal(id: UUID(), title: "Marathon base block", colorHex: "#FF7F7F", percentLabel: "74%", progress: 0.74, overdueTaskCount: 0, nextActionTitle: "Plan the next long run", linkedHabitCount: 2, dueTodayLabel: "1/1 habits today"),
-        ]
-
-        let milestoneSnapshot = CadenceMilestoneWidgetSnapshot(
-            date: todayDate,
-            state: .ready,
-            statusMessage: nil,
-            totalGoalCount: goals.count,
-            totalOverdueTaskCount: goals.reduce(0) { $0 + $1.overdueTaskCount },
-            visibleGoals: goals
         )
 
         let calendarDays = (0..<14).compactMap { offset -> CadenceCalendarWidgetDay? in
@@ -129,8 +89,6 @@ public enum CadenceWidgetDebugSnapshotRenderer {
         )
 
         let todayEntry = TodayTasksWidgetEntry(date: todayDate, snapshot: todaySnapshot)
-        let habitEntry = HabitCheckInWidgetEntry(date: todayDate, snapshot: habitSnapshot)
-        let milestoneEntry = MilestoneMomentumWidgetEntry(date: todayDate, snapshot: milestoneSnapshot)
         let calendarEntry = CalendarSnapshotWidgetEntry(date: todayDate, snapshot: calendarSnapshot)
 
         return [
@@ -145,27 +103,6 @@ public enum CadenceWidgetDebugSnapshotRenderer {
             },
             definition(name: "today-extra-large", size: .init(width: 782, height: 382), family: .systemExtraLarge) {
                 TodayTasksWidgetView(entry: todayEntry)
-            },
-            definition(name: "habit-small", size: .init(width: 170, height: 170), family: .systemSmall) {
-                HabitCheckInWidgetView(entry: habitEntry)
-            },
-            definition(name: "habit-medium", size: .init(width: 364, height: 170), family: .systemMedium) {
-                HabitCheckInWidgetView(entry: habitEntry)
-            },
-            definition(name: "habit-large", size: .init(width: 364, height: 382), family: .systemLarge) {
-                HabitCheckInWidgetView(entry: habitEntry)
-            },
-            definition(name: "milestone-small", size: .init(width: 170, height: 170), family: .systemSmall) {
-                MilestoneMomentumWidgetView(entry: milestoneEntry)
-            },
-            definition(name: "milestone-medium", size: .init(width: 364, height: 170), family: .systemMedium) {
-                MilestoneMomentumWidgetView(entry: milestoneEntry)
-            },
-            definition(name: "milestone-large", size: .init(width: 364, height: 382), family: .systemLarge) {
-                MilestoneMomentumWidgetView(entry: milestoneEntry)
-            },
-            definition(name: "milestone-extra-large", size: .init(width: 782, height: 382), family: .systemExtraLarge) {
-                MilestoneMomentumWidgetView(entry: milestoneEntry)
             },
             definition(name: "calendar-small", size: .init(width: 170, height: 170), family: .systemSmall) {
                 CalendarSnapshotWidgetView(entry: calendarEntry)
