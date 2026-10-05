@@ -8,8 +8,8 @@ import Testing
 /// you reach a width at which `NSSplitView` laid out at the sum of its minimums and overflowed
 /// **leading-aligned**, off the trailing edge.
 ///
-/// Measured with `NSHostingView` probes reproducing each modifier chain verbatim, at the 960pt
-/// floor with the sidebar at 220 / 264 (stored default) / 390 — 740 / 696 / 570 of pane:
+/// Historically measured with `NSHostingView` probes reproducing each modifier chain verbatim,
+/// at the 960pt floor with the sidebar at 220 / 264 (then-default) / 390 — 740 / 696 / 570 of pane:
 ///
 ///   - Today, `449 + 300 + 343` + 2 dividers: `449, 290, 0` — `449, 246, 0` — `449, 120, 0`.
 ///   - Goals, `560 + 340` + 1: the inspector was handed 340 and 179 / 135 / **9** of it was on
@@ -24,11 +24,12 @@ struct CadenceDesktopSplitLayoutTests {
     // MARK: - The reachable widths
 
     /// The macOS pane is the window less the sidebar, and the sidebar is 220–390 with a stored
-    /// default of 264 (`macOSRootShellViews.swift`) or hidden outright with `Cmd+O`.
+    /// default of 320 (`macOSRootShellViews.swift`) or hidden outright with `Cmd+O`.
     private static func panes(window: CGFloat) -> [(label: String, width: CGFloat)] {
         [
             ("sidebar 220", window - 220),
-            ("sidebar 264 (stored)", window - 264),
+            ("sidebar 264 (custom)", window - 264),
+            ("sidebar 320 (default)", window - 320),
             ("sidebar 390", window - 390),
             ("sidebar hidden", window),
         ]
@@ -132,21 +133,23 @@ struct CadenceDesktopSplitLayoutTests {
         }
     }
 
-    /// Dropping the notepad rather than the timeline is a measurement, not a preference: at the
-    /// ordinary minimum pane — the 960 floor less the stored 264pt sidebar — `tasks + schedule`
-    /// fits and `notes + tasks` does not. Had the other pair been chosen, Today would fold straight
-    /// to one column at the width most likely to be reached.
+    /// The wider default deliberately crosses Today's 644pt pair floor at the 960pt window
+    /// minimum. Keep the 264pt custom-width case as a positive control for the two-pane layout.
     @Test
-    func todayKeepsThePairThatFitsTheOrdinaryMinimumPane() {
-        let ordinaryPane = Self.windowFloor - 264
-        #expect(ordinaryPane == 696)
-        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: ordinaryPane) == .tasksAndSchedule)
+    func todayUsesTheFallbackAtTheNewDefaultButKeepsAPairWhenItFits() {
+        let ordinaryPane = Self.windowFloor - 320
+        #expect(ordinaryPane == 640)
+        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: ordinaryPane) == .tasksOnly)
+        let customPane = Self.windowFloor - 264
+        #expect(customPane == 696)
+        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: customPane) == .tasksAndSchedule)
 
         let notesAndTasks = CadenceDesktopSplitLayout.todayNotesPaneMinWidth
             + CadenceDesktopSplitLayout.todayTaskPaneMinWidth
             + CadenceDesktopSplitLayout.paneDividerWidth
         #expect(notesAndTasks == 750)
         #expect(notesAndTasks > ordinaryPane)
+        #expect(notesAndTasks > customPane)
     }
 
     /// And the machine the app is actually used on is untouched: at 1512 every sidebar width, and

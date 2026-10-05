@@ -49,7 +49,27 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
+Cadence/macOS/Views/macOSRootShellViews.swift
+Cadence/iOS/iOSRootSidebar.swift
+Cadence/Shared/CadenceRootShellLayout.swift
+Cadence/Shared/CadenceRegularPaneLayout.swift
+CadenceTests/CadenceRootShellLayoutTests.swift
+CadenceTests/CadenceDesktopSplitLayoutTests.swift
+CadenceTests/CadencePaneWidthRuleHomesTests.swift
+docs/CODEX_WORKTREE.md
 ```
+
+### Owner grant 2026-10-05 - T-1463 sidebar drawer
+
+The owner explicitly granted the T-1463 paths and authorized updating this protocol for
+`codex/sidebar-drawer`. The seven source/test paths above are reserved for that assignment:
+320pt macOS navigation with a one-time reset of saved widths, 264pt iPad navigation, and a
+width-based modal drawer in narrow iPad windows. Keep the compact iPhone shell unchanged.
+`CadenceRegularPaneLayout.swift` is limited to its width-rule register comment, and
+`CadencePaneWidthRuleHomesTests.swift` to the corresponding declaration inventory. This file's
+grant is limited to recording this scope; it is not permission to change the landing rules.
+The coordinator must keep other writers off these paths until landing. Retire this grant when
+the assignment lands. Primary ledger and project-file edits remain prohibited.
 
 ### LEASE RETRACTED 2026-10-04 — the 16 T-1458 paths are back, because the work landed
 

@@ -6,39 +6,17 @@ struct iPadMacStyleRootShell<Content: View>: View {
     @Binding var selection: iOSSidebarItem?
     @ViewBuilder let detail: () -> Content
 
-    /// Restored across launches, like `ios.calendar.anchorDateKey`.
-    ///
-    /// Written from **exactly two places**, both of them a tap on the fold control. Nothing
-    /// derived, nothing measured, nothing written during layout — that is the lesson of `ecaf80f`,
-    /// where a persisted navigation value took an initial scroll reading for a user action and then
-    /// compounded across launches. A width read from a `GeometryReader` must never land here: the
-    /// column is narrow at 744pt because the *window* is narrow, not because the user folded it.
+    /// Only the user's docked fold choice persists. Window measurements and drawer taps do not.
     @AppStorage("ios.sidebar.collapsed") private var isSidebarCollapsed = false
-    /// Owned by the shell rather than by the sidebar, so the editor is presented from a view that
-    /// is always on screen. The sidebar goes to zero width and zero opacity when folded, and a
-    /// sheet whose presenter has been hidden is a sheet nobody can see.
+    @State private var isDrawerPresented = false
+    /// The editor's presenter must survive hiding the navigation.
     @State private var listEditorMode: iOSListEditorMode?
 
-    /// **The detail pane is hard-sized, and the row is pinned `.leading`.**
-    ///
-    /// Both halves of that matter, and neither used to be true. The detail was
-    /// `.frame(maxWidth: .infinity)`, which sets no *minimum* — the minimum came from whatever the
-    /// pane's own content declared, and an `HStack` handed a fixed sidebar plus a detail that will
-    /// not go below 721pt does not shrink either one. It overflows. The row was then pinned into
-    /// `.frame(width: proxy.size.width, height:)` at its **default centre alignment**, so half the
-    /// overflow hung off the leading edge of the screen and the sidebar rendered as "KSPACE" and
-    /// "GRESS". Nothing clipped the sidebar; the sidebar had been positioned off-screen by the
-    /// Inbox's second column.
-    ///
-    /// `CadenceRootShellLayout` (in `Shared/`, with tests) is now the one place the split is
-    /// decided, and it guarantees `sidebar + detail == window` — **folded or not**. Folding is a
-    /// sidebar width of zero there, not a second layout path here. `.leading` is the belt to that
-    /// braces: if some future pane still insists on more room than it is given, the excess leaves by
-    /// the trailing edge — past content — rather than by the leading one, which is where the app's
-    /// navigation lives.
     var body: some View {
         GeometryReader { proxy in
-            let sidebarStyle = iOSSidebarStyle.style(for: proxy.size.width)
+            let isDrawerMode = !CadenceRootShellLayout.usesExpandedSidebar(windowWidth: proxy.size.width)
+            let isSidebarVisible = isDrawerMode ? isDrawerPresented : !isSidebarCollapsed
+            let isModal = isDrawerMode && isDrawerPresented
             let sidebarWidth = CadenceRootShellLayout.sidebarWidth(
                 windowWidth: proxy.size.width,
                 isCollapsed: isSidebarCollapsed
@@ -47,53 +25,83 @@ struct iPadMacStyleRootShell<Content: View>: View {
                 windowWidth: proxy.size.width,
                 isCollapsed: isSidebarCollapsed
             )
+            let drawerWidth = CadenceRootShellLayout.drawerWidth(windowWidth: proxy.size.width)
 
-            HStack(spacing: 0) {
+            // Keep one sidebar and one detail alive across folding, drawer taps and resizing.
+            // Only the docked reservation changes; an overlay never subtracts from the page.
+            ZStack(alignment: .leading) {
                 iOSSidebar(
-                    selection: $selection,
-                    style: sidebarStyle,
+                    selection: navigationSelection(isDrawerMode: isDrawerMode),
+                    style: .expanded,
                     onCreateList: { listEditorMode = $0 },
-                    onCollapse: { setCollapsed(true) }
+                    onCollapse: { setSidebarVisible(false, isDrawerMode: isDrawerMode) }
                 )
-                .frame(width: sidebarWidth)
-                // `Theme.surface` against the detail pane's `Theme.bg`, closed by a full-weight
-                // hairline — the same construction and the same reasoning as macOS's
-                // `SidebarView`: on a near-black palette the tonal step alone does not separate
-                // the column from the page, so the edge has to carry it. This used to paint
-                // `surface` here and `bg` inside the sidebar, so the step never existed and the
-                // edge was a half-point line at 58% of a subtle border.
+                .frame(width: drawerWidth, height: proxy.size.height)
                 .background(Theme.surface)
                 .overlay(alignment: .trailing) {
                     Rectangle()
                         .fill(Theme.borderSubtle)
                         .frame(width: 1)
                 }
-                // Folded, the column is 0pt wide but still in the hierarchy, which is what lets the
-                // width animate rather than jump. All three of these are stated rather than assumed:
-                // a zero-width view still draws outside its bounds, still takes taps, and is still
-                // read out by VoiceOver.
+                .cadenceFixedTypography()
                 .clipped()
-                .opacity(isSidebarCollapsed ? 0 : 1)
-                .allowsHitTesting(!isSidebarCollapsed)
-                .accessibilityHidden(isSidebarCollapsed)
-                .zIndex(1)
+                .offset(x: isSidebarVisible ? 0 : -drawerWidth)
+                .allowsHitTesting(isSidebarVisible)
+                .accessibilityHidden(!isSidebarVisible)
+                .accessibilityAction(.escape) {
+                    setSidebarVisible(false, isDrawerMode: isDrawerMode)
+                }
+                .zIndex(2)
 
-                detail()
-                    .frame(width: detailWidth, height: proxy.size.height)
-                    .background(Theme.bg)
-                    .clipped()
-                    // The way back. It floats over the detail because the fold is worth 188pt only
-                    // if none of it is kept back for a stub column, and it sits at the vertical
-                    // centre of the leading edge — clear of every page header, which is where the
-                    // pages put their own titles and controls.
-                    .overlay(alignment: .leading) {
-                        if isSidebarCollapsed {
-                            iOSSidebarExpandHandle { setCollapsed(false) }
-                        }
+                if isModal {
+                    Button {
+                        setSidebarVisible(false, isDrawerMode: true)
+                    } label: {
+                        Theme.scrim
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
                     }
-                    .zIndex(0)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close sidebar")
+                    .accessibilityIdentifier("cadence.sidebar.drawerBackdrop")
+                    .keyboardShortcut(.escape, modifiers: [])
+                    .zIndex(1)
+                }
+
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: sidebarWidth)
+                        .accessibilityHidden(true)
+
+                    // Hard-size and clip at the pane boundary, not just at the window edge:
+                    // descendant minimums and page-local capture scrims stay in their pane.
+                    detail()
+                        .frame(width: detailWidth, height: proxy.size.height)
+                        .background(Theme.bg)
+                        .clipped()
+                        .allowsHitTesting(!isModal)
+                        .accessibilityHidden(isModal)
+                        .overlay(alignment: .leading) {
+                            if !isSidebarVisible {
+                                iOSSidebarExpandHandle {
+                                    setSidebarVisible(true, isDrawerMode: isDrawerMode)
+                                }
+                            }
+                        }
+                        .zIndex(0)
+                }
+                .zIndex(0)
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+            .clipped()
+            .onChange(of: isDrawerMode) { _, _ in
+                isDrawerPresented = false
+            }
+            .onChange(of: selection) { _, _ in
+                if isDrawerMode {
+                    setSidebarVisible(false, isDrawerMode: true)
+                }
+            }
         }
         .background(Theme.bg.ignoresSafeArea())
         .ignoresSafeArea(.container)
@@ -102,9 +110,26 @@ struct iPadMacStyleRootShell<Content: View>: View {
         }
     }
 
-    private func setCollapsed(_ collapsed: Bool) {
+    private func navigationSelection(isDrawerMode: Bool) -> Binding<iOSSidebarItem?> {
+        Binding(
+            get: { selection },
+            set: {
+                selection = $0
+                // A tap on the current destination still dismisses; onChange alone cannot do that.
+                if isDrawerMode {
+                    setSidebarVisible(false, isDrawerMode: true)
+                }
+            }
+        )
+    }
+
+    private func setSidebarVisible(_ visible: Bool, isDrawerMode: Bool) {
         withAnimation(.easeInOut(duration: 0.22)) {
-            isSidebarCollapsed = collapsed
+            if isDrawerMode {
+                isDrawerPresented = visible
+            } else {
+                isSidebarCollapsed = !visible
+            }
         }
     }
 }
