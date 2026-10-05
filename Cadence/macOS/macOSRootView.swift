@@ -305,14 +305,17 @@ struct macOSRootView: View {
     }
 }
 
-/// Owns the two unbounded `@Query`s the notification reconcile needs, so they sit on a leaf view
+/// Owns the unbounded `@Query` the notification reconcile needs, so it sits on a leaf view
 /// rendered in `.background { }` instead of on `macOSRootView` itself — the same shape as
 /// `HoverFreezeObserver`. Nothing else changes: the reconcile still runs on exactly the same
-/// scene-phase transitions with exactly the same task/habit sets.
+/// scene-phase transitions with exactly the same task set.
+///
+/// **The `@Query private var allHabits: [Habit]` beside it is gone ([[T-2081]]).** It existed only
+/// to feed `reconcile(tasks:habits:)`, which no longer takes habits; leaving the query would have
+/// kept this view re-rendering on every habit change to compute nothing.
 private struct NotificationReconcileObserver: View {
     @Environment(\.scenePhase) private var scenePhase
     @Query private var allTasks: [AppTask]
-    @Query private var allHabits: [Habit]
 
     var body: some View {
         Color.clear
@@ -323,8 +326,7 @@ private struct NotificationReconcileObserver: View {
                 guard phase != .active else { return }
                 CadenceWidgetRefreshCenter.reloadAllWidgets()
                 let tasks = allTasks
-                let habits = allHabits
-                Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
+                Task { await NotificationManager.shared.reconcile(tasks: tasks) }
             }
     }
 }

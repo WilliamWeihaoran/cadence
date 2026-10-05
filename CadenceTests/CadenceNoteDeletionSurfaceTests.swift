@@ -476,7 +476,7 @@ struct CadenceNoteDeletionSurfaceTests {
     /// user says yes.
     ///
     /// The rule followed here is already settled twice in this codebase:
-    /// `HabitNotificationReconcileSupport.reconcileInput` returns `nil` rather than `([], [])`
+    /// `HabitNotificationReconcileSupport.scheduleReconcile` skips its pass rather than reconciling with `[]`
     /// because reconcile reads an empty desired set as "cancel everything", and
     /// `MarkdownTaskEmbedSupport.storeHoldsTask` returns `Bool?` so a failed read keeps the cached
     /// task. Same distinction, third site.

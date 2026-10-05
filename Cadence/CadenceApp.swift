@@ -36,6 +36,13 @@ struct CadenceApp: App {
         // stored selection is a key nobody reads. Clearing it is idempotent and touches no model
         // state — see `CadenceNotesEditorPreferences`.
         CadenceNotesEditorPreferences.purgeRetiredKeys()
+        // The same shape as the line above, one layer further out: a retired feature's leftovers
+        // cleared on every cold launch, idempotently. The difference is where they live — these
+        // are not this app's `UserDefaults` but the *operating system's* pending-notification
+        // queue, which is why deleting the code that scheduled them did not remove them and why
+        // this cannot wait for a reconcile pass that only runs on a scene-phase change. See
+        // `CadenceRetiredHabitReminderPurge` for the full argument.
+        Task { await CadenceRetiredHabitReminderPurge.run() }
         sharedModelContainer = PersistenceController.shared.container
     }
 

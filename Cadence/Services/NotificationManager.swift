@@ -70,11 +70,18 @@ final class NotificationManager: NSObject {
     /// The diffing rules live in `NotificationReconcileDiff.make` because this method early-returns
     /// under test; keep any new decision-making there rather than inline here.
     ///
-    /// An empty `tasks`/`habits` pair means "cancel everything", so callers must pass real fetched
-    /// state — never a failed fetch coerced to an empty array. See `HabitNotificationReconcileSupport`.
+    /// An empty `tasks` array means "cancel everything", so callers must pass real fetched state —
+    /// never a failed fetch coerced to an empty array. See `HabitNotificationReconcileSupport`.
+    ///
+    /// **`habits:` is gone ([[T-2081]]), not emptied.** Habit reminders are retired, and the two
+    /// ways to say so differ: a `habits: []` every caller must remember to pass is a parameter
+    /// whose only correct value is invisible at the call site, while no parameter at all is a
+    /// statement the compiler enforces. Removing it also means a pending `habit-reminder-…` is now
+    /// permanently absent from `plan.all` while still being `isManaged`, so this diff removes one
+    /// on every pass — which is the sweep `CadenceRetiredHabitReminderPurge` exists to not have to
+    /// wait for.
     func reconcile(
         tasks: [AppTask],
-        habits: [Habit],
         dueReminderHour: Int = 9,
         dueReminderMinute: Int = 0
     ) async {
@@ -88,7 +95,6 @@ final class NotificationManager: NSObject {
 
         let plan = NotificationPlan.build(
             tasks: tasks,
-            habits: habits,
             now: Date(),
             dueReminderHour: dueReminderHour,
             dueReminderMinute: dueReminderMinute
@@ -226,5 +232,27 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound])
+    }
+}
+
+/// The real notification centre, as the two-call view `CadenceRetiredHabitReminderPurge` asks for.
+///
+/// **It lives in this file because this file is the app's one door to the OS notification centre**
+/// — the rule `CadenceAgentOperatingRuleTests.theOnlyFileInTheAppThatReachesTheNotificationCentreIsTheGuardedManager`
+/// states as an equality. The purge declares the protocol and owns the decision about *which*
+/// identifiers go; it does not get its own door.
+///
+/// `current()` is read inside each call rather than stored, for the same reason `center` above is
+/// `lazy`: touching it eagerly crashes a SwiftUI preview host, which lacks a normal app bundle
+/// identity. `CadenceRetiredHabitReminderPurge.run()` checks `isTestEnvironment` before it
+/// constructs this, so no test host reaches either line.
+@MainActor
+struct CadenceLiveNotificationPurgeCentre: CadencePendingNotificationPurgeCentre {
+    func pendingIdentifiers() async -> [String] {
+        await UNUserNotificationCenter.current().pendingNotificationRequests().map(\.identifier)
+    }
+
+    func removePending(withIdentifiers identifiers: [String]) {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
     }
 }

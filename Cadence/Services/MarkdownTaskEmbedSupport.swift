@@ -467,7 +467,7 @@ nonisolated enum MarkdownEmbeddedTaskLookup {
     ///
     /// `Bool?` rather than `Bool`, and the third case is the load-bearing one: `nil` means the fetch
     /// itself failed, which is not the same fact as "no such task". Same distinction
-    /// `HabitNotificationReconcileSupport.reconcileInput` draws, and for the same reason — coercing
+    /// `HabitNotificationReconcileSupport.scheduleReconcile` draws, and for the same reason — coercing
     /// a failed read to the empty answer turns a store hiccup into a destructive conclusion.
     static func storeHoldsTask(id: UUID, in modelContext: ModelContext) -> Bool? {
         var descriptor = FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == id })

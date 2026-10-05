@@ -13,7 +13,7 @@ import Testing
 /// fetch had gone wrong.
 ///
 /// These tests exercise the hoisted overload, `loadOrCreateCoreNotes(today:week:notepad:)`,
-/// the same seam `HabitNotificationReconcileSupport.reconcileInput` uses for the same reason: an
+/// the same seam `HabitNotificationReconcileSupport.scheduleReconcile` uses for the same reason: an
 /// in-memory `ModelContext` will not reliably fail a fetch or a save on demand, so the failure
 /// path is only reachable by injecting the `nil` a throw would have produced.
 struct CadenceCoreNoteLoadFailureTests {

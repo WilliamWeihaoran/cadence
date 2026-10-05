@@ -29,7 +29,6 @@ struct iOSRootView: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var allTasksForNotifications: [AppTask]
-    @Query private var allHabitsForNotifications: [Habit]
     @State private var selection: iOSSidebarItem? = .today
     /// One `NavigationPath` per compact tab, so switching tabs preserves where you were. Each is
     /// type-erased — see `iOSCompactTabPaths`.
@@ -180,8 +179,7 @@ struct iOSRootView: View {
             // the home screen keeps its pending reminder until something unrelated backgrounds the
             // app. `docs/TODO.md` T-312, and T-306 for the macOS half of the same contract.
             let tasks = allTasksForNotifications
-            let habits = allHabitsForNotifications
-            Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
+            Task { await NotificationManager.shared.reconcile(tasks: tasks) }
         }
     }
 

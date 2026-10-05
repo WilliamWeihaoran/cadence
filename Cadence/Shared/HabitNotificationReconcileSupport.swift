@@ -1,9 +1,15 @@
 import Foundation
 import SwiftData
 
-/// Shared fast-path notification reconcile trigger for task/habit create, edit, and delete call
-/// sites across macOS and iOS, plus the shared reaction to Settings' "Enable reminders" toggle.
+/// Shared fast-path notification reconcile trigger for task create, edit, and delete call sites
+/// across macOS and iOS, plus the shared reaction to Settings' "Enable reminders" toggle.
 /// Kept tiny and side-effect-only so each call site stays a one-liner.
+///
+/// **The name is now wider than the job ([[T-2081]]).** Habit reminders are retired, so nothing
+/// here fetches or forwards a `Habit` any more and every surviving caller is a *task* path. The
+/// type keeps its name only because renaming it would touch a dozen call sites and a dozen test
+/// files that pin the spelling, several of which a sibling increment is editing; the rename is
+/// recorded as follow-up rather than done here.
 nonisolated enum HabitNotificationReconcileSupport {
     /// Main-actor by requirement, not by convenience.
     ///
@@ -24,26 +30,17 @@ nonisolated enum HabitNotificationReconcileSupport {
     @MainActor
     static func scheduleReconcile(in context: ModelContext) {
         Task {
-            guard let input = reconcileInput(
-                tasks: try? context.fetch(FetchDescriptor<AppTask>()),
-                habits: try? context.fetch(FetchDescriptor<Habit>())
-            ) else { return }
-            await NotificationManager.shared.reconcile(tasks: input.tasks, habits: input.habits)
+            // `try?` then `guard let`, and the two steps are one rule: a *failed* fetch must skip
+            // this pass, because `reconcile` reads an empty desired set as "nothing should be
+            // pending" and cancels every managed notification the app has scheduled. A genuinely
+            // empty store still reaches `reconcile` with `[]` — that one really does mean there is
+            // nothing to notify about. Before [[T-2081]] this was a named helper that paired the
+            // task and habit fetches so neither could be coerced; with the habit fetch retired
+            // there is one optional left and a helper over it would be the identity function, so
+            // the rule lives here, as the comment on the `guard` that enforces it.
+            guard let tasks = try? context.fetch(FetchDescriptor<AppTask>()) else { return }
+            await NotificationManager.shared.reconcile(tasks: tasks)
         }
-    }
-
-    /// `nil` when either fetch failed, which callers must treat as "skip this pass".
-    ///
-    /// Coercing a failed fetch to `[]` is not inert: `reconcile` reads an empty desired set as
-    /// "nothing should be pending" and cancels every managed notification the app has scheduled.
-    /// A genuinely empty store still returns a (empty, empty) pair — that one really does mean
-    /// there is nothing to notify about.
-    static func reconcileInput(
-        tasks: [AppTask]?,
-        habits: [Habit]?
-    ) -> (tasks: [AppTask], habits: [Habit])? {
-        guard let tasks, let habits else { return nil }
-        return (tasks, habits)
     }
 }
 

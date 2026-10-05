@@ -151,7 +151,7 @@ enum CadenceCoreNoteSupport {
     /// The same assembly with the three fetches hoisted out, so the failure path is exercisable
     /// without a genuinely throwing `ModelContext` — an in-memory container will not reliably
     /// fail a fetch or a save on demand. Same shape as
-    /// `HabitNotificationReconcileSupport.reconcileInput`, for the same reason: `nil` here can
+    /// `HabitNotificationReconcileSupport.scheduleReconcile`, for the same reason: `nil` here can
     /// only mean the caller's fetch threw, because `note(for:)` below never returns `nil` on its
     /// own account.
     static func loadOrCreateCoreNotes(today: Note?, week: Note?, notepad: Note?) -> CadenceCoreNoteState {

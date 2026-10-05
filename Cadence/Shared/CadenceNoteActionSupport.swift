@@ -144,7 +144,7 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     /// loss instead. Both are wrong; only the first is the forbidden direction.
     ///
     /// The rule is already settled twice in this codebase and is followed rather than re-argued.
-    /// `HabitNotificationReconcileSupport.reconcileInput` returns `nil` when either fetch failed
+    /// `HabitNotificationReconcileSupport.scheduleReconcile` skips its pass when the fetch failed
     /// because reconcile reads an empty desired set as "cancel everything", and
     /// `MarkdownTaskEmbedSupport.storeHoldsTask` returns `Bool?` so a failed read keeps the cached
     /// task — a store hiccup is not evidence of a deletion. Same distinction, third site.
@@ -233,7 +233,7 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     /// **`nil` means the fetch failed; `[]` means the store is empty.** The two produce the same
     /// arithmetic — there is nothing else to compute from — and differ in `hasUnknownImpact`,
     /// which is what the confirmation needs in order to stop presenting a floor as a total. Same
-    /// signature shape as `HabitNotificationReconcileSupport.reconcileInput`, for the same reason.
+    /// distinction `HabitNotificationReconcileSupport.scheduleReconcile` draws, for the same reason.
     ///
     /// `allNotes` still answers the backlink question — that one really is about notes. `images`
     /// is answered from `survivingMarkdownTexts`, which is every markdown-bearing field in the

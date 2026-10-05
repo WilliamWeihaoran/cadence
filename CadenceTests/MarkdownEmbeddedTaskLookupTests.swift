@@ -138,7 +138,7 @@ struct MarkdownEmbeddedTaskLookupTests {
 
     /// `storeHoldsTask` answers three ways, and the third is the point: `nil` is "could not read",
     /// which is not the same fact as "no such task". Same distinction
-    /// `HabitNotificationReconcileSupport.reconcileInput` draws.
+    /// `HabitNotificationReconcileSupport.scheduleReconcile` draws.
     @Test func storeHoldsTaskSeparatesPresenceFromAbsence() throws {
         let context = try embedContext()
         let task = try seedTask("Present", in: context)

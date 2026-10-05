@@ -306,7 +306,9 @@ private struct HabitReminderPicker: View {
     /// *the current time* — a time no user set and this sheet would then save. Clamping first
     /// leaves the fallback for the one case it is honest about, a minute that genuinely does not
     /// exist today (a spring-forward DST gap), which is the same distinction
-    /// `HabitNotificationPlanner.reminder(for:now:)` draws.
+    /// the retired habit-reminder planner drew before [[T-2081]] deleted it — a distinction that
+    /// outlived the scheduling it was written for, because this sheet still edits the stored value
+    /// the schema keeps.
     private var reminderDate: Binding<Date> {
         Binding(
             get: {

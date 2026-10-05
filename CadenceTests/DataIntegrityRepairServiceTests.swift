@@ -494,8 +494,9 @@ struct DataIntegrityRepairServiceTests {
     /// fell outside `0...1439`, on **launch**, with no user action. The owner retired habits at
     /// the depth "remove the UI and stop writing, keep the schema", so no startup pass rewrites a
     /// habit row any more — and nothing is lost by stopping, because the value was already inert
-    /// on both halves: `HabitNotificationPlanner.reminder(for:now:)` refuses to schedule it
-    /// (T-363) and no editor can show it, since the editors are gone.
+    /// on both halves: no plan can carry a habit reminder at all since [[T-2081]] (it was already
+    /// refused for an out-of-range minute by T-363) and no editor can show it, since the editors
+    /// are gone.
     ///
     /// The assertion is that the stored value is **unchanged**, not merely that the counter is
     /// zero: a pass that cleared the field and forgot to count would satisfy the counter alone.
@@ -559,14 +560,15 @@ struct DataIntegrityRepairServiceTests {
         #expect(unset.reminderMinuteOfDay == nil)
     }
 
-    /// Why leaving the corrupt value in place costs nothing ([[T-2077]]).
+    /// Why leaving the corrupt value in place costs nothing ([[T-2077]], restated by [[T-2081]]).
     ///
-    /// This test used to say "the repair and the planner agree"; with the repair gone, the planner
-    /// is carrying the whole of it on its own — which it already was, because [[T-363]] made it
-    /// refuse an out-of-range minute three tickets before the repair existed. A stored `1440` is
-    /// inert before the repair and inert after it, so nothing is scheduled either way. That is the
-    /// measurement that makes removing the pass safe rather than merely convenient.
-    @Test func anOutOfRangeReminderSchedulesNothingWithOrWithoutTheRetiredRepair() throws {
+    /// [[T-2077]] rewrote this test to lean on the planner: the repair was gone, but the planner
+    /// still refused an out-of-range minute ([[T-363]]), so a stored `1440` was inert either way.
+    /// [[T-2081]] then removed the planner, and the argument gets *shorter* rather than weaker —
+    /// a corrupt reminder time is now inert because **no** reminder time schedules anything, not
+    /// because this particular value is rejected. The old non-vacuity control (an in-range minute
+    /// still plans) is exactly what stopped being true, so it is inverted here instead.
+    @Test func noReminderTimeSchedulesAnythingWithOrWithoutTheRetiredRepair() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
@@ -576,19 +578,31 @@ struct DataIntegrityRepairServiceTests {
         try modelContext.save()
 
         let now = Date(timeIntervalSince1970: 1_772_000_000)
-        #expect(HabitNotificationPlanner.reminder(for: habit, now: now) == nil, "premise")
+        let task = AppTask(title: "Still scheduled")
+        task.dueDate = DateFormatters.dateKey(from: now.addingTimeInterval(86_400))
+
+        func plannedIdentifiers() -> [String] {
+            NotificationPlan.build(tasks: [task], now: now, dueReminderHour: 9, dueReminderMinute: 0)
+                .all
+                .map(\.identifier)
+        }
+
+        let habitIdentifier = NotificationIdentifiers.habitReminder(habitID: habit.id)
+        #expect(plannedIdentifiers().contains(habitIdentifier) == false, "premise")
 
         _ = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
 
         #expect(habit.reminderMinuteOfDay == 1440, "the retired pass cleared the field")
-        #expect(HabitNotificationPlanner.reminder(for: habit, now: now) == nil)
+        #expect(plannedIdentifiers().contains(habitIdentifier) == false)
 
-        // Non-vacuity: the planner is not simply answering `nil` for every habit. An in-range
-        // minute still plans, which is what makes the `nil` above a statement about the value.
+        // The inverted control. An in-range minute used to plan, and that was what made the
+        // absence above a statement about the *value*; now it plans nothing either, which is what
+        // makes it a statement about habits. The task alongside it still plans, so the plan is not
+        // merely empty.
         habit.reminderMinuteOfDay = 7 * 60
         let second = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
         #expect(second.habitRemindersCleared == 0)
-        #expect(HabitNotificationPlanner.reminder(for: habit, now: now) != nil)
+        #expect(plannedIdentifiers() == [NotificationIdentifiers.taskDue(taskID: task.id)])
     }
 
     /// The counter has to be wired into `changed`, because `performStartupMaintenance` gates its

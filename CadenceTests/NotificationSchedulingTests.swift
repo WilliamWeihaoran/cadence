@@ -4,7 +4,7 @@ import Testing
 @testable import Cadence
 
 // NOTE: This file only tests the pure planning logic in `NotificationScheduling.swift`
-// (TaskNotificationPlanner, HabitNotificationPlanner, NotificationPlan.build). It deliberately
+// (TaskNotificationPlanner, NotificationPlan, NotificationReconcileDiff). It deliberately
 // does NOT test `UNUserNotificationCenter` itself — real authorization prompts, actual
 // notification delivery, or diffing against `pendingNotificationRequests()` are inherently
 // manual/simulator-only. A future agent should not try to write a flaky test against the real
@@ -129,103 +129,61 @@ struct NotificationSchedulingTests {
         #expect(request.fireDate == date("2026-06-10", hour: 9))
     }
 
-    // MARK: - HabitNotificationPlanner.reminder
+    // MARK: - Habit reminders are retired ([[T-2081]])
 
-    @Test func habitReminderNilWhenNoReminderTimeSet() {
-        let habit = Habit(title: "Read")
-        habit.reminderMinuteOfDay = nil
+    /// **The inversion of the five habit-reminder planner tests that stood here.**
+    ///
+    /// They pinned *when* a habit got a reminder: later today vs. tomorrow, both ends of the valid
+    /// minute range, and (T-363) nothing at all for a junk minute. The planner is gone, so the
+    /// question they answered no longer has a wrong answer — and the replacement is strictly
+    /// stronger than any of them. It is not "a corrupt reminder time schedules nothing", it is
+    /// **no habit schedules anything, whatever its reminder time**, including the in-range values
+    /// the old tests used as their non-vacuity control.
+    ///
+    /// Asserted on `plan.all` rather than on the absence of a symbol, because the plan is what
+    /// `NotificationManager.reconcile` installs. `NotificationPlan.build` no longer accepts a
+    /// `habits:` argument at all, so the habits below cannot even be offered to it — this test
+    /// states what that compile-time fact buys at runtime.
+    @Test func noHabitReachesTheInstalledPlanWhateverItsReminderTime() {
         let now = date("2026-06-09", hour: 8)
 
-        #expect(HabitNotificationPlanner.reminder(for: habit, now: now) == nil)
-    }
-
-    @Test func habitReminderResolvesLaterTodayWhenStillUpcoming() throws {
-        let habit = Habit(title: "Stretch")
-        habit.reminderMinuteOfDay = 20 * 60 // 8:00 PM
-        let now = date("2026-06-09", hour: 8) // 8:00 AM — reminder is later today
-
-        let request = try #require(HabitNotificationPlanner.reminder(for: habit, now: now))
-        #expect(request.identifier == NotificationIdentifiers.habitReminder(habitID: habit.id))
-        #expect(request.kind == .habitReminder)
-        #expect(request.fireDate == date("2026-06-09", hour: 20))
-    }
-
-    @Test func habitReminderResolvesTomorrowWhenTimeAlreadyPassedToday() throws {
-        let habit = Habit(title: "Journal")
-        habit.reminderMinuteOfDay = 7 * 60 // 7:00 AM
-        let now = date("2026-06-09", hour: 8) // 8:00 AM — 7 AM already passed today
-
-        let request = try #require(HabitNotificationPlanner.reminder(for: habit, now: now))
-        #expect(request.fireDate == date("2026-06-10", hour: 7))
-    }
-
-    /// **An out-of-range reminder time schedules nothing (T-363).**
-    ///
-    /// `Calendar.date(bySettingHour:minute:second:of:)` returns `nil` for every one of these, and
-    /// the planner used to end that expression in `?? now` — so a habit carrying a junk minute got
-    /// a *standing daily* reminder at whatever o'clock reconcile happened to run. The assertion is
-    /// `== nil` rather than "not at `now`" on purpose: the values below are not times, and the
-    /// planner has no business inventing one for them.
-    ///
-    /// `Habit.reminderMinuteOfDay` is an unvalidated `Int?` by design — see
-    /// `HabitStreakTests.reminderMinuteOfDayHasNoRangeValidationTodayByDesignGap` — so these
-    /// values are reachable from imported, synced or hand-edited data even though no picker emits
-    /// them.
-    @Test func habitReminderSchedulesNothingForAnOutOfRangeMinute() {
-        let now = date("2026-06-09", hour: 8)
-
-        for minuteOfDay in [-1500, -15, -1, 1440, 1500, 100_000] {
-            let habit = Habit(title: "Corrupt reminder \(minuteOfDay)")
+        // Every shape the retired planner distinguished: later today, already passed, both ends of
+        // the valid range, unset, and the out-of-range values T-363 was about.
+        for minuteOfDay in [nil, 0, 7 * 60, 20 * 60, 1439, -15, 1440, 100_000] as [Int?] {
+            let habit = Habit(title: "Retired \(String(describing: minuteOfDay))")
             habit.reminderMinuteOfDay = minuteOfDay
 
-            // Non-vacuity: the fallback these used to take was `now` itself, so a planner that
-            // still fell back would return a request rather than nil here.
-            #expect(
-                HabitNotificationPlanner.reminder(for: habit, now: now) == nil,
-                "minuteOfDay \(minuteOfDay) still schedules a daily reminder"
+            let task = AppTask(title: "Still scheduled")
+            task.scheduledDate = "2026-06-10"
+            task.scheduledStartMin = 540
+
+            let plan = NotificationPlan.build(
+                tasks: [task],
+                now: now,
+                dueReminderHour: 9,
+                dueReminderMinute: 0
             )
+
+            #expect(
+                plan.all.contains { $0.identifier == NotificationIdentifiers.habitReminder(habitID: habit.id) } == false,
+                "minuteOfDay \(String(describing: minuteOfDay)) still reached the plan"
+            )
+            #expect(plan.all.contains { $0.kind == .habitReminder } == false)
+            // Non-vacuity: the plan is not simply empty. The task alongside each habit is still
+            // planned, so the absences above are about habits rather than about `build` returning
+            // nothing.
+            #expect(plan.all.map(\.identifier) == [NotificationIdentifiers.taskStart(taskID: task.id)])
         }
     }
 
-    /// The guard is a range, and both of its ends are inclusive: 00:00 and 23:59 are real reminder
-    /// times and a fix that clipped either would silently drop a user's actual setting.
-    @Test func habitReminderAcceptsBothEndsOfTheValidMinuteRange() throws {
+    /// The minute range outlived the planner, and on purpose.
+    ///
+    /// `HabitNotificationPlanner` is now validation-only: `CadenceHabitReminderEditing` still asks
+    /// it whether a stored value is a real time of day, for rows the schema deliberately keeps.
+    /// Pinned so "the planner is gone" is not mistaken for "the range went with it".
+    @Test func theRetiredPlannerKeepsOnlyItsMinuteRange() {
         #expect(HabitNotificationPlanner.reminderMinuteRange == 0...1439)
-
-        let midnight = Habit(title: "Midnight")
-        midnight.reminderMinuteOfDay = 0
-        let beforeMidnight = date("2026-06-09", hour: 0) // 00:00 exactly — today's slot has passed
-        let midnightRequest = try #require(HabitNotificationPlanner.reminder(for: midnight, now: beforeMidnight))
-        #expect(midnightRequest.fireDate == date("2026-06-10", hour: 0))
-
-        let lastMinute = Habit(title: "23:59")
-        lastMinute.reminderMinuteOfDay = 1439
-        let now = date("2026-06-09", hour: 8)
-        let lastMinuteRequest = try #require(HabitNotificationPlanner.reminder(for: lastMinute, now: now))
-        #expect(lastMinuteRequest.fireDate == date("2026-06-09", hour: 23, minute: 59))
-    }
-
-    /// The plan a reconcile actually installs contains no request for the corrupt habit — the level
-    /// the bug was observed at, rather than the planner call in isolation.
-    @Test func planBuildOmitsHabitsWithAnOutOfRangeReminderMinute() {
-        let now = date("2026-06-09", hour: 8)
-
-        let validHabit = Habit(title: "Meditate")
-        validHabit.reminderMinuteOfDay = 6 * 60
-
-        let corruptHabit = Habit(title: "Imported junk")
-        corruptHabit.reminderMinuteOfDay = 1440
-
-        let plan = NotificationPlan.build(
-            tasks: [],
-            habits: [validHabit, corruptHabit],
-            now: now,
-            dueReminderHour: 9,
-            dueReminderMinute: 0
-        )
-
-        #expect(plan.habitReminders.map(\.identifier) == [NotificationIdentifiers.habitReminder(habitID: validHabit.id)])
-        #expect(plan.habitReminders.contains { $0.identifier == NotificationIdentifiers.habitReminder(habitID: corruptHabit.id) } == false)
+        #expect(HabitNotificationPlanner.reminderMinuteRange == HabitReminderTime.minuteRange)
     }
 
     // MARK: - NotificationPlan.build
@@ -246,14 +204,8 @@ struct NotificationSchedulingTests {
         doneTask.dueDate = "2026-06-10"
         doneTask.status = .done
 
-        let remindingHabit = Habit(title: "Meditate")
-        remindingHabit.reminderMinuteOfDay = 6 * 60
-
-        let silentHabit = Habit(title: "No reminder set")
-
         let plan = NotificationPlan.build(
             tasks: [scheduledTask, dueTask, doneTask],
-            habits: [remindingHabit, silentHabit],
             now: now,
             dueReminderHour: 9,
             dueReminderMinute: 0
@@ -261,7 +213,9 @@ struct NotificationSchedulingTests {
 
         #expect(Set(plan.taskStarts.map(\.identifier)) == Set([NotificationIdentifiers.taskStart(taskID: scheduledTask.id)]))
         #expect(Set(plan.taskDues.map(\.identifier)) == Set([NotificationIdentifiers.taskDue(taskID: dueTask.id)]))
-        #expect(Set(plan.habitReminders.map(\.identifier)) == Set([NotificationIdentifiers.habitReminder(habitID: remindingHabit.id)]))
+        // `taskStarts + taskDues` is the whole of `all` now — [[T-2081]] removed the third channel
+        // rather than leaving it empty, so there is no `plan.habitReminders` to assert about.
+        #expect(Set(plan.all.map(\.identifier)) == Set(plan.taskStarts.map(\.identifier) + plan.taskDues.map(\.identifier)))
     }
 
     // MARK: - NotificationReconcileDiff
@@ -348,30 +302,37 @@ struct NotificationSchedulingTests {
         #expect(Set(diff.identifiersToRemove) == Set(desired.suffix(16).map(\.identifier)))
     }
 
-    // MARK: - HabitNotificationReconcileSupport.reconcileInput
+    // MARK: - HabitNotificationReconcileSupport
 
-    @Test func reconcileInputIsNilWhenEitherFetchFailed() {
-        #expect(HabitNotificationReconcileSupport.reconcileInput(tasks: nil, habits: []) == nil)
-        #expect(HabitNotificationReconcileSupport.reconcileInput(tasks: [], habits: nil) == nil)
-        #expect(HabitNotificationReconcileSupport.reconcileInput(tasks: nil, habits: nil) == nil)
-    }
+    /// **[[T-2081]] retired the paired-fetch helper, and these three tests with it.**
+    ///
+    /// Its job was to pair two optional fetches so neither could be coerced to `[]` — because
+    /// `reconcile` reads an empty desired set as "cancel everything", a failed fetch silently
+    /// cancelling every pending reminder was the bug it existed to prevent. With the habit fetch
+    /// gone there is one optional left and the helper would be the identity function, so the rule
+    /// moved into `scheduleReconcile`'s own `guard let`.
+    ///
+    /// The rule still has to hold, so it is pinned where it now lives rather than dropped: the
+    /// fetch is `try?`-and-`guard`, never `?? []`. A source assertion is the weak form, and it is
+    /// the only form available — `scheduleReconcile` spawns a `Task` into a `@MainActor`
+    /// singleton that early-returns under test, which is why the helper was extracted in the first
+    /// place.
+    @Test func scheduleReconcileStillSkipsThePassWhenTheFetchFails() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/Shared/HabitNotificationReconcileSupport.swift")
 
-    @Test func reconcileInputPassesThroughAGenuinelyEmptyStore() {
-        let input = HabitNotificationReconcileSupport.reconcileInput(tasks: [], habits: [])
-
-        #expect(input != nil)
-        #expect(input?.tasks.isEmpty == true)
-        #expect(input?.habits.isEmpty == true)
-    }
-
-    @Test func reconcileInputPassesThroughFetchedEntities() {
-        let task = AppTask(title: "Standup")
-        let habit = Habit(title: "Meditate")
-
-        let input = HabitNotificationReconcileSupport.reconcileInput(tasks: [task], habits: [habit])
-
-        #expect(input?.tasks.map(\.id) == [task.id])
-        #expect(input?.habits.map(\.id) == [habit.id])
+        #expect(source.contains("guard let tasks = try? context.fetch(FetchDescriptor<AppTask>()) else { return }"))
+        #expect(
+            source.contains("?? []") == false,
+            "a failed fetch coerced to an empty array would cancel every pending reminder"
+        )
+        #expect(
+            source.contains("FetchDescriptor<Habit>") == false,
+            "the reconcile fetches habits again"
+        )
+        #expect(
+            source.contains("reconcile(tasks: tasks)"),
+            "the reconcile call no longer matches the habit-free signature"
+        )
     }
 }
 

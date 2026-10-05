@@ -8,6 +8,13 @@ import Foundation
 nonisolated enum NotificationKind: String, Codable {
     case taskStart
     case taskDue
+    /// **Retired as something the app schedules ([[T-2081]]); kept as something it can recognise.**
+    ///
+    /// Nothing builds a request of this kind any more — the habit planner function is gone and
+    /// `NotificationPlan` has no habit channel. The case stays because `repeatsDaily` below is
+    /// the *reason* the retirement needed an explicit cleanup pass: a habit reminder scheduled by
+    /// an older build is a repeating time-of-day trigger, so it is not consumed when it fires and
+    /// does not expire on its own. See `CadenceRetiredHabitReminderPurge`.
     case habitReminder
 
     /// Whether this reminder recurs at the same time every day, or fires once at one instant.
@@ -63,12 +70,26 @@ nonisolated enum NotificationIdentifiers {
         "task-due-\(taskID.uuidString)"
     }
 
+    /// **Kept after [[T-2081]] retired habit reminders, and load-bearing rather than vestigial.**
+    ///
+    /// Nothing *schedules* one any more, but the owner's device still holds the ones an older
+    /// build registered. This is the only spelling of the identifier they carry, so it is what
+    /// `CadenceRetiredHabitReminderPurge` keys its removal on. Deleting it would leave those
+    /// pending requests with no name the app can say.
     static func habitReminder(habitID: UUID) -> String {
         "habit-reminder-\(habitID.uuidString)"
     }
 
     /// Whether an identifier belongs to Cadence's reconciled set. Anything else pending in the
     /// notification centre is somebody else's and must survive a reconcile untouched.
+    ///
+    /// **`habit-reminder-` must stay in this list ([[T-2081]]).** It reads like dead vocabulary now
+    /// that no habit reminder is ever planned, and dropping it is the one "tidy-up" that would make
+    /// the retirement worse instead of better: `NotificationReconcileDiff.make` removes managed
+    /// pending identifiers that are not desired, and `cancelAll` removes managed ones outright, so
+    /// while the prefix is managed *every* reconcile sweeps the stale reminders an older build
+    /// left. Unmanaging it reclassifies them as "somebody else's", and both sweeps would then
+    /// deliberately preserve the thing this ticket exists to remove.
     nonisolated static func isManaged(_ identifier: String) -> Bool {
         identifier.hasPrefix("task-start-") || identifier.hasPrefix("task-due-") || identifier.hasPrefix("habit-reminder-")
     }
@@ -167,85 +188,40 @@ nonisolated enum TaskNotificationPlanner {
     }
 }
 
+/// What a habit's reminder *time* is allowed to be. No longer a scheduler.
+///
+/// **[[T-2081]].** The one function that turned a `Habit` into a pending OS notification is gone
+/// with the rest of the habits surface, along with `NotificationPlan`'s habit channel. The minute range stays because it is still the app's one answer to "is this
+/// stored value a real time of day", which `CadenceHabitReminderEditing` and the integrity tests
+/// still ask of rows the schema deliberately keeps. It validates; it does not schedule.
 nonisolated enum HabitNotificationPlanner {
     /// The minutes-from-midnight a reminder time can name: `0` (00:00) through `1439` (23:59).
     ///
     /// One spelling, in `Models/Habit.swift`, because `DataIntegrityRepairService` asks the same
     /// question and this file is not in the `CadenceMCPServer` target while `Models/` is — see
-    /// `HabitReminderTime`. Kept as a name here so the planner still reads as owning its guard.
+    /// `HabitReminderTime`.
     static let reminderMinuteRange = HabitReminderTime.minuteRange
-
-    /// Returns the next daily reminder occurrence for a habit, or nil if no reminder time is set
-    /// or the stored time is not a real time of day.
-    ///
-    /// The returned `fireDate` names the next occurrence, but the reminder is a *standing* daily
-    /// one: `NotificationKind.habitReminder.repeatsDaily` makes the trigger match time-of-day and
-    /// repeat, so only the hour and minute of this date reach the OS. The full date still matters
-    /// for ordering against the pending-request limit.
-    ///
-    /// MVP simplification: this fires every day the reminder is enabled, regardless of the
-    /// habit's `frequencyType`/`frequencyDays` (e.g. a "3x/week" habit still gets a daily nudge
-    /// on days it isn't due). That's a deliberate scope decision for a general daily reminder,
-    /// not a bug — per-frequency-aware scheduling was explicitly out of scope for this pass.
-    ///
-    /// **An out-of-range minute schedules nothing, and the `?? now` it replaces is why (T-363).**
-    /// `Calendar.date(bySettingHour:minute:second:of:)` returns `nil` for -15, 1440 and 1500, and
-    /// falling back to `now` turned "this habit's reminder time is corrupt" into "remind me daily
-    /// at whatever o'clock reconcile happened to run" — a standing daily alarm at an arbitrary
-    /// time, which no picker could have set and no user could explain. The picker only ever emits
-    /// `0...1439`; imported, synced or hand-edited data need not. No reminder is the honest answer
-    /// to a time that is not a time.
-    ///
-    /// The guard is the range check rather than the `nil` result because the two are not the same
-    /// question: `date(bySettingHour:)` also returns `nil` for a perfectly valid minute that does
-    /// not exist on a given day (a spring-forward DST gap), and that is a reason to skip one
-    /// reconcile, not to treat the stored value as junk. Both end at `nil`; only one is a bug.
-    static func reminder(for habit: Habit, now: Date) -> CadenceNotificationRequest? {
-        guard let minuteOfDay = habit.reminderMinuteOfDay else { return nil }
-        guard reminderMinuteRange.contains(minuteOfDay) else { return nil }
-        let calendar = Calendar.current
-        guard let todayAtReminderTime = calendar.date(
-            bySettingHour: minuteOfDay / 60,
-            minute: minuteOfDay % 60,
-            second: 0,
-            of: now
-        ) else { return nil }
-
-        let fireDate: Date
-        if todayAtReminderTime > now {
-            fireDate = todayAtReminderTime
-        } else {
-            fireDate = calendar.date(byAdding: .day, value: 1, to: todayAtReminderTime) ?? todayAtReminderTime
-        }
-
-        return CadenceNotificationRequest(
-            identifier: NotificationIdentifiers.habitReminder(habitID: habit.id),
-            kind: .habitReminder,
-            title: habit.title,
-            // Frequency-neutral: the reminder itself is daily, but the habit may not be. A
-            // monthly "Pay rent" whose own summary reads "Day 1 each month" should not be told
-            // it has a daily check-in.
-            body: "Time to check in",
-            fireDate: fireDate
-        )
-    }
 }
 
 nonisolated struct NotificationPlan {
     let taskStarts: [CadenceNotificationRequest]
     let taskDues: [CadenceNotificationRequest]
-    let habitReminders: [CadenceNotificationRequest]
 
     var all: [CadenceNotificationRequest] {
-        taskStarts + taskDues + habitReminders
+        taskStarts + taskDues
     }
 
     /// The single pure entry point both the real `NotificationManager` adapter and unit tests
     /// call. Never call `Date()` directly inside any planner function above — `now` is always
     /// injected here so the whole plan is deterministic and testable.
+    ///
+    /// **There is deliberately no `habits:` parameter ([[T-2081]]).** The cheap retirement was to
+    /// keep the parameter and have every caller pass `[]`, and that is the shape to refuse: a
+    /// parameter that must always be empty carries no signal that filling it is forbidden, so the
+    /// next caller to hold a `[Habit]` has every reason to pass it and would silently restore
+    /// scheduling. Removing it makes "a habit cannot be scheduled" a fact the compiler keeps.
     static func build(
         tasks: [AppTask],
-        habits: [Habit],
         now: Date,
         dueReminderHour: Int,
         dueReminderMinute: Int
@@ -259,8 +235,7 @@ nonisolated struct NotificationPlan {
                     reminderHour: dueReminderHour,
                     reminderMinute: dueReminderMinute
                 )
-            },
-            habitReminders: habits.compactMap { HabitNotificationPlanner.reminder(for: $0, now: now) }
+            }
         )
     }
 }
