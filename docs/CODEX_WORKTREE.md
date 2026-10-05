@@ -53,6 +53,24 @@ Cadence/iOS/iOSMarkdownStylingLineSupport.swift
 Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift
 Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift
 Cadence/macOS/Editor/MarkdownEditorLayoutManager.swift
+Cadence/Services/PersistenceController.swift
+Cadence/Shared/CadenceEventNoteSupport.swift
+Cadence/iOS/iOSCalendarManager.swift
+Cadence/macOS/Services/CalendarManager.swift
+Cadence/iOS/iOSNotesView.swift
+Cadence/iOS/iOSSearchView.swift
+Cadence/iOS/iOSEventNoteEditorSheet.swift
+Cadence/macOS/Views/EventNoteSupportViews.swift
+Cadence/Services/CadenceWidgetRefreshCenter.swift
+Cadence/Services/CadenceTodayWidgetSupport.swift
+Cadence/Shared/CadenceTaskMutationSupport.swift
+Cadence/macOS/Services/TaskWorkflowService.swift
+Cadence/macOS/Services/TaskCompletionAnimationManager.swift
+Cadence/macOS/Views/TaskInspectorContentSupportViews.swift
+Cadence/macOS/Views/NotePanel.swift
+Cadence/macOS/Views/NoteEditorPane.swift
+Cadence/macOS/Views/ListNotesSupportViews.swift
+Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift
 ```
 
 ### LEASE WIDENED 2026-10-05 — four editor paths for [[T-1465]], the continuous quote rail
@@ -546,3 +564,30 @@ to chase. Every *other* red still is.
   one-line headline, and the measurement. A closure is written **as** a closure
   (`**CLOSED <date> (codex) — …`), not described as one ([[T-1335]]).
 - Use only ids from the range the coordinator reserved for it, recorded at the top of the inbox.
+
+### LEASE WIDENED 2026-10-05 — eighteen paths for [[T-3003]], Codex's four audit findings
+
+Granted by the coordinator at the owner's explicit instruction, relayed in chat: *"please grant it
+permission"*. Codex asked for this batch **before** making any production edit, which is the order
+this protocol wants and the opposite of the T-1458 case where the work was blocked at handoff.
+
+**Scope, as Codex stated it: the four audit findings only — no schema, project-file or manifest
+edits.** The coordinator has NOT seen the four findings; no inbox entry existed for them when this
+grant was written, so the scope recorded here is Codex's own words and not an independent reading
+of it. Codex files the T-3003 inbox entry naming the four findings; if that entry turns out to need
+a path outside this list, ask rather than widen.
+
+**Checked before granting, not assumed.** The eighteen paths were diffed against both landings in
+flight: zero overlap with `codex/tracking-ui-retirement` ([[T-1466]], queued), and no overlap with
+the live edit set of `codex/continuous-quote-rail` ([[T-1465]], mid-landing). `CadenceCodex*` tests
+and `docs/CODEX_LEDGER_INBOX.md` were already allowed and are not re-listed.
+
+**This block is wide — eighteen production paths including `PersistenceController.swift`,
+both `CalendarManager`s and `TaskWorkflowService.swift` — so it is a reservation against a
+coordinator agent touching them, not only a permission for Codex.** Three of them were edited today
+(`CadenceWidgetRefreshCenter.swift`, `CadenceTodayWidgetSupport.swift`,
+`TaskWorkflowService.swift`) by the habits/goals retirement, so a branch based before `b802afc5`
+will need a merge-base check at landing rather than a take-theirs.
+
+**Retire it when T-3003 lands**, in the same session that lands it, as [[T-1464]]'s seven paths were
+retired by `387ebca1` and the four quote paths are owed the same.
