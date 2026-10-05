@@ -488,12 +488,18 @@ struct DataIntegrityRepairServiceTests {
 
     // MARK: - T-428, a reminder minute that is not a time of day
 
-    /// A `Habit.reminderMinuteOfDay` outside `0...1439` is invisible **and** inert: the planner
-    /// refuses to schedule it (T-363) and both editors open it as unset (T-410), so the habit has
-    /// no reminder while the field claims one and the user has nothing to look at or fix. Repair
-    /// clears it, and clearing is the whole fix — the assertion that it is `nil` rather than
-    /// `1439` or `0` is the decision, not a detail.
-    @Test func repairClearsAHabitReminderMinuteThatIsNotATimeOfDay() throws {
+    /// **[[T-2077]] removed the pass this test used to assert, and this is its inversion.**
+    ///
+    /// `repairOutOfRangeHabitReminders` ([[T-428]]) cleared a `Habit.reminderMinuteOfDay` that
+    /// fell outside `0...1439`, on **launch**, with no user action. The owner retired habits at
+    /// the depth "remove the UI and stop writing, keep the schema", so no startup pass rewrites a
+    /// habit row any more — and nothing is lost by stopping, because the value was already inert
+    /// on both halves: `HabitNotificationPlanner.reminder(for:now:)` refuses to schedule it
+    /// (T-363) and no editor can show it, since the editors are gone.
+    ///
+    /// The assertion is that the stored value is **unchanged**, not merely that the counter is
+    /// zero: a pass that cleared the field and forgot to count would satisfy the counter alone.
+    @Test func repairLeavesAnOutOfRangeHabitReminderExactlyAsItFoundIt() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
@@ -509,20 +515,19 @@ struct DataIntegrityRepairServiceTests {
 
         let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
 
-        #expect(report.habitRemindersCleared == 3)
-        #expect(report.changed, "the report does not report the repair it made")
+        #expect(report.habitRemindersCleared == 0)
+        #expect(report.changed == false, "the retired pass still reports a repair")
 
-        for habit in [overflow, negative, wild] {
-            #expect(habit.reminderMinuteOfDay == nil, "\(habit.title) was not cleared")
-        }
-        // Clearing, not clamping: neither end of the range is an answer the user chose.
-        #expect(!([0, 1439] as [Int?]).contains(overflow.reminderMinuteOfDay))
-        #expect(!([0, 1439] as [Int?]).contains(negative.reminderMinuteOfDay))
+        #expect(overflow.reminderMinuteOfDay == 1440)
+        #expect(negative.reminderMinuteOfDay == -15)
+        #expect(wild.reminderMinuteOfDay == 100_000)
 
-        // A second context on the same container: the repair saved, it did not merely mutate.
+        // A second context on the same container: nothing was written behind the live objects
+        // either. This is the half that would still fail if the pass ran and only the counter was
+        // deleted.
         let stored = try ModelContext(container).fetch(FetchDescriptor<Habit>())
         #expect(stored.count == 3)
-        #expect(stored.allSatisfy { $0.reminderMinuteOfDay == nil })
+        #expect(Set(stored.compactMap(\.reminderMinuteOfDay)) == [1440, -15, 100_000])
     }
 
     /// Every value the pickers can emit survives, including both ends of the range and the `nil`
@@ -554,9 +559,14 @@ struct DataIntegrityRepairServiceTests {
         #expect(unset.reminderMinuteOfDay == nil)
     }
 
-    /// The cleared habit reads as unset to the one caller that consumes the field, so the repair
-    /// and the planner agree rather than merely both declining.
-    @Test func aClearedReminderPlansNothingAndReadsAsUnsetAfterwards() throws {
+    /// Why leaving the corrupt value in place costs nothing ([[T-2077]]).
+    ///
+    /// This test used to say "the repair and the planner agree"; with the repair gone, the planner
+    /// is carrying the whole of it on its own — which it already was, because [[T-363]] made it
+    /// refuse an out-of-range minute three tickets before the repair existed. A stored `1440` is
+    /// inert before the repair and inert after it, so nothing is scheduled either way. That is the
+    /// measurement that makes removing the pass safe rather than merely convenient.
+    @Test func anOutOfRangeReminderSchedulesNothingWithOrWithoutTheRetiredRepair() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
@@ -570,10 +580,11 @@ struct DataIntegrityRepairServiceTests {
 
         _ = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
 
-        #expect(habit.reminderMinuteOfDay == nil)
+        #expect(habit.reminderMinuteOfDay == 1440, "the retired pass cleared the field")
         #expect(HabitNotificationPlanner.reminder(for: habit, now: now) == nil)
 
-        // The user can now set a real one, and it survives a second repair.
+        // Non-vacuity: the planner is not simply answering `nil` for every habit. An in-range
+        // minute still plans, which is what makes the `nil` above a statement about the value.
         habit.reminderMinuteOfDay = 7 * 60
         let second = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
         #expect(second.habitRemindersCleared == 0)
@@ -583,6 +594,10 @@ struct DataIntegrityRepairServiceTests {
     /// The counter has to be wired into `changed`, because `performStartupMaintenance` gates its
     /// save on `repairReport?.changed` — a repair that mutates and reports `changed == false` is
     /// rolled back at the next fetch. Asserted on the value type so it fails for the right reason.
+    ///
+    /// Kept after [[T-2077]] retired the pass that raised it. The counter stays on the report and
+    /// stays decoded (an earlier build's persisted report still carries the key), so the wiring it
+    /// pins still has to hold; what changed is that nothing raises it any more.
     @Test func theClearedReminderCounterCountsAsAChange() {
         var report = DataIntegrityRepairReport(
             source: "test",
@@ -595,11 +610,14 @@ struct DataIntegrityRepairServiceTests {
         #expect(report.changed, "habitRemindersCleared is not wired into DataIntegrityRepairReport.changed")
     }
 
-    /// **The T-328 boundary, re-asserted with the new pass in the store.** Clearing a reminder is
-    /// not a sweep: it reads one scalar on a row that is present, so a half-synced store cannot
-    /// make its predicate wrong. This pins that the pass did not widen the service's licence —
-    /// the same four orphan rows survive, and a habit whose reminder is fine keeps `changed`
-    /// `false` alongside them.
+    /// **The T-328 boundary.** The same four orphan rows survive a repair, and a habit whose
+    /// reminder is fine keeps `changed` `false` alongside them.
+    ///
+    /// It was written for [[T-428]]'s reminder pass, to pin that the pass had not widened the
+    /// service's licence. [[T-2077]] removed that pass, and the test is kept rather than deleted
+    /// because the boundary it guards is about the *service*, not that pass: the orphan rows here
+    /// include a `HabitCompletion` with no habit, which is exactly the row the retired duplicate
+    /// collapse used to be the nearest neighbour of.
     @Test func clearingAReminderDidNotGiveRepairALicenceToCollectOrphans() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

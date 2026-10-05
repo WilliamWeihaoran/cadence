@@ -83,7 +83,19 @@ enum CadenceMCPToolDefinitions {
     // cannot mint is a task bundle, refused with a measurement in `docs/TODO.md` rather than left
     // undecided; "can this server file a note into a folder?" is a capability question, and the
     // version is the only thing a client can ask.
-    private static let serverVersion = "0.13.0"
+    // 0.14.0 is the first bump here that **removes** tools, which is why it is a minor and not a
+    // patch even though no response key moved: `create_goal` and `create_habit` are gone
+    // ([[T-2077]]). The owner retired goals and habits, and the chosen depth was "remove the UI and
+    // stop writing, keep the schema" — the app never creates or updates a `Goal` or a `Habit`
+    // again, the rows and the CloudKit record types stay, and the decision stays reversible. A
+    // write surface that kept minting them would have been the one process still making new ones.
+    // They **disappear** rather than remaining advertised and refusing: `tools/list` is the only
+    // capability contract a client can read, `tools(writesEnabled:)` already filters on this set,
+    // and a tool that is listed and always errors costs a client a round trip to learn what the
+    // list could have told it. A tool that silently answered OK without writing would be worse
+    // than either. `list_goals`, `get_goal` and `list_habits` are untouched and still read the
+    // existing rows — this removes the ability to mint, not the ability to see.
+    private static let serverVersion = "0.14.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
@@ -99,8 +111,6 @@ enum CadenceMCPToolDefinitions {
         "bulk_cancel_tasks",
         "append_core_note",
         "create_link",
-        "create_goal",
-        "create_habit",
         "create_tag",
         "create_list_note",
     ]
@@ -347,30 +357,6 @@ enum CadenceMCPToolDefinitions {
                 "url": stringProperty("The link URL. http:// and https:// are kept as typed, case-insensitively; anything else is prefixed with https://.", minLength: 1),
                 "title": stringProperty("Optional display title. Omitted or blank, the link displays as its url."),
             ], required: ["containerKind", "containerId", "url"])),
-            Tool(name: "create_goal", description: "Create a Cadence goal. With no parentGoalId it is a top-level direction; with one it is a milestone of that goal. Answers the same detail get_goal returns. Goals nest exactly one level, so a parentGoalId naming a goal that is itself a milestone is rejected. Lists cannot be linked from this surface and there is no deletion on it.", inputSchema: schema([
-                "title": stringProperty("Goal title.", minLength: 1),
-                "description": stringProperty("Optional definitive outcome."),
-                "startDate": dateProperty("Optional yyyy-MM-dd date or natural day."),
-                "endDate": dateProperty("Optional yyyy-MM-dd date or natural day. Pulled forward to startDate when it precedes it."),
-                "progressType": stringProperty("How progress is measured. Defaults to subtasks.", enumValues: GoalProgressType.allCases.map(\.rawValue)),
-                "targetHours": numberProperty("Optional hours target, used when progressType is hours. Fractional hours are kept; negative values floor at 0."),
-                "icon": stringProperty("Optional SF Symbol name. Omitted, the model default is kept."),
-                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. Omitted, the model default is kept."),
-                "kind": stringProperty("Goal kind. Defaults to completable; a top-level ongoing goal is what used to be a pursuit.", enumValues: GoalKind.allCases.map(\.rawValue)),
-                "status": stringProperty("Goal status. Defaults to active.", enumValues: GoalStatus.allCases.map(\.rawValue)),
-                "contextId": uuidProperty("Optional context UUID. Omitted, a milestone inherits its parent goal's context."),
-                "parentGoalId": uuidProperty("Optional parent goal UUID. The parent must be top-level."),
-            ], required: ["title"])),
-            Tool(name: "create_habit", description: "Create a Cadence habit. Answers the same summary list_habits returns. A habit created here has no reminder time: that field has no shared write path and scheduling a notification is an app action. There is no deletion on this surface.", inputSchema: schema([
-                "title": stringProperty("Habit title.", minLength: 1),
-                "icon": stringProperty("Optional SF Symbol name. Omitted, the model default is kept."),
-                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. Omitted, the model default is kept."),
-                "frequencyType": stringProperty("How often the habit is due. Defaults to daily.", enumValues: HabitFrequency.allCases.map(\.rawValue)),
-                "frequencyDays": integerArrayProperty("Optional integers read against frequencyType: daysOfWeek takes day indices 0-6, timesPerWeek takes a single target, monthly takes a single day of month, daily takes none."),
-                "targetCount": integerProperty("Optional check-ins per period. Floors at 1.", minimum: 1),
-                "contextId": uuidProperty("Optional context UUID. Omitted, the habit inherits its goal's context."),
-                "goalId": uuidProperty("Optional goal UUID this habit contributes to."),
-            ], required: ["title"])),
             Tool(name: "create_tag", description: "Create a Cadence tag, or restore the archived one that already carries its slug. Answers the same detail list_tags returns. A name whose slug an ACTIVE tag already carries is rejected rather than duplicated; a name an ARCHIVED tag carries is rejected too unless unarchive is set, because silently reviving a tag the owner archived is a write nobody asked for. There is no deletion on this surface; archiving is the app's reversible alternative.", inputSchema: schema([
                 "name": stringProperty("Tag display name. Trimmed, and must contain at least one letter or digit. The slug is derived from it.", minLength: 1),
                 "description": stringProperty("Optional tag description."),

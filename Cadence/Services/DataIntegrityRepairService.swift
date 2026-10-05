@@ -196,7 +196,7 @@ nonisolated enum DataIntegrityRepairService {
 
     /// **The four tables every repair reads, whatever the store holds.**
     ///
-    /// `repairDuplicateNotes`, `repairDuplicateHabitCompletions`, `repairOutOfRangeHabitReminders`,
+    /// `repairDuplicateNotes`,
     /// `repairStoredDefaultNoteTitles` and the duplicate-context grouping each read one of these
     /// unconditionally, so fetching them unconditionally buys nothing that is not used.
     ///
@@ -214,7 +214,6 @@ nonisolated enum DataIntegrityRepairService {
         var contexts: [Context]
         var habits: [Habit]
         var notes: [Note]
-        var habitCompletions: [HabitCompletion]
     }
 
     /// The tables a **container merge** reads, fetched only when there is a container to merge.
@@ -346,8 +345,7 @@ nonisolated enum DataIntegrityRepairService {
         let store = try RepairStore(
             contexts: context.fetch(FetchDescriptor<Context>()),
             habits: context.fetch(FetchDescriptor<Habit>()),
-            notes: context.fetch(FetchDescriptor<Note>()),
-            habitCompletions: context.fetch(FetchDescriptor<HabitCompletion>())
+            notes: context.fetch(FetchDescriptor<Note>())
         )
         var state = RepairState()
 
@@ -375,13 +373,11 @@ nonisolated enum DataIntegrityRepairService {
         }
 
         repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
-        repairDuplicateHabitCompletions(in: store, modelContext: context, report: &report)
         try repairDuplicateRecurrenceOccurrences(
             modelContext: context,
             remove: remove,
             report: &report
         )
-        repairOutOfRangeHabitReminders(in: store, report: &report)
         repairStoredDefaultNoteTitles(in: store, state: state, report: &report)
     }
 
@@ -395,7 +391,8 @@ nonisolated enum DataIntegrityRepairService {
     /// **A data edit at load, not a schema change.** There is no `SchemaMigrationPlan` in this
     /// project and this needs none — no column is added, removed or retyped, and nothing here would
     /// be legal in a migration plan anyway. It is the same kind of pass as
-    /// `repairOutOfRangeHabitReminders` above and it is placed beside it deliberately.
+    /// `repairDuplicateNotes` above and it is placed beside it deliberately. (It sat beside
+    /// `repairOutOfRangeHabitReminders` until [[T-2077]] removed that pass.)
     ///
     /// **Idempotent, and by construction rather than by a flag.** The predicate is "this row's
     /// title is exactly the retired default"; the edit makes it the empty string, which is not that
@@ -477,89 +474,32 @@ nonisolated enum DataIntegrityRepairService {
     /// `clearRetiredHeadingIfPresent`.
     private static let retiredStoredNoteHeading = "# \(retiredStoredNoteTitleDefault)"
 
-    /// T-428: a `Habit.reminderMinuteOfDay` already on disk outside `0...1439` is invisible **and**
-    /// inert, and until this pass nothing moved it. `HabitNotificationPlanner.reminder(for:now:)`
-    /// skips it (T-363), so it schedules nothing; both editors open it as no reminder (T-410), so
-    /// it shows nothing. The user cannot see the value, cannot act on it, and the habit quietly
-    /// has no reminder while the field says otherwise. Clearing it to `nil` is the app agreeing
-    /// with itself: `nil` is what every reader already behaves as if it read.
+    /// **The two habit passes this service used to run were removed by [[T-2077]].**
     ///
-    /// **Cleared, not clamped.** `1440` is not 23:59 and `-15` is not 00:00; a clamp invents a
-    /// time the user never chose and then schedules a real daily alarm at it, which is the
-    /// `?? now` failure T-363 removed from the planner wearing a tidier number. `nil` says "no
-    /// reminder", which is both true and repairable — the pickers can set a real one.
+    /// `repairOutOfRangeHabitReminders` ([[T-428]]) wrote `Habit.reminderMinuteOfDay = nil` on
+    /// every habit whose stored minute fell outside `0...1439`, and
+    /// `repairDuplicateHabitCompletions` ([[T-359]]) **deleted** `HabitCompletion` rows it judged
+    /// to be a second device's copy of one check-in. Both ran on **launch**, from
+    /// `PersistenceController.performStartupMaintenance`, with no user action. The owner retired
+    /// habits at the depth "remove the UI and stop writing, keep the schema" — the rows stay and
+    /// stay recoverable — so a startup pass that rewrites a habit, and above all one that deletes
+    /// a check-in the owner can no longer see or restore from any surface, is exactly the write
+    /// this ticket exists to stop. Neither pass was repairing something a live surface reads any
+    /// more: nothing schedules a habit reminder and nothing draws a habit day.
     ///
-    /// **Why this is allowed where an orphan sweep is not ([[T-328]]).** The boundary above is not
-    /// "repair never deletes"; it is that repair must stay *conservative under partial CloudKit
-    /// sync*, because `PersistenceController.performStartupMaintenance` runs it the instant the
-    /// container opens with no gate on sync state. What makes an orphan sweep unsafe there is that
-    /// its predicate is a claim about a **second row**: "this `Subtask` has no `parentTask`" is
-    /// indistinguishable from "its `AppTask` has not arrived yet", so the emptier the store the
-    /// more it destroys. This predicate reads **one scalar on the row in front of it**. No record
-    /// arriving later can make `1440` a minute of the day, so a half-synced store cannot produce a
-    /// false positive here — it simply sees fewer `Habit` rows and repairs fewer of them, which is
-    /// the same monotonicity the merges have. It also clears a field rather than deleting a row,
-    /// and the field it clears is one no surface can render and no reconcile can schedule.
+    /// `duplicateHabitCompletionsRemoved` and `habitRemindersCleared` stay on
+    /// `DataIntegrityRepairReport` and stay decoded, for the reason that type's own
+    /// `init(from:)` note gives — a persisted report written by an earlier build still carries
+    /// them, and dropping the keys would make an old report undecodable. They are simply never
+    /// raised above zero now.
     ///
-    /// The pass is idempotent and order-independent across devices, so a device that has not run
-    /// it yet re-syncing the corrupt value is not a loop: every device writes the same `nil`.
-    ///
-    /// `DataIntegrityRepairServiceTests.repairLeavesOrphanedRowsAloneRatherThanCollectingThemAtStartup`
-    /// still holds — that store has no `Habit` in it at all, and a habit whose reminder is `nil`
-    /// or in range is left alone here, so `changed` stays `false` for a store with nothing wrong.
-    private static func repairOutOfRangeHabitReminders(
-        in store: RepairStore,
-        report: inout DataIntegrityRepairReport
-    ) {
-        for habit in store.habits {
-            guard let minuteOfDay = habit.reminderMinuteOfDay else { continue }
-            guard !HabitReminderTime.namesATimeOfDay(minuteOfDay) else { continue }
-            habit.reminderMinuteOfDay = nil
-            report.habitRemindersCleared += 1
-        }
-    }
-
-    /// T-359: two devices can each mint a `HabitCompletion` for the same habit and the same day.
-    /// The `id`s differ, so CloudKit keeps both, and before this pass `completionCountsByDate()`
-    /// added them — one real check-in satisfying a `targetCount` of 2, or a `.timesPerWeek` target
-    /// reached with half the check-ins it names.
-    ///
-    /// This is [[T-328]]'s missing fetch, not a second repair mechanism beside it: that ticket
-    /// counted `HabitCompletion` among the models this service never looks at, and the fetch above
-    /// is now one of the ones it does.
-    ///
-    /// The collapse rule is `CadenceHabitCompletionStore`'s, deliberately not restated here — the
-    /// read (`HabitCompletion.collapsedCount(of:)`), the writer and this pass have to agree about
-    /// what a duplicated habit-day is worth, and the way they agree is by being one function.
-    ///
-    /// Grouped by **`(habit.id, date)`** rather than by habit instance, because two `Habit` rows
-    /// carrying one `id` is a state a restore can leave behind and their days are the same day.
-    /// Rows with no habit are left alone: an unowned completion is an orphan, which is the other
-    /// half of [[T-328]] and not this ticket. Rows with an empty `date` are left alone too — they
-    /// describe no day, so "the same day twice" is not a claim that can be made about them.
-    private static func repairDuplicateHabitCompletions(
-        in store: RepairStore,
-        modelContext: ModelContext,
-        report: inout DataIntegrityRepairReport
-    ) {
-        struct HabitDay: Hashable {
-            let habitID: UUID
-            let date: String
-        }
-
-        var rowsByDay: [HabitDay: [HabitCompletion]] = [:]
-        for completion in store.habitCompletions {
-            guard let habit = completion.habit, !completion.date.isEmpty else { continue }
-            rowsByDay[HabitDay(habitID: habit.id, date: completion.date), default: []].append(completion)
-        }
-
-        for rows in rowsByDay.values where rows.count > 1 {
-            report.duplicateHabitCompletionsRemoved += CadenceHabitCompletionStore.collapseDuplicates(
-                rows,
-                modelContext: modelContext
-            )
-        }
-    }
+    /// **What was deliberately NOT removed: the context/area/project merges' re-pointing of
+    /// `goal.context` and `habit.context`.** Those run only when a duplicate `Context` already
+    /// exists and is about to be deleted, and they move a surviving goal or habit onto the
+    /// canonical row rather than letting the delete nullify its filing. Removing them would make
+    /// this ticket *lose* data on the very rows it exists to preserve, which is the opposite of
+    /// the depth the owner chose. They write a relationship to keep an existing row intact; they
+    /// never create one.
 
     /// T-622: two devices can each complete the same occurrence of a recurring task and each spawn
     /// a successor for the slot after it.
@@ -575,8 +515,8 @@ nonisolated enum DataIntegrityRepairService {
     /// "these two rows claim the same slot in the same series", which needs to see *both* rows —
     /// so a half-synced store collapses less and never destroys something unique, which is the
     /// monotonicity every other pass here has. `CadenceTaskRecurrenceWorkflowSupport` owns the
-    /// survivor rule and the removability test, deliberately not restated here: the same reason
-    /// the habit-day collapse lives in `CadenceHabitCompletionStore`.
+    /// survivor rule and the removability test, deliberately not restated here — the same reason
+    /// the habit-day collapse lived in `CadenceHabitCompletionStore` until [[T-2077]] retired it.
     ///
     /// **The predecessor is re-pointed at the survivor, not cleared.** Each device wrote its own
     /// successor's id into the single `recurrenceSpawnedTaskIDRaw`, so the replica that recorded

@@ -22,7 +22,7 @@ import Testing
 /// | `GoalLinkPresentation.links(of:)` | avoid a cosmetic "Missing List" row |
 /// | `GoalContributionResolver.linkedListCount` | keep the goal's own count honest |
 /// | `CadenceReadService.goalSummary` | mirror that count on the MCP wire |
-/// | `DataIntegrityRepairService.repairDuplicateHabitCompletions` | it groups by `habit.id` |
+/// | `DataIntegrityRepairService` | [[T-2077]] removed its habit passes, so it deletes none |
 /// | `LinksView.links` | that is how a per-list panel is built at all |
 /// | `iOSListLinksPanel.links` | the same, on iOS |
 ///
@@ -189,28 +189,29 @@ struct CadenceOrphanRowInertnessTests {
 
     // MARK: - DataIntegrityRepairService
 
-    /// `Cadence/Services/DataIntegrityRepairService.swift` — `repairDuplicateHabitCompletions`
-    /// groups by `HabitDay(habitID: habit.id, date:)` behind
-    /// `guard let habit = completion.habit, !completion.date.isEmpty`.
+    /// **[[T-2077]] removed `repairDuplicateHabitCompletions`, and that settles this one by
+    /// construction rather than by a guard.**
     ///
-    /// **The gentlest-looking of the six and the only destructive one.** `deleteContext` deletes a
-    /// context's habits *and* `habits.flatMap { $0.completions ?? [] }` — a local-replica walk, so
-    /// a check-in that had not yet imported survives its habit. Widening the grouping to
-    /// `completion.habit?.id` looks like a strict improvement (why should orphans be exempt from
-    /// de-duplication?) and would make every stranded check-in in the store share one group with
-    /// every other stranded check-in on the same date, regardless of which habit each came from.
-    /// The pass would then *delete* rows: unrelated users' unrelated habits, collapsed into one
-    /// "habit-day", on an unattended startup pass, unrecoverably.
+    /// The pass grouped habit-days by `HabitDay(habitID: habit.id, date:)` behind
+    /// `guard let habit = completion.habit`, and this test existed because widening that grouping
+    /// to `completion.habit?.id` looks like a strict improvement and is the single most
+    /// destructive edit anyone could make to this service: every stranded check-in in the store
+    /// would share one group with every other stranded check-in on the same date, whatever habit
+    /// each came from, and the pass would **delete** them — unattended, at launch, unrecoverably.
+    /// [[T-623]] is parked on that staying inert.
     ///
-    /// The orphan sweep that would legitimately handle these rows is [[T-328]], and this pass says
-    /// in its own doc comment that it is not that sweep.
-    @Test func strandedHabitCheckInsAreNotCollapsedIntoOneAnother() throws {
+    /// The pass is gone now, so there is no grouping left to widen, and the assertion below is the
+    /// one that outlives it: a startup repair over a store holding a genuinely duplicated habit-day
+    /// **and** two stranded check-ins removes **nothing at all**. That is strictly stronger than
+    /// the old `== 1`, and it is what T-623 actually needs. If a duplicate-collapse pass is ever
+    /// re-introduced, this test is what refuses it.
+    @Test func noStartupRepairPassRemovesAHabitCheckInOfAnyKind() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
-        // A live habit with a genuine duplicated day, so the pass is demonstrably running: a test
-        // whose only evidence is "nothing was deleted" passes just as well when the pass is
-        // skipped entirely.
+        // A live habit with a genuine duplicated day. Under the retired pass this was the control
+        // that proved the pass was running at all; it is now the strongest row in the fixture,
+        // because it is the one a re-introduced collapse would reach first.
         let habit = Habit(title: "Meditate")
         modelContext.insert(habit)
         for _ in 0..<2 {
@@ -228,25 +229,23 @@ struct CadenceOrphanRowInertnessTests {
         let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
 
         #expect(
-            report.duplicateHabitCompletionsRemoved == 1,
+            report.duplicateHabitCompletionsRemoved == 0,
             """
-            the duplicate-habit-day pass removed \(report.duplicateHabitCompletionsRemoved) rows \
-            where exactly one live duplicate exists, so it is grouping habit-less rows together. \
-            Grouping by habit.id is what keeps T-623 inert: a hard list deletion walks only the \
-            local replica, so check-ins that had not yet imported survive their habits, and two \
-            such rows sharing a date are two different habits' days that nothing can tell apart. \
-            Collapsing them deletes real check-ins, unattended, at launch. Do not widen this \
-            grouping without unparking T-623 — the orphan sweep is T-328, not this pass.
+            a startup repair removed \(report.duplicateHabitCompletionsRemoved) habit check-in \
+            rows. T-2077 retired habits at the depth "remove the UI and stop writing, keep the \
+            schema": the rows stay recoverable, and with every habit surface gone the owner \
+            cannot see a row disappear, let alone put it back. A startup pass that deletes one \
+            is the write that ticket exists to stop. T-623 is parked on this staying zero.
             """
         )
 
-        let stranded = try modelContext.fetch(FetchDescriptor<HabitCompletion>())
-            .filter { $0.habit == nil }
-        #expect(
-            stranded.count == 2,
-            "a stranded check-in was deleted by the duplicate-habit-day pass (\(stranded.count) of 2 left)"
-        )
-        #expect((habit.completions ?? []).count == 1, "the live duplicated day was not collapsed")
+        let all = try modelContext.fetch(FetchDescriptor<HabitCompletion>())
+        #expect(all.count == 4, "a check-in was removed by an unattended startup pass")
+        #expect(all.filter { $0.habit == nil }.count == 2, "a stranded check-in was deleted")
+        #expect((habit.completions ?? []).count == 2, "the live duplicated day was collapsed")
+        // The read still reports the duplicated day as one, which is where the collapse rule lives
+        // now: `HabitCompletion.collapsedCount(of:)`, a `max` over the rows, not a delete.
+        #expect(habit.completionCountsByDate()["2026-03-09"] == 1)
     }
 
     // MARK: - The two saved-link panels

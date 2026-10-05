@@ -262,11 +262,13 @@ nonisolated enum NoteMigrationService {
     /// Whether any row of `type` is still in the store, asked as cheaply as the question can be
     /// asked: one row is enough to decide, so this fetches one rather than the lot.
     ///
-    /// The shape is `PursuitToGoalMigration.hasSurvivingPursuits`', and the difference is that a
-    /// throw propagates here instead of answering `false`. That migration's probe is a *fast path
-    /// past a latched flag* and a store it cannot read is not one to start deleting rows in; this
-    /// one is the migration's only guard, so a store it cannot read must fail the pass — which is
-    /// what the full fetch it replaces did — rather than report a clean skip.
+    /// It took its shape from the one-row probe the pursuit migration used to run past its
+    /// latched `UserDefaults` flag, and the difference was that a throw propagates here instead of
+    /// answering `false`: that probe was a *fast path* and a store it could not read was not one
+    /// to start deleting rows in, while this one is this migration's only guard, so a store it
+    /// cannot read must fail the pass — which is what the full fetch it replaces did — rather than
+    /// report a clean skip. [[T-2077]] retired the pursuit migration, so the comparison is history
+    /// now; the reasoning it is the far half of is what makes this one `throws`.
     private static func hasAnyRow<Model: PersistentModel>(
         of type: Model.Type,
         in context: ModelContext
@@ -282,8 +284,8 @@ nonisolated enum NoteMigrationService {
     /// half-synced when this runs answers "no legacy rows" correctly *for that moment*; the rows
     /// that arrive from CloudKit afterwards are found by the next launch's probe, because there is
     /// no flag to consult and nothing is written when the answer is no. That is strictly safer
-    /// than `PursuitToGoalMigration`'s guard, which does latch a flag and is sound only because it
-    /// re-checks it against a live probe.
+    /// than the pursuit migration's retired guard, which latched a flag and was sound only
+    /// because it re-checked it against a live probe ([[T-2077]] removed that pass entirely).
     ///
     /// Short-circuits on the first table that answers, so the common store — legacy-free — costs
     /// five one-row fetches and the store that still has work costs at most five before doing it.

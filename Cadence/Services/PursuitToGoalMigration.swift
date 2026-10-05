@@ -1,153 +1,49 @@
 import Foundation
 import SwiftData
 
-/// One-time migration folding the retired `Pursuit` model into `Goal`.
+/// The retired one-time migration that folded the retired `Pursuit` model into `Goal`.
 ///
-/// A pursuit becomes a top-level goal (`parentGoal == nil`) carrying its original kind,
-/// and everything it owned is re-hung off that goal:
-/// - each child `Goal` gets `parentGoal` set to the new goal, so it reads as a milestone of it
-/// - each child `Habit` gets `goal` set to the new goal (unless it already points at a goal,
-///   which is a stronger, more specific link and is left alone)
+/// **It no longer writes anything, and that is the whole of [[T-2077]] on this file.** Until this
+/// build `migrate` constructed a `Goal` per surviving `Pursuit`, inserted it, re-hung that
+/// pursuit's child goals and habits off it and saved — **on launch**, from
+/// `PersistenceController.performStartupMaintenance`, with no user action at all. The owner
+/// retired goals and habits at the depth "remove the UI and stop writing, keep the schema", so a
+/// launch-time pass that mints `Goal` records would have been the one path still making new ones,
+/// and it would have made them where nothing can show them.
 ///
-/// `GoalContributionResolver` already recurses through `subGoals`, so progress rolls up to the
-/// migrated goal with no extra work.
+/// **When it could still have fired, which is why neutering it was not optional.** The
+/// `UserDefaults` completion flag was never the decision — [[T-393]] made the pass content-aware
+/// precisely because `PersistenceController.init` applies a pending restore
+/// (`StoreBackupManager.performPendingRestoreIfNeeded`) *before* it opens the container, so a
+/// store that already migrated can be replaced by a backup that predates the migration and still
+/// carry `Pursuit` rows. With the flag set, the pass re-probed for them and re-ran. So "the owner
+/// migrated long ago" was never enough: any restore of a pre-merge backup, on any synced device,
+/// re-armed it.
 ///
-/// Guarded by a `UserDefaults` flag, but **the flag is a fast path rather than the decision**: it
-/// only skips the pass when the store also has no `Pursuit` rows left. It is deliberately
-/// idempotent and non-destructive on failure: pursuits are only deleted after their children have
-/// been successfully re-pointed and the context has saved.
+/// **What happens to a surviving `Pursuit` row now: nothing, which is the same thing that happens
+/// to a `Goal` row.** Both models stay in `CadenceSchema`, both keep their CloudKit record types,
+/// and neither is read by a live surface any more. Folding a pursuit into a goal would move a row
+/// nobody can see into another row nobody can see, so there is genuinely nothing to do — the pass
+/// answers `.nothingToDo` rather than being deleted outright, so [[T-1366]]'s launch instrument
+/// keeps the `.pursuitMigration` stage it classifies and `CadenceFirstLaunchEmptyStoreTests`'
+/// derived pass set is unchanged.
 ///
-/// ## Removal checklist (safe once every synced device has launched this build)
-/// 1. Delete `Cadence/Models/Pursuit.swift`
-/// 2. Delete `Goal.pursuit`, `Habit.pursuit`, `Context.pursuits`
-/// 3. Remove `Pursuit.self` from `CadenceSchema.schema`
-/// 4. Remove `Pursuit.self` from `PrivacyDataResetService` and `ListDeleteHelpers`
-/// 5. Delete this file and its call site in `PersistenceController`
+/// Nothing here deletes a row either. The owner's existing pursuits, goals, habits and habit
+/// completions are left exactly as they are, which is what makes the retirement reversible.
 nonisolated enum PursuitToGoalMigration {
-    /// Bumped if the migration ever needs to run again for a corrected pass.
-    private static let completionKey = "pursuitToGoalMigration.v1.completed"
-
-    /// Runs the migration unless the store demonstrably has nothing left to migrate.
+    /// Always `.nothingToDo`. See the type's note: there is no longer a destination to fold a
+    /// pursuit into that any surface reads, so the pass has no work rather than skipped work.
     ///
-    /// **Content-aware, because the flag alone strands rows.** `PersistenceController.init`
-    /// applies a pending restore (`StoreBackupManager.performPendingRestoreIfNeeded`) *before* it
-    /// opens the container and calls `performStartupMaintenance`, so the store this sees may be a
-    /// backup that predates the migration. On a device that already migrated, the flag is set and
-    /// a flag-only guard skips the pass forever: the restored `Pursuit` rows are never folded into
-    /// `Goal`, and no surface shows them. The privacy reset clears the restore flags and not this
-    /// one, so there is no path back either. The flag is kept only to make the common launch a
-    /// `fetchLimit: 1` probe rather than a full pass. T-393.
-    ///
-    /// **It answers instead of returning `Void`** ([[T-1402]]). `migrate` already computed a
-    /// clean/failed `Bool` and this discarded it, so [[T-1366]]'s launch instrument had nothing at
-    /// all to classify and filed the pass as `indeterminate`. The answer is widened rather than
-    /// merely forwarded, because the `Bool` could not separate a migration that folded rows from
-    /// one that found none — and the flag-only fast path below could not separate either of those
-    /// from a probe fetch that threw.
+    /// It keeps `modelContext` and `defaults` so the launch call site and its tests do not move,
+    /// and deliberately touches neither: a fetch would be a read with no consumer, and writing the
+    /// completion flag would record a migration that did not happen.
     @discardableResult
     static func runIfNeeded(
         modelContext: ModelContext,
         defaults: UserDefaults = CadenceDefaults.store
     ) -> CadenceMaintenancePassOutcome {
-        if defaults.bool(forKey: completionKey) {
-            switch hasSurvivingPursuits(in: modelContext) {
-            case .some(false):
-                return .nothingToDo
-            case .none:
-                // The probe fetch threw. Pre-T-1402 this returned as if the store were clean; it
-                // is a store nobody could read, and a launch that says so can be believed the next
-                // time it says the migration had nothing left to do.
-                return .couldNotRead
-            case .some(true):
-                break
-            }
-        }
-        let outcome = migrate(modelContext: modelContext)
-        // Only latch the flag on a clean run. If the save threw we want to retry next launch
-        // rather than silently strand pursuits that were never converted.
-        if outcome != .couldNotRead { defaults.set(true, forKey: completionKey) }
-        return outcome
-    }
-
-    /// Whether any `Pursuit` row is still in the store. One row is enough to decide, so this asks
-    /// for one rather than fetching the lot on every launch.
-    ///
-    /// **`nil` is a fetch that threw**, kept apart from `false` since [[T-1402]]. It used to answer
-    /// `false` for both — the pre-T-393 behaviour for a set flag — which skipped the pass on a
-    /// store nobody could read and reported that skip as a launch with nothing to migrate. The
-    /// caller still skips; what changed is that it no longer calls the skip clean. A store that
-    /// cannot be read is still not one to start deleting rows in.
-    private static func hasSurvivingPursuits(in modelContext: ModelContext) -> Bool? {
-        var descriptor = FetchDescriptor<Pursuit>()
-        descriptor.fetchLimit = 1
-        guard let surviving = try? modelContext.fetch(descriptor) else { return nil }
-        return !surviving.isEmpty
-    }
-
-    /// What the pass did: folded pursuits into goals, found none to fold, or could not finish.
-    ///
-    /// `couldNotRead` covers the fetch and **both** saves — [[T-1402]] kept them one answer rather
-    /// than three, because every one of them leaves the same state behind: pursuits still in the
-    /// store, the completion flag unset, and a retry owed on the next launch.
-    @discardableResult
-    static func migrate(modelContext: ModelContext) -> CadenceMaintenancePassOutcome {
-        let pursuits: [Pursuit]
-        do {
-            pursuits = try modelContext.fetch(FetchDescriptor<Pursuit>())
-        } catch {
-            return .couldNotRead
-        }
-        guard !pursuits.isEmpty else { return .nothingToDo }
-
-        for pursuit in pursuits {
-            let goal = Goal(title: pursuit.title, context: pursuit.context)
-            goal.desc = pursuit.desc
-            goal.icon = pursuit.icon
-            goal.colorHex = pursuit.colorHex
-            goal.kind = pursuit.kind
-            goal.status = pursuit.status
-            goal.order = pursuit.order
-            goal.createdAt = pursuit.createdAt
-            // A pursuit had no dates; leaving start/end empty keeps it rendering as an
-            // undated direction on the goal timeline rather than a zero-length bar.
-            modelContext.insert(goal)
-
-            for child in pursuit.goals ?? [] {
-                // Don't reparent a goal that already sits under another goal — that nesting
-                // was set explicitly and is more specific than the pursuit grouping.
-                if child.parentGoal == nil {
-                    child.parentGoal = goal
-                }
-                child.pursuit = nil
-            }
-
-            for habit in pursuit.habits ?? [] {
-                if habit.goal == nil {
-                    habit.goal = goal
-                }
-                habit.pursuit = nil
-            }
-        }
-
-        do {
-            // Save the re-pointed children before deleting anything, so a failure here leaves
-            // the pursuits intact for a retry instead of orphaning their contents.
-            try modelContext.save()
-        } catch {
-            return .couldNotRead
-        }
-
-        for pursuit in pursuits {
-            modelContext.delete(pursuit)
-        }
-
-        do {
-            try modelContext.save()
-        } catch {
-            // Children are already migrated and the flag stays unset, so the next launch
-            // re-runs and finds nothing left to convert beyond the undeleted pursuits.
-            return .couldNotRead
-        }
-        return .changed
+        _ = modelContext
+        _ = defaults
+        return .nothingToDo
     }
 }

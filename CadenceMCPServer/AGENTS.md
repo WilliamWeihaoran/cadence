@@ -151,9 +151,14 @@ as `timed out waiting for response 100` rather than naming a build.
   **status/`isArchived`**, and — since [[T-1182]] — a **position** (a zero-based index into the
   destination bucket, which the arm renumbers densely; re-filing alone renumbers nothing) plus the
   two `hide*IfEmpty` flags. `linkedCalendarID` stays refused, on T-390's opacity. `create_link`,
-  `create_goal`, `create_habit`, `create_tag` and `create_list_note` are the constructors outside
-  the context/list/task triangle; nothing creates a task bundle, and **nothing deletes anything** —
-  each of those **refused with a measurement**, settled rather than deferred ([[T-1122]]).
+  `create_tag` and `create_list_note` are the constructors outside the context/list/task triangle;
+  nothing creates a task bundle, and **nothing deletes anything** — each of those **refused with a
+  measurement**, settled rather than deferred ([[T-1122]]). **`create_goal` and `create_habit` were
+  two more until [[T-2077]] removed them**, with the version going 0.13.0 -> 0.14.0: the owner
+  retired goals and habits and the app itself stopped writing either model, so a write surface that
+  kept minting them would have been the one exception. They **disappear** from `tools/list` rather
+  than remaining advertised and refusing — that list is the only capability contract a client can
+  read. `list_goals`, `get_goal` and `list_habits` still read the existing rows.
   Archiving is offered instead. **`create_list_note` is the one whose refusal was lifted by moving
   a file, and the shape of that measurement is the thing to carry away**: the blocker was never the
   arm, it was that `CadenceListNoteFiling.createNote` shared a file with the four SwiftUI rows that

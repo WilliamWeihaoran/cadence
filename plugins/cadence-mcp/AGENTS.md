@@ -25,12 +25,15 @@ now a *refusal with a measurement* rather than a gap — see [[T-1122]] — so t
 the honest end state until something changes on the app side, not a placeholder. **The measurement
 grew a second half on 2026-09-27**: no write arm can put a task *into* a bundle either, so even
 with the arm the fixture could only hold an empty block. `list_links` left
-the list with `create_link`, `list_goals`, `get_goal` and `list_habits` left it with
-`create_goal`/`create_habit`, and `list_notes` now runs over list notes `create_list_note` made
-([[T-1122]] throughout): all of them now run against rows the smoke test made,
-with their key sets compared at runtime. `get_goal` is the one worth naming — its only executions
-before were a missing-argument and a not-found error, so `CadenceGoalDetail`, its contribution
-block and its habit-momentum block had never been encoded at runtime at all. `list_tasks`,
+the list with `create_link` and `list_notes` now runs over list notes `create_list_note` made
+([[T-1122]] throughout): both now run against rows the smoke test made, with their key sets
+compared at runtime. **`list_goals`, `get_goal` and `list_habits` went back on the list with
+[[T-2077]]**, which removed `create_goal` and `create_habit` along with every other habit/goal
+write in the app: nothing on this surface can mint either model now, so the fixture store can hold
+no goal and no habit and the three are dispatched against an empty table again. Their DTO key sets
+are covered by the source scan in `CadenceTests/CadenceMCPToolContractTests` (`listToolDTOSpecs`),
+which is what covered them before T-1122. That is a real loss of runtime coverage and it is
+recorded rather than papered over. `list_tasks`,
 `list_tags` and `list_notes` already ran against real rows. See T-269.
 
 `list_contexts` and `list_containers` left that list in T-799: `create_context` and

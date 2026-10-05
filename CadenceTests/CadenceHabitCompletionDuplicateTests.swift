@@ -181,7 +181,7 @@ struct CadenceHabitCompletionDuplicateTests {
 
     // MARK: - The repair
 
-    @Test func theRepairCollapsesADuplicatedHabitDayToOneRow() throws {
+    @Test func theRetiredRepairLeavesADuplicatedHabitDayIntactAndTheReadCollapsesIt() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
 
@@ -194,21 +194,25 @@ struct CadenceHabitCompletionDuplicateTests {
 
         let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
 
-        #expect(report.duplicateHabitCompletionsRemoved == 1)
-        #expect(report.changed, "the report does not report the removal it made")
+        #expect(report.duplicateHabitCompletionsRemoved == 0)
+        #expect(report.changed == false, "the retired pass still removed a row")
 
-        #expect((habit.completions ?? []).count == 2, "the deleted row is still on the relationship")
+        // **Both rows survive, and the day still reads as one.** The collapse was three things
+        // together (T-359): one writer, a read that collapses, and this repair that removed rows.
+        // T-2077 took the writer and the repair; the read is untouched and is what keeps a
+        // duplicated day worth 1 rather than 2, which was always the user-visible half.
+        #expect((habit.completions ?? []).count == 3)
         #expect(habit.completionCountsByDate() == ["2026-03-09": 1, "2026-03-10": 1])
 
-        // A second context on the same container: the repair saved, it did not merely mutate.
+        // A second context on the same container: the duplicate is still on disk, recoverable.
         let stored = try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>())
-        #expect(stored.count == 2)
-        #expect(Set(stored.map(\.date)) == ["2026-03-09", "2026-03-10"])
+        #expect(stored.count == 3)
+        #expect(stored.filter { $0.date == "2026-03-09" }.count == 2)
     }
 
     /// The survivor carries the day's collapsed count, distinct days are untouched, and a second
     /// habit that happens to share the date is a different habit-day.
-    @Test func theRepairKeepsTheLargestRowAndLeavesDistinctDaysAlone() throws {
+    @Test func theRetiredRepairKeepsEveryRowAndTheReadStillAnswersTheLargest() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
 
@@ -226,13 +230,17 @@ struct CadenceHabitCompletionDuplicateTests {
         try context.save()
 
         let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
-        #expect(report.duplicateHabitCompletionsRemoved == 2)
+        #expect(report.duplicateHabitCompletionsRemoved == 0)
 
-        let survivors = (habit.completions ?? []).filter { $0.date == "2026-03-09" }
-        #expect(survivors.count == 1)
-        #expect(survivors.first?.count == 3, "the survivor does not carry the day's collapsed count")
-        #expect((habit.completions ?? []).count == 2)
-        #expect((other.completions ?? []).count == 1, "another habit's day was collapsed into this one")
+        // All three rows for the day survive T-2077, and the **read** still answers 3 for it —
+        // `HabitCompletion.collapsedCount(of:)` is a `max`, which is the rule the deleted survivor
+        // used to carry in a stored field. The number the user sees is unchanged either way.
+        let rows = (habit.completions ?? []).filter { $0.date == "2026-03-09" }
+        #expect(rows.count == 3)
+        #expect(HabitCompletion.collapsedCount(of: rows) == 3)
+        #expect(habit.completionCountsByDate()["2026-03-09"] == 3)
+        #expect((habit.completions ?? []).count == 4)
+        #expect((other.completions ?? []).count == 1, "another habit's rows were touched")
     }
 
     /// Repair runs on every device against its own copy of the same rows. If two devices chose
@@ -650,7 +658,7 @@ struct CadenceHabitCompletionDuplicateTests {
         //
         // **The verbatim copy is the decision, not an omission.** [[T-1088]] asked whether the
         // importer should instead *fold* a day's split rows into one row's `count`, as
-        // `aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent` below used to instruct,
+        // `aSplitHabitDayReadsLowAndTheRetiredRepairNoLongerMakesThatPermanent` below used to instruct,
         // and the answer is no: the two tests beside it measure that the archive carries no field
         // separating a split day from a synced duplicate, so a fold would read a [[T-359]]
         // duplicate as 2. A computed count here would be red for that reason as well as this one.
@@ -715,7 +723,7 @@ struct CadenceHabitCompletionDuplicateTests {
     /// deletes the smaller rows — so a store that receives a split day loses the remainder before
     /// anyone can look at it, and the day reads low for ever rather than only until the next
     /// repair. That is accepted, not overlooked.
-    @Test func aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent() throws {
+    @Test func aSplitHabitDayReadsLowAndTheRetiredRepairNoLongerMakesThatPermanent() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
 
@@ -737,12 +745,17 @@ struct CadenceHabitCompletionDuplicateTests {
         )
 
         let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
-        #expect(report.duplicateHabitCompletionsRemoved == 1)
+        #expect(report.duplicateHabitCompletionsRemoved == 0)
 
-        // The remainder is gone from the store, not merely ignored by the read.
+        // **T-2077 made the low read *reversible* instead of permanent**, which is the better end
+        // of [[T-1088]]'s unanswerable question. The repair used to delete the remainder, so a
+        // split day that was really worth 3 could never be recovered; now both rows stay on disk
+        // and the read is the only thing reporting 2. Nothing in the archive separates "one tick
+        // synced twice" from "a quantity of 3 split in two" — `theArchiveCarriesNoFieldThat…`
+        // below is that measurement — so keeping both rows is the only non-guessing answer.
         let stored = try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>())
-        #expect(stored.count == 1)
-        #expect(stored.first?.count == 2, "repair kept the larger row and dropped the remainder")
+        #expect(stored.count == 2)
+        #expect(Set(stored.map(\.count)) == [1, 2], "the remainder was removed from the store")
         #expect(habit.completionCountsByDate()["2026-03-09"] == 2)
     }
 
@@ -833,7 +846,7 @@ struct CadenceHabitCompletionDuplicateTests {
     /// than a reading of the grouping code: the survivor's count is the maximum over **all three**
     /// rows, and the largest is neither the first nor the last, so a collapse that saw them one at
     /// a time or two at a time could not produce it.
-    @Test func theStartupRepairIsHandedAWholeHabitDayJustAsAnImporterWouldBe() throws {
+    @Test func theStartupRepairNoLongerFoldsAWholeHabitDayAnyMoreThanAnImporterMay() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
 
@@ -849,11 +862,13 @@ struct CadenceHabitCompletionDuplicateTests {
 
         let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
 
-        #expect(report.duplicateHabitCompletionsRemoved == 2)
+        #expect(report.duplicateHabitCompletionsRemoved == 0)
         let stored = try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>())
-        #expect(stored.count == 2)
-        #expect(stored.filter { $0.date == "2026-03-09" }.map(\.count) == [3])
-        #expect(stored.filter { $0.date == "2026-03-10" }.map(\.count) == [1], "the other day was collapsed into it")
+        #expect(stored.count == 4, "T-2077: the startup repair no longer removes a habit-day row")
+        #expect(Set(stored.filter { $0.date == "2026-03-09" }.map(\.count)) == [1, 2, 3])
+        #expect(stored.filter { $0.date == "2026-03-10" }.map(\.count) == [1])
+        // The read is what the day is worth, and it is the same number the collapse used to store.
+        #expect(habit.completionCountsByDate() == ["2026-03-09": 3, "2026-03-10": 1])
     }
 
     /// The `var` names declared directly in a type body, in source order.
