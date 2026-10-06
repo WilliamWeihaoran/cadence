@@ -523,4 +523,115 @@ struct CadenceNoteTemplatePreferenceTests {
         #expect(fresh.overridesRaw.isEmpty)
         #expect(fresh.createdAt == fresh.updatedAt)
     }
+
+    // MARK: - A record this build does not fully understand (T-1346)
+
+    /// **The guard `publish` already has, read the other way round.**
+    ///
+    /// `publish` refuses to turn a local string it cannot parse into a reset inside the record, so
+    /// one device's corruption cannot become every device's — `anUnreadableLocalDefaultIsRepaired`
+    /// `NotPropagated` pins that. The record→device direction had no matching rule: `adopt` passed
+    /// `overridesRaw` straight into `writeLocal`, which canonicalises a string it cannot read to
+    /// `{}`. So a row this build could not read **erased the templates on every device that
+    /// received it** — the [[T-2076]] shape (a record naming things this build has no reading for)
+    /// with the worse outcome, because a reset is a setting the user chose, gone.
+    ///
+    /// Two shapes arrive that way and neither is hypothetical. `""` is what SwiftData hands back
+    /// for a field a CloudKit record did not carry — a partially written record, or a row from a
+    /// build that does not write this column — and `theRecordIsRegisteredAndAdditive` pins that a
+    /// fresh row really is spelled exactly that way. A map in an encoding this build cannot decode
+    /// is what a *newer* build's row looks like from here.
+    ///
+    /// The rule is the publish side's, stated once more for the read: **a string that says nothing
+    /// is not a reset.** `{}` still is one, which is the line this guard must not cross.
+    @Test func aRecordThisBuildCannotReadLeavesTheTemplatesAlone() {
+        let local = customised("checklist", title: "Packing", body: "# Packing")
+        let newest = Date(timeIntervalSince1970: 50)
+
+        // The field never arrived.
+        #expect(
+            Store.overridesRaw(from: [NoteTemplatePreference(overridesRaw: "", updatedAt: newest)], localRaw: local)
+                == local,
+            "a row carrying no map erased this device's templates"
+        )
+
+        // The map is in a shape this build cannot decode.
+        let foreignRaw = ##"{"checklist":{"v":2,"body":"# Packing"}}"##
+        #expect(Store.canonicalRaw(foreignRaw) == nil, "the fixture decodes here, so it proves nothing")
+        #expect(
+            Store.overridesRaw(from: [NoteTemplatePreference(overridesRaw: foreignRaw, updatedAt: newest)], localRaw: local)
+                == local,
+            "a newer build's encoding erased this device's templates"
+        )
+
+        // A deliberate reset is a value and still travels. This is the distinction the guard rests
+        // on, and it holds only because `write` canonicalises: the reset this app stores is `{}`,
+        // never `""`.
+        #expect(
+            Store.overridesRaw(from: [NoteTemplatePreference(overridesRaw: "{}", updatedAt: newest)], localRaw: local)
+                == "{}"
+        )
+        #expect(Store.emptyRaw == "{}")
+    }
+
+    /// When one row is unreadable and an older one is not, the **older readable row** is what the
+    /// device shows.
+    ///
+    /// `current(from:)` is unchanged and still answers the newest row: it is the row every device
+    /// writes to, and moving the write target would stop the three devices converging on one row.
+    /// What changes is the read — an unreadable winner means "this row tells me nothing", and the
+    /// next thing a device can honestly show is the newest row that does tell it something. The
+    /// unreadable row is left inert rather than deleted, as every loser here is, and the next local
+    /// edit publishes over it and repairs it.
+    @Test func anOlderReadableRowIsPreferredToANewerUnreadableOne() {
+        let readable = NoteTemplatePreference(
+            overridesRaw: customised("checklist", title: "Packing", body: "# Packing"),
+            updatedAt: Date(timeIntervalSince1970: 10)
+        )
+        let unreadable = NoteTemplatePreference(
+            overridesRaw: "}{ not json",
+            updatedAt: Date(timeIntervalSince1970: 99)
+        )
+        let rows = [readable, unreadable]
+
+        #expect(Store.current(from: rows)?.id == unreadable.id, "the write target moved")
+        #expect(Store.currentReadable(from: rows)?.id == readable.id)
+        let shown = Store.overridesRaw(from: rows, localRaw: "")
+        #expect(NoteTemplateLibrary.overrides(from: shown)["checklist"]?.title == "Packing")
+    }
+
+    /// And the same thing end to end, through the bridge the app actually runs: a foreign row
+    /// arriving must not move `noteTemplateOverrides`, and the next local edit must repair it.
+    @Test func aForeignRowArrivingDoesNotTouchTheLocalDefault() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let mine = customised("checklist", title: "Packing", body: "# Packing")
+
+        try withTemporaryDefaults("template-foreign") { defaults in
+            defaults.set(mine, forKey: NoteTemplateLibrary.storageKey)
+            let sync = CadenceNoteTemplatePreferenceSync(defaults: defaults)
+
+            // This device has already contributed; the steady state, not the first run.
+            sync.reconcile(records: [], in: context, now: Date(timeIntervalSince1970: 10))
+            #expect(sync.hasSeeded)
+
+            let foreign = NoteTemplatePreference(
+                overridesRaw: ##"{"checklist":{"v":2,"body":"# Packing"}}"##,
+                updatedAt: Date(timeIntervalSince1970: 9_000)
+            )
+            context.insert(foreign)
+
+            #expect(!sync.adopt(records: [foreign]), "an unreadable row moved the local default")
+            let after = defaults.string(forKey: NoteTemplateLibrary.storageKey) ?? ""
+            #expect(
+                NoteTemplateLibrary.overrides(from: after)["checklist"]?.title == "Packing",
+                "a row this build cannot read reset the owner's templates"
+            )
+
+            // The repair: this device's next publish overwrites the unintelligible row rather than
+            // leaving the three devices stuck on something none of them can read.
+            sync.publish(records: [foreign], in: context, now: Date(timeIntervalSince1970: 9_100))
+            #expect(NoteTemplateLibrary.overrides(from: foreign.overridesRaw)["checklist"]?.title == "Packing")
+        }
+    }
 }

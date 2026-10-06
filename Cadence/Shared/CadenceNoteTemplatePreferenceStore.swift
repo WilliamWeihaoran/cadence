@@ -64,17 +64,38 @@ enum CadenceNoteTemplatePreferenceStore {
         }
     }
 
+    /// The newest row whose map this build can actually read (T-1346).
+    ///
+    /// **Separate from `current(from:)` on purpose, and only for the read.** `current` stays the
+    /// row every device *writes* to — moving the write target would stop the three devices
+    /// converging on one row, which is the whole reason the newest-wins rule exists. But a row
+    /// whose `overridesRaw` says nothing cannot be the row a device *shows*, and the next thing it
+    /// can honestly show is the newest row that does say something. The unreadable row is left
+    /// inert rather than deleted, like every loser here, and the next local edit publishes over it
+    /// and repairs it.
+    static func currentReadable(from records: [NoteTemplatePreference]) -> NoteTemplatePreference? {
+        current(from: records.filter { canonicalRaw($0.overridesRaw) != nil })
+    }
+
     /// The override string the app should be reading, given what has synced and what this device
     /// already had.
     ///
-    /// With a record, the record — **including an empty one**. That is the difference from
+    /// With a readable record, the record — **including an empty map**. That is the difference from
     /// `CadenceLookPreferenceSync`, where an empty accent id means "never chosen" and is skipped:
     /// here a row exists only because somebody customised or reset a template, so `{}` is the exact
-    /// state *Reset Template* leaves and it has to travel. Without a record the device-local value
+    /// state *Reset Template* leaves and it has to travel. Without one the device-local value
     /// stands, which is also the answer while `CD_NoteTemplatePreference` is undeployed or has
     /// simply not arrived yet — the two are indistinguishable and neither deserves a notice.
+    ///
+    /// **A row this build cannot read is silence, not a reset.** `publish` already refuses to turn
+    /// an unparseable *local* string into a reset in the record; this is the same rule read the
+    /// other way, and it was missing. `""` is what SwiftData hands back for a field a CloudKit
+    /// record did not carry — a partially written record, or a row from a build that does not write
+    /// this column — and canonicalising that to `{}` would have erased the templates on every
+    /// device that received it. The distinction is only available because `write` canonicalises:
+    /// the reset this app stores is `{}` and never `""`.
     static func overridesRaw(from records: [NoteTemplatePreference], localRaw: String) -> String {
-        guard let record = current(from: records) else { return localRaw }
+        guard let record = currentReadable(from: records) else { return localRaw }
         return record.overridesRaw
     }
 

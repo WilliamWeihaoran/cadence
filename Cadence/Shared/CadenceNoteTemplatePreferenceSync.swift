@@ -95,10 +95,12 @@ final class CadenceNoteTemplatePreferenceSync {
         // The value this device should be showing: what the seed just wrote if it wrote anything,
         // otherwise whatever the record says. Read from the seed's own return value rather than
         // from `records` again, which cannot yet see an insert made in this frame.
-        guard let effective = seeded ?? CadenceNoteTemplatePreferenceStore.current(from: records)?.overridesRaw else {
-            // No row anywhere: the device-local default stands. This is also the shape of "the
-            // Production schema has no `CD_NoteTemplatePreference` yet" and of "nothing has
-            // downloaded yet", and nothing can tell those apart — so there is no notice here.
+        let readable = CadenceNoteTemplatePreferenceStore.currentReadable(from: records)
+        guard let effective = seeded ?? readable?.overridesRaw else {
+            // No row this device can read: the device-local default stands. That is the shape of
+            // "the Production schema has no `CD_NoteTemplatePreference` yet", of "nothing has
+            // downloaded yet", and of "the only row here came from a build I do not understand" —
+            // nothing can tell those apart, so there is no notice here and nothing is overwritten.
             return false
         }
         return writeLocal(effective)
@@ -119,7 +121,9 @@ final class CadenceNoteTemplatePreferenceSync {
     ) -> String? {
         guard !hasSeeded else { return nil }
 
-        let record = CadenceNoteTemplatePreferenceStore.current(from: records)
+        // The readable row, so a row this build cannot parse is not read as "the record dropped
+        // every key you hold". The write below still targets `current`, which repairs it.
+        let record = CadenceNoteTemplatePreferenceStore.currentReadable(from: records)
         guard let merged = CadenceNoteTemplatePreferenceStore.firstRunMerge(
             localRaw: localRaw,
             recordRaw: record?.overridesRaw
@@ -147,7 +151,10 @@ final class CadenceNoteTemplatePreferenceSync {
     /// when the default actually moved.
     @discardableResult
     func adopt(records: [NoteTemplatePreference]) -> Bool {
-        guard let record = CadenceNoteTemplatePreferenceStore.current(from: records) else { return false }
+        // `currentReadable`, not `current`: a row whose map this build cannot parse says nothing,
+        // and `writeLocal` would canonicalise "nothing" to `{}` — one foreign row resetting the
+        // templates on every device that received it. See the note on `overridesRaw(from:)`.
+        guard let record = CadenceNoteTemplatePreferenceStore.currentReadable(from: records) else { return false }
         return writeLocal(record.overridesRaw)
     }
 
