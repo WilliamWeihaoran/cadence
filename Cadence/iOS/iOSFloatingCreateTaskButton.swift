@@ -346,8 +346,15 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
         .onChange(of: isLive, initial: true) { _, live in
             iOSNewTaskDropFrameRegistry.shared.setLive(live, for: registrationID)
         }
+        // **Retired, not unregistered, and the distinction is the whole of T-3008.** Pushing a
+        // detail page and popping back sends `onDisappear` to this subtree and then re-runs the
+        // restored copy's body — so the two `.onChange(…, initial: true)` above fire again, and
+        // `onGeometryChange` does not, because the row never moved. A teardown that deleted the
+        // frame therefore left a target that could never be a candidate again, while its key and
+        // its liveness looked healthy: one push and back, and every drop target on the surface was
+        // silently gone. It is the same argument the liveness comment above makes, one level over.
         .onDisappear {
-            iOSNewTaskDropFrameRegistry.shared.unregister(registrationID)
+            iOSNewTaskDropFrameRegistry.shared.retire(registrationID)
         }
         .onChange(of: isCustomDragTarget) { _, targeted in
             withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {

@@ -430,6 +430,125 @@ struct CadenceCaptureDropSlotRule: Equatable, Sendable {
     }
 }
 
+// MARK: - Where every drop target is
+
+/// Where every create-task drop target is on screen, and what it would seed.
+///
+/// The system drag resolves its own hit-testing; a custom one cannot, so the targets publish
+/// themselves here and `iOSNewTaskDropFrameRegistry` holds the one live instance.
+///
+/// **The bookkeeping lives in Shared rather than beside that registry on purpose.** What it has to
+/// get right is not a layout question and leaves no trace on a screenshot: it is which of a
+/// target's three published facts survive the view going away, and the answer is the difference
+/// between every drop on a surface inheriting what it landed on and every drop on it silently
+/// inheriting nothing — see `retire(_:)`. `Cadence/iOS/` is behind `#if os(iOS)` while
+/// `CadenceTests` builds on macOS, so a state machine kept in there can only be pinned by a source
+/// scan, and a source scan is exactly what T-3008 walked past.
+struct CadenceNewTaskDropFrameStore {
+    struct Placement: Equatable {
+        var dropKey: String
+        var listName: String
+        /// Non-nil only where the vertical position inside the frame is itself part of the answer —
+        /// a calendar day column, whose axis is a time. See `CadenceCaptureDropSlotRule`.
+        var slot: CadenceCaptureDropSlotRule?
+
+        init(dropKey: String, listName: String, slot: CadenceCaptureDropSlotRule? = nil) {
+            self.dropKey = dropKey
+            self.listName = listName
+            self.slot = slot
+        }
+    }
+
+    private var frames: [UUID: CGRect] = [:]
+    /// The global Y of the **whole** target, before the enclosing scroll view clipped `frames`.
+    /// Only a slotted target reads it, and only it could: a minute measured from a clipped top
+    /// would slide by a whole scroll offset. See `setFrame(_:slotOriginY:for:)`.
+    private var slotOrigins: [UUID: CGFloat] = [:]
+    private var placements: [UUID: Placement] = [:]
+    /// Ids whose surface is currently the one on screen. See `iOSNewTaskDropTargetsAreLive`.
+    private var live: Set<UUID> = []
+    /// Registration order, so `CadenceCaptureDropHitTest`'s tie-break resolves to the later one.
+    private var order: [UUID] = []
+
+    init() {}
+
+    /// `frame` is what a finger can reach — clipped to the scroll view showing it — and
+    /// `slotOriginY` is the top of the target itself. They differ only inside a scroller, and only
+    /// a slotted target cares that they do.
+    mutating func setFrame(_ frame: CGRect, slotOriginY: CGFloat, for id: UUID) {
+        if frames[id] == nil { order.append(id) }
+        frames[id] = frame
+        slotOrigins[id] = slotOriginY
+    }
+
+    mutating func setPlacement(
+        dropKey: String,
+        listName: String,
+        slot: CadenceCaptureDropSlotRule? = nil,
+        for id: UUID
+    ) {
+        placements[id] = Placement(dropKey: dropKey, listName: listName, slot: slot)
+    }
+
+    mutating func setLive(_ isLive: Bool, for id: UUID) {
+        if isLive { live.insert(id) } else { live.remove(id) }
+    }
+
+    /// The target's view went away — which is **not** the same as the target being gone, and
+    /// `onDisappear` cannot tell you which of the two happened.
+    ///
+    /// **Why this clears liveness instead of deleting the entry (T-3008).** Pushing a detail page
+    /// and popping back sends `onDisappear` to the whole index subtree, and the restored copy then
+    /// re-runs its body: `setPlacement` and `setLive` fire again, because both are
+    /// `.onChange(…, initial: true)`. **`setFrame` does not**, because `onGeometryChange` reports a
+    /// geometry *change* and nothing moved — the rows are exactly where they were. So a teardown
+    /// that deleted the frame left a target whose key and liveness looked perfectly healthy and
+    /// which `candidates()` could never return again. One push-and-back emptied every drop target
+    /// on the surface, with no error and no visual difference: the `+` still opened a composer, it
+    /// just stopped inheriting the list, group or day it had been dropped on.
+    ///
+    /// This is the argument `iOSNewTaskDropTargetsAreLive` already makes one level up — a surface
+    /// coming back produces no geometry change, so anything a target can only publish *on* a
+    /// geometry change must survive its absence. Liveness is the one of the three facts the
+    /// restored copy republishes by itself, so liveness is the one this is allowed to take away.
+    ///
+    /// **The cost, taken deliberately.** A view that really was destroyed leaves its frame and
+    /// placement behind for the life of the process. They are unreachable — `candidates()` passes
+    /// over anything not in `live`, and nothing but a restored view sets that again — so the price
+    /// is memory, while deleting them prices correctness.
+    mutating func retire(_ id: UUID) {
+        live.remove(id)
+    }
+
+    /// **A target with nothing to hand over is not a target.** The empty key is how a call site
+    /// says "not today" about a destination it still draws — the calendar timeline's columns are
+    /// the case: the same view is a live target on a future day and no target at all on a day that
+    /// has gone by, and re-registering it under a new id every time the grid scrolls would be a
+    /// view-identity change to express a fact about a date. It is the same rule
+    /// `CadenceTaskDropSupport.dropKey(forGroup:)` states with `nil`, applied one layer down.
+    func candidates() -> [CadenceCaptureDropHitTest.Candidate] {
+        order.compactMap { id in
+            guard live.contains(id),
+                  let frame = frames[id],
+                  !frame.isNull,
+                  let placement = placements[id],
+                  !placement.dropKey.isEmpty
+            else { return nil }
+            return CadenceCaptureDropHitTest.Candidate(id: id, frame: frame)
+        }
+    }
+
+    func placement(for id: UUID) -> Placement? { placements[id] }
+
+    /// The minute `point` picks out inside a slotted target, or `nil` when the target has no slot
+    /// rule. The offset is taken from the registered frame, which is the only thing here that knows
+    /// where the column starts on screen — so no view has to be asked anything at drop time.
+    func slotMinute(for id: UUID, at point: CGPoint) -> Int? {
+        guard let rule = placements[id]?.slot, let originY = slotOrigins[id] else { return nil }
+        return rule.minute(atOffsetY: point.y - originY)
+    }
+}
+
 // MARK: - What a finished press seeds
 
 /// What a finished press actually makes.
