@@ -49,6 +49,7 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
+Cadence/macOS/Views/TasksListView.swift
 ```
 
 ### LEASE RETIRED 2026-10-05 — the twenty-one T-3003 paths are out, because the work landed
@@ -777,4 +778,36 @@ two grants above name. An exemption is a hole in the detector; closing four of t
 call sites are now policed. That is why this one carries no further condition.
 
 **Retire this path with the rest of T-3003's** when the ticket lands.
+
+### LEASE WIDENED 2026-10-06 — one path for [[T-3004]], macOS task-row virtualization
+
+Granted at the owner's instruction. **One production path**, because Codex checked and said so:
+`TasksListSectionView.swift` **does not exist**. `TasksListSectionView` is declared inside
+`Cadence/macOS/Views/TasksListView.swift` at `:506`, and the Completed section is in the same file,
+so the whole of [[T-3004]]'s production surface is that one file. Verified here before granting —
+the earlier performance report cited a `TasksListSectionView.swift:530` that is not a real path.
+
+**What the ticket is.** `TasksListView.swift:270` opens a `LazyVStack`, but `TasksListSectionView`
+draws an **eager** `VStack` at `:526` with `ForEach(section.tasks)` at `:559`, and a second eager
+`VStack` at `:588`. An eager stack inside a lazy one defeats the lazy one: every row body in every
+expanded section is built whether or not it is on screen. The owner's Unscheduled group holds 88
+tasks.
+
+**This is corroborated, not just profiled.** [[T-2057]] measured the same shape on iOS: an eager
+row stack cost **4,005 row bodies and ~11s of main thread** for one tap where a `LazyVStack` cost
+**9**. That measurement is why item 1 of the performance report proceeds without waiting for the
+owner's trackpad baseline, while items 2-5 wait for it.
+
+**Regression tests go in `CadenceTests/CadenceCodex*.swift`**, already a standing glob, and the
+handoff in `docs/CODEX_LEDGER_INBOX.md`, always allowed. Neither is re-listed.
+
+**Kanban sorting is deliberately NOT in scope** — Codex asked to leave it out because it needs a
+separate production path and is not free. Agreed; it was already the item its own report called a
+cleanup rather than the explanation.
+
+**What must survive, and a lazy stack is exactly what threatens it:** collapse state, drag and
+drop, frozen ordering, and deep-link behaviour. A lazy stack changes *when* row bodies are built,
+so anything relying on an off-screen row having been constructed fails silently rather than loudly.
+
+**Retire this path when T-3004 lands.**
 
