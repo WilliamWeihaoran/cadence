@@ -80,11 +80,22 @@ struct CadenceTodayUnificationTests {
     /// and in neutral `Theme.dim` on another is two different statements. The tint travels **on the
     /// group** now — a list group is its list's colour — so what has to be pinned is that neither
     /// host decides the tint for itself.
+    ///
+    /// **Only one host still has a tint to decide, and the zero is the assertion (T-2084).** macOS's
+    /// Today drew its group's colour as the 3×22pt bar at the head of `TaskListGroupHeader`; the
+    /// owner had every one of those bars removed — *"these colors are make the page very
+    /// distracting"* — so `TasksPanel` has nothing left to tint and reads `group.accent` zero times.
+    /// It is pinned at zero rather than dropped because the defect this test exists for is a host
+    /// deciding a tint **for itself**, and a host that re-grew a local colour for its headings would
+    /// show up here as a 1 just as surely as it used to show up as a 2. iOS's one is untouched: it
+    /// hands the group's colour to `CadenceTaskGroupHeading`, which tints the eyebrow's *text* and
+    /// never drew a bar, and it is what stops the macOS zero from passing because the member was
+    /// deleted outright.
     @Test func bothPlatformsTintTheirTodayGroupsFromTheGroupItself() throws {
         try expectCallSites(
             of: "group.accent",
             at: [
-                "Cadence/macOS/Views/TasksPanel.swift": 1,
+                "Cadence/macOS/Views/TasksPanel.swift": 0,
                 "Cadence/iOS/iOSTodayTaskSections.swift": 1,
             ]
         )
