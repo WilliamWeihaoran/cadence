@@ -360,16 +360,15 @@ struct TaskDetailActionsSection: View {
 
     /// The settle, with a commit boundary and the failure named where the button is (T-628).
     ///
-    /// Only the "mark done" direction reaches an insert — `markTodo` clears the fields and spawns
-    /// nothing — so only that direction has something a rollback could strand.
+    /// Reopening commits before publishing its widget override reversal; finishing also owns
+    /// the successor insertion's undo.
     private func markDoneOrNotDone() {
-        if task.isDone {
-            TaskWorkflowService.markTodo(task)
-            settleFailureNotice = nil
-            return
-        }
         do {
-            try TaskWorkflowService.commitMarkDone(task, in: modelContext)
+            if task.isDone {
+                try TaskWorkflowService.commitMarkTodo(task, in: modelContext)
+            } else {
+                try TaskWorkflowService.commitMarkDone(task, in: modelContext)
+            }
             settleFailureNotice = nil
         } catch {
             settleFailureNotice = CadencePendingChangePersistence.editFailureNotice

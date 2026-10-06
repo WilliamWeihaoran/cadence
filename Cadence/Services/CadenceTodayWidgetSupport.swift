@@ -73,6 +73,7 @@ nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
     let dueTodayCount: Int
     let scheduledTodayCount: Int
     let tasks: [CadenceTodayWidgetTask]
+    var suppressionExpiresAt: Date? = nil
 
     var todayURL: URL {
         CadenceDeepLink.today.url
@@ -106,12 +107,13 @@ nonisolated enum CadenceTodayWidgetSupport {
     ) throws -> CadenceTodayWidgetSnapshot {
         let tasks = try modelContext.fetch(datedOpenTaskFetchDescriptor())
         probe?.finished(.fetch, rows: tasks.count)
-        let suppressedTaskIDs = CadenceWidgetRefreshCenter.suppressedTaskIDs()
+        let expirations = CadenceWidgetRefreshCenter.taskCompletionExpirations()
         let built = snapshot(
             from: tasks,
             todayKey: todayKey,
             limit: limit,
-            suppressedTaskIDs: suppressedTaskIDs
+            suppressedTaskIDs: Set(expirations.keys),
+            suppressionExpirations: expirations
         )
         probe?.finished(.derive)
         return built
@@ -121,7 +123,8 @@ nonisolated enum CadenceTodayWidgetSupport {
         from tasks: [AppTask],
         todayKey: String,
         limit: Int = 3,
-        suppressedTaskIDs: Set<UUID> = []
+        suppressedTaskIDs: Set<UUID> = [],
+        suppressionExpirations: [UUID: Date] = [:]
     ) -> CadenceTodayWidgetSnapshot {
         let visibleLimit = max(limit, 0)
         var totalCount = 0
@@ -130,8 +133,15 @@ nonisolated enum CadenceTodayWidgetSupport {
         var scheduledTodayCount = 0
         var visibleTasks: [CadenceTodayWidgetTask] = []
         visibleTasks.reserveCapacity(visibleLimit)
+        var suppressionExpiresAt: Date?
 
-        for task in todayTasks(from: tasks, todayKey: todayKey) where !suppressedTaskIDs.contains(task.id) {
+        for task in todayTasks(from: tasks, todayKey: todayKey) {
+            if suppressedTaskIDs.contains(task.id) {
+                if let expiration = suppressionExpirations[task.id] {
+                    suppressionExpiresAt = min(suppressionExpiresAt ?? expiration, expiration)
+                }
+                continue
+            }
             totalCount += 1
             // The badges read the shared standing rather than the dates a third time. Exhaustive
             // on purpose: the three counts must add up to `totalCount`, and before T-353 they did
@@ -165,7 +175,8 @@ nonisolated enum CadenceTodayWidgetSupport {
             overdueCount: overdueCount,
             dueTodayCount: dueTodayCount,
             scheduledTodayCount: scheduledTodayCount,
-            tasks: visibleTasks
+            tasks: visibleTasks,
+            suppressionExpiresAt: suppressionExpiresAt
         )
     }
 
@@ -190,13 +201,15 @@ nonisolated enum CadenceTodayWidgetSupport {
         for snapshot: CadenceTodayWidgetSnapshot,
         referenceDate: Date = Date()
     ) -> Date {
-        CadenceWidgetReloadPolicy.recommendedReloadDate(
+        let regularReload = CadenceWidgetReloadPolicy.recommendedReloadDate(
             referenceDate: referenceDate,
             isUnavailable: snapshot.state == .unavailable,
             isEmpty: snapshot.state == .empty,
             readyInterval: 15 * 60,
             emptyInterval: 30 * 60
         )
+        guard let expiration = snapshot.suppressionExpiresAt else { return regularReload }
+        return min(regularReload, max(referenceDate, expiration))
     }
 
     /// The widget's Today list — **the app's Today scope, in the app's Today rank order**, with a

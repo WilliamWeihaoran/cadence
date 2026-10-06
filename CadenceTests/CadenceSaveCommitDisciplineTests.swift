@@ -1893,9 +1893,6 @@ enum CadenceSaveCommitRule {
         // same recurrence insert. It throws, settles through the shared `commitSettle`, and puts
         // the banked minutes back; `CadenceTaskStatusEditing.completeFocusSession` records the
         // refusal and answers `false` so the stopwatch is not cleared over it.
-        "Cadence/macOS/Views/ListNotesSupportViews.swift": ["toggleEmbeddedTask"],
-        "Cadence/macOS/Views/NoteEditorPane.swift": ["toggleEmbeddedTask"],
-        "Cadence/macOS/Views/NotePanel.swift": ["toggleEmbeddedTask"],
         // T-629 emptied the two image doors out of this list: macOS's `createAssets` and iOS's
         // `createPastedImageAssets`/`insertPickedImages` commit through `commitInsert` now and
         // write no reference over a refused commit, pinned by
@@ -2093,7 +2090,6 @@ enum CadenceSaveCommitRule {
         // could see them at all), and `FocusSessionSupport.logSession`/`logBundleSession` commit
         // their own writes the same way. `FocusView.reportingFocusFailure` names a refusal on
         // `TaskCompletionAnimationManager.settleFailed`, the alert `macOSRootView` already shows.
-        "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": ["setStatus"],
         // **Not a defect, and the one entry here that is a limit of the scan rather than a
         // finding.** `CadenceWriteService.resolvedTags` reaches for the service's own stored
         // `context`, so the signature rule cannot subtract it — but the unit of work is owned by

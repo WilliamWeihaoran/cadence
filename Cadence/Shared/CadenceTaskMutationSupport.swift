@@ -1,6 +1,19 @@
 import Foundation
 import SwiftData
 
+struct CadenceTaskReopenWidgetEffects {
+    let restoreTask: (UUID) -> Void
+
+    static var live: Self {
+        Self { taskID in
+            guard !NotificationManager.isTestEnvironment else { return }
+            if CadenceWidgetRefreshCenter.clearTaskCompletion(taskID) {
+                CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
+            }
+        }
+    }
+}
+
 enum CadenceTaskMutationSupport {
     /// **T-344, decided: the completion circle toggles *settled*, not *done*.** Tapping it on a
     /// cancelled task restores it to todo, exactly as tapping it on a done task does. It does not
@@ -49,6 +62,7 @@ enum CadenceTaskMutationSupport {
     static func toggleCompletion(
         _ task: AppTask,
         modelContext: ModelContext,
+        widgetEffects: CadenceTaskReopenWidgetEffects? = nil,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
         if CadenceTaskQuerySupport.isFinishedTask(task) {
@@ -59,6 +73,7 @@ enum CadenceTaskMutationSupport {
                 task.status = status
                 task.completedAt = completedAt
             }
+            (widgetEffects ?? .live).restoreTask(task.id)
         } else {
             try commitSettle(task, in: modelContext, commit: commit) {
                 CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
@@ -128,6 +143,7 @@ enum CadenceTaskMutationSupport {
         _ status: TaskStatus,
         for task: AppTask,
         modelContext: ModelContext,
+        widgetEffects: CadenceTaskReopenWidgetEffects? = nil,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
         switch status {
@@ -143,6 +159,7 @@ enum CadenceTaskMutationSupport {
                 task.status = previousStatus
                 task.completedAt = previousCompletedAt
             }
+            (widgetEffects ?? .live).restoreTask(task.id)
         }
     }
 

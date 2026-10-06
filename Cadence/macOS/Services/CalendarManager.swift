@@ -213,6 +213,24 @@ final class CalendarManager {
         return store.event(withIdentifier: identifier)
     }
 
+    func event(for note: Note) -> EKEvent? {
+        eventForNote(identifier: note.calendarEventID, dateKey: note.eventDateKey)
+    }
+
+    private func eventForNote(identifier: String, dateKey: String) -> EKEvent? {
+        guard isAuthorized else { return nil }
+        return CadenceEventNoteSupport.resolveEvent(
+            calendarEventID: identifier,
+            eventDateKey: dateKey,
+            lookupBaseEvent: { store.event(withIdentifier: $0) },
+            eventsForDay: { date in
+                let bounds = dayBounds(for: date)
+                let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: nil)
+                return store.events(matching: predicate)
+            }
+        )
+    }
+
     /// Convert an all-day event to a timed event at the specified minute offset on the given date.
     @discardableResult
     func convertAllDayEventToTimed(_ event: EKEvent, startMin: Int, dateKey: String) -> CalendarWriteFailure? {
@@ -333,8 +351,7 @@ final class CalendarManager {
     /// instead, which is also what iOS does.
     @discardableResult
     func updateEventNotes(calendarEventID: String, notes: String) -> CalendarWriteFailure? {
-        let lookupID = CalendarEventIdentity.lookupIdentifier(from: calendarEventID)
-        guard let event = event(withIdentifier: lookupID) else { return .eventNotFound }
+        guard let event = eventForNote(identifier: calendarEventID, dateKey: "") else { return .eventNotFound }
         return updateEventNotes(event, notes: notes)
     }
 
