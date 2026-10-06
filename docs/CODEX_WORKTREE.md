@@ -68,7 +68,89 @@ Cadence/macOS/Views/NoteEditorPane.swift
 Cadence/macOS/Views/ListNotesSupportViews.swift
 Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift
 CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift
+Cadence/iOS/iOSTaskDetailSheet.swift
+Cadence/iOS/iOSTaskDetailSheetSections.swift
+Cadence/iOS/iOSTaskRowActionViews.swift
+Cadence/iOS/iOSTaskViews.swift
+Cadence/Shared/CadenceSettingsSectionCopy.swift
+Cadence/iOS/iOSDataResetSettingsSection.swift
+Cadence/macOS/Views/SettingsDataSafetySection.swift
+Cadence/Shared/CadenceListDeletionSummary.swift
+Cadence/Shared/CadenceDataExportPresentation.swift
+Cadence/Shared/CadenceArchiveImportPresentation.swift
+Cadence/Services/MarkdownNoteSupport.swift
+README.md
+CadenceTests/CadenceArchiveImportEntryPointTests.swift
+CadenceTests/CadenceChoicePickerDismissalTests.swift
+CadenceTests/CadenceEmptyTitleFallbackSweepTests.swift
+CadenceTests/CadenceIconOnlyButtonAccessibilityTests.swift
+CadenceTests/CadenceListDeletionSurfaceTests.swift
+CadenceTests/CadencePresentedTypographyBoundaryTests.swift
+CadenceTests/CadenceSettingsSectionCopyTests.swift
 ```
+
+### LEASE WIDENED 2026-10-05 — nineteen paths for [[T-1466]], the tracking-UI retirement
+
+Written by the coordinator (agent `codex1466`) while landing `codex/tracking-ui-retirement`, which
+is [[T-1466]] — the third and last Codex landing of the day. `codex-land.sh review` REFUSES
+`CODEX-LEASE-VIOLATION` on **twenty** paths; the owner authorized this grant explicitly, and the
+tool's own printed remedy is for the coordinator to widen main's lease deliberately rather than for
+the branch to widen its own. Nineteen of the twenty are granted here. The twentieth is withheld on
+purpose and is named below.
+
+**The four live controls.** `Cadence/iOS/iOSTaskDetailSheet.swift` and
+`iOSTaskDetailSheetSections.swift` hold the task inspector's unconditional Milestone row, its
+`Goal` fetch, its picker state and the `task.goal` binding; `iOSTaskRowActionViews.swift` holds the
+task row's Goal chip, its picker and the committing assignment path, and `iOSTaskViews.swift` is
+the row call site that passes them through. iPhone and iPad share these same four files, which is
+why no iPad-specific path appears.
+
+**The drawn copy.** `Cadence/Shared/CadenceSettingsSectionCopy.swift`,
+`Cadence/iOS/iOSDataResetSettingsSection.swift` and
+`Cadence/macOS/Views/SettingsDataSafetySection.swift` carry the notification descriptions and the
+reset / delete warnings; `Cadence/Shared/CadenceListDeletionSummary.swift` carries the deletion
+counts, `CadenceDataExportPresentation.swift` the backup description, and
+`CadenceArchiveImportPresentation.swift` the import preview that groups the retained tracking rows
+under one **Retained legacy records** line. These are granted for *wording and grouping only* — the
+warnings must keep disclosing that legacy records are retained, and the insert/match totals must
+stay exact. `Cadence/Services/MarkdownNoteSupport.swift` is granted for the built-in Project Brief
+template's default headings (Objective/Deliverables) ONLY; it must not rewrite a saved note or a
+customized template.
+
+**`README.md`** stops advertising the three as current features.
+
+**Seven test files** are granted because they are the exact-count and source guards this removal
+re-points rather than relaxes: `CadenceArchiveImportEntryPointTests`,
+`CadenceChoicePickerDismissalTests`, `CadenceEmptyTitleFallbackSweepTests`,
+`CadenceIconOnlyButtonAccessibilityTests`, `CadenceListDeletionSurfaceTests`,
+`CadencePresentedTypographyBoundaryTests` and `CadenceSettingsSectionCopyTests`. The two Codex's own
+broad run left red — the accessibility census (five chips to four) and the presented-workflow census
+(fifteen popovers to fourteen) — are in this set; a census that moves because a control was removed
+is re-pointed, and the coordinator checks the positive controls survive rather than taking the
+re-point on trust. Codex's new tests need no grant: they land in `CadenceTests/CadenceCodex*.swift`,
+the standing namespace.
+
+**THE TWENTIETH PATH IS DELIBERATELY NOT GRANTED.** `CadenceTests/CadenceRealTreeSweepManifest.txt`
+is generated, not authored. The coordinator re-derives it with
+`./scripts/real-tree-sweep-manifest.sh --write` *after* integrating, so the three new sweep
+registrations are proved by the generator against the real tree rather than trusted from a branch
+that is eight commits behind main — and main's own copy has moved twice since the merge base, in
+`189f7249` and `36ef5e04`. `review` will keep reporting a violation on this one path and that report
+is correct. This is the third branch running it is withheld.
+
+**`docs/CODEX_WORKTREE.md` needed no decline this time.** Unlike `codex/sidebar-drawer` and
+`codex/continuous-quote-rail`, this branch does **not** add itself to the lease block — Codex states
+outright that it does not widen its own lease, and the diff confirms the file is untouched. The
+protocol held without the coordinator having to enforce it.
+
+**NOTHING WAS DROPPED, and this was rebuilt on HEAD to make sure.** The four standing globs survive
+— `Cadence/iOS/iOSList*.swift`, `Cadence/Shared/CadenceTypography.swift`,
+`CadenceTests/CadenceTypographyScaleTests.swift` and `CadenceTests/CadenceCodex*.swift`, dropping
+the last of which would make `codex-land.sh` refuse Codex's next branch for doing what it was asked
+— and **all nineteen [[T-3003]] paths stay**, the grant `220b0b91`/`c4eedfcb` published while these
+landings were in flight. 23 patterns in, 42 out. These nineteen retire in a follow-through commit
+the moment the work lands, in this session, because *a lease granting paths nobody is working on is
+a lease that will eventually be believed.*
 
 ### LEASE RETIRED 2026-10-05 — the four T-1465 editor paths are out, because the work landed
 
