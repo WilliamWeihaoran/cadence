@@ -668,6 +668,24 @@ struct CadenceGuardScriptSelftestTests {
         // as VACUOUS-COUNT plus "executed 0 tests" -- a wrong suite name -- unless this is named.
         // Section 8c induces it and keeps a red-without-it and an exit-0 control silent.
         "ENTITLEMENTS-POISONED-DD",
+        // T-2071 / T-1920: the seven verdicts of `xcb.sh run-state`, and they are pinned as a SET
+        // because the instrument's whole value is that they are distinguishable. Deleting any one
+        // of them does not break the others -- it quietly collapses two states into one, which is
+        // the defect itself: a queued run, a slow run and a wedged run looked identical from
+        // outside, and agents repeatedly read a queue as a death and started a second run on top
+        // of it. STALLED is the one most likely to be called noise and removed, and it is the one
+        // that keeps the tool honest: it is the verdict for a silent run that does NOT carry
+        // T-2067's signature, and folding it into WEDGED would make the tool assert a hung host
+        // over every slow test body. Section 13 induces each of them, and induces QUEUED, RUNNING,
+        // ABANDONED and WEDGED against REAL `xcb.sh <id> test` runs on the production path rather
+        // than against a fixture that merely contains the word.
+        "run-state: QUEUED",
+        "run-state: RUNNING",
+        "run-state: WEDGED",
+        "run-state: STALLED",
+        "run-state: FINISHED",
+        "run-state: ABANDONED",
+        "run-state: NO-LOG",
     ]
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody

@@ -13,6 +13,7 @@
 #   ./scripts/xcb.sh check-sleep <start> <end> [exit]          # did the Mac sleep in that window (T-2048)
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
 #   ./scripts/xcb.sh last-green                                # is HEAD still the last full green? (T-2042)
+#   ./scripts/xcb.sh run-state [<id>...]                       # QUEUED / RUNNING / WEDGED (T-2071)
 #   ./scripts/xcb.sh release-dd <id|path>                      # delete a DerivedData no live build uses
 #   ./scripts/xcb.sh check-destination <-destination value>   # resolve a simulator, no build
 #   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
@@ -1607,6 +1608,407 @@ last_green_report() {  # $1 = tree root
 }
 
 
+# --- QUEUED vs RUNNING vs WEDGED (T-2071), and silence nobody is watching (T-1920) ----
+# Three states that look identical from outside, and the cost of not separating them is measured
+# repeatedly: agents concluded a run had DIED when it was queued behind the test-host lock and
+# started a second one, and T-2067 was written up as a code red -- "every CadenceTests run since
+# has produced ZERO test result lines" -- over scoped runs that were in fact passing throughout.
+#
+# THREE SIGNALS AGENTS REACH FOR FIRST, AND WHY EACH IS WRONG HERE.
+#
+#   1. `> full.log` IS NOT THE TEST LOG, and this is the big one. xcb writes xcodebuild's stream to
+#      `${TMPDIR}cadence-xcb-<id>.<ts>-<pid>.log` and prints only its preflight and its final
+#      summary on stdout. Measured against a live, healthy, actively-passing run: the agent's own
+#      redirect held 727 bytes and 0 result lines while xcb's own log held 1,237,974 bytes and
+#      3,135. An agent tailing its redirect mid-run sees zero result lines on a green suite, every
+#      time. This reader counts from the xcb log and never from a redirect.
+#   2. ELAPSED TIME DOES NOT DISCRIMINATE and is not read here. The full suite legitimately runs
+#      19+ minutes -- individual `@Test`s in it measured 3.7s, 4.5s and 15.6s -- so a wedged run
+#      and a slow run are both "quiet for fifteen minutes".
+#   3. NEITHER DOES CPU, and that one is a trap rather than merely useless. A wedged xcodebuild
+#      measured 12 seconds of CPU across 35 minutes; a HEALTHY one measured 9.29 seconds across
+#      9:48, because `xcodebuild` is a parent process and its children do the work. Low parent CPU
+#      is NORMAL during a healthy run. It is not a signal and this reader does not use it.
+#
+# WHAT DOES DISCRIMINATE IS LOG GROWTH, plus two facts the log's own NAME carries for free.
+#
+#   * The per-invocation log is `cadence-xcb-<id>.<ts>-<pid>.log` and `cadence-xcb-<id>.log` is a
+#     symlink to the newest. The name is chosen at the top of the script; the redirect that
+#     CREATES the file does not happen until after `test-host-lock.sh acquire` returns. So a run
+#     waiting its turn is a DANGLING SYMLINK -- named, pointing at nothing -- and that is the
+#     QUEUED reading, available with one `readlink` and no sampling at all.
+#   * `<pid>` is that invocation's own `$$`. `kill -0` on it separates a run that is queued from
+#     one whose owner is GONE, which is the state every agent who "concluded a run had died" was
+#     actually trying to ask about. A dead owner with no log, or with a log that stops, is
+#     ABANDONED -- a distinct answer, not a guess.
+#   * Growth is the liveness signal for a run that HAS started: bytes in the xcb log between two
+#     reads a sample window apart. T-2071 measured 30 seconds as enough, which is why that is the
+#     default; anything shorter can land inside one slow test body.
+#
+# AND WEDGED IS NOT INFERRED FROM SILENCE ALONE, because silence alone cannot carry it -- that is
+# exactly the error T-1920 made three times in a row, inferring a process's liveness from a status
+# string and two timestamps and being wrong in a different direction each time. A silent run is
+# only called WEDGED when a SECOND, independent reading agrees: the xctest session log shows a
+# session that reached "Received new test session connection" and "resuming connection" and never
+# "requested serialized transport". A healthy session logs the second within 3ms of the first, and
+# T-2067 measured that correlation at 18-for-18 with no exception. When the run is silent and that
+# signature is ABSENT, the answer is STALLED -- "quiet, and not the wedge we know" -- and never
+# WEDGED. A status tool that lies is worse than none, so the honest fifth verdict stays.
+#
+# `/usr/bin/log`, with the path: `log` is shadowed by a shell builtin here.
+RUNSTATE_SESSION_CONNECTED='Received new test session connection'
+RUNSTATE_SESSION_TRANSPORT='requested serialized transport'
+RUNSTATE_EXIT_RUNNING=0
+RUNSTATE_EXIT_QUEUED=10
+RUNSTATE_EXIT_WEDGED=11
+RUNSTATE_EXIT_FINISHED=12
+RUNSTATE_EXIT_STALLED=13
+RUNSTATE_EXIT_ABANDONED=14
+RUNSTATE_EXIT_NO_LOG=15
+# A dangling pointer whose name is older than this is never read as QUEUED, however alive the pid
+# in it looks. MEASURED, not guessed: a sweep of this Mac's real TMPDIR found 450 pointers and
+# called FOUR of them QUEUED -- logs from three weeks ago whose long-dead owner pid had since been
+# REUSED by an unrelated live process. The test-host lease is 5400s, so a run still queued two
+# hours past its own name is not queued; it is a coincidence of the pid table.
+RUNSTATE_STALE_AFTER=${CADENCE_RUNSTATE_STALE_AFTER:-7200}
+# How far back the id-less sweep looks. The same measurement is why there is a window at all: 450
+# runs, 446 of them finished or dead weeks ago, is not a report anybody reads -- and a sweep whose
+# exit code is dominated by month-old logs cannot be the thing that makes a LIVE hang visible.
+RUNSTATE_SINCE=${CADENCE_RUNSTATE_SINCE:-21600}
+
+# The testing seam, and the same one `pmset_log` uses: the live condition cannot be induced (it
+# needs this Mac's testmanagerd to stop answering), so `selftest` substitutes a file in the
+# format `log show` prints. The predicate is the subsystem, which is what makes the live read
+# cheap -- about two seconds, no privilege, the shape T-2070's automation-mode probe established.
+xctest_session_log() {
+  if [[ -n "${CADENCE_XCTEST_SESSION_FIXTURE:-}" ]]; then
+    cat -- "$CADENCE_XCTEST_SESSION_FIXTURE" 2>/dev/null
+    return 0
+  fi
+  /usr/bin/log show --last "${CADENCE_RUNSTATE_LOG_WINDOW:-30m}" \
+    --predicate 'subsystem == "com.apple.dt.xctest"' --style compact 2>/dev/null
+}
+
+# Sessions that connected minus sessions that got transport. Positive means at least one session
+# is hanging where T-2067 hangs. Zero or negative is healthy, exactly as T-2070's probe reads it.
+# Memoised for the length of one report: the live read costs about two seconds, and a sweep with
+# several silent runs in it would otherwise pay that per run for an answer about the HOST, which
+# is the same answer every time it asks.
+RUNSTATE_OUTSTANDING_MEMO=""
+runstate_transport_outstanding() {
+  if [[ -n "$RUNSTATE_OUTSTANDING_MEMO" ]]; then
+    print -r -- "$RUNSTATE_OUTSTANDING_MEMO"
+    return 0
+  fi
+  local text; text="$(xctest_session_log)"
+  local -i conn trans
+  conn=$(print -r -- "$text" | grep -cF -- "$RUNSTATE_SESSION_CONNECTED")
+  trans=$(print -r -- "$text" | grep -cF -- "$RUNSTATE_SESSION_TRANSPORT")
+  RUNSTATE_OUTSTANDING_MEMO="$(( conn - trans ))"
+  print -r -- "$RUNSTATE_OUTSTANDING_MEMO"
+}
+
+# The invocation pid encoded in a per-invocation log's name; empty for the unsuffixed symlink or
+# any other shape, and an empty answer is never read as "dead".
+runstate_log_pid() {  # $1 = log path
+  local base="${1:t}" tail
+  base="${base%.log}"
+  tail="${base##*-}"
+  [[ "$tail" == <-> ]] && print -r -- "$tail"
+}
+
+# The run's own start time, read out of the log's name (`<id>.<YYYYmmdd>-<HHMMSS>-<pid>.log`)
+# rather than off the filesystem: a pointer's mtime moves when anything re-points it, and the name
+# is the only record of when THIS run was named. 0 when the name does not carry one.
+runstate_name_epoch() {  # $1 = a log path or basename
+  local base="${1:t}" stamp
+  base="${base%.log}"
+  stamp="${base##*.}"          # <YYYYmmdd>-<HHMMSS>-<pid>
+  stamp="${stamp%-*}"          # <YYYYmmdd>-<HHMMSS>
+  [[ "$stamp" == <->-<-> ]] || { print -r -- 0; return 0 }
+  date -j -f '%Y%m%d-%H%M%S' "$stamp" +%s 2>/dev/null || print -r -- 0
+}
+
+# The log THIS id's newest run writes: the symlink's target by preference, because that is the
+# pointer xcb re-points on every invocation and it is correct even while the target is absent.
+runstate_log_path() {  # $1 = id
+  local latest="${TMP_BASE}cadence-xcb-$1.log" tgt
+  if [[ -L "$latest" ]]; then
+    tgt="$(readlink "$latest")"
+    [[ "$tgt" != /* ]] && tgt="${TMP_BASE}${tgt}"
+    print -r -- "$tgt"
+    return 0
+  fi
+  [[ -f "$latest" ]] && { print -r -- "$latest"; return 0 }
+  local -a logs
+  logs=(${TMP_BASE}cadence-xcb-$1.*.log(N.om))
+  (( ${#logs} )) && { print -r -- "${logs[1]}"; return 0 }
+  return 1
+}
+
+# Every id that has a `cadence-xcb-<id>.log` pointer in TMPDIR. The per-invocation logs are
+# skipped: their names carry a `.` in the id position, and reporting both would double-count the
+# newest run of every id under two names.
+runstate_ids() {
+  local f b target
+  local -i cutoff=$(( $(date +%s) - RUNSTATE_SINCE )) stamp=0
+  for f in ${TMP_BASE}cadence-xcb-*.log(N); do
+    b="${f:t}"; b="${b#cadence-xcb-}"; b="${b%.log}"
+    [[ "$b" == *.* ]] && continue
+    target="$(readlink "$f" 2>/dev/null)"
+    [[ -z "$target" ]] && target="${f:t}"
+    stamp=$(runstate_name_epoch "$target")
+    # Fails OPEN: a name this cannot date is reported rather than hidden. Every log this script
+    # writes carries the stamp, so the open case is somebody else's file, and a sweep that silently
+    # drops what it cannot parse is the hollow instrument one layer down.
+    (( stamp == 0 || stamp >= cutoff )) || continue
+    print -r -- "$b"
+  done
+}
+
+RUNSTATE_TERMINAL='\*\* (TEST|BUILD|CLEAN|ANALYZE|ARCHIVE|TEST EXECUTE) (SUCCEEDED|FAILED) \*\*'
+
+# Everything that can be answered WITHOUT paying for the sample window, so a sweep sleeps once for
+# all of its runs rather than once per run. Prints one `|`-joined record; the verdict is `SAMPLE`
+# when growth is the only thing left to ask.
+runstate_snapshot() {  # $1 = id
+  local id=$1 log pid="" verdict note=""
+  if ! log="$(runstate_log_path "$id")"; then
+    print -r -- "NO-LOG|$id||0|0||0|unknown|0"
+    return 0
+  fi
+  pid="$(runstate_log_pid "$log")"
+  local owner="unknown"
+  if [[ -n "$pid" ]]; then
+    kill -0 "$pid" 2>/dev/null && owner="alive" || owner="dead"
+  fi
+  local -i stamp named_age
+  stamp=$(runstate_name_epoch "$log")
+  named_age=$(( stamp > 0 ? $(date +%s) - stamp : 0 ))
+  if [[ ! -e "$log" ]]; then
+    # Named and never written: the redirect has not happened, so xcodebuild has not been launched.
+    # A LIVE owner means it is waiting its turn -- but only while the name is recent, because pids
+    # are reused and a three-week-old pointer whose number happens to be live again is not a queue.
+    # Anything else here is NOT called ABANDONED: there is no log, so there is nothing to have been
+    # abandoned, and "the run died" and "TMPDIR was swept" are the same two bytes of evidence.
+    if [[ "$owner" == "alive" ]] && (( stamp == 0 || named_age <= RUNSTATE_STALE_AFTER )); then
+      verdict="QUEUED"
+    else
+      verdict="NO-LOG"
+    fi
+    print -r -- "$verdict|$id|$log|0|0|$pid|$named_age|$owner|0"
+    return 0
+  fi
+  local -i size ran mtime age banner
+  size=$(wc -c < "$log" 2>/dev/null | tr -d ' ')
+  ran=${$(tests_seen "$log"):-0}
+  mtime=$(stat -f %m "$log" 2>/dev/null || print 0)
+  age=$(( $(date +%s) - mtime ))
+  banner=0
+  tail -n 5 "$log" 2>/dev/null | grep -qE -- "$RUNSTATE_TERMINAL" && banner=1
+  # A TERMINAL BANNER IS NOT ON ITS OWN AN ENDING, and the selftest caught this reading getting it
+  # wrong: `xcodebuild` prints its banner last, so a whole-file -- or even a last-five-lines --
+  # search reads a build banner that a later phase went straight past as "this run is over". The
+  # banner only closes a run whose OWNER IS GONE; while the owner is alive the question is still
+  # the growth question, and a growing log is RUNNING whatever is written in it.
+  if (( banner )) && [[ "$owner" != "alive" ]]; then
+    print -r -- "FINISHED|$id|$log|$size|$ran|$pid|$age|$owner|$banner"
+    return 0
+  fi
+  # Launched but xcodebuild has not spoken yet. T-2071's own reading of QUEUED, kept for a caller
+  # that pre-creates the file; under this script the dangling-symlink branch above answers first.
+  if ! grep -qF 'Command line invocation' "$log" 2>/dev/null; then
+    [[ "$owner" == "dead" ]] && verdict="ABANDONED" || verdict="QUEUED"
+    print -r -- "$verdict|$id|$log|$size|$ran|$pid|$age|$owner|$banner"
+    return 0
+  fi
+  print -r -- "SAMPLE|$id|$log|$size|$ran|$pid|$age|$owner|$banner"
+}
+
+# The second half of a sampled reading: the same log, one window later.
+runstate_classify() {  # $@ = the snapshot record's fields
+  local id=$2 log=$3 pid=$6 owner=$8
+  local -i size0=$4 ran0=$5 banner=$9
+  local -i size1 ran1 outstanding
+  size1=$(wc -c < "$log" 2>/dev/null | tr -d ' ')
+  ran1=${$(tests_seen "$log"):-0}
+  if (( size1 > size0 )); then
+    print -r -- "RUNNING|$id|$log|$size1|$ran1|$pid|$(( size1 - size0 ))|$(( ran1 - ran0 ))|$banner"
+    return 0
+  fi
+  if (( banner )); then
+    print -r -- "FINISHED|$id|$log|$size1|$ran1|$pid|0|0|$banner"
+    return 0
+  fi
+  if [[ "$owner" == "dead" ]]; then
+    print -r -- "ABANDONED|$id|$log|$size1|$ran1|$pid|0|0|$banner"
+    return 0
+  fi
+  outstanding=$(runstate_transport_outstanding)
+  if (( ran1 == 0 && outstanding > 0 )); then
+    print -r -- "WEDGED|$id|$log|$size1|$ran1|$pid|0|$outstanding|$banner"
+    return 0
+  fi
+  print -r -- "STALLED|$id|$log|$size1|$ran1|$pid|0|$outstanding|$banner"
+}
+
+runstate_exit_for() {  # $1 = verdict
+  case "$1" in
+    RUNNING)   print -r -- $RUNSTATE_EXIT_RUNNING ;;
+    QUEUED)    print -r -- $RUNSTATE_EXIT_QUEUED ;;
+    WEDGED)    print -r -- $RUNSTATE_EXIT_WEDGED ;;
+    FINISHED)  print -r -- $RUNSTATE_EXIT_FINISHED ;;
+    STALLED)   print -r -- $RUNSTATE_EXIT_STALLED ;;
+    ABANDONED) print -r -- $RUNSTATE_EXIT_ABANDONED ;;
+    *)         print -r -- $RUNSTATE_EXIT_NO_LOG ;;
+  esac
+}
+
+# The queue line for this id, read from the lock itself rather than guessed. `xcb.sh test` files
+# its ticket as `xcb-<id>`, so the holder and the wait are both already recorded there -- and a
+# QUEUED verdict that can also say "waiting 800s behind xcb-widgetdrop" is the difference between
+# an agent waiting and an agent starting a second run on top of the first.
+runstate_lock_line() {  # $1 = id
+  # NOT `status`: that name is a zsh special (an alias for `$?`) and assigning it is a read-only
+  # error printed into the middle of the verdict -- the same shape as T-1074's stray assignment.
+  local lock_status holder
+  lock_status="$("$ROOT_DIR/scripts/test-host-lock.sh" status 2>/dev/null)"
+  [[ -z "$lock_status" ]] && return 1
+  holder="$(print -r -- "$lock_status" | head -1)"
+  print -r -- "test host: $holder"
+  print -r -- "$lock_status" | grep -F "xcb-$1" | sed 's/^[[:space:]]*/this id on the lock: /'
+  return 0
+}
+
+# One run, already classified, printed. The verdict word is the product; everything under it is
+# what the next reader needs in order not to re-derive the same reading by hand.
+runstate_print() {  # $@ = a classified record
+  local verdict=$1 id=$2 log=$3 pid=$6 extra=$7 extra2=$8
+  local -i size=$4 ran=$5
+  say ""
+  say "  id:        $id"
+  [[ -n "$log" ]] && say "  log:       $log"
+  case "$verdict" in
+    NO-LOG)
+      say "  run-state: NO-LOG -- there is no log to read for this id."
+      say "             Either nothing ever claimed it in $TMP_BASE, or a run was named here and"
+      say "             never written and its owner is gone: killed while queued, or swept out of"
+      say "             TMPDIR afterwards. Those leave identical evidence, so neither is asserted."
+      say "             This is not a verdict about a live run. It is the absence of one to read."
+      ;;
+    QUEUED)
+      say "  run-state: QUEUED -- named, and xcodebuild has NOT been launched (pid $pid is alive)."
+      say "             The log name is chosen before \`test-host-lock.sh acquire\` is called, so an"
+      say "             absent or empty log with a live owner means this run is WAITING ITS TURN."
+      say "             Do not start a second run. Elapsed time says nothing about it."
+      runstate_lock_line "$id" | sed 's/^/             /'
+      ;;
+    RUNNING)
+      say "  run-state: RUNNING -- the xcb log GREW by $extra byte(s) over the sample window"
+      say "             (now $size bytes, $ran test result line(s), +$extra2 in the window)."
+      say "             Growth is the liveness signal; CPU on the xcodebuild parent is not, because"
+      say "             its children do the work (a healthy run measured 9.29s CPU over 9:48)."
+      ;;
+    WEDGED)
+      say "  run-state: WEDGED -- the log did not grow, it holds ZERO test result lines, and the"
+      say "             xctest session log shows $extra2 session(s) that connected and never"
+      say "             \"$RUNSTATE_SESSION_TRANSPORT\" (T-2067)."
+      say "             A healthy session logs that within 3ms of connecting; T-2067 measured the"
+      say "             correlation 18-for-18. This run will not produce results on its own."
+      say "             It is a state of this MAC, not of your change, and restarting testmanagerd"
+      say "             is an admin change and the OWNER's call -- report it, do not re-run."
+      ;;
+    STALLED)
+      say "  run-state: STALLED -- the log did not grow over the sample window, and the T-2067"
+      say "             wedge verdict does NOT apply (unanswered sessions: $extra2)."
+      say "             It is withheld deliberately: $ran result line(s) are already in this log, or"
+      say "             the sessions are balanced, and either way silence here is as consistent with"
+      say "             one slow test body as with a hang. Re-read with a longer window --"
+      say "             CADENCE_RUNSTATE_SAMPLE=120 ./scripts/xcb.sh run-state $id -- before"
+      say "             concluding anything. Do not kill it on this reading."
+      ;;
+    FINISHED)
+      say "  run-state: FINISHED -- the log carries xcodebuild's own terminal banner"
+      say "             ($size bytes, $ran test result line(s)). It is not growing because it is OVER."
+      say "             ./scripts/xcb.sh check-test-log '$log' is the verdict; this is not."
+      ;;
+    ABANDONED)
+      say "  run-state: ABANDONED -- the xcb.sh invocation that claimed this log (pid $pid) is GONE"
+      say "             and the log is not growing. This is the state agents guess at when they say"
+      say "             \"the run died\"; here it is read, not guessed, from the pid in the log name."
+      say "             Its test-host lease may still be held until the owner check reclaims it."
+      ;;
+  esac
+}
+
+# `run-state [id...]`: the three-way discriminator, and with no id a sweep of every run this
+# TMPDIR knows about. The sweep is the T-1920 half -- a hung run was invisible for three hours
+# because nothing anywhere could see it, and the only thing that makes silence visible without a
+# human noticing it is a cheap check something else can run on a schedule. It exits non-zero when
+# any run is WEDGED or ABANDONED, so it is a gate and not only a page to read.
+run_state_report() {  # $@ = ids, or none for every id in TMPDIR
+  # Every local is declared ONCE, at the top, with an assignment. A bare `local x` in a zsh
+  # function whose parameter is already local PRINTS `x=<value>` (T-1074), and a redeclaration
+  # inside a loop puts that line straight into the middle of a verdict.
+  local -a ids=("$@") snaps=() finals=() fields=() parts=()
+  local -A tally=()
+  local -i sweep=0 sample=${CADENCE_RUNSTATE_SAMPLE:-30} needs=0 worst=0 rc=0
+  local id="" rec="" verdict="" line=""
+  if (( ${#ids} == 0 )); then
+    sweep=1
+    for line in ${(f)"$(runstate_ids)"}; do
+      [[ -n "$line" ]] && ids+=("$line")
+    done
+  fi
+  (( sample < 1 )) && sample=1
+  say "== xcb run-state ($( (( sweep )) && print -n "sweep of $TMP_BASE" || print -n "${(j:, :)ids}" )) =="
+  if (( ${#ids} == 0 )); then
+    say "  run-state: NO-LOG -- no cadence-xcb-*.log in $TMP_BASE at all."
+    return $RUNSTATE_EXIT_NO_LOG
+  fi
+  for id in $ids; do
+    snaps+=("$(runstate_snapshot "$id")")
+  done
+  for rec in $snaps; do
+    [[ "${rec%%|*}" == SAMPLE ]] && needs=1
+  done
+  if (( needs )); then
+    say "  sampling ${sample}s of xcb-log growth (CADENCE_RUNSTATE_SAMPLE overrides)..."
+    sleep "$sample"
+  fi
+  for rec in $snaps; do
+    fields=("${(@s:|:)rec}")
+    if [[ "${fields[1]}" == SAMPLE ]]; then
+      finals+=("$(runstate_classify "${fields[@]}")")
+    else
+      finals+=("$rec")
+    fi
+  done
+  for rec in $finals; do
+    fields=("${(@s:|:)rec}")
+    runstate_print "${fields[@]}"
+    verdict="${fields[1]}"
+    tally[$verdict]=$(( ${tally[$verdict]:-0} + 1 ))
+    rc=$(runstate_exit_for "$verdict")
+    # Explicit precedence, not last-one-wins: WEDGED outranks ABANDONED outranks everything else.
+    # A sweep's exit code is the one thing a scheduled caller reads, and an order that depends on
+    # the alphabet is an instrument whose answer changes when somebody renames an agent.
+    if [[ "$verdict" == WEDGED ]]; then
+      worst=$rc
+    elif [[ "$verdict" == ABANDONED ]] && (( worst != RUNSTATE_EXIT_WEDGED )); then
+      worst=$rc
+    elif (( worst == 0 )); then
+      worst=$rc
+    fi
+  done
+  say ""
+  for verdict in ${(ko)tally}; do
+    parts+=("${tally[$verdict]} $verdict")
+  done
+  say "  run-state summary: ${#finals} run(s) -- ${(j:, :)parts}"
+  return $worst
+}
+
 # --- selftest ----------------------------------------------------------------
 # `agent-commit.sh selftest` and `mutate.sh selftest` are the precedent: a guard nobody exercises
 # is the hollow instrument this repository keeps finding one layer up, and this one is easy to
@@ -2763,6 +3165,245 @@ selftest_only_testing() {
   check "release-dd deletes a DerivedData no live xcodebuild names" \
     $( [[ $lgrc == 0 && ! -e "$lgdd" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
 
+
+  say ""
+  say " 13. QUEUED vs RUNNING vs WEDGED, and silence nobody is watching (T-2071 / T-1920)"
+  # THE WHOLE RUN, NOT A HELPER, for the reason section 11 gives: every state below is induced by a
+  # REAL `xcb.sh <id> test` through the real main flow, with `$XCODEBUILD` pointed at a stub and
+  # `$ROOT_DIR/scripts/test-host-lock.sh` pointed at one. So QUEUED is a run that is genuinely
+  # waiting on `acquire` and has genuinely not launched xcodebuild -- the stub's call file is the
+  # control, and it is EMPTY -- rather than a fixture asserting that the word prints.
+  #
+  # WEDGED is the one state that cannot be induced for real: it needs this Mac's testmanagerd to
+  # stop answering, which is the owner's to cause and nobody's to want. So the half of it that CAN
+  # be induced is -- a started run, producing no results and no output, whose owner is alive -- and
+  # the half that cannot comes from `CADENCE_XCTEST_SESSION_FIXTURE`, in the format `log show`
+  # prints. The pair of checks around it is what makes that honest: the SAME live silent run reads
+  # WEDGED under the T-2067 signature and STALLED under a balanced one, so the verdict is being
+  # taken from the signature and not from the silence.
+  local rs_xcb="$ws/rs/root/scripts/xcb.sh" rsout="" rs_fixture="" rs_sample=1
+  local rs_log="" rs_owner="" rs_calls=""
+  local -i rsrc=0 rs_i=0 rs_bg=0 rs_wedge_bg=0 rs_live_bg=0
+  mkdir -p "$ws/rs/root/scripts" "$ws/rs/tmp"
+  cp -- "$here" "$rs_xcb"
+  # `acquire` blocks forever when FAKE_LOCK_BLOCK names a file, and returns at once otherwise; the
+  # queue line `status` prints is the real script's shape, so the QUEUED verdict's "do not start a
+  # second run" advice is read back from where a real waiter would read it.
+  print -rl -- '#!/bin/zsh' \
+    'if [[ "$1" == acquire && -n "${FAKE_LOCK_BLOCK:-}" ]]; then' \
+    '  print -r -- "$$" > "$FAKE_LOCK_BLOCK"; while :; do sleep 1; done' \
+    'fi' \
+    'if [[ "$1" == status ]]; then' \
+    '  print -r -- "locked by xcb-sibling / pid 4242 (held) for 812s"' \
+    '  print -r -- "queue (1 waiting, first served first):"' \
+    '  print -r -- "  xcb-rsqueue / pid 4243, waiting 812s"' \
+    'fi' \
+    'exit 0' > "$ws/rs/root/scripts/test-host-lock.sh"
+  chmod +x "$ws/rs/root/scripts/test-host-lock.sh"
+  # A stub that STARTS and then stops producing output: xcodebuild's own first line, then nothing.
+  # `sleep` is an external command, so zsh has flushed the line into the log before it blocks.
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- "${(j: :)@}" >> "$FAKE_XCB_CALLS"' \
+    'print -r -- "Command line invocation:"' \
+    'print -r -- "    xcodebuild test -scheme Cadence -destination platform=macOS"' \
+    'while :; do sleep 1; done' > "$ws/rs/silent-xcodebuild"
+  # A stub that keeps producing result lines, i.e. a healthy run.
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- "${(j: :)@}" >> "$FAKE_XCB_CALLS"' \
+    'print -r -- "Command line invocation:"' \
+    'while :; do print -r -- "✔ Test aProbe() passed after 0.001 seconds."; sleep 0.2; done' > "$ws/rs/live-xcodebuild"
+  chmod +x "$ws/rs/silent-xcodebuild" "$ws/rs/live-xcodebuild"
+  # The two session logs, in `log show --style compact` shape. The first is T-2067's signature:
+  # a session that connected and resumed and never got transport. The second is the healthy pair.
+  print -rl -- \
+    "2026-10-04 15:02:01.113 Df xctest[41122:2f1] Received new test session connection" \
+    "2026-10-04 15:02:01.114 Df xctest[41122:2f1] resuming connection" > "$ws/rs/sess-wedged.txt"
+  print -rl -- \
+    "2026-10-04 15:02:01.113 Df xctest[41122:2f1] Received new test session connection" \
+    "2026-10-04 15:02:01.114 Df xctest[41122:2f1] resuming connection" \
+    "2026-10-04 15:02:01.116 Df xctest[41122:2f1] requested serialized transport" > "$ws/rs/sess-ok.txt"
+  rs_fixture="$ws/rs/sess-ok.txt"
+  rs_probe() {  # $@ = run-state arguments
+    rsout=$(CADENCE_RUNSTATE_SAMPLE="$rs_sample" CADENCE_XCTEST_SESSION_FIXTURE="$rs_fixture" \
+      TMPDIR="$ws/rs/tmp/" zsh "$rs_xcb" run-state "$@" 2>&1); rsrc=$?
+  }
+
+  # --- an id nothing has ever claimed ---------------------------------------------------------
+  rs_probe rs-never-run
+  check "an id with no log at all is NO-LOG (exit $RUNSTATE_EXIT_NO_LOG), not a guess about a dead run" \
+    $( (( rsrc == RUNSTATE_EXIT_NO_LOG )) && [[ "$rsout" == *"run-state: NO-LOG"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+
+  # --- QUEUED, induced for real on the production path ------------------------------------------
+  : > "$ws/rs/queue-calls"; : > "$ws/rs/lock-waiter"
+  XCODEBUILD="$ws/rs/live-xcodebuild" FAKE_XCB_CALLS="$ws/rs/queue-calls" \
+    FAKE_LOCK_BLOCK="$ws/rs/lock-waiter" TMPDIR="$ws/rs/tmp/" CADENCE_STALL_POLL=1 \
+    CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS= \
+    zsh "$rs_xcb" rsqueue test -scheme Cadence -destination 'platform=macOS' \
+    -only-testing:CadenceTests -derivedDataPath "$ws/rs/tmp/cadence-dd-rsqueue" >"$ws/rs/queue-out" 2>&1 &
+  rs_bg=$!
+  for rs_i in {1..300}; do [[ -s "$ws/rs/lock-waiter" ]] && break; sleep 0.2; done
+  rs_calls=$(grep -c . "$ws/rs/queue-calls" | tr -d ' ')
+  rs_probe rsqueue
+  check "a run blocked in \`test-host-lock.sh acquire\` reads QUEUED (exit $RUNSTATE_EXIT_QUEUED)" \
+    $( (( rsrc == RUNSTATE_EXIT_QUEUED )) && [[ "$rsout" == *"run-state: QUEUED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  check "...and the CONTROL that makes it a real queue: xcodebuild was never launched ($rs_calls call(s))" \
+    $( [[ "$rs_calls" == 0 ]] && print 1 || print 0 ) "$rs_calls call(s) in $ws/rs/queue-calls"
+  check "...and it is not read as RUNNING, WEDGED or ABANDONED, which is the misreading it exists for" \
+    $( [[ "$rsout" != *"run-state: RUNNING"* && "$rsout" != *"run-state: WEDGED"* \
+         && "$rsout" != *"run-state: ABANDONED"* ]] && print 1 || print 0 ) "$rsout"
+  check "...and it names the lock it is behind, so the reader does not start a second run" \
+    $( [[ "$rsout" == *"locked by xcb-sibling"* && "$rsout" == *"Do not start a second run"* ]] && print 1 || print 0 ) "$rsout"
+  # The same run, the same log, the same absent output -- only the OWNER's pulse changes. Nothing
+  # in the log can tell these two apart, which is why the pid is read out of the log's NAME.
+  rs_owner=$(cat "$ws/rs/lock-waiter" 2>/dev/null)
+  # The waiter is killed and the run REAPED with `wait`, not polled with `kill -0`: an unreaped
+  # zombie still answers `kill -0`, so a poll would read a dead owner as a live one and the check
+  # below would pass for the wrong reason -- the same mistake the verdict itself exists to avoid.
+  [[ -n "$rs_owner" ]] && kill "$rs_owner" 2>/dev/null
+  wait "$rs_bg" 2>/dev/null
+  kill "$rs_bg" 2>/dev/null
+  rs_probe rsqueue
+  # The same pointer, the same absent log -- only the OWNER's pulse changed, and the answer is NOT
+  # ABANDONED. There is no log, so there is nothing that was abandoned: a run killed while queued
+  # and a log swept out of TMPDIR leave byte-identical evidence, and the instrument says so rather
+  # than picking the more dramatic of the two.
+  check "the SAME pointer, once its owner dies, stops reading QUEUED and reads NO-LOG (exit $RUNSTATE_EXIT_NO_LOG)" \
+    $( (( rsrc == RUNSTATE_EXIT_NO_LOG )) && [[ "$rsout" == *"run-state: NO-LOG"* \
+         && "$rsout" != *"run-state: QUEUED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  # PID REUSE, and this one is not hypothetical: a sweep of this Mac's real TMPDIR called FOUR
+  # three-week-old pointers QUEUED because their long-dead owners' pid numbers were live again.
+  # The name carries the run's own start time, so the liveness of a pid is only believed while the
+  # name is recent enough for the test-host lease (5400s) to still be plausible.
+  ln -sf "cadence-xcb-rsreuse.20250101-000000-$$.log" "$ws/rs/tmp/cadence-xcb-rsreuse.log"
+  rs_probe rsreuse
+  check "a pointer named a year ago is NOT QUEUED however live the pid in its name is (T-2071)" \
+    $( (( rsrc == RUNSTATE_EXIT_NO_LOG )) && [[ "$rsout" != *"run-state: QUEUED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+
+  # --- RUNNING, induced for real on the production path ------------------------------------------
+  : > "$ws/rs/live-calls"
+  XCODEBUILD="$ws/rs/live-xcodebuild" FAKE_XCB_CALLS="$ws/rs/live-calls" TMPDIR="$ws/rs/tmp/" \
+    CADENCE_STALL_POLL=1 CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS= \
+    zsh "$rs_xcb" rslive test -scheme Cadence -destination 'platform=macOS' \
+    -only-testing:CadenceTests -derivedDataPath "$ws/rs/tmp/cadence-dd-rslive" >"$ws/rs/live-out" 2>&1 &
+  rs_live_bg=$!
+  rs_log="$ws/rs/tmp/cadence-xcb-rslive.log"
+  for rs_i in {1..300}; do grep -qF 'Command line invocation' "$rs_log" 2>/dev/null && break; sleep 0.2; done
+  # Deliberately probed with the WEDGE fixture in place: growth must outrank the signature, or the
+  # instrument reports a healthy run as a dead host, which is T-2067's own misreading inverted.
+  rs_fixture="$ws/rs/sess-wedged.txt"
+  rs_probe rslive
+  check "a run whose xcb log GROWS reads RUNNING (exit $RUNSTATE_EXIT_RUNNING)" \
+    $( (( rsrc == RUNSTATE_EXIT_RUNNING )) && [[ "$rsout" == *"run-state: RUNNING"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  check "...even with the T-2067 wedge signature in the session log: growth outranks it" \
+    $( [[ "$rsout" != *"run-state: WEDGED"* && "$rsout" != *"run-state: STALLED"* ]] && print 1 || print 0 ) "$rsout"
+
+  # --- WEDGED, and the control that proves it is read from the signature -------------------------
+  : > "$ws/rs/wedge-calls"
+  XCODEBUILD="$ws/rs/silent-xcodebuild" FAKE_XCB_CALLS="$ws/rs/wedge-calls" TMPDIR="$ws/rs/tmp/" \
+    CADENCE_STALL_POLL=1 CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS= \
+    zsh "$rs_xcb" rswedge test -scheme Cadence -destination 'platform=macOS' \
+    -only-testing:CadenceTests -derivedDataPath "$ws/rs/tmp/cadence-dd-rswedge" >"$ws/rs/wedge-out" 2>&1 &
+  rs_wedge_bg=$!
+  rs_log="$ws/rs/tmp/cadence-xcb-rswedge.log"
+  for rs_i in {1..300}; do grep -qF 'Command line invocation' "$rs_log" 2>/dev/null && break; sleep 0.2; done
+  rs_fixture="$ws/rs/sess-wedged.txt"
+  rs_probe rswedge
+  check "a started run with no growth, no results and the T-2067 signature is WEDGED (exit $RUNSTATE_EXIT_WEDGED)" \
+    $( (( rsrc == RUNSTATE_EXIT_WEDGED )) && [[ "$rsout" == *"run-state: WEDGED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  check "...and it says it is a state of this MAC and not to re-run" \
+    $( [[ "$rsout" == *"state of this MAC"* && "$rsout" == *"do not re-run"* ]] && print 1 || print 0 ) "$rsout"
+  rs_fixture="$ws/rs/sess-ok.txt"
+  rs_probe rswedge
+  check "CONTROL: the SAME silent run under a BALANCED session log is STALLED, never WEDGED (exit $RUNSTATE_EXIT_STALLED)" \
+    $( (( rsrc == RUNSTATE_EXIT_STALLED )) && [[ "$rsout" == *"run-state: STALLED"* \
+         && "$rsout" != *"run-state: WEDGED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  check "...and STALLED tells the reader to re-sample rather than to kill it" \
+    $( [[ "$rsout" == *"Do not kill it on this reading"* ]] && print 1 || print 0 ) "$rsout"
+
+  # --- the sweep: the T-1920 half ---------------------------------------------------------------
+  # An old run, with a real log, inside the same TMPDIR. The sweep must not report it and must not
+  # let it near the exit code: the same real-TMPDIR measurement that found the pid-reuse bug found
+  # 450 pointers, 446 of them settled weeks earlier, and a report nobody reads cannot be the thing
+  # that makes a live hang visible. Naming the id explicitly still answers about it.
+  print -rl -- "Command line invocation:" "half a build, then nothing" \
+    > "$ws/rs/tmp/cadence-xcb-rsold.20250101-000000-1.log"
+  ln -sf "cadence-xcb-rsold.20250101-000000-1.log" "$ws/rs/tmp/cadence-xcb-rsold.log"
+  # No id at all, over a TMPDIR holding a wedged run and a dead one. The point is the EXIT: a
+  # scheduled caller goes red without a human having to read anything, which is what T-1920's
+  # three-hour hang did not have.
+  rs_fixture="$ws/rs/sess-wedged.txt"
+  rs_probe
+  check "the id-less sweep reports every run in TMPDIR and names the wedged one" \
+    $( [[ "$rsout" == *"sweep of"* && "$rsout" == *rswedge* && "$rsout" == *rsqueue* \
+         && "$rsout" == *"run-state summary:"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  check "...and the sweep EXITS non-zero on the wedge, so nobody has to be watching (T-1920)" \
+    $( (( rsrc == RUNSTATE_EXIT_WEDGED )) && print 1 || print 0 ) "exit $rsrc: $rsout"
+  check "...and a run older than the sweep's window is left out of it entirely" \
+    $( [[ "$rsout" != *rsold* ]] && print 1 || print 0 ) "$rsout"
+  check "...and the refusals above carry no stray zsh assignment line (T-1074)" \
+    $( print -r -- "$rsout" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$rsout"
+  rs_probe rsold
+  check "...but naming that same old id explicitly still answers about it" \
+    $( [[ "$rsout" == *rsold* && "$rsout" == *"run-state: "* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+
+  # Only pids this selftest launched, and the children FIRST: killing the wrapper alone leaves the
+  # stub xcodebuild looping forever. With its children gone the wrapper finishes its own postflight
+  # and exits, which is tidier than signalling it.
+  pkill -P "$rs_wedge_bg" 2>/dev/null
+  wait "$rs_wedge_bg" 2>/dev/null
+  # ABANDONED is a verdict about a log that EXISTS and stopped: the wedged run's log has xcodebuild
+  # output in it, no terminal banner, and an owner that is now gone. Nothing in the log itself can
+  # tell this from the WEDGED reading two checks ago -- the pid in its NAME is the whole difference.
+  rs_fixture="$ws/rs/sess-wedged.txt"
+  rs_probe rswedge
+  check "a started log that stopped, whose owner is GONE, is ABANDONED (exit $RUNSTATE_EXIT_ABANDONED)" \
+    $( (( rsrc == RUNSTATE_EXIT_ABANDONED )) && [[ "$rsout" == *"run-state: ABANDONED"* \
+         && "$rsout" != *"run-state: WEDGED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  pkill -P "$rs_live_bg" 2>/dev/null
+  wait "$rs_live_bg" 2>/dev/null
+
+  # --- FINISHED, and the banner that must NOT be read from the middle of a live log --------------
+  local rs_done="$ws/rs/tmp/cadence-xcb-rsdone.$(date +%Y%m%d-%H%M%S)-1.log"
+  print -rl -- "Command line invocation:" \
+               "✔ Test aProbe() passed after 0.001 seconds." \
+               "** TEST SUCCEEDED **" > "$rs_done"
+  ln -sf "${rs_done:t}" "$ws/rs/tmp/cadence-xcb-rsdone.log"
+  rs_probe rsdone
+  check "a log carrying xcodebuild's terminal banner is FINISHED (exit $RUNSTATE_EXIT_FINISHED), not WEDGED" \
+    $( (( rsrc == RUNSTATE_EXIT_FINISHED )) && [[ "$rsout" == *"run-state: FINISHED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  # A BANNER IS NOT AN ENDING ON ITS OWN, and this pair is what caught the first version of this
+  # reading: `xcodebuild` prints its terminal banner last, so a search over the log -- even over
+  # its last few lines -- reads a build banner that a later phase went straight past as "this run
+  # is over", and the whole point of the instrument is that it does not lie about that. The log
+  # below is named after a pid that IS alive (this selftest's own) and is still growing, so the
+  # honest answer is RUNNING; the banner only closes a run that has also stopped producing output.
+  local rs_mid="$ws/rs/tmp/cadence-xcb-rsmid.$(date +%Y%m%d-%H%M%S)-$$.log"
+  print -rl -- "Command line invocation:" "** BUILD SUCCEEDED **" > "$rs_mid"
+  ln -sf "${rs_mid:t}" "$ws/rs/tmp/cadence-xcb-rsmid.log"
+  ( for rs_i in {1..60}; do print -r -- "✔ Test aLater() passed after 0.001 seconds." >> "$rs_mid"; sleep 0.2; done ) &
+  rs_bg=$!
+  sleep 0.5
+  rs_probe rsmid
+  kill "$rs_bg" 2>/dev/null
+  wait "$rs_bg" 2>/dev/null
+  check "a GROWING log whose banner is not its ending is RUNNING, not FINISHED" \
+    $( (( rsrc == RUNSTATE_EXIT_RUNNING )) && [[ "$rsout" == *"run-state: RUNNING"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  # The other side of the same pair, and the branch the fixture above cannot reach: a LIVE owner,
+  # a banner that really is the last line, and nothing writing. That has to be FINISHED rather than
+  # WEDGED or STALLED -- a run that went quiet because it ENDED is the commonest silent log there
+  # is, and calling it wedged under a wedge signature it had nothing to do with is the exact lie
+  # this instrument exists not to tell.
+  local rs_end="$ws/rs/tmp/cadence-xcb-rsend.$(date +%Y%m%d-%H%M%S)-$$.log"
+  print -rl -- "Command line invocation:" \
+               "✔ Test aProbe() passed after 0.001 seconds." \
+               "** TEST SUCCEEDED **" > "$rs_end"
+  ln -sf "${rs_end:t}" "$ws/rs/tmp/cadence-xcb-rsend.log"
+  rs_fixture="$ws/rs/sess-wedged.txt"
+  rs_probe rsend
+  check "...and a settled log whose banner IS its ending is FINISHED even with a live owner and the wedge signature" \
+    $( (( rsrc == RUNSTATE_EXIT_FINISHED )) && [[ "$rsout" == *"run-state: FINISHED"* \
+         && "$rsout" != *"run-state: WEDGED"* && "$rsout" != *"run-state: STALLED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -2920,6 +3561,17 @@ if [[ "${1:-}" == "check-destination" ]]; then
     say "usage: ./scripts/xcb.sh check-destination 'platform=iOS Simulator,name=<device>'..."; exit 2
   fi
   resolve_destinations "${@:#-destination}"
+  exit $?
+fi
+
+# The three-way discriminator on its own (T-2071), and the sweep that makes silence visible
+# without a human noticing it (T-1920). With an id it answers about that run; with no id it
+# answers about every run this TMPDIR knows about and exits non-zero if any of them is WEDGED or
+# ABANDONED, which is what lets a scheduled caller go red instead of a reader having to look.
+# Exits: 0 RUNNING, 10 QUEUED, 11 WEDGED, 12 FINISHED, 13 STALLED, 14 ABANDONED, 15 NO-LOG.
+if [[ "${1:-}" == "run-state" ]]; then
+  shift
+  run_state_report "$@"
   exit $?
 fi
 

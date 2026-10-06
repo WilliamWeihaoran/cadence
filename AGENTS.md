@@ -171,6 +171,14 @@ Before treating a red run as a code regression, check:
 - Compile failures that name your file are real until proven otherwise.
 - **Count hosts with `pgrep -f '^/Applications/.*/xcodebuild( .*)? test(-without-building)?( |$)'`** — anchored, so
   the poller is not counted, and action-as-a-token, because `xcb.sh` puts the action **last** (T-1162, calibrated).
+- **A quiet run is not a dead run. Ask `./scripts/xcb.sh run-state <id>` before you start a second one (T-2071).**
+  It separates QUEUED (named, never launched — still waiting on the test-host lock), RUNNING (the xcb log **grew**
+  over a sample window), WEDGED (silent, zero results, and an xctest session that connected and never got
+  transport — T-2067), STALLED, ABANDONED (the owner pid in the log's name is gone) and FINISHED. Exits
+  0/10/11/12/13/14/15; with **no id** it sweeps every run in `$TMPDIR` and exits non-zero on a wedge (T-1920).
+  **Never judge a live run from your own `> full.log`** — that holds the preflight only; measured against a
+  healthy passing run it had 727 bytes and 0 result lines beside xcb's own 1,237,974 and 3,135. **And never from
+  CPU**: `xcodebuild` is a parent whose children do the work, and a healthy run measured 9.29s of CPU over 9:48.
 - **A count from a run that did not recompile is vacuous** — an incremental run reuses object files and
   returns 0 either way. `xcb.sh` prints `swift compile tasks: N`, says `!! VACUOUS-COUNT` at 0 (T-1147), and never gates on one.
 - **Count errors and warnings `grep -cE '\.swift:[0-9]+:[0-9]+: (error|warning):'`**, never loosely: the loose form over-counts. Why, and the T-1147 measurement, in `docs/AGENTS_REFERENCE.md`.
