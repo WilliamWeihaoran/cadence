@@ -49,6 +49,9 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
+Cadence/macOS/Views/KanbanSupportViews.swift
+Cadence/macOS/Views/KanbanColumnSupportViews.swift
+Cadence/macOS/Views/KanbanListColumnView.swift
 ```
 
 ### LEASE RETIRED 2026-10-06 — the one T-3004 path is out, because the work landed
@@ -816,4 +819,49 @@ drop, frozen ordering, and deep-link behaviour. A lazy stack changes *when* row 
 so anything relying on an off-screen row having been constructed fails silently rather than loudly.
 
 **Retire this path when T-3004 lands.**
+
+### LEASE WIDENED 2026-10-06 — three Kanban paths for [[T-3005]], one batched rendering branch
+
+Granted at the owner's instruction. Codex asked for exactly these three and asked for the ticket id
+to be assigned by the coordinator; both are here. [[T-3004]] landed as `db37c9c6` and needs no
+further action.
+
+**Scope, as Codex proposed it:** bound the mounting of horizontally offscreen list columns, bound
+the mounting of vertically offscreen cards, and derive the natural/frozen display ordering once per
+list-column render instead of reaching through four separate paths.
+
+**THE SHARED-CONSUMER HAZARD, AND IT IS WIDER THAN THE REQUEST SAYS.** Codex flagged that
+`KanbanColumnScroll` serves list columns, section columns, Calendar Board day columns and Calendar
+Board rails. Measured here before granting, it has **six** consumers, and only two are inside this
+grant:
+
+- `Cadence/macOS/Views/KanbanColumnSupportViews.swift` — **granted**
+- `Cadence/macOS/Views/KanbanListColumnView.swift` — **granted**
+- `Cadence/macOS/Views/KanbanSectionColumnView.swift` — **NOT granted**
+- `Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift` — **NOT granted**
+- `Cadence/macOS/Views/CalendarBoardRailSupportViews.swift` — **NOT granted**
+- `Cadence/iOS/iOSListSupportViews.swift` — already covered by the standing `Cadence/iOS/iOSList*.swift` glob
+
+So a change to `KanbanColumnScroll` itself reaches **four** surfaces this branch may not edit, one
+of them on iOS and one of them the Calendar Board. If the work requires touching any ungranted
+consumer, that is a new request, not a widening — stop and ask. The behaviours Codex named must
+survive on **every** consumer, not only Kanban: empty-space drops, minimum-height geometry,
+composer placement, stable IDs, hover cleanup, frozen ordering, and the drop path's unfrozen custom
+ordering unchanged.
+
+**THE BASELINE QUESTION, ANSWERED: the owner's known-revision fullscreen physical-trackpad capture
+does NOT exist and is not being produced.** The owner was asked for it and chose to move on. Codex
+correctly refused to treat [[T-3004]]'s result as proof for Kanban, and asked for explicit
+authorization instead.
+
+**Authorized: a counted-mounting / comparator experiment before production changes.** Count what is
+mounted, compare bounded against eager, and report the counts. That is the same evidence class that
+carried [[T-2057]] — 4,005 row bodies against 9 — and it is measurement rather than a frame-rate
+claim. **No trackpad-FPS improvement may be claimed from hosted row counts or accessibility
+paging**, which is Codex's own stated limit and is adopted here as a condition of the grant.
+
+**Out of scope, deliberately:** calendar snapping, header payload work, persistence debouncing, and
+the undiagnosed sidebar scrolling. Those remain blocked on the baseline that does not exist.
+
+**Retire these three paths when T-3005 lands.**
 
