@@ -83,30 +83,53 @@ final class CadenceSyncActivityLog {
 /// the local store metadata to force a re-import is destructive. Neither is a button. If one is
 /// ever added it must be named for what it does.
 ///
-/// **What `center:` buys, and what it does not ([[T-2010]]).** The notification source is injected
-/// so a test can read back *how this subscribes* — the name it asks for, that it asks with no
-/// `object:` filter, and that it asks for the main queue. Those are the three things a later edit
-/// could get wrong while everything still compiles and every downstream test stays green, and they
-/// are now pinned by `CadenceCloudKitMirroringEventStreamTests`. **It does not prove the other
+/// **What `center:` and `decode:` buy, and what they do not ([[T-2010]]).** The notification source
+/// is injected so a test can read back *how this subscribes* — the name it asks for, that it asks
+/// with no `object:` filter, and that it asks for the main queue. The decoder is injected so a test
+/// can drive the subscription rather than only inspect it: with both substituted, a real `post`
+/// into a real `NotificationCenter` travels the real main-queue delivery into the real
+/// `handler(event)`, and `CadenceSyncActivityLog`'s summary moves. **It does not prove the other
 /// end.** That Core Data actually posts this notification for a SwiftData store opened with
-/// `cloudKitDatabase:` is still taken from the platform, not measured: `NSPersistentCloudKitContainer.Event`
-/// declares `init` as `NS_UNAVAILABLE` and the only public way to obtain one is a real mirrored
-/// store, so no test here can hand this stream a notification it would decode. The seam moves the
-/// untested part from "the whole subscription" down to "whether anything ever arrives", and that
-/// last step is [[T-2010]]'s own two-minute check on a debug build.
+/// `cloudKitDatabase:`, and that the real decoder reads its payload, is still taken from the
+/// platform, not measured: `NSPersistentCloudKitContainer.Event` declares `init` as
+/// `NS_UNAVAILABLE` and the only public way to obtain one is a real mirrored store. The seam moves
+/// the untested part from "the whole subscription" down to "whether anything ever arrives", and
+/// that last step is [[T-2010]]'s own two-minute check on a debug build.
 @MainActor
 final class CadenceCloudKitMirroringEventStream: CadenceSyncActivityEventStream {
+    /// How a notification becomes one of this app's events. Defaults to the real decoder and
+    /// nothing in the app passes anything else.
+    typealias Decoder = @Sendable (Notification) -> CadenceSyncActivityEvent?
+
     private let center: NotificationCenter
+    private let decode: Decoder
     private var observer: NSObjectProtocol?
 
-    /// `center` is the test seam and nothing in the app passes it — the same shape as
-    /// `CadenceSyncActivityLog`'s `stream:`.
-    init(center: NotificationCenter = .default) {
+    /// `center` and `decode` are the test seams and nothing in the app passes either — the same
+    /// shape as `CadenceSyncActivityLog`'s `stream:`.
+    ///
+    /// **`decode` exists because the real one cannot be driven, not to make the real one
+    /// optional** ([[T-2010]]). `NSPersistentCloudKitContainerEvent` declares `+new` and `-init`
+    /// `NS_UNAVAILABLE`, so no test can build a notification this stream's real decoder returns
+    /// anything but `nil` for — which left the *delivering* half of `start` unreachable: with both
+    /// `center` and `decode` real, `handler(event)` could be deleted outright and every test in
+    /// the tree stayed green, because the only assertion over the handler was a count of zero.
+    /// Substituting the decoder alongside the centre makes the path live end to end — real
+    /// `addObserver`, real `post`, real main-queue delivery, real `MainActor.assumeIsolated`, real
+    /// `handler(event)` — with exactly one link still taken from the platform: that Core Data
+    /// posts the notification, and that its payload decodes. That link is [[T-2010]]'s two-minute
+    /// owner check and nothing here claims it.
+    init(
+        center: NotificationCenter = .default,
+        decode: @escaping Decoder = { CadenceSyncActivityEvent(notification: $0) }
+    ) {
         self.center = center
+        self.decode = decode
     }
 
     func start(_ handler: @escaping @MainActor (CadenceSyncActivityEvent) -> Void) {
         guard observer == nil else { return }
+        let decode = self.decode
         observer = center.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: nil,
@@ -115,7 +138,7 @@ final class CadenceCloudKitMirroringEventStream: CadenceSyncActivityEventStream 
             // sound because this block is scheduled onto the main queue rather than run inline.
             queue: .main
         ) { notification in
-            guard let event = CadenceSyncActivityEvent(notification: notification) else { return }
+            guard let event = decode(notification) else { return }
             MainActor.assumeIsolated {
                 handler(event)
             }
@@ -136,7 +159,12 @@ extension CadenceSyncActivityEvent {
     /// `error?.localizedDescription` is read here rather than stored as an `Error`, so the value
     /// type stays `Sendable` and `Equatable` and every test over the summary is a test over
     /// strings and dates.
-    init?(notification: Notification) {
+    ///
+    /// `nonisolated` because it is a pure translation that touches no actor state, and because the
+    /// target's default actor isolation is `MainActor`: left implicit, naming this initializer
+    /// from any nonisolated `@Sendable` context — which is exactly what a `NotificationCenter`
+    /// observer block is — is an `#ActorIsolatedCall` warning against a zero-warning baseline.
+    nonisolated init?(notification: Notification) {
         guard let raw = notification.userInfo?[
             NSPersistentCloudKitContainer.eventNotificationUserInfoKey
         ] as? NSPersistentCloudKitContainer.Event else { return nil }
@@ -156,7 +184,7 @@ extension CadenceSyncActivityPhase {
     /// `nil` on an event type a future OS adds. An unrecognised phase is dropped rather than
     /// folded into one of the three, because mapping it onto `.import` would put an unknown pass's
     /// failure under a heading that names the wrong thing.
-    init?(eventType: NSPersistentCloudKitContainer.EventType) {
+    nonisolated init?(eventType: NSPersistentCloudKitContainer.EventType) {
         switch eventType {
         case .setup: self = .setup
         case .import: self = .import

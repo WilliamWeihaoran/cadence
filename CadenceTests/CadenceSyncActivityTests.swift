@@ -777,6 +777,113 @@ struct CadenceCloudKitMirroringEventStreamTests {
             "an unrecognised pass must be dropped, not filed under a heading it did not come from"
         )
     }
+
+    /// The seam **driven** rather than inspected: a notification posted into a real
+    /// `NotificationCenter` comes out the far end as history in `CadenceSyncActivityLog`.
+    ///
+    /// Every test above reads the subscription back off a centre that posts nothing, so none of
+    /// them ever runs the block Core Data would run. **Measured before this test existed**: delete
+    /// `handler(event)` from `CadenceCloudKitMirroringEventStream.start` and the entire suite
+    /// stays green, because the only assertion over the handler was `delivered.count == 0` — which
+    /// a stream that delivers nothing at all satisfies perfectly. This is that negative's positive
+    /// control, and the two halves are in one test for the same reason.
+    ///
+    /// Both ends of the seam are substituted and nothing in between is: a real `NotificationCenter`
+    /// instance (not `.default`, which belongs to the process rather than to a test), the real
+    /// `addObserver(forName:object:queue:)`, a real `post`, real `OperationQueue.main` delivery,
+    /// the real `MainActor.assumeIsolated`, the real `CadenceSyncActivityLog` fold. Only `decode`
+    /// is a stand-in, because `NSPersistentCloudKitContainerEvent` cannot be constructed here at
+    /// all — which is the one link [[T-2010]] still leaves to the platform.
+    ///
+    /// **The undecodable post is a barrier, not decoration.** It goes first, so its main-queue
+    /// operation is enqueued first; `OperationQueue.main` is serial, so by the time the second
+    /// post's event has reached the log the first one's block has already run and declined.
+    /// `observedEventCount == 1` therefore means "the first produced nothing" exactly, with no
+    /// sleep standing in for the reasoning.
+    ///
+    /// Both posts happen **off** the main thread deliberately: posting from the main thread lets
+    /// Foundation run the block inline, which is the one arrangement in which asking for
+    /// `queue: .main` does no work at all.
+    @Test func aPostIntoTheInjectedCentreBecomesSyncHistory() async throws {
+        let centre = NotificationCenter()
+        let name = NSPersistentCloudKitContainer.eventChangedNotification
+        let key = "cadence.test.decodable"
+
+        let end = Date(timeIntervalSince1970: 1_767_225_612)
+        let event = CadenceSyncActivityEvent(
+            phase: .export,
+            startDate: Date(timeIntervalSince1970: 1_767_225_600),
+            endDate: end,
+            succeeded: true
+        )
+
+        // The decoder answers from the notification in front of it rather than from a counter, so
+        // the two posts cannot race over which one it is answering for.
+        let stream = CadenceCloudKitMirroringEventStream(center: centre) { notification in
+            (notification.userInfo?[key] as? Bool) == true ? event : nil
+        }
+        let log = CadenceSyncActivityLog(stream: stream)
+        log.startIfNeeded()
+        #expect(log.summary.hasHistory == false, "nothing may be in the fold before a post")
+
+        await Self.post(name, decodable: false, key: key, into: centre)
+        await Self.post(name, decodable: true, key: key, into: centre)
+        await Self.waitForHistory(in: log)
+
+        #expect(
+            log.summary.observedEventCount == 1,
+            "\(log.summary.observedEventCount) event(s) reached the fold; one post was decodable"
+        )
+        #expect(
+            log.summary.lastSuccess(.export) == end,
+            "the posted pass did not arrive at the summary as an export that finished"
+        )
+        #expect(log.summary.lastSuccess(.import) == nil, "the fold invented a phase")
+
+        stream.stop()
+    }
+
+    /// Posts from off the main thread, so delivery is not the degenerate case where the poster is
+    /// already the main thread and Foundation can run the block inline.
+    ///
+    /// It does **not** also catch a `queue:` regression, and this comment claimed it did until the
+    /// claim was measured. **Measured:** with `queue: .main` mutated to `queue: nil` the test above
+    /// still passes and nothing traps in `MainActor.assumeIsolated`; the only thing that reddens is
+    /// `theMirroringStreamSubscribesByNameAloneOnTheMainQueue`'s `registration.queue ===
+    /// OperationQueue.main`, 1 test and 1 issue. That identity assertion is the queue argument's
+    /// only guard. This test is the delivery's.
+    private static func post(
+        _ name: Notification.Name,
+        decodable: Bool,
+        key: String,
+        into centre: NotificationCenter
+    ) async {
+        let poster = CadenceNotificationPoster(centre: centre)
+        await Task.detached { poster.post(name, userInfo: [key: decodable]) }.value
+    }
+
+    /// A **bounded** wait for an asynchronous main-queue delivery. Bounded because a hung test
+    /// holds the test-host lock against every other run on this machine; 2 s is orders of
+    /// magnitude more than the delivery takes, and on a timeout the assertions after it fail and
+    /// name the count rather than hanging.
+    private static func waitForHistory(in log: CadenceSyncActivityLog) async {
+        for _ in 0..<200 {
+            if log.summary.hasHistory { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+}
+
+/// Carries a test's own `NotificationCenter` to a background task. `NotificationCenter` is
+/// thread-safe and posting from any thread is the documented use; the box exists only because the
+/// type carries no `Sendable` annotation, the same reason `CadenceDeliveredEventCounter` below
+/// does.
+private struct CadenceNotificationPoster: @unchecked Sendable {
+    let centre: NotificationCenter
+
+    func post(_ name: Notification.Name, userInfo: [String: Bool]) {
+        centre.post(name: name, object: nil, userInfo: userInfo)
+    }
 }
 
 /// A `NotificationCenter` that subscribes to nothing and records what it was asked for.
