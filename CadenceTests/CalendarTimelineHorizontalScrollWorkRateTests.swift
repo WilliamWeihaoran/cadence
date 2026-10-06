@@ -224,7 +224,7 @@ struct CalendarTimelineHorizontalScrollWorkRateTests {
     /// real `NSScrollView` with the live-scroll cycle suppressed transcribe nothing, so the
     /// offsets the counts are computed from are AppKit's report of a live scroll.
     @Test("Without the live-scroll cycle the same horizontal offsets transcribe nothing")
-    func theTranscriptComesFromTheLiveScrollCycle() {
+    func theTranscriptComesFromTheLiveHorizontalScrollCycle() {
         let offsets = flingOffsets(frames: 60)
 
         let silent = liveScroll(to: offsets, announcingLiveScroll: false)
@@ -272,7 +272,7 @@ struct CalendarTimelineHorizontalScrollWorkRateTests {
     /// The difference between a bound and a coincidence: doubling the frame rate doubles the old
     /// number and leaves the new one alone. Nothing about this guard is tuned to 60.
     @Test("Twice the frames is still one horizontal report per day crossed")
-    func theReportCountDoesNotFollowTheFrameCount() {
+    func theHorizontalReportCountDoesNotFollowTheFrameCount() {
         let coarse = liveScroll(to: flingOffsets(frames: 60))
         let fine = liveScroll(to: flingOffsets(frames: 120))
 
