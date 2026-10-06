@@ -49,8 +49,14 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
-Cadence/macOS/Views/TasksListView.swift
 ```
+
+### LEASE RETIRED 2026-10-06 — the one T-3004 path is out, because the work landed
+
+The heartbeat coordinator landed `codex/task-list-virtualization` (tip `1b187f9e`) and closed
+[[T-3004]] in the same commit. `Cadence/macOS/Views/TasksListView.swift` is struck from the lease
+above; the four standing globs are untouched. The `CODEX-INBOX-ID-CLASH` that review printed on
+T-3004 was the pre-filed stub, whose body was replaced in place, not a blocker.
 
 ### LEASE RETIRED 2026-10-05 — the twenty-one T-3003 paths are out, because the work landed
 

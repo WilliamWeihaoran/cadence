@@ -523,7 +523,8 @@ private struct TasksListSectionView: View {
     let onDropOnTaskPayload: (String, AppTask) -> Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // The page is lazy by group; this stack must also defer the group's offscreen rows.
+        LazyVStack(alignment: .leading, spacing: 0) {
             TaskListGroupHeader(
                 title: section.title,
                 isCollapsed: isCollapsed,
@@ -585,7 +586,7 @@ private struct TasksListCompletedSectionView: View {
     let taskDragPayload: (AppTask) -> String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             TaskListGroupHeader(
                 title: "Completed",
                 isCollapsed: isCollapsed,
