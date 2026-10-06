@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import Cadence
 
 // MARK: - T-161, part one: the instrument
 
@@ -1875,6 +1876,94 @@ struct CadenceUITestInteractiveGateTests {
             a UI-test suite declares its own interactive-gate helper. Call \
             CadenceUITestEnvironment.requireInteractiveUITests() at the site instead (T-1724): \
             \(wrappers.joined(separator: ", "))
+            """
+        )
+    }
+}
+
+// MARK: - T-2074/T-2075: the strings the iOS UI test asserts about
+
+/// **The iOS UI test can only name its fixture as a literal, so the literal is pinned from here.**
+///
+/// `CadenceIOSSeededStoreUITests` asserts that a seeded iPhone or iPad launch shows `Alpha Area`
+/// (`CadenceUITestSupport`'s stock seed) and `Today One` / `Today Two`
+/// (`CadenceUITestScenarioSeed`'s `today-geometry`). The UI-test target cannot import the app
+/// module, so all four are typed out there by hand, and a rename on the app side would leave that
+/// suite asserting about strings nothing writes — which is the failure mode both tickets are
+/// about, re-created one layer up: **a UI test that passes against an empty screen, or fails
+/// against a correct one, for a reason that is not the code under test.**
+///
+/// This is the side that *can* import them. It reads the UI-test source as text and holds every
+/// literal against the value the app actually seeds.
+struct CadenceUITestScenarioSeedLiteralDriftTests {
+
+    private static let suitePath = "CadenceUITests/CadenceIOSSeededStoreUITests.swift"
+
+    @Test func theIOSSuiteNamesAScenarioThisBuildKnows() throws {
+        let source = try CadenceSourceScan.sourceFile(Self.suitePath)
+        #expect(
+            source.contains("static let scenario = \"\(CadenceUITestScenarioSeed.Scenario.todayGeometry.rawValue)\""),
+            """
+            the iOS UI test asks for a scenario name this build does not recognise. \
+            CadenceUITestScenarioSeed seeds NOTHING for an unknown name and only prints — so the \
+            suite would launch, see an empty Today and fail as though the seed were broken.
+            """
+        )
+    }
+
+    @Test func theIOSSuiteNamesTheTaskTitlesTheScenarioActuallyWrites() throws {
+        let source = try CadenceSourceScan.sourceFile(Self.suitePath)
+        for title in CadenceUITestScenarioSeed.Fixture.todayTaskNames {
+            #expect(
+                source.contains("\"\(title)\""),
+                "the iOS UI test does not name '\(title)', which is what today-geometry puts on Today"
+            )
+        }
+        // And the other direction: no title in that list is one the scenario stopped writing.
+        // `todayTaskNames` is the only group the suite reads, because it is the only one planted
+        // on **today** with no rollover offer or overdue chip around it.
+        #expect(
+            CadenceUITestScenarioSeed.Fixture.todayTaskNames.count == 2,
+            "today-geometry no longer plants exactly two plain Today rows; the iOS suite reads two"
+        )
+    }
+
+    /// The stock seed's first list, which is the half of `prepareAppState` that runs whether or
+    /// not a scenario was named — and therefore the assertion that is specifically about
+    /// [[T-2075]] rather than about [[T-2074]].
+    @Test func theIOSSuiteNamesTheStockSeedsFirstList() throws {
+        let source = try CadenceSourceScan.sourceFile(Self.suitePath)
+        let support = try CadenceSourceScan.sourceFile("Cadence/Services/CadenceUITestSupport.swift")
+        #expect(
+            support.contains("Area(name: \"Alpha Area\""),
+            "CadenceUITestSupport's stock seed no longer plants Alpha Area"
+        )
+        #expect(
+            source.contains("static let stockSeedListName = \"Alpha Area\""),
+            "the iOS UI test reads a list name the stock seed does not plant"
+        )
+    }
+
+    /// **And the app-side call the whole suite depends on is on BOTH roots.**
+    ///
+    /// This is the measurement T-2075 was filed from, kept as a test: `prepareAppState` had
+    /// exactly one caller in the app, and the second root silently had none. A third root, or a
+    /// rewrite of either, puts it back.
+    @Test func bothRootViewsPrepareTheUITestAppState() throws {
+        let call = "CadenceUITestSupport.prepareAppState(modelContext:"
+        let macOSRoot = try CadenceSourceScan.sourceFile("Cadence/macOS/macOSRootView.swift")
+        let iOSRoot = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift")
+        #expect(
+            CadenceSourceScan.strippingComments(macOSRoot).contains(call),
+            "macOSRootView no longer prepares the UI-test app state"
+        )
+        #expect(
+            CadenceSourceScan.strippingComments(iOSRoot).contains(call),
+            """
+            iOSRootView no longer prepares the UI-test app state, so CADENCE_UI_TEST_MODE, \
+            CADENCE_RESET_USER_DEFAULTS and CADENCE_UI_TEST_SCENARIO seed nothing on iPhone or \
+            iPad — while CADENCE_UI_TEST_STORE_ID goes on working, which is what made the launch \
+            LOOK configured (T-2075).
             """
         )
     }

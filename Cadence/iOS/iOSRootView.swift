@@ -23,8 +23,10 @@ struct iOSRootView: View {
     @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    /// Read for exactly one thing: resolving a `.task` deep link to a real row before navigating.
-    /// A fetch by id, not a `@Query` — nothing here observes tasks.
+    /// Read for two things, and neither is an observation: resolving a `.task` deep link to a real
+    /// row before navigating, and handing a context to `CadenceUITestSupport.prepareAppState` on
+    /// appear (T-2075). Both are fetches or writes by id, not a `@Query` — nothing here observes
+    /// tasks.
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -135,6 +137,21 @@ struct iOSRootView: View {
         .statusBarHidden(horizontalSizeClass == .regular)
         .onOpenURL { url in
             CadenceDeepLinkManager.shared.handle(url)
+        }
+        // **T-2075/T-2074 — the call `macOSRootView` has made since UI-test mode existed, and this
+        // root did not.** `CadenceUITestSupport.prepareAppState` was reached from exactly one place
+        // in the app, `macOSRootView.swift`, so `CADENCE_UI_TEST_MODE`, `CADENCE_RESET_USER_DEFAULTS`
+        // and `CADENCE_UI_TEST_SCENARIO` seeded **nothing** here. The dangerous half was that the
+        // *store redirect* still worked — `CadenceUITestStoreDirectory` resolves
+        // `CADENCE_UI_TEST_STORE_ID` on its own, before any view exists — so a seeded iOS launch
+        // came up on a private, correctly isolated, and completely empty store, and a test asserting
+        // against it would have passed for the wrong reason.
+        //
+        // Attached beside `.onOpenURL` rather than inside a shell, because both shells are below
+        // this view and either one may be the one that appears: a call on the compact shell alone
+        // would leave an iPad launch unseeded, which is the same defect one level down.
+        .onAppear {
+            CadenceUITestSupport.prepareAppState(modelContext: modelContext)
         }
         .onChange(of: deepLinkManager.route?.token) { _, _ in
             handleDeepLinkRoute()

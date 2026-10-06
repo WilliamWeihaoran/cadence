@@ -156,6 +156,11 @@ struct CadenceAgentDefaultsIsolationTests {
             "CadenceUITests/CadenceTodayCompositionUITests.swift",
             "CadenceUITests/CadenceSeededSidebarTimingUITests.swift",
             "CadenceUITests/CadenceTodayRowCrushUITests.swift",
+            // The sixth, added with [[T-2074]]/[[T-2075]]: the first launch site in this target
+            // that is not macOS. It is here because the comment above says a later one has to
+            // route through the helper too — and a list that is never extended turns that
+            // sentence into a count over the files somebody remembered.
+            "CadenceUITests/CadenceIOSSeededStoreUITests.swift",
         ]
         var constructions = 0
         var isolations = 0
@@ -168,7 +173,7 @@ struct CadenceAgentDefaultsIsolationTests {
                 "\(path) still sets the store id by hand, so its preferences suite is whatever it happens to be"
             )
         }
-        #expect(constructions == 5, "the UI target builds \(constructions) apps, not the 5 this reading was measured against")
+        #expect(constructions == 6, "the UI target builds \(constructions) apps, not the 6 this reading was measured against")
         #expect(isolations == constructions, "\(constructions) launch sites, \(isolations) of them isolated")
 
         // The helper lives in the UI-test target, which nothing here can import, so the two
