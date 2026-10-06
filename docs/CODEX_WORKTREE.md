@@ -73,13 +73,23 @@ CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift
 ### LEASE RETIRED 2026-10-05 — the nineteen T-1466 paths are out, because the work landed
 
 `df2e8a5a` closed the tracking-UI retirement on top of `3c80981c`, which integrated it.
-`codex-land.sh review codex/tracking-ui-retirement` reports the twenty-two files as landed, and the
-single path it still refuses is `CadenceTests/CadenceRealTreeSweepManifest.txt` — the one the grant
-below deliberately withheld, because it is generated and the coordinator re-derived it after
-integrating rather than taking the branch's copy. That refusal is correct and is the protocol
-working, not a loose end. The `CODEX-INBOX-ID-CLASH` on T-1466 that `review` also prints is the
-consequence of the id having been filed in `0030f487` before the code, exactly as T-1465's was in
-`b802afc5`; it is not a blocker.
+
+**CORRECTION, written by the same agent that got it wrong.** The commit message of `b11c3ec6`, which
+made this edit, claimed `codex-land.sh review codex/tracking-ui-retirement` would report all
+twenty-two files as landed and refuse a single path. That was asserted from the pre-retirement run
+and NOT re-run afterwards, and it is wrong in both halves. What `review` actually reports once the
+nineteen are retired is: **20 of 22 files already in main, 2 still only on the branch**, and
+**`CODEX-LEASE-VIOLATION` on 20 paths**, because `review` refuses a path that is outside the lease
+whether or not it has landed — so retiring a grant necessarily brings the violation back. That is the
+normal steady state after every retirement, not a regression; the same is true of `36ef5e04`/`4ccaf39d`
+and `189f7249`. The two files that are correctly **not** byte-identical in main are the two the
+coordinator deliberately resolved differently: `CadenceTests/CadenceRealTreeSweepManifest.txt`, which
+is generated and was re-derived against the integrated tree instead of taken, and
+`docs/CODEX_LEDGER_INBOX.md`, where main's copy is the UNION of both sides and so is deliberately a
+superset of the branch's. The `CODEX-INBOX-ID-CLASH` on T-1466 is the consequence of the id having
+been filed in `0030f487` before the code, exactly as T-1465's was in `b802afc5`; it is not a blocker.
+The correction is recorded here rather than left in a commit message no one re-reads, because this
+file's whole value is that a later reader can believe it.
 
 Retired in the same session that granted them, as the grant below said it would be, and because this
 file's own warning is the thing [[T-2069]] and [[T-2058]] are about: *a lease granting paths nobody
