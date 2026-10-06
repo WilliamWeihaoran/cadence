@@ -81,6 +81,28 @@ struct DayBoundaryScrollTargetBehavior: ScrollTargetBehavior {
 final class CalendarTimelineScrollState {
     private(set) var headerOffset: CGFloat = 0
 
+    /// The last day index a horizontal scroll report actually handed to persistence. `nil` until
+    /// the first one.
+    ///
+    /// **T-1498's second host.** The vertical axis of this same timeline has always guarded its
+    /// report — `guard visibleTimelineHour != clampedHour else { return }` in
+    /// `CalendarPageSupportViews` — and Today's panel was given the same memory when the ticket
+    /// first landed. The horizontal axis had neither: `CalendarTimelineDayScroller` guarded only
+    /// the `visibleTimelineDayIndex` *binding* and then called persistence below that guard, on
+    /// every changed pixel offset.
+    ///
+    /// **A box of its own and deliberately not the `visibleTimelineDayIndex` binding.** Folding
+    /// the persist into that binding's `if` would read as the same fix and would lose a day: a
+    /// jump — today, or an external navigation — sets `visibleTimelineDayIndex` itself, so every
+    /// report after it already matches and nothing would ever be written back. The memory has to
+    /// be of what *persistence* last saw, which is a different question from what the view last
+    /// displayed. `CalendarTimelineHorizontalScrollWorkRateTests` holds both halves.
+    ///
+    /// `@ObservationIgnored` because no body reads it. `@Observable` would only invalidate readers
+    /// and there are none, but a guard that bought its saving with a render per day crossed would
+    /// be paying in the currency it collects in, so the intent is stated rather than inferred.
+    @ObservationIgnored var lastReportedDay: Int?
+
     func setHeaderOffset(_ newValue: CGFloat) {
         guard abs(headerOffset - newValue) >= 0.1 else { return }
         headerOffset = newValue

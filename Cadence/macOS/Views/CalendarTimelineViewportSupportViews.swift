@@ -101,10 +101,23 @@ struct CalendarTimelineDayScroller: View {
                     visibleTimelineDayIndex = clampedDay
                 }
 
-                guard didRestoreTimelineScroll else { return }
-                onPersistVisibleTimelineDay(clampedDay)
+                // **T-1498.** Guarded on `lastReportedDay`, not on the binding above it. The
+                // binding's `if` already refuses an unchanged day, but it is written by the
+                // jump paths too, so persistence keyed off it would go silent after a jump to
+                // today. Below this guard sits a date-key format, a work-item cancel, an
+                // allocation, a main-queue schedule and a `@State` write on `CalendarPageView` —
+                // all of which used to run on every changed pixel of a horizontal fling.
+                CalendarTimelineScrollSupport.persistVisibleDay(
+                    clampedDay: clampedDay,
+                    didRestoreTimelineScroll: didRestoreTimelineScroll,
+                    state: timelineScrollState,
+                    persist: onPersistVisibleTimelineDay
+                )
             }
             .onAppear {
+                // The restore is about to move the scroll without a report, for the same reason
+                // a jump does (T-1498). Start with no memory.
+                timelineScrollState.lastReportedDay = nil
                 onRestoreTimelineScrollIfNeeded(hProxy)
                 if let day = visibleTimelineDayIndex {
                     CalendarTimelineScrollSupport.syncHeaderOffset(
