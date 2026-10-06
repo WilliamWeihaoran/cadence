@@ -1,3 +1,9 @@
+// **macOS only — T-2074/T-2075.** Until this target was asked to build for an iOS Simulator it
+// had no platform guards at all, because it had never been built for anything but macOS: it reaches
+// AppKit, `XCUIElement.rightClick()`, `CGSessionCopyCurrentDictionary` and identifiers only the
+// desktop surface publishes. The guard is here rather than around the individual call sites because
+// nothing in this file is about iOS; the iOS half of the target is `CadenceIOSSeededStoreUITests`.
+#if os(macOS)
 import XCTest
 
 /// **The interactive gate here is the shared one, and was not always** (T-1724).
@@ -431,3 +437,4 @@ final class CadenceUITests: XCTestCase {
         return false
     }
 }
+#endif

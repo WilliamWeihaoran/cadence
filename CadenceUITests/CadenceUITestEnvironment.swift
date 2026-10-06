@@ -33,9 +33,18 @@ enum CadenceUITestEnvironment {
     /// Absent rather than `false` when there is no GUI session at all, and absence is deliberately
     /// **not** treated as locked: a probe that guesses would skip the whole suite on a machine it
     /// simply could not read, which is the failure mode this type exists to prevent, inverted.
+    /// **`false` on iOS, and it is a fact rather than a stub (T-2074/T-2075).** The condition this
+    /// reads is `loginwindow` owning a Mac's foreground; a simulator has no login window and the app
+    /// under test is activated by `simctl`, not by competing for a window server's front. There is
+    /// no iOS equivalent to report, so the honest answer is the one that lets the run proceed —
+    /// and `CGSessionCopyCurrentDictionary` does not exist on that platform to be asked anyway.
     static var screenIsLocked: Bool {
+        #if os(macOS)
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
         return session["CGSSessionScreenIsLocked"] as? Bool ?? false
+        #else
+        return false
+        #endif
     }
 
     // MARK: - The interactive opt-in, and why it needed a second channel
