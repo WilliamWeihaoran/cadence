@@ -18,6 +18,7 @@ extension iOSMarkdownStyler {
         let levelInset = CGFloat(max(quote.depth - 1, 0)) * 12
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 4
+        paragraph.minimumLineHeight = baseFont.lineHeight
         paragraph.firstLineHeadIndent = 18 + levelInset
         paragraph.headIndent = 18 + levelInset
         paragraph.paragraphSpacingBefore = 4
@@ -29,17 +30,13 @@ extension iOSMarkdownStyler {
             .font: italicFont(from: baseFont)
         ], range: lineRange)
 
-        applyQuoteAttachment(storage, markerRange: quote.prefixRange.shifted(by: lineStart), depth: quote.depth)
-    }
-
-    private static func applyQuoteAttachment(
-        _ storage: NSMutableAttributedString,
-        markerRange: NSRange,
-        depth: Int
-    ) {
-        guard markerRange.length > 0 else { return }
-        let canvas = iOSMarkdownQuoteMarkerLayoutInfo(depth: depth).renderedMarker()
-        drawCanvas(storage, canvas, over: markerRange, isBlock: false, yOffset: 0)
+        // Include the terminator so adjacent same-depth paragraphs share one rail.
+        storage.addAttribute(
+            .cadenceMarkdownQuoteDepth,
+            value: quote.depth,
+            range: iOSMarkdownQuoteRailLayout.taggedRange(for: lineRange, storageLength: storage.length)
+        )
+        hide(storage, quote.prefixRange.shifted(by: lineStart))
     }
 
     private static func applyCheckboxAttachment(

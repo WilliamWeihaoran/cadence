@@ -279,10 +279,23 @@ final class CadenceLayoutManager: NSLayoutManager {
 
         textStorage.enumerateAttribute(.cadenceMarkdownQuoteDepth, in: characterRange) { value, range, _ in
             guard let depth = value as? Int, depth > 0 else { return }
-            let quoteGlyphRange = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            // A partial redraw must measure the whole block, not create new ends in its middle.
+            var blockRange = NSRange(location: 0, length: 0)
+            _ = textStorage.attribute(.cadenceMarkdownQuoteDepth, at: range.location,
+                                      longestEffectiveRange: &blockRange,
+                                      in: NSRange(location: 0, length: textStorage.length))
+            let quoteGlyphRange = self.glyphRange(forCharacterRange: blockRange, actualCharacterRange: nil)
             guard quoteGlyphRange.length > 0 else { return }
 
-            let lineRect = self.boundingRect(forGlyphRange: quoteGlyphRange, in: textContainer).offsetBy(dx: origin.x, dy: origin.y)
+            var lineRect = self.boundingRect(forGlyphRange: quoteGlyphRange, in: textContainer)
+            if let paragraph = textStorage.attribute(.paragraphStyle, at: blockRange.location, effectiveRange: nil) as? NSParagraphStyle {
+                // Hidden `>` glyphs still occupy the container's leading edge. Measuring from
+                // them puts the rail outside AppKit's text-container clip; use the text indent.
+                let rightEdge = lineRect.maxX
+                lineRect.origin.x = max(lineRect.minX, paragraph.firstLineHeadIndent + textContainer.lineFragmentPadding)
+                lineRect.size.width = max(0, rightEdge - lineRect.minX)
+            }
+            lineRect = lineRect.offsetBy(dx: origin.x, dy: origin.y)
             let backgroundRect = MarkdownDecorationGeometry.quoteBackgroundRect(lineRect: lineRect, depth: depth)
             let barRect = MarkdownDecorationGeometry.quoteBarRect(backgroundRect: backgroundRect, depth: depth)
 
