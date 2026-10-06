@@ -230,7 +230,6 @@ struct ContextSection: View {
         SidebarListRow(
             item: .area(area.id),
             label: area.name,
-            color: Color(hex: area.colorHex),
             kind: .area,
             count: CadenceSidebarLayout.listCount(
                 openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: area)
@@ -261,7 +260,6 @@ struct ContextSection: View {
         SidebarListRow(
             item: .project(project.id),
             label: project.name,
-            color: Color(hex: project.colorHex),
             kind: .project,
             count: CadenceSidebarLayout.listCount(
                 openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: project)

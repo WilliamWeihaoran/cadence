@@ -4,7 +4,6 @@ import SwiftUI
 struct ListTasksGroup: Identifiable {
     let id: String
     let title: String
-    let accent: Color
     let tasks: [AppTask]
 }
 
@@ -30,7 +29,6 @@ struct ListTasksGroupSectionView: View {
                 title: group.title,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
-                accent: group.accent,
                 onToggle: onToggle
             )
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
@@ -70,7 +68,6 @@ struct ListTasksCompletedSectionView: View {
             TaskListGroupHeader(
                 title: "Completed",
                 isCollapsed: isCollapsed,
-                accent: Theme.green,
                 onToggle: onToggle
             )
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
@@ -92,8 +89,19 @@ struct ListTasksCompletedSectionView: View {
     }
 }
 
-/// macOS's task-group header: the accent bar, the disclosure chevron, the group's name, and — when
-/// a group is late — the red flag.
+/// macOS's task-group header: the disclosure chevron, the group's name, and — when a group is
+/// late — the red flag.
+///
+/// **The accent bar is gone, and the space it held is reclaimed (T-2084).** Every section on this
+/// page, on All Tasks and on Inbox opened with a 3×22pt rounded rectangle in the group's colour,
+/// and the owner's reading of the page was that *"these colors make the page very distracting"* —
+/// the same sentence that took the sidebar's list bars. Nothing replaces it: not a grey bar, not a
+/// dot. Unlike the sidebar's, this bar was a real `HStack` child with 10pt of spacing after it, so
+/// its removal pulls the rest of the header **13pt leftward**, which is the reclaimed space the
+/// owner asked for. The hairline below moves the same 13pt (34 → 21) because it was anchored to
+/// the chevron's trailing edge, not to the page. The `accent` parameter went with the drawing
+/// rather than being left inert — the colour is still the list's, still chosen in the list editor
+/// and still drawn by `leadingContent`'s context glyphs on the by-list grouping.
 ///
 /// **It does not say how many rows are under it any more (T-2056).** The capsule read "2 tasks",
 /// in the group's accent inside a bordered pill, and the owner asked for the per-section count
@@ -111,7 +119,6 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
     let title: String
     let isCollapsed: Bool
     let overdueCount: Int?
-    var accent: Color = Theme.dim
     var isToggleEnabled: Bool = true
     let onToggle: () -> Void
     @ViewBuilder let leadingContent: () -> LeadingContent
@@ -120,7 +127,6 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         title: String,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
-        accent: Color = Theme.dim,
         isToggleEnabled: Bool = true,
         onToggle: @escaping () -> Void,
         @ViewBuilder leadingContent: @escaping () -> LeadingContent
@@ -128,7 +134,6 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         self.title = title
         self.isCollapsed = isCollapsed
         self.overdueCount = overdueCount
-        self.accent = accent
         self.isToggleEnabled = isToggleEnabled
         self.onToggle = onToggle
         self.leadingContent = leadingContent
@@ -137,10 +142,6 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
     var body: some View {
         Button(action: { if isToggleEnabled { onToggle() } }) {
             HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(accent)
-                    .frame(width: 3, height: 22)
-
                 if isToggleEnabled {
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
@@ -184,8 +185,11 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(Theme.borderSubtle.opacity(0.52))
+                    // 34 before T-2084 took the 3pt accent bar and its 10pt of spacing out of
+                    // the HStack above: this hairline is anchored to the chevron's trailing edge,
+                    // so it moves exactly as far as the chevron did.
                     .frame(height: 1)
-                    .padding(.leading, 34)
+                    .padding(.leading, 21)
             }
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
@@ -198,7 +202,6 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
         title: String,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
-        accent: Color = Theme.dim,
         isToggleEnabled: Bool = true,
         onToggle: @escaping () -> Void
     ) {
@@ -206,7 +209,6 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
             title: title,
             isCollapsed: isCollapsed,
             overdueCount: overdueCount,
-            accent: accent,
             isToggleEnabled: isToggleEnabled,
             onToggle: onToggle,
             leadingContent: { EmptyView() }

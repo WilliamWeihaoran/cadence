@@ -33,17 +33,18 @@ struct TaskSurfaceFreezeState<PrimarySnapshot, SecondarySnapshot> {
     }
 }
 
+/// The group's colour is deliberately NOT here. It was, and its only reader was the accent bar
+/// `TaskListGroupHeader` drew; T-2084 removed that bar, and a snapshot field that nothing reads is
+/// a second copy of a list's colour waiting to go stale against the one in the store.
 struct FrozenTaskGroupSnapshot: Identifiable {
     let id: String
     let title: String
-    let accent: Color
     let taskIDs: [UUID]
 }
 
 struct ResolvedFrozenTaskGroup: Identifiable {
     let id: String
     let title: String
-    let accent: Color
     let tasks: [AppTask]
 }
 
@@ -73,7 +74,6 @@ func resolveFrozenTaskGroups(_ frozen: [FrozenTaskGroupSnapshot]?, from allTasks
         return ResolvedFrozenTaskGroup(
             id: group.id,
             title: group.title,
-            accent: group.accent,
             tasks: resolvedTasks
         )
     }

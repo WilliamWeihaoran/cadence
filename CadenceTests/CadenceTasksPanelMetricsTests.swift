@@ -585,4 +585,63 @@ struct CadenceTasksPanelMetricsTests {
             "self-check: ListDetailComponents.swift's real List is what makes the row's modifiers load-bearing"
         )
     }
+
+    // MARK: - T-2084: the task-group header's accent bar
+
+    /// **The owner had the vertical colour bars removed and the space reclaimed**, in the sidebar
+    /// and here: *"remove the vertical colored bars next to the titles of lists. i think these
+    /// colors are make the page very distracting."* Nothing replaces this one — not a grey bar, not
+    /// a dot — and the colour itself stays a concept everywhere it is chosen or shown.
+    ///
+    /// **This bar was not the sidebar's.** The sidebar's two were `.overlay`s and consumed no
+    /// layout width, so removing them moved nothing. This one was the first child of an
+    /// `HStack(spacing: 10)`, so taking it out pulls every header on Today, All Tasks, Inbox and
+    /// list detail **13pt leftward**. That is the reclaimed space, and it is asserted here rather
+    /// than left to a reading of the diff, because the figure it has to stay consistent with is the
+    /// hairline below the header: that rule is anchored to the chevron's trailing edge, so it moved
+    /// by the same 13 (34 → 21) and a future change that restores one without the other would put
+    /// the rule to the right of the title it underlines.
+    ///
+    /// The `accent` parameter is pinned absent on both of the header's initialisers and at all five
+    /// call sites. It was not left inert: a parameter that is accepted and never drawn is how a
+    /// deleted decoration grows back, and the four colour fields that fed it — on the list-detail
+    /// group, on the All Tasks section, on Today's intent section and on the freeze snapshot — were
+    /// write-only the moment this `RoundedRectangle` went, so they went with it.
+    @Test func theTaskGroupHeaderDrawsNoAccentBarAndTakesNoAccent() throws {
+        let listDetail = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")
+        )
+        let header = try #require(
+            CadenceSourceScan.declarationBody("struct TaskListGroupHeader<LeadingContent: View>: View", in: listDetail)
+        )
+        #expect(header.contains("chevron.right"), "non-vacuity: the disclosure chevron left this declaration")
+        #expect(
+            !header.contains("RoundedRectangle(cornerRadius: 2"),
+            "TaskListGroupHeader draws the 3x22pt accent bar again"
+        )
+        #expect(!header.contains("accent"), "TaskListGroupHeader takes an accent again")
+        #expect(
+            header.contains(".padding(.leading, 21)"),
+            "the header's hairline is no longer inset to the chevron's trailing edge — 21 is 34 minus the bar's 3pt and its 10pt of spacing"
+        )
+
+        // The `EmptyView` convenience initialiser lives in an extension outside that declaration,
+        // and so do the two call sites in this file, so the whole file is swept as well.
+        #expect(
+            listDetail.contains("extension TaskListGroupHeader where LeadingContent == EmptyView"),
+            "self-check: the convenience initialiser moved out of this file"
+        )
+        for path in [
+            "Cadence/macOS/Views/ListDetailSupportViews.swift",
+            "Cadence/macOS/Views/TasksListView.swift",
+            "Cadence/macOS/Views/InboxSupportViews.swift",
+            "Cadence/macOS/Views/TasksPanelSectionViews.swift",
+            "Cadence/macOS/Views/TasksPanel.swift",
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains("TaskListGroupHeader") || source.contains("TasksPanelIntentSectionView"),
+                    "non-vacuity: \(path) no longer takes part in drawing the task-group header")
+            #expect(!source.contains("accent"), "\(path) threads an accent to the group header again")
+        }
+    }
 }

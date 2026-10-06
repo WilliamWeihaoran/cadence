@@ -47,24 +47,24 @@ struct ListTasksView: View {
     private var groupedActiveTasks: [ListTasksGroup] {
         if let frozenGroupedTasks = resolveFrozenTaskGroups(frozenGroupedTasks, from: tasks) {
             return frozenGroupedTasks.map { group in
-                ListTasksGroup(id: group.id, title: group.title, accent: group.accent, tasks: group.tasks)
+                ListTasksGroup(id: group.id, title: group.title, tasks: group.tasks)
             }
         }
 
         switch groupingMode {
         case .none:
             return [
-                ListTasksGroup(id: "all", title: "Tasks", accent: Theme.dim, tasks: activeTasks)
+                ListTasksGroup(id: "all", title: "Tasks", tasks: activeTasks)
             ]
         case .byDate:
             return CadenceTaskQuerySupport.dateDisplayGroups(from: activeTasks, todayKey: todayKey)
-                .map { ListTasksGroup(id: $0.id, title: $0.title, accent: $0.accent, tasks: $0.tasks) }
+                .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
         case .byList:
             return CadenceTaskQuerySupport.sectionGroups(from: activeTasks, sectionNames: sectionNames)
-                .map { ListTasksGroup(id: $0.id, title: $0.title, accent: $0.accent, tasks: $0.tasks) }
+                .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
         case .byPriority:
             return CadenceTaskQuerySupport.priorityDisplayGroups(from: activeTasks)
-                .map { ListTasksGroup(id: $0.id, title: $0.title, accent: $0.accent, tasks: $0.tasks) }
+                .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
         }
     }
 
@@ -158,7 +158,6 @@ struct ListTasksView: View {
                         FrozenTaskGroupSnapshot(
                             id: group.id,
                             title: group.title,
-                            accent: group.accent,
                             taskIDs: group.tasks.map(\.id)
                         )
                     }

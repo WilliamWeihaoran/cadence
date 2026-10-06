@@ -8,7 +8,6 @@ import SwiftData
 private struct TasksListSection: Identifiable {
     let id: String
     let title: String
-    let accent: Color
     /// The `TasksPanelSupport.assignTask` key a drop on this header applies, or `nil` when the
     /// section names nothing a task can be moved *into* — Overdue and Due Today are defined by a
     /// day that has already passed, so a drop there would light up and do nothing.
@@ -199,14 +198,13 @@ struct TasksListView: View {
         switch groupingMode {
         case .none:
             return [
-                TasksListSection(id: "tasks", title: "Tasks", accent: Theme.dim, dropKey: nil, tasks: tasks, listGroup: nil)
+                TasksListSection(id: "tasks", title: "Tasks", dropKey: nil, tasks: tasks, listGroup: nil)
             ].filter { !$0.tasks.isEmpty }
         case .byDate:
             return CadenceTaskQuerySupport.dateDisplayGroups(from: tasks, todayKey: todayKey).map { group in
                 TasksListSection(
                     id: group.id,
                     title: group.title,
-                    accent: group.accent,
                     dropKey: Self.dateDropKey(forGroupID: group.id),
                     tasks: group.tasks,
                     listGroup: nil
@@ -217,7 +215,6 @@ struct TasksListView: View {
                 TasksListSection(
                     id: group.id,
                     title: group.title,
-                    accent: group.accent,
                     dropKey: group.dropKey,
                     tasks: group.tasks,
                     listGroup: nil
@@ -228,7 +225,6 @@ struct TasksListView: View {
                 TasksListSection(
                     id: group.id,
                     title: group.listName,
-                    accent: group.listColor,
                     dropKey: "list:\(group.id)",
                     tasks: group.tasks,
                     listGroup: group
@@ -532,7 +528,6 @@ private struct TasksListSectionView: View {
                 title: section.title,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
-                accent: section.accent,
                 onToggle: onToggle
             ) {
                 if let group = section.listGroup {
@@ -594,7 +589,6 @@ private struct TasksListCompletedSectionView: View {
             TaskListGroupHeader(
                 title: "Completed",
                 isCollapsed: isCollapsed,
-                accent: Theme.green,
                 onToggle: onToggle
             )
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)

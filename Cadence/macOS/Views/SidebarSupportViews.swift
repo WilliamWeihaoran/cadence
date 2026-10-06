@@ -267,13 +267,17 @@ struct SidebarSectionDivider: View {
     }
 }
 
-/// One area/project row: a 2pt colour bar, the name, and an optional trailing count.
+/// One area/project row: the name, and an optional trailing count.
 ///
-/// **No glyph.** A list's icon was a second identity competing with its colour and its name, and a
-/// column of a dozen different symbols is harder to scan than a column of names. The list's own
-/// `colorHex` survives as a 2pt bar drawn *inside the row's leading padding* — outside the text
-/// column — so every name starts on the same x whatever colour it carries. A dot would have had to
-/// sit in the text column and push the names off that line.
+/// **No glyph, and no colour bar either (T-2084).** A list's icon was a second identity competing
+/// with its colour and its name, and a column of a dozen different symbols is harder to scan than a
+/// column of names, so the row of saturated glyphs became a 2pt bar in the row's leading padding.
+/// The owner then read the column of bars the same way — *"these colors make the page very
+/// distracting"* — and asked for them gone with **nothing** in their place, not a grey bar and not
+/// a dot. (A dot had already been refused once on its own merits: it would have to sit in the text
+/// column and push the names off their shared x.) The bar was an `.overlay`, so it occupied no
+/// layout width and nothing reflowed when it went. A list's `colorHex` is untouched and still
+/// chosen in the list editor, shown in the pickers and sheets, and drawn in the inspector.
 ///
 /// Hover and selection share **one** background layer at **one** radius, same rule as
 /// `SidebarNavRow` and `TaskInspectorFieldButtonRow`.
@@ -282,8 +286,9 @@ struct SidebarListRow: View {
         case area
         case project
 
-        /// Names the kind for the hover ID and the accessibility identifier. There is no tint
-        /// here: a row's colour is the list's own `colorHex`, never a per-kind hue.
+        /// Names the kind for the hover ID and the accessibility identifier, and nothing else.
+        /// There is no tint here and there never was: when this row did draw a colour it was the
+        /// list's own `colorHex`, never a per-kind hue, and since T-2084 it draws none at all.
         var label: String {
             switch self {
             case .area: return "Area"
@@ -294,7 +299,6 @@ struct SidebarListRow: View {
 
     let item: SidebarItem
     let label: String
-    let color: Color
     let kind: Kind
     let count: CadenceSidebarCount?
     let dueDateKey: String?
@@ -343,10 +347,6 @@ struct SidebarListRow: View {
                 RoundedRectangle(cornerRadius: SidebarMetrics.listRowCornerRadius, style: .continuous)
                     .fill(backgroundFill)
             )
-            // Decorative and inside the button's own label, but `allowsHitTesting(false)` is
-            // stated rather than assumed: a filled shape laid over an interactive surface is
-            // exactly the thing that has silently eaten clicks in this repo before.
-            .overlay(alignment: .leading) { colorBar.allowsHitTesting(false) }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -367,19 +367,6 @@ struct SidebarListRow: View {
         }
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeOut(duration: 0.12), value: isSelected)
-    }
-
-    /// The list's own colour, in the row's leading padding. Always drawn — it is the only thing
-    /// left identifying the list, and at 2pt a full column of them reads as a margin rather than
-    /// as the row of saturated glyphs this replaced.
-    private var colorBar: some View {
-        Capsule(style: .continuous)
-            .fill(color)
-            .frame(
-                width: SidebarMetrics.listColorBarWidth,
-                height: SidebarMetrics.listColorBarHeight
-            )
-            .padding(.leading, SidebarMetrics.listColorBarLeadingInset)
     }
 
     private var backgroundFill: Color {

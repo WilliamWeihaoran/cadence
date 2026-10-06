@@ -50,7 +50,6 @@ struct InboxAppleRemindersSectionView: View {
                 // not `0`, whenever Cadence had not been allowed to look — the same
                 // `state.isConnected` gate `iOSInboxRemindersSection` read. The header draws no
                 // count at all on either platform, so there is nothing left to suppress.
-                accent: Theme.purple,
                 isToggleEnabled: false,
                 onToggle: { }
             )

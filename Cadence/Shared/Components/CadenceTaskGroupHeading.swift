@@ -23,8 +23,9 @@ import SwiftUI
 /// answer instead of one shared rule.
 ///
 /// **macOS's Today is not one of its callers, and that is a decision (T-605).** Desktop draws
-/// `TaskListGroupHeader` — 3×22pt bar, 14pt bold sentence case — because All Tasks, Inbox and list
-/// detail beside it already did, and one desktop app with two group headings was the sharper
+/// `TaskListGroupHeader` — 14pt bold sentence case, and a 3×22pt accent bar until T-2084 removed
+/// it — because All Tasks, Inbox and list detail beside it already did, and one desktop app with
+/// two group headings was the sharper
 /// inconsistency. So the two platforms' headings still differ on purpose; **do not re-file that as
 /// drift.** The reasoning is on `TasksPanelIntentSectionView`.
 struct CadenceTaskGroupHeading: View {

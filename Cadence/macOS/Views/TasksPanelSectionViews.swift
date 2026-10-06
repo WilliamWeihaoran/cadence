@@ -76,13 +76,16 @@ private let todayRowLeadingInset: CGFloat = TasksPanelMetrics.horizontalInset
 ///
 /// **The heading is `TaskListGroupHeader` — macOS's, not the shared eyebrow (T-605).** Today drew
 /// `CadenceTaskGroupHeading`: a 10pt uppercase eyebrow with one count capsule and no accent bar,
-/// while All Tasks, Inbox and list detail all drew the 3×22pt bar, the 14pt bold sentence-case
+/// while All Tasks, Inbox and list detail all drew a 3×22pt accent bar, the 14pt bold sentence-case
 /// title and the split overdue/regular counts. One desktop app, two group headings, and Today was
-/// the minority of one — so Today moves and the other three do not.
+/// the minority of one — so Today moves and the other three do not. (**The accent bar itself is
+/// gone from all four since T-2084**, by the owner's reading of the colours as distracting; what
+/// still separates the two headings is the type, the chevron and the case.)
 ///
 /// **macOS and iOS now differ here, deliberately.** iOS routes Today, Inbox and All Tasks through
 /// `CadenceTaskGroupHeading`, and that stays: a 3pt bar plus a chevron plus two capsules is a
-/// pointer-density row, and the eyebrow is the phone's. `CadenceTaskGroupHeading`'s own doc used to
+/// pointer-density row — a chevron plus two capsules even after T-2084 took the bar — and the
+/// eyebrow is the phone's. `CadenceTaskGroupHeading`'s own doc used to
 /// call itself "one heading for Today on both platforms" and no longer does. **This divergence is
 /// the decision, not drift — do not re-file it.** What the two headings now agree on is simpler
 /// than the rule they used to share: neither draws a count at all (T-2056), so there is no `0` for
@@ -108,7 +111,6 @@ private let todayRowLeadingInset: CGFloat = TasksPanelMetrics.horizontalInset
 /// The disclosure chevron comes with the header now, rather than being wrapped around it here.
 struct TasksPanelIntentSectionView: View {
     let title: String
-    let accent: Color
     let tasks: [AppTask]
     /// Today's own `yyyy-MM-dd`, handed down rather than recomputed per section, so every group on
     /// the page measures against one day. It used to feed the header's overdue split as well; since
@@ -215,7 +217,6 @@ struct TasksPanelIntentSectionView: View {
         TaskListGroupHeader(
             title: title,
             isCollapsed: isCollapsed,
-            accent: accent,
             onToggle: onToggle
         )
         // On the header itself rather than on the padded result: the identifier has to name the
@@ -258,7 +259,6 @@ struct TasksPanelCompletedSectionView: View {
             TaskListGroupHeader(
                 title: CadenceTodayPresentationSupport.completedSectionTitle,
                 isCollapsed: isCollapsed,
-                accent: CadenceTodayPresentationSupport.completedSectionAccent,
                 onToggle: onToggle
             )
             .padding(.horizontal, TasksPanelMetrics.horizontalInset)

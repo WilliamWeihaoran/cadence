@@ -123,9 +123,20 @@ struct CadenceTodayUnificationTests {
         try expectNoLiveMention(of: "todayControlledSections")
     }
 
-    /// The day's finished work is headed and tinted the same on every Today. macOS said
-    /// "Completed" over a predicate that only ever held tasks completed *today*, which described a
-    /// logbook it was not showing.
+    /// The day's finished work is headed the same on every Today. macOS said "Completed" over a
+    /// predicate that only ever held tasks completed *today*, which described a logbook it was not
+    /// showing.
+    ///
+    /// **It is no longer *tinted* the same, and the zero below is the assertion rather than an
+    /// exemption (T-2084).** This test used to pin one `completedSectionAccent` call site per
+    /// platform, because both headings drew the green somewhere: iOS tints the eyebrow's text with
+    /// it and macOS filled a 3×22pt bar with it. The owner had every one of those bars removed —
+    /// *"these colors are make the page very distracting"* — so macOS's Completed header has
+    /// nothing left to tint, and a constant it no longer reads is exactly the dead plumbing that
+    /// change was removing. iOS's half is untouched and still pinned at one, which is what stops
+    /// the macOS zero from passing because the shared constant was deleted outright; that it is
+    /// still `Theme.green` is `CadenceAccentPaletteTests`'. The *title* stays one per platform —
+    /// the words are the convergence, the hue was decoration on only one of them.
     @Test func bothPlatformsHeadTheirCompletedGroupWithTheSharedTitle() throws {
         #expect(CadenceTodayPresentationSupport.completedSectionTitle == "Completed Today")
 
@@ -139,7 +150,7 @@ struct CadenceTodayUnificationTests {
         try expectCallSites(
             of: "CadenceTodayPresentationSupport.completedSectionAccent",
             at: [
-                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 1,
+                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
                 "Cadence/iOS/iOSTodayTaskSections.swift": 1,
             ]
         )
@@ -239,7 +250,7 @@ struct CadenceTodayUnificationTests {
     /// site each. That was the right answer to the question T-161 asked (*do the two Todays look
     /// the same?*) and the wrong answer to the question that turned out to matter more: **macOS
     /// Today was the only task surface on its own platform drawing that heading.** All Tasks, Inbox
-    /// and list detail draw `TaskListGroupHeader` — 3×22pt accent bar, 14pt bold sentence case,
+    /// and list detail draw `TaskListGroupHeader` — a 3×22pt accent bar until T-2084, 14pt bold sentence case,
     /// split overdue/regular counts — so cross-platform agreement was being bought with a
     /// three-against-one split inside the desktop app. The user's decision moves Today, and the
     /// number below is not bumped: the call site is **gone**, and the assertion now says which

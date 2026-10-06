@@ -19,8 +19,13 @@ nonisolated enum CadenceSidebarSurface: String, CaseIterable, Sendable {
 ///
 /// This exists because the two columns were each deciding for themselves and had drifted in five
 /// dimensions that nobody chose: 15pt glyphs against 13, 13pt labels against 14, 10pt of
-/// icon-to-label against 9, a 14pt list colour bar against 16, and a 10pt due-date caption against
-/// 11. None of those was a platform judgement; they were two files. The count badge had already
+/// icon-to-label against 9, a list colour bar 14pt tall against 16, and a 10pt due-date caption
+/// against 11. None of those was a platform judgement; they were two files.
+///
+/// **The colour bar itself is gone (T-2084)** — the owner found a column of saturated edge markers
+/// distracting and asked for the space back — so its three figures left this struct with it. A list
+/// still carries a colour everywhere it is *chosen*: the list editor, the pickers, the sheets and
+/// the inspector. The sidebar row simply stopped drawing one. The count badge had already
 /// been through this once (`CadenceSidebarCountMetrics`, 11 against 12) and is deliberately *not*
 /// restated here — change it there.
 ///
@@ -56,12 +61,6 @@ nonisolated struct CadenceSidebarRowMetrics: Equatable, Sendable {
 
     // MARK: List rows
 
-    /// Narrow enough to read as an edge marker rather than a swatch, and drawn *inside* the row's
-    /// leading padding — outside the text column — so every list name starts on the same x
-    /// whatever colour it carries.
-    let listColorBarWidth: CGFloat
-    let listColorBarHeight: CGFloat
-    let listColorBarLeadingInset: CGFloat
     let listLabelFontSize: CGFloat
     let listDueDateIconSize: CGFloat
     let listDueDateFontSize: CGFloat
@@ -89,9 +88,6 @@ nonisolated enum CadenceSidebarMetrics {
             secondaryIconOpacity: 0.8,
             groupSpacing: 8,
             sectionSpacing: 8,
-            listColorBarWidth: 2,
-            listColorBarHeight: 14,
-            listColorBarLeadingInset: 3,
             listLabelFontSize: 13,
             listDueDateIconSize: 9,
             listDueDateFontSize: 10,

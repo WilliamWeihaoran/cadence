@@ -102,7 +102,7 @@ struct TaskSurfaceFreezeSupportTests {
         let a = task(title: "a", order: 0)
         let b = task(title: "b", order: 1)
         let snapshot = [
-            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", accent: .blue, taskIDs: [a.id, b.id])
+            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", taskIDs: [a.id, b.id])
         ]
 
         let resolved = resolveFrozenTaskGroups(snapshot, from: [a, b])
@@ -115,7 +115,7 @@ struct TaskSurfaceFreezeSupportTests {
         let a = task(title: "a", order: 0)
         a.status = .done
         let snapshot = [
-            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", accent: .blue, taskIDs: [a.id])
+            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", taskIDs: [a.id])
         ]
 
         let resolved = resolveFrozenTaskGroups(snapshot, from: [a])
@@ -129,7 +129,7 @@ struct TaskSurfaceFreezeSupportTests {
         let a = task(title: "a", order: 0)
         a.status = .cancelled
         let snapshot = [
-            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", accent: Theme.blue, taskIDs: [a.id])
+            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", taskIDs: [a.id])
         ]
 
         let resolved = resolveFrozenTaskGroups(snapshot, from: [a])
@@ -147,7 +147,7 @@ struct TaskSurfaceFreezeSupportTests {
         let open = task(title: "open", order: 2)
         let all = [finishedDone, finishedCancelled, open]
         let snapshot = [
-            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", accent: Theme.blue, taskIDs: all.map(\.id))
+            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", taskIDs: all.map(\.id))
         ]
 
         let resolved = resolveFrozenTaskGroups(snapshot, from: all)
@@ -159,7 +159,7 @@ struct TaskSurfaceFreezeSupportTests {
         let a = task(title: "a", order: 0)
         let missingID = UUID()
         let snapshot = [
-            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", accent: .blue, taskIDs: [a.id, missingID])
+            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", taskIDs: [a.id, missingID])
         ]
 
         let resolved = resolveFrozenTaskGroups(snapshot, from: [a])
@@ -222,7 +222,7 @@ struct TaskSurfaceFreezeSupportTests {
 
     @Test func captureStoresANonEmptyPrimarySnapshotOnlyOnce() {
         let a = task(title: "a", order: 0)
-        let snapshotAtHoverStart = [FrozenTaskGroupSnapshot(id: "g1", title: "G1", accent: .blue, taskIDs: [a.id])]
+        let snapshotAtHoverStart = [FrozenTaskGroupSnapshot(id: "g1", title: "G1", taskIDs: [a.id])]
         var frozenOrder: [AppTask]? = nil
         var primary: [FrozenTaskGroupSnapshot]? = nil
         var secondary: [Never]? = nil
@@ -240,7 +240,7 @@ struct TaskSurfaceFreezeSupportTests {
 
         // A later capture call (e.g. re-hovering the same row) with a different
         // "current" snapshot must not replace the one taken at hover start.
-        let laterSnapshot = [FrozenTaskGroupSnapshot(id: "g2", title: "G2", accent: .red, taskIDs: [a.id])]
+        let laterSnapshot = [FrozenTaskGroupSnapshot(id: "g2", title: "G2", taskIDs: [a.id])]
         let secondCapture = TaskSurfaceFreezeCoordinator.capture(
             frozenOrder: &frozenOrder,
             primarySnapshot: &primary,
@@ -256,7 +256,7 @@ struct TaskSurfaceFreezeSupportTests {
     @Test func releaseClearsAllCapturedSnapshots() {
         let a = task(title: "a", order: 0)
         var frozenOrder: [AppTask]? = [a]
-        var primary: [FrozenTaskGroupSnapshot]? = [FrozenTaskGroupSnapshot(id: "g1", title: "G1", accent: .blue, taskIDs: [a.id])]
+        var primary: [FrozenTaskGroupSnapshot]? = [FrozenTaskGroupSnapshot(id: "g1", title: "G1", taskIDs: [a.id])]
         var secondary: [Never]? = nil
 
         TaskSurfaceFreezeCoordinator.release(

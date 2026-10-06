@@ -242,9 +242,16 @@ struct CadenceSidebarTodayCountMeaningTests {
 /// The rest of the sidebar's figures, which went through the same consolidation the count did.
 ///
 /// The two columns had each been deciding for themselves and had drifted in five dimensions nobody
-/// chose: 15pt glyphs against 13, 13pt labels against 14, 10pt of icon-to-label against 9, a 14pt
-/// list colour bar against 16, and a 10pt due-date caption against 11. The user asked for one
+/// chose: 15pt glyphs against 13, 13pt labels against 14, 10pt of icon-to-label against 9, a list
+/// colour bar 14pt tall against 16, and a 10pt due-date caption against 11. The user asked for one
 /// sidebar, so these live in `CadenceSidebarMetrics` and both files read them.
+///
+/// **One of those five no longer exists (T-2084).** The owner had the list colour bar removed from
+/// both columns outright — *"these colors make the page very distracting"* — so
+/// `listColorBarWidth`, `listColorBarHeight` and `listColorBarLeadingInset` left the struct with
+/// the drawing. Every assertion that named one is re-pointed below rather than dropped, and the
+/// bar's **absence** is pinned by `neitherSidebarColumnDrawsAListColourBarAnyMore` so a future
+/// change cannot quietly put one back.
 ///
 /// `Cadence/iOS/` is invisible to this macOS-built target, so — exactly as above — what is pinned
 /// is the value type, not the views.
@@ -261,8 +268,10 @@ struct CadenceSidebarMetricsTests {
         #expect(desktop.rowHeight != tablet.rowHeight)
 
         // Everything else is the same object with that one field changed. Rebuilding the desktop
-        // struct out of the tablet's other nineteen figures and expecting equality is what makes a
+        // struct out of the tablet's other sixteen figures and expecting equality is what makes a
         // *new* divergence fail here, rather than only the figures someone remembered to assert.
+        // Nineteen before T-2084 took the colour bar's three; the shape of the check is unchanged,
+        // and it is still exhaustive because the compiler requires every stored field to be named.
         #expect(
             desktop
                 == CadenceSidebarRowMetrics(
@@ -278,9 +287,6 @@ struct CadenceSidebarMetricsTests {
                     secondaryIconOpacity: tablet.secondaryIconOpacity,
                     groupSpacing: tablet.groupSpacing,
                     sectionSpacing: tablet.sectionSpacing,
-                    listColorBarWidth: tablet.listColorBarWidth,
-                    listColorBarHeight: tablet.listColorBarHeight,
-                    listColorBarLeadingInset: tablet.listColorBarLeadingInset,
                     listLabelFontSize: tablet.listLabelFontSize,
                     listDueDateIconSize: tablet.listDueDateIconSize,
                     listDueDateFontSize: tablet.listDueDateFontSize,
@@ -290,13 +296,19 @@ struct CadenceSidebarMetricsTests {
         )
     }
 
-    /// The five figures that were actually forked, named individually so a regression says which
-    /// one came back rather than only that the structs differ.
+    /// The figures that were actually forked, named individually so a regression says which one
+    /// came back rather than only that the structs differ.
+    ///
+    /// **`listColorBarHeight` was the fifth and it is gone (T-2084), not relaxed.** Its subject died
+    /// with the drawing — there is no bar left to be 14pt rather than 16 — so the slot is taken by
+    /// `listLabelFontSize`, which is the *other* half of the same 13-against-14 label fork and is
+    /// still drawn by both columns. The count stays at five deliberately: dropping to four would
+    /// make a later deletion of a surviving figure look like the same tidy-up.
     @Test func theFiveDriftedFiguresLandedOnTheMacOSSpelling() {
         #expect(desktop.iconSize == 15)
         #expect(desktop.labelFontSize == 13)
         #expect(desktop.iconLabelSpacing == 10)
-        #expect(desktop.listColorBarHeight == 14)
+        #expect(desktop.listLabelFontSize == 13)
         #expect(desktop.listDueDateFontSize == 10)
     }
 
@@ -307,11 +319,60 @@ struct CadenceSidebarMetricsTests {
         #expect(SidebarMetrics.labelFontSize == desktop.labelFontSize)
         #expect(SidebarMetrics.iconLabelSpacing == desktop.iconLabelSpacing)
         #expect(SidebarMetrics.rowCornerRadius == desktop.cornerRadius)
-        #expect(SidebarMetrics.listColorBarHeight == desktop.listColorBarHeight)
+        // Was `listColorBarHeight` until T-2084 removed the bar. `listLabelFontSize` and
+        // `listTrailingItemSpacing` take its place because they are the two list-row figures the
+        // enum still forwards: the point of this test is that the macOS enum is a *spelling* of the
+        // shared struct, so it has to keep naming figures from the list-row half of it.
+        #expect(SidebarMetrics.listLabelFontSize == desktop.listLabelFontSize)
+        #expect(SidebarMetrics.listTrailingItemSpacing == desktop.listTrailingItemSpacing)
         #expect(SidebarMetrics.listDueDateFontSize == desktop.listDueDateFontSize)
         #expect(SidebarMetrics.badgeLeadingGap == desktop.badgeLeadingGap)
         #expect(SidebarMetrics.groupSpacing == desktop.groupSpacing)
         #expect(SidebarMetrics.secondaryIconOpacity == desktop.secondaryIconOpacity)
+    }
+
+    /// **What replaces the three figures T-2084 deleted.** A pin on `listColorBarWidth == 2` could
+    /// only ever fail when somebody *changed* the number; nothing in this suite would have noticed
+    /// the bar coming back, because a reinstated bar would arrive with its own constants and every
+    /// surviving assertion would still pass. So the subject moves from the figures to the drawing:
+    /// neither column may build a `Capsule` out of a list's colour in its row overlay, and the
+    /// shared struct may not re-declare the figures that fed one.
+    ///
+    /// The owner's instruction was specific — the bars go and **nothing** takes their place, not a
+    /// grey bar and not a dot — and it was equally specific that list colours stay a concept
+    /// everywhere they are chosen or shown. That is why this asserts on the two row views and on
+    /// `CadenceSidebarMetrics`, and not on `colorHex` anywhere: the `colorHex` on
+    /// `CadenceSidebarLists.Item` is untouched and still feeds the editor, the pickers and the
+    /// inspector.
+    ///
+    /// macOS is compiled by this target and `Cadence/iOS/` is not, so both halves are source reads
+    /// for symmetry, each with a non-vacuity control naming a declaration that must be in the file.
+    @Test func neitherSidebarColumnDrawsAListColourBarAnyMore() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarSupportViews.swift")
+        )
+        #expect(mac.contains("struct SidebarListRow: View"), "non-vacuity: wrong file")
+        #expect(!mac.contains("colorBar"), "SidebarListRow draws a list colour bar again")
+        #expect(!mac.contains("listColorBar"), "SidebarListRow reads a colour-bar metric again")
+
+        let phone = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        #expect(phone.contains("struct iOSSidebarListRow: View"), "non-vacuity: wrong file")
+        #expect(!phone.contains("colorBar"), "iOSSidebarListRow draws a list colour bar again")
+
+        // And the figures cannot come back by the back door the two views read them through.
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSidebarMetrics.swift")
+        )
+        #expect(shared.contains("let listLabelFontSize: CGFloat"), "non-vacuity: wrong file")
+        #expect(!shared.contains("listColorBar"), "the shared metrics declare a colour bar again")
+
+        let macMetrics = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarViewSupport.swift")
+        )
+        #expect(macMetrics.contains("enum SidebarMetrics"), "non-vacuity: wrong file")
+        #expect(!macMetrics.contains("listColorBar"), "the macOS mirror forwards a colour bar again")
     }
 }
 

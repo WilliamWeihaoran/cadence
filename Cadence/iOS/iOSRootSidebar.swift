@@ -642,9 +642,10 @@ enum iOSSidebarStyle: Equatable {
 ///
 /// **Every figure here is the shared one now.** The two columns had each been deciding for
 /// themselves and had drifted in five dimensions nobody chose — 13pt glyphs against macOS's 15,
-/// 14pt labels against 13, 9pt of icon-to-label against 10, a 16pt list colour bar against 14, and
-/// an 11pt due-date caption against 10. The user asked for one sidebar, so the numbers live in
-/// `Shared/` and both files read them.
+/// 14pt labels against 13, 9pt of icon-to-label against 10, a list colour bar 16pt tall against 14,
+/// and an 11pt due-date caption against 10. The user asked for one sidebar, so the numbers live in
+/// `Shared/` and both files read them. The colour bar's three figures are not among them any more:
+/// the bar itself was removed on both platforms by T-2084.
 ///
 /// `buttonHeight` is the single exception, and it is `CadenceSidebarMetrics`' exception rather than
 /// this file's: 44pt because a nav row is the most-tapped control in this shell, where macOS's 32
@@ -667,9 +668,6 @@ enum iOSSidebarMetrics {
 
     // MARK: List rows
 
-    static let listColorBarWidth: CGFloat = shared.listColorBarWidth
-    static let listColorBarHeight: CGFloat = shared.listColorBarHeight
-    static let listColorBarLeadingInset: CGFloat = shared.listColorBarLeadingInset
     static let listDueDateIconSize: CGFloat = shared.listDueDateIconSize
     static let listDueDateFontSize: CGFloat = shared.listDueDateFontSize
     static let listDueDateSpacing: CGFloat = shared.listDueDateSpacing
@@ -951,12 +949,15 @@ struct iOSSidebarButton: View {
     }
 }
 
-/// One area/project row: a 2pt colour bar, the name, and optional trailing metadata.
+/// One area/project row: the name, and optional trailing metadata.
 ///
-/// **No glyph.** A list's icon was a second identity competing with its colour and its name, and a
-/// column of a dozen different symbols is harder to scan than a column of names. The list's own
-/// `colorHex` survives as a 2pt bar drawn *inside the row's leading padding* — outside the text
-/// column — so every name starts on the same x whatever colour it carries.
+/// **No glyph, and no colour bar either (T-2084).** A list's icon was a second identity competing
+/// with its colour and its name, and a column of a dozen different symbols is harder to scan than a
+/// column of names, so the glyphs became a 2pt bar in the row's leading padding. The owner then read
+/// the column of bars the same way and asked for them gone with nothing in their place — the same
+/// removal `SidebarListRow` carries on macOS, and for the same reason. The bar was an `.overlay`, so
+/// nothing reflowed when it went. `item.colorHex` is still the list's colour everywhere it is
+/// chosen or shown; this row simply stopped drawing it.
 struct iOSSidebarListRow: View {
     let item: CadenceSidebarLists.Item
     let isSelected: Bool
@@ -984,10 +985,6 @@ struct iOSSidebarListRow: View {
             .frame(height: iOSSidebarMetrics.buttonHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(rowShape.fill(isSelected ? Theme.surfaceHighlight : Color.clear))
-            // Decorative and inside the button's own label, but `allowsHitTesting(false)` is
-            // stated rather than assumed: a filled shape laid over an interactive surface is
-            // exactly the thing that has silently eaten taps in this repo before.
-            .overlay(alignment: .leading) { colorBar.allowsHitTesting(false) }
             .contentShape(rowShape)
         }
         .buttonStyle(.iosPressable)
@@ -1026,24 +1023,15 @@ struct iOSSidebarListRow: View {
         .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
     }
 
-    /// At rail width there is no room for a name, so the colour bar is the whole row — which is
-    /// exactly what it is on the labelled column too, just without a name beside it. The initial
-    /// gives the row something to aim at.
+    /// At rail width there is no room for a name, so the initial is the whole row. It used to be
+    /// the initial *plus* the colour bar; the bar went from both styles together (T-2084), which
+    /// leaves the letter carrying the row on its own — the rail is a folded column, and a reader who
+    /// needs to tell two lists apart there unfolds it.
     private var railLabel: some View {
         Text(String(displayName.prefix(1)).uppercased())
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(isSelected ? Theme.text : Theme.muted)
             .frame(maxWidth: .infinity)
-    }
-
-    private var colorBar: some View {
-        Capsule(style: .continuous)
-            .fill(Color(hex: item.colorHex))
-            .frame(
-                width: iOSSidebarMetrics.listColorBarWidth,
-                height: iOSSidebarMetrics.listColorBarHeight
-            )
-            .padding(.leading, iOSSidebarMetrics.listColorBarLeadingInset)
     }
 
     /// Bare tinted text rather than a filled pill: as a capsule this annotation carried more weight

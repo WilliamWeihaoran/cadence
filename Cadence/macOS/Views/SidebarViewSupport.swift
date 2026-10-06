@@ -287,13 +287,15 @@ enum SidebarMetrics {
     // MARK: Lists section
 
     /// The lists region shares the nav rows' left edge rather than indenting under its
-    /// own heading. A list row carries **no glyph**: the list's colour is a 2pt bar drawn
-    /// inside the row's own leading padding, so the name starts at
-    /// `horizontalInset + listRowHorizontalPadding` — the same x as the context eyebrow
-    /// above it, and the same x for every list whether or not it has a colour worth
-    /// noticing. A dot would have had to sit *in* the text column and push the names off
-    /// that line. These are derived from the nav values instead of restated so the two
-    /// halves of the column can't drift apart again.
+    /// own heading. A list row carries **no glyph and, since T-2084, no colour bar**: the
+    /// name starts at `horizontalInset + listRowHorizontalPadding` — the same x as the
+    /// context eyebrow above it, and the same x for every list. The glyph went because a
+    /// column of a dozen symbols is harder to scan than a column of names; the 2pt bar that
+    /// replaced it went because the owner found the column of hues distracting and asked for
+    /// nothing in its place. A dot was considered for the same slot and refused twice: it
+    /// would have to sit *in* the text column and push the names off that line. These are
+    /// derived from the nav values instead of restated so the two halves of the column can't
+    /// drift apart again.
     static let listRowHorizontalPadding: CGFloat = SidebarMetrics.rowHorizontalPadding
     static let listIconLabelSpacing: CGFloat = SidebarMetrics.iconLabelSpacing
     static let listRowCornerRadius: CGFloat = SidebarMetrics.rowCornerRadius
@@ -306,14 +308,6 @@ enum SidebarMetrics {
     static let listTrailingGap: CGFloat = 8
     /// Gap between the trailing due-date flag and the trailing count.
     static let listTrailingItemSpacing: CGFloat = shared.listTrailingItemSpacing
-
-    // MARK: List colour bar
-
-    /// Narrow enough to read as an edge marker rather than a swatch. Sits in the row's
-    /// leading padding, clear of both the rounded corners and the first letter of the name.
-    static let listColorBarWidth: CGFloat = shared.listColorBarWidth
-    static let listColorBarHeight: CGFloat = shared.listColorBarHeight
-    static let listColorBarLeadingInset: CGFloat = shared.listColorBarLeadingInset
 
     // MARK: Context headers
 

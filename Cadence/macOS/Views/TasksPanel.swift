@@ -323,7 +323,6 @@ struct TasksPanel: View {
 
             TasksPanelIntentSectionView(
                 title: group.title,
-                accent: group.accent,
                 tasks: group.tasks,
                 todayKey: todayKey,
                 // **`false`, flatly.** This was `options.showsContainerChip &&
