@@ -18,8 +18,9 @@ enum CadenceTaskSurface: String, CaseIterable, Sendable {
 /// width genuinely cannot: whether the surface is reached with a scroll wheel, a trackpad and a
 /// window you can make taller, or with a thumb.
 ///
-/// Only `completedRowLimit(for:)` reads it. Every other answer in this file is the same on both
-/// tiers, and adding a second one should be argued for rather than assumed.
+/// Only `completedRowLimit(for:)` reads it, and since T-2057 that answer is the same on both tiers
+/// too: neither caps. The axis is kept because its callers still name the question; adding a
+/// second answer that differs by tier should be argued for rather than assumed.
 enum CadenceTaskSurfaceTier: String, CaseIterable, Sendable {
     case touch
     case desktop
@@ -64,17 +65,6 @@ struct CadenceTaskViewOptions: Equatable, Sendable {
 ///
 /// `CadenceTaskSurfaceTier` is not a hole in that rule — see its own doc.
 enum CadenceTaskSurfaceOptions {
-    /// How many completed rows a **touch** surface lists before it stops.
-    ///
-    /// One number across the touch surfaces, because there was never a reason for two: Today and
-    /// Inbox capped at 12 while All Tasks capped at 24, so the same finished task was listed on one
-    /// screen and dropped on another. 24 is the larger of the two — it never hides work the smaller
-    /// cap would have shown, and All Tasks has been rendering that many since it was written.
-    ///
-    /// Prefer `completedRowLimit(for:)`. This constant is the touch tier's answer, kept named
-    /// because that is the number the two iOS caps were reconciled to.
-    static let completedRowLimit = 24
-
     /// Every surface offers the same two chrome controls; they differ only in whether a row names
     /// its list. The `surface` parameter is what keeps each exception attached to a *surface*
     /// rather than to a width — an exception written here is written for both widths at once.
@@ -118,24 +108,25 @@ enum CadenceTaskSurfaceOptions {
     ///   thousands of completed tasks" is the case a cap would be *for*, and it is not the case it
     ///   came from.
     ///
-    /// The touch tier keeps it. A phone builds its completed rows inside `iOSTaskGroupSection`'s
-    /// plain `VStack`, has no scroll bar, and reaches the list with a thumb; a Mac window has a
-    /// scroll bar, a trackpad flick, and a disclosure that starts collapsed and has to be opened on
-    /// purpose. Same rows, different cost to leave uncapped.
+    /// **The touch tier is uncapped too, since T-2057, and that is the owner's decision.** Asked
+    /// what should replace the count capsule as the signal that a group is capped, the owner
+    /// answered *show every task in every group and let the page scroll*. The touch tier used to
+    /// keep a 24-row cap on the grounds that a phone built its completed rows inside
+    /// `iOSTaskGroupSection`'s plain `VStack`, so an uncapped All Tasks logbook would construct one
+    /// row per finished task. That half was fixed in the same change: the row stack is a
+    /// `LazyVStack` now: on a seeded store of 2,000 completed tasks, All Tasks with Completed shown
+    /// mounted all 2,005 rows eagerly and 7 lazily (T-2057's ledger entry has the measurement). The "there is no show more anywhere in this app" argument above
+    /// was always true of the phone as well.
     ///
-    /// **The touch tier's silence was the other half of this, and it is fixed rather than open**
-    /// (T-386; the pointer here used to name a closed, archived ticket about ordering inside a list
-    /// cascade, which cost the next reader the same search). iOS's options bar read the true count
-    /// while the section header under it counted the capped array, so a phone with 40 finished
-    /// tasks offered "Completed 40" and drew 24 rows under a header that also said 24 — two counts
-    /// on one screen, both derived from the same list. The cap stays; what it now carries is
-    /// `hiddenCompletedCount(from:tier:)` and the caption below it, so the header counts the whole
-    /// section and the rows say how many of it they are.
+    /// **What the touch tier used to carry, and why it is still here** (T-386). The phone's options
+    /// bar read the true count while its section header counted the capped array, so
+    /// `hiddenCompletedCount(from:tier:)` and the caption below it made the cap disclosed rather
+    /// than silent. With no tier capped, both now return their "nothing hidden" answers on every
+    /// call. Removing them, and the `revealing:` overload, waits on a host file outside this
+    /// change's reach; see T-2087.
     static func completedRowLimit(for tier: CadenceTaskSurfaceTier) -> Int? {
         switch tier {
-        case .touch:
-            return completedRowLimit
-        case .desktop:
+        case .touch, .desktop:
             return nil
         }
     }
@@ -151,17 +142,22 @@ enum CadenceTaskSurfaceOptions {
 
     /// The completed rows a surface lists, with one row guaranteed to be among them.
     ///
+    /// **Inert since T-2057.** No tier caps any more, so `completedRows(from:tier:)` is `tasks`
+    /// exactly and a revealed row is always already listed, at its true newest-settled-first place.
+    /// What T-375 still delivers is `showCompleted = true`, which never depended on this. Where that
+    /// place is far down a long logbook is T-2088.
+    ///
     /// **T-375: "expanded" has to mean "listed".** A deep link to finished work opens All Tasks'
-    /// Completed section so the task the URL names is on the page. On the touch tier that section
-    /// stops at `completedRowLimit`, and the rows are ordered newest-settled first — so the
+    /// Completed section so the task the URL names is on the page. Until T-2057 the touch tier
+    /// stopped that section at 24 rows, ordered newest-settled first — so the
     /// links most in need of the reveal, the ones for work finished long enough ago that the user
     /// went looking through a widget, are exactly the ones the cap would drop. Expanding a section
     /// that still does not contain the task is the original defect with an extra animation.
     ///
     /// The revealed row is appended rather than promoted: its place in the logbook is a fact about
     /// when it was settled, and reordering the list around a deep link would misdate it. It joins
-    /// the end only when the cap would otherwise have excluded it — inside the cap, this is
-    /// `completedRows(from:tier:)` exactly, and on `.desktop`, which has no cap, it always is.
+    /// the end only when a cap would otherwise have excluded it — and with no tier capped, this is
+    /// `completedRows(from:tier:)` exactly on both.
     static func completedRows<Task: Identifiable>(
         from tasks: [Task],
         tier: CadenceTaskSurfaceTier,
@@ -174,6 +170,7 @@ enum CadenceTaskSurfaceOptions {
     }
 
     /// How many completed rows the tier's cap is **not** drawing, or `nil` when it draws them all.
+    /// Since T-2057 no tier caps, so this is `nil` on every call; see T-2087.
     ///
     /// The denominator half of `completedRows(from:tier:)`, deliberately taking the same uncapped
     /// array so the two cannot disagree about what "more" means — the shape
@@ -185,6 +182,8 @@ enum CadenceTaskSurfaceOptions {
     }
 
     /// What a capped section says under its rows, or `nil` when it is drawing all of them.
+    /// Since T-2057 no completed section is capped, so `iOSTaskGroupSection` never draws it; see
+    /// T-2087.
     ///
     /// **It names both numbers rather than only the remainder.** "+16 more" is the right line for a
     /// task row's subtasks, where tapping the row opens the rest; there is no "show more" anywhere

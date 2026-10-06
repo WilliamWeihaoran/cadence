@@ -11,8 +11,7 @@ import SwiftUI
 /// **It no longer draws how many rows are under it (T-2056).** The owner asked for the per-section
 /// count capsule off iOS and iPadOS, and then off macOS too, so `CadenceTaskGroupHeading` has no
 /// `count` to pass. What the capsule was the only surface for — a group whose rows are capped —
-/// is still stated, by `CadenceTaskSurfaceOptions.overflowCaption` under the rows; see
-/// `iOSTaskGroupSection.hiddenCount`.
+/// no longer exists: since T-2057 no group is capped, and every group lists every task it has.
 ///
 /// Usable as a `List` section header as well as inside a `VStack`, which is what lets the
 /// `List`-hosted iPad panels and the `ScrollView`-hosted compact ones share it.
@@ -50,6 +49,20 @@ struct iOSTaskGroupHeader: View {
 ///
 /// The spacings are the majority spelling of the three components this replaced (9 between the
 /// header and the rows, 7 between rows); All Tasks' 10/8 was the odd one out.
+///
+/// **The rows are a `LazyVStack` (T-2057).** No group is capped any more — the owner's answer was
+/// *show every task in every group and let the page scroll* — so a group is as long as the store
+/// makes it: All Tasks' or Inbox's Completed section is the whole logbook, and an Inbox with 2,000
+/// open tasks was already 2,000 rows before the cap went. In a plain `VStack` every one of those
+/// `iOSTaskRow`s is built, laid out and rendered on arrival. Lazy, only the rows near the visible
+/// region are, and the nesting inside the group's own `VStack` and the page's `LazyVStack` does not
+/// defeat that — measured on `Cadence-iPhone15`, see T-2057's ledger entry.
+///
+/// **Drop frames are unaffected.** Each row publishes its frame to `iOSNewTaskDropFrameRegistry`
+/// on `onGeometryChange` and withdraws it `onDisappear`, and the registry only offers frames
+/// clipped to the enclosing scroll view — so an eager stack's scrolled-out rows were never drop
+/// candidates either. A lazy stack withdraws the registration where the eager one withdrew only the
+/// candidacy. The header is outside this stack, so `isVisible` is untouched.
 struct iOSTaskGroupSection: View {
     let title: String
     let color: Color
@@ -72,18 +85,12 @@ struct iOSTaskGroupSection: View {
     /// `CadenceTaskSurfaceOptions.hiddenCompletedCount(from:tier:)`. `nil` is the ordinary case: a
     /// group that lists everything it has.
     ///
-    /// **The group counts what it has, not what it drew (T-386).** `tasks` arrives already capped,
-    /// so counting it made the header disagree with the options bar above it — "Completed 40" over
-    /// a header reading 24. Adding the remainder back gives the section's true size and puts the
-    /// difference in a caption under the rows.
+    /// **Since T-2057 it is the only case.** No tier caps its completed rows, so every caller passes
+    /// `nil` and the caption below never draws. It stays only because one host outside this
+    /// change's reach still passes it; removing it, `totalCount` and the caption is T-2087.
     ///
-    /// **This is now the *only* thing the true size feeds, and that is why it had to stay
-    /// (T-2056).** The header's count capsule is gone on both platforms; the caption under the rows
-    /// is what is left saying "there are more of these than you can see", and it is the better of
-    /// the two for that job — "Showing 24 of 40" names both numbers, where the capsule named one
-    /// and left the reader to count the rows. Deleting the cap instead was considered and is filed
-    /// rather than done: these rows are built in a plain `VStack`, so an uncapped Completed section
-    /// on All Tasks eagerly constructs one row per finished task, for as many as the store holds.
+    /// When it was live (T-386): `tasks` arrived already capped, so counting it made the section
+    /// disagree with the options bar above it, and the remainder added back gave the true size.
     var hiddenCount: Int?
 
     /// The section's true size: the rows drawn plus the rows the cap withheld.
@@ -111,7 +118,7 @@ struct iOSTaskGroupSection: View {
                 )
 
                 if !tasks.isEmpty {
-                    VStack(spacing: 7) {
+                    LazyVStack(spacing: 7) {
                         ForEach(tasks) { task in
                             iOSTaskRow(
                                 task: task,
@@ -121,8 +128,8 @@ struct iOSTaskGroupSection: View {
                             .opacity(opacity)
                         }
 
-                        // The line that makes the cap disclosed rather than silent. Not a button:
-                        // there is nowhere for it to lead — see
+                        // The line that made a cap disclosed rather than silent. No group is capped
+                        // since T-2057, so this never draws; its removal is T-2087. See
                         // `CadenceTaskSurfaceOptions.overflowCaption(shown:total:)`.
                         if let caption = CadenceTaskSurfaceOptions.overflowCaption(
                             shown: tasks.count,

@@ -70,31 +70,25 @@ struct CadenceTaskSurfaceOptionsTests {
         }
     }
 
-    // MARK: - The completed cap
+    // MARK: - The completed list, uncapped on both tiers (T-2057)
 
-    /// Today, Inbox and list detail capped their completed list at 12 while All Tasks capped it at
-    /// 24, so the same finished task was listed on one screen and silently dropped on another.
-    @Test func theCompletedListIsCappedAtOneSharedLimit() {
-        let tasks = Array(0..<200)
+    /// **The phone lists every finished task now (T-2057).** The owner's answer to "what should
+    /// replace the count capsule as the signal that a group is capped" was *show every task in every
+    /// group and let the page scroll*, so the touch tier's 24-row cap is gone and `.touch` answers
+    /// what `.desktop` already did. Two thousand rows in, two thousand rows out, in order.
+    @Test func theTouchTierListsEveryCompletedRow() {
+        #expect(CadenceTaskSurfaceOptions.completedRowLimit(for: .touch) == nil)
 
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: .touch).count == CadenceTaskSurfaceOptions.completedRowLimit)
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: .touch) == Array(0..<CadenceTaskSurfaceOptions.completedRowLimit))
+        let aLongLogbook = Array(0..<2_000)
+        #expect(CadenceTaskSurfaceOptions.completedRows(from: aLongLogbook, tier: .touch) == aLongLogbook)
+        #expect(CadenceTaskSurfaceOptions.completedRows(from: aLongLogbook, tier: .touch).count == 2_000)
     }
 
-    /// The cap must never *add* to, reorder, or drop from a list that is already short enough —
-    /// the completed section on a quiet day is a handful of rows and has to be all of them.
+    /// A list that is already short has to come back exactly as it went in — empty stays empty and
+    /// nothing is reordered — which is what both tiers' pass-through guarantees.
     @Test func aShorterCompletedListIsPassedThroughUntouched() {
         #expect(CadenceTaskSurfaceOptions.completedRows(from: [Int](), tier: .touch).isEmpty)
         #expect(CadenceTaskSurfaceOptions.completedRows(from: [7, 3, 9], tier: .touch) == [7, 3, 9])
-
-        let exactlyAtTheLimit = Array(0..<CadenceTaskSurfaceOptions.completedRowLimit)
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: exactlyAtTheLimit, tier: .touch) == exactlyAtTheLimit)
-    }
-
-    /// The limit is the larger of the two that shipped, so unifying could not hide work a screen
-    /// used to show.
-    @Test func theSharedLimitIsNoSmallerThanEitherCapItReplaced() {
-        #expect(CadenceTaskSurfaceOptions.completedRowLimit >= 24)
     }
 
     // MARK: - The desktop tier
@@ -111,20 +105,19 @@ struct CadenceTaskSurfaceOptionsTests {
         #expect(CadenceTaskSurfaceOptions.completedRows(from: manyFinishedTasks, tier: .desktop).count == 200)
     }
 
-    /// One tier caps and the other does not, and they are not two spellings of one answer. Written
-    /// over `allCases` so a third tier cannot arrive without saying which of the two it is.
-    @Test func exactlyOneTierCapsItsCompletedList() {
+    /// **No tier caps, and the two tiers are one answer (T-2057).** This used to read "exactly one
+    /// tier caps", with `.touch` the one. Written over `allCases` so a third tier cannot arrive
+    /// capped without saying so here.
+    @Test func noTierCapsItsCompletedList() {
         let capped = CadenceTaskSurfaceTier.allCases.filter {
             CadenceTaskSurfaceOptions.completedRowLimit(for: $0) != nil
         }
-
-        #expect(capped == [.touch])
-        #expect(CadenceTaskSurfaceOptions.completedRowLimit(for: .touch) == CadenceTaskSurfaceOptions.completedRowLimit)
+        #expect(capped.isEmpty, "a tier caps its completed list again: \(capped)")
 
         let manyFinishedTasks = Array(0..<200)
         #expect(
-            CadenceTaskSurfaceOptions.completedRows(from: manyFinishedTasks, tier: .desktop).count
-                > CadenceTaskSurfaceOptions.completedRows(from: manyFinishedTasks, tier: .touch).count
+            CadenceTaskSurfaceOptions.completedRows(from: manyFinishedTasks, tier: .desktop)
+                == CadenceTaskSurfaceOptions.completedRows(from: manyFinishedTasks, tier: .touch)
         )
     }
 
@@ -137,43 +130,27 @@ struct CadenceTaskSurfaceOptionsTests {
         }
     }
 
-    // MARK: - T-386, the touch tier's remainder
+    // MARK: - T-386's remainder, which no tier has any more
 
-    /// **What the cap withholds is now a number the surface can say.**
-    ///
-    /// The phone drew 24 rows out of 40 and had nothing to render the other 16 with, so its options
-    /// bar said 40, its section header said 24, and the screen contradicted itself. The rows and
-    /// the remainder come from the same uncapped array here, which is what makes them add up.
-    @Test func theTouchCapNamesTheRowsItWithholds() {
-        let fortyFinishedTasks = Array(0..<40)
-
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: fortyFinishedTasks, tier: .touch).count == 24)
-        #expect(CadenceTaskSurfaceOptions.hiddenCompletedCount(from: fortyFinishedTasks, tier: .touch) == 16)
-
-        // Shown plus hidden is the whole section — the property the two disagreeing counts broke.
-        let shown = CadenceTaskSurfaceOptions.completedRows(from: fortyFinishedTasks, tier: .touch).count
-        let hidden = CadenceTaskSurfaceOptions.hiddenCompletedCount(from: fortyFinishedTasks, tier: .touch) ?? 0
-        #expect(shown + hidden == fortyFinishedTasks.count)
-    }
-
-    /// `nil`, not `0`: there is no "+0 more" line, and a section that lists everything renders
-    /// nothing extra. Asserted at the boundary and on the tier that never caps.
+    /// **Nothing withheld, on either tier, however long the logbook (T-2057).** This was T-386's
+    /// "the touch cap names the rows it withholds", 24 shown and 16 hidden out of 40. With the cap
+    /// gone the remainder is `nil` — not `0`, there is no "+0 more" line — at every length.
     @Test func aSectionThatListsEverythingHidesNothing() {
-        #expect(CadenceTaskSurfaceOptions.hiddenCompletedCount(from: [Int](), tier: .touch) == nil)
-        #expect(CadenceTaskSurfaceOptions.hiddenCompletedCount(from: [7, 3, 9], tier: .touch) == nil)
-
-        let exactlyAtTheLimit = Array(0..<CadenceTaskSurfaceOptions.completedRowLimit)
-        #expect(CadenceTaskSurfaceOptions.hiddenCompletedCount(from: exactlyAtTheLimit, tier: .touch) == nil)
-
-        let oneOver = Array(0...CadenceTaskSurfaceOptions.completedRowLimit)
-        #expect(CadenceTaskSurfaceOptions.hiddenCompletedCount(from: oneOver, tier: .touch) == 1)
-
-        // The Mac is uncapped, so it withholds nothing however long the logbook gets.
-        #expect(CadenceTaskSurfaceOptions.hiddenCompletedCount(from: Array(0..<200), tier: .desktop) == nil)
+        for tier in CadenceTaskSurfaceTier.allCases {
+            for length in [0, 3, 24, 25, 40, 2_000] {
+                let tasks = Array(0..<length)
+                #expect(
+                    CadenceTaskSurfaceOptions.hiddenCompletedCount(from: tasks, tier: tier) == nil,
+                    "\(tier.rawValue) withholds rows from a \(length)-task section"
+                )
+                #expect(CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: tier).count == length)
+            }
+        }
     }
 
     /// The caption states both numbers, so the header's total and the rows you can count are
-    /// reconciled on screen rather than left to disagree.
+    /// reconciled on screen rather than left to disagree. A pure function of its two counts; that
+    /// no surface reaches it any more is the next test's point.
     @Test func theOverflowCaptionSaysHowManyOfHowManyAreShown() {
         #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 24, total: 40) == "Showing 24 of 40")
 
@@ -184,31 +161,19 @@ struct CadenceTaskSurfaceOptionsTests {
         #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 40, total: 24) == nil)
     }
 
-    /// The caption and the cap are the same decision, read end to end: a 40-task section shows 24,
-    /// says so, and the number it says matches the rows it drew.
-    @Test func theCaptionAgreesWithTheRowsTheTouchTierActuallyDraws() throws {
-        let fortyFinishedTasks = Array(0..<40)
-        let rows = CadenceTaskSurfaceOptions.completedRows(from: fortyFinishedTasks, tier: .touch)
-        let hidden = try #require(CadenceTaskSurfaceOptions.hiddenCompletedCount(from: fortyFinishedTasks, tier: .touch))
-
-        let caption = try #require(
-            CadenceTaskSurfaceOptions.overflowCaption(shown: rows.count, total: rows.count + hidden)
-        )
-
-        #expect(caption == "Showing 24 of 40")
-        #expect(caption.contains("\(rows.count)"))
-        #expect(caption.contains("\(fortyFinishedTasks.count)"))
-    }
-
-    /// The Mac lists every finished task, so it has no caption to draw — the tier difference
-    /// reaches the copy, not just the row count.
-    @Test func theDesktopTierNeverDrawsAnOverflowCaption() {
+    /// Neither tier draws an overflow caption any more: the rows it shows are the rows it has, so
+    /// the end-to-end reading `iOSTaskGroupSection` does — shown, plus hidden, into the caption —
+    /// comes out `nil` on both. This was the touch tier's "Showing 24 of 40" until T-2057.
+    @Test func neitherTierEverDrawsAnOverflowCaption() {
         let manyFinishedTasks = Array(0..<200)
-        let rows = CadenceTaskSurfaceOptions.completedRows(from: manyFinishedTasks, tier: .desktop)
-        let hidden = CadenceTaskSurfaceOptions.hiddenCompletedCount(from: manyFinishedTasks, tier: .desktop) ?? 0
+        for tier in CadenceTaskSurfaceTier.allCases {
+            let rows = CadenceTaskSurfaceOptions.completedRows(from: manyFinishedTasks, tier: tier)
+            let hidden = CadenceTaskSurfaceOptions.hiddenCompletedCount(from: manyFinishedTasks, tier: tier) ?? 0
 
-        #expect(hidden == 0)
-        #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: rows.count, total: rows.count + hidden) == nil)
+            #expect(rows.count == manyFinishedTasks.count)
+            #expect(hidden == 0)
+            #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: rows.count, total: rows.count + hidden) == nil)
+        }
     }
 
     /// The Mac's two task pages name the surface they are, which is what lets `TasksListView` ask
@@ -594,6 +559,101 @@ struct CadenceTouchCompletedSectionTests {
 
         #expect(raw.contains("T-291") == false, "the cap still points at a closed, unrelated ticket")
         #expect(raw.contains("T-386"), "the cap does not name the ticket that decided it")
+    }
+}
+
+// MARK: - T-2057: the touch row stack is lazy, because nothing caps it any more
+
+/// **The half of T-2057 that made the uncap safe to land.** With no cap, All Tasks' or Inbox's
+/// Completed group is the whole logbook, and `iOSTaskGroupSection` built its rows in a plain
+/// `VStack` — so one tap of the Completed control on a store of 2,000 finished tasks built every
+/// `iOSTaskRow` up front. The rows are a `LazyVStack` now.
+///
+/// **What these pin is source, and why that is the strongest thing this target can hold.**
+/// `Cadence/iOS/` is inside `#if os(iOS)` and this target is built for macOS only, so no iOS view
+/// can be hosted here and counted the way `CadenceCodexTaskListVirtualizationTests` counts the
+/// Mac's rows. The row COUNT for this change was taken on `Cadence-iPhone15` with a temporary probe
+/// and recorded in T-2057's ledger entry; what is pinned here is the shape that count depends on —
+/// the row stack is lazy, at the spacing it had, and every scrolling host that puts it on a phone
+/// is a `ScrollView` whose content is a `LazyVStack`, so the laziness is not swallowed by an eager
+/// page around it.
+struct CadenceTouchRowStackLazinessTests {
+    private func code(_ path: String) throws -> String {
+        let raw = try desktopSurfaceSourceFile(path)
+        let code = try desktopSurfaceStrippingComments(raw)
+        // The stripper ran, and it blanks rather than deletes.
+        #expect(code != raw, "\(path): the stripper read nothing")
+        #expect(code.count == raw.count)
+        return code
+    }
+
+    private func occurrences(of pattern: String, in text: String) throws -> Int {
+        try NSRegularExpression(pattern: pattern)
+            .numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
+    }
+
+    /// The group's rows are one `LazyVStack(spacing: 7)` over `ForEach(tasks)`, and no eager
+    /// `VStack(spacing: 7)` is left beside it. Same spacing, same (default, centred) alignment —
+    /// the change is the one word.
+    @Test func theGroupBuildsItsRowsInALazyStackAtTheSameSpacing() throws {
+        let section = try cadenceFunctionBody(
+            "struct iOSTaskGroupSection: View",
+            in: try code("Cadence/iOS/iOSTaskGroupSection.swift")
+        )
+        let normalized = desktopSurfaceCollapsingWhitespace(section)
+
+        #expect(
+            normalized.contains("if !tasks.isEmpty { LazyVStack(spacing: 7) { ForEach(tasks) { task in iOSTaskRow("),
+            "iOSTaskGroupSection no longer builds its rows in a LazyVStack(spacing: 7)"
+        )
+        #expect(try occurrences(of: #"LazyVStack\("#, in: section) == 1)
+        #expect(
+            try occurrences(of: #"(?<!Lazy)VStack\(spacing: 7\)"#, in: section) == 0,
+            "an eager row stack is back in iOSTaskGroupSection"
+        )
+        // Non-vacuity: the group's own header-over-rows stack is still the eager one it was, and
+        // it is the only other stack here.
+        #expect(try occurrences(of: #"(?<!Lazy)VStack\(alignment: \.leading, spacing: 9\)"#, in: section) == 1)
+        #expect(normalized.contains("iOSTaskGroupHeader("))
+    }
+
+    /// Every phone host that scrolls the group puts it inside `ScrollView { LazyVStack(...) }`. A
+    /// lazy row stack inside an eager page is still built whole the moment the page is, which is
+    /// the shape T-3004 found on the Mac. Named by host and by the exact opening it draws.
+    @Test func everyCompactScrollHostOfTheGroupIsALazyPage() throws {
+        let hosts: [(path: String, declaration: String, opening: String)] = [
+            (
+                "Cadence/iOS/iOSTaskCollectionPage.swift",
+                "var body: some View",
+                "ScrollView { LazyVStack(alignment: .leading, spacing: metrics.stackSpacing) {"
+            ),
+            (
+                "Cadence/iOS/iOSTodayCompactViews.swift",
+                "var body: some View",
+                "ScrollView { LazyVStack(alignment: .leading, spacing: 10) {"
+            ),
+            (
+                "Cadence/iOS/iOSListDetailView.swift",
+                "private var sectionStack: some View",
+                "ScrollView { LazyVStack(alignment: .leading, spacing: iOSTaskCollectionMetrics.groupSpacing) {"
+            ),
+        ]
+
+        for host in hosts {
+            let body = try cadenceFunctionBody(host.declaration, in: try code(host.path))
+            let normalized = desktopSurfaceCollapsingWhitespace(body)
+            #expect(
+                normalized.trimmingCharacters(in: .whitespaces).hasPrefix(host.opening),
+                "\(host.path): \(host.declaration) no longer opens a lazy scrolling page"
+            )
+        }
+
+        // And the groups those pages draw are the shared component, so the lazy stack above is the
+        // one they get. The Today and collection pages reach it through their `groupStack`.
+        for path in ["Cadence/iOS/iOSTaskCollectionPage.swift", "Cadence/iOS/iOSTodayTaskSections.swift"] {
+            let groupStack = try cadenceFunctionBody("private var groupStack: some View", in: try code(path))
+            #expect(try occurrences(of: #"iOSTaskGroupSection\("#, in: groupStack) == 2, "\(path)")
+        }
     }
 }
 

@@ -476,46 +476,31 @@ struct CadenceDeepLinkGrammarAndRevealTests {
         )
     }
 
-    /// **"Expanded" has to mean "listed."** The touch tier stops the logbook at
-    /// `completedRowLimit`, newest-settled first, so the links most in need of the reveal — work
-    /// finished long enough ago that the user went looking through a widget — are exactly the ones
-    /// the cap would drop. Revealing into a section that still does not contain the task is the
-    /// original defect with an animation in front of it.
-    @Test func theRevealSurvivesTheTouchTiersCompletedRowCap() {
-        let limit = CadenceTaskSurfaceOptions.completedRowLimit
-        let tasks = (0..<(limit + 6)).map { AppTask(title: "Finished \($0)") }
-        let beyondCap = tasks[limit + 3]
-        let insideCap = tasks[2]
+    /// **"Expanded" has to mean "listed" — and with no cap, it always does (T-2057).** The touch
+    /// tier used to stop the logbook at 24 rows, newest-settled first, so this test pinned that a
+    /// revealed row beyond the cap was appended. Neither tier caps now, so a link to the 28th of 30
+    /// finished tasks finds it already listed, at its own place, on both tiers: nothing appended,
+    /// nothing duplicated, nothing reordered.
+    @Test func theRevealedRowIsListedAtItsOwnPlaceOnBothTiers() {
+        let tasks = (0..<30).map { AppTask(title: "Finished \($0)") }
+        let pastTheFormerCap = tasks[27]
+        let near = tasks[2]
 
-        let capped = CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: .touch)
-        #expect(capped.count == limit)
-        #expect(!capped.contains { $0.id == beyondCap.id })
+        for tier in CadenceTaskSurfaceTier.allCases {
+            let listed = CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: tier)
+            #expect(listed.map(\.id) == tasks.map(\.id), "\(tier.rawValue) dropped rows")
+            #expect(listed.contains { $0.id == pastTheFormerCap.id })
 
-        let revealed = CadenceTaskSurfaceOptions.completedRows(
-            from: tasks,
-            tier: .touch,
-            revealing: beyondCap.id
-        )
-        #expect(revealed.count == limit + 1)
-        #expect(revealed.last?.id == beyondCap.id)
-        // Appended, not promoted: the logbook's order is when things were settled, and reordering
-        // it around a deep link would misdate the rows above.
-        #expect(revealed.prefix(limit).map(\.id) == capped.map(\.id))
-
-        // A row already inside the cap is not duplicated, and an unknown id changes nothing.
-        #expect(
-            CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: .touch, revealing: insideCap.id)
-                .map(\.id) == capped.map(\.id)
-        )
-        #expect(
-            CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: .touch, revealing: UUID())
-                .map(\.id) == capped.map(\.id)
-        )
-        // Desktop is uncapped, so the reveal is inert there and must not reorder anything.
-        #expect(
-            CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: .desktop, revealing: beyondCap.id)
-                .map(\.id) == tasks.map(\.id)
-        )
+            for revealedID in [pastTheFormerCap.id, near.id, UUID()] {
+                let revealed = CadenceTaskSurfaceOptions.completedRows(
+                    from: tasks,
+                    tier: tier,
+                    revealing: revealedID
+                )
+                #expect(revealed.count == tasks.count, "\(tier.rawValue) appended a revealed row it already listed")
+                #expect(revealed.map(\.id) == tasks.map(\.id))
+            }
+        }
     }
 
     // MARK: T-375(b) — the macOS destination → page mapping

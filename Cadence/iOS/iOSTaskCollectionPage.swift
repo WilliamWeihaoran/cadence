@@ -250,12 +250,10 @@ struct iOSTaskCollectionSections: View {
                 iOSTaskGroupSection(
                     title: "Completed",
                     color: Theme.green,
-                    // **T-375: the reveal has to survive the cap.** This tier stops at
-                    // `completedRowLimit`, newest-settled first, so the deep links most in need of
-                    // the reveal — work finished long enough ago that the user went looking for it
-                    // through a widget — are exactly the ones the cap would drop. Expanding a
-                    // section that still does not list the task is the original defect with an
-                    // animation in front of it.
+                    // **T-375: the reveal had to survive the cap.** Since T-2057 there is no cap
+                    // on either tier, so every completed task is listed and `revealing:` returns
+                    // `completedTasks` unchanged; it stays until T-2087 removes the overload. A
+                    // long-ago row is listed at its true place, far down; scrolling to it is T-2088.
                     tasks: CadenceTaskSurfaceOptions.completedRows(
                         from: completedTasks,
                         tier: .touch,
