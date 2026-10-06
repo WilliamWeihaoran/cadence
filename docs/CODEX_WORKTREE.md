@@ -68,26 +68,30 @@ Cadence/macOS/Views/NoteEditorPane.swift
 Cadence/macOS/Views/ListNotesSupportViews.swift
 Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift
 CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift
-Cadence/iOS/iOSTaskDetailSheet.swift
-Cadence/iOS/iOSTaskDetailSheetSections.swift
-Cadence/iOS/iOSTaskRowActionViews.swift
-Cadence/iOS/iOSTaskViews.swift
-Cadence/Shared/CadenceSettingsSectionCopy.swift
-Cadence/iOS/iOSDataResetSettingsSection.swift
-Cadence/macOS/Views/SettingsDataSafetySection.swift
-Cadence/Shared/CadenceListDeletionSummary.swift
-Cadence/Shared/CadenceDataExportPresentation.swift
-Cadence/Shared/CadenceArchiveImportPresentation.swift
-Cadence/Services/MarkdownNoteSupport.swift
-README.md
-CadenceTests/CadenceArchiveImportEntryPointTests.swift
-CadenceTests/CadenceChoicePickerDismissalTests.swift
-CadenceTests/CadenceEmptyTitleFallbackSweepTests.swift
-CadenceTests/CadenceIconOnlyButtonAccessibilityTests.swift
-CadenceTests/CadenceListDeletionSurfaceTests.swift
-CadenceTests/CadencePresentedTypographyBoundaryTests.swift
-CadenceTests/CadenceSettingsSectionCopyTests.swift
 ```
+
+### LEASE RETIRED 2026-10-05 — the nineteen T-1466 paths are out, because the work landed
+
+`df2e8a5a` closed the tracking-UI retirement on top of `3c80981c`, which integrated it.
+`codex-land.sh review codex/tracking-ui-retirement` reports the twenty-two files as landed, and the
+single path it still refuses is `CadenceTests/CadenceRealTreeSweepManifest.txt` — the one the grant
+below deliberately withheld, because it is generated and the coordinator re-derived it after
+integrating rather than taking the branch's copy. That refusal is correct and is the protocol
+working, not a loose end. The `CODEX-INBOX-ID-CLASH` on T-1466 that `review` also prints is the
+consequence of the id having been filed in `0030f487` before the code, exactly as T-1465's was in
+`b802afc5`; it is not a blocker.
+
+Retired in the same session that granted them, as the grant below said it would be, and because this
+file's own warning is the thing [[T-2069]] and [[T-2058]] are about: *a lease granting paths nobody
+is working on is a lease that will eventually be believed.*
+
+**Nothing else was touched, and this was rebuilt on HEAD to make sure of it.** The fence was
+regenerated from `git show HEAD:docs/CODEX_WORKTREE.md` rather than from the copy read at the start
+of the session — the same discipline `4ccaf39d` adopted after nearly revoking a live grant that way.
+The four standing globs are unchanged, `CadenceTests/CadenceCodex*.swift` among them, and **all
+nineteen [[T-3003]] paths stay**: that grant (`220b0b91`, `c4eedfcb`) is for Codex's four audit
+findings and is still live. 42 patterns in, 23 out, and the 23 are exactly the 4 standing globs plus
+T-3003's 19.
 
 ### LEASE WIDENED 2026-10-05 — nineteen paths for [[T-1466]], the tracking-UI retirement
 
