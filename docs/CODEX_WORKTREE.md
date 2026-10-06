@@ -68,6 +68,7 @@ Cadence/macOS/Views/NoteEditorPane.swift
 Cadence/macOS/Views/ListNotesSupportViews.swift
 Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift
 CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift
+CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
 ```
 
 ### LEASE RETIRED 2026-10-05 — the nineteen T-1466 paths are out, because the work landed
@@ -726,4 +727,26 @@ would leave `markTodo` the only one of the three transitions whose uncommitted s
 unguarded, which is a weakening wearing the shape of a re-point.
 
 **Retire this path with the other eighteen** when T-3003 lands.
+
+### LEASE WIDENED 2026-10-05 — a second test file for [[T-3003]], and ONE entry inside it
+
+Granted at the owner's instruction. `Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift` was
+already in the T-3003 block; this is its test half, the same shape as the
+`CadenceTaskStatusLifecycleSurfaceTests.swift` grant above.
+
+**The single permitted edit.** In `CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift`, the one
+`SaveSurface` entry whose `path` is `Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift` and
+whose `function` is `commit` may change its `successSpellings` from `["onChanged()"]` to
+`["finishCommittedEdit()"]`. **Nothing else moves**: that entry keeps its commit-before-report
+ordering check and its one-refresh count, and every other editor entry, every failure and
+dismissal control, and the surrounding inventory stay exactly as they are.
+
+**The condition this grant rests on.** Moving the pinned spelling to `finishCommittedEdit()` puts
+the ordering guarantee behind an indirection: the entry would then prove the popover calls the
+finisher, not that the user is told once after the commit lands. Codex states its new coverage pins
+both committing callers and the finisher's single `onChanged()`. **The re-point is granted only
+with that coverage in the same change** — without it this is a weakening wearing the shape of a
+re-point, which is the same trap the lifecycle grant above names.
+
+**Retire this path with the rest of T-3003's** when the ticket lands.
 
