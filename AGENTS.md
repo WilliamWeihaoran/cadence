@@ -30,9 +30,9 @@ Tests must be scoped to `CadenceTests`:
   -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
 ```
 
-Scope unit runs to `CadenceTests` to keep them fast and deterministic — **not** because the UI target
-cannot run. `CadenceUITests` **does** run on macOS since the automation grant of 2026-08-31. It
-launches a real `Cadence.app`, so it MUST hold the test-host lock: `scripts/xcb.sh <id> test`
+Scope unit runs to `CadenceTests`: they RUN here, re-measured 2026-10-04 and again 2026-10-06 (T-2049) — never read a harness failure as "tests can't run on this Mac".
+`CadenceUITests` runs too, but the 2026-08-31 automation grant is per-SESSION, not a one-time switch: `/var/db/com.apple.dt.automationmode/automation-enabled` is absent again today, so a cold UI run raises an owner-only Touch ID prompt and, unattended, dies ~70s later having executed 0 tests on *"Timed out while enabling automation mode"*. Once the owner answers it UI tests really do run — agent `escape2` went red then green on real bodies 2026-10-04 19:12-20:02. Never write the authorization database to get round the prompt (T-1742, T-2049).
+A UI run launches a real `Cadence.app`, so it MUST hold the test-host lock: `scripts/xcb.sh <id> test`
 `-only-testing:CadenceUITests`, never a bare `xcodebuild`. Zero **compiler** warnings, **enforced not asserted**
 (T-1147/T-1149): `xcb.sh` **exits 9** when a run that recompiled Swift has any and `.github/scripts/check-log.sh` fails CI
 the same way; tool notices count separately, a vacuous run never gates, and `CADENCE_ALLOW_WARNINGS=1` downgrades it to a

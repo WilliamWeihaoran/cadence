@@ -45,6 +45,61 @@ An unscoped `test` run also pulls in `CadenceUITests`, which cannot launch headl
 the whole run. The failure reads like a broken suite rather than a harness problem — do not
 conclude "tests can't run here" from it.
 
+### The two runner refusals of T-2049, and why neither reads the way the ticket first wrote it
+
+T-2049 named two sentences that both kill a run before any test body. One has stopped happening
+altogether; the other is a prompt waiting for an answer, not a broken machine. Read them apart,
+and do not carry either ticket summary forward without re-measuring — both aged badly inside
+48 hours.
+
+**`The test runner hung before establishing connection` — NO LONGER REPRODUCES.** It took every
+agent's runs, unit and UI alike, from 2026-10-03 20:43 EDT. It then cleared on its own: re-measured
+2026-10-04 10:30–11:25, a full `CadenceTests` run executed **5,538 tests in 468 suites**, and five
+runs across four agents reached test bodies that morning. Re-checked 2026-10-06 while three sibling
+runs were live at load average 52 — one of them had produced **3,482 result lines** with zero
+occurrences of the sentence and zero automation timeouts.
+**Both remedies the original entry predicted are ruled out by measurement:** `kern.boottime` still
+reads Sep 16 (the Mac never rebooted) and `testmanagerd` is still **pid 88831 from Sep 30** (it was
+never restarted) — it was alive straight through the incident and is alive now. So if you ever meet
+this sentence again, **re-run first**; do not escalate it to the owner on the first hit. *Why* it
+recovered is not established, and nobody should assert a cause for it.
+
+**`Timed out while enabling automation mode` — it is a PROMPT, not a broken machine, and the
+answer is the owner's.** Reproduced 2026-10-04 morning with the screen unlocked and
+`DevToolsSecurity -status` reading *"Developer mode is currently enabled"*: `automationmode-writer`
+asks for the device owner's Touch ID / password via LocalAuthentication policy 2, and unattended it
+times out after ~70s having run 0 tests.
+
+**But do not copy forward "UI tests cannot run here" from that — they ran the same evening.** Agent
+`escape2` executed five `CadenceUITests` sessions between **19:12 and 20:02 on 2026-10-04** with
+**zero** automation timeouts and zero hung-runner lines, and real bodies ran:
+`CadenceInspectorHeaderPanelPlacementUITests.testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen`
+failed at 19:26 (29.4 s) and 19:36 (51.4 s), then **passed** at 19:39 (26.8 s) and 20:02 (26.6 s),
+alongside `testEveryInspectorPanelOpensClearOfTheRowsItIsOpenedFrom` (34.4 s). So the grant *was*
+obtained that evening and the suite is live.
+
+**The grant is per-SESSION, which is what reconciles the two readings.**
+`/var/db/com.apple.dt.automationmode/automation-enabled` is absent again as of 2026-10-06, while
+the parent directory's mtime is **2026-10-04 20:02** — the exact minute `escape2`'s last UI run
+ended. It is written while a session holds automation and does not survive it. So a cold UI run
+raises the prompt again every time; it is not a one-time switch, and `DevToolsSecurity -enable`
+does **not** stand in for it. **Writing the authorization database is a system security change and
+the owner's** — it cost agent `escapefix` a whole ticket and cost `calcrash` two runs. Budget for
+the prompt: if nobody is at the machine, a UI run will burn ~70 s and report 0 tests.
+
+**The `log show` health probe self-matches — do not trust a bare one.** `/usr/bin/log` logs its own
+invocation *including its `--predicate` argument*, so
+`log show --predicate 'eventMessage CONTAINS "Finished enabling Automation Mode"'` matches the
+command lines of previous probes. Measured 2026-10-06: a bare 24h count returned **3 "requests" and
+3 "completions"**, and all six were `log[…] log run noninteractively … args: '/usr/bin/log' 'show'
+…` lines from three earlier probe runs at 01:13, 02:23 and 12:05 — **zero real events**. The same
+24h window with `AND process != "log"` appended returns **0 lines**. This matters beyond noise:
+because a probe session runs both predicates, both counters rise together, so an
+`outstanding = requests - completions` reading is dragged back towards 0 by the act of probing and
+will read *healthy* over a genuinely unanswered request. **Always append `AND process != "log"`**
+(or scope to `process == "automationmode-writer" OR process == "testmanagerd"`). The predicate
+printed at `scripts/xcb.sh:277` has the same defect and has not been corrected.
+
 **Writing a test that reads source files as text? Read "Source-Scanning Tests: The Two Ways They Go
 Wrong" in `Cadence/Shared/AGENTS.md` first.** Those tests caught several real regressions in one day
 and produced every defective assertion a verifier found in the same day; the substring trap,
