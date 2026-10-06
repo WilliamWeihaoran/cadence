@@ -279,8 +279,8 @@ measurement and the enumeration are here._
   `CADENCE_MCP_ENABLE_WRITES` environment flag and defaults to read-only, but when enabled there is
   no confirmation step: `createContext`, `updateContext`, `createContainer`, `updateContainer`,
   `updateContainerColumns`, `createTask`, `updateTask`, `scheduleTask`, `completeTask`,
-  `reopenTask`, `cancelTask`, `bulkCancelTasks`, `appendCoreNote`, `createSavedLink`, `createGoal`
-  and `createHabit` — **sixteen arms** — write and save. *No undo stack* is no longer true of any
+  `reopenTask`, `cancelTask`, `bulkCancelTasks`, `appendCoreNote`, `createSavedLink`, `createTag`
+  and `createListNote` — **sixteen arms** — write and save. *No undo stack* is no longer true of any
   of them (T-1121): every arm goes through `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts
   what the call added and restores what it changed in place before the caller is told. The one
   residue went with it (T-1181): the core-note accessors take a `commit:` and `append_core_note`
@@ -387,3 +387,13 @@ measurement and the enumeration are here._
   it had to be lifted out of a file declaring four SwiftUI views before it was eligible at all.
   Full reasoning in T-1095's and T-1122's ledger entries. Adding a file here is still not casual: it is another
   path by which an app-side edit breaks a target no scheme builds.
+
+**Re-measured 2026-10-06 (agent `mcpfinish`, [[T-1122]]).** The phase now holds **thirteen**
+`Cadence/Shared/` files, not nine; the heading keeps its number only so the pointer that quotes it
+stays valid. `CadenceOrderAllocation` earns its place independently of the arms it arrived with —
+`create_tag` and `create_container` both call `nextOrder`. The other three the tracking helpers
+brought — `CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization` — have
+had **no caller anywhere in this target** since [[T-2077]] removed `create_goal` and `create_habit`,
+and are still compiled into it. Measured by sweeping every one of the 56 files in the Sources phase
+for each symbol: the only hit outside each file itself is a doc comment. Removing them is
+[[T-3010]], and it needs a `project.pbxproj` edit, which is why it is a ticket and not a diff.
