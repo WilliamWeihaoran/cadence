@@ -96,8 +96,6 @@
 		B10000002FCE00000000021E /* Cadence/Services/TagSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000124 /* Cadence/Services/TagSupport.swift */; };
 		B10000002FCE00000000021F /* Cadence/Services/MarkdownMetadataSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000113 /* Cadence/Services/MarkdownMetadataSupport.swift */; };
 		B10000002FCE000000000220 /* Cadence/Models/HabitInsights.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000114 /* Cadence/Models/HabitInsights.swift */; };
-		B10000002FCE000000000221 /* Cadence/Services/CadenceHabitWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000115 /* Cadence/Services/CadenceHabitWidgetSupport.swift */; };
-		B10000002FCE000000000222 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000116 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift */; };
 		B10000002FCE000000000223 /* Cadence/Services/CadenceCalendarWidgetSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000117 /* Cadence/Services/CadenceCalendarWidgetSupport.swift */; };
 		B10000002FCE000000000224 /* Cadence/Services/CadenceHabitCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000002FCE000000000118 /* Cadence/Services/CadenceHabitCompletionStore.swift */; };
 		B10000002FCE000000000230 /* Cadence/Models/TaskOrdering.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000130 /* Cadence/Models/TaskOrdering.swift */; };
@@ -745,8 +743,6 @@
 				B10000002FCE000000000203 /* Cadence/Services/CadenceWidgetRefreshCenter.swift in Sources */,
 				B10000002FCE000000000204 /* Cadence/Services/CadenceDeepLink.swift in Sources */,
 				B10000002FCE000000000205 /* Cadence/Services/CadenceTodayWidgetSupport.swift in Sources */,
-				B10000002FCE000000000221 /* Cadence/Services/CadenceHabitWidgetSupport.swift in Sources */,
-				B10000002FCE000000000222 /* Cadence/Services/CadenceMilestoneWidgetSupport.swift in Sources */,
 				B10000002FCE000000000223 /* Cadence/Services/CadenceCalendarWidgetSupport.swift in Sources */,
 				B10000002FCE000000000224 /* Cadence/Services/CadenceHabitCompletionStore.swift in Sources */,
 				B10000002FCE000000000206 /* Cadence/Services/CadenceWidgetIntents.swift in Sources */,

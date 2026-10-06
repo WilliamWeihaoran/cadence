@@ -525,8 +525,30 @@ struct CadenceSharedConstantReuseSweepTests {
         ).memberFiles
         #expect(widgets.count >= 40, "the widget source list parsed as \(widgets.count) files")
         #expect(widgets.contains(declaration), "the widget target cannot read the labels it draws")
-        #expect(widgets.contains("Cadence/Services/CadenceHabitWidgetSupport.swift"))
-        #expect(widgets.contains("Cadence/Services/CadenceMilestoneWidgetSupport.swift"))
+
+        // **Re-pointed, not relaxed ([[T-2083]]).** These two witnesses were
+        // `CadenceHabitWidgetSupport.swift` and `CadenceMilestoneWidgetSupport.swift`. Both files
+        // are still on disk and still in the project — [[T-2078]] keeps them on purpose, as
+        // read-only snapshot builders that write nothing, so the habits/goals widgets are restored
+        // by putting two lines back in the bundle — but the owner's keep-on-disk decision removed
+        // their *membership* in the widget extension's Sources phase, because nothing under
+        // `CadenceWidgets/` references either symbol. A path that is no longer a member cannot
+        // witness that this list parsed something real; it would pass only by failing.
+        //
+        // The replacements hold the same property the originals were chosen for: both are
+        // `Cadence/`-tree files that reach the widget target **only** through the explicit Sources
+        // phase, never through the synchronized `CadenceWidgets/` root. So they still prove the
+        // parser resolved the cross-tree half of the membership, which is the half a bad parse
+        // would silently drop. They are also the two surviving members of the same widget-support
+        // family, so the non-vacuity check keeps failing for the same reason it always would.
+        #expect(widgets.contains("Cadence/Services/CadenceTodayWidgetSupport.swift"))
+        #expect(widgets.contains("Cadence/Services/CadenceCalendarWidgetSupport.swift"))
+
+        // The removed pair, asserted in the negative so the decision above is measured rather than
+        // remembered: putting either back in the Sources phase without revisiting T-2078 goes red
+        // here instead of silently re-adding dead weight to the shipping extension.
+        #expect(widgets.contains("Cadence/Services/CadenceHabitWidgetSupport.swift") == false)
+        #expect(widgets.contains("Cadence/Services/CadenceMilestoneWidgetSupport.swift") == false)
 
         // And the boundary has both answers on today's tree, or it is a claim rather than a
         // measurement: `GoalListLinkHelpers` types two of these same labels and is app-only, which
