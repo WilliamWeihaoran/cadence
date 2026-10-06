@@ -182,6 +182,13 @@ pass took the same measurement one step further — a helper whose *own* imports
 *file's* are not can be made eligible by splitting the file, which is how `CadenceListNoteFiling`
 became the ninth `Shared/` member.
 
+**The heading is past tense now.** [[T-2077]] removed both arms at 0.14.0 and [[T-3010]]
+(`3be4b126`) took three of the four files back out of the Sources phase; `CadenceOrderAllocation`
+is the one that stayed, and it stayed for `create_tag` and `create_container` rather than for
+anything the tracking arms wanted. Read this section for *why four files*, which is the reusable
+part — the closure, not the count — and "Why ten shared files joined the Sources phase" for what
+the phase holds today.
+
 ## Why Bulk Cancel Got A Cap And A Dry Run (T-1365)
 
 `bulk_cancel_tasks` is the only arm on this surface whose selector is a **pattern**. Every other
@@ -367,13 +374,13 @@ measurement and the enumeration are here._
   Archiving is offered instead: reversible from the same tool, destroys nothing, and it is
   `update_container_columns`' own argument about column removal one size up.
 
-## Why Nine Shared Files Joined The Sources Phase
+## Why Ten Shared Files Joined The Sources Phase
 
 _Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
 headroom left under its 199-line budget. The rule stays in the guide; the argument, the
 measurement and the enumeration are here._
 
-- **Nine `Cadence/Shared/` files have joined the Sources phase, and never for the obvious reason.**
+- **Ten `Cadence/Shared/` files are in the Sources phase, and never for the obvious reason.**
   Three came with `update_container_columns` and not for the one T-1095 predicted — the merge's
   `base`/`edited`/`current` is *not* what earns them; `applySectionNameChanges` is (without it a
   rename strands every card on a name no column has), plus `mutateSectionConfigs`' T-915 guard and
@@ -388,12 +395,27 @@ measurement and the enumeration are here._
   Full reasoning in T-1095's and T-1122's ledger entries. Adding a file here is still not casual: it is another
   path by which an app-side edit breaks a target no scheme builds.
 
-**Re-measured 2026-10-06 (agent `mcpfinish`, [[T-1122]]).** The phase now holds **thirteen**
-`Cadence/Shared/` files, not nine; the heading keeps its number only so the pointer that quotes it
-stays valid. `CadenceOrderAllocation` earns its place independently of the arms it arrived with —
-`create_tag` and `create_container` both call `nextOrder`. The other three the tracking helpers
-brought — `CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization` — have
-had **no caller anywhere in this target** since [[T-2077]] removed `create_goal` and `create_habit`,
-and are still compiled into it. Measured by sweeping every one of the 56 files in the Sources phase
-for each symbol: the only hit outside each file itself is a doc comment. Removing them is
-[[T-3010]], and it needs a `project.pbxproj` edit, which is why it is a ticket and not a diff.
+**The count has been nine, thirteen and ten, and the heading now tracks it.** `mcpfinish`
+re-measured on 2026-10-06 and found **thirteen**, not nine: the ninth above was the last one
+anybody had written down, and four more had arrived since. It kept the heading at *nine* because
+`CadenceTests/AgentContextBudgetTests.guideReferencePairings` pins this title as a string
+`CadenceMCPServer/AGENTS.md` must still quote, so renaming it is a three-file edit — guide,
+reference and test — that has to land in one commit or the test reddens. [[T-3010]] (`3be4b126`,
+agent `mcpsources`) made that edit, and the number it settled on is **ten**.
+
+**What [[T-3010]] removed, and why the removal is the lesson rather than the arithmetic.** Of the
+four files the tracking helpers brought, `CadenceOrderAllocation` earns its place independently of
+the arms it arrived with — `create_tag` and `create_container` both call `nextOrder`
+(`CadenceWriteService.swift:1368` and `:1429`) — and stays. The other three,
+`CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization`, had had **no
+caller anywhere in this target** since [[T-2077]] removed `create_goal` and `create_habit` at
+0.14.0, and were still being compiled into it. Each declares exactly one top-level `enum` and
+nothing else — no extension, no free function, no conformance — so a static member can only be
+reached through the type name; sweeping all 56 files of the phase for the three type names returned
+each file's own declaration and one doc comment, and a second sweep of the member names found no
+unqualified use. **Only the membership went**: the three `PBXBuildFile` entries and their Sources
+lines, with the `PBXFileReference` entries and group children kept, because all three still have
+app callers (`GoalAssignmentRules` has 68 references outside its own file). **The standing rule
+this leaves behind:** retiring a tool arm does not retire the files it dragged in, and nothing in
+this repository notices — no scheme builds this target, and dead weight here emits no diagnostic.
+Sweep the phase when an arm is removed, not only when one is added.

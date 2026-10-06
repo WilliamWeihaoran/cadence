@@ -344,7 +344,7 @@ struct AgentContextBudgetTests {
                 "Why the reads fetch what they return",
                 "Why in-memory sort is settled, not deferred",
                 "What the create and update arms cover",
-                "Why nine shared files joined the Sources phase",
+                "Why ten shared files joined the Sources phase",
             ],
             pinnedHeadings: []
         ),

@@ -23,13 +23,14 @@ refactor — that part of the old rule was right, it was just spelled as a ban o
 
 `CadenceMCPServer` is a command-line tool target with an **explicit** Sources build phase: it
 compiles a hand-picked subset of app source directly, not a framework. Currently that is most of
-`Cadence/Models/`, all of `Cadence/Services/MCPReadOnly/`, and a short list of shared services —
+`Cadence/Models/`, all of `Cadence/Services/MCPReadOnly/`, eight `Services/` files —
 `CadenceSchema`, `CadenceStoreSupport`, `NoteMigrationService`, `DataIntegrityRepairService`,
-`TagSupport`, `NoteReferenceSupport`, `MarkdownMetadataSupport`, `CadenceHabitCompletionStore`,
-`CadenceSearchMatcher`, `Shared/CadenceTaskRecurrenceWorkflowSupport`, `Shared/DateFormatters`,
-`Shared/CadencePendingChangePersistence`, `Shared/CadenceSectionConfigMerge`,
-`Shared/CadenceSectionEditingSupport`, `Shared/CadenceDefaults`,
-`Shared/CadenceSavedLinkPersistence` — plus this folder's four files.
+`TagSupport`, `NoteReferenceSupport`, `MarkdownMetadataSupport`, `CadenceHabitCompletionStore` —
+and **all ten** `Shared/` files, enumerated because a list that drops a name reads as the phase
+not holding it: `CadenceSearchMatcher`, `DateFormatters`, `CadenceTaskRecurrenceWorkflowSupport`,
+`CadencePendingChangePersistence`, `CadenceSectionConfigMerge`, `CadenceSectionEditingSupport`,
+`CadenceDefaults`, `CadenceSavedLinkPersistence`, `CadenceOrderAllocation`,
+`CadenceListNoteFiling` — plus this folder's four files.
 **Adding a file to `Models/` does not add it here.** A new type that an existing compiled file
 references is a link error in this target and nothing at all in the app.
 
@@ -176,16 +177,17 @@ as `timed out waiting for response 100` rather than naming a build.
   questions rather than two spellings of one. Do not re-decide any of it from a summary:
   `../docs/MCP_AGENTS_REFERENCE.md`, "What the create and update arms cover", "Why one kind has
   no constructor" and "Why deletion is refused".
-- **Thirteen `Cadence/Shared/` files are in the Sources phase, and the ones that earn their place
-  never do it for the obvious reason.** Each earns it by one rule a hand-rolled copy would re-break
-  — a rename that would otherwise strand every card on a name no column has, T-509's
-  case-insensitive scheme rule — never by the feature it arrived with. Adding another is still not
-  casual: one more path by which an app-side edit breaks a target no scheme builds — and
-  `CadenceListNoteFiling` cost a file **split** rather than a file ([[T-1122]]). **Three now earn
-  nothing**: `CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization`
-  have had no caller here since [[T-2077]] removed `create_goal`/`create_habit` ([[T-3010]]).
-  What each is for: `../docs/MCP_AGENTS_REFERENCE.md`, "Why nine shared files joined the Sources
-  phase" and "Why the tracking helpers cost four files".
+- **Ten `Cadence/Shared/` files are in the Sources phase, and none of them earns its place for the
+  obvious reason.** Each earns it by one rule a hand-rolled copy would re-break — a rename that
+  would otherwise strand every card on a name no column has, T-509's case-insensitive scheme rule
+  — never by the feature it arrived with. Adding another is still not casual: one more path by
+  which an app-side edit breaks a target no scheme builds — and `CadenceListNoteFiling` cost a
+  file **split** rather than a file ([[T-1122]]). **A file stops earning it, too, and then it
+  goes**: `CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization` lost
+  their last caller here when [[T-2077]] removed `create_goal`/`create_habit`, and [[T-3010]] took
+  all three out of the phase while leaving them on disk for the app. Sweep when an arm is retired,
+  not only when one is added. What each is for: `../docs/MCP_AGENTS_REFERENCE.md`, "Why ten shared
+  files joined the Sources phase" and "Why the tracking helpers cost four files".
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
   renders as `isError`, plus an undo, and every arm now has both halves** (T-1121). One long-lived
   `ModelContext` per process means a refused `save()` used to leave the mutation *pending* for the

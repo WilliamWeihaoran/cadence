@@ -26,10 +26,16 @@ import SwiftData
 /// refusal that can no longer happen, and `goalDeleteConfirmationMessage` counted a cascade
 /// (`ModelContext.deleteGoal`) that no longer exists either — see `TrackingDeleteHelpers`.
 ///
-/// **The type is kept rather than the file deleted**, and that is a constraint rather than a
-/// preference: this file is named in `CadenceMCPServer`'s **explicit** Sources phase in
-/// `Cadence.xcodeproj/project.pbxproj`, and removing it from that phase is a project-file edit
-/// [[T-117]] forbids while the owner has Xcode open. `CadenceHabitCompletionStore.swift` and
-/// `GoalAssignmentRules.swift` are in that phase for the same reason; the third is all reads and
-/// is untouched.
+/// **That constraint is gone, and this empty type is now a deletion nobody has made.** It read, up
+/// to [[T-3010]], that the type was kept rather than the file deleted because this file was named
+/// in `CadenceMCPServer`'s **explicit** Sources phase and removing it from that phase was a
+/// `Cadence.xcodeproj/project.pbxproj` edit [[T-117]] forbids while the owner has Xcode open.
+/// T-3010 (`3be4b126`) made that edit: this file, `GoalAssignmentRules.swift` and
+/// `CadencePluralization.swift` left the phase and stayed on disk. The other two kept their place
+/// on disk on their own merits — both still have app callers — but **this one has none anywhere**,
+/// and an empty enum with no reference in the tree is [[T-260]]'s case for deleting the file
+/// outright. It is left here only because T-3010's scope was the target membership; the deletion
+/// is a separate pass, and the three remaining mentions of the name are doc comments in
+/// `CadenceGlobalUndoSurfaceTests`, `CadenceTrackingEditorSaveCommitTests` (whose comment already
+/// says "the file is deleted", which is not yet true) and `CadenceSaveCommitDisciplineTests`.
 enum CadenceTrackingMutationSupport {}
