@@ -749,7 +749,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
             SaveSurface(
                 path: "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift",
                 function: "commit",
-                successSpellings: ["onChanged()"]
+                successSpellings: ["finishCommittedEdit()"]
             ),
 
             // T-634: the task-detail subtask field, on both platforms. Clearing the draft is the
