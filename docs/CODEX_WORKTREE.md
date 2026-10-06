@@ -49,28 +49,32 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
-Cadence/Services/PersistenceController.swift
-Cadence/Shared/CadenceEventNoteSupport.swift
-Cadence/iOS/iOSCalendarManager.swift
-Cadence/macOS/Services/CalendarManager.swift
-Cadence/iOS/iOSNotesView.swift
-Cadence/iOS/iOSSearchView.swift
-Cadence/iOS/iOSEventNoteEditorSheet.swift
-Cadence/macOS/Views/EventNoteSupportViews.swift
-Cadence/Services/CadenceWidgetRefreshCenter.swift
-Cadence/Services/CadenceTodayWidgetSupport.swift
-Cadence/Shared/CadenceTaskMutationSupport.swift
-Cadence/macOS/Services/TaskWorkflowService.swift
-Cadence/macOS/Services/TaskCompletionAnimationManager.swift
-Cadence/macOS/Views/TaskInspectorContentSupportViews.swift
-Cadence/macOS/Views/NotePanel.swift
-Cadence/macOS/Views/NoteEditorPane.swift
-Cadence/macOS/Views/ListNotesSupportViews.swift
-Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift
-CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift
-CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
-CadenceTests/CadenceSaveCommitDisciplineTests.swift
 ```
+
+### LEASE RETIRED 2026-10-05 — the twenty-one T-3003 paths are out, because the work landed
+
+`52a6b408` integrated `codex/data-safety-audit-fixes` and `d17fac9a` closed [[T-3003]] on top of it.
+The eighteen production paths and the three narrowly granted guard files are struck; **the four
+standing globs above are untouched**, `CadenceTests/CadenceCodex*.swift` among them — it is Codex's
+reserved namespace and it is where this very branch's `CadenceCodexBackupAuditTests.swift`,
+`CadenceCodexEventNoteResolutionTests.swift` and `CadenceCodexWidgetReopenTests.swift` landed, so
+dropping it would strand three files that are now on main.
+
+Asserted as a **set equality**, not a line count: the patterns remaining are exactly
+`Cadence/iOS/iOSList*.swift`, `Cadence/Shared/CadenceTypography.swift`,
+`CadenceTests/CadenceTypographyScaleTests.swift` and `CadenceTests/CadenceCodex*.swift`.
+
+**Rebuilt from `git show HEAD:docs/CODEX_WORKTREE.md`, never from a copy read earlier in the
+session** — a previous agent nearly revoked a live grant that way, and a lease file is exactly the
+document where a stale base silently re-grants or silently revokes. The branch itself never touched
+this file, so nothing here was taken from a writer holding its own lease: a writer that can edit the
+fence can widen its own lease, and that hunk would have been declined had it existed.
+
+The three conditional grants were checked as honoured before retirement, not after:
+`markTodo` gained the zero-pin on its old spelling rather than only moving to `commitMarkTodo`;
+the popover `SaveSurface` moved to `finishCommittedEdit()` **together with** the coverage pinning
+both committing callers and the finisher's single `onChanged()`; and exactly four stale exemptions
+were deleted with the detector, the "Exemptions rot" guard and an EMPTY `reportExemptions` intact.
 
 ### LEASE RETIRED 2026-10-05 — the nineteen T-1466 paths are out, because the work landed
 
