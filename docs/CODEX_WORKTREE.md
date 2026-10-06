@@ -49,10 +49,6 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
-Cadence/iOS/iOSMarkdownStylingLineSupport.swift
-Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift
-Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift
-Cadence/macOS/Editor/MarkdownEditorLayoutManager.swift
 Cadence/Services/PersistenceController.swift
 Cadence/Shared/CadenceEventNoteSupport.swift
 Cadence/iOS/iOSCalendarManager.swift
@@ -73,6 +69,25 @@ Cadence/macOS/Views/ListNotesSupportViews.swift
 Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift
 CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift
 ```
+
+### LEASE RETIRED 2026-10-05 — the four T-1465 editor paths are out, because the work landed
+
+`36ef5e04` landed the continuous quote rail. `codex-land.sh review codex/continuous-quote-rail` now
+reports the four editor sources as already in main, and the two paths it still refuses are the two
+the coordinator deliberately resolved differently rather than taking from the branch:
+`CadenceTests/CadenceRealTreeSweepManifest.txt`, which is generated and was re-derived after
+integrating rather than taken, and this file, whose lease self-grant was declined for the second
+branch running. The `CODEX-INBOX-ID-CLASH` on T-1465 that it also prints is the consequence of the
+id having been filed in `b802afc5` before the code, not a blocker.
+
+Retired immediately rather than left standing, because the grant below said it would be, and
+because this file's own warning is the thing [[T-2069]] and [[T-2058]] are about: *a lease granting
+paths nobody is working on is a lease that will eventually be believed.*
+
+**Nothing else was touched.** The four standing globs are unchanged, `CadenceTests/CadenceCodex*.swift`
+among them, and **all nineteen [[T-3003]] paths stay** — that grant landed in `220b0b91`/`c4eedfcb`
+*while this landing was in flight*, so this retirement was rebuilt on HEAD rather than written from
+the copy that was read before it, which would have silently revoked a live lease.
 
 ### LEASE WIDENED 2026-10-05 — four editor paths for [[T-1465]], the continuous quote rail
 
