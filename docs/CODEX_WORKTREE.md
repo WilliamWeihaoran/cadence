@@ -69,6 +69,7 @@ Cadence/macOS/Views/ListNotesSupportViews.swift
 Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift
 CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift
 CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
+CadenceTests/CadenceSaveCommitDisciplineTests.swift
 ```
 
 ### LEASE RETIRED 2026-10-05 — the nineteen T-1466 paths are out, because the work landed
@@ -747,6 +748,29 @@ finisher, not that the user is told once after the commit lands. Codex states it
 both committing callers and the finisher's single `onChanged()`. **The re-point is granted only
 with that coverage in the same change** — without it this is a weakening wearing the shape of a
 re-point, which is the same trap the lifecycle grant above names.
+
+**Retire this path with the rest of T-3003's** when the ticket lands.
+
+### LEASE WIDENED 2026-10-05 — the save-commit discipline suite for [[T-3003]], FOUR exemption entries only
+
+Granted at the owner's instruction. All four production files this touches were already in the
+T-3003 block; these are the exemptions that named them.
+
+**The four permitted removals, verified present before granting.**
+`CadenceSaveCommitRule.existenceExemptions` — `toggleEmbeddedTask` under
+`Cadence/macOS/Views/ListNotesSupportViews.swift` (`:1896`), `NoteEditorPane.swift` (`:1897`) and
+`NotePanel.swift` (`:1898`); and `CadenceSaveCommitRule.commitReachExemptions` — `setStatus` under
+`Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift` (`:2096`).
+
+**Everything else holds.** The detector itself, every other exemption entry, the six `allowed:`
+call sites, and — named because it is what makes this safe — the **"Exemptions rot" guard at
+`:1748`**, which is the thing that would fail if one of these four were still needed. That guard is
+the evidence for a removal here; weakening or re-pointing it would remove the only check that an
+exemption deletion is honest. `reportExemptions` stays **EMPTY**.
+
+**Removing a stale exemption is strengthening, not weakening** — it is the opposite of the trap the
+two grants above name. An exemption is a hole in the detector; closing four of them means four more
+call sites are now policed. That is why this one carries no further condition.
 
 **Retire this path with the rest of T-3003's** when the ticket lands.
 
