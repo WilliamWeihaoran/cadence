@@ -613,7 +613,7 @@ struct CadenceArchiveImportEntryPointTests {
     /// tasks" is the type's name and "Tasks" is the app's word for the same thing.
     @Test func theEntityNamerOverridesTasksAndPluralisesTheAwkwardEndings() {
         #expect(CadenceArchiveImportPresentation.entityTitle("AppTask") == "Tasks")
-        #expect(CadenceArchiveImportPresentation.entityTitle("HabitCompletion") == "Habit completions")
+        #expect(CadenceArchiveImportPresentation.entityTitle("HabitCompletion") == "Retained legacy records")
         #expect(CadenceArchiveImportPresentation.entityTitle("SavedLink") == "Saved links")
         #expect(CadenceArchiveImportPresentation.entityTitle("MarkdownImageAsset") == "Markdown image assets")
         // Consonant + y pluralises to -ies; a vowel before it does not.

@@ -1,13 +1,13 @@
 # Cadence
 
-Cadence is a native SwiftUI productivity app for planning work across tasks, notes, calendars, goals, habits, and focus sessions. The macOS app is the primary product surface today, with a large iOS/iPadOS surface built on the same models.
+Cadence is a native SwiftUI productivity app for planning work across tasks, notes, calendars, and focus sessions. The macOS app is the primary product surface today, with a large iOS/iPadOS surface built on the same models.
 
 ## What Cadence Does
 
 - Capture and organize tasks across inbox, areas, projects, sections, kanban boards, and calendar timelines.
 - Schedule tasks on a day timeline, and create Apple Calendar events alongside them. Scheduling a task does not create an event for it — the two are independent.
 - Write unified markdown notes for daily, weekly, permanent, list, and meeting contexts.
-- Track goals, habits, focus sessions, and progress signals.
+- Track focus sessions and task progress.
 - Search across tasks, notes, lists, calendar-linked meeting notes, and other app content.
 - Use optional AI actions with a user-provided OpenAI API key. Requests go to OpenAI's API; nothing runs on device.
 - Expose read/write automation surfaces through the bundled Cadence MCP integration.
@@ -15,8 +15,12 @@ Cadence is a native SwiftUI productivity app for planning work across tasks, not
 ## Platform Status
 
 - macOS: primary, fully featured app surface.
-- iOS/iPadOS: a large, actively-developed surface (79 files) with an adaptive root shell — an iPad sidebar layout at regular width, a tab bar at compact width — covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, and Settings. Not at full feature parity with macOS by design.
+- iOS/iPadOS: a large, actively-developed surface with an adaptive root shell — an iPad sidebar layout at regular width, a tab bar at compact width — covering Today, Calendar, Tasks, Focus, Notes, Lists, Search, and Settings. Not at full feature parity with macOS by design.
 - Widgets: Today task widget support is included.
+
+Goals, habits, and nested milestones are not current app features. Their models and stored
+relationships remain in the backend for compatibility and possible future restoration; archives
+continue to preserve those records.
 
 ## Tech Stack
 

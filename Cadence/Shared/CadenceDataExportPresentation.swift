@@ -54,7 +54,7 @@ nonisolated enum CadenceDataExportPresentation {
     static let title = "Export an Archive"
 
     static let description = """
-        One JSON file holding every task, list, note, goal, habit, tag, saved link and image \
+        One JSON file holding every task, list, note, tag, saved link, image and retained legacy record \
         Cadence stores, readable in any text editor. Keep it somewhere outside Cadence: automatic \
         backups live inside the app and are deleted when Cadence's data is. Import an Archive reads \
         one back in — but an import adds and never deletes, so this file is a copy to keep rather \

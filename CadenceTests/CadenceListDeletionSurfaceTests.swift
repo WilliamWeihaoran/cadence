@@ -208,7 +208,7 @@ struct CadenceListDeletionSurfaceTests {
         // Images sit between the notes they live in and the links, and are worded exactly as the
         // note confirmation words them (T-433).
         #expect(full.lostItemLines == [
-            "2 areas", "3 projects", "1 goal", "4 habits", "5 tasks", "1 note",
+            "2 areas", "3 projects", "5 retained legacy records", "5 tasks", "1 note",
             "6 embedded images", "2 saved links"
         ])
 

@@ -420,9 +420,6 @@ struct iOSTaskRow: View {
             iOSTaskRowRepeatChip(task: task, pendingRecurrenceRule: $pendingRecurrenceRule)
         }
 
-        if let goal = task.goal {
-            iOSTaskRowGoalChip(task: task, goal: goal)
-        }
     }
 
     /// Every row that names its list gets the chip — **including an Inbox task**, which reads

@@ -193,7 +193,7 @@ nonisolated enum CadenceNotificationSettingsCopy {
 
     /// Says what is scheduled and that it stays on the device. "Locally" is load-bearing: nothing
     /// here goes through a push server, and the reader has just been asked for a system permission.
-    static let remindersToggleDetail = "A task's scheduled start and due date, and a habit's reminder time, notify you locally."
+    static let remindersToggleDetail = "A task's scheduled start and due date notify you locally."
 
     /// Settings → Notifications, with permission explicitly denied. Kept as a demand — T-694's
     /// urgency call — because that state genuinely is a fault the reader has to go and fix.
@@ -204,7 +204,7 @@ nonisolated enum CadenceNotificationSettingsCopy {
     /// [[T-543]] fixed for the calendar card's glyph and sentence, still open for this title.
     static let connectOfferTitle = "Connect Notifications"
 
-    static let accessRequiredDetail = "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."
+    static let accessRequiredDetail = "Allow Cadence to notify you about scheduled tasks and due dates."
 
     /// The button under `accessRequiredDetail`. Names the thing it turns on rather than the
     /// permission dialog it opens, so it still reads correctly on the second press, when the

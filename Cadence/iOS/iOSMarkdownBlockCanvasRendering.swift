@@ -1,9 +1,10 @@
 #if os(iOS)
+import SwiftUI
 import UIKit
 
 extension NSAttributedString.Key {
     /// A pre-rendered canvas to paint over a hidden run — a table, a fenced code block, a divider,
-    /// an image, a task embed, a quote bar, a checkbox.
+    /// an image, a task embed, a checkbox.
     /// `nonisolated` because the layout manager reads it from a `nonisolated` drawing override; it
     /// is an immutable key, so there is nothing here for the main actor to protect.
     nonisolated static let cadenceMarkdownBlockCanvas = NSAttributedString.Key("CadenceMarkdownBlockCanvas")
@@ -33,7 +34,7 @@ final class iOSMarkdownBlockCanvas: NSObject {
     let image: UIImage
     /// `true` for a canvas that owns its whole line — table, code block, divider, image, task
     /// embed. It is drawn against the line fragment, which is the box the paragraph style sized.
-    /// `false` for an inline marker — a quote bar or a checkbox — which is drawn at the glyph it
+    /// `false` for an inline marker — a checkbox — which is drawn at the glyph it
     /// replaces, inside a line whose other text still shows.
     let isBlock: Bool
     /// Nudge from the natural position, matching the `bounds.origin.y` the attachments used to set.
@@ -107,6 +108,7 @@ final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
         guard let storage = textStorage else { return }
 
         let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        drawQuoteRails(in: charRange, storage: storage, origin: origin)
         drawTables(in: charRange, storage: storage, origin: origin)
         storage.enumerateAttribute(.cadenceMarkdownBlockCanvas, in: charRange, options: []) { value, range, _ in
             guard let canvas = value as? iOSMarkdownBlockCanvas, range.length > 0 else { return }
@@ -127,9 +129,9 @@ final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
                 .offsetBy(dx: origin.x, dy: origin.y)
             } else {
                 // The marker's glyph is hidden and therefore ~zero-width, so its location is where
-                // the line's *text* now starts — draw there and the bar or checkbox sits on top of
+                // the line's *text* now starts — draw there and the checkbox sits on top of
                 // the first letter. It goes in the head indent instead, immediately before the
-                // text, which is the space the `> ` or `- [ ] ` prefix used to occupy.
+                // text, which is the space the `- [ ] ` prefix used to occupy.
                 let location = self.location(forGlyphAt: glyphRange.location)
                 let x = max(0, fragment.minX + location.x - size.width - Self.inlineMarkerGap)
 
@@ -148,6 +150,20 @@ final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
             }
 
             canvas.image.draw(in: rect)
+        }
+    }
+
+    nonisolated private func drawQuoteRails(in charRange: NSRange, storage: NSTextStorage, origin: CGPoint) {
+        for run in iOSMarkdownQuoteRailLayout.runs(in: storage, intersecting: charRange) {
+            let glyphs = glyphRange(forCharacterRange: run.range, actualCharacterRange: nil)
+            guard glyphs.length > 0 else { continue }
+            let first = lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+            let last = lineFragmentRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil)
+            let location = location(forGlyphAt: glyphs.location)
+            for (index, rect) in run.barRects(firstFragment: first, lastFragment: last, markerLocation: location).enumerated() {
+                UIColor(Theme.blue).withAlphaComponent(index == 0 ? 0.78 : 0.38).setFill()
+                UIBezierPath(roundedRect: rect.offsetBy(dx: origin.x, dy: origin.y), cornerRadius: 1.5).fill()
+            }
         }
     }
 

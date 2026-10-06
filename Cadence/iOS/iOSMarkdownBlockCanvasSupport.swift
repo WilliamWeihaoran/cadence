@@ -1,26 +1,49 @@
-#if os(iOS)
-import SwiftUI
-import UIKit
+import Foundation
+import CoreGraphics
 
-struct iOSMarkdownQuoteMarkerLayoutInfo {
+// Kept outside the UIKit boundary so range grouping and rail geometry are executable in tests.
+nonisolated struct iOSMarkdownQuoteRailLayout: Equatable {
     let depth: Int
+    let range: NSRange
 
-    func renderedMarker() -> UIImage {
-        let width = CGFloat(8 + max(0, depth - 1) * 4)
-        let size = CGSize(width: width, height: 18)
-        let format = UIGraphicsImageRendererFormat()
-        format.opaque = false
+    static func taggedRange(for lineRange: NSRange, storageLength: Int) -> NSRange {
+        NSRange(location: lineRange.location,
+                length: min(lineRange.length + 1, storageLength - lineRange.location))
+    }
 
-        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            for index in 0..<max(1, depth) {
-                let x = CGFloat(index * 4)
-                let path = UIBezierPath(roundedRect: CGRect(x: x, y: 1, width: 3, height: 16), cornerRadius: 1.5)
-                UIColor(Theme.blue).withAlphaComponent(index == 0 ? 0.78 : 0.38).setFill()
-                path.fill()
-            }
+    static func runs(in storage: NSAttributedString, intersecting visibleRange: NSRange) -> [Self] {
+        let fullRange = NSRange(location: 0, length: storage.length)
+        let visible = NSIntersectionRange(fullRange, visibleRange)
+        guard visible.length > 0 else { return [] }
+        var runs: [Self] = []
+        storage.enumerateAttribute(.cadenceMarkdownQuoteDepth, in: visible) { value, range, _ in
+            guard let depth = value as? Int, depth > 0,
+                  (storage.attribute(.cadenceMarkdownFrontmatter, at: range.location, effectiveRange: nil) as? Bool) != true
+            else { return }
+            // A dirty rect can start halfway through a block. Recover its full range before
+            // measuring, otherwise partial redraws give the rail spurious rounded ends.
+            var wholeRange = NSRange(location: 0, length: 0)
+            _ = storage.attribute(.cadenceMarkdownQuoteDepth, at: range.location,
+                                  longestEffectiveRange: &wholeRange, in: fullRange)
+            let run = Self(depth: depth, range: wholeRange)
+            if runs.last != run { runs.append(run) }
+        }
+        return runs
+    }
+
+    func barRects(firstFragment: CGRect, lastFragment: CGRect, markerLocation: CGPoint) -> [CGRect] {
+        let markerWidth = CGFloat(8 + max(0, depth - 1) * 4)
+        let x = max(0, firstFragment.minX + markerLocation.x - markerWidth - 6)
+        return (0..<max(1, depth)).map { index in
+            CGRect(x: x + CGFloat(index * 4), y: firstFragment.minY + 1,
+                   width: 3, height: max(0, lastFragment.maxY - firstFragment.minY - 2))
         }
     }
 }
+
+#if os(iOS)
+import SwiftUI
+import UIKit
 
 struct iOSMarkdownCheckboxLayoutInfo {
     let isDone: Bool
