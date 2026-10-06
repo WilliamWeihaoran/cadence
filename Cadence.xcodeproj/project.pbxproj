@@ -56,10 +56,7 @@
 		A10000002FCE000000000236 /* Cadence/Shared/CadenceSectionEditingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000233 /* Cadence/Shared/CadenceSectionEditingSupport.swift */; };
 		A10000002FCE000000000238 /* Cadence/Shared/CadenceDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000237 /* Cadence/Shared/CadenceDefaults.swift */; };
 		A10000002FCE00000000023A /* Cadence/Shared/CadenceSavedLinkPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000239 /* Cadence/Shared/CadenceSavedLinkPersistence.swift */; };
-		A10000002FCE00000000023C /* Cadence/Shared/CadenceTrackingMutationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000023B /* Cadence/Shared/CadenceTrackingMutationSupport.swift */; };
-		A10000002FCE00000000023E /* Cadence/Shared/GoalAssignmentRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000023D /* Cadence/Shared/GoalAssignmentRules.swift */; };
 		A10000002FCE000000000240 /* Cadence/Shared/CadenceOrderAllocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000023F /* Cadence/Shared/CadenceOrderAllocation.swift */; };
-		A10000002FCE000000000242 /* Cadence/Shared/CadencePluralization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000241 /* Cadence/Shared/CadencePluralization.swift */; };
 		A10000002FCE000000000244 /* Cadence/Shared/CadenceListNoteFiling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000243 /* Cadence/Shared/CadenceListNoteFiling.swift */; };
 		A10000002FCE0000000002F1 /* Cadence/Models/SidebarLayoutPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE0000000001F1 /* Cadence/Models/SidebarLayoutPreference.swift */; };
 		A10000002FCE0000000002F2 /* Cadence/Models/LookPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE0000000001F2 /* Cadence/Models/LookPreference.swift */; };
@@ -692,10 +689,7 @@
 				A10000002FCE000000000236 /* Cadence/Shared/CadenceSectionEditingSupport.swift in Sources */,
 				A10000002FCE000000000238 /* Cadence/Shared/CadenceDefaults.swift in Sources */,
 				A10000002FCE00000000023A /* Cadence/Shared/CadenceSavedLinkPersistence.swift in Sources */,
-				A10000002FCE00000000023C /* Cadence/Shared/CadenceTrackingMutationSupport.swift in Sources */,
-				A10000002FCE00000000023E /* Cadence/Shared/GoalAssignmentRules.swift in Sources */,
 				A10000002FCE000000000240 /* Cadence/Shared/CadenceOrderAllocation.swift in Sources */,
-				A10000002FCE000000000242 /* Cadence/Shared/CadencePluralization.swift in Sources */,
 				A10000002FCE000000000244 /* Cadence/Shared/CadenceListNoteFiling.swift in Sources */,
 				A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */,
 				A10000002FCE00000000021B /* CadenceMCPToolDefinitions.swift in Sources */,
