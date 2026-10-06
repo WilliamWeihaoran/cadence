@@ -331,7 +331,7 @@ struct iOSTodayView: View {
     private var todayTaskColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             iPadTodayTaskHeader(
-                eyebrow: DateFormatters.longDate.string(from: Date()),
+                day: Date(),
                 title: "Today",
                 summary: todaySummary,
                 sortMode: sortModeBinding,

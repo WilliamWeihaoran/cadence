@@ -824,8 +824,25 @@ struct CadenceTodayUnificationTests {
             of: "DateFormatters.longDate.string",
             at: [
                 "Cadence/macOS/Views/TasksPanelSupportViews.swift": 1,
-                "Cadence/iOS/iOSTodayView.swift": 1,
+                // T-1880: the iPad header formats its own day, so the spelling moved out of
+                // `iOSTodayView`, which now hands over the `Date` itself.
+                "Cadence/iOS/iOSTodayView.swift": 0,
+                "Cadence/iOS/iPadTodaySupportViews.swift": 1,
                 "Cadence/iOS/iOSTodayCompactViews.swift": 1,
+            ]
+        )
+        // And it formats BOTH spellings from that one value: the header reads no clock of its own,
+        // so the long and the compact eyebrow cannot name two different days across midnight.
+        try expectCallSites(
+            of: "Date()",
+            at: [
+                "Cadence/iOS/iPadTodaySupportViews.swift": 0,
+            ]
+        )
+        try expectCallSites(
+            of: "string(from: day)",
+            at: [
+                "Cadence/iOS/iPadTodaySupportViews.swift": 2,
             ]
         )
     }

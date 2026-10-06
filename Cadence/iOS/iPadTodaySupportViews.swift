@@ -46,7 +46,7 @@ import SwiftUI
 /// counts for. The 92pt fixed height went with the hand-tuned type: the row's content is a 44pt
 /// control against two lines of text either way, so it does not need pinning to stay still.
 struct iPadTodayTaskHeader: View {
-    let eyebrow: String
+    let day: Date
     let title: String
     let summary: CadenceTodaySummary
     @Binding var sortMode: CadenceTaskSortMode
@@ -60,18 +60,17 @@ struct iPadTodayTaskHeader: View {
         CadenceTaskSurfaceOptions.options(for: .today)
     }
 
-    /// The same day as `eyebrow`, spelled short, for the middle rung of the header's narrowing
-    /// ladder — "Tue, Sep 29" against "Tuesday, September 29".
-    ///
-    /// **Derived here rather than taken from the caller, and that is a lease boundary rather than a
-    /// design (T-1702).** `iOSTodayView.todayTaskColumn` builds `eyebrow` as
-    /// `DateFormatters.longDate.string(from: Date())`, so the two spellings read `Date()` a few
-    /// microseconds apart in the same body evaluation instead of sharing one value; the file that
-    /// would let them share it was under another agent's lease when this landed. [[T-1880]] takes
-    /// the day itself as one parameter and deletes this. The failure mode it leaves open is one
-    /// frame straddling midnight, which the call site already has on its own.
+    /// Both spellings of the header's day, from the one `day` the caller read — "Tuesday,
+    /// September 29" for the eyebrow proper and "Tue, Sep 29" for the middle rung of the header's
+    /// narrowing ladder. They used to be two reads of `Date()` a few microseconds apart, the long
+    /// one at the call site and the short one here, so one frame straddling midnight could spell
+    /// two different days (T-1702 left it, [[T-1880]] closed it). The header reads no clock.
+    private var eyebrow: String {
+        DateFormatters.longDate.string(from: day)
+    }
+
     private var compactEyebrow: String {
-        DateFormatters.compactLongDate.string(from: Date())
+        DateFormatters.compactLongDate.string(from: day)
     }
 
     var body: some View {
