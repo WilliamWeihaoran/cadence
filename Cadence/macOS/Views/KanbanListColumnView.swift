@@ -42,11 +42,6 @@ struct TaskListKanbanColumn: View {
         tasks.taskSorted(by: sortField, direction: sortDirection)
     }
 
-    /// Hovering a card must not let the board resort rows out from under the cursor.
-    private var sortedTasks: [AppTask] {
-        applyFrozenTaskOrder(unfrozenSortedTasks, frozen: frozenTasks)
-    }
-
     private var columnHoverID: String {
         switch container {
         case .inbox:
@@ -59,21 +54,23 @@ struct TaskListKanbanColumn: View {
     }
 
     var body: some View {
-        columnBody
+        let naturalTasks = unfrozenSortedTasks
+        let displayTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTasks)
+        return columnBody(tasks: displayTasks)
             .background {
                 KanbanFreezeObserver(
                     frozenTasks: $frozenTasks,
-                    columnTaskIDs: Set(unfrozenSortedTasks.map(\.id)),
-                    capturedTasks: unfrozenSortedTasks
+                    columnTaskIDs: Set(naturalTasks.map(\.id)),
+                    capturedTasks: naturalTasks
                 )
             }
     }
 
-    private var columnBody: some View {
+    private func columnBody(tasks: [AppTask]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            header(count: tasks.count)
 
-            columnTaskScroll
+            columnTaskScroll(tasks: tasks)
         }
         .kanbanColumnChrome(tint: color, isTargeted: isTargeted)
         .zIndex(isTargeted ? 2 : 0)
@@ -94,13 +91,16 @@ struct TaskListKanbanColumn: View {
                 hoveredKanbanColumnManager.endHovering(id: columnHoverID)
             }
         }
+        .onDisappear {
+            hoveredKanbanColumnManager.endHovering(id: columnHoverID)
+        }
     }
 
-    private var header: some View {
+    private func header(count: Int) -> some View {
         CadenceBoardColumnHeader(
             dotColor: color,
             title: title,
-            count: sortedTasks.count,
+            count: count,
             trailing: { EmptyView() },
             detail: {
                 if let reorderFailureNotice {
@@ -116,19 +116,20 @@ struct TaskListKanbanColumn: View {
     /// List columns intentionally do *not* name a section — only section columns do — so the
     /// composer opens on the column's list with the default section, which is what this column's
     /// old create-sheet call did by omission.
-    private var columnTaskScroll: some View {
+    private func columnTaskScroll(tasks: [AppTask]) -> some View {
         KanbanColumnScroll(
             isColumnHovered: isHovered,
             add: .compose(.column(container: container, sectionName: TaskSectionDefaults.defaultName)),
-            isComposing: $isComposing
+            isComposing: $isComposing,
+            defersOffscreenCards: true
         ) {
-            taskCards
+            taskCards(tasks: tasks)
         }
     }
 
     @ViewBuilder
-    private var taskCards: some View {
-        ForEach(sortedTasks) { task in
+    private func taskCards(tasks: [AppTask]) -> some View {
+        ForEach(tasks) { task in
             KanbanDraggableCard(
                 task: task,
                 showsDropIndicator: dragOverTaskID == task.id,
