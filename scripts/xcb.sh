@@ -3583,6 +3583,49 @@ selftest_only_testing() {
     $( [[ "$rw_control" == *INJECTED-BY-A-MID-RUN-EDIT* || "$rw_control" == *"/scripts/xcb.sh:"<->* \
        || $(print -r -- "$rw_control" | grep -c '== xcb result') != 1 ]] && print 1 || print 0 ) "$rw_control"
 
+  say ""
+  say " 15. the test-host lease ends with the primary run, not with the postflight (T-2086)"
+  # A real `xcb.sh <id> test` against a stub lock whose `release` records WHERE IN THE RUN'S OWN
+  # OUTPUT it was called: whether the result block had started, and whether the closing release-dd
+  # hint (the last thing a run prints) was already out. The iOS leg is carved out, so the only
+  # releases left are the early one and the EXIT trap -- an early release removed reads end=1.
+  local lh_out="" lh_calls=""
+  mkdir -p "$ws/lh/root/scripts" "$ws/lh/tmp"
+  cp -- "$here" "$ws/lh/root/scripts/xcb.sh"
+  print -rl -- '#!/bin/zsh' \
+    'if [[ "$1" == release ]]; then' \
+    '  r=0; e=0' \
+    '  grep -qF "== xcb result" "$FAKE_LEASE_OUT" 2>/dev/null && r=1' \
+    '  grep -qF "when you are done" "$FAKE_LEASE_OUT" 2>/dev/null && e=1' \
+    '  print -r -- "release $2 result=$r end=$e" >> "$FAKE_LEASE_CALLS"' \
+    '  [[ -n "${FAKE_LEASE_REFUSE:-}" ]] && { print -r -- "REFUSING: stub"; exit 1 }' \
+    'fi' \
+    'exit 0' > "$ws/lh/root/scripts/test-host-lock.sh"
+  chmod +x "$ws/lh/root/scripts/test-host-lock.sh"
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- "Command line invocation:"' \
+    'print -r -- "✔ Test aProbe() passed after 0.001 seconds."' \
+    'print -r -- "** TEST SUCCEEDED **"' > "$ws/lh/xcodebuild"
+  chmod +x "$ws/lh/xcodebuild"
+  lh_run() {  # $1 = FAKE_LEASE_REFUSE value
+    : > "$ws/lh/calls"; : > "$ws/lh/out"
+    XCODEBUILD="$ws/lh/xcodebuild" TMPDIR="$ws/lh/tmp/" CADENCE_STALL_POLL=1 CADENCE_SKIP_IOS_LEG=1 \
+      FAKE_LEASE_OUT="$ws/lh/out" FAKE_LEASE_CALLS="$ws/lh/calls" FAKE_LEASE_REFUSE="$1" \
+      CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS= \
+      zsh "$ws/lh/root/scripts/xcb.sh" lhprobe test -scheme Cadence -destination 'platform=macOS' \
+      -only-testing:CadenceTests -derivedDataPath "$ws/lh/tmp/cadence-dd-lhprobe" >"$ws/lh/out" 2>&1
+    lh_out="$(cat "$ws/lh/out" 2>/dev/null)"; lh_calls="$(cat "$ws/lh/calls" 2>/dev/null)"
+  }
+  lh_run ""
+  check "the lease is released ONCE, before the result block is printed (exit trap disarmed)" \
+    $( [[ "$lh_calls" == "release xcb-lhprobe result=0 end=0" ]] && print 1 || print 0 ) "calls: $lh_calls"
+  check "...and the result block says so" \
+    $( [[ "$lh_out" == *"test-host lock: released when xcodebuild exited"* && "$lh_out" == *"XCODEBUILD_EXIT=0"* ]] && print 1 || print 0 ) "$lh_out"
+  lh_run 1
+  check "a refused early release leaves the exit trap armed: it is retried after the whole postflight" \
+    $( [[ "$lh_calls" == $'release xcb-lhprobe result=0 end=0\nrelease xcb-lhprobe result=1 end=1' \
+         && "$lh_out" == *"test-host lock: NOT released early (REFUSING: stub)"* ]] && print 1 || print 0 ) "calls: $lh_calls | $lh_out"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -4030,6 +4073,7 @@ fi
 # that could reach a host still queues. It is NOT the `raw` escape hatch: `raw` skips the lock on
 # the caller's word, this skips it on a reading of the selection, and a run that skips it here is
 # still a run the zero-test, warning and suite guards all gate.
+LOCK_HELD=0
 if [[ "$ACTION" == "test" ]] && ! selection_launches_an_app "${only_testing[@]}"; then
   say "  test-host lock: not taken -- this selection launches no app (T-1933)."
 elif [[ "$ACTION" == "test" ]]; then
@@ -4037,6 +4081,28 @@ elif [[ "$ACTION" == "test" ]]; then
   trap "\"$ROOT_DIR/scripts/test-host-lock.sh\" release 'xcb-$ID'" EXIT INT TERM
   LOCK_HELD=1
 fi
+
+# Give the lease back as soon as the primary xcodebuild has exited (T-2086). The lease guards the
+# app-group container two live test hosts share (T-236), and that hazard ends with the run: no
+# postflight step starts a host or opens the container. The reports read this run's own log, the
+# session dictionary and `pmset`; `last-green` fingerprints the git tree; the DD-IN-USE checks read
+# the process list, and a same-id sibling never needed the lease to build into this DerivedData
+# (a `build` takes none) -- the pre-leg check is what refuses that. Held to script exit, a red run
+# kept siblings queued through every report, the ~24 s `pmset -g log` read included. Idempotent;
+# when `release` fails the EXIT trap is left armed so the exit retries it. The trap itself is
+# cleared by the CALLER, at top level: in zsh `trap - EXIT` inside a function names the function's
+# own exit, so the script's trap survived it and released a second time (caught by selftest 15).
+LEASE_NOTE=""
+give_back_test_host_lease() {
+  (( ${LOCK_HELD:-0} )) || return 0
+  local out
+  if out="$("$ROOT_DIR/scripts/test-host-lock.sh" release "xcb-$ID" 2>&1)"; then
+    LOCK_HELD=0
+    LEASE_NOTE="released when xcodebuild exited, before this postflight (T-2086)"
+  else
+    LEASE_NOTE="NOT released early ($(print -r -- "$out" | tail -1)); the exit trap retries (T-2086)"
+  fi
+}
 
 # --- the T-117 stall watchdog ------------------------------------------------
 # Reports, never kills. `sample` on our own child is what turns silence into a verdict.
@@ -4116,11 +4182,13 @@ wait "$XCB_PID"; STATUS=$?
 RUN_END_EPOCH=$(date +%s)
 kill "$WATCHDOG_PID" 2>/dev/null
 [[ -n "$CAFFEINATE_PID" ]] && kill "$CAFFEINATE_PID" 2>/dev/null
+give_back_test_host_lease; (( LOCK_HELD )) || trap - EXIT INT TERM
 
 # --- postflight --------------------------------------------------------------
 say ""
 say "== xcb result ($ID) =="
 say "  XCODEBUILD_EXIT=$STATUS"
+[[ -n "$LEASE_NOTE" ]] && say "  test-host lock: $LEASE_NOTE"
 XCODEBUILD_STATUS=$STATUS   # before any gate below can overwrite STATUS (T-2021 reads the raw one)
 # Both counts spelled the way AGENTS.md requires, and the denominator with them (T-1147): a loose
 # `grep -c 'error:'` counts a test failure whose message contains the word and reads a real kill as
@@ -4187,13 +4255,9 @@ elif [[ "$IOS_LEG_SKIP" == DD-IN-USE ]]; then
 elif [[ -n "$IOS_LEG_SKIP" ]]; then
   say "  ios leg: skipped ($IOS_LEG_SKIP) -- $IOS_LEG_WHY (T-1956)"
 else
-  # The leg needs no test host. Give the lease back now rather than hold it across a build that
-  # was measured at 88 s cold (T-1921) while siblings queue FIFO behind it.
-  if (( ${LOCK_HELD:-0} )); then
-    "$ROOT_DIR/scripts/test-host-lock.sh" release "xcb-$ID" >/dev/null 2>&1
-    trap - EXIT INT TERM
-    LOCK_HELD=0
-  fi
+  # The leg needs no test host (88 s cold, T-1921). The lease is normally already back since the
+  # primary exited (T-2086); this second call only matters when that release failed.
+  give_back_test_host_lease; (( LOCK_HELD )) || trap - EXIT INT TERM
   IOS_LOG="${TMP_BASE}cadence-xcb-$ID-ios.$(date +%Y%m%d-%H%M%S)-$$.log"
   ln -sf "${IOS_LOG:t}" "${TMP_BASE}cadence-xcb-$ID-ios.log" 2>/dev/null
   ios_args=("${(@f)$(ios_leg_args "${args[@]}")}")
