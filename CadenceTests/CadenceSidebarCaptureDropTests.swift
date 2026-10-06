@@ -170,4 +170,46 @@ struct CadenceSidebarCaptureDropTests {
         #expect(region.contains("CadenceTaskDropSupport.newListDropKey(contextID: nil)"),
                 "the lists region stopped accepting a drop when it holds no sections — T-1113's shape")
     }
+
+    /// **The other end of "inherited", and nothing held it.** Everything above pins the key and
+    /// the `CadenceCaptureCreation` it resolves to; the sheet that key opens is where the group
+    /// actually becomes a stored relationship, and a break at either of this test's two points
+    /// looks *correct on screen* — which is the failure mode T-2054 was filed against.
+    ///
+    /// Two links, and each one alone is the whole feature:
+    ///
+    /// 1. `load()` has to copy `seededContext` into `selectedContextID`, or the editor opens on
+    ///    "No context" and the group the finger came down on is simply discarded. The sheet still
+    ///    appears, the list is still created, and it lands in no group.
+    /// 2. `save()`'s `.newArea` arm has to construct the `Area` **with** `selectedContext`, or the
+    ///    picker is decoration: it would state the dropped group, the user would see it stated,
+    ///    and the row would appear under "Other".
+    ///
+    /// Both arms of `load()` are asserted rather than `.newArea` alone, because the remedy this
+    /// ticket leaves open — one new-list mode with an Area/Project toggle — merges them, and a
+    /// test that only knew about `.newArea` would go quiet over the half that moved.
+    ///
+    /// Scoped to the two declarations rather than counted over the file: a `selectedContext` that
+    /// migrated from `save()` into some helper would keep a whole-file count green.
+    @Test func theDroppedGroupReachesTheEditorAndThenTheStoredList() throws {
+        let code = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSListEditorViews.swift"))
+
+        let load = try cadenceFunctionBody("private func load()", in: code)
+        #expect(load.contains("selectedContextID = seededContextValue"),
+                "a dropped context group no longer reaches the list editor's own context control")
+        // Non-vacuity, and the merge guard: today there are two new-list arms and both seed.
+        #expect(load.components(separatedBy: "selectedContextID = seededContextValue").count - 1 == 2,
+                "a new-list arm of the editor stopped seeding the dropped group")
+
+        let save = try cadenceFunctionBody("private func save()", in: code)
+        #expect(save.contains("Area(name: trimmedName, context: selectedContext"),
+                "a list created from a sidebar drop no longer joins the group it was dropped on")
+
+        // The seed is a starting point, not a constraint: the picker must still be able to
+        // overrule it, which is what makes `selectedContextID` — rather than `seededContext` —
+        // the value `save()` reads. A `save()` that read the seed directly would pass the line
+        // above if it were spelled with `seededContext`, so the relationship is asserted here.
+        #expect(!save.contains("seededContext"),
+                "the editor's save path reads the drop's seed instead of the control the user can change")
+    }
 }
