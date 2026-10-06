@@ -662,4 +662,78 @@ struct CadenceLookPreferenceTests {
             }
         }
     }
+
+    // MARK: - T-1347: a look row this build does not fully understand
+
+    /// **A row written before the calendar column existed must not move the window.**
+    ///
+    /// This is not the hypothetical shape: every `LookPreference` already on the owner's other
+    /// devices is spelled this way, and `CD_LookPreference` reaching Production will hand each of
+    /// them to a build that now has two more keys to look for. The [[T-2076]] lesson was that the
+    /// fix which mattered was proving the *stale* record keeps the setting rather than resetting
+    /// it, so this asserts both halves at once: the keys the old row does carry are adopted, and
+    /// the two it does not carry leave the person's window exactly where they left it.
+    @Test func aLookRowFromBeforeTheCalendarColumnLeavesTheWindowAlone() throws {
+        try withTemporaryDefaults("work-hours-stale") { defaults in
+            try withTemporaryDefaults("work-hours-stale-accent") { accents in
+                defaults.set(7 * 60 + 30, forKey: CalendarWorkHoursPreferences.startMinuteKey)
+                defaults.set(16 * 60, forKey: CalendarWorkHoursPreferences.endMinuteKey)
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .iOS)
+
+                // The whole row as an older build wrote it: a task map, and no calendar column.
+                let stale = LookPreference(
+                    taskPresentationRaw: "today.mode=priority",
+                    calendarPresentationRaw: ""
+                )
+                let changed = sync.adopt(records: [stale], applyAccent: false)
+
+                #expect(
+                    changed.contains(CadencePreferenceKeys.iosTodaySortMode),
+                    "the stale row stopped carrying what it did carry"
+                )
+                #expect(!changed.contains(CalendarWorkHoursPreferences.startMinuteKey))
+                #expect(!changed.contains(CalendarWorkHoursPreferences.endMinuteKey))
+                #expect(defaults.integer(forKey: CalendarWorkHoursPreferences.startMinuteKey) == 7 * 60 + 30)
+                #expect(defaults.integer(forKey: CalendarWorkHoursPreferences.endMinuteKey) == 16 * 60)
+            }
+        }
+    }
+
+    /// **Half a window is half a window, not a reset.**
+    ///
+    /// A record can carry one of the two keys and not the other: a write that only half landed, a
+    /// build that knew one spelling, a pair dropped on the way. The absent-key rule has to hold
+    /// per key rather than per map — adopt the half that arrived, leave the half that did not —
+    /// and the band the timeline then draws has to still be a band, which is
+    /// `normalizedRange`'s job and is checked here rather than assumed.
+    @Test func halfAWorkHoursRecordLeavesTheOtherHalfWhereItIs() throws {
+        try withTemporaryDefaults("work-hours-half") { defaults in
+            try withTemporaryDefaults("work-hours-half-accent") { accents in
+                defaults.set(8 * 60, forKey: CalendarWorkHoursPreferences.startMinuteKey)
+                defaults.set(17 * 60, forKey: CalendarWorkHoursPreferences.endMinuteKey)
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+
+                let changed = sync.adopt(
+                    records: [LookPreference(calendarPresentationRaw: "workHours.start=450")],
+                    applyAccent: false
+                )
+                #expect(changed == [CalendarWorkHoursPreferences.startMinuteKey])
+                #expect(defaults.integer(forKey: CalendarWorkHoursPreferences.startMinuteKey) == 450)
+                #expect(
+                    defaults.integer(forKey: CalendarWorkHoursPreferences.endMinuteKey) == 17 * 60,
+                    "the half the record never carried was reset"
+                )
+
+                let range = CalendarWorkHoursPreferences.normalizedRange(
+                    startMinute: defaults.integer(forKey: CalendarWorkHoursPreferences.startMinuteKey),
+                    endMinute: defaults.integer(forKey: CalendarWorkHoursPreferences.endMinuteKey)
+                )
+                #expect(range == .init(startMinute: 450, endMinute: 17 * 60))
+
+                // And the half that did not arrive is still this device's to publish, so the two
+                // devices converge on a whole window rather than on half of one.
+                #expect(Store.currentCalendarMirrors(in: defaults).count == 2)
+            }
+        }
+    }
 }
