@@ -101,7 +101,7 @@ struct EventNoteEditorSheet: View {
     /// Whether Apple Calendar now holds this text. The timeline hands the sheet the live `EKEvent`
     /// it is already rendering, which skips a lookup that a churned identifier could fail.
     private func syncNativeEventNotes(_ note: Note, content: String) -> Bool {
-        if let nativeEvent {
+        if let nativeEvent, CadenceEventNoteSupport.matches(nativeEvent, identifier: note.calendarEventID) {
             return calendarManager.updateEventNotes(nativeEvent, notes: content) == nil
         }
         return EventNoteSupport.syncNativeCalendarNotes(for: note, content: content, calendarManager: calendarManager)
@@ -175,7 +175,8 @@ enum EventNoteSupport {
     /// note would wear the "not synced" notice.
     static func syncNativeCalendarNotes(for note: Note, content: String, calendarManager: CalendarManager) -> Bool {
         guard note.kind == .meeting, !note.calendarEventID.isEmpty else { return true }
-        return calendarManager.updateEventNotes(calendarEventID: note.calendarEventID, notes: content) == nil
+        guard let event = calendarManager.event(for: note) else { return false }
+        return calendarManager.updateEventNotes(event, notes: content) == nil
     }
 
     static func eventDateMetadata(from event: EKEvent) -> (dateKey: String, startMin: Int, endMin: Int) {
@@ -184,8 +185,7 @@ enum EventNoteSupport {
 
     static func backfillMetadataIfPossible(_ note: Note, calendarManager: CalendarManager) {
         guard note.kind == .meeting else { return }
-        let lookupID = CalendarEventIdentity.lookupIdentifier(from: note.calendarEventID)
-        guard let event = calendarManager.event(withIdentifier: lookupID) else { return }
+        guard let event = calendarManager.event(for: note) else { return }
         let metadata = eventDateMetadata(from: event)
         updateMetadata(
             note,

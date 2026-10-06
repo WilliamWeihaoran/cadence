@@ -756,7 +756,8 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         )
         try expectOccurrences(of: "TaskWorkflowService.markDone(", at: [path: 0])
         try expectOccurrences(of: "TaskWorkflowService.markCancelled(", at: [path: 0])
-        try expectOccurrences(of: "TaskWorkflowService.markTodo(task)", at: [path: 1])
+        try expectOccurrences(of: "TaskWorkflowService.commitMarkTodo(task, in: $0)", at: [path: 1])
+        try expectOccurrences(of: "TaskWorkflowService.markTodo(", at: [path: 0])
         // One funnel, and every call site of it.
         try expectOccurrences(of: "private func write(", at: [path: 1])
         try expectOccurrences(of: "write(.restored, to: task)", at: [path: 2])

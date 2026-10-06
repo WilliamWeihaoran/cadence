@@ -326,12 +326,14 @@ struct NotePanel: View {
 
     private func toggleEmbeddedTask(id: UUID) {
         guard let task = embeddedTask(id: id) else { return }
-        if task.isDone {
-            TaskWorkflowService.markTodo(task)
-        } else {
-            TaskWorkflowService.markDone(task, in: modelContext)
+        do {
+            try CadenceTaskMutationSupport.setStatus(task.isDone ? .todo : .done, for: task, modelContext: modelContext)
+        } catch {
+            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
         }
-        try? modelContext.save()
+        embeddedTaskFailureNotice = nil
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         activeTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(task)
         if let activeTextView {
             MarkdownStylist.apply(to: activeTextView)

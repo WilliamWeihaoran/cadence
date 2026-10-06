@@ -65,15 +65,33 @@ nonisolated enum CadenceWidgetRefreshCenter {
         now: Date = Date(),
         userDefaults: UserDefaults? = nil
     ) -> Set<UUID> {
+        Set(taskCompletionExpirations(now: now, userDefaults: userDefaults).keys)
+    }
+
+    static func taskCompletionExpirations(
+        now: Date = Date(),
+        userDefaults: UserDefaults? = nil
+    ) -> [UUID: Date] {
         let cutoff = now.timeIntervalSince1970 - completionSuppressionInterval
         let timestamps = loadRecentlyCompletedTaskTimestamps(userDefaults: userDefaults)
-        let filtered = timestamps.filter { $0.value >= cutoff }
+        let filtered = timestamps.filter { $0.value > cutoff }
 
         if filtered.count != timestamps.count {
             storeRecentlyCompletedTaskTimestamps(filtered, userDefaults: userDefaults)
         }
 
-        return Set(filtered.keys.compactMap(UUID.init(uuidString:)))
+        return Dictionary(uniqueKeysWithValues: filtered.compactMap { key, timestamp in
+            guard let id = UUID(uuidString: key) else { return nil }
+            return (id, Date(timeIntervalSince1970: timestamp + completionSuppressionInterval))
+        })
+    }
+
+    @discardableResult
+    static func clearTaskCompletion(_ taskID: UUID, userDefaults: UserDefaults? = nil) -> Bool {
+        var timestamps = loadRecentlyCompletedTaskTimestamps(userDefaults: userDefaults)
+        guard timestamps.removeValue(forKey: taskID.uuidString) != nil else { return false }
+        storeRecentlyCompletedTaskTimestamps(timestamps, userDefaults: userDefaults)
+        return true
     }
 
     static func markHabitCompletion(

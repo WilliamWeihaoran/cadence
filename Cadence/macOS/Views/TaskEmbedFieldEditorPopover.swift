@@ -367,19 +367,14 @@ struct TaskEmbedFieldEditorPopover: View {
     }
 
     private func setStatus(_ status: TaskStatus) -> Bool {
-        commit {
-            switch status {
-            case .todo:
-                TaskWorkflowService.markTodo(task)
-            case .done:
-                TaskWorkflowService.markDone(task, in: modelContext)
-            case .inProgress:
-                task.completedAt = nil
-                task.status = .inProgress
-            case .cancelled:
-                TaskWorkflowService.markCancelled(task, in: modelContext)
-            }
+        do {
+            try CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: modelContext)
+        } catch {
+            failureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return false
         }
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
+        return finishCommittedEdit()
     }
 
     private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
@@ -416,7 +411,8 @@ struct TaskEmbedFieldEditorPopover: View {
         }
     }
 
-    /// The one write path out of this popover.
+    /// Field edits commit here; status changes use the shared status commit. Both refresh only
+    /// through `finishCommittedEdit` after their commit succeeds.
     ///
     /// T-366: this was `try? modelContext.save(); onChanged()`, and `onChanged()` is what repaints
     /// the note's rendered task card. A refused save therefore drew the card with values the store
@@ -434,6 +430,10 @@ struct TaskEmbedFieldEditorPopover: View {
             failureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
             return false
         }
+        return finishCommittedEdit()
+    }
+
+    private func finishCommittedEdit() -> Bool {
         failureNotice = nil
         onChanged()
         return true

@@ -354,12 +354,18 @@ struct TaskNoteEditorPane: View {
 
     private func toggleEmbeddedTask(id: UUID) {
         guard let embeddedTask = embeddedTask(id: id) else { return }
-        if embeddedTask.isDone {
-            TaskWorkflowService.markTodo(embeddedTask)
-        } else {
-            TaskWorkflowService.markDone(embeddedTask, in: modelContext)
+        do {
+            try CadenceTaskMutationSupport.setStatus(
+                embeddedTask.isDone ? .todo : .done,
+                for: embeddedTask,
+                modelContext: modelContext
+            )
+        } catch {
+            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
         }
-        try? modelContext.save()
+        embeddedTaskFailureNotice = nil
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         editorTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
         if let editorTextView {
             MarkdownStylist.apply(to: editorTextView)

@@ -76,6 +76,22 @@ enum TaskWorkflowService {
         }
     }
 
+    static func commitMarkTodo(
+        _ task: AppTask,
+        in context: ModelContext,
+        widgetEffects: CadenceTaskReopenWidgetEffects? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        try CadenceTaskMutationSupport.setStatus(
+            .todo,
+            for: task,
+            modelContext: context,
+            widgetEffects: widgetEffects,
+            commit: commit
+        )
+        HabitNotificationReconcileSupport.scheduleReconcile(in: context)
+    }
+
     static func ensureRecurrenceSeriesMetadata(for task: AppTask) {
         CadenceTaskRecurrenceWorkflowSupport.ensureRecurrenceSeriesMetadata(for: task)
     }

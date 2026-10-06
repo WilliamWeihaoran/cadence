@@ -197,7 +197,11 @@ final class TaskCompletionAnimationManager {
         withTransaction(transaction) {
             switch transition {
             case .restored:
-                TaskWorkflowService.markTodo(task)
+                if let context = modelContext ?? task.modelContext {
+                    settle(in: context) { try TaskWorkflowService.commitMarkTodo(task, in: $0) }
+                } else {
+                    CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .todo)
+                }
             case .done:
                 if let context = modelContext ?? task.modelContext {
                     settle(in: context) { try TaskWorkflowService.commitMarkDone(task, in: $0) }

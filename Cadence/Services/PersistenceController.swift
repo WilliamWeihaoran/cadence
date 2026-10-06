@@ -1010,7 +1010,8 @@ enum StoreBackupManager {
     static func createBackupIfStoreExists(
         reason: StoreBackupReason,
         storeDirectoryURL: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        defaults: UserDefaults = CadenceDefaults.store
     ) throws -> URL? {
         let sourceItems = existingStoreItems(in: storeDirectoryURL, fileManager: fileManager)
         guard !sourceItems.isEmpty else { return nil }
@@ -1051,7 +1052,7 @@ enum StoreBackupManager {
 
             try fileManager.moveItem(at: temporaryURL, to: finalURL)
             if reason == .startup || reason == .preRestore {
-                try purgeAutomaticBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager)
+                try purgeAutomaticBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager, defaults: defaults)
             }
             return finalURL
         } catch {
@@ -1279,10 +1280,15 @@ enum StoreBackupManager {
     }
 
     @discardableResult
-    static func cleanUpAutomaticBackups(storeDirectoryURL: URL, fileManager: FileManager = .default) throws -> Int {
+    static func cleanUpAutomaticBackups(
+        storeDirectoryURL: URL,
+        fileManager: FileManager = .default,
+        defaults: UserDefaults = CadenceDefaults.store
+    ) throws -> Int {
+        let pendingURL = pendingRestoreURL(defaults: defaults)?.standardizedFileURL
         let removableBackups = automaticBackupSnapshotsToRemove(
             listBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager)
-        )
+        ).filter { $0.url.standardizedFileURL != pendingURL }
         for snapshot in removableBackups {
             try fileManager.removeItem(at: snapshot.url)
         }
@@ -1434,7 +1440,7 @@ enum StoreBackupManager {
         }
 
         do {
-            try applyRestore(from: backupURL, into: storeDirectoryURL, fileManager: fileManager)
+            try applyRestore(from: backupURL, into: storeDirectoryURL, fileManager: fileManager, defaults: defaults)
         } catch {
             quarantinePendingRestore(
                 backupURL: backupURL,
@@ -1456,13 +1462,9 @@ enum StoreBackupManager {
     private static func applyRestore(
         from backupURL: URL,
         into storeDirectoryURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        defaults: UserDefaults
     ) throws {
-        _ = try createBackupIfStoreExists(
-            reason: .preRestore,
-            storeDirectoryURL: storeDirectoryURL,
-            fileManager: fileManager
-        )
         try fileManager.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
 
         let stagingURL = storeDirectoryURL.appendingPathComponent(restoreStagingDirectoryName, isDirectory: true)
@@ -1478,6 +1480,13 @@ enum StoreBackupManager {
             from: backupURL,
             stagedNames: stagedNames,
             fileManager: fileManager
+        )
+        // The safety backup prunes automatic backups; stage the selected input before that can run.
+        _ = try createBackupIfStoreExists(
+            reason: .preRestore,
+            storeDirectoryURL: storeDirectoryURL,
+            fileManager: fileManager,
+            defaults: defaults
         )
         try swapStagedRestore(
             at: stagingURL,
@@ -1523,9 +1532,13 @@ enum StoreBackupManager {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        let manifestItems = Set(manifest(at: backupURL, fileManager: fileManager)?.items ?? [])
+        guard let decodedManifest = manifest(at: backupURL, fileManager: fileManager) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let manifestItems = Set(decodedManifest.items)
             .subtracting([manifestName])
-        guard manifestItems.isSubset(of: stagedNameSet) else {
+        guard manifestItems.contains(CadenceStoreSupport.storeFilename),
+              manifestItems.isSubset(of: stagedNameSet) else {
             throw CocoaError(.fileReadCorruptFile)
         }
 
@@ -1809,8 +1822,12 @@ enum StoreBackupManager {
         return try? JSONDecoder.cadenceBackupDecoder.decode(StoreBackupManifest.self, from: data)
     }
 
-    private static func purgeAutomaticBackups(storeDirectoryURL: URL, fileManager: FileManager = .default) throws {
-        try cleanUpAutomaticBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager)
+    private static func purgeAutomaticBackups(
+        storeDirectoryURL: URL,
+        fileManager: FileManager = .default,
+        defaults: UserDefaults = CadenceDefaults.store
+    ) throws {
+        try cleanUpAutomaticBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager, defaults: defaults)
     }
 
     static func automaticBackupSnapshotsToRemove(

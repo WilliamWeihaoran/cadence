@@ -88,6 +88,39 @@ enum CadenceEventNoteSupport {
         identifier.components(separatedBy: occurrenceSeparator).first ?? identifier
     }
 
+    static func occurrenceDateKey(from identifier: String) -> String? {
+        let parts = identifier.components(separatedBy: occurrenceSeparator)
+        guard parts.count == 2, !parts[0].isEmpty else { return nil }
+        let occurrence = parts[1].split(separator: ":", omittingEmptySubsequences: false)
+        guard occurrence.count == 2,
+              let minute = Int(occurrence[1]), (0..<1440).contains(minute),
+              let date = DateFormatters.date(from: String(occurrence[0])),
+              DateFormatters.dateKey(from: date) == String(occurrence[0]) else { return nil }
+        return String(occurrence[0])
+    }
+
+    /// A scoped note must never fall back to the series base, even when its occurrence is missing.
+    /// The stored event day also covers an occurrence moved away from its original repeat day.
+    static func resolveEvent(
+        calendarEventID: String,
+        eventDateKey: String,
+        lookupBaseEvent: (String) -> EKEvent?,
+        eventsForDay: (Date) -> [EKEvent]
+    ) -> EKEvent? {
+        guard !calendarEventID.isEmpty else { return nil }
+        guard calendarEventID.contains(occurrenceSeparator) else {
+            return lookupBaseEvent(calendarEventID)
+        }
+        guard let occurrenceDay = occurrenceDateKey(from: calendarEventID) else { return nil }
+        for day in Set([occurrenceDay, eventDateKey]).sorted() {
+            guard let date = DateFormatters.date(from: day) else { continue }
+            if let event = eventsForDay(date).first(where: { identifier(for: $0) == calendarEventID }) {
+                return event
+            }
+        }
+        return nil
+    }
+
     /// The event's calendar identifier, or `""` when it has none.
     ///
     /// **T-2052, after [[T-2047]].** `EKEvent.calendar` is an implicitly-unwrapped `EKCalendar!`,

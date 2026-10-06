@@ -89,6 +89,24 @@ final class iOSCalendarManager {
         return store.event(withIdentifier: CadenceEventNoteSupport.lookupIdentifier(from: identifier))
     }
 
+    func event(for note: Note) -> EKEvent? {
+        eventForNote(identifier: note.calendarEventID, dateKey: note.eventDateKey)
+    }
+
+    private func eventForNote(identifier: String, dateKey: String) -> EKEvent? {
+        guard isAuthorized else { return nil }
+        return CadenceEventNoteSupport.resolveEvent(
+            calendarEventID: identifier,
+            eventDateKey: dateKey,
+            lookupBaseEvent: { store.event(withIdentifier: $0) },
+            eventsForDay: { date in
+                let bounds = dayBounds(for: date)
+                let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: nil)
+                return store.events(matching: predicate)
+            }
+        )
+    }
+
     /// Every event in the window, all-day included. The window and the filter are the *same* on
     /// both platforms — see `CadenceCalendarEventSearchSupport`, which owns the matching rule.
     func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
@@ -233,7 +251,7 @@ final class iOSCalendarManager {
         // An identifier that resolves to nothing is a sync that did not happen, not a no-op. That
         // sentence is what `.eventNotFound` was named for on the desktop side (T-389); until
         // T-339 this overload could only assert it in a comment.
-        guard let event = event(withIdentifier: calendarEventID) else { return .eventNotFound }
+        guard let event = eventForNote(identifier: calendarEventID, dateKey: "") else { return .eventNotFound }
         return updateEventNotes(event, notes: notes)
     }
 

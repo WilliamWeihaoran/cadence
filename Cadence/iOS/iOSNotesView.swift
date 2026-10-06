@@ -239,7 +239,7 @@ struct iOSNotesView: View {
             )
         }
         .sheet(item: $selectedMeetingNote) { note in
-            let event = calendarManager.event(withIdentifier: note.calendarEventID)
+            let event = calendarManager.event(for: note)
             iOSEventNoteEditorSheet(
                 note: note,
                 eventTitle: event.map { iOSCalendarEventSupport.title(for: $0) } ?? note.displayTitle,

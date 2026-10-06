@@ -146,7 +146,7 @@ struct iOSEventNoteEditorSheet: View {
     }
 
     private func refreshEventMetadata() {
-        guard let event else { return }
+        guard let event, CadenceEventNoteSupport.matches(event, identifier: note.calendarEventID) else { return }
         let metadata = CadenceEventNoteSupport.eventDateMetadata(from: event)
         CadenceEventNoteSupport.updateMetadata(
             note,
@@ -184,11 +184,12 @@ struct iOSEventNoteEditorSheet: View {
     /// did. Which EventKit rejection it was does not change either of those, and this editor's
     /// banner is a debounced flush that fires while someone types.
     private func syncNoteToNativeEvent() -> Bool {
-        if let event {
+        if let event, CadenceEventNoteSupport.matches(event, identifier: note.calendarEventID) {
             return calendarManager.updateEventNotes(event, notes: note.content) == nil
         }
         if !note.calendarEventID.isEmpty {
-            return calendarManager.updateEventNotes(calendarEventID: note.calendarEventID, notes: note.content) == nil
+            guard let resolved = calendarManager.event(for: note) else { return false }
+            return calendarManager.updateEventNotes(resolved, notes: note.content) == nil
         }
         return true
     }

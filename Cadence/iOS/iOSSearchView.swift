@@ -406,7 +406,7 @@ struct iOSSearchView: View {
     @ViewBuilder
     private func noteSheet(for note: Note) -> some View {
         if note.kind == .meeting {
-            let event = calendarManager.event(withIdentifier: note.calendarEventID)
+            let event = calendarManager.event(for: note)
             iOSEventNoteEditorSheet(
                 note: note,
                 eventTitle: event.map { iOSCalendarEventSupport.title(for: $0) } ?? note.displayTitle,
