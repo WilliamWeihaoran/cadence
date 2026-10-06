@@ -120,3 +120,86 @@ enum CadenceSeededSidebarArrivalVerdict {
         return seeded > bound ? .arrivedPastBound(seeded) : .arrivedWithinBound(seeded)
     }
 }
+
+/// **Which of the two observed blank-launch shapes a blank launch was — [[T-2020]].**
+///
+/// `CadenceSeededSidebarArrivalVerdict` above decides whether a launch may be read as evidence
+/// about the seed. It deliberately says nothing about *why* a blank launch was blank, and that is
+/// the half T-2020 is still open on. The two that have been seen are not the same failure:
+///
+///     T710 run  7/20 launch=1.51s today=ABSENT …   "app did not reach the foreground; state is 3"
+///     T710 run  8/20 launch=1.29s today=ABSENT …   foreground reached, empty tree
+///
+/// Run 7 never left `.runningBackground` ([[T-563]]'s signature) and run 8 reached the foreground
+/// and published nothing ([[T-1890]]'s, whose closing observation was a window the window server
+/// reports `isOnScreen = false`). The entry says the honest reading is that they *may* be one
+/// failure seen from two sides and that **nothing settles that** — so the next occurrence has to
+/// arrive already labelled, because n=1 of each is exactly what has made this unanswerable twice.
+///
+/// **The third case is the one nothing was looking for, and it is why this type takes a
+/// predecessor at all.** `CadenceSeededSidebarTimingUITests` is the only test in the target that
+/// relaunches the app in a loop — 20 times inside one test — and it is the only test that has ever
+/// produced a blank launch. Between launches it called `app.terminate()` and then **discarded** the
+/// result of `app.wait(for: .notRunning, …)` (`_ =`), so a termination that did not complete inside
+/// `CadenceUITestBounds.settle` was invisible. A second instance of the same bundle id is a
+/// mechanism for *both* of the other two shapes — `launch()` activates the live instance rather
+/// than the new one, which leaves the new process in the background and the old window carrying a
+/// store the new launch did not seed. It also predicts what the measured runs show and a per-launch
+/// 5% flake does not: **runs 7 and 8 were CONSECUTIVE**, which is the shape of one host condition
+/// spanning two launches, not two independent draws. (Given exactly 2 blanks in 20 launches, two
+/// being adjacent has probability 19/190 = 10% by chance, so this is suggestive and not proof.)
+///
+/// So the predecessor is consulted **first**: when the previous launch is still running, neither of
+/// the other two readings is safe, and saying "T-563" of a launch that was merely talking to a
+/// leftover app is the same class of mistake T-1954 made one layer out.
+enum CadenceBlankLaunchSignature: Equatable {
+
+    /// The preceding launch in the loop had not stopped when this one started. This launch is
+    /// evidence about the TEARDOWN, not about T-563 or T-1890.
+    case previousLaunchStillRunning
+
+    /// The app never reached `.runningForeground`. [[T-563]]'s shape — `state` carried so the
+    /// reading can be checked rather than taken on trust (3 is `.runningBackground`).
+    case neverReachedForeground(state: Int)
+
+    /// The app reached the foreground and still drew nothing. [[T-1890]]'s shape.
+    case foregroundButNothingDrawn
+
+    /// What to print beside a blank launch so the next reader does not have to infer it.
+    var report: String {
+        switch self {
+        case .previousLaunchStillRunning:
+            return "the PREVIOUS launch was still running when this one started, so this launch is "
+                + "evidence about the loop's teardown and about neither T-563 nor T-1890 — "
+                + "`launch()` activates a live instance rather than the new one"
+        case .neverReachedForeground(let state):
+            return "the app never reached the foreground (state \(state)); T-563's shape, on a "
+                + "launch whose predecessor had stopped"
+        case .foregroundButNothingDrawn:
+            return "the app reached the foreground and drew nothing; T-1890's shape — a window the "
+                + "window server will not composite publishes no accessibility tree"
+        }
+    }
+}
+
+/// Names a blank launch from the three observations the launch loop already makes.
+enum CadenceBlankLaunchClassifier {
+
+    /// - Parameters:
+    ///   - predecessorStopped: whether `wait(for: .notRunning, …)` succeeded after the PREVIOUS
+    ///     launch. `true` for the first launch of a loop, which has no predecessor.
+    ///   - reachedForeground: whether `wait(for: .runningForeground, …)` succeeded.
+    ///   - state: `XCUIApplication.state.rawValue` as observed.
+    ///
+    /// **The predecessor is consulted before the state, and the order is the correctness
+    /// contract** — same shape, and same reason, as the control-first rule above.
+    static func signature(
+        predecessorStopped: Bool,
+        reachedForeground: Bool,
+        state: Int
+    ) -> CadenceBlankLaunchSignature {
+        guard predecessorStopped else { return .previousLaunchStillRunning }
+        guard reachedForeground else { return .neverReachedForeground(state: state) }
+        return .foregroundButNothingDrawn
+    }
+}

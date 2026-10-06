@@ -201,7 +201,15 @@ enum CadenceUITestBounds {
     static let firstPaint: TimeInterval = 8
 
     /// **Not measured.** How long something already on screen may take to finish moving, or a
-    /// terminated app to stop running. Neither has ever been seen to fire.
+    /// terminated app to stop running.
+    ///
+    /// It was documented here as "never seen to fire", which was not a measurement: the one place
+    /// that relaunches in a loop — `CadenceSeededSidebarTimingUITests` — wrote
+    /// `_ = app.wait(for: .notRunning, timeout:)` and **discarded the answer**, so a quit that
+    /// overran this had no way to be seen. That loop now reads it and carries the result into the
+    /// next launch's blank-launch report ([[T-2020]], `CadenceBlankLaunchClassifier`). Until a run
+    /// with a blank launch in it has been taken under that reporting, this bound's behaviour is
+    /// unknown rather than clean.
     static let settle: TimeInterval = 5
 }
 

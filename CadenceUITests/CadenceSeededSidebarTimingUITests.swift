@@ -85,6 +85,11 @@ final class CadenceSeededSidebarTimingUITests: XCTestCase {
         /// Launches that drew no UI at all, control included. Counted apart from `seedMisses`
         /// because conflating the two is what re-filed a launch failure as a seeding defect.
         var blankLaunches = 0
+        /// Whether the PREVIOUS launch had actually stopped when this one started (T-2020). The
+        /// first launch has no predecessor, so it starts true. Until now this loop terminated the
+        /// app and threw the answer away, which made a second live instance — a mechanism for
+        /// both observed blank-launch shapes — invisible. See `CadenceBlankLaunchClassifier`.
+        var predecessorStopped = true
 
         for run in 1...runs {
             let storeID = "t710-\(UUID().uuidString)"
@@ -101,10 +106,14 @@ final class CadenceSeededSidebarTimingUITests: XCTestCase {
 
             // The clock for the rows starts when the app is in the foreground, which is the point
             // the original failure was measured from.
+            let reachedForeground = app.wait(for: .runningForeground, timeout: CadenceUITestBounds.foreground)
             XCTAssertTrue(
-                app.wait(for: .runningForeground, timeout: CadenceUITestBounds.foreground),
+                reachedForeground,
                 "run \(run): app did not reach the foreground; state is \(app.state.rawValue)"
             )
+            // `Int(...)` rather than the raw value directly: `XCUIApplication.State`'s raw type
+            // is not guaranteed to be `Int` across SDKs, and the classifier takes one.
+            let stateAfterLaunch = Int(app.state.rawValue)
             let foregroundAt = Date()
 
             let today = firstSeen("sidebar.destination.today", after: foregroundAt)
@@ -127,9 +136,20 @@ final class CadenceSeededSidebarTimingUITests: XCTestCase {
                 bound: CadenceUITestBounds.sidebarRow
             )
 
+            var blankLaunchReport: String? = nil
             switch verdict {
             case .uiNeverAppeared:
                 blankLaunches += 1
+                // T-2020. A blank launch that is only counted is the n=1 this ticket has been
+                // stuck on twice. Name which of the three shapes it was, from observations this
+                // loop already had and was discarding.
+                let signature = CadenceBlankLaunchClassifier.signature(
+                    predecessorStopped: predecessorStopped,
+                    reachedForeground: reachedForeground,
+                    state: stateAfterLaunch
+                )
+                blankLaunchReport = signature.report
+                print("T710   ^ BLANK LAUNCH (T-2020): \(signature.report)")
             case .seedNeverArrived:
                 seedMisses += 1
             case .arrivedWithinBound(let seenAt):
@@ -141,11 +161,24 @@ final class CadenceSeededSidebarTimingUITests: XCTestCase {
             }
 
             if let message = verdict.failureMessage {
-                XCTFail("run \(run): \(message)")
+                let suffix = blankLaunchReport.map { " \u{2014} and \($0)" } ?? ""
+                XCTFail("run \(run): \(message)\(suffix)")
             }
 
+            // **The result is READ now** (T-2020). `CadenceUITestBounds.settle`'s own comment said
+            // this had "never been seen to fire", which was true only because nobody asked: the
+            // answer was discarded with `_ =` on this line. It is deliberately recorded for the
+            // NEXT launch rather than failed here — a slow quit is not itself a defect, and a run
+            // that stopped at the first one would never produce the distribution this test exists
+            // for. `continueAfterFailure` is already true for the same reason.
             app.terminate()
-            _ = app.wait(for: .notRunning, timeout: CadenceUITestBounds.settle)
+            predecessorStopped = app.wait(for: .notRunning, timeout: CadenceUITestBounds.settle)
+            if !predecessorStopped {
+                print(
+                    "T710   ^ run \(run) did not stop within \(CadenceUITestBounds.settle)s; "
+                    + "run \(run + 1) starts with a live instance of the same bundle id (T-2020)"
+                )
+            }
             app = nil
         }
 

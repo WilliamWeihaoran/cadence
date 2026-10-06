@@ -771,3 +771,39 @@ without T-2067's signature is never asserted to be a hang.
 
 `scripts/xcb.sh selftest` section 13 induces QUEUED, RUNNING, WEDGED and ABANDONED against real
 `xcb.sh <id> test` invocations on the production path.
+
+## The iOS compile-task count is an ARCH count, not a floor (T-1703, 2026-10-06)
+
+Briefs have been quoting **"~1,390 swift compile tasks"** as the cold-iOS non-vacuity floor, and an
+agent who built for a concrete simulator saw **695** and flagged it as a possibly failed build. Both
+numbers are right and neither is a floor. Measured on this tree, all three through `scripts/xcb.sh`
+with private DerivedData:
+
+| destination                                       | `SwiftCompile` tasks | architectures      |
+|---------------------------------------------------|----------------------|--------------------|
+| `platform=macOS`                                  | **691**              | arm64              |
+| `platform=iOS Simulator,id=<udid>` (concrete)     | **691**              | arm64              |
+| `generic/platform=iOS Simulator`                  | **1382**             | arm64 **+** x86_64 |
+
+`xcb.sh` counts one task per file per architecture. A **generic** simulator destination resolves to
+every valid simulator arch and so compiles the whole target twice; a **concrete** simulator (and a
+macOS build) compiles it once. 1382 = 2 x 691 exactly, and the 1,390/695 pair quoted from T-1492 is
+the same 2x relationship measured 2026-09-30, when the target held 695 files rather than 691. So the
+absolute number tracks the repository's file count and rots on every file added or removed; only the
+**ratio** is stable.
+
+Two consequences, and the second is the dangerous one:
+
+1. **~695 on a concrete iOS destination is NON-vacuous.** A brief that quotes 1,390 without naming
+   the destination shape has agents distrusting good runs, which is what prompted this entry.
+2. **The count cannot tell a macOS build from an iOS one.** The macOS arm64 slice and the iOS
+   arm64 slice compiled a **byte-identical list of 691 file names** — target membership picks the
+   files and `#if os(iOS)` lives *inside* them, so no file is platform-excluded. Only the
+   `-destination` argument and the `Debug-iphonesimulator` products path say which platform a log
+   is. T-1781's rule above ("a macOS build is blind to `#if os(iOS)`") is unchanged by this; what
+   changes is that you cannot verify you took the iOS build by reading its task count.
+
+Evidence: `cadence-xcb-suitehygiene-ios-concrete.20261006-155435-58449.log` (concrete, `Cadence-iPhone15`
+by id, `XCODEBUILD_EXIT=0`, 0 warnings, 691 tasks) beside three independent sibling runs of
+`generic/platform=iOS Simulator` the same afternoon (`t1-ios`, `t2-ios`, `app2-ios`), each 1382 tasks
+split 691 arm64 / 691 x86_64.

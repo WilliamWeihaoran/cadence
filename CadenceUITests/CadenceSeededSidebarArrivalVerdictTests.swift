@@ -139,4 +139,85 @@ final class CadenceSeededSidebarArrivalVerdictTests: XCTestCase {
             "not one of 38 arrivals was past the 5s bound, so raising it answers nothing"
         )
     }
+
+    // MARK: - T-2020: naming WHICH blank launch
+
+    /// **The predecessor outranks the state, and that ordering is the whole point.**
+    ///
+    /// A launch whose predecessor is still running is talking to a live instance of the same
+    /// bundle id, which produces `.runningBackground` on its own — so reading T-563's signature
+    /// off it would be the same class of mistake T-1954 made one layer out. Both of the other
+    /// inputs are set to their T-563 values here, so a classifier that consulted them first would
+    /// return `.neverReachedForeground` and fail this.
+    func testALaunchWhosePredecessorWasStillRunningIsATeardownFindingNotT563() {
+        let signature = CadenceBlankLaunchClassifier.signature(
+            predecessorStopped: false,
+            reachedForeground: false,
+            state: 3
+        )
+
+        XCTAssertEqual(signature, .previousLaunchStillRunning)
+        XCTAssertTrue(
+            signature.report.contains("teardown"),
+            "the report has to name the teardown, because the loop that produces this used to "
+            + "discard the observation entirely"
+        )
+        XCTAssertFalse(
+            signature.report.contains("T-563's shape"),
+            "a leftover instance must not be reported as T-563"
+        )
+    }
+
+    /// `coordgated` run 7 verbatim, with its predecessor accounted for: state 3 is
+    /// `.runningBackground` and the foreground wait failed. T-563's shape.
+    func testALaunchThatNeverReachedTheForegroundIsNamedAsT563sShape() {
+        let signature = CadenceBlankLaunchClassifier.signature(
+            predecessorStopped: true,
+            reachedForeground: false,
+            state: 3
+        )
+
+        XCTAssertEqual(signature, .neverReachedForeground(state: 3))
+        XCTAssertTrue(signature.report.contains("T-563"))
+        XCTAssertTrue(
+            signature.report.contains("state 3"),
+            "the state is carried so the reading can be checked rather than taken on trust"
+        )
+    }
+
+    /// `coordgated` run 8 verbatim: the foreground was reached and nothing was drawn. T-1890's
+    /// shape — the window the window server reports `isOnScreen = false`.
+    func testALaunchThatReachedTheForegroundAndDrewNothingIsNamedAsT1890sShape() {
+        let signature = CadenceBlankLaunchClassifier.signature(
+            predecessorStopped: true,
+            reachedForeground: true,
+            state: 4
+        )
+
+        XCTAssertEqual(signature, .foregroundButNothingDrawn)
+        XCTAssertTrue(signature.report.contains("T-1890"))
+    }
+
+    /// **The three readings must DIFFER**, which is the check that survives a classifier returning
+    /// one answer to everything — and that is exactly what the old loop did, by returning no
+    /// answer at all and counting blank launches as one undifferentiated number.
+    ///
+    /// Runs 7 and 8 were CONSECUTIVE launches of one 20-launch loop. Both are replayed here with
+    /// `predecessorStopped: true`, which is what the loop *assumed* and never measured: if a future
+    /// run shows either of them with a live predecessor instead, these two rows are the ones that
+    /// have to be re-read, and the row above is the reading they become.
+    func testTheThreeBlankLaunchShapesAreDistinguishedRatherThanCounted() {
+        let signatures = [
+            CadenceBlankLaunchClassifier.signature(predecessorStopped: false, reachedForeground: false, state: 3),
+            CadenceBlankLaunchClassifier.signature(predecessorStopped: true, reachedForeground: false, state: 3),
+            CadenceBlankLaunchClassifier.signature(predecessorStopped: true, reachedForeground: true, state: 4)
+        ]
+
+        XCTAssertEqual(Set(signatures.map(\.report)).count, 3, "two shapes report the same sentence")
+        XCTAssertEqual(signatures.count, Set(signatures.map { "\($0)" }).count)
+        // The denominator: every report has to actually say something.
+        for report in signatures.map(\.report) {
+            XCTAssertGreaterThan(report.count, 40, "a blank launch's report is \(report.count) characters")
+        }
+    }
 }

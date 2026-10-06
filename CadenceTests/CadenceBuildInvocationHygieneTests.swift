@@ -989,6 +989,14 @@ struct CadenceBuildInvocationHygieneTests {
     /// | `platform=macOS`                     | 695           | 0        | exit 0   | exit 0         |
     /// | `generic/platform=iOS Simulator`     | 1390          | 2        | **9**    | **1**          |
     ///
+    /// **Neither task count is a floor, and the pair is not a coincidence** (T-1703, re-measured
+    /// 2026-10-06): `xcb.sh` counts one `SwiftCompile` task per file *per architecture*, a generic
+    /// simulator destination resolves to arm64 **and** x86_64, and a concrete `id=<udid>` resolves
+    /// to one. So 1390 is exactly 2 x 695, the same tree gave 1382 / 691 a month later as files
+    /// changed, and **695 on a concrete iOS destination is a complete, non-vacuous iOS build.**
+    /// The macOS arm64 slice and the iOS arm64 slice compile a byte-identical list of file names,
+    /// so the count cannot identify the platform at all — only `-destination` can.
+    ///
     /// So a macOS build really is blind — it compiles none of `#if os(iOS)`, and 695 tasks of it
     /// saw nothing. But **neither counter is**: both are destination-agnostic, they gate whatever
     /// log they are handed, and `.github/workflows/ci.yml`'s `ios-build` job has piped its own
@@ -1039,6 +1047,71 @@ struct CadenceBuildInvocationHygieneTests {
             gatedDestinations.contains { $0.contains("platform=macOS") },
             "no gated CI invocation names a macOS destination: \(gatedDestinations)"
         )
+    }
+
+    // MARK: - T-1703: the iOS task count is an arch count
+
+    /// **The "~1,390 swift compile tasks" floor every brief was quoting is a doubled arch count,
+    /// and a brief that quotes it without the destination shape makes agents distrust good runs.**
+    ///
+    /// Measured 2026-10-06 through `scripts/xcb.sh` on one tree: `platform=macOS` **691**,
+    /// `platform=iOS Simulator,id=<udid>` **691**, `generic/platform=iOS Simulator` **1382**,
+    /// split exactly 691 `arm64` + 691 `x86_64`. A generic simulator destination resolves to every
+    /// valid arch and compiles the target twice; a concrete one compiles it once. T-1492's
+    /// 1,390/695 is the same 2x pair measured 2026-09-30 over four more files.
+    ///
+    /// So the number is not a floor — it tracks the file count and rots — and, worse, the macOS
+    /// and iOS arm64 slices compile a **byte-identical list of file names**, because target
+    /// membership picks the files and `#if os(iOS)` lives inside them. No count can say which
+    /// platform a log is; only `-destination` can.
+    ///
+    /// This pins the correction where agents read it, because the wrong figure survived in briefs
+    /// for a month without anything going red. Each positive check below is paired with a control
+    /// that genuinely fires: the guide must still carry T-1781's macOS-blindness rule, so a rewrite
+    /// that drops one half to satisfy the other cannot pass.
+    @Test func theRootGuideStatesBothIOSDestinationShapesRatherThanOneTaskCount() throws {
+        let guide = try CadenceSourceScan.sourceFile("AGENTS.md")
+        let reference = try CadenceSourceScan.sourceFile("docs/AGENTS_REFERENCE.md")
+
+        // Non-vacuity: these two files are read by path and an empty string satisfies nothing
+        // below, but it would satisfy a `!contains` check, so assert the denominator first.
+        #expect(guide.count > 5_000, "AGENTS.md read as \(guide.count) bytes")
+        #expect(reference.count > 5_000, "docs/AGENTS_REFERENCE.md read as \(reference.count) bytes")
+
+        // The correction itself. `2x` is the only stable fact; the absolute numbers are examples.
+        #expect(
+            guide.contains("ARCH count, not a floor"),
+            "root AGENTS.md no longer says a compile-task count is an arch count (T-1703)"
+        )
+        #expect(
+            guide.contains("concrete `platform=iOS Simulator,id=<udid>`"),
+            "root AGENTS.md names no concrete iOS destination, so 695 still reads as a failed build"
+        )
+        #expect(
+            guide.contains("generic/platform=iOS Simulator"),
+            "root AGENTS.md no longer names the generic destination the doubled count comes from"
+        )
+        #expect(
+            guide.contains("NON-vacuous"),
+            "root AGENTS.md no longer says a concrete-destination iOS build is non-vacuous"
+        )
+
+        // The control that keeps the clause honest: T-1781's finding must survive the correction.
+        // Collapsing "the count cannot identify the platform" into "macOS is fine for iOS" would
+        // satisfy every check above and is the misreading this replaces one misreading with.
+        #expect(
+            guide.contains("a macOS build is not"),
+            "root AGENTS.md lost T-1781's rule that a macOS build is blind to `#if os(iOS)`"
+        )
+
+        // And the long half, which is where the measurement lives.
+        #expect(
+            reference.contains("## The iOS compile-task count is an ARCH count, not a floor"),
+            "docs/AGENTS_REFERENCE.md lost the section the guide's clause is the summary of"
+        )
+        for row in ["| **691**", "| **1382**", "arm64 **+** x86_64"] {
+            #expect(reference.contains(row), "docs/AGENTS_REFERENCE.md lost the measured row \(row)")
+        }
     }
 
     // MARK: - T-1516 witnesses
