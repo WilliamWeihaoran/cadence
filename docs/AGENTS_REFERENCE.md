@@ -674,3 +674,45 @@ In `extension ModelContext` the receiver is `self` and is left off (T-1301): `sa
 All four are fixed the same way: commit through `CadencePendingChangePersistence` (`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and name the failure on screen.
 Why it matters: one `ModelContext` app-wide, so a swallowed failure leaves the change *pending*, for
 the next unrelated `save()` to take or `rollback()` to discard. Enforced by `CadenceSaveCommitDisciplineTests`.
+
+## Telling a queued run from a wedged one (moved out of AGENTS.md, 2026-10-06)
+
+`./scripts/xcb.sh run-state [<id>…]` (T-2071). With an id it answers about that run; with **no id** it
+sweeps every run in `$TMPDIR` from the last 6 hours and **exits non-zero on a wedge or an abandoned
+run**, so a scheduled caller goes red without anyone watching (T-1920).
+
+Seven verdicts, and the exit code for each:
+
+| verdict | exit | what it means |
+| --- | --- | --- |
+| `RUNNING` | 0 | the xcb log **grew** between two reads |
+| `QUEUED` | 10 | named, xcodebuild never launched — still waiting on the test-host lock |
+| `WEDGED` | 11 | silent, zero result lines, **and** an xctest session that connected and never `requested serialized transport` (T-2067) |
+| `FINISHED` | 12 | xcodebuild's terminal banner, and nothing still writing |
+| `STALLED` | 13 | silent, and the T-2067 signature does **not** apply — re-read, do not kill |
+| `ABANDONED` | 14 | a log that exists, stopped, and whose owner pid is gone |
+| `NO-LOG` | 15 | nothing to read: never claimed, or named and never written |
+
+`QUEUED` costs nothing: `xcb.sh` names `cadence-xcb-<id>.<ts>-<pid>.log` at the top of the script and
+the redirect that creates the file does not happen until after `test-host-lock.sh acquire` returns, so
+a queued run is a **dangling symlink with a live pid in its name**, and the verdict prints the lock
+line beside it. Only a run that has *started* pays for sampling.
+
+**The three signals agents reach for first are all wrong here, and each was measured.**
+
+- A `> full.log` redirect is **not** the test log. Against one live, healthy, passing run it held 727
+  bytes and 0 result lines while xcb's own log held 1,237,974 bytes and 3,135.
+- **Elapsed time does not discriminate.** The full suite legitimately runs 19+ minutes.
+- **CPU is a trap, not merely useless.** A wedged `xcodebuild` measured 12s of CPU across 35 minutes —
+  but a **healthy** one measured 9.29s across 9:48, because `xcodebuild` is a parent and its children
+  do the work. Low parent CPU is normal.
+
+**Silence needs two windows.** Measured 2026-10-06 against a live healthy run: the xcb log sat at
+exactly 707008 bytes for 75+ consecutive seconds inside `theTestHostLocksOwnGuardsStillFire()`, which
+spawns real processes and real sleeps and prints nothing. So a run that grew in the first window
+(`CADENCE_RUNSTATE_SAMPLE`, 30s) is answered at once, and only a run that did **not** pays for a
+confirming second window (`CADENCE_RUNSTATE_SAMPLE_LONG`, 150s). `STALLED` exists so that a silent run
+without T-2067's signature is never asserted to be a hang.
+
+`scripts/xcb.sh selftest` section 13 induces QUEUED, RUNNING, WEDGED and ABANDONED against real
+`xcb.sh <id> test` invocations on the production path.

@@ -115,6 +115,50 @@ say() { print -r -- "$@" }
 # /private/tmpcadence-dd-x on a machine without it.
 TMP_BASE="${TMPDIR:-/private/tmp/}"; [[ "$TMP_BASE" != */ ]] && TMP_BASE="$TMP_BASE/"
 
+# --- a runner that cannot be rewritten underneath itself (T-2085) -------------
+# `zsh` reads a script INCREMENTALLY, by byte offset into one open fd. Rewriting this file in
+# place while a run is executing it therefore does not "take effect next time": the running shell
+# keeps reading the SAME inode from wherever it had got to, which is now in the middle of a
+# different line. Reproduced deliberately on 2026-10-06 -- a 4-line script was truncated and
+# rewritten with 40 lines one second into its own `sleep`, and it ran its own four lines and then
+# executed THIRTY-SIX lines that were never part of its program.
+#
+# It happened twice for real on the same day, both from one commit (`1d8786cd`) that appended to
+# this file while runs were live. `xcb-widgetdrop-tests` printed
+# `./scripts/xcb.sh:3336: command not found: the`, **re-ran its whole test phase**, and emitted two
+# `== xcb result ==` blocks with different exit codes (0, then 65) plus a lease self-reclaim; an
+# agent reading only the last block would have recorded a red its own tree never caused. The
+# commit's own author then hit it a second time: that run printed its complete result block and
+# was found 40 minutes later running `test-host-lock.sh acquire` again as a child of itself,
+# holding the lock AND queued behind it.
+#
+# "Edit it only when nothing is running" is a rule about remembering, and this repository's whole
+# guard-script family exists because those do not hold. So the runner takes a private copy of
+# itself and re-execs from that. The copy is unlinked immediately -- the fd stays valid, which the
+# same probe confirmed -- so there is no path anyone could edit and no litter in TMPDIR either.
+# `exec` keeps the pid, which is what the log name and the lock ticket are keyed on.
+#
+# `$0` becomes the snapshot, so the two things derived from it are carried across explicitly;
+# everything downstream (`$here` in the selftest, `$ROOT_DIR/scripts/test-host-lock.sh`) must keep
+# naming the REAL checkout. The guard variables are unset rather than exported onward, so a child
+# invocation protects itself too.
+#
+# It fails OPEN. A runner that refuses to run because it could not copy itself would be a worse
+# instrument than one that can be edited underneath it.
+if [[ -n "${CADENCE_XCB_SELF:-}" ]]; then
+  SCRIPT_PATH="${CADENCE_XCB_SCRIPT_PATH:-$SCRIPT_PATH}"
+  ROOT_DIR="${CADENCE_XCB_ROOT_DIR:-$ROOT_DIR}"
+  rm -f -- "$CADENCE_XCB_SELF"
+  unset CADENCE_XCB_SELF CADENCE_XCB_SCRIPT_PATH CADENCE_XCB_ROOT_DIR
+elif [[ -z "${CADENCE_XCB_NO_REEXEC:-}" ]]; then
+  _xcb_snap="${TMP_BASE}cadence-xcb-self.$$.$RANDOM.zsh"
+  if cp -- "$SCRIPT_PATH" "$_xcb_snap" 2>/dev/null; then
+    CADENCE_XCB_SELF="$_xcb_snap" CADENCE_XCB_SCRIPT_PATH="$SCRIPT_PATH" \
+      CADENCE_XCB_ROOT_DIR="$ROOT_DIR" exec zsh "$_xcb_snap" "$@"
+  fi
+  rm -f -- "$_xcb_snap"
+fi
+
 shared_cadence_entries() {
   print -rn -- "$(ls -d "$SHARED_DD"/Cadence-* 2>/dev/null | sort)"
 }
@@ -1675,6 +1719,15 @@ RUNSTATE_STALE_AFTER=${CADENCE_RUNSTATE_STALE_AFTER:-7200}
 # runs, 446 of them finished or dead weeks ago, is not a report anybody reads -- and a sweep whose
 # exit code is dominated by month-old logs cannot be the thing that makes a LIVE hang visible.
 RUNSTATE_SINCE=${CADENCE_RUNSTATE_SINCE:-21600}
+# THE SECOND WINDOW, and it exists because of a measurement taken against a live healthy run of
+# this repository's own suite on 2026-10-06: the xcb log sat at **exactly 707008 bytes for 75+
+# consecutive seconds** while the run was perfectly fine -- it was inside
+# `theTestHostLocksOwnGuardsStillFire()`, which spawns real processes and real sleeps and prints
+# nothing while it does. So T-2071's 30 seconds is enough to recognise a run that IS talking and
+# nowhere near enough to conclude that one is not, and a reader that stopped there would have
+# called a healthy build STALLED several times an hour. A run that grew in the first window is
+# answered in 30s, as before; only a run that did NOT pays for the confirmation.
+RUNSTATE_SAMPLE_LONG=${CADENCE_RUNSTATE_SAMPLE_LONG:-150}
 
 # The testing seam, and the same one `pmset_log` uses: the live condition cannot be induced (it
 # needs this Mac's testmanagerd to stop answering), so `selftest` substitutes a file in the
@@ -1950,9 +2003,10 @@ run_state_report() {  # $@ = ids, or none for every id in TMPDIR
   # Every local is declared ONCE, at the top, with an assignment. A bare `local x` in a zsh
   # function whose parameter is already local PRINTS `x=<value>` (T-1074), and a redeclaration
   # inside a loop puts that line straight into the middle of a verdict.
-  local -a ids=("$@") snaps=() finals=() fields=() parts=()
+  local -a ids=("$@") snaps=() finals=() fields=() parts=() second=()
   local -A tally=()
   local -i sweep=0 sample=${CADENCE_RUNSTATE_SAMPLE:-30} needs=0 worst=0 rc=0
+  local -i long=${CADENCE_RUNSTATE_SAMPLE_LONG:-150} needs_long=0 k=0
   local id="" rec="" verdict="" line=""
   if (( ${#ids} == 0 )); then
     sweep=1
@@ -1984,6 +2038,31 @@ run_state_report() {  # $@ = ids, or none for every id in TMPDIR
       finals+=("$rec")
     fi
   done
+  # A silent run gets a SECOND window before the answer is published, and it is re-classified from
+  # its ORIGINAL size, so growth anywhere across the whole span counts. One extra sleep for the
+  # whole report, paid only when something was quiet -- and never paid at all by QUEUED, ABANDONED,
+  # NO-LOG or a settled FINISHED, none of which sample anything.
+  for rec in $finals; do
+    verdict="${rec%%|*}"
+    [[ "$verdict" == WEDGED || "$verdict" == STALLED ]] && needs_long=1
+  done
+  if (( needs_long )); then
+    say "  no growth in the first window -- confirming over ${long}s more before saying so."
+    say "  (A healthy run of this suite measured 75+ seconds at an unchanged byte count.)"
+    sleep "$long"
+    k=0
+    for rec in $snaps; do
+      (( k++ ))
+      verdict="${finals[k]%%|*}"
+      if [[ "${rec%%|*}" == SAMPLE && ( "$verdict" == WEDGED || "$verdict" == STALLED ) ]]; then
+        fields=("${(@s:|:)rec}")
+        second+=("$(runstate_classify "${fields[@]}")")
+      else
+        second+=("${finals[k]}")
+      fi
+    done
+    finals=("${second[@]}")
+  fi
   for rec in $finals; do
     fields=("${(@s:|:)rec}")
     runstate_print "${fields[@]}"
@@ -3181,9 +3260,9 @@ selftest_only_testing() {
   # prints. The pair of checks around it is what makes that honest: the SAME live silent run reads
   # WEDGED under the T-2067 signature and STALLED under a balanced one, so the verdict is being
   # taken from the signature and not from the silence.
-  local rs_xcb="$ws/rs/root/scripts/xcb.sh" rsout="" rs_fixture="" rs_sample=1
+  local rs_xcb="$ws/rs/root/scripts/xcb.sh" rsout="" rs_fixture="" rs_sample=1 rs_long=1
   local rs_log="" rs_owner="" rs_calls=""
-  local -i rsrc=0 rs_i=0 rs_bg=0 rs_wedge_bg=0 rs_live_bg=0
+  local -i rsrc=0 rs_i=0 rs_bg=0 rs_wedge_bg=0 rs_live_bg=0 rs_slow_bg=0
   mkdir -p "$ws/rs/root/scripts" "$ws/rs/tmp"
   cp -- "$here" "$rs_xcb"
   # `acquire` blocks forever when FAKE_LOCK_BLOCK names a file, and returns at once otherwise; the
@@ -3212,7 +3291,16 @@ selftest_only_testing() {
     'print -r -- "${(j: :)@}" >> "$FAKE_XCB_CALLS"' \
     'print -r -- "Command line invocation:"' \
     'while :; do print -r -- "✔ Test aProbe() passed after 0.001 seconds."; sleep 0.2; done' > "$ws/rs/live-xcodebuild"
-  chmod +x "$ws/rs/silent-xcodebuild" "$ws/rs/live-xcodebuild"
+  # A stub that is quiet for longer than the FIRST window and then speaks: the shape a healthy run
+  # of this repository's own suite really has. Measured live on 2026-10-06, the xcb log sat at
+  # exactly 707008 bytes for 75+ consecutive seconds inside `theTestHostLocksOwnGuardsStillFire()`,
+  # which spawns real processes and real sleeps and prints nothing meanwhile.
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- "${(j: :)@}" >> "$FAKE_XCB_CALLS"' \
+    'print -r -- "Command line invocation:"' \
+    'sleep 3' \
+    'while :; do print -r -- "✔ Test aSlowOne() passed after 3.000 seconds."; sleep 3; done' > "$ws/rs/slow-xcodebuild"
+  chmod +x "$ws/rs/silent-xcodebuild" "$ws/rs/live-xcodebuild" "$ws/rs/slow-xcodebuild"
   # The two session logs, in `log show --style compact` shape. The first is T-2067's signature:
   # a session that connected and resumed and never got transport. The second is the healthy pair.
   print -rl -- \
@@ -3224,7 +3312,8 @@ selftest_only_testing() {
     "2026-10-04 15:02:01.116 Df xctest[41122:2f1] requested serialized transport" > "$ws/rs/sess-ok.txt"
   rs_fixture="$ws/rs/sess-ok.txt"
   rs_probe() {  # $@ = run-state arguments
-    rsout=$(CADENCE_RUNSTATE_SAMPLE="$rs_sample" CADENCE_XCTEST_SESSION_FIXTURE="$rs_fixture" \
+    rsout=$(CADENCE_RUNSTATE_SAMPLE="$rs_sample" CADENCE_RUNSTATE_SAMPLE_LONG="$rs_long" \
+      CADENCE_XCTEST_SESSION_FIXTURE="$rs_fixture" \
       TMPDIR="$ws/rs/tmp/" zsh "$rs_xcb" run-state "$@" 2>&1); rsrc=$?
   }
 
@@ -3296,6 +3385,30 @@ selftest_only_testing() {
     $( (( rsrc == RUNSTATE_EXIT_RUNNING )) && [[ "$rsout" == *"run-state: RUNNING"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
   check "...even with the T-2067 wedge signature in the session log: growth outranks it" \
     $( [[ "$rsout" != *"run-state: WEDGED"* && "$rsout" != *"run-state: STALLED"* ]] && print 1 || print 0 ) "$rsout"
+
+  # --- the SECOND window: a run that is quiet, and then is not -----------------------------------
+  # Without the confirming window this run is STALLED, and STALLED on a healthy build several times
+  # an hour is how an instrument gets switched off. The stub below says nothing for longer than the
+  # first window and then speaks; the verdict has to be RUNNING, which it can only be if the second
+  # window really re-reads the log rather than re-printing the first answer.
+  : > "$ws/rs/slow-calls"
+  XCODEBUILD="$ws/rs/slow-xcodebuild" FAKE_XCB_CALLS="$ws/rs/slow-calls" TMPDIR="$ws/rs/tmp/" \
+    CADENCE_STALL_POLL=1 CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS= \
+    zsh "$rs_xcb" rsslow test -scheme Cadence -destination 'platform=macOS' \
+    -only-testing:CadenceTests -derivedDataPath "$ws/rs/tmp/cadence-dd-rsslow" >"$ws/rs/slow-out" 2>&1 &
+  rs_slow_bg=$!
+  rs_log="$ws/rs/tmp/cadence-xcb-rsslow.log"
+  for rs_i in {1..300}; do grep -qF 'Command line invocation' "$rs_log" 2>/dev/null && break; sleep 0.2; done
+  rs_fixture="$ws/rs/sess-wedged.txt"
+  rs_long=8
+  rs_probe rsslow
+  check "a run quiet through the FIRST window and talking in the second is RUNNING, not STALLED" \
+    $( (( rsrc == RUNSTATE_EXIT_RUNNING )) && [[ "$rsout" == *"run-state: RUNNING"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  check "...and the report says it went back for a second window rather than answering on the first" \
+    $( [[ "$rsout" == *"confirming over 8s more"* ]] && print 1 || print 0 ) "$rsout"
+  rs_long=1
+  pkill -P "$rs_slow_bg" 2>/dev/null
+  wait "$rs_slow_bg" 2>/dev/null
 
   # --- WEDGED, and the control that proves it is read from the signature -------------------------
   : > "$ws/rs/wedge-calls"
@@ -3403,6 +3516,72 @@ selftest_only_testing() {
   check "...and a settled log whose banner IS its ending is FINISHED even with a live owner and the wedge signature" \
     $( (( rsrc == RUNSTATE_EXIT_FINISHED )) && [[ "$rsout" == *"run-state: FINISHED"* \
          && "$rsout" != *"run-state: WEDGED"* && "$rsout" != *"run-state: STALLED"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+
+
+  say ""
+  say " 14. this runner cannot be rewritten underneath itself (T-2085)"
+  # THE REAL FAILURE, INDUCED, not a claim about `exec`. A real `xcb.sh <id> test` is started
+  # against stubs, and while it is inside xcodebuild its own script file is TRUNCATED AND REWRITTEN
+  # in place -- which is exactly what an editor and `open(path, "w")` do, and exactly what happened
+  # to two live runs on 2026-10-06. The injection is ~900 KB, far longer than this script, so
+  # wherever the running shell's read offset sits it lands INSIDE the new text rather than at EOF.
+  #
+  # The CONTROL is what makes it evidence: the identical scenario with the guard switched off must
+  # show the injected program running. Without it these checks would pass just as well against a
+  # zsh that happened to buffer the whole file, and would be proving nothing about the guard.
+  local rw_out="" rw_log="" rw_control=""
+  local -i rw_bg=0 rw_i=0
+  mkdir -p "$ws/rw/root/scripts" "$ws/rw/tmp" "$ws/rw/ctl/scripts" "$ws/rw/ctltmp"
+  print -rl -- '#!/bin/zsh' 'exit 0' > "$ws/rw/root/scripts/test-host-lock.sh"
+  chmod +x "$ws/rw/root/scripts/test-host-lock.sh"
+  cp -- "$ws/rw/root/scripts/test-host-lock.sh" "$ws/rw/ctl/scripts/test-host-lock.sh"
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- "Command line invocation:"' \
+    'print -r -- "✔ Test aProbe() passed after 0.001 seconds."' \
+    'sleep 6' \
+    'print -r -- "** TEST SUCCEEDED **"' > "$ws/rw/xcodebuild"
+  chmod +x "$ws/rw/xcodebuild"
+  { repeat 24000; do print -r -- 'print -r -- "INJECTED-BY-A-MID-RUN-EDIT"'; done } > "$ws/rw/inject.zsh"
+
+  rw_rewrite_run() {  # $1 = root dir, $2 = tmp dir, $3 = id, $4 = CADENCE_XCB_NO_REEXEC value
+    cp -- "$here" "$1/scripts/xcb.sh"
+    XCODEBUILD="$ws/rw/xcodebuild" TMPDIR="$2/" CADENCE_STALL_POLL=1 CADENCE_XCB_NO_REEXEC="$4" \
+      CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS= \
+      zsh "$1/scripts/xcb.sh" "$3" test -scheme Cadence -destination 'platform=macOS' \
+      -only-testing:CadenceTests -derivedDataPath "$2/cadence-dd-$3" >"$2/out" 2>&1 &
+    rw_bg=$!
+    rw_log="$2/cadence-xcb-$3.log"
+    for rw_i in {1..300}; do grep -qF 'Command line invocation' "$rw_log" 2>/dev/null && break; sleep 0.2; done
+    cat -- "$ws/rw/inject.zsh" > "$1/scripts/xcb.sh"     # the hostile edit, in place
+    wait "$rw_bg" 2>/dev/null
+  }
+
+  rw_rewrite_run "$ws/rw/root" "$ws/rw/tmp" rwprobe ""
+  rw_out="$(cat "$ws/rw/tmp/out" 2>/dev/null)"
+  check "a run whose own script is REWRITTEN in place mid-run never executes the new text" \
+    $( [[ "$rw_out" != *INJECTED-BY-A-MID-RUN-EDIT* ]] && print 1 || print 0 ) "$rw_out"
+  check "...and still produces exactly ONE result block, not two (T-2085's measured symptom)" \
+    $( [[ $(print -r -- "$rw_out" | grep -c '== xcb result') == 1 ]] && print 1 || print 0 ) "$rw_out"
+  check "...and reaches its postflight, rather than stopping at a shifted EOF" \
+    $( [[ "$rw_out" == *"XCODEBUILD_EXIT=0"* ]] && print 1 || print 0 ) "$rw_out"
+  check "...and leaves no snapshot behind: the private copy is unlinked while it is still running" \
+    $( [[ -z "$(print -r -- "$ws/rw/tmp"/cadence-xcb-self.*(N))" ]] && print 1 || print 0 ) \
+    "$(print -rl -- "$ws/rw/tmp"/cadence-xcb-self.*(N))"
+  # The authentic symptom, and it is a DIAGNOSTIC rather than injected output: a shifted offset
+  # lands mid-token, so what the shell usually says is `xcb.sh:<line>: ...` about its own file.
+  # `widgetdrop`'s run printed `./scripts/xcb.sh:3336: command not found: the`.
+  check "...and no zsh diagnostic naming its own script, which is what a shifted offset produces" \
+    $( [[ "$rw_out" != *"/scripts/xcb.sh:"<->* ]] && print 1 || print 0 ) "$rw_out"
+
+  rw_rewrite_run "$ws/rw/ctl" "$ws/rw/ctltmp" rwctl 1
+  rw_control="$(cat "$ws/rw/ctltmp/out" 2>/dev/null)"
+  # NON-VACUITY. Without this the four checks above would pass just as well against a zsh that
+  # happened to buffer the whole file, and would prove nothing about the guard. Any of the three
+  # readings counts as corruption, because the shifted offset can land on a runnable line, inside a
+  # quote, or past the end -- `widgetdrop` got the second, and two result blocks with it.
+  check "CONTROL: with the guard off the SAME edit really does corrupt the run" \
+    $( [[ "$rw_control" == *INJECTED-BY-A-MID-RUN-EDIT* || "$rw_control" == *"/scripts/xcb.sh:"<->* \
+       || $(print -r -- "$rw_control" | grep -c '== xcb result') != 1 ]] && print 1 || print 0 ) "$rw_control"
 
   rm -rf "$ws"
   say ""
