@@ -103,9 +103,9 @@ struct CadenceChoicePickerDismissalTests {
     /// picker anywhere lands here in the same change — which is the point, because the question
     /// "does this one's selection setter commit?" has to be asked at that moment and not later.
     ///
-    /// Four of thirty-nine commit. The two archive-import mode pickers do not: the mode is a
+    /// Three of thirty-two commit. The two archive-import mode pickers do not: the mode is a
     /// view-state choice read at the moment Import is pressed, so its setter writes nothing to the
-    /// store and a committing setter there would be wrong, not missing. Three are task-row chips; the fourth is
+    /// store and a committing setter there would be wrong, not missing. Two are task-row chips; the third is
     /// `iOSTaskDetailSheetSections`' time picker, the same defect closing over a swallowed
     /// `try? modelContext.save()` two calls down its old `Binding<Int>` setter — fixed by routing it
     /// through `iOSTaskDetailSheet.selectScheduledTime` and the committing initialiser [[T-761]].
@@ -122,8 +122,8 @@ struct CadenceChoicePickerDismissalTests {
             // T-1278 moved the priority picker from the sections file's Priority *row* onto the
             // title card's mark control, which is why one call crossed between these two lines.
             "Cadence/iOS/iOSTaskDetailComponents.swift": (3, 0),
-            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (5, 1),
-            "Cadence/iOS/iOSTaskRowActionViews.swift": (3, 3),
+            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (4, 1),
+            "Cadence/iOS/iOSTaskRowActionViews.swift": (2, 2),
             "Cadence/iOS/iOSTaskViews.swift": (1, 0),
             "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),
             "Cadence/macOS/Views/SettingsArchiveImportCard.swift": (1, 0),
@@ -156,9 +156,10 @@ struct CadenceChoicePickerDismissalTests {
         // the table by construction and stop being a second reading of the same population.
         // 39 since the two archive-import mode pickers; 37 before them. [[T-2079]] made it 34:
         // `iOSTrackingEditorSheets.swift` held five, none of them committing, and the file is
-        // deleted with the goal and habit editors it contained.
-        #expect(found.values.map(\.calls).reduce(0, +) == 34)
-        #expect(found.values.map(\.committing).reduce(0, +) == 4)
+        // deleted with the goal and habit editors it contained. T-1466 removes the inspector's
+        // milestone picker and the committing row chip, leaving exactly 32 and 3 respectively.
+        #expect(found.values.map(\.calls).reduce(0, +) == 32)
+        #expect(found.values.map(\.committing).reduce(0, +) == 3)
     }
 
     /// **The defect itself, as a detector rather than a list.**
@@ -240,20 +241,14 @@ struct CadenceChoicePickerDismissalTests {
         #expect(source.contains("ruleFailure = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice"))
     }
 
-    /// The row's milestone chip. The same defect two declarations below the repeat chip's, and
-    /// found by counting the class rather than by reading the ticket.
-    @Test func therowsMilestonePickerCommitsTheGoalAndUndoesItWhenTheStoreRefuses() throws {
+    /// T-1466 removes this edit path entirely; it must not return beside the surviving pickers.
+    @Test func therowsRetiredMilestonePickerHasNoAssignmentOrCommitPath() throws {
         let source = try CadenceCommitSurfaceScan.scanned(Self.rowActionsPath)
-        let body = try CadenceCommitSurfaceScan.declarationBody(named: "selectGoal", in: source)
-
-        #expect(body.contains("let previous = task.goal"), "the milestone edit captures no undo")
-        #expect(source.contains("try CadencePendingChangePersistence.commitEdit(in: modelContext) {"))
-        #expect(source.contains("task.goal = previous"), "a refused milestone is not put back")
-        #expect(source.contains("failureNotice: goalFailure,"))
-        #expect(
-            CadenceSourceScan.matchCount(#"task\.goal = goalID\.flatMap"#, in: source) == 0,
-            "the milestone picker still writes through the binding setter"
-        )
+        #expect(source.contains("struct iOSTaskRowRepeatChip: View"), "non-vacuity: still the chip file")
+        #expect(source.contains("failureNotice: ruleFailure,"))
+        #expect(!source.contains("selectGoal"))
+        #expect(!source.contains("iOSTaskRowGoalPickerContent"))
+        #expect(!source.contains("task.goal"))
     }
 
     /// **The fourth site, [[T-761]].** Its `select` closure is not in `rowActionsPath` like the other

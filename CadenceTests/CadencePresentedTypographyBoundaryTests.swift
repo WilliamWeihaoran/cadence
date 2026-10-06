@@ -291,7 +291,8 @@ struct CadencePresentedTypographyBoundaryTests {
             }
         }
 
-        #expect(popoverCount == 15, "the workflows' popover count moved; re-derive the list")
+        // T-1466 removes the inspector's milestone popover from these five workflow files.
+        #expect(popoverCount == 14, "the workflows' popover count moved; re-derive the list")
         #expect(Set(found).count >= 4, "the sweep matched one type thirteen times, which proves nothing")
     }
 

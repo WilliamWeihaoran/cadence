@@ -166,8 +166,8 @@ nonisolated enum CadenceArchiveImportPresentation {
         "\(count) record\(count == 1 ? "" : "s")"
     }
 
-    /// The rows the preview lists: one per kind of record the import would actually touch, biggest
-    /// first, so a screen names the tables that change rather than quoting one total.
+    /// The rows the preview lists, biggest first. Retired tracking tables share one retained-data
+    /// row; their insert/match counts and backend entity keys are unchanged.
     ///
     /// A kind the plan counts at zero on both sides is dropped. `CadenceArchiveImportPlan`'s keys
     /// are every entity in `CadenceSchema`, and a preview that listed all of them would bury the
@@ -176,10 +176,20 @@ nonisolated enum CadenceArchiveImportPresentation {
         var names = Set(plan.insertCountsByEntityName.keys)
         names.formUnion(plan.matchedCountsByEntityName.keys)
 
-        var lines: [CadenceArchiveImportPlanLine] = []
+        var counts: [String: (added: Int, matched: Int)] = [:]
         for name in names {
-            let added = plan.insertCountsByEntityName[name] ?? 0
-            let matched = plan.matchedCountsByEntityName[name] ?? 0
+            let displayName = retainedEntityNames.contains(name) ? retainedRecordsEntityName : name
+            let previous = counts[displayName] ?? (added: 0, matched: 0)
+            counts[displayName] = (
+                added: previous.added + (plan.insertCountsByEntityName[name] ?? 0),
+                matched: previous.matched + (plan.matchedCountsByEntityName[name] ?? 0)
+            )
+        }
+
+        var lines: [CadenceArchiveImportPlanLine] = []
+        for (name, count) in counts {
+            let added = count.added
+            let matched = count.matched
             guard added > 0 || matched > 0 else { continue }
             lines.append(
                 CadenceArchiveImportPlanLine(
@@ -315,6 +325,9 @@ nonisolated enum CadenceArchiveImportPresentation {
     /// come back. Exactly one override, for the one name where the mechanical answer is wrong
     /// rather than merely plain — `AppTask` is the type; "tasks" is the word the whole app uses.
     static func entityTitle(_ entityName: String) -> String {
+        if retainedEntityNames.contains(entityName) || entityName == retainedRecordsEntityName {
+            return "Retained legacy records"
+        }
         if let override = entityTitleOverrides[entityName] { return override }
         let words = splitCamelCase(entityName)
         guard let last = words.last else { return entityName }
@@ -325,6 +338,10 @@ nonisolated enum CadenceArchiveImportPresentation {
     }
 
     private static let entityTitleOverrides = ["AppTask": "Tasks"]
+    private static let retainedRecordsEntityName = "RetainedLegacyRecord"
+    private static let retainedEntityNames: Set<String> = [
+        "Goal", "GoalListLink", "Habit", "HabitCompletion", "Pursuit"
+    ]
 
     /// Upper-cases the first character and leaves the rest alone, unlike `capitalized`, which would
     /// turn "Habit completions" into "Habit Completions".

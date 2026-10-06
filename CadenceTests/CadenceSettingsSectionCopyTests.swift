@@ -97,7 +97,7 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceNotificationSettingsCopy.remindersToggleTitle", "Enable reminders"),
         (
             "CadenceNotificationSettingsCopy.remindersToggleDetail",
-            "A task's scheduled start and due date, and a habit's reminder time, notify you locally."
+            "A task's scheduled start and due date notify you locally."
         ),
         ("CadenceNotificationSettingsCopy.accessRequiredTitle", "Notification access required"),
         // **T-694.** The offer title before anyone has been asked; the demand phrasing above is
@@ -105,7 +105,7 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceNotificationSettingsCopy.connectOfferTitle", "Connect Notifications"),
         (
             "CadenceNotificationSettingsCopy.accessRequiredDetail",
-            "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."
+            "Allow Cadence to notify you about scheduled tasks and due dates."
         ),
         ("CadenceNotificationSettingsCopy.enableNotificationsAction", "Enable Notifications"),
     ]
@@ -1049,13 +1049,13 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceNotificationSettingsCopy.remindersToggleTitle == "Enable reminders")
         #expect(
             CadenceNotificationSettingsCopy.remindersToggleDetail
-                == "A task's scheduled start and due date, and a habit's reminder time, notify you locally."
+                == "A task's scheduled start and due date notify you locally."
         )
         #expect(CadenceNotificationSettingsCopy.accessRequiredTitle == "Notification access required")
         #expect(CadenceNotificationSettingsCopy.connectOfferTitle == "Connect Notifications")
         #expect(
             CadenceNotificationSettingsCopy.accessRequiredDetail
-                == "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."
+                == "Allow Cadence to notify you about scheduled tasks and due dates."
         )
         #expect(CadenceNotificationSettingsCopy.enableNotificationsAction == "Enable Notifications")
 

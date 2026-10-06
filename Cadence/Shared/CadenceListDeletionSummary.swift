@@ -106,7 +106,7 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
         case .project:
             return "This permanently deletes the project and its tasks, documents, and links."
         case .context:
-            return "This permanently deletes the context and all its areas, projects, tasks, milestones, and habits."
+            return "This permanently deletes the context and all its areas, projects, tasks, and retained legacy records."
         }
     }
 }
@@ -199,8 +199,7 @@ struct CadenceListDeletionSummary: Equatable, Sendable {
         [
             Self.line(areas, "area", "areas"),
             Self.line(projects, "project", "projects"),
-            Self.line(goals, "goal", "goals"),
-            Self.line(habits, "habit", "habits"),
+            Self.line(goals + habits, "retained legacy record", "retained legacy records"),
             Self.line(tasks, "task", "tasks"),
             Self.line(notes, "note", "notes"),
             Self.line(images, "embedded image", "embedded images"),

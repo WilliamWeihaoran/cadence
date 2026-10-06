@@ -234,7 +234,7 @@ nonisolated enum NoteTemplateLibrary {
     private static let projectBrief = NoteTemplate(
         id: "project-brief",
         title: "Project Brief",
-        subtitle: "Goal, scope, milestones",
+        subtitle: "Objective, scope, deliverables",
         body: """
         ---
         tags: [project]
@@ -243,12 +243,12 @@ nonisolated enum NoteTemplateLibrary {
 
         # Project Brief
 
-        ## Goal
+        ## Objective
 
         ## Scope
 
-        ## Milestones
-        | Milestone | Date |
+        ## Deliverables
+        | Deliverable | Date |
         | --- | --- |
         |  |  |
 

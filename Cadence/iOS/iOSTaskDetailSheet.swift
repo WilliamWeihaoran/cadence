@@ -11,7 +11,6 @@ struct iOSTaskDetailSheet: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @Query(sort: \Goal.order) private var goals: [Goal]
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var newSubtaskTitle = ""
     /// Set when a subtask insert or delete was refused by the store. See `addSubtask()`.
@@ -42,13 +41,6 @@ struct iOSTaskDetailSheet: View {
         (task.subtasks ?? []).sorted { $0.order < $1.order }
     }
 
-    private var availableGoals: [Goal] {
-        let openGoals = goals.filter { $0.status != .done }
-        guard let currentGoal = task.goal,
-              !openGoals.contains(where: { $0.id == currentGoal.id })
-        else { return openGoals }
-        return openGoals + [currentGoal]
-    }
 
     private var availableSectionNames: [String] {
         CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
@@ -266,7 +258,6 @@ struct iOSTaskDetailSheet: View {
     private var fieldListSection: some View {
         iOSTaskFieldListSection(
             task: task,
-            availableGoals: availableGoals,
             recurrenceSelection: recurrenceSelection,
             applyRecurrenceEnd: selectRecurrenceEnd,
             hasScheduledDate: $hasScheduledDate,

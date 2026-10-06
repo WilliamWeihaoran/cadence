@@ -536,7 +536,7 @@ private struct SettingsDataResetConfirmationSheet: View {
                                 // Calendar clause with "and neither are"; split into its own
                                 // sentence so one string can serve both platforms without either
                                 // depending on what precedes it.
-                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
+                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, tags, saved links, retained legacy records, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)
