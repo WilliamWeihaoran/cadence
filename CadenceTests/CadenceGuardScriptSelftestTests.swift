@@ -828,6 +828,11 @@ struct CadenceGuardScriptSelftestTests {
     static let codexLandChecks = [
         "a lease with patterns is readable",
         "an empty branch is VACUOUS, not clean",
+        // T-2051: the refusal's NUMBER, not only its status — `grep -c '^'` on an empty diff
+        // said 1 changed file for a branch that changed none.
+        "an empty branch's refusal counts 0 changed files, not 1",
+        "a branch whose commits cancel out is VACUOUS too",
+        "...and its refusal counts 2 commits and 0 changed files",
         "editing the ledger is refused",
         "a path outside the lease is refused",
         "code with no inbox entry is refused",

@@ -119,7 +119,10 @@ cmd_review() {
 
     files=$(git diff --name-only "$base".."$ref")
     ncommits=$(git rev-list --count "$base".."$ref")
-    nfiles=$(printf '%s\n' "$files" | grep -c '^' )
+    # Counted only when there is something to count (T-2051): `printf '%s\n' ""` is one empty
+    # line, so `grep -c '^'` on an empty diff answered 1 and the vacuity refusal below reported
+    # "1 changed file(s)" for a branch that changed none.
+    if [ -n "$files" ]; then nfiles=$(printf '%s\n' "$files" | grep -c '^'); else nfiles=0; fi
 
     # NON-VACUITY, the shape every guard here carries (T-1282): a review that read nothing must
     # refuse rather than report a clean branch. An empty diff and a broken ref look the same.
@@ -281,6 +284,19 @@ cmd_selftest() {
 
     ( cd "$ws" && git checkout -qb codex/empty main ) >/dev/null 2>&1
     ck "an empty branch is VACUOUS, not clean" "$(run review codex/empty)" 4
+    # The number in the refusal is what an agent reads to decide whether the branch holds anything,
+    # so it is asserted, not just the exit status (T-2051). The second branch is the case the count
+    # exists for: two commits whose net diff over main is nothing.
+    msg=$( cd "$ws" && sh ./scripts/codex-land.sh review codex/empty 2>&1 >/dev/null )
+    case "$msg" in *"adds 0 commit(s) and 0 changed file(s)"*) got=yes ;; *) got="$msg" ;; esac
+    ck "an empty branch's refusal counts 0 changed files, not 1" "$got" yes
+    ( cd "$ws" && git checkout -q main && git checkout -qb codex/netzero \
+      && printf 'x\n' > Cadence/iOS/iOSTaskRowGone.swift && git add -A && git commit -qm t \
+      && git rm -q Cadence/iOS/iOSTaskRowGone.swift && git commit -qm t ) >/dev/null 2>&1
+    ck "a branch whose commits cancel out is VACUOUS too" "$(run review codex/netzero)" 4
+    msg=$( cd "$ws" && sh ./scripts/codex-land.sh review codex/netzero 2>&1 >/dev/null )
+    case "$msg" in *"adds 2 commit(s) and 0 changed file(s)"*) got=yes ;; *) got="$msg" ;; esac
+    ck "...and its refusal counts 2 commits and 0 changed files" "$got" yes
 
     ( cd "$ws" && git checkout -q main && git checkout -qb codex/ledger \
       && printf 'edited\n' >> docs/TODO.md && git add -A && git commit -qm t ) >/dev/null 2>&1
