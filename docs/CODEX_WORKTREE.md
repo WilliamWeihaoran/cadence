@@ -29,7 +29,10 @@ the second Codex's own problem rather than a shared one.
    lease violations, ledger edits, missing inbox entries and id clashes.
 5. **The coordinator runs the tests and lands it** through `scripts/agent-commit.sh`, folding the
    inbox entries into `docs/TODO.md` in the same commit. Every guard the repository has then applies
-   to Codex's work exactly as it applies to everyone's.
+   to Codex's work exactly as it applies to everyone's. **When the coordinator PRE-FILED a stub for
+   the id and assigned the branch to it, the fold REPLACES THAT STUB'S BODY IN PLACE** — one id, one
+   entry, no second entry, no deletion, no renumber ([[T-1458]], [[T-3003]], [[T-3004]]). Step 4's
+   `CODEX-INBOX-ID-CLASH` on a pre-filed id is that case, not a blocker ([[T-1800]]).
 
 The coordinator is the bottleneck on step 5 deliberately. It costs minutes, and it is what keeps
 `FOREIGN-STAGED`, `REMOVES-HEAD-LINES`, `LEDGER-ID-UNFILED`, the closure reading and the foreign-hunk

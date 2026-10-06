@@ -224,7 +224,7 @@ cmd_review() {
             | grep -E '^\+' | grep -oE '^\+- \[T-[0-9]+\]' | sed 's/^+- \[//;s/\]$//' | sort -u)
         for id in $newids; do
             if grep -qE "^- \[$id\]" "$TODO" "$DONE" 2>/dev/null; then
-                printf 'REFUSED (CODEX-INBOX-ID-CLASH): %s already has a formal entry in the ledger.\n  Folding this in would give one id two entries, which is the shape T-1356 is about.\n' "$id" >&2
+                printf 'REFUSED (CODEX-INBOX-ID-CLASH): %s already has a formal entry in the ledger.\n  One id with two entries is the shape T-1356 is about, so this refusal stays -- but it does not\n  by itself mean the branch is blocked, and twice it has been read that way (T-1800).\n  If the coordinator PRE-FILED a stub for this id and assigned the branch to it, this exit is the\n  protocol working: at landing REPLACE THE STUB BODY IN PLACE, keeping the one id and adding no\n  second entry (T-1458, T-3003, T-3004).\n  If instead the id was folded formally while its own inbox entry was never published, publish that\n  entry on main unchanged and re-review (T-1800).\n  Never delete the entry, renumber it, or edit this check.\n' "$id" >&2
                 rc=3
             fi
         done
@@ -316,6 +316,14 @@ cmd_selftest() {
       && printf -- '- [T-9001] **already filed**\n' >> docs/TODO.md \
       && git add -A && git commit -qm t ) >/dev/null 2>&1
     ck "an id the ledger already has is refused" "$(run review codex/clash)" 3
+    # T-1800. The exit status is only half of what this refusal has to get right. It fired as
+    # designed on T-3003 and T-3004 -- where the coordinator had PRE-FILED the stub and assigned the
+    # branch to it, so exit 3 was the expected state of a branch that WAS ready to land -- and both
+    # times Codex stopped and asked the coordinator, because the message named the hazard and no way
+    # out. The check is untouched; the words are what changed, so the words are what is asserted.
+    msg=$( cd "$ws" && sh ./scripts/codex-land.sh review codex/clash 2>&1 >/dev/null )
+    case "$msg" in *"REPLACE THE STUB BODY IN PLACE"*) got=yes ;; *) got="$msg" ;; esac
+    ck "...and the clash refusal names the stub-replace landing path" "$got" yes
 
     ( cd "$ws" && git checkout -q main && git checkout -qb codex/good \
       && mkdir -p Cadence/iOS && printf 'x\n' > Cadence/iOS/iOSTaskRowC.swift \

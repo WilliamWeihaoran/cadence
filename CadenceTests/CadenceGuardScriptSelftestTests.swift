@@ -837,6 +837,13 @@ struct CadenceGuardScriptSelftestTests {
         "a path outside the lease is refused",
         "code with no inbox entry is refused",
         "an id the ledger already has is refused",
+        // T-1800, and it is a *wording* check on purpose. The clash refusal fired exactly as
+        // designed on T-3003 and T-3004, where the coordinator had pre-filed the stub and assigned
+        // the branch to it — so exit 3 was the expected state of a branch that was ready to land —
+        // and both times Codex halted and asked what to do, because the message named the hazard
+        // and no way out. Nothing about the check changed; the refusal now names the two supported
+        // resolutions, and a refusal's words are the only documentation this script has.
+        "...and the clash refusal names the stub-replace landing path",
         "a branch inside the lease with an entry passes",
         "a NEW file under a glob that also matches an existing file passes",
         "an inbox id the coordinator already folded is not a clash",
