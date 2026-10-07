@@ -668,6 +668,14 @@ struct CadenceGuardScriptSelftestTests {
         // as VACUOUS-COUNT plus "executed 0 tests" -- a wrong suite name -- unless this is named.
         // Section 8c induces it and keeps a red-without-it and an exit-0 control silent.
         "ENTITLEMENTS-POISONED-DD",
+        // T-2070: an unanswered "Enable UI Automation" prompt wedges the UNIT suite too, and the
+        // only thing an agent can read from inside one is a run that died at ~445s. The name is
+        // pinned here because the probe behind it is the part that rots silently: the predicate
+        // this ticket shipped counted `/usr/bin/log`'s own invocation records, so it read HEALTHY
+        // over a standing prompt, and a refusal that has quietly stopped firing looks exactly
+        // like a host nobody has wedged lately. Section 8e induces it, keeps a granted-request
+        // CONTROL silent, and pins both the noise filter and the scoping of the predicate.
+        "AUTOMATION-PROMPT-OUTSTANDING",
         // T-2071 / T-1920: the seven verdicts of `xcb.sh run-state`, and they are pinned as a SET
         // because the instrument's whole value is that they are distinguishable. Deleting any one
         // of them does not break the others -- it quietly collapses two states into one, which is
