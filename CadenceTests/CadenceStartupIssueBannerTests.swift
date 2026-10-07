@@ -163,7 +163,7 @@ struct CadenceStartupIssueBannerTests {
     ///
     /// The behaviour is unchanged because two better reasons hold. The pane only reacts to kinds
     /// whose `disablesCloudSync` is true, so `.maintenanceSaveFailed`, `.restoreFailed` and
-    /// `.restoreIncomplete` — three of the five `CadenceStartupIssueKind` cases — still reach no
+    /// `.restoreIncomplete` — three of the six `CadenceStartupIssueKind` cases — still reach no
     /// Settings pane on either platform. And
     /// `.inMemoryStore` loses data on quit, so a dismissible warning is one a user could hide and
     /// then quit behind.

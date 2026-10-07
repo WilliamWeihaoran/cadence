@@ -33,13 +33,25 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     /// there would be the app's own reassurance covering the one case where it is false.
     case restoreIncomplete
 
+    /// This is a development build, so Cadence opened the real store with no CloudKit database
+    /// behind it **on purpose** ([[T-3013]]).
+    ///
+    /// Deliberately its own case rather than `.recoveryStore`. The consequence is the same — this
+    /// device will not sync — but the cause is the opposite: nothing failed, no recovery store was
+    /// opened, and the data on screen is the person's own, intact, in its usual place. Filing it
+    /// under `.recoveryStore` would have made every reader of that case's name and doc comment
+    /// wrong about what happened, and would have sent anyone debugging it to
+    /// `recoveryStoreDirectoryCandidates`, which this path never touches. `CadenceSigningEnvironment`
+    /// holds the reasoning for the refusal itself.
+    case developmentBuild
+
     /// Whether the store Cadence actually opened has no CloudKit database behind it.
     ///
     /// This is the whole point of the type: a maintenance save failure is a real problem worth a
     /// banner, but it is **not** a sync failure, and reporting it as one would be its own lie.
     var disablesCloudSync: Bool {
         switch self {
-        case .recoveryStore, .inMemoryStore: return true
+        case .recoveryStore, .inMemoryStore, .developmentBuild: return true
         case .maintenanceSaveFailed, .restoreFailed, .restoreIncomplete: return false
         }
     }
@@ -67,6 +79,7 @@ extension CadenceStartupIssue {
         case .maintenanceSaveFailed: return "Startup Maintenance Failed"
         case .restoreFailed: return "Backup Was Not Restored"
         case .restoreIncomplete: return "Restore Left Files Aside"
+        case .developmentBuild: return "Development Build — iCloud Sync Is Off"
         }
     }
 
@@ -87,6 +100,8 @@ extension CadenceStartupIssue {
             return "\(message) Your existing data is intact and still syncing, and a copy of it was saved as a Before Restore backup. You can try the restore again from Settings."
         case .restoreIncomplete:
             return "\(message) Nothing was deleted, but what Cadence is showing you may be incomplete until those files are dealt with. A copy of the store as it was before the restore was saved as a Before Restore backup."
+        case .developmentBuild:
+            return "\(message) Your data is intact and exactly where it always is; nothing was deleted and no recovery store was opened. A development build signs into iCloud's Development environment, and letting it sync would mark your real records as already uploaded so they never reach your other devices. Changes made here stay on this device. Quit and use the installed Cadence to sync."
         }
     }
 
@@ -97,6 +112,7 @@ extension CadenceStartupIssue {
         case .maintenanceSaveFailed: return "wrench.and.screwdriver.fill"
         case .restoreFailed: return "clock.arrow.circlepath"
         case .restoreIncomplete: return "externaldrive.trianglebadge.exclamationmark"
+        case .developmentBuild: return "hammer.fill"
         }
     }
 

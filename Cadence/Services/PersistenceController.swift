@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import OSLog
+import Security
 import SwiftData
 
 struct PersistenceController {
@@ -126,7 +127,12 @@ struct PersistenceController {
             let c = try PersistenceController.makeContainer()
             recorder.finished(.containerOpen, .completed)
             container = c
-            if let failedRestore {
+            // `Self.startupIssue == nil` is [[T-3013]]: there is exactly one slot, and
+            // `makeContainer()` may already have filled it with the reason this launch is not
+            // syncing at all. A restore that did not run is the smaller news — the store it would
+            // have replaced is intact and open — and overwriting the sync message with it would
+            // reintroduce the silence this guard exists to break.
+            if let failedRestore, Self.startupIssue == nil {
                 Self.startupIssue = CadenceStartupIssue(
                     kind: failedRestore.startupIssueKind,
                     message: failedRestore.startupMessage
@@ -365,6 +371,18 @@ struct PersistenceController {
         }
     }
 
+    /// Open the store this launch resolved, with CloudKit behind it unless something says not to.
+    ///
+    /// **There are two separate reasons not to, and they are deliberately not folded together.**
+    /// `shouldUseLocalStoreOnly` is about a launch that was *asked* to stay local — the test host
+    /// and the two environment variables `scripts/run-macos-app.sh` sets. The gate below is about a
+    /// launch nobody asked anything of: Xcode's Run button sets none of those variables, so a
+    /// development-signed debug build opened the signed-in person's real store with CloudKit on and
+    /// mirrored it into the **Development** environment ([[T-2053]], [[T-3013]]). Keeping them
+    /// apart matters because [[T-3015]]'s product-level guard is a separate, still-open owner
+    /// decision over the same three conditions, and because the two have opposite fail directions:
+    /// an environment variable is read exactly, while the gate must refuse *only* on a positive
+    /// identification. See `CadenceSigningEnvironment` for why.
     private static func makeContainer() throws -> ModelContainer {
         let storeURL = try resolvedStoreURL()
         if shouldUseLocalStoreOnly {
@@ -375,6 +393,23 @@ struct PersistenceController {
                 cloudKitDatabase: .none
             )
             return try ModelContainer(for: schema, configurations: [localConfig])
+        }
+
+        if CadenceSigningEnvironment.currentProcessVerdict().mustOpenLocalStoreOnly {
+            // Say so. A store that silently stopped syncing is the bug [[T-2053]] spent a week
+            // tracing; a store that stopped syncing and *told you why* is a development build
+            // behaving correctly, and the user can only tell those apart if this line runs.
+            startupIssue = CadenceStartupIssue(
+                kind: .developmentBuild,
+                message: CadenceSigningEnvironment.localStoreOnlyMessage
+            )
+            let developmentConfig = ModelConfiguration(
+                "Cadence",
+                schema: schema,
+                url: storeURL,
+                cloudKitDatabase: .none
+            )
+            return try ModelContainer(for: schema, configurations: [developmentConfig])
         }
 
         let cloudConfig = ModelConfiguration(
@@ -762,6 +797,202 @@ struct PersistenceController {
         try FileManager.default.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
         return storeDirectoryURL.appendingPathComponent("default.store")
     }
+}
+
+/// Whether the process running right now was signed for Apple's **development** environment, which
+/// is the one question [[T-3013]] turns on.
+///
+/// ## Why this exists
+///
+/// `PersistenceController.makeContainer()` opens the signed-in person's real app-group store with
+/// `cloudKitDatabase: .private("iCloud.com.haoranwei.Cadence")`. A build signed for development
+/// mirrors that container's **Development** environment; an installed Release build mirrors
+/// **Production**. `NSPersistentCloudKitContainer` stores no environment discriminator in the
+/// store's mirroring metadata, so whichever build ran last stamps each record as already exported
+/// and the other one believes it — records a debug run pushed to Development are never uploaded to
+/// Production, and the owner's other devices simply never see them. [[T-2053]] established that by
+/// forensics and then confirmed it by direct observation: the Development database carries a full
+/// Cadence schema, including `CD_Exam`, a record type no model in this tree still declares.
+///
+/// ## Why the push entitlement is the discriminator
+///
+/// `Cadence/Cadence.entitlements` and `Cadence/Cadence-iOS.entitlements` both pin the push key to
+/// `$(APS_ENVIRONMENT)`, and `Cadence.xcodeproj/project.pbxproj` sets that build setting to
+/// `development` on the app target's Debug configuration and `production` on its Release one. So
+/// the answer is a **project-controlled build setting**, not whatever a signing profile happened to
+/// imply, and it reaches the running process as an entitlement anyone can read back.
+/// `CadenceSigningEnvironmentTests.theProjectStillSpellsTheTwoConfigurationsThisGateDependsOn` pins
+/// both halves of that sentence against `project.pbxproj`, so an edit that flips them turns red.
+///
+/// The key's **spelling** is per-platform and always has been: macOS writes
+/// `com.apple.developer.aps-environment`, iOS writes the bare `aps-environment`, which is the whole
+/// reason this project carries two entitlements files ([[T-1309]]). Both spellings are read here.
+///
+/// ## And so is the *reader*, which is the part that is not symmetric
+///
+/// macOS asks the kernel about this process (`SecTaskCreateFromSelf`). iOS cannot: `SecTask.h` is
+/// in the macOS SDK and is absent from `iPhoneOS.sdk`, so an iOS build of a macOS-shaped reader
+/// does not compile, let alone run. The iOS half therefore reads the bundle's embedded
+/// provisioning profile, which is a **witness** to the signed entitlement rather than the
+/// entitlement itself. That is a weaker source, and it is only acceptable because of the fail
+/// direction below: everything it cannot establish keeps syncing.
+///
+/// ## The fail direction, which is the opposite of this repository's usual rule
+///
+/// **Refuse only on a positive identification of `development`. Every other outcome keeps syncing.**
+/// An absent entitlement, an unreadable one, a `SecTask` that could not be created, a value of some
+/// other type, an empty string, a different capitalisation, garbage — all of them answer
+/// `.notPositivelyDevelopment` and leave CloudKit on.
+///
+/// That asymmetry is deliberate and must not be "fixed" into a fail-closed guard. The two errors do
+/// not cost the same thing:
+///
+/// - A **false refusal** silently stops the owner's real Mac and phone syncing. That is not a
+///   degraded version of the bug this ticket exists to end; it *is* that bug, wearing this guard's
+///   name, and it would be indistinguishable from it from the outside.
+/// - A **false allow** leaves today's behaviour exactly as it already is — which is the state the
+///   app has shipped in for its whole life, and which nothing here makes worse.
+///
+/// So the burden of proof sits entirely on the refusal, and anything short of the literal marker
+/// fails to discharge it.
+nonisolated enum CadenceSigningEnvironment {
+    /// What the gate decided about this process.
+    enum Verdict: Hashable {
+        /// The push entitlement positively reads as Apple's development environment.
+        case developmentSigned
+        /// Everything else — including every way the question could not be answered at all.
+        case notPositivelyDevelopment
+
+        /// The only consequence this type has: the real store opens with `cloudKitDatabase: .none`.
+        var mustOpenLocalStoreOnly: Bool { self == .developmentSigned }
+    }
+
+    /// The one value that refuses, spelled exactly as the build emits it.
+    ///
+    /// **The comparison is case-sensitive, and that is a decision rather than an oversight.** The
+    /// string is produced by this project's own `APS_ENVIRONMENT` build setting, which spells it
+    /// lowercase `development`, and Apple's vocabulary for the push entitlement is the lowercase
+    /// pair `development` / `production` — `/Applications/Cadence.app` reads back lowercase
+    /// `production` today. A case-insensitive compare would therefore widen the set of values that
+    /// **refuse** to spellings this build cannot emit, and widening the refusal set is the one
+    /// direction this gate is not allowed to be generous in. (`com.apple.developer.icloud-container-environment`
+    /// is the capitalised `Production`, but that key is not pinned by either entitlements file and
+    /// is not what this reads.)
+    static let developmentMarker = "development"
+
+    /// The entitlement key, in each spelling, platform-native first.
+    ///
+    /// Both are read on both platforms rather than behind an `#if`: a build that somehow carries
+    /// the other platform's spelling is still a build whose environment is knowable, and the order
+    /// only decides which one answers when both are present.
+    static var pushEnvironmentEntitlementKeys: [String] {
+        #if os(macOS)
+        return ["com.apple.developer.aps-environment", "aps-environment"]
+        #else
+        return ["aps-environment", "com.apple.developer.aps-environment"]
+        #endif
+    }
+
+    /// **The pure gate.** Given the push entitlement's value — or `nil` for every way there wasn't
+    /// one — say whether this is positively a development build.
+    ///
+    /// Pure and total, taking a `String?` rather than reading anything, so the whole truth table can
+    /// be driven from a test without a Security-framework call, a signed bundle, or a launch. The
+    /// impure half below is a thin wrapper over this and holds no decision of its own.
+    ///
+    /// No trimming, no case folding, no prefix matching: each of those would make some value that
+    /// is *not* the marker refuse anyway, and the note on `developmentMarker` is why that is the
+    /// wrong direction here.
+    static func verdict(forPushEnvironmentEntitlement value: String?) -> Verdict {
+        value == developmentMarker ? .developmentSigned : .notPositivelyDevelopment
+    }
+
+    /// The running process's own push entitlement, or `nil` if it has none that reads as a string.
+    ///
+    /// **The two platforms read it from two different places, because `SecTask` is macOS-only.**
+    /// `SecTask.h` ships in `MacOSX.sdk/System/Library/Frameworks/Security.framework/Headers` and
+    /// **not** in `iPhoneOS.sdk` — measured against this machine's Xcode on 2026-10-07, after an
+    /// iOS build of this very file failed with *cannot find 'SecTaskCreateFromSelf' in scope*. A
+    /// macOS build compiles none of `#if os(iOS)`, so that is exactly the kind of gap a macOS-only
+    /// check would have shipped.
+    ///
+    /// Both readers answer `nil` for every failure, which
+    /// `verdict(forPushEnvironmentEntitlement:)` reads as "not positively development" and which
+    /// therefore keeps syncing.
+    static func pushEnvironmentEntitlementOfCurrentProcess(
+        bundle: Bundle = .main
+    ) -> String? {
+        #if os(macOS)
+        // `SecTaskCreateFromSelf` asks the kernel about *this* process, so it answers for the
+        // binary that is actually executing rather than for a bundle on disk that may not be the
+        // one running.
+        guard let task = SecTaskCreateFromSelf(nil) else { return nil }
+        for key in pushEnvironmentEntitlementKeys {
+            guard let value = SecTaskCopyValueForEntitlement(task, key as CFString, nil) else { continue }
+            if let string = value as? String { return string }
+        }
+        return nil
+        #else
+        // iOS has no API for reading your own entitlements, so the next best witness in the bundle
+        // is the provisioning profile the build was signed against — which is where
+        // `$(APS_ENVIRONMENT)` ends up on the way to the signature. It is a *witness* and not the
+        // signed entitlement itself, and that asymmetry is only safe because of the fail direction:
+        // an App Store or TestFlight profile carries `production`, a development profile carries
+        // `development`, and a bundle with no profile, an unparseable one, or one with no push key
+        // answers `nil` and keeps syncing.
+        guard let profileURL = bundle.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let profileData = try? Data(contentsOf: profileURL) else { return nil }
+        return pushEnvironmentEntitlement(inProvisioningProfile: profileData)
+        #endif
+    }
+
+    /// The push environment named by a provisioning profile's embedded entitlements, or `nil`.
+    ///
+    /// Compiled on **both** platforms although only iOS calls it, so `CadenceTests` — which builds
+    /// for macOS — can drive it over fixture bytes the test writes into its own temporary
+    /// directory. A parser that only the iOS build compiles is a parser this repository's unit
+    /// suite cannot see at all.
+    ///
+    /// Total: every malformed input answers `nil`.
+    static func pushEnvironmentEntitlement(inProvisioningProfile data: Data) -> String? {
+        guard let profile = embeddedPropertyList(inProvisioningProfile: data),
+              let entitlements = profile["Entitlements"] as? [String: Any] else { return nil }
+        for key in pushEnvironmentEntitlementKeys {
+            if let value = entitlements[key] as? String { return value }
+        }
+        return nil
+    }
+
+    /// The XML property list inside a `.mobileprovision`, which is a CMS envelope wrapped around
+    /// one.
+    ///
+    /// Found by its delimiters rather than by decoding the signature: nothing here trusts the
+    /// profile, and the only question asked of it is which of two literal strings it names.
+    static func embeddedPropertyList(inProvisioningProfile data: Data) -> [String: Any]? {
+        guard let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), options: [.backwards]),
+              start.lowerBound < end.upperBound else { return nil }
+        let payload = data[start.lowerBound..<end.upperBound]
+        let parsed = try? PropertyListSerialization.propertyList(from: payload, options: [], format: nil)
+        return parsed as? [String: Any]
+    }
+
+    /// The impure wrapper: read this process's entitlement, then decide with the pure function.
+    static func currentProcessVerdict(
+        entitlement: @autoclosure () -> String? = pushEnvironmentEntitlementOfCurrentProcess()
+    ) -> Verdict {
+        verdict(forPushEnvironmentEntitlement: entitlement())
+    }
+
+    /// What the banner says when the gate refuses.
+    ///
+    /// Plain language and not a log line: the person reading it has to be able to tell this apart
+    /// from the failure it is designed to prevent. Silence here is the failure mode — a build that
+    /// quietly stopped syncing looks exactly like [[T-2053]].
+    static let localStoreOnlyMessage = """
+        Cadence is running a development build, so it opened your data with iCloud sync turned off \
+        on purpose.
+        """
 }
 
 enum StoreBackupReason: String, Codable {

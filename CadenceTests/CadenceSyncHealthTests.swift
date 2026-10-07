@@ -71,7 +71,11 @@ struct CadenceSyncHealthTests {
 
     @Test func onlyTheStoreLevelIssuesDisableSync() {
         let disabling = CadenceStartupIssueKind.allCases.filter(\.disablesCloudSync)
-        #expect(Set(disabling) == [.recoveryStore, .inMemoryStore])
+        // `.developmentBuild` joined the set with [[T-3013]]. It belongs here for the same reason
+        // the other two do and for a different reason than theirs: the store it opened genuinely
+        // has `cloudKitDatabase: .none`, but because the app refused on purpose rather than because
+        // anything failed.
+        #expect(Set(disabling) == [.recoveryStore, .inMemoryStore, .developmentBuild])
         #expect(CadenceStartupIssueKind.allCases.filter(\.losesDataOnQuit) == [.inMemoryStore])
     }
 
