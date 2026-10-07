@@ -9,6 +9,14 @@
 //  instant is written into the **owner's real Calendar**, outside Cadence and not undoable from
 //  inside it.
 //
+//  **T-3051 added a fourth.** `CalendarManager.createStandaloneEvent` — the macOS drag-to-create
+//  path, reached from `CalendarPageMonthSupportViews` and `SchedulePanel` — had the same defect
+//  spelled `startOfDay.addingTimeInterval(TimeInterval(startMin * 60))`, with its *end* anchored at
+//  the same midnight. An `rg 'byAdding: .minute'` scores 0 on that spelling, which is how both
+//  earlier audits walked past it. It holds the day as a `Date` rather than a key, so
+//  `CadenceCalendarEventTiming` grew a `startDate(day:startMin:calendar:)` **overload** of the one
+//  rule rather than a second copy of it, and the scan below now hunts `addingTimeInterval` too.
+//
 //  **Why this file states a zone instead of relying on the host.** The scheme's `TestAction` pins
 //  `TZ=UTC` ([[T-1116]]) and UTC has no DST, so a test that read `Calendar.current` here would
 //  measure a zone in which the whole distinction is invisible: it would pass against the defect
@@ -214,6 +222,120 @@ struct CadenceCalendarEventTimingTests {
         #expect(calendar.component(.month, from: normalized) == 1)
     }
 
+    // MARK: - 2b. The `Date`-day overload, T-3051
+
+    /// `CalendarManager.createStandaloneEvent` holds the day as a `Date`, not a stored key, so it
+    /// takes the `day:` overload. Same three days, same answer — and this is the macOS
+    /// drag-to-create path, which writes into the owner's real Calendar.
+    @Test func theDayOverloadSetsTheWallClockMinuteOfDayOnBothTransitionDaysAndAnOrdinaryOne() throws {
+        let calendar = try newYork()
+
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+            let start = try #require(
+                CadenceCalendarEventTiming.startDate(day: base, startMin: 540, calendar: calendar),
+                "09:00 on \(dateKey) must resolve from a Date day"
+            )
+            let components = calendar.dateComponents([.hour, .minute], from: start)
+            #expect(components.hour == 9, "the standalone event on \(dateKey) starts at hour \(components.hour ?? -1), not 9")
+            #expect(components.minute == 0, "the standalone event on \(dateKey) starts at minute \(components.minute ?? -1), not 0")
+            #expect(calendar.isDate(start, inSameDayAs: base), "the standalone event on \(dateKey) left its own day")
+        }
+    }
+
+    /// The old spelling at `CalendarManager.swift:235`, asserted rather than quoted:
+    /// `startOfDay.addingTimeInterval(startMin * 60)` is elapsed seconds, so it lands on hour 10 on
+    /// the spring-forward day and hour 8 on the fall-back day. `addingTimeInterval` is why two
+    /// `byAdding: .minute` audits walked straight past this site.
+    @Test func addingElapsedSecondsToMidnightLandsAnHourOffOnlyOnTheTransitionDays() throws {
+        let calendar = try newYork()
+
+        let expectedElapsedHours = [Self.springForward: 10, Self.ordinary: 9, Self.fallBack: 8]
+        for (dateKey, expectedHour) in expectedElapsedHours {
+            let base = try midnight(dateKey, calendar)
+            let elapsed = calendar.startOfDay(for: base).addingTimeInterval(TimeInterval(540 * 60))
+            #expect(
+                calendar.component(.hour, from: elapsed) == expectedHour,
+                "adding 540 minutes of real time to midnight on \(dateKey) must read hour \(expectedHour)"
+            )
+
+            let set = try #require(
+                CadenceCalendarEventTiming.startDate(day: base, startMin: 540, calendar: calendar)
+            )
+            if dateKey == Self.ordinary {
+                #expect(set == elapsed, "an ordinary day cannot tell the two spellings apart")
+            } else {
+                #expect(set != elapsed, "\(dateKey) must distinguish setting the clock from adding seconds")
+            }
+        }
+    }
+
+    /// `SchedulePanel` hands this overload `Date()` — an instant in the *middle* of the day, not
+    /// its midnight — while `CalendarPageMonthSupportViews` hands it the column's own date. So the
+    /// answer must not depend on **when during the day** the user dragged, and it must stay on
+    /// that day.
+    ///
+    /// **Measured on this toolchain, because the obvious worry turns out not to be the mechanism:**
+    /// `date(bySettingHour:minute:second:of:)` is documented as searching forward, but it answers
+    /// the *same calendar day* for every `of:` instant tried here — 00:00, 09:00, 15:42 and 23:59,
+    /// on all three days, and for the ambiguous 01:30 on the fall-back day as well. The
+    /// `startOfDay` narrowing inside the helper is therefore belt-and-braces rather than the thing
+    /// preventing a roll onto tomorrow; it is kept because it makes the `day:` overload provably
+    /// the same function as the `dateKey:` one, whose base is always a midnight. Do not delete it
+    /// on the strength of this paragraph — delete it and `theKeyAndDayOverloadsAgree…` below is the
+    /// pin that still has to hold.
+    @Test func theDayOverloadAnswersTheSameInstantFromAnyTimeOfDayWithinTheDay() throws {
+        let calendar = try newYork()
+
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+            let expected = try #require(
+                CadenceCalendarEventTiming.startDate(day: base, startMin: 540, calendar: calendar)
+            )
+            for (hour, minute) in [(0, 0), (9, 0), (15, 42), (23, 59)] {
+                let instant = try #require(calendar.date(bySettingHour: hour, minute: minute, second: 0, of: base))
+                let start = try #require(
+                    CadenceCalendarEventTiming.startDate(day: instant, startMin: 540, calendar: calendar),
+                    "09:00 must resolve from \(hour):\(minute) on \(dateKey)"
+                )
+                #expect(start == expected, "the answer moved when the day was handed in as \(hour):\(minute) on \(dateKey)")
+                #expect(calendar.isDate(start, inSameDayAs: base), "09:00 asked of a \(hour):\(minute) \(dateKey) rolled onto another day")
+                #expect(calendar.component(.hour, from: start) == 9)
+            }
+        }
+    }
+
+    /// Out of range on the `Date` overload too. `createStandaloneEvent` refuses the write rather
+    /// than filing the event on a different calendar day than the one the user dragged on.
+    @Test func anOutOfRangeMinuteNamesNoInstantOnTheDayOverloadEither() throws {
+        let calendar = try newYork()
+
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+            for startMin in [1440, 1441, 1500, 2880, -1] {
+                #expect(
+                    CadenceCalendarEventTiming.startDate(day: base, startMin: startMin, calendar: calendar) == nil,
+                    "\(startMin) names no time on \(dateKey)"
+                )
+            }
+        }
+    }
+
+    /// The two overloads are one rule, not two: for every day key they answer the same instant.
+    @Test func theKeyAndDayOverloadsAgreeOnEveryMinuteTheyBothResolve() throws {
+        let calendar = try newYork()
+
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+            for startMin in [0, 90, 150, 540, 1439] {
+                let fromKey = CadenceCalendarEventTiming.startDate(dateKey: dateKey, startMin: startMin, calendar: calendar)
+                let fromDay = CadenceCalendarEventTiming.startDate(day: base, startMin: startMin, calendar: calendar)
+                #expect(fromKey == fromDay, "the two overloads disagree at \(startMin) on \(dateKey)")
+                #expect(fromKey != nil, "\(startMin) must resolve on \(dateKey)")
+            }
+        }
+    }
+
     // MARK: - 3. The lines that are CORRECT, pinned so they are not "fixed" symmetrically
 
     /// An event's duration is **elapsed** time, and on a transition day that is visibly different
@@ -246,6 +368,21 @@ struct CadenceCalendarEventTimingTests {
             calendar.date(bySettingHour: 2, minute: 30, second: 0, of: fallStart)
         )
         #expect(setInstead.timeIntervalSince(fallStart) != 3600)
+
+        // T-3051: the same claim for `createStandaloneEvent`'s end, whose duration is a dragged
+        // `endMin - startMin` rather than a fixed hour. A 30-minute drag is 30 minutes of real time
+        // on every one of the three days; it used to be `startMin + 30` measured from midnight, so
+        // it inherited the start's error instead of being a duration at all.
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+            let start = try #require(
+                CadenceCalendarEventTiming.startDate(day: base, startMin: 540, calendar: calendar)
+            )
+            let end = try #require(calendar.date(byAdding: .minute, value: max(5, 30), to: start))
+            #expect(end.timeIntervalSince(start) == 1800, "a 30-minute drag on \(dateKey) is 1800 seconds")
+            #expect(calendar.component(.hour, from: end) == 9, "and still ends at 09:30 on \(dateKey)")
+            #expect(calendar.component(.minute, from: end) == 30)
+        }
     }
 
     /// The three call sites, in source: each sets its start through `CadenceCalendarEventTiming`
@@ -264,8 +401,8 @@ struct CadenceCalendarEventTimingTests {
 
         // Positive: the start legs route through the one helper.
         #expect(
-            CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(", in: manager) == 2,
-            "CalendarManager has exactly two minute-of-day start legs"
+            CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(", in: manager) == 3,
+            "CalendarManager has exactly three minute-of-day start legs"
         )
         #expect(
             CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(", in: sheet) == 1,
@@ -282,6 +419,10 @@ struct CadenceCalendarEventTimingTests {
             "updateEvent's end is durationMinutes of real time after its start"
         )
         #expect(
+            manager.contains("timingCalendar.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate)"),
+            "createStandaloneEvent's end is durationMinutes of real time after its start (T-3051)"
+        )
+        #expect(
             sheet.contains("Calendar.current.date(byAdding: .minute, value: max(5, estimatedMinutes), to: startDate)"),
             "the sheet's end is estimatedMinutes of real time after its start"
         )
@@ -294,6 +435,23 @@ struct CadenceCalendarEventTimingTests {
             )
             #expect(offenders.isEmpty, "\(path) still adds a minute-of-day to midnight: \(offenders)")
         }
+
+        // **T-3051, the spelling two audits missed.** `addingTimeInterval` is elapsed seconds and
+        // is the form `createStandaloneEvent` used, so a `byAdding: .minute` scan — the one above,
+        // and the `rg` that produced T-3048 and T-3050 — scores 0 on it. Neither file may turn a
+        // minute-of-day into an instant that way again.
+        for (path, source) in [("CalendarManager.swift", manager), ("iOSCalendarQuickCreateSheet.swift", sheet)] {
+            let offenders = CadenceSourceScan.matchLines("addingTimeInterval", in: source)
+            #expect(offenders.isEmpty, "\(path) converts a time by elapsed seconds: \(offenders)")
+        }
+
+        // Non-vacuity for that scan too.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "addingTimeInterval",
+                in: "event.startDate = startOfDay.addingTimeInterval(TimeInterval(startMin * 60))"
+            ) == 1
+        )
 
         // Non-vacuity: the regex above must match the shape it is hunting and miss the duration it
         // must not touch.

@@ -50,13 +50,37 @@ nonisolated enum CadenceCalendarEventTiming {
     ///   explicit DST-observing zone because the scheme pins the test host to `TZ=UTC` ([[T-1116]]),
     ///   in which this whole distinction is invisible.
     static func startDate(dateKey: String, startMin: Int, calendar: Calendar = .current) -> Date? {
-        guard startMin >= 0 else { return nil }
         guard let baseDate = DateFormatters.date(from: dateKey, in: calendar) else { return nil }
+        return startDate(day: baseDate, startMin: startMin, calendar: calendar)
+    }
+
+    /// The same instant for a caller that holds a **`Date` somewhere in the day** rather than a
+    /// stored day key ([[T-3051]]).
+    ///
+    /// `CalendarManager.createStandaloneEvent` is the one such caller: the macOS drag-to-create
+    /// path hands it the day as a `Date` (`Date()` from `SchedulePanel`, the column's own date from
+    /// `CalendarPageMonthSupportViews`), so it cannot reach the key overload. This is an *overload*
+    /// and not a second helper on purpose — the rule "a minute-of-day is set, never added" is one
+    /// rule, and the repo reached six copies of it by letting each call site spell it locally.
+    ///
+    /// **`day` is narrowed to its own start first.** `SchedulePanel` hands this `Date()` — any
+    /// instant in the day — so the answer must not depend on when during the day the user dragged.
+    /// *Measured, rather than assumed:* `date(bySettingHour:minute:second:of:)` is documented as
+    /// searching forward, but on this toolchain it already answers the **same calendar day** from
+    /// a 00:00, 09:00, 15:42 or 23:59 `of:`, on both transition days and an ordinary one, and for
+    /// an ambiguous reading too. So the narrowing is not what stops a roll onto tomorrow — it is
+    /// what makes this provably the *same* function as the key overload, whose base is always a
+    /// midnight. `CadenceCalendarEventTimingTests` pins both halves.
+    ///
+    /// Every reading above about gaps, ambiguity and out-of-range applies here unchanged, because
+    /// this is the function the key overload delegates to.
+    static func startDate(day: Date, startMin: Int, calendar: Calendar = .current) -> Date? {
+        guard startMin >= 0 else { return nil }
         return calendar.date(
             bySettingHour: startMin / 60,
             minute: startMin % 60,
             second: 0,
-            of: baseDate
+            of: calendar.startOfDay(for: day)
         )
     }
 }

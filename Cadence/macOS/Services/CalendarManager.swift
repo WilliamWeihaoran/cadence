@@ -221,19 +221,58 @@ final class CalendarManager {
 
     // MARK: - Create Standalone Event (direct iCal event, not linked to a task)
 
+    /// Create a standalone event at `startMin` minutes-of-day on `date`.
+    ///
+    /// **T-3051.** `startMin` is a wall-clock reading, so the start is *set* through
+    /// `CadenceCalendarEventTiming.startDate(day:startMin:calendar:)` rather than added to the
+    /// day's midnight — the identical defect T-3050 fixed three lines below and at `:383`, spelled
+    /// with `addingTimeInterval` instead of `date(byAdding: .minute,)`, which is exactly why two
+    /// `rg 'byAdding: .minute'` audits walked past it. This is the macOS drag-to-create path
+    /// (`CalendarPageMonthSupportViews` and `SchedulePanel`), so the wrong instant went into the
+    /// owner's real Calendar.
+    ///
+    /// The **end** was anchored at the same midnight (`startMin + max(5, durationMinutes)` from
+    /// `startOfDay`), so it carried the start's error instead of being a duration. It is now
+    /// `durationMinutes` of **real time** after a correct start — a 30-minute event really is 30
+    /// minutes long on a 23-hour day — the shape `convertAllDayEventToTimed` and `updateEvent`
+    /// already have, and `CadenceCalendarEventTimingTests` pins it from both directions.
+    ///
+    /// **It changes no `whether`.** Both production call sites take their minute from
+    /// `TimelineMetrics.snappedMinute(fromY:)`, whose `clampStart` bounds it at
+    /// `endHour * 60 - duration` and so never reaches the 1440 the helper refuses.
+    ///
+    /// - Parameter timingCalendar: see `CadenceCalendarEventTiming.startDate`. `.current` in
+    ///   production; a test passes an explicit DST-observing zone because the scheme pins the test
+    ///   host to `TZ=UTC` ([[T-1116]]). It is not named `calendar` because that name is already the
+    ///   resolved `EKCalendar` this event is filed in.
     @discardableResult
-    func createStandaloneEvent(title: String, startMin: Int, durationMinutes: Int, calendarID: String, date: Date, notes: String = "") -> CalendarWriteFailure? {
+    func createStandaloneEvent(
+        title: String,
+        startMin: Int,
+        durationMinutes: Int,
+        calendarID: String,
+        date: Date,
+        notes: String = "",
+        timingCalendar: Calendar = .current
+    ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
         let selectedCalendar = calendarID.isEmpty ? defaultWritableCalendar : store.calendar(withIdentifier: calendarID)
         guard let calendar = selectedCalendar,
               calendar.allowsContentModifications,
               isActiveCalendar(calendar)
         else { return record(.noWritableCalendar) }
+        guard let startDate = CadenceCalendarEventTiming.startDate(
+            day: date,
+            startMin: startMin,
+            calendar: timingCalendar
+        ) else { return record(.invalidRange) }
+        guard let endDate = timingCalendar.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate) else {
+            return record(.invalidRange)
+        }
         let event = EKEvent(eventStore: store)
         event.title = CadenceEventTitleSupport.storedTitle(title)
-        let startOfDay = Calendar.current.startOfDay(for: date)
-        event.startDate = startOfDay.addingTimeInterval(TimeInterval(startMin * 60))
-        event.endDate = startOfDay.addingTimeInterval(TimeInterval((startMin + max(5, durationMinutes)) * 60))
+        event.startDate = startDate
+        event.endDate = endDate
         event.isAllDay = false
         event.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes
         event.calendar = calendar
