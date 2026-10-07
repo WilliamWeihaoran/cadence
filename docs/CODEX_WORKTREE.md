@@ -65,7 +65,85 @@ Cadence/iOS/iOSCaptureRadialMenu.swift
 Cadence/iOS/iOSFocusView.swift
 Cadence/Shared/CadenceFocusPlanningSupport.swift
 CadenceWidgets/CadenceWidgetsBundle.swift
+Cadence/iOS/iOSFloatingCreateTaskButton.swift
+Cadence/Shared/Components/CadenceBoardMetadataChip.swift
+CadenceTests/CadenceTagChipStyleTests.swift
+Cadence/iOS/iOSMarkdownStylingSupport.swift
+Cadence/iOS/iOSMarkdownEditor.swift
+Cadence/iOS/iOSMarkdownTableGridRendering.swift
+Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift
+Cadence/macOS/Services/CadenceMCPRefreshCoordinator.swift
+Cadence/macOS/Services/CalendarManager.swift
+Cadence/macOS/Services/FocusManager.swift
+Cadence/macOS/Services/QuickTaskPanelController.swift
+Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift
+Cadence/macOS/Views/TimelineDropInteractionSupport.swift
+Cadence/Services/CadenceRemindersManager.swift
+Cadence/Services/CadenceForkedOccurrenceRemover.swift
 ```
+
+### LEASE WIDENED 2026-10-07 — fifteen paths for [[T-3011]], [[T-1411]], [[T-1400]] and [[T-122]]
+
+The owner granted these after Codex named each one in its batch report and the landing note above
+recorded that none of them was granted by the landing. Each path was checked to exist on HEAD and to
+be absent from the fence before being added, so this grant adds fifteen patterns and retires none;
+the ten paths of the first 2026-10-07 grant and the four standing globs are untouched.
+
+**Why this is a grant and not a widening by the writer.** `codex-land.sh review` refuses
+`CODEX-LEASE-VIOLATION` on a path outside the fence, and the tool's own printed remedy is for the
+coordinator to widen main's lease deliberately rather than for the branch to carry the widening
+hunk. Codex edited none of these files before asking, which is why there is a branch to grant for
+rather than one to refuse.
+
+**[[T-3011]] — `Cadence/iOS/iOSFloatingCreateTaskButton.swift`, to wire the lifetime owner that
+already landed built-and-unwired.** Replace the `@State UUID` at the drop-target modifier with the
+`CadenceNewTaskDropRegistrationLifetime` that `makeRegistrationLifetime()` builds, and call
+`activate()` where the registration is published — a lifetime that is never activated must stay
+inert, because a discarded `@State` initial value enqueuing a `destroy` is the bug the reference
+type exists to avoid. **Conditional:** [[T-3008]]'s guarantee is the thing this must not reopen, so
+`CadenceNewTaskDropRegistrationTests` stays green unmodified, and the entry's own third requirement
+stands — land a measurement that this bounds something, not only the wiring. `retire(_:)`'s doc
+comment stops saying the cost is still paid only once production owns a lifetime.
+
+**[[T-1411]] — `Cadence/Shared/Components/CadenceBoardMetadataChip.swift` and
+`CadenceTests/CadenceTagChipStyleTests.swift`.** The patch order is the one the entry already
+records and it is not negotiable, because declaring a root over an unconverted chip is the
+scattering [[T-1364]]'s brief forbids: convert the chip first (environment fonts, additive glyph
+growth, wrap rather than shrink-to-fit, fixed metrics unchanged), then extend the existing caller
+inventory to the undeclared Calendar and macOS consumers, then declare both Lists roots, then add
+exactly those two to `CadenceTypographyConversionSweepTests`. The chip is drawn on macOS too, so the
+macOS rendering must be unchanged at the default text size.
+
+**[[T-1400]] — the four iOS markdown files.** `monoFont`, the table geometry and the restyle-on-change
+invalidator, scaled through `UIFontMetrics`. **Do not convert `iOSMarkdownStyler.baseFont`** — it is
+`.preferredFont(forTextStyle: .body)` and has followed the reader's text size all along, which is the
+finding that corrected the audit's headline; moving it to the Cadence ramp would be a regression
+dressed as the fix. Table geometry derives from the same fonts rather than from a second constant,
+and a restyle preserves selection and caret. The Mac half of this ticket is **not** granted: it waits
+on [[T-1399]], and `Cadence/macOS/Editor/` is not in this fence.
+
+**[[T-122]] — the eight Swift 6 files, under a condition that is the whole point of the grant.**
+The owner's standing decision on this ticket is *investigate and report, do not flip*, and this grant
+does not change it: `SWIFT_VERSION` stays 5 and no target flips. What is granted is clearing the one
+error and the thirteen warnings the 2026-10-07 re-measure found, as preparation that is **inert under
+Swift 5**. A fix qualifies only if it is a type- or annotation-level change — a `Sendable`
+conformance, a `@Sendable` closure annotation, an isolation annotation that states the isolation the
+code already has at runtime. A fix that moves work to a different actor or defers it does not
+qualify, however quiet it makes the compiler: **no blanket `Task {}` hops and no
+`nonisolated(unsafe)`**, because `FocusManager`'s observers bank synchronously before sleep and the
+drag decoders in `TimelineDropInteractionSupport` must stay synchronous. Where a warning cannot be
+cleared that way, Codex reports it in the inbox entry instead of clearing it — that report is worth
+more than the silence. The zero-warning Swift 5 baseline must be re-measured as still zero before and
+after, and the entry's own caution stands: the error may hide further debt behind it.
+
+**[[T-168]] is NOT granted by this, and the omission is deliberate.** Half (a) wants a new widget
+surface (`CadenceWidgets/FocusSessionWidget.swift`, `Cadence/Services/CadenceWidgetRefreshCenter.swift`,
+`Cadence/Services/CadenceTodayWidgetSupport.swift`) and a `cadence://focus` route; the rest of half
+(b) wants `iOSCompactTabShell` to let Focus hide the tab bar and `iOSRootView` to promise State
+survives a size-class shell swap. Those are three product decisions and a new surface, not
+dependencies — they go to the owner, and the paths stay outside the fence until they come back
+answered.
+
 
 ### LANDED PARTIAL 2026-10-07 — `codex/typography-lifecycle-batch`, and NOTHING is retired
 
