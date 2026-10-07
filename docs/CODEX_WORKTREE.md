@@ -80,7 +80,68 @@ Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift
 Cadence/macOS/Views/TimelineDropInteractionSupport.swift
 Cadence/Services/CadenceRemindersManager.swift
 Cadence/Services/CadenceForkedOccurrenceRemover.swift
+CadenceWidgets/FocusSessionWidget.swift
+Cadence/Shared/CadenceFocusSessionSnapshot.swift
+Cadence/Services/CadenceWidgetRefreshCenter.swift
+Cadence/Services/CadenceTodayWidgetSupport.swift
+Cadence/iOS/iOSCompactTabShell.swift
+Cadence/iOS/iOSRootView.swift
 ```
+
+### LEASE WIDENED 2026-10-07 — six paths for [[T-168]], because the owner answered its three questions
+
+The grant above withheld T-168 on the grounds that it was three product decisions and a new surface
+rather than a set of dependencies. The owner has now made all three, so this publishes them together
+with the paths they imply. Additive: six patterns in, none out, 32 -> 38.
+
+**(1) The widget: yes, ONE read-only current-session widget.** Codex's own design is the one taken —
+the live timer plus the subject, drawn with `Text(timerInterval:)` so the system animates the count
+without waking the extension, because a WidgetKit timeline cannot tick and a reload-every-second
+timeline is not an option. **No second widget and no task-list widget**: two widgets that say the
+same thing was the outcome the entry told us to avoid. `CadenceWidgets/FocusSessionWidget.swift` is
+new; `CadenceWidgetRefreshCenter.swift` and `CadenceTodayWidgetSupport.swift` are granted for the
+registration and `instrumentedKinds` only, not for a rewrite of what the existing widgets do.
+
+**(2) The chrome: hide the tab bar in landscape Focus, AND a tap on empty space toggles it back.**
+This is the owner's refinement on the question as asked, and it is the binding half of the grant:
+hiding alone is not what was asked for. In landscape Focus the four-tab bar is hidden so the timer
+goes full-bleed, and a tap on empty space — not on the timer, not on the transport controls, not on
+the task picker — toggles it back into view, and toggles it away again. So the bar is **recoverable
+without rotating**, which is what makes hiding it safe: a hidden bar that can only be restored by
+rotating the phone would strand someone in Focus. Granted: `Cadence/iOS/iOSCompactTabShell.swift`.
+Every tab draws through that shell, so the hiding must be expressible as something Focus asks for
+and the other three tabs cannot accidentally inherit; portrait Focus and all of iPad are unchanged.
+
+**(3) Rotation: a running session must survive it.** `iOSRootView` replaces the compact shell with
+the regular one at a size-class change, which today throws away an in-progress session, and the
+owner's answer is that it must not. Focus session state moves above the shell so the swap cannot
+take it. Granted: `Cadence/iOS/iOSRootView.swift`. This is the same persistence (1) needs — a widget
+process cannot see in-memory state in `iOSFocusView` either — so do them as one piece of work and
+not twice.
+
+**The persistence itself is `Cadence/Shared/CadenceFocusSessionSnapshot.swift`, new, and it is the
+prerequisite rather than a detail.** iOS focus state lives in `iOSFocusView`'s own
+`CadenceFocusTimerState` with no shared state object, and `FocusManager` is `#if os(macOS)` only
+(T-242) — do **not** make it cross-platform, that would be a second timer authority with nothing
+incrementing its `elapsed`. The snapshot is a small app-group value — subject, start instant,
+running/paused, and nothing more — written by the app and read by the extension. It goes in
+`Shared/`, not `Services/`, for a mechanical reason: the `Cadence/` tree is a
+`PBXFileSystemSynchronizedRootGroup` so a new file there self-registers, while `Cadence/Services/`
+holds explicit `PBXFileReference`s and a new file there needs a project edit. `CadenceFocusHandoff`
+is NOT this type and must not be made into it — it is an in-memory message carrying a
+`CadenceFocusTarget` and a token, with deliberately zero macOS readers.
+
+**Two hard stops.** There is **no `cadence://focus` route** — the owner chose the widget without one,
+so tapping it opens the app and nothing registers a new deep link. And if making the snapshot
+readable from the widget target turns out to need a membership edit in
+`Cadence.xcodeproj/project.pbxproj`, **STOP and report instead of editing it**: that file must not be
+touched while the owner has Xcode open ([[T-117]]), and whether the coordinator or the owner lands
+that hunk is a decision made at the time, not in advance.
+
+Existing widgets to match are **`CalendarSnapshotWidget` and `TodayTasksWidget`** — the two named in
+T-168's original text that no longer exist, `HabitCheckInWidget` and `MilestoneMomentumWidget`, went
+with the Habits/Goals retirement, and a design that matches them matches nothing.
+
 
 ### LEASE WIDENED 2026-10-07 — fifteen paths for [[T-3011]], [[T-1411]], [[T-1400]] and [[T-122]]
 
