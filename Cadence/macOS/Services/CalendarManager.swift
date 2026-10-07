@@ -21,7 +21,27 @@ final class CalendarManager {
 
     static let shared = CalendarManager()
 
-    var isAuthorized: Bool = false
+    /// **T-3032. `private(set)`, and the setter is the whole safety argument for this type.**
+    ///
+    /// This flag is the *only* guard on all six EventKit write paths here — `createStandaloneEvent`,
+    /// both `updateEvent` overloads, `updateEventNotes`, `convertAllDayEventToTimed` and
+    /// `deleteEvent` each open with `guard isAuthorized else { return record(.notAuthorized) }` and
+    /// nothing else stands between the call and `store.save` / `store.remove`. Those writes land in
+    /// the user's real Calendar, outside Cadence and not undoable from inside it. So a plain `var`
+    /// here let any caller in the module — in practice, a test — mint the one permission the whole
+    /// file rests on, and `CalendarManagerScenarioTests` did exactly that on `shared`, which holds a
+    /// real `EKEventStore`: safe only because each such test then handed EventKit an event built
+    /// from a throwaway store, which EventKit refuses. The call it happened not to make
+    /// (`createStandaloneEvent(…, calendarID: "")`) resolves `store.defaultCalendarForNewEvents` and
+    /// writes for real.
+    ///
+    /// `RemindersManager` next door has spelled the same flag `private(set)` all along, so this was
+    /// an asymmetry in the tree rather than a matter of taste. Inside the type the value still has
+    /// exactly the three writers it always had — `applyAuthorizationStatus`, `requestAccess`'s
+    /// refusal branch, and (DEBUG only) the test seam below — and *when* a write happens is
+    /// unchanged; T-3032 is about who may set the flag, not about when Cadence may write. The open
+    /// question of what an agent launch may reach at all is T-3031 and is the owner's.
+    private(set) var isAuthorized: Bool = false
 
     /// The most recent write failure, for a surface to present and clear. Views bind an alert to
     /// this rather than each inventing their own error path.
@@ -36,12 +56,47 @@ final class CalendarManager {
         return status == .denied || status == .restricted
     }
 
-    private let store = EKEventStore()
+    private let store: EKEventStore
     private var storeObserver: NSObjectProtocol?
 
     private init() {
+        self.store = EKEventStore()
         refreshAuthorizationState()
     }
+
+    #if DEBUG
+    /// **T-3032 — the only way to obtain an authorized `CalendarManager` from outside the type, and
+    /// it does not exist in a release build.**
+    ///
+    /// A test that needs to run the code *after* the `guard isAuthorized` — the save-rollback paths,
+    /// the inverted-range refusal, the all-day conversion — used to force `shared.isAuthorized =
+    /// true`, which authorizes the singleton that owns the process's real, granted `EKEventStore`
+    /// for as long as the `defer` has not run. This builds a **separate** manager over a store the
+    /// caller owns instead, so nothing a test does can leave `shared` authorized, and the seeded
+    /// value is fixed at construction rather than settable afterwards.
+    ///
+    /// Why this shape and not one of the three seams already in the tree. `NotificationManager`'s
+    /// static `isTestEnvironment` guard returns early from every side-effecting method — that would
+    /// make the save paths unreachable, and the rollback behaviour these tests exist for is exactly
+    /// what happens *after* a failed save. `CalendarEventLookup` / `CalendarEventDaySource` (the
+    /// protocol seams `CalendarLinkedTaskSupport` and the board already use, with fakes in
+    /// `CalendarManagerScenarioTests` and `CalendarBoardEventFetchRateTests`) replace this type
+    /// wholesale, so they cannot exercise logic that lives *inside* it.
+    /// `CalendarBoardUITestEventSupport` is the same move one surface further out. The injected
+    /// dependency is the smallest thing that leaves the behaviour under test untouched.
+    ///
+    /// `store` has **no default**: a caller must hand over a store it made, so a test cannot reach
+    /// the singleton's by omission. Note the residue this does not remove — EventKit grants are
+    /// per-process, so *any* `EKEventStore` in an authorized host still resolves the owner's real
+    /// calendars. A test built on this seam must keep doing what the existing ones do and operate on
+    /// `EKEvent`s from a different store, never on `defaultWritableCalendar`. Callers that start
+    /// observing should pair it with `stopObserving()`; nothing here owns a `deinit`, because
+    /// `shared` never deallocates and T-3032 does not change production lifetimes.
+    init(testStore: EKEventStore, authorizedForTesting: Bool) {
+        self.store = testStore
+        self.isAuthorized = authorizedForTesting
+    }
+    #endif
 
     // MARK: - Authorization
 

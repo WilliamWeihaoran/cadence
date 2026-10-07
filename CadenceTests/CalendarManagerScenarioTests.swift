@@ -11,26 +11,35 @@ import SwiftData
 // Cadence/macOS/Views/CalendarLinkedTaskSupport.swift (reconciling a task's stale
 // `calendarEventID` against the live store). AGENTS.md flags CalendarManager as a risk area
 // ("can trigger permission prompts and external calendar side effects"), so these tests avoid
-// ever touching a real, authorized EventKit store — the test machine has no Calendar access
-// grant, so `CalendarManager.shared.isAuthorized` starts (and normally stays) `false`, which is
-// itself exactly the "denied / not yet determined" scenario these tests exercise.
+// ever touching a real, authorized EventKit store.
 //
-// Where a test needs to simulate a *previously authorized* state (to prove stale-state recovery
-// or to exercise the parts of a method that run after the authorization guard), it force-sets
-// `CalendarManager.shared.isAuthorized` directly via `@testable import` and always restores it
-// in a `defer` so no state leaks into other tests in the suite.
+// **T-3032 changed how that is achieved.** These tests used to force
+// `CalendarManager.shared.isAuthorized = true` and restore it in a `defer` — which authorized the
+// singleton that owns the process's real, granted `EKEventStore` for the length of the test body.
+// They were safe by argument rather than by construction: each then handed EventKit an `EKEvent`
+// built from a throwaway store, which EventKit refuses. `isAuthorized` is now `private(set)` and
+// the assignment no longer compiles. Every test that needs a seeded authorization state builds its
+// own manager through `makeManager(authorized:)` below instead, over a store this file owns, so the
+// shared singleton's flag is never touched and no state can leak between tests in the suite.
 #if os(macOS)
 @Suite(.serialized)
 @MainActor
 struct CalendarManagerScenarioTests {
 
+    /// A manager seeded into a known authorization state, over a throwaway `EKEventStore` that is
+    /// **not** `CalendarManager.shared`'s. `CalendarManager.init(testStore:authorizedForTesting:)`
+    /// exists only under `#if DEBUG`, so this seam is absent from a release build (T-3032).
+    ///
+    /// Seeding at construction rather than assigning afterwards is also why the two re-derivation
+    /// tests below now build one manager per direction instead of flipping one twice.
+    private func makeManager(authorized: Bool) -> CalendarManager {
+        CalendarManager(testStore: EKEventStore(), authorizedForTesting: authorized)
+    }
+
     // MARK: - 1. Denied / not-yet-determined authorization never crashes and no-ops safely
 
     @Test func unauthorizedStateShortCircuitsEveryCalendarOperationWithoutTouchingEventKit() {
-        let manager = CalendarManager.shared
-        let originalAuthorized = manager.isAuthorized
-        manager.isAuthorized = false
-        defer { manager.isAuthorized = originalAuthorized }
+        let manager = makeManager(authorized: false)
 
         // Read-only surface.
         #expect(manager.allCalendars.isEmpty)
@@ -83,13 +92,11 @@ struct CalendarManagerScenarioTests {
     }
 
     @Test func staleCachedAuthorizationIsCorrectedWhenTheStoreChangeHandlerRuns() {
-        let manager = CalendarManager.shared
-        let originalAuthorized = manager.isAuthorized
-        let originalVersion = manager.storeVersion
         let live = liveAuthorization
         // Simulate a previous session whose cached grant no longer matches reality.
-        manager.isAuthorized = !live
-        defer { manager.isAuthorized = originalAuthorized }
+        let manager = makeManager(authorized: !live)
+        defer { manager.stopObserving() }
+        let originalVersion = manager.storeVersion
 
         // The EKEventStoreChanged handler must re-derive authorization (not just bump the
         // refresh counter), so a revocation made outside the app while it keeps running is
@@ -101,28 +108,27 @@ struct CalendarManagerScenarioTests {
     }
 
     @Test func refreshAuthorizationStateNeverThrowsAndReflectsLiveStatus() {
-        let manager = CalendarManager.shared
-        let originalAuthorized = manager.isAuthorized
-        defer { manager.isAuthorized = originalAuthorized }
         let live = liveAuthorization
 
         // Converges from either direction, so neither a stuck `true` nor a stuck `false` passes.
-        manager.isAuthorized = true
-        manager.refreshAuthorizationState()
-        #expect(manager.isAuthorized == live)
+        // One manager per direction now that the seed is fixed at construction: the assertion is
+        // the same one, that the refresh re-derives from the live status rather than keeping what
+        // it was handed.
+        let seededTrue = makeManager(authorized: true)
+        defer { seededTrue.stopObserving() }
+        seededTrue.refreshAuthorizationState()
+        #expect(seededTrue.isAuthorized == live)
 
-        manager.isAuthorized = false
-        manager.refreshAuthorizationState()
-        #expect(manager.isAuthorized == live)
+        let seededFalse = makeManager(authorized: false)
+        defer { seededFalse.stopObserving() }
+        seededFalse.refreshAuthorizationState()
+        #expect(seededFalse.isAuthorized == live)
     }
 
     // MARK: - 3. Moving an event to a missing/read-only calendar doesn't crash or corrupt the event
 
     @Test func aFailedSaveIsReportedAndRollsTheEventBackInsteadOfLeavingAPhantomEdit() {
-        let manager = CalendarManager.shared
-        let originalAuthorized = manager.isAuthorized
-        manager.isAuthorized = true
-        defer { manager.isAuthorized = originalAuthorized }
+        let manager = makeManager(authorized: true)
 
         // Constructed against a throwaway store (not CalendarManager's own), so `store.save`
         // internally fails with an EventKit error rather than persisting anywhere real — this
@@ -168,10 +174,7 @@ struct CalendarManagerScenarioTests {
     }
 
     @Test func updateEventRejectsInvertedTimeRangeWithoutMutatingTheEvent() {
-        let manager = CalendarManager.shared
-        let originalAuthorized = manager.isAuthorized
-        manager.isAuthorized = true
-        defer { manager.isAuthorized = originalAuthorized }
+        let manager = makeManager(authorized: true)
 
         let event = EKEvent(eventStore: EKEventStore())
         event.title = "Untouched"
@@ -218,10 +221,7 @@ struct CalendarManagerScenarioTests {
     // MARK: - 5. Converting an all-day event to timed produces a sane range and never bleeds into other events
 
     @Test func convertAllDayEventToTimedRollsBackOnFailureAndNeverMutatesAnUnrelatedEvent() throws {
-        let manager = CalendarManager.shared
-        let originalAuthorized = manager.isAuthorized
-        manager.isAuthorized = true
-        defer { manager.isAuthorized = originalAuthorized }
+        let manager = makeManager(authorized: true)
 
         let dateKey = "2026-06-15"
         let baseDate = try #require(DateFormatters.date(from: dateKey))

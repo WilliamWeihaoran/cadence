@@ -104,9 +104,21 @@ directions is a decision, not a refactor.
 **Unit tests reach a live store.** `CadenceTests` has no EventKit sandbox: `RemindersManager.shared`
 is touched from the suite, and its `private init()` runs `refreshAuthorizationState()` and, on a
 granted host, `reload()`s the owner's real reminders into the test process. Do not add a test that
-writes. Open decisions on that exposure: [[T-3031]] (an agent app launch and a UI-test launch both
-reach the real databases) and [[T-3032]] (`CalendarManager.isAuthorized` is a plain settable `var`
-and is the only guard on all six write paths).
+writes. The open decision on that exposure is [[T-3031]] (an agent app launch and a UI-test launch
+both reach the real databases); it is the owner's and nothing here has narrowed it.
+
+**[[T-3032]] is closed and changed how a test gets an authorized `CalendarManager`.**
+`isAuthorized` is `private(set)`, so the forced `CalendarManager.shared.isAuthorized = true` that
+`CalendarManagerScenarioTests` used to run no longer compiles. A test that needs the code *after*
+the guard builds its own manager through `init(testStore:authorizedForTesting:)` — internal, inside
+`#if DEBUG`, so a release build exposes no way to set the flag from outside — over an `EKEventStore`
+the test hands in, never `shared`'s. That removes the forged flag and **not** the process-wide
+grant: any `EKEventStore` in an authorized host still resolves the owner's real calendars, so such a
+test must keep operating on `EKEvent`s built from a foreign store, which EventKit refuses, and must
+never reach `defaultWritableCalendar`. Pinned by
+`CadenceTests/CadenceCalendarAuthorizationFenceTests`, which also pins that the seam stays under
+`#if DEBUG`. `iOSCalendarManager.isAuthorized` is still a plain `var`, deliberately — different
+file, `#if os(iOS)`, no external assignment in the tree.
 
 ## Risk Notes
 
