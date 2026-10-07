@@ -1098,6 +1098,11 @@ struct CadenceGuardScriptSelftestTests {
         // T-2044. An empty rev-list split into one empty element read "1 commit(s)" for a floor at
         // HEAD; the mode builds a fixture repository, so it also proves git spawns in here (T-2045).
         "report-counts-the-commits-after-the-floor",
+        // T-1993. The caller T-1950's guard was missing: the push event itself. The mode walks a
+        // real `<before>..<after>` range out of a fixture repository rather than reading a
+        // hand-written manifest, because the walk is the part `.github/workflows/ci.yml`'s
+        // `push-attribution` job adds and therefore the part that can be wrong.
+        "the-push-event-is-the-only-caller-that-can-see-the-group",
     ]
 
     /// T-749. Runs against a throwaway claims root and a fake `simctl` (`CADENCE_SIM_CLAIMS_DIR` /
