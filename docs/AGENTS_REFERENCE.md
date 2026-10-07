@@ -97,8 +97,13 @@ command lines of previous probes. Measured 2026-10-06: a bare 24h count returned
 because a probe session runs both predicates, both counters rise together, so an
 `outstanding = requests - completions` reading is dragged back towards 0 by the act of probing and
 will read *healthy* over a genuinely unanswered request. **Always append `AND process != "log"`**
-(or scope to `process == "automationmode-writer" OR process == "testmanagerd"`). The predicate
-printed at `scripts/xcb.sh:277` has the same defect and has not been corrected.
+(or scope to `process == "automationmode-writer" OR process == "testmanagerd"`). **Corrected 2026-10-07 (T-2070, agent `envguard`): `scripts/xcb.sh` no longer prints that
+predicate.** The scoped probe is `./scripts/xcb.sh check-automation` — one `log show` over
+`(process == "testmanagerd" OR process == "automationmode-writer") AND process != "log"`,
+answering both counters over one window in 2.3s, with any line carrying `--predicate` dropped
+as a second defence. It exits 13 while a prompt stands, `xcb.sh`'s preflight refuses `test`
+actions on that reading, and both the automation-mode and hung-runner refusals now name it
+instead of a bare `log show`. Re-measured on the way in: 10 requests unscoped, 1 scoped.
 
 **Writing a test that reads source files as text? Read "Source-Scanning Tests: The Two Ways They Go
 Wrong" in `Cadence/Shared/AGENTS.md` first.** Those tests caught several real regressions in one day

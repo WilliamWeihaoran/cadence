@@ -275,10 +275,15 @@ automation_mode_refusal() {  # $1 = the log, so the refusal can name WHICH sente
   say "       Enabling it is an admin change to this Mac and the owner's call."
   say "   (2) Developer mode READS ENABLED and it still times out: automationmode-writer is asking"
   say "       for the device owner's Touch ID / password and nobody answered. Measured 2026-10-03."
-  say "       Check:  log show --last 10m --predicate 'eventMessage CONTAINS \"automation mode\"'"
+  say "       Check:  ./scripts/xcb.sh check-automation   (T-2070)"
+  say "       DO NOT hand-type a bare \`log show --predicate 'eventMessage CONTAINS ...'\` here:"
+  say "       /usr/bin/log is logged with its own argv, so such a predicate counts PREVIOUS PROBE"
+  say "       RUNS as events -- 10 against 1 real on this Mac, measured 2026-10-07 -- and because"
+  say "       a probe session runs both sides, it reads HEALTHY over a standing prompt."
   say "       The giveaway is: \"Writer daemon requires authentication to enable automation mode\","
   say "       and /var/db/com.apple.dt.automationmode/automation-enabled is absent afterwards."
-  say "       Only the owner can clear this, by answering the prompt while the run is starting."
+  say "       Only the owner can clear this, by answering the prompt while the run is starting;"
+  say "       the grant is PER-SESSION, so a previous grant is no reason to disbelieve it."
   say "   Either way it is the owner's to clear; re-run once it is."
 }
 
@@ -293,7 +298,9 @@ runner_hung_refusal() {
   say "     1. Look for the same sentence in a SIBLING agent's log --"
   say "        grep -l '$RUNNER_HUNG_BEFORE_CONNECTION' /var/folders/*/*/T/cadence-xcb-*.log"
   say "        If another agent's run died the same way, it is the Mac. Say so and stop."
-  say "     2. log show --last 20m --predicate 'process == \"testmanagerd\"'"
+  say "     2. ./scripts/xcb.sh check-automation   -- is an \"Enable UI Automation\" prompt standing?"
+  say "        A prompt nobody answered wedges UNIT runs too, and that is T-2070's measured case."
+  say "     3. log show --last 20m --predicate 'process == \"testmanagerd\"'"
   say "        \"requested transport for IDE\" with no reply after it is this failure."
   say "   Measured 2026-10-03: it began at 20:43 EDT and took every agent's runs, unit and UI,"
   say "   after a full 5520-test unit run had passed at 20:19. Restarting testmanagerd or"
@@ -2950,6 +2957,17 @@ selftest_only_testing() {
   # with no next check -- which is what happened to agent `escapefix` on 2026-10-03.
   check "...and it names the second cause as well as developer mode (T-2049)" \
     $( [[ "$aout" == *"automationmode-writer"* && "$aout" == *"Writer daemon requires authentication"* ]] && print 1 || print 0 ) "$aout"
+  # T-2070, and it is a CORRECTION of this refusal rather than an addition to it: the check this
+  # block used to print was `log show --last 10m --predicate 'eventMessage CONTAINS "automation
+  # mode"'`, which counts /usr/bin/log's OWN invocation records -- the probe's argv quotes the
+  # phrase -- and therefore reads healthy over a standing prompt. docs/AGENTS_REFERENCE.md had
+  # already measured the defect and recorded that this line still had it.
+  check "...and the check it names is \`check-automation\`, not a bare log show that counts its own probes (T-2070)" \
+    $( [[ "$aout" == *"./scripts/xcb.sh check-automation"* && "$aout" != *"Check:  log show"* ]] && print 1 || print 0 ) "$aout"
+  # ANCHORED at `say "` in column 1-or-indent for the reason section 8e's predicate pin is anchored:
+  # unanchored, this check's own source line is the thing it would find.
+  check "PIN: no refusal in this script hands the reader a bare \`log show\` as THE check (T-2070)" \
+    $( ! grep -qE '^ *say ".*Check: *log show' "$here" && print 1 || print 0 ) "$(grep -nE '^ *say ".*Check: *log show' "$here" | head -1)"
   # T-2049's SECOND sentence. The fixture line is verbatim from
   # `cadence-xcb-escapefix.20261003-211849-1974.log`, whose run compiled 1105 Swift files, linked
   # and code-signed -- so the counters were non-vacuous and ONLY the result lines were zero. The
@@ -2970,6 +2988,8 @@ selftest_only_testing() {
     $( [[ "$aout" != *DevToolsSecurity* ]] && print 1 || print 0 ) "$aout"
   check "...and it says this hits UNIT runs too, so it is not read as UI-only" \
     $( [[ "$aout" == *"UNIT runs as well as UI runs"* ]] && print 1 || print 0 ) "$aout"
+  check "...and it asks whether an automation prompt is standing, because that wedges UNIT runs (T-2070)" \
+    $( [[ "$aout" == *"./scripts/xcb.sh check-automation"* ]] && print 1 || print 0 ) "$aout"
   run_tlog "$ws/runner-hung.log" 0
   check "CONTROL: the hung-runner sentence under exit 0 is not the environmental refusal" \
     $( (( arc == 4 )) && [[ "$aout" == *"takes a SUITE name"* && "$aout" != *"TEST HOST never connected"* ]] && print 1 || print 0 ) "exit $arc: $aout"
