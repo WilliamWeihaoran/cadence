@@ -190,15 +190,15 @@ nonisolated enum CadenceTypographyRole: String, CaseIterable, Sendable {
 /// `.cadenceScaledTypography()` in its own body, and then it renders the same on both toolchains
 /// whichever way propagation goes. `CadencePresentedTypographyBoundaryTests` is what holds that.
 ///
-/// **T-1410 answered the question the pin postponed, and the four panels do not answer it alike.**
-/// `CadenceFittedPopover` and `EstimatePickerPopoverContent` are converted: they say
-/// `.cadenceScaledTypography()`, and their geometry therefore names `.enabled` **literally** rather
-/// than reading a flag back — the panel *is* the declaration, and a panel that consulted the
-/// environment for its own frame would be inheriting the answer again one level down, while the
-/// fonts inside it read the scope it installs. `CadenceQuickDatePopover` and
-/// `iOSTaskTagPickerPopover` stay `.fixed`, for reasons that are arithmetic rather than appetite: a
-/// month is seven columns wide, and every row of the tag picker is a `CadenceTagChip` that twelve
-/// surfaces draw. `CadencePickerLargeTextLayoutTests` prices both decisions.
+/// **The pins were a considered boundary, not an inconsistency to remove.** T-1410 converted
+/// `CadenceFittedPopover` and `EstimatePickerPopoverContent` while leaving the tag and date panels
+/// pinned. T-1412 subsequently converted the tag chip and its panel together; T-1413 redesigned
+/// date entry as rows when seven readable day cells cannot fit. All four panels now declare
+/// `.cadenceScaledTypography()` themselves, and the independently embeddable month panel does too.
+/// Their geometry names `.enabled` literally while fonts read the declared scope; neither answer
+/// depends on a presenter's scope. `CadencePresentedTypographyBoundaryTests` pins the declarations
+/// and `CadencePickerLargeTextLayoutTests` prices their geometry. Embedded or independently
+/// presented surfaces that remain unconverted still declare `.cadenceFixedTypography()`.
 nonisolated enum CadenceTypographyScaling: String, CaseIterable, Sendable {
     /// Draw at the base size whatever the reader's text size is — the app's behaviour before
     /// T-1364, and still the behaviour of every surface that has not been converted and tested.
@@ -440,7 +440,7 @@ extension View {
     /// this is a view that is *presented* from a converted one — and, since T-1410, one that has
     /// been *looked at and left pinned on purpose*, which is the more useful of the two readings:
     /// it is the only way a panel can say "this was considered and the answer is no" rather than
-    /// merely not having been reached yet. Both remaining declarers argue that in their own bodies.
+    /// merely not having been reached yet. Each pinned boundary states that answer in its own body.
     /// The original case: T-1398 measured that a custom
     /// environment value **does** cross `.sheet`, `.popover` and `.fullScreenCover`, while
     /// `\.dynamicTypeSize` is reseeded from the host window rather than inherited. So a rigid picker
