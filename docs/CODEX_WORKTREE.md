@@ -52,10 +52,28 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
-Cadence/macOS/Views/KanbanSupportViews.swift
-Cadence/macOS/Views/KanbanColumnSupportViews.swift
-Cadence/macOS/Views/KanbanListColumnView.swift
 ```
+
+### LEASE RETIRED 2026-10-06 — the three T-3005 Kanban paths are out, because the work landed
+
+`codex/kanban-rendering` landed at tip `05de6408` in the same commit that folded [[T-3005]]'s
+pre-filed stub in place. `Cadence/macOS/Views/KanbanSupportViews.swift`,
+`KanbanColumnSupportViews.swift` and `KanbanListColumnView.swift` are struck from the lease above.
+**Exactly three patterns out, and the four standing globs are untouched** — asserted as a SET
+equality, not a line count: what remains is exactly `Cadence/iOS/iOSList*.swift`,
+`Cadence/Shared/CadenceTypography.swift`, `CadenceTests/CadenceTypographyScaleTests.swift` and
+`CadenceTests/CadenceCodex*.swift`. That last one is Codex's reserved namespace and is where this
+branch's `CadenceCodexKanbanRenderingTests.swift` landed, so it must survive its own landing.
+
+**Rebuilt from `git show HEAD:docs/CODEX_WORKTREE.md`, never from a copy read earlier in the
+session** — the discipline `4ccaf39d` adopted after an agent nearly revoked a live grant from a
+stale base. The branch itself never touched this file (`git diff c3b659f5 05de6408` lists five
+paths and this is not one), so nothing retired here was taken from a writer holding its own lease:
+a writer that can edit the fence can widen it, and that hunk would have been declined had it
+existed.
+
+The `CODEX-INBOX-ID-CLASH` that `codex-land.sh review` exits 3 on was answered by replacing the
+pre-filed T-3005 stub's body, not by allocating a second id — the same fold as [[T-3004]].
 
 ### LEASE RETIRED 2026-10-06 — the one T-3004 path is out, because the work landed
 

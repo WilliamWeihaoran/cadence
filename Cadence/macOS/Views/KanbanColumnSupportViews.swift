@@ -129,39 +129,53 @@ struct KanbanColumnScroll<Content: View>: View {
     /// somewhere other than the add row — Cmd+N on the hovered kanban column does exactly that.
     /// Columns whose `add` is not `.compose` never read it.
     var isComposing: Binding<Bool> = .constant(false)
+    /// Opt in only after the caller's offscreen lifecycle is accounted for. Calendar bundle
+    /// drop routing and section completion groups retain their existing realization policy.
+    var defersOffscreenCards = false
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                content()
-                // Replaces the old header "+" chip; always genuinely last in the column. The
-                // composer takes the same slot, so the row it grew out of does not shift.
-                if case .compose(let surface) = add, isComposing.wrappedValue {
-                    InlineTaskComposer(surface: surface) {
-                        isComposing.wrappedValue = false
-                    }
-                } else if let add {
-                    KanbanColumnAddTaskRow(isColumnHovered: isColumnHovered) {
-                        switch add {
-                        case .compose:
-                            isComposing.wrappedValue = true
-                        case .presentSheet(let present):
-                            present()
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 4)
-            .padding(.top, 8)
-            .padding(.bottom, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            cardStack
+                .padding(.horizontal, 4)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
         .frame(minHeight: 200)
         .background(
             Color.clear.contentShape(Rectangle())
         )
+    }
+
+    @ViewBuilder
+    private var cardStack: some View {
+        if defersOffscreenCards {
+            LazyVStack(alignment: .leading, spacing: 8) { columnContents }
+        } else {
+            VStack(alignment: .leading, spacing: 8) { columnContents }
+        }
+    }
+
+    @ViewBuilder
+    private var columnContents: some View {
+        content()
+        // The add row and composer share the same final slot under either realization policy.
+        if case .compose(let surface) = add, isComposing.wrappedValue {
+            InlineTaskComposer(surface: surface) {
+                isComposing.wrappedValue = false
+            }
+        } else if let add {
+            KanbanColumnAddTaskRow(isColumnHovered: isColumnHovered) {
+                switch add {
+                case .compose:
+                    isComposing.wrappedValue = true
+                case .presentSheet(let present):
+                    present()
+                }
+            }
+        }
     }
 }
 

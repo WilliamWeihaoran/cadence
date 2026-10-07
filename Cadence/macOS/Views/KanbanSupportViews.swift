@@ -26,7 +26,7 @@ struct TaskListsKanbanView: View {
 
     private func taskListColumnsBoard(activeTasks: [AppTask]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 12) {
+            LazyHStack(alignment: .top, spacing: 12) {
                 ForEach(listColumns(activeTasks: activeTasks)) { column in
                     TaskListKanbanColumn(
                         title: column.title,
