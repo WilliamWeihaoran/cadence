@@ -257,6 +257,53 @@ struct CadenceExternalWriteReconcileTests {
         #expect(branch.contains("CadenceWidgetRefreshCenter.reloadAllWidgets"))
     }
 
+    /// **T-3046: the macOS half of the same checkpoint, which was missing.**
+    ///
+    /// `NotificationReconcileObserver` guarded its whole closure with
+    /// `guard phase != .active else { return }`, so *becoming* active reconciled nothing. That is
+    /// not a smaller version of the iOS hole, it is a bigger one: iOS at least repairs itself the
+    /// next time the app is foregrounded, while a Mac left open and frontmost all day never
+    /// reached a reconcile at all. Every other trigger in the tree is a *local* write — the
+    /// `scheduleReconcile` call sites, the two Settings toggles, the privacy reset, the archive
+    /// import, the external-write marker — so a task deleted, completed or rescheduled on another
+    /// device and synced in over CloudKit left its pending reminder standing.
+    ///
+    /// Scoped to the observer's own `.onChange`, because `macOSRootView` has a second
+    /// `.onChange(of: scenePhase)` higher up (the external-write refresh) that
+    /// `cadenceFunctionBody` would reach first.
+    @Test func macOSReconcilesNotificationsOnEveryScenePhaseChange() throws {
+        let raw = try sourceFile("Cadence/macOS/macOSRootView.swift")
+        let source = strippingComments(raw)
+
+        #expect(source != raw, "the comment stripper did nothing")
+        #expect(source.count == raw.count, "the comment stripper changed the string's length")
+
+        let observer = try cadenceFunctionBody(
+            "private struct NotificationReconcileObserver: View",
+            in: source
+        )
+        let body = try cadenceFunctionBody(".onChange(of: scenePhase)", in: observer)
+
+        #expect(body.contains("NotificationManager.shared.reconcile"))
+        // The direct regression pin. A `guard` on the leaving arm returns before the reconcile for
+        // the whole of the becoming-active case, which is the defect itself rather than a shape it
+        // could be refactored into.
+        #expect(
+            !body.contains("guard phase != .active"),
+            "becoming active returns before the reconcile again, so a CloudKit import is never swept on macOS (T-3046)"
+        )
+
+        // Same structural assertion as the iOS twin: the reconcile sits outside the leaving-active
+        // branch, and the widget reload — which is about what *this* process wrote — stays in it.
+        let guardRange = try #require(body.range(of: "if phase != .active {"))
+        let branch = try cadenceFunctionBody("if phase != .active", in: String(body[guardRange.lowerBound...]))
+        #expect(
+            !branch.contains("NotificationManager.shared.reconcile"),
+            "the reconcile is back inside the leaving-active branch, so a Mac left frontmost never converges (T-3046)"
+        )
+        #expect(branch.contains("CadenceWidgetRefreshCenter.reloadAllWidgets"))
+    }
+
     // MARK: - The scan itself
 
     /// The absence assertions above are worth nothing if the reads are failing. A scan that reads

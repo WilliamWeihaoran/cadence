@@ -307,8 +307,7 @@ struct macOSRootView: View {
 
 /// Owns the unbounded `@Query` the notification reconcile needs, so it sits on a leaf view
 /// rendered in `.background { }` instead of on `macOSRootView` itself — the same shape as
-/// `HoverFreezeObserver`. Nothing else changes: the reconcile still runs on exactly the same
-/// scene-phase transitions with exactly the same task set.
+/// `HoverFreezeObserver`.
 ///
 /// **The `@Query private var allHabits: [Habit]` beside it is gone ([[T-2081]]).** It existed only
 /// to feed `reconcile(tasks:habits:)`, which no longer takes habits; leaving the query would have
@@ -323,8 +322,19 @@ private struct NotificationReconcileObserver: View {
             // background, so without this it would sit in front of the shell for pointer events.
             .allowsHitTesting(false)
             .onChange(of: scenePhase) { _, phase in
-                guard phase != .active else { return }
-                CadenceWidgetRefreshCenter.reloadAllWidgets()
+                if phase != .active {
+                    CadenceWidgetRefreshCenter.reloadAllWidgets()
+                }
+                // **Both directions reconcile, as on iOS ([[T-3046]]).** This used to be
+                // `guard phase != .active else { return }` over the whole closure, so only
+                // *leaving* active was a checkpoint — and a Mac left open and frontmost all day
+                // never converged at all, which is strictly worse than the iOS shape this now
+                // matches (`iOSRootView`'s own `.onChange(of: scenePhase)`, [[T-312]]).
+                // Leaving active sweeps what this process just changed; *becoming* active is the
+                // checkpoint for a write this process did not make — the MCP server's or the
+                // widget extension's ([[T-306]]), and the one that matters most, a CloudKit import
+                // that landed a delete or a completion from another device while this app was away.
+                // The widget reload stays on the leaving arm: it is about what this process wrote.
                 let tasks = allTasks
                 Task { await NotificationManager.shared.reconcile(tasks: tasks) }
             }
