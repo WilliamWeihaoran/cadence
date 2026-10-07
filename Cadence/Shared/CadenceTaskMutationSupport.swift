@@ -14,7 +14,7 @@ struct CadenceTaskReopenWidgetEffects {
     }
 }
 
-enum CadenceTaskMutationSupport {
+extension CadenceTaskMutationSupport {
     /// **T-344, decided: the completion circle toggles *settled*, not *done*.** Tapping it on a
     /// cancelled task restores it to todo, exactly as tapping it on a done task does. It does not
     /// convert an abandoned task into an accomplished one.
@@ -1109,32 +1109,6 @@ enum CadenceTaskMutationSupport {
         }
     }
 
-    /// The day a bundle has to fit inside, and the shortest slot it may occupy.
-    ///
-    /// macOS spells the same two numbers as `TimelineDayRange` in `macOS/Views/TimelineMetrics.swift`,
-    /// which this file cannot see — `Shared/` does not compile the timeline. They are deliberately
-    /// identical, and `bundleClampsMatchTheTimelineDayRange` in `TaskBundleTests` fails if one side
-    /// moves. Do not re-spell either literal at a call site; that is how the timeline clamp came to
-    /// exist four times with three different bounds.
-    static let bundleDayEndMin = 24 * 60
-    static let bundleMinimumDuration = 5
-
-    /// Clamps a start minute so a minimum-length block still ends inside the day.
-    static func clampedBundleStart(_ startMin: Int) -> Int {
-        min(max(0, startMin), bundleDayEndMin - bundleMinimumDuration)
-    }
-
-    /// Minutes a bundle starting at `startMin` needs in order to hold `tasks`, clamped inside the day.
-    ///
-    /// Every member contributes at least `bundleMinimumDuration`, so two estimate-less tasks still
-    /// get a block tall enough to see and hit rather than a zero-height sliver.
-    static func bundleDuration(startingAt startMin: Int, tasks: [AppTask]) -> Int {
-        let total = tasks.reduce(0) { partial, task in
-            partial + max(task.estimatedMinutes, bundleMinimumDuration)
-        }
-        return max(bundleMinimumDuration, min(total, bundleDayEndMin - clampedBundleStart(startMin)))
-    }
-
     /// Forms a new bundle out of a scheduled task plus a task dropped onto it.
     ///
     /// **This is the one implementation of the drop-a-task-on-a-task gesture.** It was
@@ -1229,29 +1203,6 @@ enum CadenceTaskMutationSupport {
             task.scheduledStartMin = scheduledStartMin
             task.calendarEventID = calendarEventID
         }
-    }
-
-    @discardableResult
-    static func insertBundle(
-        title: String,
-        dateKey: String,
-        startMin: Int,
-        durationMinutes: Int,
-        modelContext: ModelContext
-    ) throws -> TaskBundle {
-        let clampedStart = clampedBundleStart(startMin)
-        let duration = min(max(bundleMinimumDuration, durationMinutes), bundleDayEndMin - clampedStart)
-        let bundle = TaskBundle(
-            title: TaskBundle.storedTitle(title),
-            dateKey: dateKey,
-            startMin: clampedStart,
-            durationMinutes: duration
-        )
-
-        modelContext.insert(bundle)
-        // See `duplicate(_:allTasks:modelContext:)` (T-1299): the same three lines, said once.
-        try CadencePendingChangePersistence.commitInsert(of: bundle, in: modelContext)
-        return bundle
     }
 
     /// **Throws when the commit is refused (T-566).** It used to end `try? modelContext.save()`,
