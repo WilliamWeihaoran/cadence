@@ -11,6 +11,8 @@ struct iPadMacStyleRootShell<Content: View>: View {
     @State private var isDrawerPresented = false
     /// The editor's presenter must survive hiding the navigation.
     @State private var listEditorMode: iOSListEditorMode?
+    /// The capture `+` the shell draws **only while the drawer is modal** — see `drawerCaptureButton`.
+    @State private var drawerCapture = iOSCaptureInteraction(placement: .bottomTrailing)
 
     var body: some View {
         GeometryReader { proxy in
@@ -91,6 +93,11 @@ struct iPadMacStyleRootShell<Content: View>: View {
                         .zIndex(0)
                 }
                 .zIndex(0)
+
+                if isModal {
+                    drawerCaptureButton
+                        .zIndex(3)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
             .clipped()
@@ -108,6 +115,49 @@ struct iPadMacStyleRootShell<Content: View>: View {
         .sheet(item: $listEditorMode) { mode in
             iOSListEditorSheet(mode: mode)
         }
+        // The composers the drawer's own `+` asks for. Mounted on the shell rather than on a page
+        // for the same reason the phone's is mounted on `iOSCompactRootShell`: the control it
+        // belongs to is drawn above a modal scrim, outside every page.
+        .iOSCaptureHost(drawerCapture)
+    }
+
+    /// The capture `+`, drawn by the **shell** for exactly as long as the drawer is modal (T-3009).
+    ///
+    /// **Why the shell has to draw one at all.** `CadenceRootShellLayout.expandedMinWindowWidth` is
+    /// 865 since the sidebar's `expandedWidth` became 264, and an 11" iPad in portrait is 834 — so
+    /// in the orientation the device is usually held the sidebar is *only* ever the drawer, and the
+    /// only way to see the lists T-2054 made into drop targets is to open it. Opening it is what
+    /// took the `+` away: the page's own button lives inside `detail()`, which goes
+    /// `allowsHitTesting(false)` under the modal scrim, so a plain tap on it dismissed the drawer
+    /// and opened no composer, and a drag from it committed nothing. Drag-to-create had no reachable
+    /// gesture on the target device at all.
+    ///
+    /// **Why this is the `+` showing through the scrim rather than a second one.** It is the same
+    /// control — `iOSCaptureRadialMenuButton` at `iOSCircularAddButton.floatingDiameter`, at the
+    /// same `edgeInset` from the same corner, with the same tap / hold / drag — and it exists only
+    /// while the page's copy is hit-test-disabled. **One `+` is reachable at any moment**, which is
+    /// the duplication rule this app keeps, not a second affordance for one action. A hole punched
+    /// in the scrim could not have said that: the button is four levels down inside a pane the shell
+    /// deliberately clips and disables as a unit, and nothing inside an `allowsHitTesting(false)`
+    /// subtree can opt back in.
+    ///
+    /// Its interaction is its own `@State` for the reason every other one is (T-491): several
+    /// surfaces are alive at once on iPad and only the one under the finger may open a composer.
+    /// The drawer's targets are the sidebar's own — `iOSSidebarListsRegion` registers them, and
+    /// opening the drawer moves them on screen, which is a geometry change and so republishes them.
+    ///
+    /// **Not driven in landscape**, because nothing in the permitted simulator tooling rotates a
+    /// device: at ≥865pt the sidebar docks, `isModal` is false, this draws nothing, and the page's
+    /// own `+` is live exactly as before.
+    private var drawerCaptureButton: some View {
+        iOSCaptureRadialMenuButton(
+            diameter: iOSCircularAddButton.floatingDiameter,
+            interaction: drawerCapture
+        )
+        .cadenceFixedTypography()
+        .padding(.trailing, iOSCircularAddButton.edgeInset)
+        .padding(.bottom, iOSCircularAddButton.edgeInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
     }
 
     private func navigationSelection(isDrawerMode: Bool) -> Binding<iOSSidebarItem?> {

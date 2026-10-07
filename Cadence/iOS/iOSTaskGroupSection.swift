@@ -58,11 +58,15 @@ struct iOSTaskGroupHeader: View {
 /// region are, and the nesting inside the group's own `VStack` and the page's `LazyVStack` does not
 /// defeat that — measured on `Cadence-iPhone15`, see T-2057's ledger entry.
 ///
-/// **Drop frames are unaffected.** Each row publishes its frame to `iOSNewTaskDropFrameRegistry`
-/// on `onGeometryChange` and withdraws it `onDisappear`, and the registry only offers frames
-/// clipped to the enclosing scroll view — so an eager stack's scrolled-out rows were never drop
-/// candidates either. A lazy stack withdraws the registration where the eager one withdrew only the
-/// candidacy. The header is outside this stack, so `isVisible` is untouched.
+/// **Drop frames are unaffected, and that was measured rather than argued (T-2089).** Each row
+/// publishes its frame to `iOSNewTaskDropFrameRegistry` on `onGeometryChange` and **retires** it
+/// `onDisappear` — liveness only, since T-3008; the frame itself stays behind — and the registry
+/// only offers frames clipped to the enclosing scroll view, so an eager stack's scrolled-out rows
+/// were never candidates either. A row built *by* scrolling publishes all three of its facts on
+/// arrival and is a full target: driven on `Cadence-iPadPro11`, a `+` released on a row that did
+/// not exist at launch seeded that row's list, at a point an earlier row had occupied — so the
+/// frame T-3011 deliberately leaves behind cannot win, because `candidates()` passes over anything
+/// not live. The header is outside this stack, so `isVisible` is untouched.
 struct iOSTaskGroupSection: View {
     let title: String
     let color: Color

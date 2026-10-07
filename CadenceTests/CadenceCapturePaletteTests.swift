@@ -1072,10 +1072,20 @@ struct CadenceCapturePaletteTests {
             "non-vacuity: the second .clipped() this assertion is scoped away from is gone"
         )
 
-        // And the shell owns no capture state, so there is nothing at window level for a
-        // window-wide scrim to read. This is the half a fix would have to change.
-        #expect(shell.contains("iOSCaptureInteraction") == false)
-        #expect(shell.contains(".iOSCaptureHost(") == false)
+        // The shell owns capture state for **one** control, under one condition: the `+` it draws
+        // above the modal drawer's scrim, which exists only while the page's own copy is
+        // hit-test-disabled (T-3009). T-491's decision is untouched by that — the host inside
+        // `detail()` is still the one a page's `+` uses, so a palette opened from a page still
+        // dims the page and leaves the sidebar bright. A second unconditional interaction here
+        // *would* reverse it, which is what these two counts refuse.
+        #expect(
+            shell.components(separatedBy: "iOSCaptureInteraction(").count - 1 == 1,
+            "the shell owns capture state beyond the drawer's one `+` — re-read T-491 and T-3009"
+        )
+        #expect(
+            shell.components(separatedBy: ".iOSCaptureHost(").count - 1 == 1,
+            "the shell mounts more than one capture host — re-read T-491 and T-3009"
+        )
 
         // The iPad's host is inside a page, and its interaction is per page on purpose.
         let corner = try strippingComments(sourceFile("Cadence/iOS/iOSFloatingCreateTaskButton.swift"))
@@ -1110,6 +1120,85 @@ struct CadenceCapturePaletteTests {
             overlayBody.contains(".allowsHitTesting(false)"),
             "the palette overlay now takes touches, so its scrim's extent is a capability difference between the two shells, not a visual one — re-read T-491"
         )
+    }
+
+    // MARK: - T-3009: the `+` the drawer's scrim used to swallow
+
+    /// **On an 11" iPad in portrait the sidebar can only be the drawer, so a `+` that the drawer
+    /// takes away is a feature with no reachable gesture on the device it was built for.**
+    ///
+    /// The arithmetic is why, and it is asserted here rather than recited: `expandedMinWindowWidth`
+    /// is `expandedWidth + CadenceNotesListMetrics.twoColumnMinimumWidth`, which became 865 when the
+    /// sidebar's expanded width became 264, and `Cadence-iPadPro11` portrait is **834**. So
+    /// `isDrawerMode` is the ordinary state in portrait, not an edge case — and with the drawer
+    /// open, `detail()` is `allowsHitTesting(!isModal)` under a full-bleed scrim, so the page's own
+    /// corner `+` cannot be tapped, held or dragged. Measured before the fix on that device at
+    /// `97519ce8`: a plain tap on the `+` at (784, 1172) dismissed the drawer and opened no
+    /// composer, and a drag from it to `Alpha Area` committed nothing.
+    ///
+    /// **It is the same `+`, not a second one.** Same control, same diameter, same corner inset,
+    /// and it is drawn *only* while the page's copy is disabled — which is what keeps the "one
+    /// affordance per action per screen" rule this app has enforced repeatedly. A hole in the scrim
+    /// was not available: nothing inside an `allowsHitTesting(false)` subtree can opt back in.
+    ///
+    /// **Landscape is inferred, not driven** — nothing in the permitted simulator tooling rotates a
+    /// device. At ≥865 `isModal` is false and this branch draws nothing, which is what the width
+    /// assertions below stand in for.
+    @Test func theModalDrawerDrawsTheCapturePlusAboveItsOwnScrim() throws {
+        // The reason the branch has to exist at all, as values rather than as prose.
+        #expect(CadenceRootShellLayout.expandedMinWindowWidth
+                == CadenceRootShellLayout.expandedWidth + CadenceNotesListMetrics.twoColumnMinimumWidth)
+        #expect(!CadenceRootShellLayout.usesExpandedSidebar(windowWidth: 834),
+                "an 11\" iPad in portrait docks its sidebar again, so T-3009's premise is gone")
+        #expect(CadenceRootShellLayout.usesExpandedSidebar(windowWidth: 1210),
+                "non-vacuity: no width docks the sidebar, so the drawer is not a width consequence")
+
+        let shell = try strippingComments(sourceFile("Cadence/iOS/iOSRootSidebar.swift"))
+        let root = try cadenceFunctionBody("struct iPadMacStyleRootShell<Content: View>: View", in: shell)
+        let body = try cadenceFunctionBody("var body: some View", in: root)
+
+        // Non-vacuity: the pane really is the thing that cannot be reached while the drawer is up.
+        #expect(
+            body.contains(".allowsHitTesting(!isModal)"),
+            "the detail pane is reachable under the drawer again, so this branch has nothing to fix"
+        )
+
+        // Drawn only while the drawer is modal, and above both the scrim (1) and the drawer (2).
+        let plus = try #require(
+            body.range(of: "drawerCaptureButton"),
+            "the shell no longer draws a capture `+` of its own — re-read T-3009"
+        )
+        // The 40 characters in front of it: the `+` is the first thing inside an `if isModal`,
+        // so nothing else can have opened a scope between the gate and the control.
+        let gate = String(body[body.startIndex..<plus.lowerBound].suffix(40))
+        #expect(
+            gate.contains("if isModal {"),
+            "the shell's `+` is no longer gated on isModal, so two `+`s may be reachable at once"
+        )
+        let plusChain = String(body[plus.upperBound..<body.endIndex].prefix(40))
+        #expect(
+            plusChain.contains(".zIndex(3)"),
+            "the drawer's `+` is no longer the top layer, so the scrim can swallow it again"
+        )
+        #expect(body.contains(".zIndex(2)"), "non-vacuity: the drawer itself no longer declares a layer")
+        #expect(body.contains(".zIndex(1)"), "non-vacuity: the scrim no longer declares a layer")
+
+        // The same control and the same two constants the page's corner `+` uses — not a
+        // second spelling of a 56pt circle 22pt from the corner.
+        let button = try cadenceFunctionBody("private var drawerCaptureButton: some View", in: root)
+        #expect(button.contains("iOSCaptureRadialMenuButton("))
+        #expect(button.contains("diameter: iOSCircularAddButton.floatingDiameter"))
+        #expect(button.contains(".padding(.trailing, iOSCircularAddButton.edgeInset)"))
+        #expect(button.contains(".padding(.bottom, iOSCircularAddButton.edgeInset)"))
+        #expect(button.contains("alignment: .bottomTrailing"))
+        #expect(button.contains("interaction: drawerCapture"))
+
+        // And something presents what it asks for.
+        #expect(
+            root.contains(".iOSCaptureHost(drawerCapture)"),
+            "the drawer's `+` has no host, so a finished press would ask for a composer nobody opens"
+        )
+        #expect(root.contains("@State private var drawerCapture = iOSCaptureInteraction(placement: .bottomTrailing)"))
     }
 
     // MARK: - A drop on a calendar day column makes an event (T-2065)
