@@ -771,8 +771,18 @@ struct CadenceCapturePaletteTests {
         }
     }
 
-    /// The host is applied once per placement and nowhere else — two `+`s, two hosts. A third would
-    /// be a third capture button nobody decided on.
+    /// The host is applied once per placement and nowhere else. A host this list does not name is a
+    /// capture button nobody decided on.
+    ///
+    /// **The third entry is T-3009's, and it is a placement rather than a fourth control.** The iPad
+    /// shell draws the corner `+` itself while the navigation drawer is modal, because the page's own
+    /// copy is inside `detail()`, which the shell hit-test-disables as a unit under the scrim — so in
+    /// portrait, where 834pt never reaches the 865 that docks the sidebar, drag-to-create had no
+    /// reachable gesture at all. It is the same control at the same corner, drawn *only* while the
+    /// page's is disabled, so the count of `+`s a finger can reach is still one per screen. What this
+    /// list refuses is the next one added without that argument — see
+    /// `theModalDrawerDrawsTheCapturePlusAboveItsOwnScrim`, which pins the `isModal` gate that makes
+    /// the claim true.
     @Test func theCaptureHostIsAppliedOncePerPlacement() throws {
         var perFile: [String: Int] = [:]
         for file in try iOSSourceFiles() {
@@ -783,7 +793,8 @@ struct CadenceCapturePaletteTests {
 
         #expect(perFile == [
             "iOSCompactTabShell.swift": 1,
-            "iOSFloatingCreateTaskButton.swift": 1
+            "iOSFloatingCreateTaskButton.swift": 1,
+            "iOSRootSidebar.swift": 1
         ])
     }
 
