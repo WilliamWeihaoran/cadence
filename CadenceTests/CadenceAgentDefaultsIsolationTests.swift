@@ -222,6 +222,167 @@ struct CadenceAgentDefaultsIsolationTests {
         )
     }
 
+    // MARK: - T-3015: the whole repository, not just the UI target
+
+    /// **Every site anywhere in the repository that redirects the store must also turn CloudKit
+    /// off, and the pairing is held by hand at each one.**
+    ///
+    /// Why the pairing is the only thing holding the line.
+    /// `PersistenceController.shouldUseLocalStoreOnly` is
+    /// `isRunningTests || CADENCE_LOCAL_STORE_ONLY == "1" || CADENCE_UI_TEST_MODE == "1"`
+    /// (`Cadence/Services/PersistenceController.swift:709-712`) — **`CADENCE_UI_TEST_STORE_ID` is
+    /// not in it.** A launch that redirects the store and forgets the flag therefore has
+    /// `makeContainer()` take the `.private("iCloud.com.haoranwei.Cadence")` branch over the
+    /// redirected URL `resolvedStoreURL()` just returned: the fresh throwaway store imports the
+    /// owner's **entire real private database**, and then every row the UI-test seed inserts
+    /// (`CadenceUITestSupport.prepareAppState` runs from an `.onAppear`) and every delete driven
+    /// through that app exports back to their real iCloud and lands on their Mac and their phone.
+    ///
+    /// **`isRunningTests` does not rescue a forgotten pairing**, which is the part that reads
+    /// wrong: the app under test is not a test host. `XCTestConfigurationFilePath` is set in the
+    /// *runner* process, not in the app the runner launches, so `isRunningTests` is false in
+    /// exactly the process where this matters. `CADENCE_LOCAL_STORE_ONLY` is all there is.
+    ///
+    /// Folding the store id into `shouldUseLocalStoreOnly` would be the mechanism, and it is **not
+    /// this test's to make**: it changes what `scripts/run-macos-app.sh` and
+    /// `scripts/simulator-claim.sh` do today, so it is an owner decision ([[T-3015]], under
+    /// [[T-3013]]'s rule). Until then the convention is held as a *measurement*, and this is it.
+    ///
+    /// **The denominator is read off disk, roots included.** The sibling test above counts the
+    /// UI target's launch sites the same way and for the same reason — it listed six paths while
+    /// the target held nine, and `constructions == 6` kept passing. This one widens that to every
+    /// Swift file and every `#`-commented script in the repository, so the two scripts that pair
+    /// the variables by hand are inside the census too, and so is the next script nobody has
+    /// written yet.
+    ///
+    /// One self-reference to know about: the Swift needle below is spelled with `\"` escapes, so
+    /// the contiguous text it searches for does **not** occur in this file. A raw-string spelling
+    /// would match this very line and score a phantom write.
+    @Test func everySiteThatRedirectsTheStoreAlsoRefusesTheOwnersICloud() throws {
+        let manager = FileManager.default
+        let root = CadenceSourceScan.repositoryRoot()
+
+        // The roots are read off disk too, so a new top-level source directory is swept without
+        // anyone remembering to add it. `docs/` and `design/` are prose and assets rather than
+        // anything that launches an app — and `docs/TODO.md` alone is 2.3 MB. Hidden entries are
+        // skipped because `.git` is, so the two that do hold runnable code are named back in.
+        let prose: Set<String> = ["docs", "design"]
+        var roots = try manager.contentsOfDirectory(atPath: root.path)
+            .filter { !$0.hasPrefix(".") && !prose.contains($0) }
+        roots.append(contentsOf: [".github", ".githooks"])
+        roots = roots
+            .filter { name in
+                var isDirectory: ObjCBool = false
+                let exists = manager.fileExists(
+                    atPath: root.appendingPathComponent(name).path,
+                    isDirectory: &isDirectory
+                )
+                return exists && isDirectory.boolValue
+            }
+            .sorted()
+        #expect(roots.count >= 8, "\(roots.count) source roots enumerated; 10 were there on 2026-10-07: \(roots)")
+
+        // `=` for shell, `:` for a YAML `env:` block. The `SIMCTL_CHILD_` prefix is how
+        // `simulator-claim.sh` passes the pair through `simctl` into the app it launches.
+        let redirect = #"(?:SIMCTL_CHILD_)?CADENCE_UI_TEST_STORE_ID[ \t]*[=:]"#
+        let gate = #"(?:SIMCTL_CHILD_)?CADENCE_(?:LOCAL_STORE_ONLY|UI_TEST_MODE)[ \t]*[=:][ \t]*["']?1"#
+        let scriptSuffixes = [".sh", ".zsh", ".bash", ".yml", ".yaml"]
+
+        var scanned = 0
+        var scriptSites: [String] = []
+        var unpaired: [String] = []
+        var swiftWrites: [String] = []
+
+        for rootName in roots {
+            for path in try CadenceSourceScan.files(under: rootName) {
+                // A non-UTF-8 file is an asset, not a launcher; `sourceFile` throws on it.
+                guard let raw = try? CadenceSourceScan.sourceFile(path) else { continue }
+                let isSwift = path.hasSuffix(".swift")
+                let isScript = scriptSuffixes.contains(where: path.hasSuffix) || raw.hasPrefix("#!")
+                guard isSwift || isScript else { continue }
+                scanned += 1
+                // Stripping cannot *add* the needle, so the cheap test runs first: a regex pass
+                // over a thousand files to reach eleven of them is the quadratic shape
+                // `strippedSourceReader` warns about.
+                guard raw.contains("CADENCE_UI_TEST_STORE_ID") else { continue }
+
+                let code = isSwift
+                    ? CadenceSourceScan.strippingComments(raw)
+                    : CadenceSourceScan.strippingHashComments(raw)
+                guard code.contains("CADENCE_UI_TEST_STORE_ID") else { continue }
+
+                guard !isSwift else {
+                    let needle = "launchEnvironment[\"CADENCE_UI_TEST_STORE_ID\"]"
+                    swiftWrites.append(
+                        contentsOf: Array(repeating: path, count: code.components(separatedBy: needle).count - 1)
+                    )
+                    #expect(
+                        CadenceSourceScan.matchCount(#"setenv\([ \t]*"CADENCE_UI_TEST_STORE_ID""#, in: code) == 0,
+                        "\(path) redirects the store through setenv, a spelling this census does not reach"
+                    )
+                    continue
+                }
+
+                // A script pairs the two by hand, and the two spellings in the tree put them on one
+                // line (`run-macos-app.sh:111`, `simulator-claim.sh:640`) or on adjacent lines
+                // (`simulator-claim.sh:587-588`). The window is the assignment's line plus two on
+                // each side: wide enough for either shape and for a wrapped continuation, narrow
+                // enough that an unrelated flag elsewhere in the script cannot vouch for it.
+                let lines = code.components(separatedBy: "\n")
+                var sitesHere = 0
+                for (index, line) in lines.enumerated()
+                where CadenceSourceScan.matchCount(redirect, in: line) > 0 {
+                    sitesHere += 1
+                    scriptSites.append("\(path):\(index + 1)")
+                    let window = lines[max(0, index - 2)...min(lines.count - 1, index + 2)]
+                        .joined(separator: "\n")
+                    if CadenceSourceScan.matchCount(gate, in: window) == 0 {
+                        unpaired.append("\(path):\(index + 1)")
+                    }
+                }
+                #expect(
+                    sitesHere > 0,
+                    "\(path) names CADENCE_UI_TEST_STORE_ID in live code but assigns it in a spelling this census cannot see"
+                )
+            }
+        }
+
+        // Non-vacuity, in all three directions: the sweep reached the files, it reached the
+        // scripts, and the scripts it reached are the ones that launch the app.
+        #expect(scanned >= 900, "\(scanned) Swift files and scripts scanned; 1,053 were on 2026-10-07")
+        #expect(
+            scriptSites.count >= 3,
+            "\(scriptSites.count) script sites redirect the store; 3 did on 2026-10-07 — \(scriptSites)"
+        )
+        #expect(
+            scriptSites.contains(where: { $0.hasPrefix("scripts/run-macos-app.sh:") }),
+            "the macOS launcher is no longer in the census: \(scriptSites)"
+        )
+        #expect(
+            scriptSites.filter { $0.hasPrefix("scripts/simulator-claim.sh:") }.count >= 2,
+            "the simulator claim script redirects the store in two places; the census sees \(scriptSites)"
+        )
+
+        // The line itself.
+        #expect(
+            unpaired.isEmpty,
+            "these sites redirect the store without CADENCE_LOCAL_STORE_ONLY or CADENCE_UI_TEST_MODE, so the app they launch joins the owner's real iCloud private database and exports every seeded row to it: \(unpaired)"
+        )
+
+        // Swift sets it in exactly one place, and that place is the shared helper. Every caller of
+        // it is an `XCUIApplication()` site, and `bothMacOSLaunchersAskForAPrivatePreferencesSuite`
+        // above is what proves each of those nine pairs the flag. A tenth file that wrote the
+        // variable into a launch environment by hand would carry no such proof.
+        #expect(
+            swiftWrites.count == 1,
+            "the store id is written into a launch environment at \(swiftWrites); only CadenceUITestEnvironment should"
+        )
+        #expect(
+            swiftWrites.first == "CadenceUITests/CadenceUITestEnvironment.swift",
+            "the one Swift store redirect moved to \(swiftWrites.first ?? "nowhere"), away from the helper whose callers are counted"
+        )
+    }
+
     /// **Why "one line on each side" would have been a green no-op**, and the reason T-1157 was
     /// filed rather than applied blind.
     ///

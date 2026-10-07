@@ -133,6 +133,37 @@ enum CadenceSourceScan {
         return result
     }
 
+    /// `strippingComments` for the `#` family — shell, zsh, YAML, and anything else whose comment
+    /// character is `#`. Same contract as the Swift stripper: comments become **spaces of equal
+    /// width**, so every line number, line count and character offset survives and a caller may
+    /// still split the result into lines and report `index + 1`.
+    ///
+    /// A `#` opens a comment only at the start of a line or after whitespace, which is what keeps
+    /// `$#`, `${#POS}` and `${ID//[A-Za-z0-9_.-]/}` intact.
+    ///
+    /// **It is deliberately not quote-aware, and the asymmetry is the reason.** Over-stripping (a
+    /// ` #` inside a quoted string) can only make a census *smaller*, which a non-vacuity floor
+    /// catches. Under-stripping lets a header comment score as real code — and
+    /// `scripts/run-macos-app.sh:12-14` documents its own environment as
+    /// `#   CADENCE_LOCAL_STORE_ONLY=1` / `#   CADENCE_UI_TEST_STORE_ID=..`, two lines apart, which
+    /// is a commented-out launch site that would have paired *itself* and hidden a real one.
+    static func strippingHashComments(_ source: String) -> String {
+        source
+            .components(separatedBy: "\n")
+            .map { line -> String in
+                let characters = Array(line)
+                var index = 0
+                while index < characters.count {
+                    if characters[index] == "#", index == 0 || characters[index - 1].isWhitespace {
+                        return String(characters[0..<index]) + String(repeating: " ", count: characters.count - index)
+                    }
+                    index += 1
+                }
+                return line
+            }
+            .joined(separator: "\n")
+    }
+
     /// The text between the braces of `func <name>(`, found by brace matching from the first `{`
     /// **after the parameter list closes**. Returns `nil` when the function is absent or either
     /// pair never balances.
@@ -292,12 +323,30 @@ enum CadenceSourceScan {
     /// needed it — which is the defect shape that ticket is about, committed inside the test target
     /// that enforces it.
     static func swiftFiles(under relativeDirectory: String) throws -> [String] {
+        try files(under: relativeDirectory).filter { $0.hasSuffix(".swift") }
+    }
+
+    /// **Every** file under `relativeDirectory`, directories themselves excluded, as
+    /// repository-relative paths. `swiftFiles(under:)` is this with one suffix filter.
+    ///
+    /// It exists because a census over anything that is *not* Swift — the shell scripts that launch
+    /// the app, a CI workflow, a git hook — still has to read its denominator off disk. A census
+    /// whose denominator is a list of remembered paths cannot notice the file nobody remembered:
+    /// `CadenceAgentDefaultsIsolationTests` listed six launch sites while the target held nine, and
+    /// `constructions == 6` went on passing ([[T-3015]]).
+    ///
+    /// Enumerated by `enumerator(atPath:)` for the reason `swiftFiles` gives above, and the
+    /// directory test is `enumerator.fileAttributes`, which the enumerator already holds, rather
+    /// than a second `fileExists` stat per entry.
+    static func files(under relativeDirectory: String) throws -> [String] {
         let directory = repositoryRoot().appendingPathComponent(relativeDirectory)
         guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
-        return enumerator.compactMap { element in
-            guard let name = element as? String, name.hasSuffix(".swift") else { return nil }
-            return "\(relativeDirectory)/\(name)"
+        var paths: [String] = []
+        while let name = enumerator.nextObject() as? String {
+            guard enumerator.fileAttributes?[.type] as? FileAttributeType != .typeDirectory else { continue }
+            paths.append("\(relativeDirectory)/\(name)")
         }
+        return paths
     }
 
     /// Reads each file once and hands a sweep source with its comments already blanked.
