@@ -11,6 +11,7 @@
 #   ./scripts/xcb.sh check-host-launch <log> [xcodebuild-exit] # the refused-relaunch report (T-1992)
 #   ./scripts/xcb.sh check-entitlements <log> [exit] [dd-path] # the poisoned-DerivedData report (T-2046)
 #   ./scripts/xcb.sh check-sleep <start> <end> [exit]          # did the Mac sleep in that window (T-2048)
+#   ./scripts/xcb.sh check-automation                        # is an "Enable UI Automation" prompt standing? (T-2070)
 #   ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>   # resolve a filter, no build
 #   ./scripts/xcb.sh last-green                                # is HEAD still the last full green? (T-2042)
 #   ./scripts/xcb.sh run-state [<id>...]                       # QUEUED / RUNNING / WEDGED (T-2071)
@@ -274,10 +275,15 @@ automation_mode_refusal() {  # $1 = the log, so the refusal can name WHICH sente
   say "       Enabling it is an admin change to this Mac and the owner's call."
   say "   (2) Developer mode READS ENABLED and it still times out: automationmode-writer is asking"
   say "       for the device owner's Touch ID / password and nobody answered. Measured 2026-10-03."
-  say "       Check:  log show --last 10m --predicate 'eventMessage CONTAINS \"automation mode\"'"
+  say "       Check:  ./scripts/xcb.sh check-automation   (T-2070)"
+  say "       DO NOT hand-type a bare \`log show --predicate 'eventMessage CONTAINS ...'\` here:"
+  say "       /usr/bin/log is logged with its own argv, so such a predicate counts PREVIOUS PROBE"
+  say "       RUNS as events -- 10 against 1 real on this Mac, measured 2026-10-07 -- and because"
+  say "       a probe session runs both sides, it reads HEALTHY over a standing prompt."
   say "       The giveaway is: \"Writer daemon requires authentication to enable automation mode\","
   say "       and /var/db/com.apple.dt.automationmode/automation-enabled is absent afterwards."
-  say "       Only the owner can clear this, by answering the prompt while the run is starting."
+  say "       Only the owner can clear this, by answering the prompt while the run is starting;"
+  say "       the grant is PER-SESSION, so a previous grant is no reason to disbelieve it."
   say "   Either way it is the owner's to clear; re-run once it is."
 }
 
@@ -292,7 +298,9 @@ runner_hung_refusal() {
   say "     1. Look for the same sentence in a SIBLING agent's log --"
   say "        grep -l '$RUNNER_HUNG_BEFORE_CONNECTION' /var/folders/*/*/T/cadence-xcb-*.log"
   say "        If another agent's run died the same way, it is the Mac. Say so and stop."
-  say "     2. log show --last 20m --predicate 'process == \"testmanagerd\"'"
+  say "     2. ./scripts/xcb.sh check-automation   -- is an \"Enable UI Automation\" prompt standing?"
+  say "        A prompt nobody answered wedges UNIT runs too, and that is T-2070's measured case."
+  say "     3. log show --last 20m --predicate 'process == \"testmanagerd\"'"
   say "        \"requested transport for IDE\" with no reply after it is this failure."
   say "   Measured 2026-10-03: it began at 20:43 EDT and took every agent's runs, unit and UI,"
   say "   after a full 5520-test unit run had passed at 20:19. Restarting testmanagerd or"
@@ -1124,12 +1132,139 @@ host_launch_refusal_report() {  # $1 = log, $2 = xcodebuild's exit status ("" wh
 # this report deliberately does not, because that ships a product whose signature may not match
 # its entitlements. Never gates -- the run's exit status is left exactly as it was.
 ENTITLEMENTS_MODIFIED_PATTERN='Entitlements file .* was modified during the build'
+# THE BATCH-RULE HALF, which T-2046 left open: IS A DERIVEDDATA DISPOSABLE THE MOMENT THIS FIRES?
+# YES, and it is settled here as a rule the script enforces rather than as advice a reader has to
+# remember at the fourth identical red. The argument is the measurement in the paragraph above:
+# the poisoning is PERMANENT for that tree (four consecutive runs, identical death at
+# `builtin-productPackagingUtility`, 0 Swift files compiled), deleting the generated `.xcent` does
+# NOT clear it, and `release-dd` plus a fresh build does -- so after this fires, every later build
+# in that directory is a guaranteed twelve-minute dead end. There is also nothing in it worth
+# keeping: it compiled nothing and ran nothing, so no evidence is lost by deleting it, and the
+# only thing it can still produce is another agent reading T-552's "executed 0 tests" as a
+# misspelt suite name. A DerivedData that has tripped this is RUBBISH, and the rule is that the
+# next run refuses to build into it rather than paying to rediscover that.
+#
+# How the rule is carried: a sentinel file inside the DerivedData itself. Not a variable (the next
+# run is a different process), not a note in a log (nobody re-reads the log of a run that produced
+# nothing), and not an entry in TMPDIR beside the logs (it would outlive the directory it is about
+# and refuse a FRESH DerivedData that happened to reuse the name). Inside the tree, it has exactly
+# the lifetime of the thing it describes: `release-dd` deletes the directory and the sentinel with
+# it, so clearing the refusal and clearing the poisoning are THE SAME ACT and cannot drift apart.
+ENTITLEMENTS_POISON_SENTINEL='.cadence-entitlements-poisoned'
+ENTITLEMENTS_POISONED_EXIT=14
 entitlements_poisoned_dd_report() {  # $1 = log, $2 = xcodebuild's exit status ("" when unknown), $3 = the DerivedData path
   local log=$1 xstatus=${2:-} dd=${3:-<derived-data-path>}
   [[ "$xstatus" == "0" ]] && return 0   # a green run has no red to explain
   grep -aqE -- "$ENTITLEMENTS_MODIFIED_PATTERN" "$log" 2>/dev/null || return 0
   say ""
   say "!! ENTITLEMENTS-POISONED-DD (T-2046): this private DerivedData is poisoned by a metadata-only touch of Cadence.entitlements (\"was modified during the build\"), not by your code or your suite name -- run \`./scripts/xcb.sh release-dd $dd\` then a fresh build."
+  if [[ -d "$dd" ]]; then
+    print -r -- "poisoned $(date '+%Y-%m-%d %H:%M:%S') by ${log}" > "$dd/$ENTITLEMENTS_POISON_SENTINEL" 2>/dev/null
+    say "   MARKED DISPOSABLE (T-2046): \`$ENTITLEMENTS_POISON_SENTINEL\` written into that tree, and the next"
+    say "   run of this script refuses to build into it. It compiled nothing and ran nothing, so"
+    say "   there is no evidence in it to lose -- delete it, do not nurse it."
+  fi
+  return 0
+}
+# The refusal the sentinel buys. Returns 0 (and prints) when the DerivedData has been marked.
+entitlements_poisoned_dd_refusal() {  # $1 = the DerivedData path
+  local dd=${1:-}
+  [[ -n "$dd" && -f "$dd/$ENTITLEMENTS_POISON_SENTINEL" ]] || return 1
+  say ""
+  say "!! REFUSING -- ENTITLEMENTS-POISONED-DD (T-2046): this DerivedData was marked disposable by an"
+  say "   earlier run of this script: $(cat -- "$dd/$ENTITLEMENTS_POISON_SENTINEL" 2>/dev/null)"
+  say "   One metadata-only touch of Cadence.entitlements poisons a warm DerivedData PERMANENTLY:"
+  say "   every later build in it dies at builtin-productPackagingUtility having compiled 0 Swift"
+  say "   files, and what reaches you is T-552's \"executed 0 tests\" -- which reads character for"
+  say "   character like a misspelt suite name. Four runs went into that dead end once already."
+  say "   Deleting the generated Cadence.app.xcent does NOT clear it. This does:"
+  say "       ./scripts/xcb.sh release-dd $dd"
+  say "   then re-run. Nothing is lost: the tree compiled nothing and ran nothing."
+  say "   Do NOT reach for CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION -- the error text offers it,"
+  say "   and it ships a product whose signature may not match its entitlements."
+  return 0
+}
+
+# --- an outstanding "Enable UI Automation" prompt (T-2070) -------------------
+# A `CadenceUITests` run can raise an interactive authentication prompt ("Enable UI Automation")
+# that no agent can answer, and while it stands NO macOS test run works -- the unit suite included.
+# T-2067 is the measured incident: one unanswered prompt held testmanagerd inside a single
+# synchronous `LAContext.evaluatePolicy` for 3h11m and killed seven runs behind it on a fixed 445s
+# timer, while three agents chased daemons, DerivedData and Xcode because nothing said a prompt
+# was open. This reads the host and refuses, the same shape as the locked-screen guard.
+#
+# THE PREDICATE IS THE WHOLE FIX, and the probe T-2070 shipped as "TESTED" was defective.
+# MEASURED on this Mac 2026-10-07: the entry's predicate, which filters on
+# `eventMessage CONTAINS "Writer daemon requires authentication"`, matches the `log` BINARY'S OWN
+# INVOCATION RECORDS -- /usr/bin/log is itself logged with its argv, and its argv contains the
+# phrase being counted. Over the same 24h window the unscoped read counts **10** requests and the
+# scoped read counts **1** (the real one, testmanagerd at 16:47:08, granted at 17:13:45). Worse
+# than noisy: the entry runs the SAME shape for the `done` counter, so every probe run lifts both
+# sides together and `req - done` is dragged toward zero BY THE ACT OF PROBING -- the probe reads
+# HEALTHY over a genuinely unanswered prompt, which is the one reading it exists to prevent.
+# So the predicate names the two processes that actually emit these lines, says `process != "log"`
+# out loud as well (belt and braces, and so a reader cannot quietly drop the scoping), and ONE
+# read answers both counters over exactly one window instead of two reads over two.
+# `automation_prompt_counts` also drops any line carrying `--predicate`: a line quoting a probe
+# invocation is never a testmanagerd event, and that is the second line of defence that selftest
+# can actually exercise through the fixture.
+#
+# The grant is PER-SESSION, not permanent (measured 2026-10-07, and root AGENTS.md was corrected):
+# `/var/db/com.apple.dt.automationmode/automation-enabled` is absent while that directory's mtime
+# matches the minute an ATTENDED UI run last ended, and a cold UI run raises the owner's Touch ID
+# prompt every time. So "it was granted once" is never a reason to disbelieve this probe.
+#
+# Do NOT "fix" an outstanding prompt by `DevToolsSecurity -enable`, by killing testmanagerd or
+# coreautha, or by writing to the authorization database -- T-1742 and T-2049 are what that cost.
+# Only the owner, at the keyboard, can answer it.
+AUTOMATION_PROMPT_EXIT=13
+AUTOMATION_PROMPT_REQUEST='Writer daemon requires authentication'
+AUTOMATION_PROMPT_GRANTED='Finished enabling Automation Mode'
+AUTOMATION_PROMPT_PREDICATE='(process == "testmanagerd" OR process == "automationmode-writer") AND process != "log"'
+# The testing seam, the shape `pmset_log` and `xctest_session_log` already use: the live condition
+# needs this Mac's own authentication stack to stop answering, so `selftest` substitutes a file in
+# the format `log show --style compact` prints.
+automation_mode_log() {
+  if [[ -n "${CADENCE_AUTOMATION_LOG_FIXTURE:-}" ]]; then
+    cat -- "$CADENCE_AUTOMATION_LOG_FIXTURE" 2>/dev/null
+    return 0
+  fi
+  /usr/bin/log show --last "${CADENCE_AUTOMATION_LOG_WINDOW:-6h}" \
+    --predicate "$AUTOMATION_PROMPT_PREDICATE" --style compact 2>/dev/null
+}
+automation_prompt_counts() {   # prints "<requests> <granted>"
+  local text
+  text="$(automation_mode_log | grep -v -- '--predicate')"
+  local -i req granted
+  req=$(print -r -- "$text" | grep -cF -- "$AUTOMATION_PROMPT_REQUEST")
+  granted=$(print -r -- "$text" | grep -cF -- "$AUTOMATION_PROMPT_GRANTED")
+  print -r -- "$req $granted"
+}
+# >0 means a prompt is STANDING and no macOS test run can work. Zero or negative is healthy.
+automation_prompt_outstanding() {
+  local -a c
+  c=( ${=$(automation_prompt_counts)} )
+  print -r -- "$(( ${c[1]:-0} - ${c[2]:-0} ))"
+}
+# Prints the refusal and returns 0 when a prompt is outstanding; returns 1 (silent) otherwise, so
+# the caller reads it exactly as it reads `dd_in_use_refusal`.
+automation_prompt_refusal() {
+  local -i outstanding
+  outstanding=$(automation_prompt_outstanding)
+  (( outstanding > 0 )) || return 1
+  local -a c; c=( ${=$(automation_prompt_counts)} )
+  say ""
+  say "!! REFUSING -- AUTOMATION-PROMPT-OUTSTANDING (T-2070): this Mac has an unanswered \"Enable UI"
+  say "   Automation\" authentication prompt (requests=${c[1]}, granted=${c[2]}, outstanding=$outstanding)."
+  say "   While it stands NO macOS test run works, the UNIT suite included: testmanagerd sits in one"
+  say "   synchronous LAContext.evaluatePolicy and every run behind it dies on a fixed 445s timer."
+  say "   T-2067 measured 3h11m of host and seven dead runs from exactly one of these."
+  say "   ONLY THE OWNER CAN CLEAR IT, at the keyboard: answer the Touch ID / password prompt (it may"
+  say "   be behind other windows, or already dismissed -- then re-run an ATTENDED UI run to raise it"
+  say "   again). The grant is PER-SESSION, so this can recur on the next cold UI run."
+  say "   Do NOT run \`sudo DevToolsSecurity -enable\`, kill testmanagerd/coreautha, or touch the"
+  say "   authorization database -- T-1742 and T-2049 are what that cost."
+  say "   CADENCE_ALLOW_AUTOMATION_PROMPT=1 exists to TEST this guard, not to get a run past it."
   return 0
 }
 
@@ -2684,6 +2819,44 @@ selftest_only_testing() {
   run_ent "$ws/ent-poisoned.log" 0
   check "CONTROL: the line under exit 0 (nothing red to explain) is silent" \
     $( (( erc == 0 )) && [[ -z "$eout" ]] && print 1 || print 0 ) "exit $erc: $eout"
+  # T-2046's batch-rule half, which the PARTIAL left open and which is settled as: YES, disposable
+  # the moment this fires. It is enforced rather than described -- the report MARKS the tree and
+  # the next preflight refuses it -- because the thing that went wrong was nobody remembering a
+  # rule at the fourth identical red, and prose does not fix that. Both ends are induced here: the
+  # mark, and a REAL `xcb.sh ... build` refused by it on the production path.
+  mkdir -p "$ws/cadence-dd-live"
+  run_ent "$ws/ent-poisoned.log" 65 "$ws/cadence-dd-live"
+  check "a poisoned DerivedData that EXISTS is marked disposable, in the tree itself" \
+    $( [[ -f "$ws/cadence-dd-live/.cadence-entitlements-poisoned" && "$eout" == *"MARKED DISPOSABLE (T-2046)"* ]] && print 1 || print 0 ) "$eout"
+  check "...and the mark names when and from which log, so it is not a bare flag" \
+    $( [[ "$(cat "$ws/cadence-dd-live/.cadence-entitlements-poisoned")" == poisoned\ <->-<->-<->\ * && "$(cat "$ws/cadence-dd-live/.cadence-entitlements-poisoned")" == *ent-poisoned.log ]] && print 1 || print 0 ) "$(cat "$ws/cadence-dd-live/.cadence-entitlements-poisoned")"
+  mkdir -p "$ws/cadence-dd-clean"
+  run_ent "$ws/ent-other-red.log" 65 "$ws/cadence-dd-clean"
+  check "CONTROL: a red build WITHOUT the entitlements error marks nothing" \
+    $( [[ ! -f "$ws/cadence-dd-clean/.cadence-entitlements-poisoned" ]] && print 1 || print 0 ) "$(ls -a "$ws/cadence-dd-clean")"
+  run_ent "$ws/ent-poisoned.log" 0 "$ws/cadence-dd-clean"
+  check "CONTROL: a GREEN run marks nothing, whatever an old log in it says" \
+    $( [[ ! -f "$ws/cadence-dd-clean/.cadence-entitlements-poisoned" ]] && print 1 || print 0 ) "$(ls -a "$ws/cadence-dd-clean")"
+  # The refusal, on the production path: a real invocation, with a real -derivedDataPath, refused
+  # at preflight -- BEFORE the destination resolver, which this deliberately hands an impossible
+  # destination to prove. Exit 10 here would mean the poisoned tree was admitted and the run merely
+  # died of something else later.
+  local pout prc
+  pout=$(zsh "$here" selftest-ent build -scheme Cadence -destination 'platform=iOS Simulator,name=NoSuchDeviceXYZ' \
+    -derivedDataPath "$ws/cadence-dd-live" 2>&1); prc=$?
+  check "a marked DerivedData is REFUSED at preflight (exit $ENTITLEMENTS_POISONED_EXIT), before anything is paid for" \
+    $( (( prc == ENTITLEMENTS_POISONED_EXIT )) && [[ "$pout" == *"REFUSING -- ENTITLEMENTS-POISONED-DD"* && "$pout" == *"release-dd $ws/cadence-dd-live"* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  check "...and it never offers the override xcodebuild's own error text offers" \
+    $( [[ "$pout" == *"Do NOT reach for CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION"* ]] && print 1 || print 0 ) "$pout"
+  pout=$(zsh "$here" selftest-ent build -scheme Cadence -destination 'platform=iOS Simulator,name=NoSuchDeviceXYZ' \
+    -derivedDataPath "$ws/cadence-dd-clean" 2>&1); prc=$?
+  check "CONTROL: an UNMARKED DerivedData is admitted and dies of its own fault (exit $SIMULATOR_GATE_EXIT), not of this one" \
+    $( (( prc == SIMULATOR_GATE_EXIT )) && [[ "$pout" != *ENTITLEMENTS-POISONED-DD* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  # The mark and the poisoning are cleared by THE SAME ACT, which is why the sentinel lives inside
+  # the tree: `release-dd` deletes the directory, and nothing is left behind to refuse a fresh one.
+  zsh "$here" release-dd "$ws/cadence-dd-live" >/dev/null 2>&1
+  check "release-dd clears the mark because it deletes the tree the mark lives in" \
+    $( [[ ! -e "$ws/cadence-dd-live" ]] && print 1 || print 0 ) "$(ls -d "$ws/cadence-dd-live" 2>&1)"
 
   say ""
   say " 8d. a run the Mac slept through is named, not read as a bare exit 143 (T-2048)"
@@ -2725,6 +2898,47 @@ selftest_only_testing() {
   run_sleep "$ws/pm-three-inside.log" $s0 $s1 0
   check "CONTROL: Sleep entries under exit 0 (nothing red to explain) are silent" \
     $( (( slrc == 0 )) && [[ -z "$slout" ]] && print 1 || print 0 ) "exit $slrc: $slout"
+
+  say ""
+  say " 8e. an unanswered \"Enable UI Automation\" prompt is named, and the probe cannot be dragged to zero by its own noise (T-2070)"
+  # The live condition cannot be induced (it needs this Mac's authentication stack to stop
+  # answering), so these drive `check-automation` through CADENCE_AUTOMATION_LOG_FIXTURE in the
+  # format `log show --style compact` prints. THE THIRD AND FOURTH FIXTURES ARE THE POINT: the
+  # probe T-2070 shipped counted /usr/bin/log's OWN invocation records, whose argv quotes the very
+  # phrases being counted -- and because a probe session runs both predicates, both counters rose
+  # together and `requests - granted` was dragged to zero BY PROBING. Measured on this Mac
+  # 2026-10-07: 10 requests unscoped, 1 scoped. A probe that reads HEALTHY over a standing prompt
+  # is worse than no probe, so the host-noise fixture is a PINNED regression, not an illustration.
+  local tm="2026-10-07 16:47:08.095 Df testmanagerd[88831:488d048] [com.apple.dt.automationmode:Default]"
+  local xc="2026-10-07 17:13:45.851 Df testmanagerd[88831:488d048] [com.apple.dt.xctest:Default]"
+  local probe_noise='2026-10-07 17:20:00.000 Df log[91234:4900001] [com.apple.log:Default] /usr/bin/log show --last 6h --predicate process == "testmanagerd" AND eventMessage CONTAINS "Writer daemon requires authentication" / "Finished enabling Automation Mode"'
+  print -rl -- "$tm Writer daemon requires authentication to enable automation mode." > "$ws/autom-outstanding.log"
+  print -rl -- "$tm Writer daemon requires authentication to enable automation mode." \
+               "$xc Finished enabling Automation Mode" > "$ws/autom-answered.log"
+  print -rl -- "$probe_noise" "$probe_noise" "$probe_noise" > "$ws/autom-noise-only.log"
+  print -rl -- "$tm Writer daemon requires authentication to enable automation mode." \
+               "$probe_noise" "$probe_noise" "$probe_noise" "$probe_noise" > "$ws/autom-outstanding-plus-noise.log"
+  local aout2 arc2
+  run_autom() { aout2=$(CADENCE_AUTOMATION_LOG_FIXTURE="$1" zsh "$here" check-automation 2>&1); arc2=$?; }
+  run_autom "$ws/autom-outstanding.log"
+  check "a request with no matching grant says AUTOMATION-PROMPT-OUTSTANDING and exits $AUTOMATION_PROMPT_EXIT" \
+    $( (( arc2 == AUTOMATION_PROMPT_EXIT )) && [[ "$aout2" == *"AUTOMATION-PROMPT-OUTSTANDING (T-2070)"* && "$aout2" == *"requests=1 granted=0 outstanding=1"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  check "...and says only the OWNER can clear it, never a daemon kill or DevToolsSecurity" \
+    $( [[ "$aout2" == *"ONLY THE OWNER CAN CLEAR IT"* && "$aout2" == *"Do NOT run"*"DevToolsSecurity"* && "$aout2" == *"PER-SESSION"* ]] && print 1 || print 0 ) "$aout2"
+  run_autom "$ws/autom-answered.log"
+  check "CONTROL: a request that WAS granted reads HEALTHY and exits 0" \
+    $( (( arc2 == 0 )) && [[ "$aout2" == *"outstanding=0"* && "$aout2" == *HEALTHY* && "$aout2" != *REFUSING* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  run_autom "$ws/autom-noise-only.log"
+  check "PIN: /usr/bin/log's own invocation records are not counted at all (requests=0)" \
+    $( (( arc2 == 0 )) && [[ "$aout2" == *"requests=0 granted=0 outstanding=0"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  run_autom "$ws/autom-outstanding-plus-noise.log"
+  check "PIN: one REAL standing prompt still reads outstanding=1 under four probe-noise lines" \
+    $( (( arc2 == AUTOMATION_PROMPT_EXIT )) && [[ "$aout2" == *"requests=1 granted=0 outstanding=1"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  # ANCHORED at column 1, and that is not decoration: unanchored, this check's OWN source line
+  # quotes the patterns it searches for, so it matched ITSELF and the pin failed over its own
+  # text. The assignment is the only line that starts the name in column 1.
+  check "PIN: the live predicate is scoped to the emitting daemons and off the \`log\` process" \
+    $( grep -q '^AUTOMATION_PROMPT_PREDICATE=.*process == "testmanagerd"' "$here" && grep -q '^AUTOMATION_PROMPT_PREDICATE=.*process != "log"' "$here" && ! grep -q '^AUTOMATION_PROMPT_PREDICATE=.*eventMessage CONTAINS' "$here" && print 1 || print 0 ) "$(grep -m1 '^AUTOMATION_PROMPT_PREDICATE=' "$here")"
 
   say ""
   say " 9. the per-requested-suite guard, and which of its two inputs it trusts (T-667 / T-1326)"
@@ -2825,6 +3039,17 @@ selftest_only_testing() {
   # with no next check -- which is what happened to agent `escapefix` on 2026-10-03.
   check "...and it names the second cause as well as developer mode (T-2049)" \
     $( [[ "$aout" == *"automationmode-writer"* && "$aout" == *"Writer daemon requires authentication"* ]] && print 1 || print 0 ) "$aout"
+  # T-2070, and it is a CORRECTION of this refusal rather than an addition to it: the check this
+  # block used to print was `log show --last 10m --predicate 'eventMessage CONTAINS "automation
+  # mode"'`, which counts /usr/bin/log's OWN invocation records -- the probe's argv quotes the
+  # phrase -- and therefore reads healthy over a standing prompt. docs/AGENTS_REFERENCE.md had
+  # already measured the defect and recorded that this line still had it.
+  check "...and the check it names is \`check-automation\`, not a bare log show that counts its own probes (T-2070)" \
+    $( [[ "$aout" == *"./scripts/xcb.sh check-automation"* && "$aout" != *"Check:  log show"* ]] && print 1 || print 0 ) "$aout"
+  # ANCHORED at `say "` in column 1-or-indent for the reason section 8e's predicate pin is anchored:
+  # unanchored, this check's own source line is the thing it would find.
+  check "PIN: no refusal in this script hands the reader a bare \`log show\` as THE check (T-2070)" \
+    $( ! grep -qE '^ *say ".*Check: *log show' "$here" && print 1 || print 0 ) "$(grep -nE '^ *say ".*Check: *log show' "$here" | head -1)"
   # T-2049's SECOND sentence. The fixture line is verbatim from
   # `cadence-xcb-escapefix.20261003-211849-1974.log`, whose run compiled 1105 Swift files, linked
   # and code-signed -- so the counters were non-vacuous and ONLY the result lines were zero. The
@@ -2845,6 +3070,8 @@ selftest_only_testing() {
     $( [[ "$aout" != *DevToolsSecurity* ]] && print 1 || print 0 ) "$aout"
   check "...and it says this hits UNIT runs too, so it is not read as UI-only" \
     $( [[ "$aout" == *"UNIT runs as well as UI runs"* ]] && print 1 || print 0 ) "$aout"
+  check "...and it asks whether an automation prompt is standing, because that wedges UNIT runs (T-2070)" \
+    $( [[ "$aout" == *"./scripts/xcb.sh check-automation"* ]] && print 1 || print 0 ) "$aout"
   run_tlog "$ws/runner-hung.log" 0
   check "CONTROL: the hung-runner sentence under exit 0 is not the environmental refusal" \
     $( (( arc == 4 )) && [[ "$aout" == *"takes a SUITE name"* && "$aout" != *"TEST HOST never connected"* ]] && print 1 || print 0 ) "exit $arc: $aout"
@@ -3734,6 +3961,22 @@ if [[ "${1:-}" == "check-entitlements" ]]; then
   exit 0
 fi
 
+# The automation-prompt probe on its own (T-2070): what `selftest` drives (with
+# CADENCE_AUTOMATION_LOG_FIXTURE), and what an agent staring at a run that died at ~445s -- or at
+# a whole batch of them -- asks before blaming a tree. Exits 0 on a healthy host and
+# $AUTOMATION_PROMPT_EXIT while a prompt is outstanding, so it is scriptable as well as readable.
+if [[ "${1:-}" == "check-automation" ]]; then
+  autom_counts=( ${=$(automation_prompt_counts)} )
+  autom_out=$(automation_prompt_outstanding)
+  say "automation prompt: requests=${autom_counts[1]} granted=${autom_counts[2]} outstanding=$autom_out"
+  if (( autom_out > 0 )); then
+    automation_prompt_refusal
+    exit $AUTOMATION_PROMPT_EXIT
+  fi
+  say "  HEALTHY -- no unanswered \"Enable UI Automation\" prompt in the window."
+  exit 0
+fi
+
 # The slept-through-it report on its own (T-2048): what `selftest` drives (with
 # CADENCE_PMSET_LOG_FIXTURE), and how anyone holding a red run's start/end asks whether the Mac
 # slept in between. Never gates; exits 0.
@@ -3908,6 +4151,12 @@ others=$(pgrep -f '^/Applications/.*/xcodebuild' 2>/dev/null | grep -vx "$$" | w
 say "  other xcodebuild processes: $others"
 # Before anything else is paid for: a second build into a live one's DerivedData (T-2042).
 dd_in_use_refusal "$DD" "preflight" && exit $DD_IN_USE_EXIT
+# And before anything else is paid for a SECOND time: a DerivedData an earlier run marked poisoned
+# (T-2046). Twelve minutes to rediscover a permanent fact about a directory is the whole cost this
+# guard exists to stop, and it is checked here -- ahead of the suite resolver, the destination
+# resolver and the test-host lease -- because none of those questions matter about a tree that
+# cannot link.
+entitlements_poisoned_dd_refusal "$DD" && exit $ENTITLEMENTS_POISONED_EXIT
 if (( $(pgrep -x Xcode 2>/dev/null | wc -l) > 0 )); then
   say "  WARNING: Xcode is running. T-117's mitigation is to quit it while a batch of agents"
   say "           builds; an open project is a standing claimant on Cadence.xcodeproj."
@@ -3995,6 +4244,22 @@ if screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]] \
   say "   authentication is running.)\" -- so the run builds for five minutes and executes 0 tests."
   say "   Unlock the screen and re-run (T-563)."
   exit 5
+fi
+
+# --- the unanswered automation-prompt guard (T-2070) -------------------------
+# Costs 2.3s, measured on this Mac 2026-10-07 with the scoped predicate -- against a `test` action
+# that is about to spend minutes building and then queue for the test host, and against the 445s
+# per run plus 3h11m of wedged host that T-2067 paid for not asking. Only `test` runs ask: a
+# `build` is unaffected by an outstanding prompt, and refusing one would be a lie about the host.
+# Placed after the locked-screen refusal and before the test-host lease, for that guard's reason:
+# a run that cannot pass must not hold the host while it fails.
+run_is_a_test_action() {
+  [[ "$ACTION" == "test" ]] && return 0
+  [[ "$ACTION" == "raw" && " ${args[*]} " == *" test "* ]] && return 0
+  return 1
+}
+if run_is_a_test_action && [[ "${CADENCE_ALLOW_AUTOMATION_PROMPT:-}" != "1" ]]; then
+  automation_prompt_refusal && exit $AUTOMATION_PROMPT_EXIT
 fi
 
 # --- resolve -only-testing: before anything expensive (T-1076) ---------------

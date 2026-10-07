@@ -62,6 +62,9 @@ Cadence/iOS/iOSTaskRowActionViews.swift
 Cadence/iOS/iOSTaskGroupSection.swift
 Cadence/Shared/CadenceCapturePaletteSupport.swift
 Cadence/iOS/iOSCaptureRadialMenu.swift
+Cadence/iOS/iOSFocusView.swift
+Cadence/Shared/CadenceFocusPlanningSupport.swift
+CadenceWidgets/CadenceWidgetsBundle.swift
 ```
 
 ### LEASE RETIRED 2026-10-06 — the three T-3005 Kanban paths are out, because the work landed
@@ -943,4 +946,48 @@ pop order and is the control.
 
 **Retire all ten when the work lands.** Ask before touching any path not listed; a path outside the
 grant is a new request, not a widening.
+
+### LEASE WIDENED 2026-10-07 (second grant) — [[T-168]]'s iOS Focus mode, three paths
+
+Granted at the owner's instruction, alongside two assignments that need **no new paths at all**.
+
+**[[T-2054]] needs nothing granted — its one remaining path is already leased.** The ticket is
+PARTIAL on exactly one sentence: `iOSListEditorMode.newProject` has a single call site, so the drop
+that opens `.newArea` cannot replace the Lists row without deleting the only way to make a
+**project** on iPad. The remedy is the Area/Project toggle in `Cadence/iOS/iOSListEditorViews.swift`,
+which matches the standing `Cadence/iOS/iOSList*.swift` glob. Agent `dropinherit` stopped there
+rather than edit a leased file, which is why this is Codex's to finish. The three layers below it
+are already **driven, not argued** — a real drag made a task whose stored container is the dropped
+list, verified in SQLite.
+
+**[[T-122]] needs nothing granted YET, and that is deliberate.** Rechecked 2026-08-30: *do not
+flip*, and the reason is measured on both platforms — a macOS Swift 6 build costs **10 warnings
+across 6 files** against a zero-warning baseline, so it fails on its own merits before iOS is even
+considered. The useful work is to **name those 6 files and clear the 10 warnings**, which turns a
+blocked flip into a decidable one. Measure first and request the six paths by name; a blanket grant
+over whatever Swift 6 complains about would be wider than anything measured.
+
+**[[T-168]] — iOS Focus mode: widgets and a landscape timer.** The entry is two words long ("Two
+halves"), so the scoping is Codex's and should be stated in the inbox entry before implementation.
+Granted:
+- `Cadence/iOS/iOSFocusView.swift` — the landscape timer half.
+- `Cadence/Shared/CadenceFocusPlanningSupport.swift` — the shared planning surface both halves read.
+- `CadenceWidgets/CadenceWidgetsBundle.swift` — a widget is only registered by appearing in the
+  bundle body; that file **is** the registration.
+
+**New files under `CadenceWidgets/` need no project edit** — it is a
+`PBXFileSystemSynchronizedRootGroup` and self-registers, confirmed by [[T-2078]] and
+[[T-2083]]. Do **not** add files to `Cadence/Services/` for widget use: those are explicit
+`PBXFileReference`s and would need a `project.pbxproj` edit, which [[T-117]] forbids while the
+owner's Xcode is open.
+
+**What the widget half must not repeat.** [[T-2078]] retired two widgets and the thing that would
+have survived deleting the views was the **AppIntent**, not the view — an intent is extracted into
+AppIntents metadata from the *compiled target*, so it keeps appearing in Shortcuts with no app
+surface behind it. If a Focus widget ships an intent, it owns that intent's whole lifecycle.
+Also: `CadenceWidgetGenerationLedger.instrumentedKinds` keeps retired kinds on purpose, because it
+is the list `clearStoredState` sweeps — adding a kind means adding it there too.
+
+**Retire these three when T-168 lands.** T-2054's and T-122's retirements belong to their own
+grants. Ask before touching any path not listed.
 
