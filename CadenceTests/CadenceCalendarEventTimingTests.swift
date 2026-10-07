@@ -336,6 +336,224 @@ struct CadenceCalendarEventTimingTests {
         }
     }
 
+    // MARK: - 2c. The iOS bundle edit sheet's round trip, T-3051
+
+    //  **The fifth site, and the first one that mutates data Cadence itself stores.** T-3051's
+    //  filing called `iOSCalendarBundleDetailSheet.timeDate(on:minute:)` a `DatePicker` seed and
+    //  listed it as display-only. It is not. The seed is read straight back out by that sheet's
+    //  `startMinute`, and `save()` hands `startMinute` to
+    //  `CadenceTaskMutationSupport.updateBundle(startMin:)`, which assigns `bundle.startMin` and
+    //  commits through `CadencePendingChangePersistence` — so on a transition day, *opening the
+    //  sheet and tapping Save moved the block an hour with no user edit at all*.
+    //
+    //  The sheet is behind `#if os(iOS)` and `timeDate` is `private static`, so `CadenceTests`
+    //  (a macOS target) cannot call it. It is pinned the way the iOS quick-create site is: the
+    //  behaviour is asserted on the shared helper the sheet now delegates to — which, after the
+    //  fix, *is* the sheet's arithmetic — and the delegation itself is asserted in source by
+    //  `theBundleEditSheetSeedsItsPickerBySettingTheClock` below.
+
+    /// The headline: a block stored at `startMin = 540` must seed 09:00 and read back **540**, on
+    /// a 23-hour day, a 25-hour day and an ordinary one alike. The old
+    /// `date(byAdding: .minute, value: 540, to: startOfDay)` seed read back 600 on the
+    /// spring-forward day and 480 on the fall-back day — the filing's two numbers.
+    @Test func theBundleEditSheetRoundTripsAStoredStartMinuteOnBothTransitionDaysAndAnOrdinaryOne() throws {
+        let calendar = try newYork()
+
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+            let seeded = try #require(
+                CadenceCalendarEventTiming.startDate(day: base, startMin: 540, calendar: calendar),
+                "09:00 on \(dateKey) must seed the block sheet's picker"
+            )
+            let components = calendar.dateComponents([.hour, .minute], from: seeded)
+            #expect(
+                components.hour == 9,
+                "the 09:00 block on \(dateKey) seeds hour \(components.hour ?? -1), not 9"
+            )
+            #expect(
+                components.minute == 0,
+                "the 09:00 block on \(dateKey) seeds minute \(components.minute ?? -1), not 0"
+            )
+
+            // `startMinute`'s own arithmetic, spelled exactly as the sheet spells it. This is the
+            // integer `save()` writes into `bundle.startMin`.
+            let readBack = max(0, min((components.hour ?? 0) * 60 + (components.minute ?? 0), (24 * 60) - 5))
+            #expect(
+                readBack == 540,
+                "saving the block sheet unopened on \(dateKey) rewrote startMin 540 as \(readBack)"
+            )
+            #expect(calendar.isDate(seeded, inSameDayAs: base), "the seed left \(dateKey)")
+        }
+    }
+
+    /// The same round trip over **every** minute the sheet can hold, not just 09:00: a green run on
+    /// one number cannot distinguish a fixed conversion from a lucky one.
+    ///
+    /// It is the identity everywhere except the hour the spring-forward day does not have. 02:00 to
+    /// 02:59 on 2026-03-08 never occur, so there is nothing for them to round-trip *to*; they all
+    /// resolve forward to 03:00 (180), the helper's chosen gap answer, and that collapse is the one
+    /// place an edit the user did not make can still change the stored minute. It is asserted
+    /// rather than skipped, so a later change to the gap rule fails here.
+    ///
+    /// The fall-back day has no such exception: an ambiguous 01:30 resolves to the *first* of its
+    /// two occurrences, whose `.hour`/`.minute` are still 1 and 30, so the identity holds there.
+    @Test func everyMinuteTheBundleSheetCanHoldSurvivesTheRoundTripExceptTheHourTheClockSkips() throws {
+        let calendar = try newYork()
+        let ceiling = (24 * 60) - 5
+
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+            var collapsed: [Int] = []
+
+            for minute in 0...ceiling {
+                let seeded = try #require(
+                    CadenceCalendarEventTiming.startDate(day: base, startMin: minute, calendar: calendar),
+                    "minute \(minute) must seed on \(dateKey)"
+                )
+                let components = calendar.dateComponents([.hour, .minute], from: seeded)
+                let readBack = max(0, min((components.hour ?? 0) * 60 + (components.minute ?? 0), ceiling))
+                if readBack != minute { collapsed.append(minute) }
+                #expect(calendar.isDate(seeded, inSameDayAs: base), "minute \(minute) left \(dateKey)")
+            }
+
+            if dateKey == Self.springForward {
+                #expect(
+                    collapsed == Array(120...179),
+                    "only the hour 2026-03-08 skips may move, got \(collapsed.prefix(5))… (\(collapsed.count) minutes)"
+                )
+                let gap = try #require(
+                    CadenceCalendarEventTiming.startDate(day: base, startMin: 150, calendar: calendar)
+                )
+                #expect(calendar.component(.hour, from: gap) == 3, "02:30 opens when the gap closes")
+                #expect(calendar.component(.minute, from: gap) == 0)
+            } else {
+                #expect(
+                    collapsed.isEmpty,
+                    "\(dateKey) must round-trip every minute, but \(collapsed.count) moved: \(collapsed.prefix(5))…"
+                )
+            }
+        }
+    }
+
+    /// The ambiguous reading, named on its own because the round trip above would also pass if the
+    /// helper answered the *second* 01:30. It answers the first, which is EDT.
+    @Test func theBundleSheetSeedsTheFirstOfTwoAmbiguousReadingsOnTheFallBackDay() throws {
+        let calendar = try newYork()
+
+        let base = try midnight(Self.fallBack, calendar)
+        let seeded = try #require(
+            CadenceCalendarEventTiming.startDate(day: base, startMin: 90, calendar: calendar)
+        )
+        #expect(calendar.component(.hour, from: seeded) == 1)
+        #expect(calendar.component(.minute, from: seeded) == 30)
+        #expect(
+            calendar.timeZone.secondsFromGMT(for: seeded) == Self.edt,
+            "the block sheet seeds the first 01:30, which is still EDT"
+        )
+    }
+
+    /// **Out of range diverges from the three write sites, deliberately.** They refuse rather than
+    /// mis-date a real calendar event; this is a non-failable `@State` seed inside a `View.init`,
+    /// so the picker must be handed *some* instant and the sheet clamps instead.
+    ///
+    /// The old code clamped the floor (`max(0, minute)`) and had **no ceiling**, so a stored 1500
+    /// rolled the seed onto the *next calendar day* at 01:00 and `startMinute` read it back as 60 —
+    /// the block jumped a day as well as an hour. The ceiling is now the one `startMinute` and
+    /// `updateBundle` already impose, so an out-of-range minute lands at 23:55 on the block's own
+    /// day. Both halves are asserted: the old roll-off, so "it used to be worse" is a measurement,
+    /// and the new clamp.
+    @Test func anOutOfRangeBundleStartMinuteClampsToTheBlocksOwnDayInsteadOfRollingOntoTheNext() throws {
+        let calendar = try newYork()
+        let ceiling = (24 * 60) - 5
+
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+
+            // The old arithmetic, asserted rather than quoted.
+            let rolled = try #require(calendar.date(byAdding: .minute, value: 1500, to: base))
+            #expect(
+                !calendar.isDate(rolled, inSameDayAs: base),
+                "adding 1500 elapsed minutes to midnight on \(dateKey) used to leave the day"
+            )
+
+            // The helper itself still refuses, which is what the write sites rely on …
+            #expect(
+                CadenceCalendarEventTiming.startDate(day: base, startMin: 1500, calendar: calendar) == nil,
+                "1500 names no time on \(dateKey)"
+            )
+
+            // … and the sheet's two-sided clamp is what turns that refusal into a seed.
+            for minute in [1440, 1500, 2880, -1, -600] {
+                let clamped = min(max(0, minute), ceiling)
+                let seeded = try #require(
+                    CadenceCalendarEventTiming.startDate(day: base, startMin: clamped, calendar: calendar),
+                    "the clamped \(minute) must seed on \(dateKey)"
+                )
+                #expect(
+                    calendar.isDate(seeded, inSameDayAs: base),
+                    "a clamped \(minute) must stay on \(dateKey)"
+                )
+                let components = calendar.dateComponents([.hour, .minute], from: seeded)
+                let readBack = (components.hour ?? 0) * 60 + (components.minute ?? 0)
+                #expect(readBack == clamped, "the clamped \(minute) must round-trip on \(dateKey)")
+            }
+        }
+    }
+
+    /// The delegation, in source. `timeDate` is `private static` inside an `#if os(iOS)` file, so
+    /// this is the only reachable pin that the sheet actually calls the shared rule — and it is
+    /// what fails if a later edit respells the conversion locally, which is how one rule reached
+    /// five copies.
+    @Test func theBundleEditSheetSeedsItsPickerBySettingTheClock() throws {
+        let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
+
+        // The stripper must be discriminating, or every absence below is free. The doc comments on
+        // this sheet quote both offending spellings on purpose.
+        let strippedProbe = CadenceSourceScan.strippingComments("let a = 1 // byAdding: .minute\n")
+        #expect(!strippedProbe.contains("byAdding"), "the comment stripper is not stripping")
+        #expect(strippedProbe.contains("let a = 1"), "the comment stripper ate code")
+
+        #expect(
+            CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(", in: sheet) == 1,
+            "the block edit sheet has exactly one minute-of-day seed and it routes through the helper"
+        )
+
+        // Negative, in both spellings — `addingTimeInterval` is the one an `rg 'byAdding: .minute'`
+        // scores 0 on, and it is how two audits walked past `createStandaloneEvent`.
+        let added = CadenceSourceScan.matchLines("byAdding:\\s*\\.minute,\\s*value:\\s*(max\\(0,\\s*)?minute", in: sheet)
+        #expect(added.isEmpty, "the block edit sheet still adds a minute-of-day to midnight: \(added)")
+        let elapsed = CadenceSourceScan.matchLines("addingTimeInterval", in: sheet)
+        #expect(elapsed.isEmpty, "the block edit sheet converts a time by elapsed seconds: \(elapsed)")
+
+        // Non-vacuity: the regex matches the line that was there and misses a real duration.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "byAdding:\\s*\\.minute,\\s*value:\\s*(max\\(0,\\s*)?minute",
+                in: "return calendar.date(byAdding: .minute, value: max(0, minute), to: start) ?? start"
+            ) == 1
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                "byAdding:\\s*\\.minute,\\s*value:\\s*(max\\(0,\\s*)?minute",
+                in: "x = cal.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate)"
+            ) == 0
+        )
+
+        // The read-back direction is wall-clock and must stay that way: it is the half that turns
+        // a wrong seed into a wrong `bundle.startMin`.
+        #expect(
+            sheet.contains("calendar.dateComponents([.hour, .minute], from: startTime)"),
+            "the block edit sheet reads its picker back as a clock reading"
+        )
+        // And the write it feeds, so "this is a write path, not a preview" is pinned, not asserted
+        // in a comment.
+        #expect(
+            CadenceSourceScan.matchCount("CadenceTaskMutationSupport\\.updateBundle\\(", in: sheet) == 1,
+            "the block edit sheet's Save writes startMinute into the store"
+        )
+        #expect(sheet.contains("startMin: startMinute"), "and it is startMinute that it writes")
+    }
+
     // MARK: - 3. The lines that are CORRECT, pinned so they are not "fixed" symmetrically
 
     /// An event's duration is **elapsed** time, and on a transition day that is visibly different

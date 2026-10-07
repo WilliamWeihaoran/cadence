@@ -39,6 +39,15 @@ struct iOSCalendarBundleDetailSheet: View {
         DateFormatters.dateKey(from: date)
     }
 
+    /// The other direction, and it was already right ([[T-3051]]). Reading `.hour` and `.minute`
+    /// out of a calendar *is* a wall-clock reading, so it needed no change — it is the half that
+    /// made the seed's elapsed arithmetic visible as data loss rather than as a cosmetic offset.
+    /// Together with `timeDate(on:minute:calendar:)` below it now round-trips to the identity, and
+    /// its `(24 * 60) - 5` ceiling is the one that clamp mirrors.
+    ///
+    /// **What `save()` does with this is the whole reason the seed mattered**: it goes to
+    /// `CadenceTaskMutationSupport.updateBundle(startMin:)`, which assigns `bundle.startMin` and
+    /// commits. This is not a label.
     private var startMinute: Int {
         let components = calendar.dateComponents([.hour, .minute], from: startTime)
         return max(0, min((components.hour ?? 0) * 60 + (components.minute ?? 0), (24 * 60) - 5))
@@ -300,9 +309,41 @@ struct iOSCalendarBundleDetailSheet: View {
         )
     }
 
+    /// Seeds `startTime` — and re-seeds it on every date change and picker edit — from a
+    /// **minute-of-day**, which is a wall-clock reading and is therefore *set*, never added to
+    /// midnight ([[T-3051]], the fifth site of the defect [[T-3048]] and [[T-3050]] fixed).
+    ///
+    /// **This sheet is a write path, not a preview, and that is why the line mattered.** The seed
+    /// is read straight back out by `startMinute` above, which `save()` hands to
+    /// `CadenceTaskMutationSupport.updateBundle(startMin:)` — so with the old
+    /// `date(byAdding: .minute, value: minute, to: startOfDay)` spelling, *opening this sheet on a
+    /// transition day and tapping Save moved the block an hour with no user edit at all*. Measured
+    /// in `America/New_York` with `startMin = 540`: the elapsed form seeds 10:00 on 2026-03-08 and
+    /// 08:00 on 2026-11-01, and `startMinute` then reads back 600 and 480 for a block stored at
+    /// 540. The picker misbehaved in the same breath — `startMinuteBinding` sets through here and
+    /// reads back through `startMinute`, so a user who picked 09:00 watched it snap elsewhere.
+    ///
+    /// It delegates to `CadenceCalendarEventTiming.startDate(day:startMin:calendar:)` rather than
+    /// spelling the rule again: this call site holds the day as a `Date`, which is exactly the
+    /// shape that overload was added for, and the repo reached five copies of one rule by letting
+    /// each site write its own. That helper's doc comment owns the gap and ambiguity readings — a
+    /// non-existent 02:30 resolves to 03:00, the first instant after the gap, and an ambiguous
+    /// 01:30 takes the first (EDT) of its two occurrences.
+    ///
+    /// **Out of range diverges from the three write sites, and only because there is nothing here
+    /// to refuse.** They return `nil` and abandon the write rather than mis-date a real calendar
+    /// event; this is a non-failable `@State` seed inside a `View.init`, so the picker must be
+    /// given *some* instant. The old code clamped the floor with `max(0, minute)` and had **no
+    /// ceiling**, so a stored `startMin` of 1500 rolled the seed onto the *next calendar day* at
+    /// 01:00 and `startMinute` read it back as 60. The clamp is now two-sided and at exactly the
+    /// bound `startMinute` and `updateBundle` already impose — `(24 * 60) - 5` — which makes the
+    /// round trip `startMin → timeDate → startMinute` the identity on the whole valid domain and a
+    /// same-day 23:55 outside it. `?? dayStart` is therefore unreachable, and is the day's own
+    /// midnight rather than any other day.
     private static func timeDate(on date: Date, minute: Int, calendar: Calendar = .current) -> Date {
-        let start = calendar.startOfDay(for: date)
-        return calendar.date(byAdding: .minute, value: max(0, minute), to: start) ?? start
+        let dayStart = calendar.startOfDay(for: date)
+        let clamped = min(max(0, minute), (24 * 60) - 5)
+        return CadenceCalendarEventTiming.startDate(day: dayStart, startMin: clamped, calendar: calendar) ?? dayStart
     }
 }
 
