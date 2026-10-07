@@ -512,13 +512,30 @@ struct CadenceNewTaskDropFrameStore {
     /// geometry change must survive its absence. Liveness is the one of the three facts the
     /// restored copy republishes by itself, so liveness is the one this is allowed to take away.
     ///
-    /// **The cost, taken deliberately.** A view that really was destroyed leaves its frame and
-    /// placement behind for the life of the process. They are unreachable — `candidates()` passes
-    /// over anything not in `live`, and nothing but a restored view sets that again — so the price
-    /// is memory, while deleting them prices correctness.
+    /// **The cost, taken deliberately — and still paid today.** A view that really was destroyed
+    /// leaves its frame and placement behind for the life of the process. They are unreachable —
+    /// `candidates()` passes over anything not in `live`, and nothing but a restored view sets that
+    /// again — so the price is memory, while deleting them prices correctness.
+    ///
+    /// `destroy(_:)` below is T-3011's remedy, and it is **not wired yet**: no production target
+    /// owns a `CadenceNewTaskDropRegistrationLifetime`, so nothing calls it. When one does, only
+    /// final destruction may call it; a count or time limit cannot tell destruction from a push.
     mutating func retire(_ id: UUID) {
         live.remove(id)
     }
+
+    /// Final destruction, never a visibility event. Remove every retained fact and its tie-break
+    /// position so neither memory nor the per-drag candidate walk grows with destroyed targets.
+    mutating func destroy(_ id: UUID) {
+        guard frames[id] != nil || placements[id] != nil || live.contains(id) else { return }
+        live.remove(id)
+        frames.removeValue(forKey: id)
+        slotOrigins.removeValue(forKey: id)
+        placements.removeValue(forKey: id)
+        order.removeAll { $0 == id }
+    }
+
+    var retainedFrameCount: Int { frames.count }
 
     /// **A target with nothing to hand over is not a target.** The empty key is how a call site
     /// says "not today" about a destination it still draws — the calendar timeline's columns are
@@ -546,6 +563,33 @@ struct CadenceNewTaskDropFrameStore {
     func slotMinute(for id: UUID, at point: CGPoint) -> Int? {
         guard let rule = placements[id]?.slot, let originY = slotOrigins[id] else { return nil }
         return rule.minute(atOffsetY: point.y - originY)
+    }
+}
+
+/// Stored in a drop target's `@State`, not in its transient view value. SwiftUI copies retaining
+/// the same state share this owner, so an old copy disappearing cannot destroy a restored frame.
+@MainActor
+final class CadenceNewTaskDropRegistrationLifetime {
+    private let id: UUID
+    private let onDestroy: @MainActor @Sendable (UUID) -> Void
+    private var isActivated = false
+
+    init(id: UUID = UUID(), onDestroy: @escaping @MainActor @Sendable (UUID) -> Void) {
+        self.id = id
+        self.onDestroy = onDestroy
+    }
+
+    func activate() -> UUID {
+        isActivated = true
+        return id
+    }
+
+    deinit {
+        // State's unadopted initial values never published an entry. Do not enqueue work for them.
+        guard isActivated else { return }
+        let id = id
+        let onDestroy = onDestroy
+        Task { @MainActor in onDestroy(id) }
     }
 }
 

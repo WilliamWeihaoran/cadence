@@ -38,6 +38,7 @@ struct iOSListEditorSheet: View {
     @State private var colorHex = ""
     @State private var selectedContextID = "none"
     @State private var selectedAreaID = "none"
+    @State private var createsProject = false
     @State private var sectionDrafts: [CadenceSectionDraft] = [CadenceSectionDraft(name: TaskSectionDefaults.defaultName)]
     @State private var originalSectionConfigs: [TaskSectionConfig] = []
     @State private var hideEmptyDueDates = true
@@ -59,8 +60,13 @@ struct iOSListEditorSheet: View {
     /// gives: "try again" is the wrong advice for a name that will be refused every time.
     @State private var nameRefusalNotice: String?
 
+    private var resolvedMode: iOSListEditorMode {
+        guard !isEditing else { return mode }
+        return createsProject ? .newProject : .newArea
+    }
+
     private var isProjectMode: Bool {
-        switch mode {
+        switch resolvedMode {
         case .newProject, .editProject:
             return true
         case .newArea, .editArea:
@@ -112,6 +118,17 @@ struct iOSListEditorSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if !isEditing {
+                    Section {
+                        iOSSegmentedChoice(
+                            options: [(false, "Area"), (true, "Project")],
+                            selection: $createsProject
+                        )
+                        .accessibilityLabel("List type")
+                    }
+                    .iOSListEditorSectionChrome()
+                }
+
                 if let editorFailureNotice {
                     Section {
                         CadenceInlineFailureNotice(text: editorFailureNotice)
@@ -271,6 +288,16 @@ struct iOSListEditorSheet: View {
                 }
             }
             .onAppear(perform: load)
+            .onChange(of: createsProject) { oldValue, newValue in
+                guard !isEditing else { return }
+                let oldIcon = oldValue ? "checklist" : "folder.fill"
+                let oldColor = oldValue ? CadenceColorPalette.projectDefault : CadenceColorPalette.areaDefault
+                if icon == oldIcon { icon = newValue ? "checklist" : "folder.fill" }
+                if colorHex == oldColor {
+                    colorHex = newValue ? CadenceColorPalette.projectDefault : CadenceColorPalette.areaDefault
+                }
+                showAreaPicker = false
+            }
             .iOSColumnWindDown(target: $pendingColumnWindDown, perform: applyColumnWindDown)
         }
         .preferredColorScheme(.dark)
@@ -378,6 +405,7 @@ struct iOSListEditorSheet: View {
 
         switch mode {
         case .newArea:
+            createsProject = false
             name = ""
             details = ""
             icon = "folder.fill"
@@ -387,6 +415,7 @@ struct iOSListEditorSheet: View {
             hideEmptySectionDueDates = true
             selectedContextID = seededContextValue
         case .newProject:
+            createsProject = true
             name = ""
             details = ""
             icon = "checklist"
@@ -451,7 +480,7 @@ struct iOSListEditorSheet: View {
             CadenceSectionEditingSupport.clearedColumnNames(in: sectionDrafts).isEmpty ? nil : .emptyName
         nameRefusalNotice = refusal?.notice
         do {
-            switch mode {
+            switch resolvedMode {
             case .newArea:
                 let area = Area(name: trimmedName, context: selectedContext, colorHex: normalizedColor, icon: normalizedIcon)
                 area.desc = details

@@ -85,8 +85,10 @@ struct iOSFocusView: View {
     }
 
     var body: some View {
-        Group {
-            if isCompact {
+        GeometryReader { geometry in
+            if CadenceFocusLayout.usesLandscapeLayout(width: geometry.size.width, height: geometry.size.height) {
+                landscapeLayout(width: geometry.size.width)
+            } else if isCompact {
                 compactLayout
             } else {
                 horizontalLayout
@@ -149,6 +151,54 @@ struct iOSFocusView: View {
             detail: { focusDetailPane },
             narrow: { compactLayout }
         )
+    }
+
+    private func landscapeLayout(width: CGFloat) -> some View {
+        HStack(spacing: CadenceFocusLayout.columnSpacing) {
+            ScrollView {
+                VStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        if isCompact {
+                            Button { dismiss() } label: {
+                                Image(systemName: "chevron.left")
+                                    .frame(width: 44, height: 44)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Back")
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(selectedItem.map(title(of:)) ?? "Focus")
+                                .font(.system(size: 18, weight: .semibold))
+                                .lineLimit(2)
+                            Text(statusEyebrow)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.subdued)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .foregroundStyle(Theme.text)
+
+                    if let item = selectedItem {
+                        sessionClock(fontSize: 66)
+                        switch item {
+                        case .task(let task): focusControls(for: task)
+                        case .bundle(let bundle): bundleControls(for: bundle)
+                        }
+                    } else {
+                        unselectedDetail
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.hidden)
+            .frame(width: CadenceFocusLayout.timerWidth(availableWidth: width))
+
+            taskListPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(CadenceFocusLayout.contentInset)
+        .cadenceFixedTypography()
     }
 
     /// The eyebrow carries the session's state, because the title already says "Focus" and a
@@ -395,28 +445,28 @@ struct iOSFocusView: View {
             isRunning: timerState.isRunning,
             isCompact: isCompact,
             clock: {
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    let seconds = elapsedSeconds
-                    VStack(spacing: 6) {
-                        Text(CadenceFocusSupport.clockDisplay(elapsedSeconds: seconds))
-                            .font(.system(size: isCompact ? 56 : 66, weight: .ultraLight, design: .monospaced))
-                            .monospacedDigit()
-                            .foregroundStyle(timerState.isRunning ? Theme.text : Theme.muted)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.68)
-                            .contentTransition(.numericText())
-
-                        // The stopwatch silently rounds to whole minutes when it is logged, so
-                        // the amount that will actually land on the task is spelled out rather
-                        // than left to be discovered after the fact.
-                        Text(logHint(elapsedSeconds: seconds))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Theme.subdued)
-                    }
-                }
+                sessionClock(fontSize: isCompact ? 56 : 66)
             },
             controls: controls
         )
+    }
+
+    private func sessionClock(fontSize: CGFloat) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let seconds = elapsedSeconds
+            VStack(spacing: 6) {
+                Text(CadenceFocusSupport.clockDisplay(elapsedSeconds: seconds))
+                    .font(.system(size: fontSize, weight: .ultraLight, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(timerState.isRunning ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.68)
+                    .contentTransition(.numericText())
+                Text(logHint(elapsedSeconds: seconds))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.subdued)
+            }
+        }
     }
 
     /// Same "actual/estimate" pill macOS's focus header shows, minus the empty `-/-` case.

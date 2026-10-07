@@ -251,6 +251,12 @@ final class iOSNewTaskDropFrameRegistry {
         store.retire(id)
     }
 
+    func makeRegistrationLifetime() -> CadenceNewTaskDropRegistrationLifetime {
+        CadenceNewTaskDropRegistrationLifetime { [weak self] id in
+            self?.store.destroy(id)
+        }
+    }
+
     func candidates() -> [CadenceCaptureDropHitTest.Candidate] {
         store.candidates()
     }

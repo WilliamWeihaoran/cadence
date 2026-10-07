@@ -67,6 +67,27 @@ Cadence/Shared/CadenceFocusPlanningSupport.swift
 CadenceWidgets/CadenceWidgetsBundle.swift
 ```
 
+### LANDED PARTIAL 2026-10-07 — `codex/typography-lifecycle-batch`, and NOTHING is retired
+
+Agent `codexland3` landed the branch (tip `980d4b75`) in the commit carrying this note. Every one of
+its ten paths was unchanged on main since the merge base `12858406`, checked blob by blob, so the
+take was whole-file with no three-way merge. **No lease path is retired, deliberately:** each grant
+says to retire its paths when its work lands, and none of the three code tickets did. [[T-2054]]
+(the Area/Project chooser) needed no grant — `iOSListEditorViews.swift` is the standing
+`iOSList*.swift` glob. [[T-168]] landed landscape content only, so its three paths stay. [[T-3011]]
+landed built-but-unwired, and the Dynamic Type cluster's eight paths carry rechecks rather than
+conversions, so the ten paths of the first 2026-10-07 grant stay too.
+
+**Changed at landing, and only this:** the `retire(_:)` doc comment in
+`CadenceCapturePaletteSupport.swift` keeps saying the memory cost is *still paid*, because the
+branch's rewrite read as though a lifetime owner already existed and none does in production.
+
+**Codex's requested dependencies are NOT granted by this landing** — `iOSFloatingCreateTaskButton.swift`
+for T-3011's wiring, the compact-shell and root-view decisions and the three widget files for T-168,
+`CadenceBoardMetadataChip.swift` / `CadenceTagChipStyleTests.swift` for [[T-1411]], four iOS editor
+files for [[T-1400]], and eight Swift 6 files for [[T-122]]. Each is recorded in its ledger entry and
+needs the owner's grant here before Codex edits it.
+
 ### LEASE RETIRED 2026-10-06 — the three T-3005 Kanban paths are out, because the work landed
 
 `codex/kanban-rendering` landed at tip `05de6408` in the same commit that folded [[T-3005]]'s
