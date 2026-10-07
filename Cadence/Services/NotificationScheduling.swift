@@ -141,11 +141,58 @@ nonisolated struct NotificationReconcileDiff: Equatable {
 nonisolated enum TaskNotificationPlanner {
     /// Returns the "starting now" notification for a task's scheduled start time, or nil if the
     /// task isn't scheduled, is done/cancelled, or its fire time has already passed.
-    static func startNotification(for task: AppTask, now: Date) -> CadenceNotificationRequest? {
+    ///
+    /// **`scheduledStartMin` is a wall-clock time of day, so the fire date is *set*, never added**
+    /// ([[T-3048]]). `date(byAdding: .minute, value:, to: midnight)` is **elapsed** time — `.hour`,
+    /// `.minute` and `.second` are not calendrical units — so on a day that is 23 or 25 hours long
+    /// it lands on a different clock reading than the one every timeline, row and chip renders for
+    /// the same field. Measured in `America/New_York` with `scheduledStartMin = 540`: adding 540
+    /// minutes to midnight gives **10:00** on 2026-03-08 and **08:00** on 2026-11-01, while
+    /// `date(bySettingHour:minute:second:of:)` gives 09:00 on both and on an ordinary day. The
+    /// error is not absorbed downstream: `CadenceNotificationRequest.triggerSpec` extracts
+    /// `.hour`/`.minute` from this instant and `NotificationManager.makeTrigger` hands them to
+    /// `UNCalendarNotificationTrigger`, so the wrong hour is the hour the OS fires at. The due leg
+    /// below has always set its hour; this is the start leg agreeing with it.
+    ///
+    /// **The three times that need a decision rather than a default**, all measured on this
+    /// toolchain in `America/New_York`:
+    ///
+    /// - **`0` (00:00)** and **`1439` (23:59)** are ordinary: both resolve on all three days, and
+    ///   23:59 stays on the task's own day rather than rolling into the next one.
+    /// - **A time the day does not have.** 02:30 on 2026-03-08 never occurs — the clocks jump from
+    ///   01:59:59 EST to 03:00:00 EDT. Foundation answers **03:00 EDT**, the first instant at or
+    ///   after the missing reading, and that is the behaviour this function wants: a reminder for a
+    ///   start time inside the gap fires the moment that gap closes instead of being skipped or
+    ///   silently moved to the next day. Spelled out because it is a decision — adding 150 minutes
+    ///   to midnight instead answers 03:30, an hour past a start the user never asked for.
+    /// - **An ambiguous time.** 01:30 on 2026-11-01 happens twice. Foundation answers the **first**
+    ///   (01:30 EDT), which is the earlier of the two and the only one that cannot arrive late.
+    ///
+    /// A `scheduledStartMin` of `1440` or more names no time on the day at all, and
+    /// `bySettingHour:` returns `nil` for it, so no reminder is planned. That is deliberate: every
+    /// writer already holds the field to `0...1439` (`CadenceWriteService`, `AIActionService`), and
+    /// the old arithmetic instead rolled such a value quietly onto a *different calendar day* than
+    /// the one the task is filed under. The existing guards are unchanged — this leg still returns
+    /// `nil` for an unscheduled, done, cancelled or already-past task, and for a negative minute.
+    ///
+    /// - Parameter calendar: The calendar whose time zone the day key is resolved in and the start
+    ///   time is set in. Defaults to `.current`, which is every production call. A test passes an
+    ///   explicit DST-observing zone because the scheme pins the test host to `TZ=UTC` ([[T-1116]]),
+    ///   which has no DST and in which this whole distinction is invisible.
+    static func startNotification(
+        for task: AppTask,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> CadenceNotificationRequest? {
         guard !task.isDone, !task.isCancelled else { return nil }
         guard !task.scheduledDate.isEmpty, task.scheduledStartMin >= 0 else { return nil }
-        guard let baseDate = DateFormatters.date(from: task.scheduledDate) else { return nil }
-        guard let fireDate = Calendar.current.date(byAdding: .minute, value: task.scheduledStartMin, to: baseDate) else {
+        guard let baseDate = DateFormatters.date(from: task.scheduledDate, in: calendar) else { return nil }
+        guard let fireDate = calendar.date(
+            bySettingHour: task.scheduledStartMin / 60,
+            minute: task.scheduledStartMin % 60,
+            second: 0,
+            of: baseDate
+        ) else {
             return nil
         }
         guard fireDate > now else { return nil }
@@ -161,16 +208,21 @@ nonisolated enum TaskNotificationPlanner {
 
     /// Returns the due-date reminder for a task, fired at a fixed time-of-day on the due date,
     /// or nil if the task has no due date, is done/cancelled, or the fire time has already passed.
+    ///
+    /// This leg was already DST-safe and is the shape the start leg above was corrected to match
+    /// ([[T-3048]]). The `calendar:` parameter exists so a test can assert that in as many words,
+    /// in a zone that actually has DST; it changes nothing in production, where it is `.current`.
     static func dueNotification(
         for task: AppTask,
         now: Date,
         reminderHour: Int,
-        reminderMinute: Int
+        reminderMinute: Int,
+        calendar: Calendar = .current
     ) -> CadenceNotificationRequest? {
         guard !task.isDone, !task.isCancelled else { return nil }
         guard !task.dueDate.isEmpty else { return nil }
-        guard let baseDate = DateFormatters.date(from: task.dueDate) else { return nil }
-        guard let fireDate = Calendar.current.date(
+        guard let baseDate = DateFormatters.date(from: task.dueDate, in: calendar) else { return nil }
+        guard let fireDate = calendar.date(
             bySettingHour: reminderHour,
             minute: reminderMinute,
             second: 0,
