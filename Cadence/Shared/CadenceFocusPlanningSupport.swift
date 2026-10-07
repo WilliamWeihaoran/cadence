@@ -1,6 +1,22 @@
 import Foundation
 import SwiftData
 
+nonisolated enum CadenceFocusLayout {
+    static let contentInset: CGFloat = 16
+    static let columnSpacing: CGFloat = 16
+    static let minimumPickerWidth: CGFloat = 240
+
+    static func usesLandscapeLayout(width: CGFloat, height: CGFloat) -> Bool {
+        width.isFinite && height.isFinite
+            && width >= 568 && height >= 240 && height <= 500 && width > height * 1.4
+    }
+
+    static func timerWidth(availableWidth: CGFloat) -> CGFloat {
+        let columns = max(0, availableWidth - contentInset * 2 - columnSpacing)
+        return min(columns * 0.52, max(0, columns - minimumPickerWidth))
+    }
+}
+
 struct CadenceFocusTimerState: Hashable {
     var isRunning = false
     var startedAt: Date?
