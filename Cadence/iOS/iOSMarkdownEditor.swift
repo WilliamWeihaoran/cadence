@@ -4,6 +4,7 @@ import UIKit
 
 struct iOSMarkdownEditor: UIViewRepresentable {
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var text: String
     @Binding var isFocused: Bool
     @Binding var selectedRange: NSRange
@@ -238,6 +239,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         var parent: iOSMarkdownEditor
         private var isApplyingStyle = false
         private var styleSignature = MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], taskEmbeds: [:])
+        private var styledContentSizeCategory: UIContentSizeCategory?
+        private var styledDynamicTypeSize: DynamicTypeSize?
         private var pendingStyleWorkItem: DispatchWorkItem?
 
         // MARK: - Rendered tables (T-221)
@@ -549,7 +552,9 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 contentWidth: textView.markdownContentWidth,
                 tableSourceAnchors: tableSourceAnchors
             )
-            guard current != styleSignature else { return }
+            guard current != styleSignature
+                || styledContentSizeCategory != textView.traitCollection.preferredContentSizeCategory
+                || styledDynamicTypeSize != parent.dynamicTypeSize else { return }
             styleSignature = current
             let selection = textView.selectedRange
             applyMarkdownStyle(to: textView, text: textView.text ?? "")
@@ -630,16 +635,26 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
             let storage = textView.textStorage
             let revealed = revealedBlockRange(in: textView)
-            let styled = iOSMarkdownStyler.attributedString(
-                for: text,
-                revealedBlockRange: revealed,
-                imageAssets: parent.imageAssets,
-                taskEmbeds: parent.taskEmbeds,
-                contentWidth: textView.markdownContentWidth,
-                tableSourceAnchors: tableSourceAnchors
-            )
-            storage.setAttributedString(styled)
-            textView.typingAttributes = iOSMarkdownStyler.baseTypingAttributes
+            // Resolve fonts and font-derived geometry against this editor's scene traits together.
+            textView.traitCollection.performAsCurrent {
+                let styled = iOSMarkdownStyler.attributedString(
+                    for: text,
+                    revealedBlockRange: revealed,
+                    imageAssets: parent.imageAssets,
+                    taskEmbeds: parent.taskEmbeds,
+                    contentWidth: textView.markdownContentWidth,
+                    tableSourceAnchors: tableSourceAnchors
+                )
+                storage.setAttributedString(styled)
+                textView.typingAttributes = iOSMarkdownStyler.baseTypingAttributes
+                if let field = tableCellEditor, let address = tableCellEditAddress {
+                    let selection = field.selectedTextRange
+                    field.font = iOSMarkdownTableGridMetrics.font(isHeader: address.row == 0)
+                    field.selectedTextRange = selection
+                }
+            }
+            styledContentSizeCategory = textView.traitCollection.preferredContentSizeCategory
+            styledDynamicTypeSize = parent.dynamicTypeSize
             styleSignature = MarkdownStyleSignature.current(
                 revealedBlockRange: revealed,
                 imageAssets: parent.imageAssets,

@@ -124,7 +124,7 @@ struct TimelineDropDelegate: DropDelegate {
         }
     }
 
-    private func taskID(from payload: String) -> UUID? {
+    nonisolated private func taskID(from payload: String) -> UUID? {
         TaskDragPayload.taskID(from: payload)
     }
 }

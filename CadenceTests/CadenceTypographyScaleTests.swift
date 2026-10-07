@@ -422,6 +422,8 @@ struct CadenceTypographyConversionSweepTests {
             "Cadence/Shared/Components/CadenceDatePicker.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
+            "Cadence/iOS/iOSListDetailView.swift",
+            "Cadence/iOS/iOSListViews.swift",
             "Cadence/iOS/iOSSearchView.swift",
             "Cadence/iOS/iOSTaskCollectionPage.swift",
             "Cadence/iOS/iOSTaskDetailComponents.swift",

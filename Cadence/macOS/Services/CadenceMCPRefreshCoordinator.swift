@@ -6,7 +6,7 @@ final class CadenceMCPRefreshCoordinator {
     private var monitor: CadenceMCPRefreshMonitor?
     private var lastMarkerDate: Date?
 
-    func start(onChange: @escaping () -> Void) {
+    func start(onChange: @escaping @MainActor @Sendable () -> Void) {
         guard monitor == nil else { return }
         monitor = CadenceMCPRefreshMonitor { [weak self] in
             self?.lastMarkerDate = Self.currentMarkerDate() ?? Date()
@@ -36,7 +36,7 @@ private final class CadenceMCPRefreshMonitor {
     private let source: DispatchSourceFileSystemObject
     private var pendingRefresh: DispatchWorkItem?
 
-    init?(onChange: @escaping () -> Void) {
+    init?(onChange: @escaping @MainActor @Sendable () -> Void) {
         guard let markerURL = try? CadenceModelContainerFactory.refreshMarkerURL() else { return nil }
         try? FileManager.default.createDirectory(
             at: markerURL.deletingLastPathComponent(),
@@ -67,7 +67,7 @@ private final class CadenceMCPRefreshMonitor {
         source.cancel()
     }
 
-    private func scheduleRefresh(_ onChange: @escaping () -> Void) {
+    private func scheduleRefresh(_ onChange: @escaping @MainActor @Sendable () -> Void) {
         pendingRefresh?.cancel()
         let workItem = DispatchWorkItem {
             DispatchQueue.main.async(execute: onChange)

@@ -17,8 +17,10 @@ import UIKit
 /// `MarkdownTableEditor`'s. Both are in `Services/`, pure, and covered — which is what T-221's
 /// macOS half was built for.
 nonisolated enum iOSMarkdownTableGridMetrics {
-    static let cellFont = UIFont.systemFont(ofSize: 15)
-    static let headerCellFont = UIFont.systemFont(ofSize: 15, weight: .semibold)
+    static var cellFont: UIFont { UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 15)) }
+    static var headerCellFont: UIFont {
+        UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 15, weight: .semibold))
+    }
 
     /// One row's height, for every table on this platform.
     ///
@@ -26,12 +28,18 @@ nonisolated enum iOSMarkdownTableGridMetrics {
     /// hit target for opening a cell, and 24pt is well under what a thumb can land on in a grid of
     /// them. The larger of the two wins, so the type still decides the height whenever the type is
     /// the bigger constraint.
-    static let rowHeight: CGFloat = max(
-        34,
-        MarkdownTableMetrics.rowHeight(
-            forTextHeight: (headerCellFont.ascender - headerCellFont.descender).rounded(.up)
+    static var rowHeight: CGFloat {
+        rowHeight(cellFont: cellFont, headerFont: headerCellFont)
+    }
+
+    static func rowHeight(cellFont: UIFont, headerFont: UIFont) -> CGFloat {
+        max(
+            34,
+            MarkdownTableMetrics.rowHeight(
+                forTextHeight: max(cellFont.lineHeight, headerFont.lineHeight).rounded(.up)
+            )
         )
-    )
+    }
 
     static func font(isHeader: Bool) -> UIFont {
         isHeader ? headerCellFont : cellFont
@@ -60,33 +68,40 @@ nonisolated final class iOSMarkdownTableRenderInfo: NSObject {
     /// The text container width the layout was computed against, kept so `gridRect(inLineFragment:)`
     /// can go back through `MarkdownTableMetrics.gridRect` rather than re-spelling its insets.
     let containerWidth: CGFloat
+    let cellFont: UIFont
+    let headerFont: UIFont
 
     /// The table's first character. Stable across every edit made *inside* the table — a cell
     /// rewrite, a row insert and a whole-table column rewrite all start at or after it — which is
     /// what lets an open cell editor survive its own commit.
     var anchor: Int { grid.storageRange.location }
 
-    init(grid: MarkdownTableGrid, layout: MarkdownTableLayout, containerWidth: CGFloat) {
+    init(grid: MarkdownTableGrid, layout: MarkdownTableLayout, containerWidth: CGFloat, cellFont: UIFont, headerFont: UIFont) {
         self.grid = grid
         self.layout = layout
         self.containerWidth = containerWidth
+        self.cellFont = cellFont
+        self.headerFont = headerFont
         super.init()
     }
 
     static func make(grid: MarkdownTableGrid, containerWidth: CGFloat) -> iOSMarkdownTableRenderInfo {
+        let cellFont = iOSMarkdownTableGridMetrics.cellFont
+        let headerFont = iOSMarkdownTableGridMetrics.headerCellFont
+        let rowHeight = iOSMarkdownTableGridMetrics.rowHeight(cellFont: cellFont, headerFont: headerFont)
         let width = MarkdownTableMetrics.gridRect(
             lineRect: .zero,
             containerWidth: containerWidth,
             rowCount: grid.rowCount,
-            rowHeight: iOSMarkdownTableGridMetrics.rowHeight
+            rowHeight: rowHeight
         ).width
         let layout = MarkdownTableLayout.compute(
-            intrinsicCellWidths: iOSMarkdownTableGridDrawing.intrinsicCellWidths(for: grid),
+            intrinsicCellWidths: iOSMarkdownTableGridDrawing.intrinsicCellWidths(for: grid, cellFont: cellFont, headerFont: headerFont),
             columnCount: grid.columnCount,
             availableWidth: width,
-            rowHeight: iOSMarkdownTableGridMetrics.rowHeight
+            rowHeight: rowHeight
         )
-        return iOSMarkdownTableRenderInfo(grid: grid, layout: layout, containerWidth: containerWidth)
+        return iOSMarkdownTableRenderInfo(grid: grid, layout: layout, containerWidth: containerWidth, cellFont: cellFont, headerFont: headerFont)
     }
 
     /// Where the grid sits inside the one line fragment the styler reserved for it, in text
@@ -100,7 +115,7 @@ nonisolated final class iOSMarkdownTableRenderInfo: NSObject {
             lineRect: fragment,
             containerWidth: containerWidth,
             rowCount: grid.rowCount,
-            rowHeight: iOSMarkdownTableGridMetrics.rowHeight
+            rowHeight: layout.rowHeight
         )
     }
 
@@ -114,9 +129,9 @@ nonisolated final class iOSMarkdownTableRenderInfo: NSObject {
 }
 
 nonisolated enum iOSMarkdownTableGridDrawing {
-    static func intrinsicCellWidths(for grid: MarkdownTableGrid) -> [[CGFloat]] {
+    static func intrinsicCellWidths(for grid: MarkdownTableGrid, cellFont: UIFont, headerFont: UIFont) -> [[CGFloat]] {
         grid.rows.enumerated().map { rowIndex, cells in
-            let font = iOSMarkdownTableGridMetrics.font(isHeader: rowIndex == 0)
+            let font = rowIndex == 0 ? headerFont : cellFont
             return cells.map { cell in
                 (cell as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
             }
@@ -172,6 +187,7 @@ nonisolated enum iOSMarkdownTableGridDrawing {
                 draw(
                     cell: cell,
                     in: rect,
+                    font: rowIndex == 0 ? info.headerFont : info.cellFont,
                     isHeader: rowIndex == 0,
                     alignment: info.grid.alignments[min(columnIndex, info.grid.alignments.count - 1)]
                 )
@@ -188,6 +204,7 @@ nonisolated enum iOSMarkdownTableGridDrawing {
     private static func draw(
         cell: String,
         in rect: CGRect,
+        font: UIFont,
         isHeader: Bool,
         alignment: MarkdownTableAlignment
     ) {
@@ -195,7 +212,6 @@ nonisolated enum iOSMarkdownTableGridDrawing {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         paragraph.alignment = iOSMarkdownTableGridMetrics.textAlignment(alignment)
-        let font = iOSMarkdownTableGridMetrics.font(isHeader: isHeader)
         // Muted header over full-contrast body, matching the Mac's grid and every other column
         // header in the app. The data is the thing you read; the header names it.
         let attributes: [NSAttributedString.Key: Any] = [

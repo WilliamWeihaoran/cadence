@@ -37,7 +37,7 @@ nonisolated enum CadenceForkedOccurrenceRemover {
     /// `ModelContext.deleteContext` uses for the habits a context cascade takes. Without it a
     /// scheduled-start reminder fires for a task that no longer exists, because reconciliation only
     /// converges at the next `scenePhase` transition.
-    static let removeAndCancelReminders: CadenceForkedOccurrenceRemoval = { tasks, modelContext in
+    @MainActor static let removeAndCancelReminders: CadenceForkedOccurrenceRemoval = { tasks, modelContext in
         var removedIDs: [UUID] = []
         for task in tasks {
             for subtask in task.subtasks ?? [] {

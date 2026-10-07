@@ -23,6 +23,10 @@ nonisolated struct CadenceBoardMetadataChipMetrics: Sendable {
     /// is worth 2pt of scale and worthless with its end cut off.
     static let minimumScale: CGFloat = 0.78
 
+    static func iconColumnWidth(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        iconColumnWidth + CadenceTypeScale.growth(.metadata, base: iconSize, at: size, scaling: scaling)
+    }
+
     /// The 1pt of card left outside the chip's own corner, which is what stops the two arcs from
     /// touching.
     static let cardInset: CGFloat = 1
@@ -60,6 +64,8 @@ nonisolated struct CadenceBoardMetadataChipMetrics: Sendable {
 /// `iOSBoardCards.swift` whose doc comment read "Matches macOS's `CalendarBoardMetadataChip`" —
 /// a copy that documented its own obligation to stay in step and had no mechanism for doing so.
 struct CadenceBoardMetadataChip: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     let systemImage: String
     let tint: Color
@@ -74,16 +80,21 @@ struct CadenceBoardMetadataChip: View {
     /// `HStack`, where filling would stretch "Repeats" across half a 306pt column.
     var fillsWidth: Bool = false
 
+    private var wraps: Bool {
+        scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
+    }
+
     var body: some View {
         HStack(spacing: CadenceBoardMetadataChipMetrics.spacing) {
             Image(systemName: systemImage)
-                .font(.system(size: CadenceBoardMetadataChipMetrics.iconSize, weight: .semibold))
-                .frame(width: CadenceBoardMetadataChipMetrics.iconColumnWidth)
+                .cadenceFont(.metadata, base: CadenceBoardMetadataChipMetrics.iconSize, weight: .semibold)
+                .frame(width: CadenceBoardMetadataChipMetrics.iconColumnWidth(at: dynamicTypeSize, scaling: scaling))
 
             Text(title)
-                .font(.system(size: CadenceBoardMetadataChipMetrics.labelSize, weight: .medium))
-                .lineLimit(1)
-                .minimumScaleFactor(CadenceBoardMetadataChipMetrics.minimumScale)
+                .cadenceFont(.metadata, base: CadenceBoardMetadataChipMetrics.labelSize, weight: .medium)
+                .lineLimit(wraps ? nil : 1)
+                .minimumScaleFactor(wraps ? 1 : CadenceBoardMetadataChipMetrics.minimumScale)
+                .fixedSize(horizontal: false, vertical: wraps)
 
             if fillsWidth {
                 Spacer(minLength: 0)

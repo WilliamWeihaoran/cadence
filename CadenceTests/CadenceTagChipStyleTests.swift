@@ -381,13 +381,13 @@ struct CadenceTagChipScaleTests {
                 [
                     "Cadence/iOS/iOSFeatureComponents.swift",
                     "Cadence/iOS/iOSFocusView.swift",
-                    "Cadence/iOS/iOSListDetailView.swift",
                     "Cadence/iOS/iOSListSupportViews.swift",
                     "Cadence/iOS/iOSSettingsComponents.swift",
                     "Cadence/iOS/iOSTaskViews.swift",
                     "Cadence/iOS/iOSTodayCompactViews.swift",
                     "Cadence/iOS/iPadTodaySupportViews.swift",
                 ], [
+                    "Cadence/iOS/iOSListDetailView.swift",
                     "Cadence/iOS/iOSTaskCollectionPage.swift",
                     "Cadence/iOS/iOSTasksPageView.swift",
                     "Cadence/iOS/iOSTasksTabView.swift",
@@ -410,6 +410,15 @@ struct CadenceTagChipScaleTests {
                     // All / Inbox switch.
                     "Cadence/iOS/iOSTasksPageView.swift",
                 ]
+            ),
+            (
+                #"\bCadenceBoardMetadataChip\s*\("#,
+                "CadenceBoardMetadataChip(title: title, systemImage: icon, tint: color, cardCornerRadius: radius)",
+                "Cadence/iOS/iOSBoardCards.swift",
+                [
+                    "Cadence/iOS/iOSBoardCards.swift",
+                    "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift",
+                ], []
             ),
             (
                 #"\bCadenceBoardColumn(?:Header|TitleRow|DueDateLine)\s*\("#,
