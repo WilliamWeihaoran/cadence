@@ -581,8 +581,24 @@ struct iOSCalendarQuickCreateSheet: View {
             startDate = Calendar.current.startOfDay(for: baseDate)
             endDate = Calendar.current.date(byAdding: .day, value: 1, to: startDate) ?? startDate
         } else {
+            // T-3050. The start is a wall-clock reading and is *set*, not added to midnight —
+            // `CadenceCalendarEventTiming.startDate` records the measurement and the edge cases.
+            // The `endDate` line below is a **duration** added to an already-correct start and is
+            // correct as elapsed time; do not "fix" it to match the line above.
+            //
+            // A `nil` start names no time on the day, and it leaves by the same announced exit
+            // the unparseable date key does rather than by a bare `return`: nothing was offered to
+            // EventKit, so there is no cause to name. `minuteOfDay(from:)` clamps to `0...1439`,
+            // so no picker can reach it.
             let startMinute = minuteOfDay(from: startTime)
-            startDate = Calendar.current.date(byAdding: .minute, value: startMinute, to: baseDate) ?? baseDate
+            guard let timedStart = CadenceCalendarEventTiming.startDate(
+                dateKey: dateKey,
+                startMin: startMinute
+            ) else {
+                actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)
+                return
+            }
+            startDate = timedStart
             endDate = Calendar.current.date(byAdding: .minute, value: max(5, estimatedMinutes), to: startDate) ?? startDate
         }
         if let failure = calendarManager.createEvent(

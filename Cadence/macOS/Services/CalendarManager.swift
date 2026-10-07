@@ -286,15 +286,40 @@ final class CalendarManager {
         )
     }
 
-    /// Convert an all-day event to a timed event at the specified minute offset on the given date.
+    /// Convert an all-day event to a timed event at the specified minute of day on the given date.
+    ///
+    /// **T-3050.** `startMin` is a wall-clock reading, so the start is *set* through
+    /// `CadenceCalendarEventTiming.startDate(dateKey:startMin:calendar:)`, not added to midnight —
+    /// that enum records the measurement and the three edge readings. The **end** stays an elapsed
+    /// hour after the start, which is the one change of spelling here that is not a bug fix: this
+    /// line used to anchor the end at midnight too (`startMin + 60` from `baseDate`), so it carried
+    /// the start's error rather than being a clean duration. An hour of real time after a correct
+    /// start is what "a one-hour block" means, including on the two days that are 23 and 25 hours
+    /// long, and it is the shape `updateEvent`'s timed overload below already has.
+    ///
+    /// `event.isAllDay` is cleared only once both endpoints exist, so a range this cannot form
+    /// leaves the event exactly as it found it rather than half-converted.
+    ///
+    /// - Parameter calendar: see `CadenceCalendarEventTiming.startDate`. `.current` in production.
     @discardableResult
-    func convertAllDayEventToTimed(_ event: EKEvent, startMin: Int, dateKey: String) -> CalendarWriteFailure? {
+    func convertAllDayEventToTimed(
+        _ event: EKEvent,
+        startMin: Int,
+        dateKey: String,
+        calendar: Calendar = .current
+    ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
-        guard let baseDate = DateFormatters.date(from: dateKey) else { return record(.invalidRange) }
-        let cal = Calendar.current
+        guard let startDate = CadenceCalendarEventTiming.startDate(
+            dateKey: dateKey,
+            startMin: startMin,
+            calendar: calendar
+        ) else { return record(.invalidRange) }
+        guard let endDate = calendar.date(byAdding: .minute, value: 60, to: startDate) else {
+            return record(.invalidRange)
+        }
         event.isAllDay = false
-        event.startDate = cal.date(byAdding: .minute, value: startMin, to: baseDate) ?? baseDate
-        event.endDate = cal.date(byAdding: .minute, value: startMin + 60, to: baseDate) ?? baseDate
+        event.startDate = startDate
+        event.endDate = endDate
         return save(event, span: .thisEvent, describing: "convert all-day event")
     }
 
@@ -329,6 +354,14 @@ final class CalendarManager {
     // MARK: - Update External Event (iCal event edited in Cadence)
 
     /// Update an EKEvent's title and time, then save back to iCal.
+    ///
+    /// **T-3050.** The start is *set* from `startMin` as a wall-clock reading rather than added to
+    /// midnight; `CadenceCalendarEventTiming.startDate` records why and what the edge readings do.
+    /// The end below is **left exactly as it was** and must stay that way: `durationMinutes` is a
+    /// duration added to a start that is already correct, and a 30-minute meeting lasts 30 minutes
+    /// of real time on a 23-hour day too. Making the two lines agree in shape would be the bug.
+    ///
+    /// - Parameter calendar: see `CadenceCalendarEventTiming.startDate`. `.current` in production.
     @discardableResult
     func updateEvent(
         _ event: EKEvent,
@@ -338,13 +371,16 @@ final class CalendarManager {
         dateKey: String,
         calendarID: String? = nil,
         notes: String? = nil,
-        scope: CalendarRecurrenceEditScope = .thisOccurrence
+        scope: CalendarRecurrenceEditScope = .thisOccurrence,
+        calendar: Calendar = .current
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
-        guard let baseDate = DateFormatters.date(from: dateKey) else { return record(.invalidRange) }
-        let cal = Calendar.current
-        let startDate = cal.date(byAdding: .minute, value: startMin, to: baseDate) ?? baseDate
-        let endDate = cal.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate) ?? startDate
+        guard let startDate = CadenceCalendarEventTiming.startDate(
+            dateKey: dateKey,
+            startMin: startMin,
+            calendar: calendar
+        ) else { return record(.invalidRange) }
+        let endDate = calendar.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate) ?? startDate
         return updateEvent(
             event,
             title: title,
