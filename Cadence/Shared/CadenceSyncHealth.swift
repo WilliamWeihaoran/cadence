@@ -33,6 +33,22 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     /// there would be the app's own reassurance covering the one case where it is false.
     case restoreIncomplete
 
+    /// The store opened normally — **this launch's own backup of it could not be written**
+    /// ([[T-3042]]).
+    ///
+    /// Its own case, and the whole reason the ticket exists, is that until now this was reported
+    /// with `.recoveryStore`'s sentence: *"Cadence opened a recovery store because backup/restore
+    /// preflight failed"*. That sentence says the database could not be opened. This one says a
+    /// **copy** of it could not be written. They are opposite news — one means the data on screen
+    /// is not the user's, the other means the data on screen is exactly theirs and there is one
+    /// fewer way back if it is ever lost — and the user cannot act sensibly on either while they
+    /// share a message.
+    ///
+    /// Not a sync issue and not a store issue: `createBackupIfStoreExists` writes only inside
+    /// `Cadence Store Backups`, so the store this banner appears over is the real one, intact, open
+    /// and still mirroring to CloudKit. What is degraded is the safety net.
+    case backupFailed
+
     /// This is a development build, so Cadence opened the real store with no CloudKit database
     /// behind it **on purpose** ([[T-3013]]).
     ///
@@ -52,7 +68,7 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     var disablesCloudSync: Bool {
         switch self {
         case .recoveryStore, .inMemoryStore, .developmentBuild: return true
-        case .maintenanceSaveFailed, .restoreFailed, .restoreIncomplete: return false
+        case .maintenanceSaveFailed, .restoreFailed, .restoreIncomplete, .backupFailed: return false
         }
     }
 
@@ -79,6 +95,7 @@ extension CadenceStartupIssue {
         case .maintenanceSaveFailed: return "Startup Maintenance Failed"
         case .restoreFailed: return "Backup Was Not Restored"
         case .restoreIncomplete: return "Restore Left Files Aside"
+        case .backupFailed: return "Backup Was Not Saved"
         case .developmentBuild: return "Development Build — iCloud Sync Is Off"
         }
     }
@@ -100,6 +117,12 @@ extension CadenceStartupIssue {
             return "\(message) Your existing data is intact and still syncing, and a copy of it was saved as a Before Restore backup. You can try the restore again from Settings."
         case .restoreIncomplete:
             return "\(message) Nothing was deleted, but what Cadence is showing you may be incomplete until those files are dealt with. A copy of the store as it was before the restore was saved as a Before Restore backup."
+        case .backupFailed:
+            // Says the opposite thing to `.recoveryStore`'s detail on purpose ([[T-3042]]): your
+            // data is here, your copy of it is not. Naming free space and Settings → Data Safety
+            // because both causes this was measured for — a near-full disk, and one old backup
+            // folder that will not delete — are things the user can look at and clear.
+            return "\(message) Your data is intact, open and still syncing — Cadence saves its backups beside the store and never touches the store to do it. What you have lost is this launch's copy, so check free disk space and whether an older backup folder is locked, then take a backup from Settings → Data Safety. Earlier backups are untouched."
         case .developmentBuild:
             return "\(message) Your data is intact and exactly where it always is; nothing was deleted and no recovery store was opened. A development build signs into iCloud's Development environment, and letting it sync would mark your real records as already uploaded so they never reach your other devices. Changes made here stay on this device. Quit and use the installed Cadence to sync."
         }
@@ -112,6 +135,7 @@ extension CadenceStartupIssue {
         case .maintenanceSaveFailed: return "wrench.and.screwdriver.fill"
         case .restoreFailed: return "clock.arrow.circlepath"
         case .restoreIncomplete: return "externaldrive.trianglebadge.exclamationmark"
+        case .backupFailed: return "externaldrive.badge.xmark"
         case .developmentBuild: return "hammer.fill"
         }
     }

@@ -50,6 +50,7 @@ struct CadenceStartupIssueBannerModel: Equatable {
         case .maintenanceSaveFailed: return "Maintenance Failed"
         case .restoreFailed: return "Restore Did Not Run"
         case .restoreIncomplete: return "Restore Left Files Aside"
+        case .backupFailed: return "Backup Not Saved"
         case .developmentBuild: return "Development Build"
         }
     }
@@ -84,8 +85,9 @@ struct CadenceStartupIssueBannerModel: Equatable {
     /// **One: the pane only sees half the kinds.** `resolve` reacts to a kind whose
     /// `disablesCloudSync` is true, and that gate is deliberate — reporting a maintenance-save
     /// failure as a sync failure "would be its own lie", per `CadenceStartupIssueKind`. So
-    /// `.maintenanceSaveFailed`, `.restoreFailed` and `.restoreIncomplete` reach no Settings pane on
-    /// *either* platform, and for those three this banner is still the only durable indicator in the app.
+    /// `.maintenanceSaveFailed`, `.restoreFailed`, `.restoreIncomplete` and `.backupFailed` reach no
+    /// Settings pane on *either* platform, and for those four this banner is still the only durable
+    /// indicator in the app.
     /// (`.developmentBuild` does reach it — it disables sync, so `resolve` renders it like the other two
     /// store-level kinds.)
     ///

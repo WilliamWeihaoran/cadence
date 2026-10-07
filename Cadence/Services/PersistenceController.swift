@@ -59,6 +59,12 @@ struct PersistenceController {
         let recorder = CadenceStartupCostLedger.begin()
 
         var failedRestore: StoreBackupManager.FailedRestoreRecord?
+        // [[T-3042]]: the error itself and not a durable record, because unlike a refused restore
+        // there is nothing for a later launch to read back. A restore that failed is an instruction
+        // that has to be taken off the launch path and reported as history; a backup that failed
+        // simply did not happen, and the only thing worth saying is why this launch's copy is
+        // missing.
+        var failedStartupBackup: Error?
         do {
             // **T-1448: every step below acts on the store directory THIS launch opens.** It used
             // to be `CadenceStoreSupport.primaryStoreDirectoryURL()` unconditionally, which is the
@@ -105,14 +111,39 @@ struct PersistenceController {
             } catch {
                 failedRestore = StoreBackupManager.lastFailedRestore()
             }
-            _ = try StoreBackupManager.createBackupIfStoreExists(
-                reason: .startup,
-                storeDirectoryURL: storeDirectoryURL
-            )
+            // **[[T-3042]]: and neither does a failed backup — the same move, with a weaker claim
+            // on aborting the launch than the restore above it has.** The restore at least *touches*
+            // the store directory; the backup only reads it. Every write
+            // `createBackupIfStoreExists` makes lands inside `<store>/Cadence Store Backups`: the
+            // backup root's `createDirectory`, each `copyItem` into the `.tmp` staging folder, the
+            // manifest `write`, the `moveItem` that renames that staging folder to its final name
+            // *within the same backup root*, and `purgeAutomaticBackups`' `removeItem` over old
+            // backup folders. None of those five legs can leave the store itself in a state where
+            // opening it is unsafe, so none of them is kept fatal and none of them needed to be:
+            // there is no staged swap over the store here, only a scratch-to-final rename beside it.
+            //
+            // The leg that decided this is the last one, and it runs **after** the backup has
+            // already landed under its final name — so one old backup folder that will not delete
+            // (locked, `uchg`, a permissions fault) made a *successful* backup report failure and
+            // empty the app on every launch until the condition cleared. A near-full disk did the
+            // same thing from the `copyItem`, and this app copies several MB of store on every
+            // launch. What the user saw in both cases was total loss, over an intact database.
+            do {
+                _ = try StoreBackupManager.createBackupIfStoreExists(
+                    reason: .startup,
+                    storeDirectoryURL: storeDirectoryURL
+                )
+            } catch {
+                failedStartupBackup = error
+            }
             // A *refused* pending restore is not a preflight that did nothing: the original store
             // is intact and the launch is about to open it, which is the right outcome and still
-            // the one the ledger has to keep apart from a clean pass.
-            recorder.finished(.preflight, failedRestore == nil ? .completed : .refused("pendingRestoreRefused"))
+            // the one the ledger has to keep apart from a clean pass. A refused startup backup is
+            // the same kind of answer, and `preflightVerdict` is where the two notes are kept apart.
+            recorder.finished(.preflight, Self.preflightVerdict(
+                failedRestore: failedRestore,
+                failedStartupBackup: failedStartupBackup
+            ))
         } catch {
             recorder.finished(.preflight, .refused(Self.instrumentReason(for: error)))
             recorder.commit()
@@ -132,11 +163,18 @@ struct PersistenceController {
             // syncing at all. A restore that did not run is the smaller news — the store it would
             // have replaced is intact and open — and overwriting the sync message with it would
             // reintroduce the silence this guard exists to break.
-            if let failedRestore, Self.startupIssue == nil {
-                Self.startupIssue = CadenceStartupIssue(
-                    kind: failedRestore.startupIssueKind,
-                    message: failedRestore.startupMessage
-                )
+            //
+            // [[T-3042]] put a **third** claimant on that one slot, so the guard stays exactly as it
+            // is and the ranking between the two preflight failures moved into
+            // `preflightStartupIssue`, which argues it. The order of this condition is unchanged in
+            // effect and deliberate in form: whatever `makeContainer()` recorded about sync wins
+            // first, and only then does the preflight get to speak.
+            if Self.startupIssue == nil,
+               let preflightIssue = Self.preflightStartupIssue(
+                   failedRestore: failedRestore,
+                   failedStartupBackup: failedStartupBackup
+               ) {
+                Self.startupIssue = preflightIssue
             }
             let startupContext = ModelContext(c)
             Self.performStartupMaintenance(in: startupContext, recorder: recorder)
@@ -180,6 +218,85 @@ struct PersistenceController {
     /// maintenance-save failure already use, because all three can appear in the same banner.
     static func primaryStoreFailureMessage(_ error: Error) -> String {
         "Cadence opened a recovery store because the CloudKit store could not be created: \(storeFailureReason(error))"
+    }
+
+    /// What a launch whose **backup** failed says about it — and the one sentence in this file that
+    /// must never mention a recovery store ([[T-3042]]).
+    ///
+    /// The audit's complaint was not that the failure was unreported; it was that it was reported as
+    /// the *other* failure. "Cadence opened a recovery store because backup/restore preflight
+    /// failed" was shown both for a database that could not be opened and for a copy of it that
+    /// could not be written, and those mean opposite things to the person reading them: one says
+    /// what is on screen is not their data, the other says what is on screen is exactly their data
+    /// and there is one fewer way back to it. A user cannot act on either while they share a
+    /// sentence, and the one they acted on was the frightening one.
+    ///
+    /// Same shape as `primaryStoreFailureMessage` above — sentence, colon, reason — because all of
+    /// these can appear in the same banner, and the reason goes through `storeFailureReason` for
+    /// T-1319's reason: a `FileManager` error is already specific, and that extractor's floor is to
+    /// keep an already-specific error's own words rather than replace them.
+    static func startupBackupFailureMessage(_ error: Error) -> String {
+        "Cadence could not save this launch's backup of your data, and your data itself was not touched: \(storeFailureReason(error))"
+    }
+
+    /// Which of the preflight's two non-fatal failures gets the one `CadenceStartupIssue` slot.
+    ///
+    /// **There is exactly one slot and, since [[T-3042]], three things that can want it** — the
+    /// contention `e3f22b73` settled once already for the development-build banner. `init` keeps
+    /// that guard unchanged: an issue `makeContainer()` recorded about sync outranks both of these,
+    /// because a device that has silently stopped syncing is the failure [[T-3013]] exists to break
+    /// the silence on. This decides the rest, and it is written here rather than inline so the
+    /// ranking is a thing a test can drive instead of a thing `init` happens to do.
+    ///
+    /// **A failed restore outranks a failed backup**, for three reasons that point the same way:
+    ///
+    /// - The restore is something the **user asked for** and did not get. The backup is housekeeping
+    ///   they never requested and would not otherwise know had run at all.
+    /// - A failed restore can leave the store directory part-original and part-backup — that is the
+    ///   whole of `.restoreIncomplete` (T-1100), and it is a claim about the data on screen. A failed
+    ///   backup cannot make any claim about the store: every write it attempts is inside
+    ///   `Cadence Store Backups`.
+    /// - The restore's message names a backup folder and, in the incomplete case, a retained-
+    ///   originals path the user has to go and deal with. The backup's message asks them to free
+    ///   some disk space.
+    ///
+    /// So the smaller news yields, which is the same direction [[T-3013]]'s guard already points. A
+    /// launch that hit both still reports the restore; the backup failure is then visible in the
+    /// [[T-1366]] ledger's `preflight` note rather than nowhere.
+    static func preflightStartupIssue(
+        failedRestore: StoreBackupManager.FailedRestoreRecord?,
+        failedStartupBackup: Error?
+    ) -> CadenceStartupIssue? {
+        if let failedRestore {
+            return CadenceStartupIssue(
+                kind: failedRestore.startupIssueKind,
+                message: failedRestore.startupMessage
+            )
+        }
+        if let failedStartupBackup {
+            return CadenceStartupIssue(
+                kind: .backupFailed,
+                message: startupBackupFailureMessage(failedStartupBackup)
+            )
+        }
+        return nil
+    }
+
+    /// What the [[T-1366]] ledger records for a preflight that reached its end with one of its two
+    /// non-fatal steps refused.
+    ///
+    /// Both notes are **vocabulary, never content**, which is the standing rule on
+    /// `CadenceStartupStageVerdict.note` — a refusal reason that is not an
+    /// `instrumentReason(for:)` has to be a fixed string this file chose, because the durable ledger
+    /// can be read back by anything. The ranking matches `preflightStartupIssue` so the banner and
+    /// the ledger never name different failures for the same launch.
+    static func preflightVerdict(
+        failedRestore: StoreBackupManager.FailedRestoreRecord?,
+        failedStartupBackup: Error?
+    ) -> CadenceStartupStageVerdict {
+        if failedRestore != nil { return .refused("pendingRestoreRefused") }
+        if failedStartupBackup != nil { return .refused("startupBackupRefused") }
+        return .completed
     }
 
     /// The most specific sentence available about why a store operation failed.
