@@ -797,3 +797,58 @@ Two fallbacks, in order of fidelity:
    which of your claims are observed and which are reasoned when you use it.
 
 Do not bypass the guard. Do not launch the shipping configuration.
+
+## Why the write-mode ban is prose
+
+`docs/SUBAGENT_RUNBOOK.md`'s *"never set `CADENCE_MCP_ENABLE_WRITES`"* is the one opening rule with no
+mechanism behind it. [[T-3018]] went looking for one rather than assuming either way, and the answer
+is that there is none to build. Written down here so the next agent does not spend the search again,
+and does not build something that only looks like one.
+
+**What the variable actually opens.** `CadenceModelContainerFactory.makeReadWriteContainer()` resolves
+`CadenceStoreSupport.primaryStoreURL()` — the owner's real app-group store, the same file the running
+app has open — opens it with `allowsSave: true` and `cloudKitDatabase: .none`, and then runs
+`CadenceMCPStorePreparation.prepare`. `prepare`'s third step is `DataIntegrityRepairService`, which
+**deletes duplicate `Context`, `Area`, `Project` and `Note` rows and saves**. All of that happens when
+the *container is opened*, so an `initialize` and a `tools/list` are enough; none of the sixteen write
+arms has to be called. There is no confirmation and no undo, and `mcp-audit.log` beside the store is
+the only record. "I only read" is not a defence against this variable.
+
+**Why no test can hold it.** A test here is a process that reads the repository. A variable an agent
+exports in its own shell, or writes inline in front of a single command, is never written down
+anywhere a test can read it; the only trace is the agent's transcript, which is not an input to a test
+run. The two mechanisms that *suggest* themselves are both worse than nothing: a wrapper script that
+refuses covers only the agents who went through the wrapper, and an assertion over
+`ProcessInfo.processInfo.environment` inside the test host measures the test host's own environment
+and says nothing about the shell that set the variable an hour earlier. Either would read to the next
+person as though the rule were enforced, and a guard that looks like enforcement and is not is worse
+than prose, because it buys silence. T-3018 therefore strengthened the prose — stating the
+consequence, not only the prohibition — and built nothing.
+
+**What is enforced, and exactly how far it reaches.**
+`CadenceTests/CadenceMCPWriteFenceTests` fences every *script* in the repository, which is the half
+that is written down. Two layers, discovery-based rather than a remembered list of paths:
+
+- `everyRepositoryScriptEnablingMCPWritesPinsAStoreURLFirst` requires a script that **assigns**
+  `CADENCE_MCP_ENABLE_WRITES` to assign `CADENCE_MCP_STORE_URL` earlier in the same file.
+- `everyScriptEnablingMCPWritesPinsAThrowawayStoreAndNotTheOwnersOwn` requires that pinned value to be
+  provably a throwaway. The right-hand side is resolved transitively through the identifiers and
+  `def`s the same file declares — two hops are needed for the real code, `temp_store` ->
+  `prepare_fixture_store()` -> `tempfile.TemporaryDirectory` — and the closure must not reach
+  `Library/Containers/com.haoranwei.Cadence`, `group.com.haoranwei.Cadence`,
+  `iCloud.com.haoranwei.Cadence` or `Library/Application Support/Cadence`. On top of that it must
+  carry one of the two defences the repository already uses: a temporary-directory derivation
+  (`plugins/cadence-mcp/scripts/smoke-test.py`) **or** an explicit refusal over the real container
+  path (`docs/screenshots/seed-screenshot-data.py`, via `REFUSED_SUBSTRINGS` and `guard_store_path`,
+  which `theSeedScriptRefusalListStillCoversTheOwnersRealContainer` separately pins against being
+  edited down to an empty tuple). Comments are blanked first, so a commented-out pin is not a defence.
+
+**The first layer alone is not the second, and that was measured.** A probe pinning
+`CADENCE_MCP_STORE_URL` to a literal path under `~/Library/Containers/com.haoranwei.Cadence`
+**passed** `everyRepositoryScriptEnablingMCPWritesPinsAStoreURLFirst` and failed the throwaway layer,
+naming the file, the line, the pinned expression and both missing defences. The probe lived in a
+private `/tmp` directory, was surfaced to the sweep by a symlink, was never executed, and was deleted
+in the same turn.
+
+What none of it reaches: the shell. That rule is exactly as strong as the reader's attention, and
+saying so is the point of this section.

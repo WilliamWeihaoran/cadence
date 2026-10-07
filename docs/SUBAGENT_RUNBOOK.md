@@ -25,7 +25,16 @@ under the same bundle id as your debug build. Every rule in this section is abou
 - **Never point a launched app at the real store.** `~/Library/Containers/com.haoranwei.Cadence/`
   is the user's data. Use `CADENCE_LOCAL_STORE_ONLY` and a temp store URL, and confirm which store
   you got before you trust anything you saw.
-- **Never make a live MCP call against the user's store, and never set `CADENCE_MCP_ENABLE_WRITES`.**
+- **Never make a live MCP call against the user's store, and never set `CADENCE_MCP_ENABLE_WRITES`**
+  — not exported, not inline in front of one command, not from a script you wrote. It does not mean
+  "write access is available": it opens the owner's real app-group store `allowsSave: true` and runs
+  `CadenceMCPStorePreparation.prepare`, whose integrity repair **deletes duplicate `Context`, `Area`,
+  `Project` and `Note` rows and saves** — on the connection, before any write arm is called, with no
+  user in front of it and no undo. **Nothing enforces this line and nothing can**: a variable typed at
+  a prompt leaves no artifact a test can read. `CadenceTests/CadenceMCPWriteFenceTests` fences the
+  repository's *scripts* only — they must pin `CADENCE_MCP_STORE_URL` first, and to a store the file
+  proves is a throwaway. Why that is the whole mechanism:
+  `docs/SUBAGENT_RUNBOOK_REFERENCE.md`, "Why the write-mode ban is prose".
 - **Never create a simulator device, and never erase or shut down a simulator you did not create.**
   Reuse one already-booted stock simulator through `scripts/simulator-claim.sh`. No `simctl privacy`
   against a shared one.
