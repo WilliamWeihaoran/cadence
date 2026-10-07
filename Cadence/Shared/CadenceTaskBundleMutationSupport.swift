@@ -2,8 +2,11 @@ import Foundation
 import SwiftData
 
 /// **The declaration site of `CadenceTaskMutationSupport`, holding only the block constructor and
-/// its clamps.** The other fifty-six members live in `CadenceTaskMutationSupport.swift`, which
-/// extends this enum rather than declaring it.
+/// its clamps.** The enum's other sixty-three members live in `CadenceTaskMutationSupport.swift`,
+/// which extends this enum rather than declaring it — fifty-six `internal` and seven `private`.
+/// (T-1122's entry counts this enum at "61 static members" and that number is right: it counts the
+/// `internal` ones only, 48 `static func` + 12 `static let` + 1 `static var`, of which five are
+/// here. Count the same way or the next re-measure will disagree with the ledger for no reason.)
 ///
 /// **That inversion is the point of the file, and it is deliberate (T-1122).** The enum's main file
 /// reaches `NotificationManager` and `CadenceWidgetRefreshCenter`, and the latter is
