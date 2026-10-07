@@ -188,8 +188,8 @@ as `timed out waiting for response 100` rather than naming a build.
   all three out of the phase while leaving them on disk for the app. Sweep when an arm is retired,
   not only when one is added. **The eleventh, `CadenceTaskBundleMutationSupport`, is the second
   that cost a split — of the *declaration*** ([[T-1122]]). What each is for:
-  `../docs/MCP_AGENTS_REFERENCE.md`, "Why ten shared files joined the Sources phase" and "Why the
-  tracking helpers cost four files".
+  `../docs/MCP_AGENTS_REFERENCE.md`, "Why eleven shared files joined the Sources phase" and "Why
+  the tracking helpers cost four files".
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
   renders as `isError`, plus an undo, and every arm now has both halves** (T-1121). One long-lived
   `ModelContext` per process means a refused `save()` used to leave the mutation *pending* for the

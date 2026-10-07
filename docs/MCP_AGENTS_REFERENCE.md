@@ -198,7 +198,7 @@ became the ninth `Shared/` member.
 (`3be4b126`) took three of the four files back out of the Sources phase; `CadenceOrderAllocation`
 is the one that stayed, and it stayed for `create_tag` and `create_container` rather than for
 anything the tracking arms wanted. Read this section for *why four files*, which is the reusable
-part — the closure, not the count — and "Why ten shared files joined the Sources phase" for what
+part — the closure, not the count — and "Why eleven shared files joined the Sources phase" for what
 the phase holds today.
 
 ## Why Bulk Cancel Got A Cap And A Dry Run (T-1365)
@@ -387,13 +387,13 @@ measurement and the enumeration are here._
   Archiving is offered instead: reversible from the same tool, destroys nothing, and it is
   `update_container_columns`' own argument about column removal one size up.
 
-## Why Ten Shared Files Joined The Sources Phase
+## Why Eleven Shared Files Joined The Sources Phase
 
 _Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
 headroom left under its 199-line budget. The rule stays in the guide; the argument, the
 measurement and the enumeration are here._
 
-- **Ten `Cadence/Shared/` files are in the Sources phase, and never for the obvious reason.**
+- **Eleven `Cadence/Shared/` files are in the Sources phase, and never for the obvious reason.**
   Three came with `update_container_columns` and not for the one T-1095 predicted — the merge's
   `base`/`edited`/`current` is *not* what earns them; `applySectionNameChanges` is (without it a
   rename strands every card on a name no column has), plus `mutateSectionConfigs`' T-915 guard and
@@ -406,16 +406,28 @@ measurement and the enumeration are here._
   file (the eleventh, below, is the second):
   `CadenceListNoteFiling` carries `CadenceNoteFolderPath.normalized` and the seeded `# Title`, and
   it had to be lifted out of a file declaring four SwiftUI views before it was eligible at all.
+  The eleventh came with `create_task_bundle` and `add_task_to_bundle`, and what earns it is
+  `CadenceTaskMutationSupport.assignTask(_:to:)` — the five-field membership rule, including the
+  `calendarEventID` clear the two platforms used to disagree on. A second copy of that rule, inside
+  a process with no timeline to look at, is the failure [[T-1122]] exists to refuse:
+  `add_task_to_bundle` calls `assignTask` and undoes it with
+  `CadenceTaskMutationSupport.BundleMembership` rather than re-deriving the five fields in
+  `CadenceWriteService`.
   Full reasoning in T-1095's and T-1122's ledger entries. Adding a file here is still not casual: it is another
   path by which an app-side edit breaks a target no scheme builds.
 
-**The count has been nine, thirteen and ten, and the heading now tracks it.** `mcpfinish`
+**The count has been nine, thirteen, ten and eleven, and the heading now tracks it.** `mcpfinish`
 re-measured on 2026-10-06 and found **thirteen**, not nine: the ninth above was the last one
 anybody had written down, and four more had arrived since. It kept the heading at *nine* because
 `CadenceTests/AgentContextBudgetTests.guideReferencePairings` pins this title as a string
 `CadenceMCPServer/AGENTS.md` must still quote, so renaming it is a three-file edit — guide,
 reference and test — that has to land in one commit or the test reddens. [[T-3010]] (`3be4b126`,
-agent `mcpsources`) made that edit, and the number it settled on is **ten**.
+agent `mcpsources`) made that edit, and the number it settled on is **ten**. [[T-3035]] (agent
+`elevenfiles`) made the same three-file edit a second time for **eleven**, and the lesson it adds is
+that the number must be RE-MEASURED rather than carried over from the prose being fixed: parse
+`CadenceMCPServer`'s own `PBXSourcesBuildPhase` out of `Cadence.xcodeproj/project.pbxproj` and
+resolve each `PBXBuildFile` to its group path. A naive grep of the whole file returns **30**,
+because it counts every target's membership.
 
 **What [[T-3010]] removed, and why the removal is the lesson rather than the arithmetic.** Of the
 four files the tracking helpers brought, `CadenceOrderAllocation` earns its place independently of
@@ -436,10 +448,9 @@ Sweep the phase when an arm is removed, not only when one is added.
 
 **The count is ELEVEN since [[T-1122]]'s eighth pass (2026-10-07), and the eleventh is the second
 file here that cost a SPLIT rather than a file.** `Cadence/Shared/CadenceTaskBundleMutationSupport.swift`
-joined with `create_task_bundle` and `add_task_to_bundle`. The heading above still says *ten* for
-the reason the paragraph before last gives — `AgentContextBudgetTests.guideReferencePairings` pins
-it as a string the guide must quote, so renaming it is a three-file edit — and the measured number
-is the one to take. **What is worth carrying away is the shape of the split, which is not
+joined with `create_task_bundle` and `add_task_to_bundle`. The heading above says *eleven* since
+[[T-3035]] paid the three-file edit `AgentContextBudgetTests.guideReferencePairings` makes it —
+guide, reference and test in one commit, or the pin reddens from whichever end was left behind. **What is worth carrying away is the shape of the split, which is not
 `CadenceListNoteFiling`'s.** That one moved a *type* out of a file full of SwiftUI views. This one
 could not: the five bundle members are `static` on `enum CadenceTaskMutationSupport`, whose name
 three source-text scans pin by spelling at their call sites —
