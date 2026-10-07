@@ -226,7 +226,8 @@ struct CadenceMCPWriteFenceTests {
     ///    - **temporary derivation** — the resolved value names a temporary-directory source
     ///      (`tempfile`, `mkdtemp`, `mktemp`, `$TMPDIR`, …). `plugins/cadence-mcp/scripts/smoke-test.py`
     ///      is defended this way: it pins `str(Path(temp_store.name) / "default.store")`, and
-    ///      `temp_store` resolves through `prepare_fixture_store()` to `tempfile.TemporaryDirectory`
+    ///      `temp_store` resolves through that script's own `prepare_fixture_store` helper to
+    ///      `tempfile.TemporaryDirectory`
     ///      — two hops, which is why the resolution is transitive and not a look at one line.
     ///    - **a refusal guard** — the file holds a real-container marker in a literal it tests the
     ///      candidate path against, inside a function that raises, and that function is called.
@@ -518,7 +519,7 @@ struct CadenceMCPWriteFenceTests {
     /// the identifiers inside *those*, to four hops.
     ///
     /// Two hops is the minimum that works on the code as written — `temp_store` ->
-    /// `prepare_fixture_store()` -> `tempfile.TemporaryDirectory` — so a one-line look at the
+    /// that script's `prepare_fixture_store` helper -> `tempfile.TemporaryDirectory` — so a one-line look at the
     /// right-hand side would have scored the smoke test as undefended. Identifiers are taken from
     /// the expression with its string literals blanked, so `"default.store"` does not send the
     /// resolver looking for a variable called `store`; the *text* that is searched for markers and
