@@ -90,6 +90,255 @@ struct CalendarTimelineRangeTests {
         #expect(overrun.end == CadenceScheduleSupport.calendarEndHour * 60)
     }
 
+    // MARK: - The wall-clock ladder on a 23- and a 25-hour day (T-3051)
+
+    // `minuteRange` derived its minute-of-day from `clamped.timeIntervalSince(dayStart) / 60` —
+    // elapsed seconds, the inverse of the arithmetic T-3048 and T-3050 fixed on the writing side.
+    // The canvas it feeds is 24 wall-clock rungs, so on the two days a year that are not 24 hours
+    // long a block landed a rung away from the time its own label named.
+    //
+    // Every assertion below builds an explicit `America/New_York` calendar through
+    // `CadenceTestTimeZones.calendar(_:)`: the scheme pins `TZ=UTC` ([[T-1116]]), UTC has no DST,
+    // and this suite's own `calendar` above is UTC, so nothing here could be measured through it.
+    // The pin is untouched. New York is the zone T-3048 and T-3050 measured in, so a failure here
+    // is directly comparable to the numbers in those tickets.
+
+    /// 2026-03-08 loses an hour at 02:00, 2026-11-01 repeats one at 02:00, 2026-06-15 is ordinary.
+    /// The ordinary day is not padding: without it a green run cannot tell "the transition days
+    /// are right" from "every day is wrong by the same amount".
+    private static let springForwardKey = "2026-03-08"
+    private static let fallBackKey = "2026-11-01"
+    private static let ordinaryKey = "2026-06-15"
+    private static let everyDSTDay = [springForwardKey, ordinaryKey, fallBackKey]
+
+    private func newYork() throws -> Calendar {
+        try CadenceTestTimeZones.calendar("America/New_York")
+    }
+
+    private func midnight(_ key: String, in calendar: Calendar) throws -> Date {
+        try #require(DateFormatters.date(from: key, in: calendar))
+    }
+
+    /// The instant a user means by this reading on this day. `bySettingHour:` is the spelling
+    /// T-3048 settled on, so an ambiguous reading comes back as the **first** of the two.
+    private func reading(_ key: String, hour: Int, minute: Int = 0, in calendar: Calendar) throws -> Date {
+        let day = try midnight(key, in: calendar)
+        return try #require(calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day))
+    }
+
+    private func clockMinute(of instant: Date, in calendar: Calendar) -> Int {
+        let parts = calendar.dateComponents([.hour, .minute], from: instant)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+    }
+
+    /// **The defect.** A 09:00 event drew against the 10:00 rung on 2026-11-01 and the 08:00 rung
+    /// on 2026-03-08, because 09:00 is 600 and 480 *elapsed* minutes after those days' midnights.
+    @Test func aTimelineBlockSitsOnTheWallClockRungItsOwnLabelNames() throws {
+        let calendar = try newYork()
+
+        for key in Self.everyDSTDay {
+            let start = try reading(key, hour: 9, in: calendar)
+            let end = try reading(key, hour: 10, in: calendar)
+            let day = try midnight(key, in: calendar)
+
+            let range = CadenceScheduleSupport.minuteRange(from: start, to: end, on: day, calendar: calendar)
+
+            #expect(
+                range.start == 9 * 60,
+                "the 09:00 block on \(key) is drawn at hour \(range.start / 60), not 9"
+            )
+            #expect(
+                range.end == 10 * 60,
+                "the 09:00 block on \(key) ends at hour \(range.end / 60), not 10"
+            )
+            // The label beside the block reads the same two numbers; that agreement is the point.
+            #expect(
+                CadenceScheduleSupport.timeRangeLabel(startMinute: range.start, endMinute: range.end)
+                    == TimeFormatters.timeRange(startMin: 9 * 60, endMin: 10 * 60)
+            )
+        }
+    }
+
+    /// Not one reading but every one: each instant of a transition day is drawn at its own clock
+    /// reading, measured through the same calendar. On 2026-03-08 that leaves the 02:00 rung with
+    /// nothing on it — the hour that does not exist — which is what a *non-existent* wall time
+    /// looks like from this direction. An instant always has exactly one reading, so there is no
+    /// 02:30 here to resolve and T-3048's gap rule has nothing to apply to.
+    @Test func everyInstantOfATransitionDayIsDrawnAtItsOwnClockReading() throws {
+        let calendar = try newYork()
+
+        for key in [Self.springForwardKey, Self.fallBackKey] {
+            let day = try midnight(key, in: calendar)
+            let nextDay = try #require(calendar.date(byAdding: .day, value: 1, to: day))
+            var drawnRungs: Set<Int> = []
+
+            var instant = day
+            while instant < nextDay {
+                let range = CadenceScheduleSupport.minuteRange(
+                    from: instant,
+                    to: instant,
+                    on: day,
+                    calendar: calendar
+                )
+                let expected = clockMinute(of: instant, in: calendar)
+                #expect(
+                    range.start == expected,
+                    "\(key): an instant reading \(expected / 60):\(expected % 60) is drawn at minute \(range.start)"
+                )
+                drawnRungs.insert(range.start / 60)
+                instant = instant.addingTimeInterval(15 * 60)
+            }
+
+            // Non-vacuity: a 23-hour day visits 92 quarter-hours and a 25-hour one 100.
+            let realHours = nextDay.timeIntervalSince(day) / 3600
+            #expect(realHours == (key == Self.springForwardKey ? 23 : 25))
+
+            if key == Self.springForwardKey {
+                #expect(!drawnRungs.contains(2), "the 02:00 rung on 2026-03-08 is an hour that does not exist")
+                #expect(drawnRungs.count == 23)
+            } else {
+                #expect(drawnRungs == Set(0...23), "a 25-hour day still fills all 24 rungs")
+            }
+        }
+    }
+
+    /// **The ticket's step-5 question, answered: the ends are wall-clock and the ladder absorbs
+    /// the difference.** 01:00 → 03:00 on 2026-11-01 is three hours of real time drawn two rungs
+    /// tall; the same pair of readings on 2026-03-08 is two hours of real time drawn three rungs
+    /// tall. Height here is clock distance, not duration, because the canvas has one `1 AM` row
+    /// and no 25th — and whichever way it goes the block and its label are these same two numbers.
+    @Test func aBlockSpanningTheTransitionKeepsItsWallClockEndsOnBothDays() throws {
+        let calendar = try newYork()
+
+        // 2026-11-01: 01:00 EDT + 3 real hours = 03:00 EST.
+        let fallBackDay = try midnight(Self.fallBackKey, in: calendar)
+        let fallBackStart = try reading(Self.fallBackKey, hour: 1, in: calendar)
+        let fallBackEnd = fallBackStart.addingTimeInterval(3 * 60 * 60)
+        #expect(clockMinute(of: fallBackEnd, in: calendar) == 3 * 60, "the fixture must really end at 03:00")
+
+        let fallBack = CadenceScheduleSupport.minuteRange(
+            from: fallBackStart,
+            to: fallBackEnd,
+            on: fallBackDay,
+            calendar: calendar
+        )
+        #expect(fallBack == (60, 180))
+        #expect(fallBack.end - fallBack.start == 120, "three real hours, two rungs of clock")
+
+        // 2026-03-08: 01:00 EST + 2 real hours = 04:00 EDT.
+        let springDay = try midnight(Self.springForwardKey, in: calendar)
+        let springStart = try reading(Self.springForwardKey, hour: 1, in: calendar)
+        let springEnd = springStart.addingTimeInterval(2 * 60 * 60)
+        #expect(clockMinute(of: springEnd, in: calendar) == 4 * 60, "the fixture must really end at 04:00")
+
+        let spring = CadenceScheduleSupport.minuteRange(
+            from: springStart,
+            to: springEnd,
+            on: springDay,
+            calendar: calendar
+        )
+        #expect(spring == (60, 240))
+        #expect(spring.end - spring.start == 180, "two real hours, three rungs of clock")
+    }
+
+    /// An *ambiguous* reading is the one edge this direction can actually meet, and the answer is
+    /// T-3048's: the first of the two owns the rung. Both instants draw at 90, overlapping on the
+    /// single 1:30 row — and a block living wholly inside the repeated hour comes back with `end`
+    /// below `start`, where the pre-existing 15-minute floor keeps it drawable at its true start.
+    @Test func bothHalvesOfTheRepeatedHourDrawOnTheSameRungAndStayDrawable() throws {
+        let calendar = try newYork()
+        let day = try midnight(Self.fallBackKey, in: calendar)
+
+        let firstPass = try reading(Self.fallBackKey, hour: 1, minute: 30, in: calendar)
+        let secondPass = firstPass.addingTimeInterval(60 * 60)
+        #expect(secondPass.timeIntervalSince(firstPass) == 3600)
+        #expect(clockMinute(of: secondPass, in: calendar) == 90, "the second pass really reads 01:30 again")
+
+        let first = CadenceScheduleSupport.minuteRange(from: firstPass, to: firstPass, on: day, calendar: calendar)
+        let second = CadenceScheduleSupport.minuteRange(from: secondPass, to: secondPass, on: day, calendar: calendar)
+        #expect(first.start == 90)
+        #expect(second.start == 90)
+
+        // 01:30 EDT → 02:00 EDT, which reads 01:00 again: the clock goes backwards under it.
+        let backwards = CadenceScheduleSupport.minuteRange(
+            from: firstPass,
+            to: firstPass.addingTimeInterval(30 * 60),
+            on: day,
+            calendar: calendar
+        )
+        #expect(backwards == (90, 105), "drawn at its true start, floored to the drawable minimum")
+    }
+
+    /// The day's own edges on a 23- and a 25-hour day. The next midnight is the one reading the
+    /// components cannot give — it is `00:00` of the following day — so it is named `1440`, which
+    /// is the bottom of the ladder. The elapsed arithmetic answered 1380 and 1500 here, and 1500
+    /// is not a position this canvas has.
+    @Test func theLadderBottomsAtMidnightOnADayThatIsNotTwentyFourHoursLong() throws {
+        let calendar = try newYork()
+
+        for key in [Self.springForwardKey, Self.fallBackKey] {
+            let day = try midnight(key, in: calendar)
+            let nextDay = try #require(calendar.date(byAdding: .day, value: 1, to: day))
+
+            // 23:00 to midnight keeps its hour rather than collapsing to the 15-minute floor.
+            let lateNight = CadenceScheduleSupport.minuteRange(
+                from: try reading(key, hour: 23, in: calendar),
+                to: nextDay,
+                on: day,
+                calendar: calendar
+            )
+            #expect(lateNight == (23 * 60, 24 * 60), "\(key): the last hour of the day")
+
+            // A multi-day event covering this column entirely spans all 24 rungs.
+            let spanning = CadenceScheduleSupport.minuteRange(
+                from: day.addingTimeInterval(-6 * 60 * 60),
+                to: nextDay.addingTimeInterval(6 * 60 * 60),
+                on: day,
+                calendar: calendar
+            )
+            #expect(spanning == (0, 24 * 60), "\(key): a day fully inside the event")
+
+            // *Out of range* diverges from T-3048/T-3050 on purpose: nothing is written here, so an
+            // instant outside this column is clamped to the column's own edge and drawn rather than
+            // refused. The edge is the ladder's bottom, not the day's elapsed length.
+            let tomorrow = CadenceScheduleSupport.minuteRange(
+                from: nextDay.addingTimeInterval(9 * 60 * 60),
+                to: nextDay.addingTimeInterval(10 * 60 * 60),
+                on: day,
+                calendar: calendar
+            )
+            #expect(tomorrow.start == 24 * 60, "\(key): clamped to the ladder, not to \(Int(nextDay.timeIntervalSince(day)) / 60)")
+        }
+    }
+
+    /// **One rule, not a second spelling of it.** The red now-line crossing these blocks takes its
+    /// position from `CadenceTimelineNowLineSupport.fractionalMinuteOfDay`, and so does a block, so
+    /// the rule and the block it crosses cannot name different minutes. This is the pin that fails
+    /// if a later edit re-derives the minute here instead of reading the shared one.
+    @Test func aTimelineBlockAndTheNowLineCrossingItReadTheSameMinute() throws {
+        let calendar = try newYork()
+
+        for key in Self.everyDSTDay {
+            let day = try midnight(key, in: calendar)
+            for (hour, minute) in [(0, 0), (1, 30), (9, 0), (13, 45), (23, 59)] {
+                let instant = try reading(key, hour: hour, minute: minute, in: calendar)
+                let range = CadenceScheduleSupport.minuteRange(
+                    from: instant,
+                    to: instant,
+                    on: day,
+                    calendar: calendar
+                )
+                let nowLine = Int(
+                    CadenceTimelineNowLineSupport.fractionalMinuteOfDay(at: instant, calendar: calendar)
+                )
+                #expect(
+                    range.start == nowLine,
+                    "\(key) \(hour):\(minute): the block is at \(range.start) and the now-line at \(nowLine)"
+                )
+            }
+        }
+    }
+
     // MARK: - The hours every timeline draws
 
     /// The complaint: Today's timeline showed 06:00–22:59, so a third of the day did not exist on

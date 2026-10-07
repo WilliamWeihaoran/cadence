@@ -487,6 +487,44 @@ enum CadenceScheduleSupport {
     /// fell through to the 15-minute floor, and every day of a multi-day timed event drew the
     /// same sliver. Clamping to the day's own bounds instead gives the part of the event that
     /// belongs on this column, and a day fully inside the event spans the whole column.
+    ///
+    /// **The clamp is in instant space; the conversion to minutes is in wall-clock space, and the
+    /// split is load-bearing** ([[T-3051]]). Which part of the event belongs on this column is a
+    /// question about instants, so `min`/`max` against the day's own bounds is right and is
+    /// unchanged. *Where* that part is drawn is a question about the clock, because the canvas it
+    /// is drawn on is a ladder of **24 wall-clock hour rows** (`calendarStartHour..<calendarEndHour`)
+    /// labelled by `TimeFormatters`, and the red now-line crossing those rows takes its own
+    /// position from `CadenceTimelineNowLineSupport.fractionalMinuteOfDay` — the hour/minute
+    /// components, not elapsed time. This used to read `clamped.timeIntervalSince(dayStart) / 60`,
+    /// which is elapsed seconds: the inverse of the bug [[T-3048]] and [[T-3050]] fixed on the
+    /// writing side, and wrong in the same way on the same two days a year. On 2026-11-01 a 09:00
+    /// event is 600 elapsed minutes after that day's midnight, so it drew against the **10:00**
+    /// rung with a label that read `10:00` — an hour from where Apple Calendar, the event edit
+    /// sheet and the now-line all put it — and on 2026-03-08 the same event drew against `08:00`.
+    /// It is therefore the same `fractionalMinuteOfDay` that answers here, so a block and the rule
+    /// crossing it cannot disagree by construction.
+    ///
+    /// **A block that spans the transition keeps its wall-clock ends, and the ladder absorbs the
+    /// difference.** 01:00 → 03:00 on 2026-11-01 is three hours of real time but two rungs of
+    /// clock, and it is drawn two rungs tall between the `1 AM` and `3 AM` labels; on 2026-03-08
+    /// the same pair of readings is two hours of real time drawn three rungs tall. Height on this
+    /// canvas is clock distance, not duration, because the canvas has exactly one `1 AM` row and
+    /// no 25th. The requirement the ticket names is that the block and the label beside it agree,
+    /// and they do: both are these two numbers.
+    ///
+    /// **The three edges, deliberately the same answers as [[T-3048]] and [[T-3050]] where the
+    /// question can even be asked here.** A *non-existent* wall time is unreachable in this
+    /// direction: the inputs are `Date` instants and every instant has exactly one reading, so
+    /// there is no 02:30 on 2026-03-08 to resolve — the gap shows up as a rung nothing lands on.
+    /// An *ambiguous* reading is reachable and both instants answer the same minute: 01:30 EDT and
+    /// 01:30 EST both draw at 90, overlapping on the single 1:30 row, and the earlier one is the
+    /// one that rung belongs to — the same "take the first" T-3048 chose. A pair wholly inside the
+    /// repeated hour can therefore come back with `end` below `start`; the pre-existing 15-minute
+    /// floor below is what makes it drawable, at its true start, with a label that matches.
+    /// *Out of range* diverges, and only because nothing here is written: the two writing fixes
+    /// **refuse** a `startMin >= 1440` rather than mis-date a real calendar event, while an instant
+    /// outside this column is clamped to the column's own edge (`0` or `1440`) and drawn, because
+    /// a renderer that refused would simply omit a real event from the grid.
     static func minuteRange(
         from startDate: Date,
         to endDate: Date,
@@ -499,9 +537,20 @@ enum CadenceScheduleSupport {
         let clampedStart = min(max(startDate, dayStart), dayEnd)
         let clampedEnd = min(max(endDate, clampedStart), dayEnd)
 
-        let start = Int(clampedStart.timeIntervalSince(dayStart) / 60)
-        let end = Int(clampedEnd.timeIntervalSince(dayStart) / 60)
+        let start = minuteOfDay(for: clampedStart, dayEnd: dayEnd, calendar: calendar)
+        let end = minuteOfDay(for: clampedEnd, dayEnd: dayEnd, calendar: calendar)
         return (start, max(start + 15, end))
+    }
+
+    /// An instant already clamped into `dayStart...dayEnd`, as the ladder's own minute-of-day.
+    ///
+    /// The next midnight is the one reading the components cannot give: it is `00:00` of the
+    /// following day and would come back as `0`, collapsing a 23:00 → 00:00 event to the 15-minute
+    /// floor again — the exact regression the doc comment above exists to describe. It is named
+    /// `1440` instead, which is the bottom of a 24-rung ladder.
+    private static func minuteOfDay(for instant: Date, dayEnd: Date, calendar: Calendar) -> Int {
+        guard instant < dayEnd else { return calendarEndHour * 60 }
+        return Int(CadenceTimelineNowLineSupport.fractionalMinuteOfDay(at: instant, calendar: calendar))
     }
 
     /// The same span, clamped into the hours a day column actually draws, so a block that runs
