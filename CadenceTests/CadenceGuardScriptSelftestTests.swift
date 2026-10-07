@@ -676,6 +676,15 @@ struct CadenceGuardScriptSelftestTests {
         // like a host nobody has wedged lately. Section 8e induces it, keeps a granted-request
         // CONTROL silent, and pins both the noise filter and the scoping of the predicate.
         "AUTOMATION-PROMPT-OUTSTANDING",
+        // T-2070's other half, and it is pinned because it is the half a reader would call
+        // redundant and delete. An unmatched automation request is NOT by itself a standing
+        // prompt: an unattended UI run raises the owner's prompt, times out after ~70s and leaves
+        // exactly that line behind over a host that then runs unit suites fine. The refusal needs
+        // a second reading -- a test session that connected and never got transport -- and this
+        // NOTE is what the other case produces. Deleting it does not break the refusal; it
+        // collapses "a prompt is standing" into "someone ran a UI test earlier", which is the
+        // false positive that would refuse every macOS run on this Mac for six hours.
+        "AUTOMATION-PROMPT-UNMATCHED",
         // T-2071 / T-1920: the seven verdicts of `xcb.sh run-state`, and they are pinned as a SET
         // because the instrument's whole value is that they are distinguishable. Deleting any one
         // of them does not break the others -- it quietly collapses two states into one, which is
