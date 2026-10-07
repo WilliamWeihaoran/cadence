@@ -460,3 +460,29 @@ it in. The inverse direction was costed and **refused**: splitting
 `Cadence/Shared/CadenceTaskMutationSupport.swift` **by path** for that body, and it was dearer
 besides — the whole 1,788-line file needs three more, one of which imports SwiftUI. Do not
 re-cost it.
+
+## Why The MCP Containers Open A Mirrored Store With Mirroring Off
+
+Filed as [[T-3018]] and written here rather than in the guide, which has no headroom.
+
+`makeReadOnlyContainer()` and `makeReadWriteContainer()` both resolve
+`CadenceStoreSupport.primaryStoreURL()` -- the owner's real app-group store -- and both pass
+`cloudKitDatabase: .none`
+(`Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift:68-93`), while the running app
+has that same file open with `.private("iCloud.com.haoranwei.Cadence")`
+(`Cadence/Services/PersistenceController.swift:384`).
+
+The read-only container is `allowsSave: false` and is harmless. The read-write one is
+`allowsSave: true`, which makes it **one store open under two different configurations** --
+[[T-2053]]'s family again, read the other way round.
+
+What follows is not a sync *delay*. A writer whose container has mirroring off does not maintain
+the mirroring metadata the app's own container exports from, so **an MCP write may never reach the
+owner's other devices, and may not register there as a change at all.**
+
+Nothing in the write path says so, and no test can say it: this target is not unit-executed, and
+the only store a test or a script may point at is a throwaway.
+
+Whether an out-of-process writer should mirror, refuse, or keep running
+`CadenceMCPStorePreparation.prepare`'s integrity repair is an **owner decision about the sync
+contract**, open in [[T-3018]]. Do not settle it as a side effect of a write-path change.
