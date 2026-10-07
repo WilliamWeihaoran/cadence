@@ -63,6 +63,8 @@ export TMPPREFIX="${CADENCE_TMPPREFIX:-${TMP_BASE}zsh}"
 # `/usr/bin/git` is an xcrun shim and xcrun refuses inside an App Sandbox, so from the test host
 # every git call fails with that on stderr and nothing else -- which reads like a broken
 # repository. Same probe, same reason, as `worktree-drift.sh`.
+# `CadenceTestHostSandboxCapabilityTests.theXcrunShimsRefuseButTheRealToolsSpawn` is where that is
+# measured, and `CadenceGuardScriptSelftestTests` is what runs this script in there (T-1380).
 if ! git --version >/dev/null 2>&1; then
     for _candidate in /Applications/Xcode.app/Contents/Developer/usr/bin /opt/homebrew/bin /usr/local/bin; do
         [[ -x "$_candidate/git" ]] || continue
