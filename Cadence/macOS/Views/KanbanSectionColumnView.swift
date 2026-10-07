@@ -18,7 +18,7 @@ struct ListSectionKanbanColumn: View {
     /// inside the sequence this drop renumbers even though they are in other columns.
     let spanTasks: [AppTask]
     /// The board's active sort, handed down rather than read here (T-1085). This column does not
-    /// sort its own cards — `ListSectionsKanbanView.sortedTasksForSection` does, and hands the
+    /// sort its own cards — `ListSectionsKanbanView.columnCards` does, and hands the
     /// result in as `tasks` — so until now the column had no way to answer the one question a card
     /// drop raises: *will this sort show the card where it was dropped?* These two are that
     /// answer's inputs, and they are the same values the host already sorted by, so the notice and

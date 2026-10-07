@@ -52,6 +52,16 @@ struct ListSectionsKanbanView: View {
     }
 
     var body: some View {
+        // T-3020: the columns and their cards are derived ONCE per render. Each column used to run
+        // its own filter over the board's whole task list from inside the `ForEach` content
+        // closure — O(columns x tasks) over an eager `HStack` — and now indexes one grouping pass.
+        let columns = sectionConfigs
+        let cardsBySectionName = Self.columnCards(
+            from: tasks,
+            sections: columns,
+            sortField: sortField,
+            direction: sortDirection
+        )
         ZStack {
             Theme.bg
 
@@ -65,8 +75,8 @@ struct ListSectionsKanbanView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 12) {
-                            ForEach(sectionConfigs, id: \.id) { section in
-                                let sectionTasks = sortedTasksForSection(section)
+                            ForEach(columns, id: \.id) { section in
+                                let sectionTasks = cardsBySectionName[section.name] ?? []
                                 ListSectionKanbanColumn(
                                     section: section,
                                     tasks: sectionTasks,
@@ -144,11 +154,56 @@ struct ListSectionsKanbanView: View {
         }
     }
 
-    private func sortedTasksForSection(_ section: TaskSectionConfig) -> [AppTask] {
-        let source = tasks.filter {
-            !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
+    /// **Every column's cards in one pass over `tasks` (T-3020), keyed by the column's exact
+    /// `name`.**
+    ///
+    /// The value for a section is exactly what the retired per-column filter produced:
+    ///
+    ///     tasks.filter {
+    ///         !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
+    ///     }.taskSorted(by: sortField, direction: direction)
+    ///
+    /// and it is that by construction rather than by an equivalence argument. The membership test
+    /// is still `caseInsensitiveCompare` — never a folded dictionary key, whose agreement with
+    /// `NSString`'s comparison (`ß`/`SS`, canonical equivalence) would be a claim to prove — but it
+    /// is asked once per *distinct* task section name rather than once per task, and the answer is
+    /// cached. Cancelled work is dropped before anything else, so no column ever sees it (T-381).
+    /// A task joins every column its name matches, so two columns whose names differ only by case
+    /// each draw it, as they did before. Each bucket is filled in `tasks` order and then sorted
+    /// once, so the sort sees the same input in the same order and ties land where they did.
+    ///
+    /// Columns are keyed by exact `name` rather than by `id` because two columns with one name
+    /// have one bucket by definition; a column no task names is absent and reads as empty.
+    static func columnCards(
+        from tasks: [AppTask],
+        sections: [TaskSectionConfig],
+        sortField: TaskSortField,
+        direction: TaskSortDirection
+    ) -> [String: [AppTask]] {
+        var columnNames: [String] = []
+        var seenColumnNames = Set<String>()
+        for section in sections where seenColumnNames.insert(section.name).inserted {
+            columnNames.append(section.name)
         }
-        return source.taskSorted(by: sortField, direction: sortDirection)
+
+        var columnsByTaskSectionName: [String: [String]] = [:]
+        var buckets: [String: [AppTask]] = [:]
+        for task in tasks where !task.isCancelled {
+            let taskSectionName = task.resolvedSectionName
+            let matches: [String]
+            if let cached = columnsByTaskSectionName[taskSectionName] {
+                matches = cached
+            } else {
+                matches = columnNames.filter {
+                    taskSectionName.caseInsensitiveCompare($0) == .orderedSame
+                }
+                columnsByTaskSectionName[taskSectionName] = matches
+            }
+            for columnName in matches {
+                buckets[columnName, default: []].append(task)
+            }
+        }
+        return buckets.mapValues { $0.taskSorted(by: sortField, direction: direction) }
     }
 
     @ViewBuilder

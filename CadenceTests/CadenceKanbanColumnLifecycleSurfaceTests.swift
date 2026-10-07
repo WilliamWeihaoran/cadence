@@ -921,11 +921,13 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         #expect(column.contains("struct ListSectionKanbanColumn: View"), "non-vacuity: wrong file read")
         #expect(popover.contains("struct KanbanSectionEditorPopover"), "non-vacuity: wrong file read")
 
-        // The board's grouping, which `boardCards(in:from:)` above transcribes.
+        // The board's grouping, which `boardCards(in:from:)` above calls: each column reads the one
+        // grouping pass by its STORED name, so a config renamed ahead of its cards draws empty.
         #expect(
-            board.contains("!$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame"),
-            "the board groups by something else now, so the transcription above is stale"
+            board.contains("let sectionTasks = cardsBySectionName[section.name] ?? []"),
+            "the board's columns read their cards by something other than the stored name now"
         )
+        #expect(board.contains("taskSectionName.caseInsensitiveCompare($0) == .orderedSame"))
 
         // The name field raises no per-character callback, and the popover has no parameter for
         // one. Either alone is satisfiable by the defect: a live `onNameChanged` with no
@@ -1279,15 +1281,17 @@ private func recolouring(_ configs: [TaskSectionConfig], at index: Int, to hex: 
     return edited
 }
 
-/// The board's grouping for one column, transcribed from
-/// `ListSectionsKanbanView.sortedTasksForSection` — a private member of a SwiftUI `View`. The sort
-/// is left out because the question is which cards the column draws, not in what order;
-/// `theRenameFieldWritesNothingUntilACommitPointSoTheColumnKeepsItsCards` asserts the filter
-/// against the source so the two cannot drift.
+/// The board's grouping for one column. This used to be a *transcription* of the board's private
+/// per-column filter, kept honest by a source pin; since T-3020 the board groups through
+/// `ListSectionsKanbanView.columnCards(from:sections:sortField:direction:)`, so this calls the
+/// production grouping itself and there is nothing left to drift.
+/// `theRenameFieldWritesNothingUntilACommitPointSoTheColumnKeepsItsCards` pins that the board's
+/// columns read that grouping by their stored `name`.
+@MainActor
 private func boardCards(in section: TaskSectionConfig, from tasks: [AppTask]) -> [AppTask] {
-    tasks.filter {
-        !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
-    }
+    ListSectionsKanbanView.columnCards(
+        from: tasks, sections: [section], sortField: .date, direction: .ascending
+    )[section.name] ?? []
 }
 
 /// `bodyOfComputed` for a computed property that is not `some View`.

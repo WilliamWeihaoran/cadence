@@ -996,7 +996,7 @@ struct CadenceCancelledTaskReachabilityTests {
     /// card came back in `active`.
     ///
     /// **Which ticket was right.** T-381 said it cannot happen today because the caller pre-filters
-    /// — verified, and true: `ListSectionsKanbanView.sortedTasksForSection` drops `isCancelled`
+    /// — verified, and true: `ListSectionsKanbanView.columnCards` (T-3020; formerly `sortedTasksForSection`) drops `isCancelled`
     /// before any column sees it. T-399 said it *can* happen because the column open-codes both
     /// halves — a claim about shape, not reachability, and its supporting claim that
     /// `KanbanListColumnView` "splits the same way" is wrong: `TaskListKanbanColumn` does not split
@@ -1080,8 +1080,11 @@ struct CadenceCancelledTaskReachabilityTests {
     /// If either of these goes, cancelled cards reach a column for real, and whoever changes it
     /// should have to say so.
     @Test func theKanbanBoardsStillKeepCancelledWorkOffTheColumnsUpstream() throws {
+        // T-3020: the per-column filter became one grouping pass, and it drops cancelled work as
+        // the first thing it does; `aSectionBoardColumnNeverDrawsCancelledWork` in
+        // `ListSectionBoardColumnCardsParityTests` is the behavioural half.
         try expectOccurrences(
-            of: "!$0.isCancelled && $0.resolvedSectionName",
+            of: "for task in tasks where !task.isCancelled",
             at: ["Cadence/macOS/Views/KanbanListSectionSupportViews.swift": 1]
         )
         try expectOccurrences(

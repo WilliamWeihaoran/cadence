@@ -50,7 +50,7 @@ enum TaskSurfaceDerivationScan {
         ".onAppear", ".onDisappear", ".onChange", ".task", ".sheet", ".onTapGesture",
         ".onDrag", ".onDrop", ".refreshable", ".contextMenu", ".popover", ".alert",
         ".confirmationDialog", ".onSubmit", ".swipeActions", ".onHover", ".onReceive",
-        ".fullScreenCover", ".onLongPressGesture"
+        ".fullScreenCover", ".onLongPressGesture", ".dropDestination"
     ]
 
     struct Split {
@@ -529,34 +529,55 @@ enum TaskSurfaceDerivationScan {
         #expect(body.contains("return columnBody(active: displayActive, completed: halves.completed)"))
     }
 
-    /// **The one kanban slope left, and it is RECORDED rather than removed — read the second half
-    /// before changing anything here.**
+    /// **A card drop is an event, not a render ([[T-3020]]'s carried instrument gap).**
     ///
-    /// `ListSectionsKanbanView` calls `sortedTasksForSection(_:)` — a `filter` over the board's
-    /// whole task list, then a sort of what survives — **inside** its `ForEach` content closure.
-    /// That is the per-element position, so the board's cost is `0 + 1/element`: not a constant,
-    /// one full pass over the board's tasks per section column, and adding a column adds a pass.
-    /// The same shape the All Tasks board had before [[T-1501]]'s binding.
+    /// `.dropDestination` was missing from `deferredClosurePrefixes`, so a census whose subject
+    /// was reached only from a card drop would have counted it as render work. Nothing read wrong
+    /// today; this pins the rule so the gap cannot quietly come back. The control in the same text
+    /// is a reference in ordinary body position, which must still count.
+    @Test func aReferenceInsideADropDestinationClosureCostsARenderNothing() {
+        let body = """
+        VStack { header(moveTask) }
+            .dropDestination(for: String.self) { items, _ in
+                moveTask(items)
+                return true
+            }
+        """
+        let split = TaskSurfaceDerivationScan.split(body, stripDeferred: true)
+        #expect(split.deferredRegionsRemoved == 1)
+        #expect(TaskSurfaceDerivationScan.occurrences(of: "moveTask", in: split.fixed) == 1)
+        let unstripped = TaskSurfaceDerivationScan.split(body, stripDeferred: false)
+        #expect(TaskSurfaceDerivationScan.occurrences(of: "moveTask", in: unstripped.fixed) == 2)
+    }
+
+    /// **The last kanban slope, removed by [[T-3020]]: the section board groups its cards ONCE per
+    /// render, not once per column.**
     ///
-    /// **And unlike that one, it is not redundant, which is why no binding fixes it.** The All
-    /// Tasks board re-derived *the same array* once per column; this one derives a *different*
-    /// array per column, and every column needs its own. The cost is O(columns x tasks) where
-    /// O(tasks) would do — one `Dictionary(grouping:)` over `resolvedSectionName` — but that is an
-    /// algorithmic change over a case-insensitive comparison, not the same one-line `let`, and it
-    /// is filed rather than taken.
+    /// `ListSectionsKanbanView` used to call `sortedTasksForSection(_:)` — a `filter` over the
+    /// board's whole task list, then a sort of what survived — **inside** its `ForEach` content
+    /// closure. That is the per-element position, so this census read it as `0 + 1/element`: one
+    /// full pass over the board's tasks per section column, and adding a column added a pass.
     ///
-    /// **The eager stack is pinned deliberately.** T-3005 opted *only* the All Tasks list column
-    /// into deferred realization, because the other `KanbanColumnScroll` callers' offscreen
-    /// lifecycle is unaccounted for — this board's columns register hover with three managers. So
-    /// every section column mounts, the element count above is the real multiplier, and this stack
-    /// is the half a tidy-up would quietly delete the meaning of. If you make it lazy or group the
-    /// pass, this test must fail and send you to the ledger: the number stops being this number.
-    @Test func theSectionBoardsPerColumnPassIsStillASlopeOverAnEagerStack() throws {
+    /// **Unlike the All Tasks board it was not redundant, so no binding could fix it** — every
+    /// column needs a *different* subset. The fix is one grouping pass in `body`
+    /// (`columnCards(from:sections:sortField:direction:)`) that the `ForEach` only *indexes*. So the
+    /// reading is now `1 + 0/element`: one call per render, no per-column term.
+    ///
+    /// **The eager stack is still pinned, deliberately.** T-3005 opted only the All Tasks list
+    /// column into deferred realization, because this board's columns register hover with three
+    /// managers and their offscreen lifecycle is unaccounted for. Every section column still mounts
+    /// — which is exactly why the per-element term was worth removing. If someone makes it lazy,
+    /// this must fail and send them to the ledger.
+    ///
+    /// Two halves, and either alone is satisfiable by a defect: the grouping call must be reached
+    /// **once** and **outside** the `ForEach`, and the `ForEach` content must reach **no** pass over
+    /// the board's `tasks` — not through the grouping call, and not through an open-coded
+    /// `tasks.filter` either.
+    @Test func theSectionBoardGroupsItsCardsOncePerRenderAndNotOncePerColumn() throws {
         let graph = try TaskSurfaceDerivationScan.graph(
             file: "Cadence/macOS/Views/KanbanListSectionSupportViews.swift",
             declarations: [
                 "body": "var body: some View",
-                "sortedTasksForSection": "private func sortedTasksForSection(",
                 "sectionConfigs": "private var sectionConfigs",
                 "baseSectionConfigs": "private var baseSectionConfigs"
             ]
@@ -566,22 +587,26 @@ enum TaskSurfaceDerivationScan {
             graph.forEachRegions >= 1,
             "no ForEach content closure was found — the per-element position cannot be reached"
         )
-        let passes = graph.reach(to: "sortedTasksForSection")
+        let passes = graph.reach(toCall: "Self.columnCards(")
         #expect(
-            passes == .init(fixed: 0, perElement: 1),
-            "section board passes over its task list: \(passes)"
+            passes == .init(fixed: 1, perElement: 0),
+            "section board grouping passes over its task list: \(passes)"
         )
-        // Non-vacuity: the function the walk arrived at is the one that walks the board.
-        let pass = try #require(graph.split["sortedTasksForSection"]).fixed
-        #expect(pass.contains("tasks.filter"))
-        #expect(pass.contains("source.taskSorted(by: sortField, direction: sortDirection)"))
-        // The multiplier: every section column mounts, so the per-element term is per *column*.
-        let body = try #require(graph.split["body"]).fixed
+        let openCodedPasses = graph.reach(toCall: "tasks.filter")
+        #expect(openCodedPasses == .zero, "section board open-codes a pass over its tasks: \(openCodedPasses)")
+        // Non-vacuity: the ForEach content really is the column loop, and it reads the grouping.
+        let body = try #require(graph.split["body"])
+        #expect(body.perElement.contains("let sectionTasks = cardsBySectionName[section.name] ?? []"))
+        #expect(body.fixed.contains("ForEach(columns, id: \\.id)"))
+        // The retired per-column pass is gone from the file, not merely moved out of reach.
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanListSectionSupportViews.swift")
+        #expect(!CadenceSourceScan.strippingComments(source).contains("sortedTasksForSection"))
+        // The multiplier: every section column mounts, so a per-element term would be per *column*.
         #expect(
-            body.contains("HStack(alignment: .top, spacing: 12)") && !body.contains("LazyHStack"),
+            body.fixed.contains("HStack(alignment: .top, spacing: 12)") && !body.fixed.contains("LazyHStack"),
             """
-            this board's columns are no longer eagerly realized — the slope above has a new \
-            multiplier and [[T-1501]]'s ledger entry is now wrong about it
+            this board's columns are no longer eagerly realized — [[T-3020]]'s ledger entry is now \
+            wrong about what the per-element term would have multiplied
             """
         )
     }
@@ -782,5 +807,134 @@ struct SidebarListCountTraversalTests {
             sidebarVisits > calendarVisits * 3 && sidebarVisits < calendarVisits * 5,
             "sidebar \(sidebarVisits) vs control \(calendarVisits) — a ratio that is not a lag story"
         )
+    }
+}
+
+// MARK: - [[T-3020]]'s behavioural half
+
+/// **The one grouping pass draws exactly the cards the per-column filter drew, in the same order.**
+///
+/// The census above proves the section board's pass is no longer per column; this proves it did
+/// not change a card. The oracle is the retired per-column filter, verbatim, run once per column
+/// — so every column of every fixture below is compared by **identity and order** against what the
+/// board used to draw, across all three sort fields and both directions. The fixture is built to
+/// hold the cases the grouping could plausibly get wrong: case-only name differences in both
+/// directions, a name the task pads with whitespace, an empty name (the default section), two
+/// columns whose names differ only by case, cancelled work, a column no task names, a task naming
+/// no column, NSString-only case equivalences (`ß`/`SS`, composed/decomposed `é`), and sort ties.
+@Suite @MainActor
+struct ListSectionBoardColumnCardsParityTests {
+
+    /// The retired `ListSectionsKanbanView.sortedTasksForSection(_:)`, transcribed verbatim.
+    private func retiredColumn(
+        _ section: TaskSectionConfig,
+        of tasks: [AppTask],
+        sortField: TaskSortField,
+        direction: TaskSortDirection
+    ) -> [AppTask] {
+        let source = tasks.filter {
+            !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
+        }
+        return source.taskSorted(by: sortField, direction: direction)
+    }
+
+    private func card(
+        _ title: String,
+        in sectionName: String,
+        status: TaskStatus = .todo,
+        priority: TaskPriority = .none,
+        order: Int = 0,
+        date: String = ""
+    ) -> AppTask {
+        let task = AppTask(title: title)
+        task.sectionName = sectionName
+        task.status = status
+        task.priority = priority
+        task.order = order
+        task.scheduledDate = date
+        return task
+    }
+
+    private var sections: [TaskSectionConfig] {
+        [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing"),
+            TaskSectionConfig(name: "doing"),
+            TaskSectionConfig(name: "Straße"),
+            TaskSectionConfig(name: "Caf\u{E9}"),
+            TaskSectionConfig(name: "Empty")
+        ]
+    }
+
+    private var tasks: [AppTask] {
+        [
+            card("default by empty name", in: ""),
+            card("default by name", in: TaskSectionDefaults.defaultName.uppercased(), priority: .high),
+            card("doing upper", in: "DOING", priority: .medium, order: 3, date: "2026-10-09"),
+            card("doing padded", in: "  Doing ", priority: .medium, order: 3, date: "2026-10-09"),
+            card("doing tie", in: "doing", priority: .medium, order: 3, date: "2026-10-09"),
+            card("doing early", in: "Doing", priority: .low, order: 1, date: "2026-10-01"),
+            card("doing cancelled", in: "Doing", status: .cancelled),
+            card("doing done", in: "Doing", status: .done, order: 2),
+            card("strasse", in: "STRASSE"),
+            card("cafe decomposed", in: "CAFE\u{301}"),
+            card("orphan", in: "Nowhere"),
+            card("orphan cancelled", in: "Nowhere", status: .cancelled)
+        ]
+    }
+
+    @Test func everyColumnDrawsTheCardsThePerColumnFilterDrewInTheSameOrder() {
+        let tasks = tasks
+        let sections = sections
+        var compared = 0
+        var nonEmpty = 0
+        for field in TaskSortField.allCases {
+            for direction in TaskSortDirection.allCases {
+                let grouped = ListSectionsKanbanView.columnCards(
+                    from: tasks, sections: sections, sortField: field, direction: direction
+                )
+                for section in sections {
+                    let expected = retiredColumn(section, of: tasks, sortField: field, direction: direction)
+                    let actual = grouped[section.name] ?? []
+                    #expect(
+                        actual.map(ObjectIdentifier.init) == expected.map(ObjectIdentifier.init),
+                        """
+                        \(section.name) by \(field.rawValue) \(direction.rawValue): \
+                        \(actual.map(\.title)) != \(expected.map(\.title))
+                        """
+                    )
+                    compared += 1
+                    if !expected.isEmpty { nonEmpty += 1 }
+                }
+            }
+        }
+        // Non-vacuity: every (field, direction, column) was compared, and most columns have cards.
+        #expect(compared == TaskSortField.allCases.count * TaskSortDirection.allCases.count * sections.count)
+        #expect(nonEmpty >= TaskSortField.allCases.count * TaskSortDirection.allCases.count * 4)
+    }
+
+    /// The cases parity alone would pass vacuously if the oracle drew nothing for them.
+    @Test func caseOnlyColumnsShareTheirCardsAndCancelledWorkReachesNoColumn() {
+        let grouped = ListSectionsKanbanView.columnCards(
+            from: tasks, sections: sections, sortField: .custom, direction: .ascending
+        )
+        let doing = Set((grouped["Doing"] ?? []).map(\.title))
+        #expect(doing == ["doing upper", "doing padded", "doing tie", "doing early", "doing done"])
+        #expect(Set((grouped["doing"] ?? []).map(\.title)) == doing)
+        #expect((grouped["Empty"] ?? []).isEmpty)
+        #expect(grouped["Nowhere"] == nil, "a task naming no column grew a bucket")
+        let everyCard = grouped.values.flatMap { $0 }
+        #expect(!everyCard.contains { $0.isCancelled }, "a cancelled card reached a column")
+        #expect(Set((grouped[TaskSectionDefaults.defaultName] ?? []).map(\.title))
+                == ["default by empty name", "default by name"])
+    }
+
+    /// Two columns with one name are one bucket, and a card is drawn once in it, not twice.
+    @Test func aDuplicatedColumnNameDoesNotDrawACardTwice() {
+        let doubled = [TaskSectionConfig(name: "Doing"), TaskSectionConfig(name: "Doing")]
+        let grouped = ListSectionsKanbanView.columnCards(
+            from: [card("one", in: "doing")], sections: doubled, sortField: .date, direction: .ascending
+        )
+        #expect((grouped["Doing"] ?? []).map(\.title) == ["one"])
     }
 }
