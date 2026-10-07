@@ -97,18 +97,6 @@ struct ListSectionKanbanColumn: View {
         KanbanBoardSupport.columnHalves(from: tasks)
     }
 
-    private var unfrozenActiveTasks: [AppTask] {
-        columnHalves.active
-    }
-
-    private var activeTasks: [AppTask] {
-        applyFrozenTaskOrder(unfrozenActiveTasks, frozen: frozenTasks)
-    }
-
-    private var completedTasks: [AppTask] {
-        columnHalves.completed
-    }
-
     private var columnColor: Color {
         section.isDefault ? Theme.dim : Color(hex: section.colorHex)
     }
@@ -128,23 +116,35 @@ struct ListSectionKanbanColumn: View {
     }
 
     var body: some View {
-        columnBody
+        // **One split of this column's tasks per render, not eight (T-1501).**
+        // `columnHalves` is one pass over `tasks`, and it was a computed property reached through
+        // three more — `unfrozenActiveTasks`, `activeTasks`, `completedTasks` — from eight places
+        // in one body evaluation: twice here, once per branch of `columnHeader`, once from the card
+        // `ForEach`, and four times across the completed section's test, toggle and cards. A
+        // SwiftUI computed property is recomputed at every reference, so that was eight splits of
+        // the same array for one render. The sibling list column was bound the same way under
+        // T-3005 and `TasksListView` under this ticket; `TaskSurfaceUniversePassCensusTests` counts
+        // all three. Nothing about the *values* changes — same cards, same order, derived once.
+        let halves = columnHalves
+        let naturalActive = halves.active
+        let displayActive = applyFrozenTaskOrder(naturalActive, frozen: frozenTasks)
+        return columnBody(active: displayActive, completed: halves.completed)
             .background {
                 KanbanFreezeObserver(
                     frozenTasks: $frozenTasks,
-                    columnTaskIDs: Set(unfrozenActiveTasks.map(\.id)),
-                    capturedTasks: unfrozenActiveTasks
+                    columnTaskIDs: Set(naturalActive.map(\.id)),
+                    capturedTasks: naturalActive
                 )
             }
     }
 
-    private var columnBody: some View {
+    private func columnBody(active: [AppTask], completed: [AppTask]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // The hairline under the header is part of `CadenceBoardColumnHeader` itself, so all three
             // boards close their header the same way without each column remembering to.
-            columnHeader
+            columnHeader(activeCount: active.count)
 
-            columnTaskScroll
+            columnTaskScroll(active: active, completed: completed)
         }
         .kanbanColumnChrome(tint: columnColor, isTargeted: isTargeted) {
             // Section columns can be "completing…" — that sweep layers on top of the shared
@@ -223,21 +223,24 @@ struct ListSectionKanbanColumn: View {
     /// The `TimelineView` must stay *conditional*: an unconditional one re-renders every
     /// visible column on every display frame, forever.
     @ViewBuilder
-    private var columnHeader: some View {
+    private func columnHeader(activeCount: Int) -> some View {
         if isPendingCompletion {
             TimelineView(.animation) { context in
-                header(completionProgress: sectionCompletionAnimationManager.progress(for: section, now: context.date))
+                header(
+                    activeCount: activeCount,
+                    completionProgress: sectionCompletionAnimationManager.progress(for: section, now: context.date)
+                )
             }
         } else {
-            header(completionProgress: 0)
+            header(activeCount: activeCount, completionProgress: 0)
         }
     }
 
-    private func header(completionProgress: Double) -> some View {
+    private func header(activeCount: Int, completionProgress: Double) -> some View {
         KanbanColumnHeader(
             section: section,
             displayName: headerDisplayName,
-            activeTaskCount: activeTasks.count,
+            activeTaskCount: activeCount,
             columnColor: columnColor,
             hideColumnDueDateIfEmpty: hideColumnDueDateIfEmpty,
             isPendingCompletion: isPendingCompletion,
@@ -267,20 +270,20 @@ struct ListSectionKanbanColumn: View {
         )
     }
 
-    private var columnTaskScroll: some View {
+    private func columnTaskScroll(active: [AppTask], completed: [AppTask]) -> some View {
         KanbanColumnScroll(
             isColumnHovered: isHovered,
             add: .compose(.column(container: taskContainerSelection, sectionName: section.name)),
             isComposing: $isComposing
         ) {
-            activeTaskCards
-            completedTaskSection
+            activeTaskCards(tasks: active)
+            completedTaskSection(tasks: completed)
         }
     }
 
     @ViewBuilder
-    private var activeTaskCards: some View {
-        ForEach(activeTasks) { task in
+    private func activeTaskCards(tasks: [AppTask]) -> some View {
+        ForEach(tasks) { task in
             KanbanDraggableCard(
                 task: task,
                 showsDropIndicator: dragOverTaskID == task.id,
@@ -296,30 +299,30 @@ struct ListSectionKanbanColumn: View {
     }
 
     @ViewBuilder
-    private var completedTaskSection: some View {
-        if !completedTasks.isEmpty {
+    private func completedTaskSection(tasks: [AppTask]) -> some View {
+        if !tasks.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                completedTasksToggle
+                completedTasksToggle(count: tasks.count)
 
                 if showDoneTasks {
-                    completedTaskCards
+                    completedTaskCards(tasks: tasks)
                 }
             }
             .padding(.top, 6)
         }
     }
 
-    private var completedTasksToggle: some View {
-        KanbanCompletedTasksToggle(count: completedTasks.count, isExpanded: showDoneTasks) {
+    private func completedTasksToggle(count: Int) -> some View {
+        KanbanCompletedTasksToggle(count: count, isExpanded: showDoneTasks) {
             withAnimation(.easeInOut(duration: 0.18)) {
                 showDoneTasks.toggle()
             }
         }
     }
 
-    private var completedTaskCards: some View {
+    private func completedTaskCards(tasks: [AppTask]) -> some View {
         VStack(spacing: 6) {
-            ForEach(completedTasks) { task in
+            ForEach(tasks) { task in
                 KanbanDraggableCard(task: task) { items in
                     handleTaskDrop(items: items, before: task)
                 }

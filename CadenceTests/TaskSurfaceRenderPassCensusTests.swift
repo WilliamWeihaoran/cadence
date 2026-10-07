@@ -139,17 +139,39 @@ enum TaskSurfaceDerivationScan {
         declarations: [String: String],
         stripDeferred: Bool = true
     ) throws -> Graph {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(file))
+        graph(
+            source: try CadenceSourceScan.sourceFile(file),
+            named: file,
+            declarations: declarations,
+            stripDeferred: stripDeferred
+        )
+    }
+
+    /// The same walk over source **text** rather than over a path in the working tree.
+    ///
+    /// `graph(file:)` is this with the file read for you, and is the only spelling a shipped
+    /// census should use. This one exists because a "did the landing flatten it?" question is a
+    /// question about **two** revisions, and re-deriving the older number by hand — or by a second
+    /// copy of the counting code — is how a comparison ends up measuring the instrument instead of
+    /// the change. Hand it `git show <sha>:<path>` and the older revision is counted by exactly
+    /// the walk that counts the current one.
+    static func graph(
+        source: String,
+        named label: String,
+        declarations: [String: String],
+        stripDeferred: Bool = true
+    ) -> Graph {
+        let stripped = CadenceSourceScan.strippingComments(source)
         var split: [String: Split] = [:]
         var missing: [String] = []
         for (name, declaration) in declarations {
-            guard let body = CadenceSourceScan.declarationBody(declaration, in: source) else {
+            guard let body = CadenceSourceScan.declarationBody(declaration, in: stripped) else {
                 missing.append(name)
                 continue
             }
             split[name] = self.split(body, stripDeferred: stripDeferred)
         }
-        return Graph(file: file, split: split, missing: missing.sorted())
+        return Graph(file: label, split: split, missing: missing.sorted())
     }
 
     // MARK: - Text surgery
@@ -417,6 +439,151 @@ enum TaskSurfaceDerivationScan {
         #expect(graph.missing.isEmpty, "the census could not find: \(graph.missing)")
         let derivations = graph.reach(toCall: "KanbanBoardSupport.activeTasks(")
         #expect(derivations == .init(fixed: 1, perElement: 0), "kanban universe derivations: \(derivations)")
+    }
+
+    /// **What `f0603016` flattened is one frame below what this ticket measured, and the two are
+    /// different numbers over different things.**
+    ///
+    /// The board's per-column *universe* derivation above was already `1 + 0/element` when T-3005
+    /// landed — the binding directly above took it there on 2026-09-29, a week earlier — so the
+    /// lazy containers cannot have flattened the slope this ticket named, and nothing in this file
+    /// moved when they landed. What they did flatten is a slope the first census never reached,
+    /// because it stopped at `KanbanSupportViews.swift`: **the column's own sort**.
+    ///
+    /// `TaskListKanbanColumn` sorted through a `sortedTasks` computed property reached from the
+    /// header's count and from the card `ForEach`, over an `unfrozenSortedTasks` the body also
+    /// named twice for the freeze observer — **four sorts of the column's own tasks per column
+    /// body evaluation**, the same it-is-a-computed-property shape as `visibleTaskUniverse`'s
+    /// seven. T-3005 binds both in `body` and threads them, so it is one.
+    ///
+    /// **The landing's other half is invisible here and must not be read off this number.**
+    /// `LazyHStack` bounds how many column bodies are *evaluated*; it cannot change what one
+    /// costs, and this census walks declared references with no model of mounting at all. The
+    /// mounting count is Codex's own measurement and lives in
+    /// `CadenceCodexKanbanRenderingTests.horizontalListColumnsMountOnlyABoundedSubset`, which pins
+    /// a bound rather than a number. Multiplying the two is the only way to a per-render total,
+    /// and neither half is a duration ([[T-1279]]/[[T-1296]]).
+    @Test func theAllTasksBoardColumnSortsOncePerColumnRenderAndNotFourTimes() throws {
+        let graph = try TaskSurfaceDerivationScan.graph(
+            file: "Cadence/macOS/Views/KanbanListColumnView.swift",
+            declarations: [
+                "body": "var body: some View",
+                "columnBody": "private func columnBody(",
+                "header": "private func header(",
+                "columnTaskScroll": "private func columnTaskScroll(",
+                "taskCards": "private func taskCards(",
+                "unfrozenSortedTasks": "private var unfrozenSortedTasks"
+            ]
+        )
+        #expect(graph.missing.isEmpty, "the census could not find: \(graph.missing)")
+        let sorts = graph.reach(to: "unfrozenSortedTasks")
+        #expect(sorts == .init(fixed: 1, perElement: 0), "All Tasks (kanban) column sorts: \(sorts)")
+        // Non-vacuity: the property the walk arrived at is the one that sorts.
+        let sort = try #require(graph.split["unfrozenSortedTasks"]).fixed
+        #expect(sort.contains("tasks.taskSorted(by: sortField, direction: sortDirection)"))
+    }
+
+    // MARK: The *other* kanban — the section board of a list or project
+
+    /// **The same defect one board over, and nobody had counted it: eight splits of one column's
+    /// tasks for one render.**
+    ///
+    /// `ListSectionKanbanColumn` is Cadence's second kanban column. `columnHalves` is one pass over
+    /// the column's `tasks` (`KanbanBoardSupport.columnHalves`), and it was a computed property
+    /// reached through three more computed properties from **eight** places in one body evaluation:
+    /// twice from `body`'s freeze observer, once from each branch of `columnHeader`, once from the
+    /// card `ForEach`, and four times across the completed section's emptiness test, its toggle's
+    /// count and its cards. Bound once in `body` and threaded, it is one.
+    ///
+    /// **Eight is the census's count and the executed count is smaller, which is worth saying
+    /// rather than rounding away.** The walk has no model of branches: only one arm of
+    /// `columnHeader` runs, and the completed cards only when the section is expanded — so a render
+    /// of an expanded column with completed cards paid **seven**, and a collapsed one six. The
+    /// number that changed is the shape, not the seventh pass: a computed property re-derived at
+    /// every reference now has exactly one reference.
+    @Test func theSectionColumnSplitsItsTasksOncePerRenderAndNotEightTimes() throws {
+        let graph = try TaskSurfaceDerivationScan.graph(
+            file: "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+            declarations: [
+                "body": "var body: some View",
+                "columnBody": "private func columnBody(",
+                "columnHeader": "private func columnHeader(",
+                "header": "private func header(",
+                "columnTaskScroll": "private func columnTaskScroll(",
+                "activeTaskCards": "private func activeTaskCards(",
+                "completedTaskSection": "private func completedTaskSection(",
+                "completedTasksToggle": "private func completedTasksToggle(",
+                "completedTaskCards": "private func completedTaskCards(",
+                "columnHalves": "private var columnHalves"
+            ]
+        )
+        #expect(graph.missing.isEmpty, "the census could not find: \(graph.missing)")
+        let splits = graph.reach(to: "columnHalves")
+        #expect(splits == .init(fixed: 1, perElement: 0), "section column task splits: \(splits)")
+        // Non-vacuity: the property the walk arrived at is the one that walks the column.
+        let halves = try #require(graph.split["columnHalves"]).fixed
+        #expect(halves.contains("KanbanBoardSupport.columnHalves(from: tasks)"))
+        // And the body really is the body that binds it once, spelled as the file spells it.
+        let body = try #require(graph.split["body"]).fixed
+        #expect(body.contains("let halves = columnHalves"))
+        #expect(body.contains("return columnBody(active: displayActive, completed: halves.completed)"))
+    }
+
+    /// **The one kanban slope left, and it is RECORDED rather than removed — read the second half
+    /// before changing anything here.**
+    ///
+    /// `ListSectionsKanbanView` calls `sortedTasksForSection(_:)` — a `filter` over the board's
+    /// whole task list, then a sort of what survives — **inside** its `ForEach` content closure.
+    /// That is the per-element position, so the board's cost is `0 + 1/element`: not a constant,
+    /// one full pass over the board's tasks per section column, and adding a column adds a pass.
+    /// The same shape the All Tasks board had before [[T-1501]]'s binding.
+    ///
+    /// **And unlike that one, it is not redundant, which is why no binding fixes it.** The All
+    /// Tasks board re-derived *the same array* once per column; this one derives a *different*
+    /// array per column, and every column needs its own. The cost is O(columns x tasks) where
+    /// O(tasks) would do — one `Dictionary(grouping:)` over `resolvedSectionName` — but that is an
+    /// algorithmic change over a case-insensitive comparison, not the same one-line `let`, and it
+    /// is filed rather than taken.
+    ///
+    /// **The eager stack is pinned deliberately.** T-3005 opted *only* the All Tasks list column
+    /// into deferred realization, because the other `KanbanColumnScroll` callers' offscreen
+    /// lifecycle is unaccounted for — this board's columns register hover with three managers. So
+    /// every section column mounts, the element count above is the real multiplier, and this stack
+    /// is the half a tidy-up would quietly delete the meaning of. If you make it lazy or group the
+    /// pass, this test must fail and send you to the ledger: the number stops being this number.
+    @Test func theSectionBoardsPerColumnPassIsStillASlopeOverAnEagerStack() throws {
+        let graph = try TaskSurfaceDerivationScan.graph(
+            file: "Cadence/macOS/Views/KanbanListSectionSupportViews.swift",
+            declarations: [
+                "body": "var body: some View",
+                "sortedTasksForSection": "private func sortedTasksForSection(",
+                "sectionConfigs": "private var sectionConfigs",
+                "baseSectionConfigs": "private var baseSectionConfigs"
+            ]
+        )
+        #expect(graph.missing.isEmpty, "the census could not find: \(graph.missing)")
+        #expect(
+            graph.forEachRegions >= 1,
+            "no ForEach content closure was found — the per-element position cannot be reached"
+        )
+        let passes = graph.reach(to: "sortedTasksForSection")
+        #expect(
+            passes == .init(fixed: 0, perElement: 1),
+            "section board passes over its task list: \(passes)"
+        )
+        // Non-vacuity: the function the walk arrived at is the one that walks the board.
+        let pass = try #require(graph.split["sortedTasksForSection"]).fixed
+        #expect(pass.contains("tasks.filter"))
+        #expect(pass.contains("source.taskSorted(by: sortField, direction: sortDirection)"))
+        // The multiplier: every section column mounts, so the per-element term is per *column*.
+        let body = try #require(graph.split["body"]).fixed
+        #expect(
+            body.contains("HStack(alignment: .top, spacing: 12)") && !body.contains("LazyHStack"),
+            """
+            this board's columns are no longer eagerly realized — the slope above has a new \
+            multiplier and [[T-1501]]'s ledger entry is now wrong about it
+            """
+        )
     }
 
     // MARK: The sidebar's lists ([[T-1500]])
