@@ -60,9 +60,27 @@ that it compiles here.
   Treat a write-path change as a data-safety change. The sixteen arms by name, and why `taskIds`
   stays uncapped: `../docs/MCP_AGENTS_REFERENCE.md`, "What the write path does to the real store"
   and "Why bulk cancel got a cap and a dry run".
-- Opening the read-write container also runs `NoteMigrationService`, `TagSupport` seeding/sync and
-  `DataIntegrityRepairService` against live data. A migration bug reaches users through this door
-  as much as through app launch.
+- **Both containers open the owner's CloudKit-MIRRORED store with `cloudKitDatabase: .none`**
+  ([[T-3018]]). `makeReadOnlyContainer()` and `makeReadWriteContainer()` resolve
+  `CadenceStoreSupport.primaryStoreURL()` and pass `.none`
+  (`Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift:68-93`), while the running app
+  has that same file open with `.private("iCloud.com.haoranwei.Cadence")`
+  (`Cadence/Services/PersistenceController.swift:384`). The read-only one is `allowsSave: false`
+  and harmless. The read-write one is `allowsSave: true` — **one store open under two different
+  configurations**, [[T-2053]]'s family again — and what follows is not a sync *delay*: a writer
+  whose container has mirroring off does not maintain the mirroring metadata the app's own
+  container exports from, so **an MCP write may never reach the owner's other devices, and may
+  not register there as a change at all**. Nothing in the write path says so and no test can say
+  it: this target is not unit-executed, and the only store a test or a script may point at is a
+  throwaway. Whether an out-of-process writer should mirror, refuse, or keep running the repair
+  named in the next bullet is an **owner decision about the sync contract**, open in [[T-3018]];
+  do not settle it as a side effect of a write-path change.
+- Opening the read-write container also runs `CadenceMCPStorePreparation.prepare` — note
+  migration, tag **sync**, integrity repair — against live data. A migration bug reaches users
+  through this door as much as through app launch. The tag **seed** was a fourth step until T-528
+  removed it, on the argument the bullet above restates; **the repair was left, and it is the
+  destructive one** — `DataIntegrityRepairService` deletes duplicate `Context`, `Area`, `Project`
+  and `Note` rows and saves, with no user in front of it, from a process that is not the app.
 - **Nothing under `CadenceMCPServer/` is unit-*executed*.** `CadenceTests` covers the app-side half
   (`CadenceReadServiceTests`, `CadenceWriteServiceTests`, `CadenceSearchMatcherTests`); the router,
   the tool definitions and the argument parsing are *run* only by

@@ -19,6 +19,21 @@ import SwiftData
 ///
 /// `executedStartupStepCount` on the two services exists so a test can state the count instead of
 /// the prose.
+///
+/// **T-3018: the store the two container factories below open is the owner's CloudKit-MIRRORED
+/// one, and they open it with `cloudKitDatabase: .none`.** `makeReadOnlyContainer()` and
+/// `makeReadWriteContainer()` both resolve `CadenceStoreSupport.primaryStoreURL()` — the same file
+/// the running app has open with `.private("iCloud.com.haoranwei.Cadence")`
+/// (`PersistenceController.swift:384`) — so the read-write one is a single store open under two
+/// different configurations. What follows from that is not a sync *delay*: a container with
+/// mirroring off does not maintain the mirroring metadata the app's own container exports from, so
+/// a write that lands through this door may never reach the owner's other devices and may not
+/// register there as a change at all. `CADENCE_MCP_ENABLE_WRITES` gates the write container and
+/// `CADENCE_MCP_STORE_URL` redirects both, which is why every repository script that sets the
+/// first pins the second before it — `CadenceTests/CadenceMCPWriteFenceTests` is what keeps that
+/// true. Whether an out-of-process writer should mirror, refuse, or keep running the repair in
+/// `prepare` is an owner decision about the sync contract, open in T-3018; it is written down here
+/// rather than settled in passing.
 nonisolated enum CadenceMCPStorePreparation {
     /// How many distinct operations `prepare(in:source:)` performs. The services report what they
     /// executed against this rather than against a literal.
@@ -34,6 +49,13 @@ nonisolated enum CadenceMCPStorePreparation {
     /// stopped touching. Nothing downstream needs it: `TagSupport.resolveTags` mints a tag by name
     /// when a write asks for one, so an MCP write that names a tag works against a store with no
     /// tags in it at all. Seeding is a user action now, and this process has no user.
+    ///
+    /// **The repair step was left, and it is the destructive one (T-3018).**
+    /// `DataIntegrityRepairService.repairAndRecordFailure` deletes duplicate `Context`, `Area`,
+    /// `Project` and `Note` rows and saves — the same "this process has no user" that removed the
+    /// seed, applied to a pass that *removes* rows rather than adding one. Whether an
+    /// out-of-process writer should keep running it is an owner decision, open in T-3018 and
+    /// recorded there rather than acted on here.
     @discardableResult
     static func prepare(in context: ModelContext, source: String) -> Int {
         NoteMigrationService.migrateAndRecordFailure(in: context, source: source)
