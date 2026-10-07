@@ -708,6 +708,37 @@ struct CadenceGuardScriptSelftestTests {
         "ALLOW-OVERRIDE",
     ]
 
+    /// T-1920. The three verdicts of `scripts/heartbeat-progress.sh`, the three marks it reads, and
+    /// — unusually for this file — **a sentence it must keep printing.**
+    ///
+    /// T-1920 nominated a tell for a hung heartbeat, refuted it, replaced it and refuted the
+    /// replacement: three readings, all wrong the same way, all inferring a process's liveness from
+    /// a run list of two timestamps and a status string, in which a usage-limit wait and a hang are
+    /// the same row. This script answers a different question on purpose — did any work LAND —
+    /// and reads it from three marks on this Mac's disk that cannot move unless it did: `git` HEAD,
+    /// the `xcb.sh last-green` record, and a growing xcb log.
+    ///
+    /// `NO-MARKS` is pinned beside `SILENT` because collapsing them is the obvious future edit and
+    /// is wrong in the expensive direction: a machine that has never run the heartbeat has nothing
+    /// that could have advanced, and reporting that as "no progress" is the same mistake as reading
+    /// a queue as a death.
+    ///
+    /// **`NOT A LIVENESS VERDICT` is in this list as a string, which is deliberate.** Every other
+    /// name here is a state; this one is a non-claim, and it is the only part of the instrument
+    /// that keeps the fourth wrong reading from being written on top of the third. A SILENT verdict
+    /// that quietly starts saying "hung" is exactly the tool T-1920 says not to build, and section
+    /// 3 of the selftest also checks the output for the words *hung* and *wedged* and fails on
+    /// either.
+    static let heartbeatProgressVerdicts = [
+        "heartbeat-progress: ADVANCING",
+        "heartbeat-progress: SILENT",
+        "heartbeat-progress: NO-MARKS",
+        "NOT A LIVENESS VERDICT",
+        "HEAD",
+        "LAST-GREEN",
+        "XCB-LOG",
+    ]
+
     @Test func theMutationRunnersOwnGuardsStillFire() throws {
         let run = try CadenceSelftestRun.of("scripts/mutate.sh")
         let complaints = run.complaints(requiring: Self.mutationRunnerRefusals)
@@ -740,6 +771,24 @@ struct CadenceGuardScriptSelftestTests {
         let run = try CadenceSelftestRun.of("scripts/agent-scratch.sh")
         let complaints = run.complaints(requiring: Self.scratchGuardRefusals)
         #expect(complaints.isEmpty, "./scripts/agent-scratch.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
+    /// T-1920. Runs entirely against throwaway fixtures under `$TMPDIR` — a throwaway git
+    /// repository, a fabricated `last-green` record and a fabricated xcb log — and **substitutes
+    /// the clock** rather than waiting out a window, so a reading about 26 hours of silence costs
+    /// no wall clock and says nothing about this checkout.
+    ///
+    /// The checks worth knowing about are section 4's pair. Each of the three marks has to be able
+    /// to produce `ADVANCING` **on its own, over two stale companions** — a verdict that ORs three
+    /// inputs is the shape where one input silently stops being read and the other two keep the
+    /// answer looking right. Section 7 is the other one: the `last-green` record's filename is
+    /// compared as text against `scripts/xcb.sh`'s own spelling, because a hash that drifts by one
+    /// character reads a file that is never there and this tool would report `NO-MARKS` forever
+    /// while the heartbeat worked perfectly.
+    @Test func theHeartbeatProgressReadingsOwnChecksStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/heartbeat-progress.sh")
+        let complaints = run.complaints(requiring: Self.heartbeatProgressVerdicts)
+        #expect(complaints.isEmpty, "./scripts/heartbeat-progress.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
     /// T-1298. Runs entirely inside a throwaway git repository under `$TMPDIR`: it writes fixture

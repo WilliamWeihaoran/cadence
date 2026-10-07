@@ -772,6 +772,48 @@ without T-2067's signature is never asserted to be a hang.
 `scripts/xcb.sh selftest` section 13 induces QUEUED, RUNNING, WEDGED and ABANDONED against real
 `xcb.sh <id> test` invocations on the production path.
 
+## Did the heartbeat land anything? Read marks that ADVANCE (T-1920, 2026-10-06)
+
+`./scripts/heartbeat-progress.sh report [<window-minutes>]` — default 60; exit **0 ADVANCING**,
+**1 SILENT**, **3 NO-MARKS**. It reads three things on this Mac's disk, each of which only moves when
+work actually landed:
+
+| mark | where it is | what moves it |
+| --- | --- | --- |
+| `HEAD` | this checkout | a commit |
+| `LAST-GREEN` | `$TMPDIR/cadence-xcb-last-green.<hash of tree root>` | a full green `-only-testing:CadenceTests` macOS run |
+| `XCB-LOG` | the newest `$TMPDIR/cadence-xcb-*.log` | any xcb run writing |
+
+**It does not read the scheduled task's run list, and that is the whole design.** T-1920 nominated a
+liveness tell from that list — status `running`, `last_activity_at` seconds after `started_at`,
+`now - last_activity_at` in hours — then refuted it, replaced it, and refuted the replacement. Three
+readings, all wrong the same way: **a run list of two timestamps and a status string cannot separate
+`waiting`, `wedged` and `slow`**, because a usage-limit wait produces exactly the hang's shape. The
+entry's own closing instruction is not to build a fourth tell from those three fields.
+
+So this answers **progress**, not liveness. `ADVANCING` is sound in one direction and that is the
+useful one. `SILENT` says *no work landed* and deliberately does **not** say why — a heartbeat waiting
+out a usage limit is silent and healthy. That non-claim is pinned as a string
+(`NOT A LIVENESS VERDICT`) by `CadenceGuardScriptSelftestTests.heartbeatProgressVerdicts`, and the
+selftest fails if the output ever says *hung* or *wedged*, because a SILENT verdict that quietly
+starts asserting a hang is the fourth wrong reading written on top of the third.
+
+It is still worth having, because the thing T-1920 wanted visible was never a hang in the abstract:
+it was *the heartbeat ran for over 26 hours and committed nothing*. That is a SILENT verdict, it is
+measurable without inferring anything, and the non-zero exit means nobody has to be watching.
+
+`NO-MARKS` is separate from `SILENT` on purpose: a machine that has never run the heartbeat has
+nothing that *could* have advanced, and reporting that as "no progress" is the same mistake as
+reading a queue as a death.
+
+Seams, reusing `xcb.sh`'s own names so there is no second spelling to drift: `CADENCE_TREE_ROOT`,
+`CADENCE_XCB_STATE_DIR`, `TMPDIR`, plus `CADENCE_HBP_NOW` to substitute the clock.
+
+**Still owed and not in reach of this checkout:** stopping a stuck run, and adding
+`./scripts/ci-run-coverage.sh report` (T-1640's instrument, still called by nothing) to section 1 of
+`~/.claude/scheduled-tasks/cadence-heartbeat-resume/SKILL.md`. Both edit the owner's file outside this
+repository.
+
 ## The iOS compile-task count is an ARCH count, not a floor (T-1703, 2026-10-06)
 
 Briefs have been quoting **"~1,390 swift compile tasks"** as the cold-iOS non-vacuity floor, and an
