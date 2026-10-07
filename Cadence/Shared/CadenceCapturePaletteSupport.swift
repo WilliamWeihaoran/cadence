@@ -512,14 +512,10 @@ struct CadenceNewTaskDropFrameStore {
     /// geometry change must survive its absence. Liveness is the one of the three facts the
     /// restored copy republishes by itself, so liveness is the one this is allowed to take away.
     ///
-    /// **The cost, taken deliberately — and still paid today.** A view that really was destroyed
-    /// leaves its frame and placement behind for the life of the process. They are unreachable —
-    /// `candidates()` passes over anything not in `live`, and nothing but a restored view sets that
-    /// again — so the price is memory, while deleting them prices correctness.
-    ///
-    /// `destroy(_:)` below is T-3011's remedy, and it is **not wired yet**: no production target
-    /// owns a `CadenceNewTaskDropRegistrationLifetime`, so nothing calls it. When one does, only
-    /// final destruction may call it; a count or time limit cannot tell destruction from a push.
+    /// The production modifier owns a `CadenceNewTaskDropRegistrationLifetime` in State. It keeps
+    /// these facts through disappearance and calls `destroy(_:)` only on final release. Retained
+    /// targets still cost memory while absent; a count or time limit cannot distinguish that
+    /// absence from destruction without breaking the return path above.
     mutating func retire(_ id: UUID) {
         live.remove(id)
     }

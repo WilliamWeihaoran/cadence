@@ -34,7 +34,7 @@ struct CalendarBoardDayColumn: View {
     @State private var isHovered = false
     @State private var isComposing = false
 
-    private var coordinateSpaceName: String { "calendarBoardDayColumn-\(dayIndex)" }
+    nonisolated private var coordinateSpaceName: String { "calendarBoardDayColumn-\(dayIndex)" }
 
     /// Keyed by the day, not by `dayIndex`: the board slides its render window, so the same index
     /// is a different day after a recenter, and a hover registered under an index would answer

@@ -75,6 +75,7 @@ struct iOSListsView: View {
                 regularSplitLayout
             }
         }
+        .cadenceScaledTypography()
         .toolbar(.hidden, for: .navigationBar)
         .background(Theme.bg)
         .sheet(item: $editorMode) { mode in

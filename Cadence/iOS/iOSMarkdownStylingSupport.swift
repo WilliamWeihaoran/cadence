@@ -4,7 +4,9 @@ import UIKit
 
 enum iOSMarkdownStyler {
     static var baseFont: UIFont { .preferredFont(forTextStyle: .body) }
-    static var monoFont: UIFont { .monospacedSystemFont(ofSize: 14, weight: .regular) }
+    static var monoFont: UIFont {
+        UIFontMetrics(forTextStyle: .body).scaledFont(for: .monospacedSystemFont(ofSize: 14, weight: .regular))
+    }
 
     static var baseTypingAttributes: [NSAttributedString.Key: Any] {
         [

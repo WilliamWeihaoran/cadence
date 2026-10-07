@@ -240,7 +240,7 @@ final class RemindersManager {
         let generation = publication.issue()
         isLoading = true
         fetchIncompleteReminders { [weak self] items in
-            let publish = {
+            let publish: @MainActor @Sendable () -> Void = {
                 guard let self, self.publication.accepts(generation) else { return }
                 self.adopt(items)
             }

@@ -262,7 +262,9 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// `withAnimation(.spring(…))`, the same way reorder moves are animated everywhere else.
     @State private var showsGhost = false
     /// This target's name in `iOSNewTaskDropFrameRegistry`, stable for the view's lifetime.
-    @State private var registrationID = UUID()
+    @State private var registrationLifetime = iOSNewTaskDropFrameRegistry.shared.makeRegistrationLifetime()
+
+    private var registrationID: UUID { registrationLifetime.activate() }
     /// See `iOSNewTaskDropTargetsAreLive`. A tab the compact shell is keeping alive at zero opacity
     /// still lays its rows out, so without this every hidden task surface would publish frames that
     /// overlap the visible one and a drag could land on a row nobody can see.

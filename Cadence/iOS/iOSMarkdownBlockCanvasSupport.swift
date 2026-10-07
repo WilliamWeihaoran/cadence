@@ -101,12 +101,26 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
     let text: String
     let isClosed: Bool
 
+    private var codeFont: UIFont {
+        UIFontMetrics(forTextStyle: .body).scaledFont(for: .monospacedSystemFont(ofSize: 12, weight: .regular))
+    }
+
+    private var headerFont: UIFont {
+        UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .systemFont(ofSize: 10, weight: .bold))
+    }
+
+    private var overflowFont: UIFont {
+        UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .systemFont(ofSize: 11, weight: .semibold))
+    }
+
     func renderedBlock(maxWidth: CGFloat) -> UIImage {
         let width = min(max(260, maxWidth - 22), 760)
         let lines = visibleLines
-        let lineHeight: CGFloat = 18
-        let headerHeight: CGFloat = language == nil && isClosed ? 0 : 24
-        let overflowHeight: CGFloat = overflowCount > 0 ? 22 : 0
+        let lineHeight: CGFloat = max(18, ceil(codeFont.lineHeight) + 3)
+        let headerLineHeight: CGFloat = max(18, ceil(headerFont.lineHeight) + 4)
+        let headerHeight: CGFloat = language == nil && isClosed ? 0 : headerLineHeight + 6
+        let overflowLineHeight: CGFloat = max(16, ceil(overflowFont.lineHeight))
+        let overflowHeight: CGFloat = overflowCount > 0 ? overflowLineHeight + 6 : 0
         let height = max(68, 24 + headerHeight + CGFloat(lines.count) * lineHeight + overflowHeight)
         let size = CGSize(width: width, height: height)
         let format = UIGraphicsImageRendererFormat()
@@ -123,7 +137,7 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
 
             var y = rect.minY + 12
             if headerHeight > 0 {
-                drawHeader(in: CGRect(x: rect.minX + 12, y: y, width: rect.width - 24, height: 18))
+                drawHeader(in: CGRect(x: rect.minX + 12, y: y, width: rect.width - 24, height: headerLineHeight))
                 y += headerHeight
             }
 
@@ -133,7 +147,7 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
             }
 
             if overflowCount > 0 {
-                drawOverflow(in: CGRect(x: rect.minX + 14, y: y + 2, width: rect.width - 28, height: 16))
+                drawOverflow(in: CGRect(x: rect.minX + 14, y: y + 2, width: rect.width - 28, height: overflowLineHeight))
             }
         }
     }
@@ -173,7 +187,7 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+            .font: codeFont,
             .foregroundColor: UIColor(Theme.muted),
             .paragraphStyle: paragraph
         ]
@@ -183,7 +197,7 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
     private func drawOverflow(in rect: CGRect) {
         guard let text = truncation.overflowLabel(unit: "line") else { return }
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
+            .font: overflowFont,
             .foregroundColor: UIColor(Theme.dim)
         ]
         NSString(string: text).draw(in: rect, withAttributes: attributes)
@@ -191,7 +205,7 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
 
     private func headerAttributes(tint: UIColor) -> [NSAttributedString.Key: Any] {
         [
-            .font: UIFont.systemFont(ofSize: 10, weight: .bold),
+            .font: headerFont,
             .foregroundColor: tint
         ]
     }

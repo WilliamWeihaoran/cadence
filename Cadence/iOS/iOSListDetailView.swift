@@ -188,6 +188,7 @@ struct iOSListDetailView: View {
             pageBody
                 .id(containerIdentity)
         }
+        .cadenceScaledTypography()
         .background(Theme.bg.ignoresSafeArea())
         // Unseeded. It used to hand this page's list to the composer; T-337 moved that inheritance
         // to the drop — the list's own section headers, its kanban columns and its empty state are

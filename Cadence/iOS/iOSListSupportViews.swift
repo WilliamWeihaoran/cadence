@@ -77,6 +77,8 @@ enum iOSListRowSwipeActions {
 /// *not* tinted — the row's identity colour is the icon badge, and a second coloured element per
 /// row turns a page of lists into a page of colours.
 struct iOSListCountBadge: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let count: Int
 
     var body: some View {
@@ -87,7 +89,7 @@ struct iOSListCountBadge: View {
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 7)
-            .frame(minWidth: 24, minHeight: 20)
+            .frame(minWidth: 24, minHeight: CadenceTypeScale.height(20, holding: .metadata, textBase: 11, at: dynamicTypeSize, scaling: scaling))
             .background(Capsule(style: .continuous).fill(Theme.borderSubtle))
             .accessibilityHidden(true)
     }
