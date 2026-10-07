@@ -1431,6 +1431,13 @@ struct CadenceGuardScriptSelftestTests {
     /// that exists nowhere but HEAD, carrying that ticket's closure, cannot have been written by an
     /// agent that never saw it. Naming the function here means deleting the rule, or the mode that
     /// induces it, goes red rather than quietly restoring the false refusal.
+    ///
+    /// `INTERRUPTED-REPAIR` is T-3007: a run stopped between its compare-and-swap and its shared-index
+    /// repair landed its commit and left the index holding a staged revert of it, which the next
+    /// agent was refused `FOREIGN-STAGED` over, with only forbidden cures in reach. A signal in that
+    /// window is now trapped, and the next run recognises the leftover and repairs it in place —
+    /// a reading, not a refusal, so it is pinned here, and mode 9 of the selftest induces it by
+    /// SIGKILLing a run the instant its swap lands.
     @Test func theCommitHelpersReadingsThatAreNotRefusalsAreStillInducedByItsSelftest() throws {
         let source = try String(
             contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/agent-commit.sh"),
@@ -1442,7 +1449,7 @@ struct CadenceGuardScriptSelftestTests {
         }
         let body = String(source[source.startIndex..<split.lowerBound])
         let selftest = String(source[split.lowerBound...])
-        for reading in ["LEDGER-CLOSURE-LAGGED", "ledger_rewrites_only_new_entries", "T-1305"] {
+        for reading in ["LEDGER-CLOSURE-LAGGED", "ledger_rewrites_only_new_entries", "T-1305", "INTERRUPTED-REPAIR"] {
             #expect(body.contains(reading), "scripts/agent-commit.sh no longer makes the reading \(reading)")
             #expect(selftest.contains(reading), "scripts/agent-commit.sh's selftest no longer induces \(reading)")
         }

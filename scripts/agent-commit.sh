@@ -45,6 +45,10 @@
 #                       NOTICE: two agents editing one file is normal, and the reading is measured
 #                       by `scripts/replay-foreign-hunk-reading.sh`.
 #   LEDGER-CLOSURE-LAGGED  see 3a6 below.
+#   INTERRUPTED-REPAIR  a previous run landed its commit and was stopped before repairing the
+#                       shared index, so the index holds a staged revert of work already in HEAD.
+#                       Repaired in place (index only) instead of refused as FOREIGN-STAGED; see
+#                       "an interrupted run's leftovers" below (T-3007).
 #
 # WHAT IT REFUSES
 #
@@ -1234,6 +1238,109 @@ cmd_accept() {
     return 0
 }
 
+# --- an interrupted run's leftovers (T-3007) -----------------------------------
+#
+# The shared-index repair (step 6) runs AFTER the compare-and-swap, so a run stopped between the
+# two -- a tool timeout, a ^C, a SIGKILL -- has landed its commit and left the shared index holding
+# the pre-commit entries: a STAGED REVERT of work that is in HEAD. The next agent was then refused
+# FOREIGN-STAGED over content that was already committed, and every cure within reach (`reset`,
+# `checkout`, `stash`) is one this checkout forbids, because siblings hold uncommitted work there.
+# Measured 2026-10-06: agent `hourwrite`'s killed run left `f58c3b2c` with 587 deletions staged and
+# its new test file missing from the checkout, and two more leftovers of the same shape blocked it
+# for ~25 minutes.
+#
+# Two halves. The window is trapped and shrunk (step 4 below), and -- because SIGKILL cannot be
+# trapped -- the NEXT run recognises a leftover and repairs it before reading anything as foreign.
+# The recognition is exact: a path whose stage-0 index entry is the entry it had in the PARENT of
+# the newest commit (reachable from the sha being validated) that changed it -- absent there and
+# absent here counts -- is that commit's un-repaired residue. The repair is index-only, back to
+# HEAD's entry, so the one thing it discards is a blob that is in history by construction. The
+# worktree is written only under T-1209's rule: where the copy on disk is missing and was missing
+# before that commit, or is byte-identical to the revision it replaced -- nobody's edit is in it.
+
+index_entry() {  # $1 = path -> "<mode> <blob>" of its stage-0 entry, "" if absent; exit 1 if unmerged
+    local line
+    line=$(git --literal-pathspecs ls-files -s -- "$1" 2>/dev/null)
+    [[ -n "$line" ]] || return 0
+    [[ "$line" != *$'\n'* ]] || return 1
+    local -a fields
+    fields=(${=line%%$'\t'*})
+    [[ "${fields[3]}" == 0 ]] || return 1
+    print -r -- "${fields[1]} ${fields[2]}"
+}
+
+tree_entry() {  # $1 = commit, $2 = path -> "<mode> <blob>", "" if absent or not a blob
+    local line
+    line=$(git --literal-pathspecs ls-tree "$1" -- "$2" 2>/dev/null)
+    [[ -n "$line" && "$line" != *$'\n'* ]] || return 0
+    local -a fields
+    fields=(${=line%%$'\t'*})
+    [[ "${fields[2]}" == blob ]] || return 0
+    print -r -- "${fields[1]} ${fields[3]}"
+}
+
+staged_revert_commit() {  # $1 = head sha, $2 = path -> the commit whose landing the index entry reverts
+    local head=$1 p=$2 c staged was
+    staged=$(index_entry "$p") || return 1
+    [[ "$staged" != "$(tree_entry "$head" "$p")" ]] || return 1
+    c=$(git --literal-pathspecs log -1 --format=%H "$head" -- "$p" 2>/dev/null)
+    [[ -n "$c" ]] || return 1
+    git rev-parse -q --verify "$c^" >/dev/null 2>&1 || return 1
+    was=$(tree_entry "$c^" "$p")
+    [[ "$staged" == "$was" ]] || return 1
+    print -r -- "$c"
+}
+
+repair_staged_revert() {  # $1 = head sha, $2 = path, $3 = the commit it reverted; prints the path if the worktree was restored
+    local head=$1 p=$2 c=$3 now
+    now=$(tree_entry "$head" "$p")
+    if [[ -z "$now" ]]; then
+        git update-index --force-remove -- "$p" || return 1
+        return 0
+    fi
+    git update-index --add --cacheinfo "${now% *},${now#* },$p" || return 1
+    resync_landed_worktree "$head" "$p" "$c^"
+}
+
+# T-1209's rule for one path, shared by the next-run repair and the signal trap: write the landed
+# blob into the checkout only where the copy there is missing and was missing in the replaced
+# revision, or is byte-identical to the replaced revision. Prints the path if it wrote it.
+resync_landed_worktree() {  # $1 = commit that landed, $2 = path, $3 = the revision it replaced
+    local landed=$1 p=$2 now was tmp
+    now=$(tree_entry "$landed" "$p")
+    [[ "${now% *}" == 100644 || "${now% *}" == 100755 ]] || return 0
+    was=$(tree_entry "$3" "$p")
+    if [[ -e "$p" ]]; then
+        [[ -n "$was" && -f "$p" && "$(git hash-object -- "$p" 2>/dev/null)" == "${was#* }" ]] || return 0
+    else
+        [[ -z "$was" ]] || return 0      # existed before that commit and is gone now: somebody's deletion
+    fi
+    # Write a sibling and `mv -f` it, never `cp` onto the path: see T-1387 in step 5b.
+    mkdir -p -- "${p:h}" 2>/dev/null
+    tmp="$p.cadence-resync.$$"
+    git cat-file blob "${now#* }" > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 0 }
+    [[ "${now% *}" == 100755 ]] && chmod 755 -- "$tmp" 2>/dev/null
+    mv -f -- "$tmp" "$p" && print -r -- "$p"
+    return 0
+}
+
+# Installed only across the compare-and-swap and the repair straight after it. It reads cmd_commit's
+# locals (zsh scoping is dynamic) and repairs only if the commit is really in HEAD's history, so a
+# signal that lands before the swap leaves the index exactly as it was.
+on_commit_signal() {
+    if [[ -n "$newsha" ]] && git merge-base --is-ancestor "$newsha" HEAD 2>/dev/null; then
+        git reset -q -- "${names[@]}" 2>/dev/null
+        say "INTERRUPTED-REPAIR: stopped after ${newsha[1,8]} landed; repaired the shared index for ${(j:, :)names} before exiting (T-3007)." >&2
+        local signalled_name signalled_wrote
+        for signalled_name in "${names[@]}"; do
+            signalled_wrote=$(resync_landed_worktree "$newsha" "$signalled_name" "$headsha")
+            [[ -n "$signalled_wrote" ]] && say "      and restored the checkout copy of $signalled_wrote from that commit." >&2
+        done
+    fi
+    [[ -n "$scratch" ]] && rm -rf "$scratch"
+    exit 130
+}
+
 # --- commit -------------------------------------------------------------------
 
 cmd_commit() {
@@ -1358,6 +1465,34 @@ cmd_commit() {
         # refusal with a false reason, sending the agent to `git reset` a sibling's committed work.
         [[ "$(git rev-parse HEAD 2>/dev/null)" == "$headsha" ]] || refuse HEAD-MOVED "HEAD moved to $(git rev-parse --short HEAD 2>/dev/null) while this commit was starting; it was ${headsha[1,8]} a moment ago.
   Nothing was committed. Run it again against the new HEAD."
+        # T-3007. Before calling anything foreign, take out the leftovers of a run that was stopped
+        # between its swap and its repair: an entry that is exactly what the newest commit of that
+        # path replaced is that commit's residue, not anybody's staged work (see the helpers above).
+        local -a still_foreign repaired restored
+        still_foreign=(); repaired=(); restored=()
+        local reverted wt_restored
+        for staged in "${foreign[@]}"; do
+            if reverted=$(staged_revert_commit "$headsha" "$staged") \
+                && wt_restored=$(repair_staged_revert "$headsha" "$staged" "$reverted"); then
+                repaired+=("$staged (reverted ${reverted[1,8]})")
+                [[ -n "$wt_restored" ]] && restored+=("$wt_restored")
+            else
+                still_foreign+=("$staged")
+            fi
+        done
+        if (( ${#repaired} )); then
+            say "INTERRUPTED-REPAIR: the shared index held a STAGED REVERT of work already in HEAD -- a previous"
+            say "      agent-commit.sh run landed its commit and was stopped before its shared-index repair (T-3007):"
+            say "        ${(pj:\n        :)repaired}"
+            say "      Repaired: each index entry now matches HEAD. Index only; what it held is that commit's"
+            say "      parent's blob, so it is in history. No reset, checkout or stash of anybody's work."
+            (( ${#restored} )) && say "      Restored the checkout copy of ${(j:, :)restored} from HEAD (it was missing, or exactly the replaced revision)."
+            [[ "$(git rev-parse HEAD 2>/dev/null)" == "$headsha" ]] || refuse HEAD-MOVED "HEAD moved to $(git rev-parse --short HEAD 2>/dev/null) while an interrupted run's leftovers were being repaired.
+  Nothing was committed. Run it again; it re-reads the index against the new HEAD."
+        fi
+        foreign=("${still_foreign[@]}")
+    fi
+    if (( ${#foreign} )); then
         refuse FOREIGN-STAGED "the shared index holds paths you did not name: ${(j:, :)foreign}
   Another agent staged them. Ask them to commit, or \`git reset -- <path>\` only what you are sure is yours."
     fi
@@ -2496,7 +2631,17 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     newsha=$(print -r -- "$message" | git commit-tree "$tree" -p "$headsha") || { rm -rf "$scratch"; refuse COMMIT-TREE "cannot write the commit" }
     local subject
     subject=$(print -r -- "$message" | head -1)
-    git update-ref -m "commit: $subject" HEAD "$newsha" "$headsha" || { rm -rf "$scratch"; refuse HEAD-MOVED "HEAD moved between the check and the swap; nothing was committed. Run it again." }
+    # T-3007. From the swap to the repair the shared index is a staged revert of what just landed,
+    # so a signal in that window is trapped and the repair done before exiting; and the repair runs
+    # straight after the swap rather than after steps 5 and 5b, which is the window shrunk. SIGKILL
+    # cannot be trapped -- the next run's INTERRUPTED-REPAIR reading in step 1 is the other half.
+    trap on_commit_signal INT TERM HUP
+    git update-ref -m "commit: $subject" HEAD "$newsha" "$headsha" || { trap - INT TERM HUP; rm -rf "$scratch"; refuse HEAD-MOVED "HEAD moved between the check and the swap; nothing was committed. Run it again." }
+
+    # 6. THE REPAIR. Without this the shared index still holds the pre-commit blobs for your paths,
+    #    and `git status` reports your own landed work as a staged revert (Batch M, 274 deletions).
+    git reset -q -- "${names[@]}" 2>/dev/null
+    trap - INT TERM HUP
 
     # The commit has landed, so the records this commit accounted for can go. Not before: see the
     # note in step 3.
@@ -2596,10 +2741,7 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         say "      \`git show HEAD:<path> > <path>\` (T-1209)." >&2
     fi
 
-    # 6. THE REPAIR. Without this the shared index still holds the pre-commit blobs for your paths,
-    #    and `git status` reports your own landed work as a staged revert (Batch M, 274 deletions).
-    git reset -q -- "${names[@]}" 2>/dev/null
-
+    # 6b. The repair itself ran straight after the swap (T-3007); this is its verification.
     local -a residue
     residue=()
     for staged in ${(f)"$(git diff --cached --name-only HEAD 2>/dev/null)"}; do
@@ -4578,6 +4720,77 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" )
     out=$( cd "$ws" && zsh "$ws/lonely8/agent-commit.sh" s8e -m "$M" CadenceTests/SweepSelftest.swift 2>&1 ); rc=$?
     check "a precheck that exits neither 0 nor 4 is refused, not read as a pass" \
         $( [[ $rc == 3 && "$out" == *SWEEP-CHECK-FAILED* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+    say ""
+    say " mode 9 (INTERRUPTED-REPAIR) -- a run stopped between its swap and its shared-index repair"
+    say "         must not leave the next agent a FOREIGN-STAGED revert of work already in HEAD"
+    # T-3007, measured 2026-10-06 on `f58c3b2c`: killed mid-commit, 587 deletions left staged and a
+    # new file missing from the checkout. Stopped at the one instant that matters with the same
+    # in-process `git` interception as mode 5: let the swap land, then signal this very process.
+    print -rl -- \
+        'git() {' \
+        '  command git "$@"; local _rc=$?' \
+        '  if [[ "$1" == update-ref && "$2" == -m && "$3" == commit:* && -n "$CADENCE_STOP_SIG" ]]; then' \
+        '    : > "$CADENCE_STOP_WS/.stopped"; kill -$CADENCE_STOP_SIG $$' \
+        '  fi' \
+        '  return $_rc' \
+        '}' > "$ws/zdot/.zshenv"
+    ( cd "$ws" && mkdir -p t3007 && print -rl -- one two three four > t3007/big.txt \
+        && print -r -- "sibling base" > t3007/sib.txt \
+        && git add t3007 && git commit -qm "t3007 base
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
+    ( cd "$ws" && print -r -- one > t3007/big.txt && print -r -- "a new test" > "$ws/new9.txt" )
+    rm -f "$ws/.stopped"
+    out=$( cd "$ws" && ZDOTDIR="$ws/zdot" CADENCE_STOP_SIG=KILL CADENCE_STOP_WS="$ws" \
+        zsh "$here" k9 -m "$M" --removes 3 t3007/big.txt t3007/New9.txt="$ws/new9.txt" 2>&1 ); rc=$?
+    check "the run really was killed after its swap landed" \
+        $( [[ -e "$ws/.stopped" && $rc == 137 && $( cd "$ws" && git show HEAD:t3007/New9.txt 2>/dev/null ) == "a new test" ]] \
+           && print 1 || print 0 ) "exit $rc: $out"
+    # The control: SIGKILL cannot be trapped, so the leftover has to be there for the next run to
+    # find. Without it everything below passes against a clean index and proves nothing.
+    check "and it left the staged revert behind (the bug's state; untrappable)" \
+        $( [[ "$( cd "$ws" && git diff --cached --name-status HEAD -- t3007 )" == *"D"*"t3007/New9.txt"* \
+              && "$( cd "$ws" && git diff --cached --name-status HEAD -- t3007 )" == *"M"*"t3007/big.txt"* \
+              && ! -e "$ws/t3007/New9.txt" ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git diff --cached --name-status HEAD )"
+    # A sibling's own in-flight edit to sib.txt sits in the worktree, and a real FOREIGN stage of a
+    # path no commit's residue explains comes next: neither may be touched or waved through.
+    ( cd "$ws" && print -r -- "sibling's uncommitted line" >> t3007/sib.txt && print -r -- "b9 work" > t3007/b9.txt )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" b9 -m "$M" t3007/b9.txt 2>&1 ); rc=$?
+    check "the next agent's unrelated commit is accepted, not refused FOREIGN-STAGED" \
+        $( [[ $rc == 0 && "$out" == *INTERRUPTED-REPAIR* && "$out" != *FOREIGN-STAGED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the shared index is clean against the new HEAD" \
+        $( ( cd "$ws" && git diff --cached --quiet HEAD ) >/dev/null 2>&1 && print 1 || print 0 ) \
+        "$( cd "$ws" && git diff --cached --name-status HEAD )"
+    check "the killed run's work is still in HEAD and its new file is back in the checkout" \
+        $( [[ $( cd "$ws" && git show HEAD:t3007/big.txt ) == one && $( cd "$ws" && git rev-parse HEAD~1 ) == "$prehead" \
+              && "$(<$ws/t3007/New9.txt)" == "a new test" ]] && print 1 || print 0 ) "$( cd "$ws" && git log --oneline -3 )"
+    check "and the sibling's uncommitted worktree edit was not touched" \
+        $( [[ "$(<$ws/t3007/sib.txt)" == *"sibling's uncommitted line"* ]] && print 1 || print 0 )
+    # The other side of the recognition: a staged change that is NOT what the newest commit of that
+    # path replaced is somebody's work, and stays FOREIGN-STAGED. Here a staged `git rm` of a file
+    # whose newest commit modified it -- its parent had the file, so absence is not the residue.
+    ( cd "$ws" && git rm -q --cached t3007/big.txt ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" b9 -m "$M" t3007/b9.txt 2>&1 ); rc=$?
+    check "a staged change no commit's residue explains is still FOREIGN-STAGED, and left staged" \
+        $( [[ $rc == 3 && "$out" == *FOREIGN-STAGED*t3007/big.txt* && "$out" != *INTERRUPTED-REPAIR* \
+              && $( cd "$ws" && git rev-parse HEAD ) == "$prehead" \
+              && "$( cd "$ws" && git diff --cached --name-status HEAD )" == *"D"*"t3007/big.txt"* ]] \
+           && print 1 || print 0 ) "exit $rc: $out"
+    ( cd "$ws" && git add t3007/big.txt ) >/dev/null 2>&1
+    # The trappable half: TERM in the same instant repairs before exiting, so there is no leftover.
+    ( cd "$ws" && print -r -- "term work" >> t3007/b9.txt )
+    rm -f "$ws/.stopped"
+    out=$( cd "$ws" && ZDOTDIR="$ws/zdot" CADENCE_STOP_SIG=TERM CADENCE_STOP_WS="$ws" \
+        zsh "$here" t9 -m "$M" t3007/b9.txt 2>&1 ); rc=$?
+    check "a run TERMinated after its swap landed repairs the shared index before it exits" \
+        $( [[ -e "$ws/.stopped" && $rc == 130 && "$out" == *INTERRUPTED-REPAIR* \
+              && $( cd "$ws" && git show HEAD:t3007/b9.txt ) == *"term work"* ]] \
+           && ( cd "$ws" && git diff --cached --quiet HEAD ) >/dev/null 2>&1 && print 1 || print 0 ) \
+        "exit $rc: $out / $( cd "$ws" && git diff --cached --name-status HEAD )"
 
     # The precheck's own fixtures -- the helper-hop sweep, the fixed-file assertion, the sweep that
     # exists only inside a string literal, and both vacuity ends -- are asserted next door, and
