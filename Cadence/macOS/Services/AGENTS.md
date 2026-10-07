@@ -66,6 +66,48 @@ Beyond the long-standing managers, note:
 - Hover managers drive keyboard shortcuts. Preserve delayed-clear behavior when it prevents regroup/layout churn.
 - Quick task panel code is AppKit-heavy; keep NSPanel/window logic isolated.
 
+## EventKit Sync Directions
+
+The contract between Cadence's store and the owner's real Calendar and Reminders databases, written
+down for the first time in [[T-3033]] and re-verified against the tree by `rg` before landing here.
+EventKit writes are **outside Cadence and not undoable from inside it**, so widening any of the four
+directions is a decision, not a refactor.
+
+- **Cadence -> Reminders: `completeReminder` and nothing else.** `CadenceRemindersManager.swift:289`
+  is the only write — `reminder.isCompleted = true`, `reminder.completionDate = Date()`,
+  `store.save(reminder, commit: true)`. There is **no** `EKReminder(` constructor and **no**
+  `store.remove` of a reminder anywhere in the repository, so Cadence cannot create, edit or delete
+  one. Do not add a delete to "keep the lists tidy".
+- **Cadence -> Calendar: create / update / delete, every one user-gestured.** The whole surface is
+  `CalendarManager.swift` (`store.save:385`, `store.remove:365`) and `iOSCalendarManager.swift`
+  (`:151`, `:189`, `:209`, `:238`); there are no other EventKit write sites. Every call site is a
+  view callback — drag-create, drag-move/resize, a note-editor save, or a Delete the user confirmed
+  — and none is reached from a timer, a launch-time repair, a migration, an import, the widgets or
+  the MCP write service. **Deleting an `AppTask` is not one of them**: see `AppTask.calendarEventID`
+  for why `TaskDeleteHelpers` deliberately reaches no EventKit symbol, pinned by
+  `CadenceTests/CadenceTaskDeleteEventKitRefusalTests`.
+- **Reminders -> Cadence: writes nothing to the store, ever.** `reload()` replaces an in-memory
+  `[AppleReminderItem]` through `adopt(_:)`; `CadenceRemindersManager.swift` contains no
+  `ModelContext`, no `AppTask` and no `save()`, and neither Inbox surface turns a reminder into a
+  row. `RemindersPublicationGuard` ([[T-1105]]) refuses a late fetch so a stale callback cannot
+  resurrect a completed item.
+- **Calendar -> Cadence: exactly one unattended destructive writer, and it writes one field.**
+  `CalendarLinkedTaskSupport.clearMissingEventLinks` clears `AppTask.calendarEventID` and never
+  deletes a row. Both callers fire it off an `EKEventStoreChanged` bump with nobody looking
+  (`macOSRootView.swift:128` -> `macOSRootStateSupport.clearMissingCalendarLinkedTasks`,
+  `SchedulePanel.swift:249` -> `SchedulePanelDataSupport.syncLinkedTasks`), which is why
+  `canTrustLookupMisses` requires `isAuthorized && hasLoadedCalendars` ([[T-529]], [[T-537]]): a
+  store that has answered nothing must not be read as a store saying the event is gone. Its named
+  residue stands — one account still syncing leaves `allCalendars` non-empty, so a link into that
+  account is still clearable on a miss.
+
+**Unit tests reach a live store.** `CadenceTests` has no EventKit sandbox: `RemindersManager.shared`
+is touched from the suite, and its `private init()` runs `refreshAuthorizationState()` and, on a
+granted host, `reload()`s the owner's real reminders into the test process. Do not add a test that
+writes. Open decisions on that exposure: [[T-3031]] (an agent app launch and a UI-test launch both
+reach the real databases) and [[T-3032]] (`CalendarManager.isAuthorized` is a plain settable `var`
+and is the only guard on all six write paths).
+
 ## Risk Notes
 
 - `CalendarManager.swift` can trigger permission prompts and external calendar side effects.

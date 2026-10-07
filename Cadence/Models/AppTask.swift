@@ -234,9 +234,27 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     /// exists on either platform — the feature is gone, whatever it once was. Do not delete the
     /// property or its readers: values written by an earlier build may still be on disk or in
     /// CloudKit, and the readers exist to handle exactly those (clearing stale identifiers in
-    /// `CalendarLinkedTaskSupport`, deleting a linked event with its task in `TaskDeleteHelpers`,
-    /// repairing relationships in `DataIntegrityRepairService`). There is no `SchemaMigrationPlan`,
-    /// so dropping a stored property drops data rather than tidying anything.
+    /// `CalendarLinkedTaskSupport`, repairing relationships in `DataIntegrityRepairService`).
+    /// There is no `SchemaMigrationPlan`, so dropping a stored property drops data rather than
+    /// tidying anything.
+    ///
+    /// **Deleting a Cadence task does NOT delete the linked calendar event, and the absence of
+    /// that path is a REFUSAL rather than an oversight ([[T-3033]]).** This comment used to name a
+    /// third reader — "deleting a linked event with its task in `TaskDeleteHelpers`" — and it was
+    /// simply false: `Cadence/macOS/Services/TaskDeleteHelpers.swift` mentions none of
+    /// `calendarEventID`, `EventKit`, `EKEvent`, `EKEventStore`, `EKSpan`, `CalendarManager` or
+    /// `deleteEvent`, and nothing anywhere in the tree propagates a Cadence-side task delete
+    /// outward to Apple Calendar. **Do not "restore" one.** The `AppTask` row is Cadence's to
+    /// destroy; the `EKEvent` is not. It may live on a shared or subscribed calendar, it may be
+    /// owned by somebody else entirely, it may carry attendees and a history Cadence never saw,
+    /// and `EKEventStore.remove` is not undoable from inside this app — so tidying a task list
+    /// would silently take events out of other people's calendars. Cadence→Calendar deletes exist
+    /// (`CalendarManager.deleteEvent`, `iOSCalendarManager.deleteEvent`) and every one of them is
+    /// reached from an explicit Delete gesture aimed at the *event*, never at a task. The written
+    /// contract for all four sync directions is `Cadence/macOS/Services/AGENTS.md`, "EventKit Sync
+    /// Directions"; the refusal itself is pinned by
+    /// `CadenceTests/CadenceTaskDeleteEventKitRefusalTests`, which reds if this file's claim stops
+    /// being true.
     var calendarEventID: String = ""
     var recurrenceRaw: String = TaskRecurrenceRule.none.rawValue
     var recurrenceSpawnedTaskIDRaw: String = ""
