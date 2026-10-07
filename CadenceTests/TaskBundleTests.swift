@@ -544,13 +544,21 @@ struct TaskBundleTests {
         )
     }
 
-    /// The other seven sites, which no behavioural test can reach: they are literals inside `View`
+    /// The other eight sites, which no behavioural test can reach: they are literals inside `View`
     /// bodies and one AppKit-side service. The iOS create sheet is not in this list because it
     /// never typed the noun — its half of T-567 is `canCreate`, two tests below.
+    ///
+    /// **`CadenceTaskBundleMutationSupport.swift` is listed beside its own extension file, and the
+    /// pairing is the point (T-1122).** That file is where `enum CadenceTaskMutationSupport` is now
+    /// *declared* — the block constructor and its clamps moved there so `CadenceMCPServer` can
+    /// compile them without the notification and WidgetKit stacks the rest of the enum reaches.
+    /// Listing only the extension file would have let the split quietly halve this rule's reach:
+    /// `insertBundle(title:…)`, the one member here that mints a title, went with the declaration.
     @Test func noSurfaceStillTypesTheRetiredBundleNoun() throws {
         for path in [
             "Cadence/Models/AppTask.swift",
             "Cadence/Shared/CadenceTaskMutationSupport.swift",
+            "Cadence/Shared/CadenceTaskBundleMutationSupport.swift",
             "Cadence/macOS/Services/SchedulingService.swift",
             "Cadence/macOS/Views/TimelineDayCanvas.swift",
             "Cadence/macOS/Views/QuickCreateChoicePopover.swift",
