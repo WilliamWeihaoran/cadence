@@ -162,7 +162,17 @@ nonisolated enum CadenceAISettingsCopy {
     /// the request now sets `store: false`, so the card states the behaviour and its cost — the
     /// request stays out of the reader's own OpenAI dashboard logs — rather than leaving either to
     /// the provider's default and to source.
-    static let keyPrivacyDisclosure = "Stored in Keychain. Cadence sends the note to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts: its title, its full text, and the name of the list it belongs to. Every request asks OpenAI not to store it, which also keeps it out of your OpenAI account's logs."
+    ///
+    /// **T-3036 named the second request.** The sentence said "only when you run an AI action"
+    /// and was rendered in the same card as the **Test Connection** button, which calls
+    /// `AISettingsManager.testConnection()` — a live `POST https://api.openai.com/v1/responses`
+    /// with the user's key, down the same `send` path as a note action. The fix names it rather
+    /// than softening "only" into vagueness: the reader is standing in front of that button, and
+    /// what they need is that pressing it talks to OpenAI *and* that it carries nothing of theirs.
+    /// The body is `AITextNoteContext(title: "Connection Test", content: "Reply with a short
+    /// confirmation.")` with no container, so "two fixed phrases and none of your content" is read
+    /// off those two literals and off `prompt(for:)`, which renders only the context it is given.
+    static let keyPrivacyDisclosure = "Stored in Keychain. Cadence sends the note to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts: its title, its full text, and the name of the list it belongs to. Test Connection also contacts OpenAI, but it sends two fixed phrases and none of your content. Every request asks OpenAI not to store it, which also keeps it out of your OpenAI account's logs."
 
     /// The three buttons under the key field. Verbosity was **inverted** between the surfaces —
     /// macOS said "Save API Key"/"Test Connection"/"Delete Key" and iOS said "Save Key"/"Test"/

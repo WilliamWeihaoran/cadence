@@ -99,6 +99,24 @@ struct AppStoreReviewReadinessTests {
     /// letting a "no more than N" reading absorb it. The walk's witness is
     /// `AppleAccountManager.swift` on purpose — it is the file whose three fields the removed rows
     /// described, so a sweep that cannot see it cannot clear it.
+    ///
+    /// **The walk is three trees, and it used to be one (T-3038).** This swept `Cadence/` only,
+    /// while `docs/apple-release-readiness.md` cited it in a bullet whose neighbours are the
+    /// widget and MCP rows — so the sentence claimed more than the test held, and a session opened
+    /// in `CadenceWidgets/` or `CadenceMCPServer/` would have gone unnoticed. Both are clean
+    /// today; widening makes that a measured fact rather than an unpinned one.
+    ///
+    /// **Each tree carries its own floor, because one combined floor cannot see a tree that
+    /// vanished.** `Cadence/` alone clears any plausible `atLeast` on its own, so a widening that
+    /// silently stopped walking the widget target would still pass a single count. The per-tree
+    /// floors are the counts on disk, which is deliberate for the two small fixed sets: losing a
+    /// widget or MCP source is worth a red run and a look.
+    ///
+    /// `plugins/` is swept too, by a second instrument, because it holds **no Swift at all** — a
+    /// `swiftFiles` walk of it returns zero and would fail the non-vacuity guard rather than prove
+    /// anything. What it holds is a shell launcher and a Python smoke test, so the needles there
+    /// are a script's ways of opening a connection. The negative witness is the one URL literal in
+    /// that tree: a fixture string in `smoke-test.py`, which must not read as a network client.
     @Test func theOnlyOutboundNetworkSurfaceIsTheAIProvider() throws {
         let instrument = try CadenceScanInstrument(
             "URLSession use",
@@ -107,9 +125,21 @@ struct AppStoreReviewReadinessTests {
             by: { CadenceSourceScan.strippingComments($0).contains("URLSession") }
         )
 
+        let trees: [(root: String, floor: Int, witness: String)] = [
+            ("Cadence", 500, "Cadence/macOS/Services/AppleAccountManager.swift"),
+            ("CadenceWidgets", 6, "CadenceWidgets/TodayTasksWidget.swift"),
+            ("CadenceMCPServer", 4, "CadenceMCPServer/CadenceMCPToolRouter.swift"),
+        ]
+        var walked: [String] = []
+        for tree in trees {
+            let files = try CadenceSourceScan.swiftFiles(under: tree.root)
+            try instrument.checkWalk(files, atLeast: tree.floor, including: tree.witness)
+            walked += files
+        }
+
         let sessionHolders = try instrument.sweep(
-            try CadenceSourceScan.swiftFiles(under: "Cadence"),
-            atLeast: 500,
+            walked,
+            atLeast: 510,
             including: "Cadence/macOS/Services/AppleAccountManager.swift",
             read: CadenceSourceScan.strippedSourceReader()
         )
@@ -118,6 +148,28 @@ struct AppStoreReviewReadinessTests {
             "Cadence/Services/AI/AIProvider.swift",
             "Cadence/Services/AI/AISettingsManager.swift",
         ])
+
+        let scriptNetworking = try CadenceScanInstrument(
+            "network client in a plugin script",
+            fires: "import urllib.request\n",
+            andNotOn: "        if untitled[\"url\"] != \"https://example.com/untitled\":\n",
+            by: { source in
+                ["urllib", "http.client", "requests.", "import socket", "curl ", "wget "]
+                    .contains { source.contains($0) }
+            }
+        )
+
+        let pluginReachers = try scriptNetworking.sweep(
+            try CadenceSourceScan.files(under: "plugins").filter { !$0.hasSuffix(".DS_Store") },
+            atLeast: 5,
+            including: "plugins/cadence-mcp/scripts/smoke-test.py",
+            read: { try self.textFile(at: $0) }
+        )
+
+        #expect(
+            pluginReachers.isEmpty,
+            "\(pluginReachers) opens a network connection from the MCP plugin wrapper."
+        )
     }
 
     @Test func widgetPrivacyManifestDeclaresSharedGroupDefaultsAndCollectsNothing() throws {

@@ -174,6 +174,16 @@ struct CadenceAgentOperatingRuleTests {
     /// driving the built app by hand and pressing the AI action with the owner's key in the
     /// Keychain — nothing mechanical can, and `docs/SUBAGENT_RUNBOOK.md` says so instead of
     /// implying this test covers it.
+    ///
+    /// **The perimeter is three trees since T-3038, and it was one.** The walk read `CadenceTests/`
+    /// only, which is the target least able to reach OpenAI: it never launches the app. The two it
+    /// skipped are the ones that do — `CadenceUITests/`, whose runs launch the signed app against
+    /// the owner's login Keychain, and `scripts/`, which is where `run-macos-app.sh` lives. All
+    /// three are clean today, re-checked rather than inherited; widening turns that from a thing
+    /// nobody is watching into a thing that goes red. It is still a **lexical** guard and not a
+    /// runtime one: `Cadence/Services/AI/` has no `NotificationManager.isTestEnvironment`
+    /// equivalent, so nothing refuses the call at process level. Whether it should is the owner's
+    /// call (T-3038) and is a behaviour change this does not make.
     @Test func noTestInThisTargetCanReachOpenAIWithTheOwnersKey() throws {
         let instrument = try CadenceScanInstrument(
             "reaches OpenAI or the real Keychain from a test",
@@ -193,16 +203,32 @@ struct CadenceAgentOperatingRuleTests {
         // would take. So the reader stays the comment stripper and the scanner steps out of the
         // walk; nothing here checks this file, and the two fixtures above are what keep the
         // detector honest instead.
-        let walked = try CadenceSourceScan.swiftFiles(under: "CadenceTests")
+        let unitTests = try CadenceSourceScan.swiftFiles(under: "CadenceTests")
             .filter { $0 != "CadenceTests/CadenceAgentOperatingRuleTests.swift" }
         #expect(
-            walked.count == (try CadenceSourceScan.swiftFiles(under: "CadenceTests").count) - 1,
+            unitTests.count == (try CadenceSourceScan.swiftFiles(under: "CadenceTests").count) - 1,
             "the scanner excluded something other than exactly itself"
+        )
+        try instrument.checkWalk(
+            unitTests,
+            atLeast: 300,
+            including: "CadenceTests/AITests.swift"
+        )
+
+        // T-3038 widened the walk. `CadenceUITests` is the target that matters most and was the
+        // one not being read: a UI run launches the signed `Cadence.app` against the owner's login
+        // Keychain, where `hasAPIKey` is true and both AI rows are live, so a line naming the
+        // endpoint there is the closest thing in this repository to an accidental live call.
+        let uiTests = try CadenceSourceScan.swiftFiles(under: "CadenceUITests")
+        try instrument.checkWalk(
+            uiTests,
+            atLeast: 14,
+            including: "CadenceUITests/CadenceUITests.swift"
         )
 
         let offenders = try instrument.sweep(
-            walked,
-            atLeast: 300,
+            unitTests + uiTests,
+            atLeast: 314,
             including: "CadenceTests/AITests.swift",
             read: CadenceSourceScan.strippedSourceReader()
         )
@@ -212,6 +238,40 @@ struct CadenceAgentOperatingRuleTests {
             """
             \(offenders) would let a scoped test run reach the owner's OpenAI key or the live \
             endpoint. Stub the secret store and assert on makeURLRequest(for:) instead (T-1386).
+            """
+        )
+
+        // `scripts/` holds no Swift at all, so it gets its own walk over every file rather than a
+        // `swiftFiles` call that would return zero and fail the non-vacuity guard. Only the first
+        // needle means anything to a shell script — the other two are Swift spellings — and that
+        // is stated rather than implied: what this holds of `scripts/` is that no launcher or
+        // helper names the endpoint or reaches into the login Keychain for the key.
+        let scriptReach = try CadenceScanInstrument(
+            "a script reaching OpenAI or the login Keychain",
+            fires: "curl https://api.openai.com/v1/responses\n",
+            andNotOn: "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test\n",
+            by: { source in
+                source.contains("api.openai.com")
+                    || source.contains("find-generic-password")
+                    || source.contains("AISettingsManager.shared")
+            }
+        )
+        let scriptOffenders = try scriptReach.sweep(
+            try CadenceSourceScan.files(under: "scripts"),
+            atLeast: 25,
+            including: "scripts/xcb.sh",
+            read: { path in
+                try String(
+                    contentsOf: CadenceSourceScan.repositoryRoot().appendingPathComponent(path),
+                    encoding: .utf8
+                )
+            }
+        )
+        #expect(
+            scriptOffenders.isEmpty,
+            """
+            \(scriptOffenders) would let a repository script reach the OpenAI endpoint or read \
+            the owner's key out of the login Keychain (T-3038).
             """
         )
     }

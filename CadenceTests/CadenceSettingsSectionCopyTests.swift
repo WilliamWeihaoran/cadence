@@ -69,7 +69,7 @@ struct CadenceSettingsSectionCopyTests {
     private static let aiPairs: [(expression: String, literal: String)] = [
         (
             "CadenceAISettingsCopy.keyPrivacyDisclosure",
-            "Stored in Keychain. Cadence sends the note to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts: its title, its full text, and the name of the list it belongs to. Every request asks OpenAI not to store it, which also keeps it out of your OpenAI account's logs."
+            "Stored in Keychain. Cadence sends the note to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts: its title, its full text, and the name of the list it belongs to. Test Connection also contacts OpenAI, but it sends two fixed phrases and none of your content. Every request asks OpenAI not to store it, which also keeps it out of your OpenAI account's logs."
         ),
         ("CadenceAISettingsCopy.saveAPIKeyAction", "Save API Key"),
         ("CadenceAISettingsCopy.testConnectionAction", "Test Connection"),
@@ -1034,14 +1034,19 @@ struct CadenceSettingsSectionCopyTests {
         // carries the whole note rather than "selected note content", and it now sets
         // `store: false`, which is why the card can say the request is not retained and is also
         // absent from the reader's own OpenAI logs. `OpenAIResponseRequestStorageTests` pins the
-        // behaviour this sentence describes; this pins the sentence.
+        // behaviour this sentence describes; this pins the sentence. T-3036 added the Test
+        // Connection clause: that button is a second live request to the same endpoint with the
+        // same key, so the card that draws it can no longer promise "only when you run an AI
+        // action" and name nothing else.
         #expect(
             CadenceAISettingsCopy.keyPrivacyDisclosure
                 == """
                 Stored in Keychain. Cadence sends the note to OpenAI only when you run an AI \
                 action, such as summarizing a note or extracting task drafts: its title, its full \
-                text, and the name of the list it belongs to. Every request asks OpenAI not to \
-                store it, which also keeps it out of your OpenAI account's logs.
+                text, and the name of the list it belongs to. Test Connection also contacts \
+                OpenAI, but it sends two fixed phrases and none of your content. Every request \
+                asks OpenAI not to store it, which also keeps it out of your OpenAI account's \
+                logs.
                 """
         )
         #expect(CadenceAISettingsCopy.saveAPIKeyAction == "Save API Key")
