@@ -1132,12 +1132,56 @@ host_launch_refusal_report() {  # $1 = log, $2 = xcodebuild's exit status ("" wh
 # this report deliberately does not, because that ships a product whose signature may not match
 # its entitlements. Never gates -- the run's exit status is left exactly as it was.
 ENTITLEMENTS_MODIFIED_PATTERN='Entitlements file .* was modified during the build'
+# THE BATCH-RULE HALF, which T-2046 left open: IS A DERIVEDDATA DISPOSABLE THE MOMENT THIS FIRES?
+# YES, and it is settled here as a rule the script enforces rather than as advice a reader has to
+# remember at the fourth identical red. The argument is the measurement in the paragraph above:
+# the poisoning is PERMANENT for that tree (four consecutive runs, identical death at
+# `builtin-productPackagingUtility`, 0 Swift files compiled), deleting the generated `.xcent` does
+# NOT clear it, and `release-dd` plus a fresh build does -- so after this fires, every later build
+# in that directory is a guaranteed twelve-minute dead end. There is also nothing in it worth
+# keeping: it compiled nothing and ran nothing, so no evidence is lost by deleting it, and the
+# only thing it can still produce is another agent reading T-552's "executed 0 tests" as a
+# misspelt suite name. A DerivedData that has tripped this is RUBBISH, and the rule is that the
+# next run refuses to build into it rather than paying to rediscover that.
+#
+# How the rule is carried: a sentinel file inside the DerivedData itself. Not a variable (the next
+# run is a different process), not a note in a log (nobody re-reads the log of a run that produced
+# nothing), and not an entry in TMPDIR beside the logs (it would outlive the directory it is about
+# and refuse a FRESH DerivedData that happened to reuse the name). Inside the tree, it has exactly
+# the lifetime of the thing it describes: `release-dd` deletes the directory and the sentinel with
+# it, so clearing the refusal and clearing the poisoning are THE SAME ACT and cannot drift apart.
+ENTITLEMENTS_POISON_SENTINEL='.cadence-entitlements-poisoned'
+ENTITLEMENTS_POISONED_EXIT=14
 entitlements_poisoned_dd_report() {  # $1 = log, $2 = xcodebuild's exit status ("" when unknown), $3 = the DerivedData path
   local log=$1 xstatus=${2:-} dd=${3:-<derived-data-path>}
   [[ "$xstatus" == "0" ]] && return 0   # a green run has no red to explain
   grep -aqE -- "$ENTITLEMENTS_MODIFIED_PATTERN" "$log" 2>/dev/null || return 0
   say ""
   say "!! ENTITLEMENTS-POISONED-DD (T-2046): this private DerivedData is poisoned by a metadata-only touch of Cadence.entitlements (\"was modified during the build\"), not by your code or your suite name -- run \`./scripts/xcb.sh release-dd $dd\` then a fresh build."
+  if [[ -d "$dd" ]]; then
+    print -r -- "poisoned $(date '+%Y-%m-%d %H:%M:%S') by ${log}" > "$dd/$ENTITLEMENTS_POISON_SENTINEL" 2>/dev/null
+    say "   MARKED DISPOSABLE (T-2046): \`$ENTITLEMENTS_POISON_SENTINEL\` written into that tree, and the next"
+    say "   run of this script refuses to build into it. It compiled nothing and ran nothing, so"
+    say "   there is no evidence in it to lose -- delete it, do not nurse it."
+  fi
+  return 0
+}
+# The refusal the sentinel buys. Returns 0 (and prints) when the DerivedData has been marked.
+entitlements_poisoned_dd_refusal() {  # $1 = the DerivedData path
+  local dd=${1:-}
+  [[ -n "$dd" && -f "$dd/$ENTITLEMENTS_POISON_SENTINEL" ]] || return 1
+  say ""
+  say "!! REFUSING -- ENTITLEMENTS-POISONED-DD (T-2046): this DerivedData was marked disposable by an"
+  say "   earlier run of this script: $(cat -- "$dd/$ENTITLEMENTS_POISON_SENTINEL" 2>/dev/null)"
+  say "   One metadata-only touch of Cadence.entitlements poisons a warm DerivedData PERMANENTLY:"
+  say "   every later build in it dies at builtin-productPackagingUtility having compiled 0 Swift"
+  say "   files, and what reaches you is T-552's \"executed 0 tests\" -- which reads character for"
+  say "   character like a misspelt suite name. Four runs went into that dead end once already."
+  say "   Deleting the generated Cadence.app.xcent does NOT clear it. This does:"
+  say "       ./scripts/xcb.sh release-dd $dd"
+  say "   then re-run. Nothing is lost: the tree compiled nothing and ran nothing."
+  say "   Do NOT reach for CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION -- the error text offers it,"
+  say "   and it ships a product whose signature may not match its entitlements."
   return 0
 }
 
@@ -2775,6 +2819,44 @@ selftest_only_testing() {
   run_ent "$ws/ent-poisoned.log" 0
   check "CONTROL: the line under exit 0 (nothing red to explain) is silent" \
     $( (( erc == 0 )) && [[ -z "$eout" ]] && print 1 || print 0 ) "exit $erc: $eout"
+  # T-2046's batch-rule half, which the PARTIAL left open and which is settled as: YES, disposable
+  # the moment this fires. It is enforced rather than described -- the report MARKS the tree and
+  # the next preflight refuses it -- because the thing that went wrong was nobody remembering a
+  # rule at the fourth identical red, and prose does not fix that. Both ends are induced here: the
+  # mark, and a REAL `xcb.sh ... build` refused by it on the production path.
+  mkdir -p "$ws/cadence-dd-live"
+  run_ent "$ws/ent-poisoned.log" 65 "$ws/cadence-dd-live"
+  check "a poisoned DerivedData that EXISTS is marked disposable, in the tree itself" \
+    $( [[ -f "$ws/cadence-dd-live/.cadence-entitlements-poisoned" && "$eout" == *"MARKED DISPOSABLE (T-2046)"* ]] && print 1 || print 0 ) "$eout"
+  check "...and the mark names when and from which log, so it is not a bare flag" \
+    $( [[ "$(cat "$ws/cadence-dd-live/.cadence-entitlements-poisoned")" == poisoned\ <->-<->-<->\ * && "$(cat "$ws/cadence-dd-live/.cadence-entitlements-poisoned")" == *ent-poisoned.log ]] && print 1 || print 0 ) "$(cat "$ws/cadence-dd-live/.cadence-entitlements-poisoned")"
+  mkdir -p "$ws/cadence-dd-clean"
+  run_ent "$ws/ent-other-red.log" 65 "$ws/cadence-dd-clean"
+  check "CONTROL: a red build WITHOUT the entitlements error marks nothing" \
+    $( [[ ! -f "$ws/cadence-dd-clean/.cadence-entitlements-poisoned" ]] && print 1 || print 0 ) "$(ls -a "$ws/cadence-dd-clean")"
+  run_ent "$ws/ent-poisoned.log" 0 "$ws/cadence-dd-clean"
+  check "CONTROL: a GREEN run marks nothing, whatever an old log in it says" \
+    $( [[ ! -f "$ws/cadence-dd-clean/.cadence-entitlements-poisoned" ]] && print 1 || print 0 ) "$(ls -a "$ws/cadence-dd-clean")"
+  # The refusal, on the production path: a real invocation, with a real -derivedDataPath, refused
+  # at preflight -- BEFORE the destination resolver, which this deliberately hands an impossible
+  # destination to prove. Exit 10 here would mean the poisoned tree was admitted and the run merely
+  # died of something else later.
+  local pout prc
+  pout=$(zsh "$here" selftest-ent build -scheme Cadence -destination 'platform=iOS Simulator,name=NoSuchDeviceXYZ' \
+    -derivedDataPath "$ws/cadence-dd-live" 2>&1); prc=$?
+  check "a marked DerivedData is REFUSED at preflight (exit $ENTITLEMENTS_POISONED_EXIT), before anything is paid for" \
+    $( (( prc == ENTITLEMENTS_POISONED_EXIT )) && [[ "$pout" == *"REFUSING -- ENTITLEMENTS-POISONED-DD"* && "$pout" == *"release-dd $ws/cadence-dd-live"* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  check "...and it never offers the override xcodebuild's own error text offers" \
+    $( [[ "$pout" == *"Do NOT reach for CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION"* ]] && print 1 || print 0 ) "$pout"
+  pout=$(zsh "$here" selftest-ent build -scheme Cadence -destination 'platform=iOS Simulator,name=NoSuchDeviceXYZ' \
+    -derivedDataPath "$ws/cadence-dd-clean" 2>&1); prc=$?
+  check "CONTROL: an UNMARKED DerivedData is admitted and dies of its own fault (exit $SIMULATOR_GATE_EXIT), not of this one" \
+    $( (( prc == SIMULATOR_GATE_EXIT )) && [[ "$pout" != *ENTITLEMENTS-POISONED-DD* ]] && print 1 || print 0 ) "exit $prc: $pout"
+  # The mark and the poisoning are cleared by THE SAME ACT, which is why the sentinel lives inside
+  # the tree: `release-dd` deletes the directory, and nothing is left behind to refuse a fresh one.
+  zsh "$here" release-dd "$ws/cadence-dd-live" >/dev/null 2>&1
+  check "release-dd clears the mark because it deletes the tree the mark lives in" \
+    $( [[ ! -e "$ws/cadence-dd-live" ]] && print 1 || print 0 ) "$(ls -d "$ws/cadence-dd-live" 2>&1)"
 
   say ""
   say " 8d. a run the Mac slept through is named, not read as a bare exit 143 (T-2048)"
@@ -4069,6 +4151,12 @@ others=$(pgrep -f '^/Applications/.*/xcodebuild' 2>/dev/null | grep -vx "$$" | w
 say "  other xcodebuild processes: $others"
 # Before anything else is paid for: a second build into a live one's DerivedData (T-2042).
 dd_in_use_refusal "$DD" "preflight" && exit $DD_IN_USE_EXIT
+# And before anything else is paid for a SECOND time: a DerivedData an earlier run marked poisoned
+# (T-2046). Twelve minutes to rediscover a permanent fact about a directory is the whole cost this
+# guard exists to stop, and it is checked here -- ahead of the suite resolver, the destination
+# resolver and the test-host lease -- because none of those questions matter about a tree that
+# cannot link.
+entitlements_poisoned_dd_refusal "$DD" && exit $ENTITLEMENTS_POISONED_EXIT
 if (( $(pgrep -x Xcode 2>/dev/null | wc -l) > 0 )); then
   say "  WARNING: Xcode is running. T-117's mitigation is to quit it while a batch of agents"
   say "           builds; an open project is a standing claimant on Cadence.xcodeproj."
