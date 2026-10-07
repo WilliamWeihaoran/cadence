@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Cadence
@@ -201,5 +202,61 @@ struct NoteTemplateLibraryTests {
         )
         #expect(template.body.isEmpty)
         #expect(template.title == defaultTemplate.title)
+    }
+
+    // MARK: - T-3016: an edit over an unreadable map
+
+    /// **An edit must not launder a string this build cannot read into a readable one-key map.**
+    /// `overrides(from:)` reads it as `[:]`, and re-encoding that plus one edit used to produce a
+    /// canonical string holding only the edited template — every other customisation gone, and in a
+    /// form T-1346's sync guards accept and publish. Both writers now hand the raw back untouched.
+    @Test func anEditOverAnUnreadableMapLeavesTheRawExactlyAsItWas() {
+        // A truncated write of a two-template map: real customisations, not parseable.
+        let unreadable = ##"{"checklist":{"body":"# Packing","subtitle":"","title":"Packing"},"daily-plan":{"bo"##
+        #expect(NoteTemplateLibrary.storedOverridesAreUnreadable(unreadable))
+
+        let edited = NoteTemplateLibrary.setOverride(
+            for: "research-note", title: "Mine", subtitle: "", body: "# Mine", in: unreadable
+        )
+        #expect(edited == unreadable, "setOverride re-encoded an unreadable map")
+        #expect(NoteTemplateLibrary.decodedOverrides(from: edited) == nil)
+
+        let reset = NoteTemplateLibrary.resetOverride(for: "checklist", in: unreadable)
+        #expect(reset == unreadable, "resetOverride re-encoded an unreadable map")
+        #expect(NoteTemplateLibrary.decodedOverrides(from: reset) == nil)
+    }
+
+    /// The refusal is for unreadable text only. The never-written default and a readable map — the
+    /// two inputs every real edit starts from — still edit, and other keys still survive.
+    @Test func theNeverWrittenDefaultAndAReadableMapStillEdit() throws {
+        #expect(!NoteTemplateLibrary.storedOverridesAreUnreadable(""))
+        #expect(!NoteTemplateLibrary.storedOverridesAreUnreadable("  \n"))
+        #expect(!NoteTemplateLibrary.storedOverridesAreUnreadable("{}"))
+
+        let fromEmpty = NoteTemplateLibrary.setOverride(
+            for: "checklist", title: "Packing", subtitle: "", body: "# Packing", in: "   "
+        )
+        #expect(NoteTemplateLibrary.overrides(from: fromEmpty).count == 1)
+
+        let two = NoteTemplateLibrary.setOverride(
+            for: "daily-plan", title: "Morning", subtitle: "", body: "# Morning", in: fromEmpty
+        )
+        #expect(Set(NoteTemplateLibrary.overrides(from: two).keys) == ["checklist", "daily-plan"])
+        let reset = NoteTemplateLibrary.resetOverride(for: "checklist", in: two)
+        #expect(Set(NoteTemplateLibrary.overrides(from: reset).keys) == ["daily-plan"])
+    }
+
+    /// Both Settings editors read the same predicate, show the shared notice and disable their
+    /// fields — so the refused edit is visible rather than silently vanishing. Source-shape pin:
+    /// the views are not hostable in a unit test, and a deleted `.disabled` is the regression.
+    @Test func bothTemplateEditorsSayWhenTheyRefuseAnEdit() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        for path in ["Cadence/macOS/Views/SettingsTemplatesSection.swift",
+                     "Cadence/iOS/iOSSettingsTemplateAndListSections.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            #expect(source.contains("NoteTemplateLibrary.storedOverridesAreUnreadable(templateOverridesRaw)"), "\(path)")
+            #expect(source.contains("CadenceTemplateSettingsCopy.unreadableStoredTitle"), "\(path)")
+            #expect(source.contains(".disabled(storedOverridesAreUnreadable)"), "\(path)")
+        }
     }
 }

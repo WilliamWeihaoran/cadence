@@ -59,6 +59,23 @@ nonisolated enum NoteTemplateLibrary {
         return decoded
     }
 
+    /// Whether `raw` holds text this build cannot read — non-empty, and not an override map.
+    ///
+    /// **The one input `setOverride` and `resetOverride` refuse** (T-3016). Both are
+    /// read-modify-write over `raw`, and starting the modify from `overrides(from:)`'s `[:]` would
+    /// re-encode an unreadable string as a canonical map holding only the one template being
+    /// edited — every other customisation it held gone, in a string that is now *readable*, so
+    /// neither of T-1346's sync guards (which refuse only what they cannot parse) would stop it
+    /// travelling to the other devices. Refusing loses the one edit instead of the whole map, and
+    /// the two Settings editors read this to say so and stop taking input rather than dropping it
+    /// silently. The sync's `adopt` replaces an unreadable local default with the record's map
+    /// when there is a readable one, which is what clears this state.
+    ///
+    /// `""` and whitespace are "never written", not unreadable: there is nothing to lose.
+    static func storedOverridesAreUnreadable(_ raw: String) -> Bool {
+        !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && decodedOverrides(from: raw) == nil
+    }
+
     static func rawOverrides(from overrides: [String: NoteTemplateOverride]) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -78,7 +95,10 @@ nonisolated enum NoteTemplateLibrary {
     /// the blue dot, the "Customized" chip and an enabled "Reset Template" for a template that
     /// looked untouched. An empty *body* is a real edit and keeps its override; `resolved` has no
     /// fallback for it.
+    ///
+    /// Returns `raw` unchanged when it is unreadable — see `storedOverridesAreUnreadable(_:)`.
     static func setOverride(for id: String, title: String, subtitle: String, body: String, in raw: String) -> String {
+        guard !storedOverridesAreUnreadable(raw) else { return raw }
         var overrides = overrides(from: raw)
         guard let defaultTemplate = defaultTemplates.first(where: { $0.id == id }) else { return raw }
         let normalized = NoteTemplateOverride(
@@ -105,7 +125,9 @@ nonisolated enum NoteTemplateLibrary {
         )
     }
 
+    /// Returns `raw` unchanged when it is unreadable — see `storedOverridesAreUnreadable(_:)`.
     static func resetOverride(for id: String, in raw: String) -> String {
+        guard !storedOverridesAreUnreadable(raw) else { return raw }
         var overrides = overrides(from: raw)
         overrides.removeValue(forKey: id)
         return rawOverrides(from: overrides)

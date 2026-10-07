@@ -133,6 +133,14 @@ nonisolated enum CadenceTemplateSettingsCopy {
     /// surfaces genuinely say is the scope of the edit, and iOS's spelling of it is the one that
     /// stands alone without the sidebar clause in front of it. Same family as [[T-544]].
     static let editScopeFootnote = "Templates affect future insertions only. Existing notes keep their current content."
+
+    /// The notice both editors draw, and the reason their fields stop taking input, while the
+    /// stored override map is text this build cannot read (T-3016). An edit there would replace
+    /// every customisation the string holds with the one being typed, so
+    /// `NoteTemplateLibrary.setOverride` refuses it — and a refusal the screen does not mention is
+    /// an edit that silently vanishes, which is the data loss this notice exists to prevent.
+    static let unreadableStoredTitle = "Saved templates could not be read"
+    static let unreadableStoredDetail = "Editing is paused so the templates stored on this device are not overwritten. If another device has a readable copy, it replaces this one when it syncs."
 }
 
 /// Settings → AI, on both surfaces.

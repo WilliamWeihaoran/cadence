@@ -127,10 +127,24 @@ struct iOSTemplatesSettingsSection: View {
         }
     }
 
+    /// T-3016: an edit over a stored map this build cannot read is refused by `setOverride`, so the
+    /// fields stop taking input and the notice says why, rather than letting typing vanish.
+    private var storedOverridesAreUnreadable: Bool {
+        NoteTemplateLibrary.storedOverridesAreUnreadable(templateOverridesRaw)
+    }
+
     @ViewBuilder
     private var templateEditor: some View {
         if let selectedTemplate {
             VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
+                if storedOverridesAreUnreadable {
+                    iOSSettingsEmptyInlineRow(
+                        systemImage: "exclamationmark.triangle",
+                        title: CadenceTemplateSettingsCopy.unreadableStoredTitle,
+                        subtitle: CadenceTemplateSettingsCopy.unreadableStoredDetail
+                    )
+                }
+
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(selectedTemplate.title)
@@ -157,19 +171,22 @@ struct iOSTemplatesSettingsSection: View {
                     }
                 }
 
-                iOSSettingsField(title: "Title") {
-                    TextField("Template title", text: titleBinding)
-                        .textInputAutocapitalization(.words)
-                }
+                Group {
+                    iOSSettingsField(title: "Title") {
+                        TextField("Template title", text: titleBinding)
+                            .textInputAutocapitalization(.words)
+                    }
 
-                iOSSettingsField(title: "Description") {
-                    TextField("Short sidebar description", text: subtitleBinding)
-                }
+                    iOSSettingsField(title: "Description") {
+                        TextField("Short sidebar description", text: subtitleBinding)
+                    }
 
-                iOSTemplateBodyEditor(
-                    isFocused: $bodyEditorFocused,
-                    text: bodyBinding(for: selectedTemplate)
-                )
+                    iOSTemplateBodyEditor(
+                        isFocused: $bodyEditorFocused,
+                        text: bodyBinding(for: selectedTemplate)
+                    )
+                }
+                .disabled(storedOverridesAreUnreadable)
 
                 HStack {
                     Spacer()

@@ -634,4 +634,57 @@ struct CadenceNoteTemplatePreferenceTests {
             #expect(NoteTemplateLibrary.overrides(from: foreign.overridesRaw)["checklist"]?.title == "Packing")
         }
     }
+
+    // MARK: - T-3017: the guard is in the writer, not only in its callers
+
+    /// **`write` refuses a string that says nothing**, rather than storing `{}` — which every
+    /// device would read as a reset. Its two callers never hand it one today; this is the property
+    /// the next caller inherits without having to know it. Both the insert path and the edit path.
+    @Test func theRecordWriterRefusesAStringThatSaysNothing() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+
+        for nothing in ["", "   ", "}{ not json"] {
+            #expect(throws: Store.UnreadableOverridesRefusal.self) {
+                try Store.write(nothing, records: [], in: context, now: Date(timeIntervalSince1970: 5))
+            }
+        }
+        #expect(try context.fetch(FetchDescriptor<NoteTemplatePreference>()).count == 0,
+                "a refused first write still inserted a row")
+
+        let original = customised("checklist", title: "Packing", body: "# Packing")
+        try Store.write(original, records: [], in: context, now: Date(timeIntervalSince1970: 10))
+        let records = try context.fetch(FetchDescriptor<NoteTemplatePreference>())
+        // The row `write` edits — not `records[0]`, which is not the target when a mutated writer
+        // has already inserted rows above.
+        let target = try #require(Store.current(from: records))
+        let before = target.overridesRaw
+        let beforeUpdatedAt = target.updatedAt
+
+        #expect(throws: Store.UnreadableOverridesRefusal.self) {
+            try Store.write("}{ not json", records: records, in: context, now: Date(timeIntervalSince1970: 9_000))
+        }
+        #expect(target.overridesRaw == before, "an unreadable string reset the shared row")
+        #expect(target.updatedAt == beforeUpdatedAt)
+        #expect(try context.fetch(FetchDescriptor<NoteTemplatePreference>()).count == 1)
+    }
+
+    /// **`writeLocal` moves nothing for a string that says nothing**, rather than overwriting the
+    /// device's templates with `{}`. Same property, the local half.
+    @Test func theLocalWriterRefusesAStringThatSaysNothing() throws {
+        let mine = customised("checklist", title: "Packing", body: "# Packing")
+        try withTemporaryDefaults("template-writelocal") { defaults in
+            defaults.set(mine, forKey: NoteTemplateLibrary.storageKey)
+            let sync = CadenceNoteTemplatePreferenceSync(defaults: defaults)
+
+            for nothing in ["", "   ", "}{ not json"] {
+                #expect(!sync.writeLocal(nothing), "writeLocal reported a move for \(nothing.debugDescription)")
+                #expect(defaults.string(forKey: NoteTemplateLibrary.storageKey) == mine,
+                        "a string that says nothing overwrote the device's templates")
+            }
+            // And a readable map still moves it.
+            #expect(sync.writeLocal(Store.emptyRaw))
+            #expect(defaults.string(forKey: NoteTemplateLibrary.storageKey) == Store.emptyRaw)
+        }
+    }
 }

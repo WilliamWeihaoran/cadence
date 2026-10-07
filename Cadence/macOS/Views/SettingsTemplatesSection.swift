@@ -117,10 +117,26 @@ struct SettingsTemplatesSection: View {
         }
     }
 
+    /// T-3016: an edit over a stored map this build cannot read is refused by `setOverride`, so the
+    /// fields stop taking input and the notice says why, rather than letting typing vanish.
+    private var storedOverridesAreUnreadable: Bool {
+        NoteTemplateLibrary.storedOverridesAreUnreadable(templateOverridesRaw)
+    }
+
     @ViewBuilder
     private var templateEditor: some View {
         if let selectedTemplate {
             VStack(alignment: .leading, spacing: 14) {
+                if storedOverridesAreUnreadable {
+                    CadenceSettingsNoticeRow(
+                        systemImage: "exclamationmark.triangle",
+                        title: CadenceTemplateSettingsCopy.unreadableStoredTitle,
+                        detail: CadenceTemplateSettingsCopy.unreadableStoredDetail
+                    ) {
+                        EmptyView()
+                    }
+                }
+
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(selectedTemplate.title)
                         .font(.system(size: 16, weight: .semibold))
@@ -196,6 +212,7 @@ struct SettingsTemplatesSection: View {
                         .frame(minHeight: 280)
                     }
                 }
+                .disabled(storedOverridesAreUnreadable)
             }
         } else {
             // Was a bare `Text` with no glyph, no card row and no second line — the loudest of the

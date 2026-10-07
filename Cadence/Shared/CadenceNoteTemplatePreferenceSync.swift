@@ -160,9 +160,14 @@ final class CadenceNoteTemplatePreferenceSync {
 
     /// `true` when the default actually moved. An equivalent write is skipped so adopt cannot post
     /// a change notification that would send publish round again.
-    private func writeLocal(_ raw: String) -> Bool {
-        let wanted = CadenceNoteTemplatePreferenceStore.canonicalRaw(raw)
-            ?? CadenceNoteTemplatePreferenceStore.emptyRaw
+    ///
+    /// **A `raw` that says nothing moves nothing** (T-3017). This used to canonicalise it to
+    /// `emptyRaw`, which would overwrite the device's templates with a reset. Both callers read
+    /// through `currentReadable` (or the seed's own encoded map), so that was unreachable — the
+    /// guard lived in the callers; it lives here now. Internal rather than private only so
+    /// `CadenceNoteTemplatePreferenceTests` can state the property directly.
+    func writeLocal(_ raw: String) -> Bool {
+        guard let wanted = CadenceNoteTemplatePreferenceStore.canonicalRaw(raw) else { return false }
         guard CadenceNoteTemplatePreferenceStore.canonicalRaw(localRaw) != wanted else { return false }
         defaults.set(wanted, forKey: NoteTemplateLibrary.storageKey)
         return true

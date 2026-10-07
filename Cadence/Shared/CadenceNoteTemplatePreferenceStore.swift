@@ -126,7 +126,17 @@ enum CadenceNoteTemplatePreferenceStore {
 
     // MARK: - Writing
 
+    /// What `write` throws for a `raw` that says nothing (T-3017).
+    struct UnreadableOverridesRefusal: Error, Equatable {}
+
     /// Writes an override map, creating the synced row the first time.
+    ///
+    /// **Refuses a `raw` that `canonicalRaw` cannot read — `""` or unparseable text — and throws
+    /// `UnreadableOverridesRefusal` before touching the row** (T-3017). It used to substitute
+    /// `emptyRaw`, which would publish "say nothing" to every device as `{}`, a reset. Both callers
+    /// already hand it a canonical string (`seedIfNeeded` an encoded map, `publish` a `canonicalRaw`
+    /// it proved non-`nil`), so the substitution was unreachable — but only because each caller
+    /// carried the guard, which the next caller would not know about. The guard is here now.
     ///
     /// Commits through `CadencePendingChangePersistence` rather than `try? save()`: this inserts on
     /// the first write, and there is one `ModelContext` app-wide, so a swallowed insert leaves the
@@ -139,7 +149,7 @@ enum CadenceNoteTemplatePreferenceStore {
         now: Date = Date(),
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
-        let canonical = canonicalRaw(raw) ?? emptyRaw
+        guard let canonical = canonicalRaw(raw) else { throw UnreadableOverridesRefusal() }
 
         guard let record = current(from: records) else {
             let created = NoteTemplatePreference(overridesRaw: canonical, updatedAt: now)

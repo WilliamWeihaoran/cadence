@@ -553,7 +553,9 @@ struct CadenceSettingsSectionCopyTests {
             // in this file. Four, exactly: an aggregate that still totals four cannot tell you the
             // four are where you left them, so the shapes they replaced are named below.
             ("Cadence/macOS/Views/SettingsListManagementSections.swift", 4),
-            ("Cadence/macOS/Views/SettingsTemplatesSection.swift", 1),
+            // The empty-catalog card, plus [[T-3016]]'s unreadable-stored-map notice above the
+            // editor — the shared row, not a private one.
+            ("Cadence/macOS/Views/SettingsTemplatesSection.swift", 2),
         ] {
             let code = try Self.strippedSource(at: path)
             let actual = code.components(separatedBy: "CadenceSettingsNoticeRow(").count - 1
