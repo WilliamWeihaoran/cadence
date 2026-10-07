@@ -21,6 +21,16 @@ import SwiftUI
 /// `pendingWrite` and commits nothing. A real local edit runs publish once, which bumps the record,
 /// which runs adopt once, which finds every mirror already correct and stops.
 ///
+/// **And they are ordered: adopt first, publish never before it** (T-3040). `publish` is driven by
+/// `UserDefaults.didChangeNotification`, which fires for *every* write in the process — dozens of
+/// them during startup — and the host subscribes to it while its body is first evaluated, which is
+/// before `onAppear` has run the launch's first adopt. A publish that reaches the record first sees
+/// `records` as empty and **mints a row stamped `now`**, which `CadenceLookPreferenceStore.current`
+/// then prefers over every row this device has not read yet. Nothing merges the loser back:
+/// `LookPreference` is deliberately outside `DataIntegrityRepairService`'s dedupe set, which
+/// *deletes* the rows it collapses and is the one thing this model's own "Duplicates" note forbids.
+/// So the ordering is the guard, and `hasAdopted` below is the whole of it.
+///
 /// **No write site changed.** That is the point of the shape: the sort chips, the tint picker and
 /// the palette picker keep writing the same local defaults they always wrote, `CadenceWidgets`
 /// keeps reading the app-group key with no SwiftData anywhere near it, and the thirty-odd readers
@@ -36,6 +46,33 @@ final class CadenceLookPreferenceSync {
     /// the next change or the next launch. Surfacing a banner for that would be telling someone
     /// about a failure with no action attached to it.
     private(set) var lastFailureNotice: String?
+
+    /// `true` once this launch's first `adopt` has read the record set, whether or not it found a
+    /// row in it. The gate `publish` gets to run behind (T-3040).
+    ///
+    /// **Launch-scoped rather than persisted, and set by the read rather than by the find.** Those
+    /// are two separate judgements and both are load-bearing:
+    ///
+    /// - *Launch-scoped*, because the hazard is a launch-ordering one. `CadenceNoteTemplatePreferenceSync`
+    ///   persists its equivalent flag because what it gates is a once-per-device migration; there is
+    ///   no migration here, and a persisted flag would leave this gate permanently open from the
+    ///   second launch onwards — which is exactly the launch where a startup write can still beat
+    ///   the first adopt.
+    /// - *Set by the read*, because "a record was found" is not available to a device whose account
+    ///   has never had one. Gating on that would mean a first-ever user's device never mints the
+    ///   shared row at all and nothing they set ever reached a second device — a worse bug than the
+    ///   one this closes. `adopt` is called from `onAppear` and from every `onChange`, so the flag
+    ///   says what it needs to say: this device has looked.
+    ///
+    /// **What this does not close, stated rather than implied.** A cold CloudKit import can still
+    /// be in flight long after `onAppear`, and nothing in-process can tell "no row has downloaded
+    /// yet" from "no row has ever existed" — `CadenceSyncActivityLog`'s events are launch-scoped
+    /// and, per [[T-2010]], not provably delivered at all. A device that touches a setting during
+    /// that window can still mint. The mitigation is the one already in
+    /// `CadenceLookPreferenceStore.pendingWrite`: a minted row carries only the pairs this device
+    /// actually set, `adopt` writes only the keys a record names, and neither accent nor tint can
+    /// be minted empty over a value this device has not seen.
+    @ObservationIgnored private(set) var hasAdopted = false
 
     private let defaults: UserDefaults
     private let accentDefaults: UserDefaults
@@ -57,6 +94,9 @@ final class CadenceLookPreferenceSync {
     /// a test can tell an adopt that did something from one that found everything already right.
     @discardableResult
     func adopt(records: [LookPreference], applyAccent: Bool = true) -> Set<String> {
+        // Before the early return, not after it: the flag means "this device has read the record
+        // set", and an empty set is a reading. See `hasAdopted`.
+        hasAdopted = true
         guard let record = CadenceLookPreferenceStore.current(from: records) else { return [] }
         var changed: Set<String> = []
 
@@ -133,10 +173,20 @@ final class CadenceLookPreferenceSync {
 
     /// Reads this device's mirrors up into the record, committing only when something differs.
     ///
+    /// **Refused before this launch's first adopt** (T-3040). `UserDefaults.didChangeNotification`
+    /// fires for every write in the process and the host is subscribed to it before `onAppear`
+    /// runs, so without this the first startup write that touches any default at all would reach
+    /// the record ahead of the only direction that reads it — and, finding nothing there, mint a
+    /// row stamped `now` that outranks whatever this device has not read yet. The mirror is written
+    /// first either way, so nothing the user can see is deferred by the refusal: `onAppear`'s adopt
+    /// opens the gate a frame later and the next change publishes normally. `hasAdopted` carries
+    /// the rest of the argument, including what it does *not* close.
+    ///
     /// Not `try?`: this inserts on the first write, and a swallowed insert is a pending change for
     /// the next unrelated `save()` to take. The failure is kept in `lastFailureNotice` and the next
     /// local change tries again.
     func publish(records: [LookPreference], in modelContext: ModelContext, now: Date = Date()) {
+        guard hasAdopted else { return }
         let record = CadenceLookPreferenceStore.current(from: records)
         guard let pending = CadenceLookPreferenceStore.pendingWrite(
             accentPaletteID: accentDefaults.string(forKey: CadenceAccentPaletteStore.defaultsKey) ?? "",

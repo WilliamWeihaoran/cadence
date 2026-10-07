@@ -736,4 +736,121 @@ struct CadenceLookPreferenceTests {
             }
         }
     }
+
+    // MARK: - T-3040: publish never runs before this launch's first adopt
+
+    /// **The race, end to end: a setting touched before the record has been read.**
+    ///
+    /// `UserDefaults.didChangeNotification` fires for every write in the process and the host is
+    /// subscribed before `onAppear` runs, so a publish can reach the record while `records` is
+    /// still empty — which is also what a device mid-import sees. Minting there produces a row
+    /// stamped `now` that `current(from:)` prefers over the row that arrives a moment later
+    /// carrying a month of the owner's choices, and nothing merges the loser back: `LookPreference`
+    /// is outside `DataIntegrityRepairService`'s dedupe set on purpose, because that pass *deletes*
+    /// what it collapses and this model's "Duplicates" note forbids exactly that.
+    ///
+    /// So the assertion is on the row **set** and on **which row wins**, not on a return value: a
+    /// guard that refused the write and minted anyway would pass a weaker test.
+    @Test func aPublishBeforeTheFirstAdoptMintsNoRowForTheImportToLoseTo() throws {
+        try withTemporaryDefaults("look-race") { defaults in
+            try withTemporaryDefaults("look-race-accent") { accents in
+                // This device has touched exactly one chip, so `currentMirrors` has something to
+                // say and the all-empty candidate that stops an untouched device does not apply.
+                defaults.set("Priority", forKey: CadencePreferenceKeys.allTasksSortField)
+
+                let container = try CadenceTestStore.container()
+                let context = ModelContext(container)
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+                #expect(sync.hasAdopted == false)
+
+                // The notification arrives first. `records` is empty because the import has not
+                // landed, not because the account is.
+                sync.publish(records: [], in: context, now: Date(timeIntervalSince1970: 10_000))
+
+                // Now the import lands, carrying the look the owner set a month ago.
+                let imported = LookPreference(
+                    accentPaletteID: "ember",
+                    sidebarTabColorsRaw: "inbox=#FF0000",
+                    taskPresentationRaw: "allTasks.grouping=project;inbox.mode=priority",
+                    updatedAt: Date(timeIntervalSince1970: 1_000)
+                )
+                context.insert(imported)
+                try context.save()
+
+                let rows = try ModelContext(container).fetch(FetchDescriptor<LookPreference>())
+                #expect(rows.count == 1, "the early publish minted a row the import then lost to")
+                let winner = try #require(Store.current(from: rows))
+                #expect(winner.accentPaletteID == "ember", "a minted row outranked the imported one")
+                #expect(winner.taskPresentationRaw == "allTasks.grouping=project;inbox.mode=priority")
+                #expect(winner.updatedAt == Date(timeIntervalSince1970: 1_000))
+            }
+        }
+    }
+
+    /// The bound that must survive the guard: a device that has touched nothing publishes nothing,
+    /// *after* it has adopted as well as before. `currentMirrors` omits an unset key, so the
+    /// candidate is empty and `pendingWrite` mints no row — a guard that started minting rows of
+    /// pure defaults on every untouched device would be the regression this one is meant to avoid.
+    @Test func anUntouchedDeviceStillMintsNothingOnceItHasAdopted() throws {
+        try withTemporaryDefaults("look-race-untouched") { defaults in
+            try withTemporaryDefaults("look-race-untouched-accent") { accents in
+                let container = try CadenceTestStore.container()
+                let context = ModelContext(container)
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+
+                #expect(sync.adopt(records: [], applyAccent: false).isEmpty)
+                #expect(sync.hasAdopted, "the gate stayed shut on an empty record set")
+                #expect(Store.currentMirrors(in: defaults, on: .macOS).isEmpty)
+
+                sync.publish(records: [], in: context, now: Date(timeIntervalSince1970: 10_000))
+
+                let rows = try ModelContext(container).fetch(FetchDescriptor<LookPreference>())
+                #expect(rows.isEmpty, "a device with nothing to say minted a row")
+            }
+        }
+    }
+
+    /// **The obvious wrong fix is one that blocks legitimate writes, so both legitimate shapes are
+    /// pinned here.**
+    ///
+    /// A device whose account genuinely has no row still mints one once it has looked — otherwise
+    /// a first-ever user's settings would never reach a second device, which is worse than the bug
+    /// being closed. And a device that has adopted a real row still writes into it rather than
+    /// minting a second.
+    @Test func aPublishAfterTheFirstAdoptStillReachesTheRecord() throws {
+        try withTemporaryDefaults("look-race-after") { defaults in
+            try withTemporaryDefaults("look-race-after-accent") { accents in
+                defaults.set("Priority", forKey: CadencePreferenceKeys.allTasksSortField)
+
+                let container = try CadenceTestStore.container()
+                let context = ModelContext(container)
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+
+                // An account with no row: adopt reads an empty set, and the mint still happens.
+                sync.adopt(records: [], applyAccent: false)
+                sync.publish(records: [], in: context, now: Date(timeIntervalSince1970: 2_000))
+
+                // Read back through a second context, so what is asserted is the store's answer
+                // rather than one object's memory.
+                let landed = try ModelContext(container).fetch(FetchDescriptor<LookPreference>())
+                #expect(landed.count == 1, "the gate blocked a first-ever device's only write")
+                #expect(Store.current(from: landed)?.taskPresentationRaw == "allTasks.mode=priority")
+
+                // And a later local change goes into that row rather than minting a second. The
+                // records come from `context`, which is the host's shape — the one app-wide
+                // context the `@Query` and the write both sit in; an object fetched from a second
+                // context would be edited where this `save()` cannot see it. No second adopt here
+                // on purpose: in the host the record has not moved, so the only thing that runs is
+                // the notification's publish.
+                let minted = try context.fetch(FetchDescriptor<LookPreference>())
+                defaults.set("Custom", forKey: CadencePreferenceKeys.allTasksSortField)
+                sync.publish(records: minted, in: context, now: Date(timeIntervalSince1970: 3_000))
+
+                let after = try ModelContext(container).fetch(FetchDescriptor<LookPreference>())
+                #expect(after.count == 1, "a normal publish minted a second row")
+                #expect(Store.current(from: after)?.taskPresentationRaw == "allTasks.mode=listOrder")
+                #expect(sync.lastFailureNotice == nil)
+            }
+        }
+    }
 }
