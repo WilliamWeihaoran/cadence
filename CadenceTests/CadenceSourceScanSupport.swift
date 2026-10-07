@@ -541,6 +541,18 @@ struct CadenceScanInstrument {
         including witness: String,
         read: (String) throws -> String
     ) throws -> [String] {
+        try checkWalk(paths, atLeast: minimum, including: witness)
+        var hits: [String] = []
+        for path in paths {
+            if detect(try read(path)) { hits.append(path) }
+        }
+        return hits.sorted()
+    }
+
+    /// `sweep`'s non-vacuity claim about the walk, on its own — for a caller that answers many
+    /// instruments from one pass over the same paths instead of one pass per instrument
+    /// ([[T-3006]]). Same refusals, same messages; it is the guard `sweep` itself runs first.
+    func checkWalk(_ paths: [String], atLeast minimum: Int, including witness: String) throws {
         guard !paths.isEmpty else { throw Failure.walkedNothing(name) }
         guard paths.count >= minimum else {
             throw Failure.walkedTooFew(name, walked: paths.count, expected: minimum)
@@ -548,11 +560,6 @@ struct CadenceScanInstrument {
         guard paths.contains(witness) else {
             throw Failure.walkMissedItsWitness(name, path: witness)
         }
-        var hits: [String] = []
-        for path in paths {
-            if detect(try read(path)) { hits.append(path) }
-        }
-        return hits.sorted()
     }
 }
 

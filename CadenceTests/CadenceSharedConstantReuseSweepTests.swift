@@ -275,8 +275,16 @@ struct CadenceSharedConstantReuseSweepTests {
     @Test func noCallSiteRetypesASharedStringConstant() throws {
         let constants = try cadenceSharedStringConstants()
         let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
-        let read = CadenceSourceScan.strippedSourceReader()
+        let cached = CadenceSourceScan.strippedSourceReader()
         let mcpMembers = try cadenceMCPServerMemberFiles()
+
+        // [[T-3006]]: one pass over the tree answers every constant. Counted through the reader
+        // rather than timed, because a count is the same on every Mac and a duration is not.
+        var reads = 0
+        let index = try CadenceSharedLiteralIndex(files: files) { path in
+            reads += 1
+            return try cached(path)
+        }
 
         for constant in constants {
             // The walk, the instrument and the T-499 target boundary all live in
@@ -286,9 +294,8 @@ struct CadenceSharedConstantReuseSweepTests {
             // complete, and there would be nothing for T-555's ledger to be checked against.
             let offenders = try cadenceSharedConstantOffenders(
                 for: constant,
-                in: files,
-                mcpMembers: mcpMembers,
-                read: read
+                in: index,
+                mcpMembers: mcpMembers
             ).filter { path in
                 !cadenceStaticFuncConstantLedger.contains {
                     $0.literal == constant.literal && $0.path == path
@@ -304,6 +311,15 @@ struct CadenceSharedConstantReuseSweepTests {
                 """
             )
         }
+
+        #expect(constants.count > 1, "non-vacuity: one constant cannot tell one pass from one per constant")
+        #expect(
+            reads == files.count,
+            """
+            \(constants.count) constants over \(files.count) files took \(reads) file reads; the sweep \
+            reads each file once and answers every constant from that pass (T-3006).
+            """
+        )
     }
 
     /// The walk, named rather than trusted. `sweep` refuses an empty or short list but cannot know
@@ -1006,17 +1022,18 @@ struct CadenceSharedConstantReuseSweepTests {
         let constants = try cadenceSharedFunctionStringConstants(in: cadenceSharedConstantRoots())
         #expect(constants.isEmpty == false, "non-vacuity: the function harvest returned nothing")
 
-        let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
-        let read = CadenceSourceScan.strippedSourceReader()
+        let index = try CadenceSharedLiteralIndex(
+            files: CadenceSourceScan.swiftFiles(under: "Cadence"),
+            read: CadenceSourceScan.strippedSourceReader()
+        )
         let mcpMembers = try cadenceMCPServerMemberFiles()
 
         var found: Set<CadenceLiteralSite> = []
         for constant in constants {
             for path in try cadenceSharedConstantOffenders(
                 for: constant,
-                in: files,
-                mcpMembers: mcpMembers,
-                read: read
+                in: index,
+                mcpMembers: mcpMembers
             ) {
                 found.insert(CadenceLiteralSite(literal: constant.literal, path: path))
             }
@@ -1246,8 +1263,58 @@ private func sharedLiteralInstrument(for constant: CadenceSharedStringConstant) 
             let subtitle = Somewhere.\(constant.name)
         }
         """,
-        by: { CadenceSourceScan.strippingComments($0).contains("\"\(constant.literal)\"") }
+        // The index's own question, asked of one source: `sweep` over an index answers exactly
+        // what this answers file by file, so these witnesses vouch for the single pass too.
+        by: { CadenceQuotedSpans(code: CadenceSourceScan.strippingComments($0)).types(constant.literal) }
     )
+}
+
+/// Every run of text that sits between two consecutive `"` characters of `code` — the only places
+/// a needle of the form `"<literal>"` can occur when the literal itself holds no `"`.
+///
+/// **[[T-3006]].** The sweep used to ask `code.contains("\"\(literal)\"")` once per harvested
+/// constant per file, re-stripping every file's comments each time: 47.8 s of the target's slowest
+/// test. A literal with no `"` in it matches at a `"` and must end at the very next one, so the set
+/// of spans between consecutive quotes answers every such needle by lookup, and is built once per
+/// file. The harvest excludes escaped literals, so a literal holding `"` should never arrive; if
+/// one does, `types` asks the original `contains` rather than guessing.
+struct CadenceQuotedSpans {
+    let code: String
+    private let spans: Set<Substring>
+
+    init(code: String) {
+        self.code = code
+        // Not omitting empties: `""` is a span too. The first piece precedes every quote and the
+        // last follows them all, so neither sits *between* two.
+        let pieces = code.split(separator: "\"", omittingEmptySubsequences: false)
+        spans = pieces.count < 3 ? [] : Set(pieces.dropFirst().dropLast())
+    }
+
+    func types(_ literal: String) -> Bool {
+        literal.contains("\"") ? code.contains("\"\(literal)\"") : spans.contains(Substring(literal))
+    }
+}
+
+/// One stripped read of every file under the walk, every harvested literal answered from it.
+///
+/// [[T-3006]]. Built once per test, then queried once per constant; `files` keeps the walk's
+/// order so `cadenceSharedConstantOffenders` can hand the instrument the exact list `sweep` was
+/// given before.
+struct CadenceSharedLiteralIndex {
+    let files: [String]
+    private let spansByPath: [(path: String, spans: CadenceQuotedSpans)]
+
+    init(files: [String], read: (String) throws -> String) throws {
+        self.files = files
+        spansByPath = try files.map { path in
+            (path, CadenceQuotedSpans(code: CadenceSourceScan.strippingComments(try read(path))))
+        }
+    }
+
+    /// The paths that type `literal` as a whole string literal, sorted — what `sweep` returned.
+    func paths(typing literal: String) -> [String] {
+        spansByPath.filter { $0.spans.types(literal) }.map(\.path).sorted()
+    }
 }
 
 /// Every `static let`/`static var` **or `static func`** in `Cadence/Shared/` or
@@ -1379,20 +1446,22 @@ func cadenceSharedComputedVarStringConstants(in roots: [String]) throws -> [Cade
 /// as complete.
 func cadenceSharedConstantOffenders(
     for constant: CadenceSharedStringConstant,
-    in files: [String],
-    mcpMembers: Set<String>,
-    read: (String) throws -> String
+    in index: CadenceSharedLiteralIndex,
+    mcpMembers: Set<String>
 ) throws -> [String] {
-    let hits = try sharedLiteralInstrument(for: constant).sweep(
-        files,
+    // [[T-3006]]: the instrument still vouches for the detector and the walk, per constant; the
+    // hits come from the index's single pass instead of a `sweep` that re-read every file.
+    let instrument = try sharedLiteralInstrument(for: constant)
+    try instrument.checkWalk(
+        index.files,
         // 300+ Swift files under `Cadence/`; the floor `CadenceRetiredCopyTests` uses for the same
         // tree.
         atLeast: 300,
         // The file that held four of this sweep's first hits, so a walk that skipped the iOS tree
         // cannot report the repo clean.
-        including: "Cadence/iOS/iOSFocusView.swift",
-        read: read
+        including: "Cadence/iOS/iOSFocusView.swift"
     )
+    let hits = index.paths(typing: constant.literal)
     // The target boundary, stated as the rule it always meant (T-499): a file cannot read a
     // constant declared in a file its own target does not compile. So the subtraction applies only
     // while the *declaration* is out of `CadenceMCPServer`'s reach — a constant in `Models/` is
