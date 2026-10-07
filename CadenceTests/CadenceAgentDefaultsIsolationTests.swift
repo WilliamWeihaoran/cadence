@@ -148,33 +148,63 @@ struct CadenceAgentDefaultsIsolationTests {
             "run-macos-app.sh launches the app onto the signed-in person's own defaults domain"
         )
 
-        // Every launch site in the UI target, counted rather than named: a fifth one added later
-        // has to route through the helper too, and a count is the only reading that notices.
-        let uiSources = [
-            "CadenceUITests/CadenceUITests.swift",
-            "CadenceUITests/CadenceUITestsLaunchTests.swift",
-            "CadenceUITests/CadenceTodayCompositionUITests.swift",
-            "CadenceUITests/CadenceSeededSidebarTimingUITests.swift",
-            "CadenceUITests/CadenceTodayRowCrushUITests.swift",
-            // The sixth, added with [[T-2074]]/[[T-2075]]: the first launch site in this target
-            // that is not macOS. It is here because the comment above says a later one has to
-            // route through the helper too — and a list that is never extended turns that
-            // sentence into a count over the files somebody remembered.
-            "CadenceUITests/CadenceIOSSeededStoreUITests.swift",
-        ]
+        // Every launch site in the UI target, **enumerated from the directory rather than listed**
+        // (agent `dataloss`, 2026-10-07). The list used to be six hand-typed paths under a comment
+        // warning that "a list that is never extended turns that sentence into a count over the
+        // files somebody remembered" — and that is exactly what it had become: the target holds
+        // **nine** `XCUIApplication()` sites, and `CadenceBoardPopoverAnchorPlacementUITests`,
+        // `CadenceInspectorHeaderPanelPlacementUITests` and
+        // `CadenceUnmeasuredTrailingPopoverPlacementUITests` were outside the census while
+        // `constructions == 6` went on passing. A count whose denominator is a remembered list
+        // cannot notice the file nobody remembered, so the denominator is read off disk now and
+        // the hardcoded total is replaced by a non-vacuity floor plus the two equalities, which
+        // are the properties that actually matter.
+        // **A file that builds no app is not a launch site, and skipping those is load-bearing
+        // rather than tidiness.** The first cut of this swept the whole directory and went red on
+        // two of its own assertions, both from one cause: `CadenceUITestEnvironment.swift` *defines*
+        // the helper, so it carries the by-hand `CADENCE_UI_TEST_STORE_ID` spelling inside
+        // `isolateStoreAndPreferences`' body — the one legitimate occurrence in the target — and its
+        // `static func isolateStoreAndPreferences(` declaration scored a tenth "isolation" against
+        // nine constructions. Keying on `XCUIApplication()` is what makes the census self-
+        // maintaining: it needs no named exclusion, and the next helper file is handled too.
+        let uiSources = try CadenceSourceScan.swiftFiles(under: "CadenceUITests")
         var constructions = 0
         var isolations = 0
+        var localStoreOnly = 0
+        var launchSiteFiles = 0
         for path in uiSources {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-            constructions += source.components(separatedBy: "XCUIApplication()").count - 1
+            let built = source.components(separatedBy: "XCUIApplication()").count - 1
+            guard built > 0 else { continue }
+            launchSiteFiles += 1
+            constructions += built
             isolations += source.components(separatedBy: "isolateStoreAndPreferences(").count - 1
+            localStoreOnly += source
+                .components(separatedBy: "launchEnvironment[\"CADENCE_LOCAL_STORE_ONLY\"] = \"1\"")
+                .count - 1
             #expect(
                 !source.contains("launchEnvironment[\"CADENCE_UI_TEST_STORE_ID\"]"),
                 "\(path) still sets the store id by hand, so its preferences suite is whatever it happens to be"
             )
         }
-        #expect(constructions == 6, "the UI target builds \(constructions) apps, not the 6 this reading was measured against")
+        #expect(launchSiteFiles >= 9, "\(launchSiteFiles) files in CadenceUITests build an app; 9 did on 2026-10-07")
+        #expect(constructions >= 9, "the UI target builds \(constructions) apps; 9 were counted on 2026-10-07, so this scan has gone vacuous")
         #expect(isolations == constructions, "\(constructions) launch sites, \(isolations) of them isolated")
+
+        // **The store redirect does not imply the CloudKit gate, and nothing in the app couples
+        // them** (agent `dataloss`, 2026-10-07; filed as the ticket this comment names).
+        // `isolateStoreAndPreferences` above sets `CADENCE_UI_TEST_STORE_ID` and the suite argument
+        // and *nothing else*, while `PersistenceController.shouldUseLocalStoreOnly` is
+        // `isRunningTests || CADENCE_LOCAL_STORE_ONLY || CADENCE_UI_TEST_MODE` — the store id is not
+        // in it. The app under test is not a test host (`XCTestConfigurationFilePath` is set in the
+        // *runner*), so a launch site that redirects the store and forgets this one line opens a
+        // throwaway store wired to `cloudKitDatabase: .private("iCloud.com.haoranwei.Cadence")` —
+        // the owner's real private database — and every row the seed inserts exports to it. All
+        // nine sites set it today; this is what makes that a measurement rather than a convention.
+        #expect(
+            localStoreOnly == constructions,
+            "\(constructions) launch sites, \(localStoreOnly) of them local-store-only: the rest join the owner's real iCloud container"
+        )
 
         // The helper lives in the UI-test target, which nothing here can import, so the two
         // literals it has to keep in step with this target are read as text. Both are load-bearing:
