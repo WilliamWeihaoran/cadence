@@ -86,7 +86,50 @@ Cadence/Services/CadenceWidgetRefreshCenter.swift
 Cadence/Services/CadenceTodayWidgetSupport.swift
 Cadence/iOS/iOSCompactTabShell.swift
 Cadence/iOS/iOSRootView.swift
+Cadence/macOS/Views/CalendarEventPresentationSupport.swift
 ```
+
+### LEASE WIDENED 2026-10-07 (second batch) — one path for [[T-122]], and the widget-membership sequence for [[T-168]]
+
+Codex landed `codex/leased-followup-batch` for review and came back with exactly two asks. Both are
+answered here. Additive: one pattern in, none out, 38 -> 39.
+
+**[[T-122]] — `Cadence/macOS/Views/CalendarEventPresentationSupport.swift:285-305`, granted.** This is
+the LAST of the Swift 6 warnings that can be cleared inside the annotation-only rule. It is
+`CalendarEventDragPayload`, a pure string codec: `static func string(for:)` and
+`allDayEventPayload(from:)` on an enum with two private `let`s and no stored state. The grant is for
+an annotation, not a rewrite — **the decode must stay synchronous**, which is the same constraint the
+first grant put on `TimelineDropInteractionSupport`: a drag decoder that gains a hop stops answering
+in the callback that asked it.
+
+**The other seven warnings are CORRECTLY not fixed, and that is the grant working rather than
+failing.** Codex reports them as actor-bound observer and KVO callbacks that cannot be honestly
+cleared within the annotation-only restriction. The first grant said in as many words that a warning
+which cannot be cleared that way gets **reported in the inbox entry instead of cleared**, because the
+report is worth more than the silence. It did that. Nobody should read eight-minus-one as incomplete
+work; `SWIFT_VERSION` stays 5 and the ticket's standing *investigate and report, do not flip* is
+intact.
+
+**[[T-168]] — the project-membership STOP was the right call, and here is the sequence.** The grant
+said to stop rather than edit `Cadence.xcodeproj/project.pbxproj` if widget-target membership needed
+a hunk, and Codex stopped, made no edit and claimed no workaround. The reason the stop exists is
+[[T-117]]: that file must not be written while the owner has Xcode open, and whether the coordinator
+or the owner lands it is decided at the time, not in advance.
+
+**The coordinator adds the membership, not Codex, and it is a known four-line shape.** `7d5bad39`
+did exactly this for `CadenceTaskBundleMutationSupport.swift` — a `PBXFileReference`, a
+`PBXBuildFile`, a group-children line and a Sources-phase line, with `pgrep -x Xcode` re-checked
+immediately before the write and the file backed up by `cp` first. `Cadence/Shared/` is a
+`PBXFileSystemSynchronizedRootGroup` so the app target picks a new file up by itself; the widget
+extension is a second target and does not, which is the whole of the problem Codex hit.
+
+**So the order is: Codex writes `CadenceFocusSessionSnapshot.swift` and the widget against it and
+says so; the coordinator then lands the membership in the same pass that integrates the branch.** Do
+not build the widget first and discover the membership last — a snapshot type the extension cannot
+see compiles fine in the app and fails only in the target nobody builds by default. **No T-168 lease
+path is retired by any of this**: nothing of half (a) is claimed, no session persistence exists, and
+the chrome toggle is unwritten.
+
 
 ### LEASE WIDENED 2026-10-07 — six paths for [[T-168]], because the owner answered its three questions
 
