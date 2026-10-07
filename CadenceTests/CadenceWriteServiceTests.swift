@@ -1912,6 +1912,247 @@ struct CadenceWriteServiceTests {
         #expect(try fixture.modelContext.fetch(FetchDescriptor<Note>()).isEmpty)
     }
 
+    // MARK: - T-1122: the block constructor and the one way to fill a block
+
+    /// The shared constructor is reached, not re-spelled — and the clamps are what prove it.
+    ///
+    /// This is what the declaration split bought. `insertBundle(title:…)` lived in
+    /// `CadenceTaskMutationSupport.swift`, which reaches `NotificationManager` and — through
+    /// `CadenceWidgetRefreshCenter` — WidgetKit, and a Sources phase compiles whole files, so
+    /// `CadenceMCPServer` could not have this arm without two UI stacks. Moving the *declaration*
+    /// into `CadenceTaskBundleMutationSupport.swift` left the old file an `extension` and every
+    /// call site character-identical. Each `#expect` below is a rule a hand-rolled arm would have
+    /// had to carry, and `bundleDayEndMin`/`bundleMinimumDuration` are the same two numbers
+    /// `TimelineDayRange` spells on macOS — which is the whole argument against retyping `24 * 60`
+    /// inside `CadenceWriteService`.
+    @Test func createTaskBundleMintsThroughTheSharedConstructorAndItsClamps() throws {
+        let fixture = try Fixture()
+
+        let detail = try fixture.writeService.createTaskBundle(options: .init(
+            title: "  Deep work  ",
+            dateKey: "2026-05-04",
+            startMin: 540,
+            durationMinutes: 120
+        ))
+
+        #expect(detail.summary.title == "Deep work")
+        #expect(detail.summary.dateKey == "2026-05-04")
+        #expect(detail.summary.startMin == 540)
+        #expect(detail.summary.durationMinutes == 120)
+        #expect(detail.summary.endMin == 660)
+        #expect(detail.tasks.isEmpty)
+        #expect(detail.summary.taskCount == 0)
+
+        // `TaskBundle.storedTitle`'s fallback, asked of the model rather than typed here: the arm
+        // sends the empty string and the shared constructor decides what an unnamed block is
+        // called. A copy that wrote a literal would pass a check on "not empty" and drift the day
+        // the app's own noun moved, which is the drift [[T-843]] had to sweep eleven call sites for.
+        let untitled = try fixture.writeService.createTaskBundle(options: .init(
+            dateKey: "2026-05-04", startMin: 780, durationMinutes: 30
+        ))
+        #expect(untitled.summary.title == TaskBundle.defaultDisplayTitle)
+
+        // The day-end clamp, which is the half no response field would reveal if it were missing:
+        // a block starting at 23:30 cannot be two hours tall, and the arm deliberately does not
+        // re-spell the arithmetic that decides so.
+        let clamped = try fixture.writeService.createTaskBundle(options: .init(
+            dateKey: "2026-05-04", startMin: 1410, durationMinutes: 120
+        ))
+        #expect(clamped.summary.startMin == 1410)
+        #expect(clamped.summary.durationMinutes == 30)
+        #expect(clamped.summary.endMin == 1440)
+    }
+
+    /// A block is a placement, so each of the three placement fields is refused when absent rather
+    /// than defaulted to a day, a time or a height nobody asked for — and the two bounds this
+    /// surface already holds `scheduledStartMin` to are the ones a block's own start answers to.
+    @Test func createTaskBundleRefusesAPlacementItWasNotGiven() throws {
+        let fixture = try Fixture()
+
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTaskBundle(options: .init(startMin: 540, durationMinutes: 60))
+        }
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTaskBundle(options: .init(dateKey: "2026-05-04", durationMinutes: 60))
+        }
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTaskBundle(options: .init(dateKey: "2026-05-04", startMin: 540))
+        }
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTaskBundle(options: .init(
+                dateKey: "2026-05-04", startMin: 2_000, durationMinutes: 60
+            ))
+        }
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTaskBundle(options: .init(
+                dateKey: "2026-05-04", startMin: 540, durationMinutes: 0
+            ))
+        }
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
+    }
+
+    /// **The rule this whole ticket exists to refuse a second copy of.**
+    ///
+    /// `CadenceTaskMutationSupport.assignTask(_:to:)` writes five fields, and every one of them is
+    /// asserted here off the stored row rather than off the arm's own answer: the block, the
+    /// member's order within it, the block's day, a cleared time-of-day slot, and a cleared
+    /// `calendarEventID` — the last being the one field the macOS and iOS add-to-bundle paths
+    /// disagreed on before T-760 made them one function, and the one a hand-rolled copy written
+    /// from the response shape would have missed entirely. `taskCount` and the member list would
+    /// both be satisfied by an arm that assigned `bundle` and nothing else.
+    @Test func addTaskToBundleWritesEveryFieldOfTheSharedMembershipRule() throws {
+        let fixture = try Fixture()
+        let block = try fixture.writeService.createTaskBundle(options: .init(
+            title: "Deep work", dateKey: "2026-05-04", startMin: 540, durationMinutes: 120
+        ))
+
+        let first = try fixture.writeService.createTask(options: .init(
+            title: "Draft", scheduledDate: "2026-05-06", scheduledStartMin: 600, estimatedMinutes: 45
+        ))
+        // A stale calendar link the task is carrying in. Nothing on this surface can write one, so
+        // it is seeded on the row: the clear is the rule's fifth field and must be observable.
+        let seeded = try #require(
+            try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id.uuidString == first.summary.id }
+        )
+        seeded.calendarEventID = "evt-stale"
+        try fixture.modelContext.save()
+
+        let filled = try fixture.writeService.addTaskToBundle(options: .init(
+            bundleId: block.summary.id, taskId: first.summary.id
+        ))
+        #expect(filled.tasks.map(\.id) == [first.summary.id])
+        #expect(filled.summary.taskCount == 1)
+        #expect(filled.summary.totalEstimatedMinutes == 45)
+
+        #expect(seeded.bundle?.id.uuidString == block.summary.id)
+        #expect(seeded.bundleOrder == 0)
+        #expect(seeded.scheduledDate == "2026-05-04", "the block owns the day now")
+        #expect(seeded.scheduledStartMin == -1, "the block owns the placement, so the task's own slot goes")
+        #expect(seeded.calendarEventID == "", "the stale calendar link went with the slot it belonged to")
+
+        // The order is max-plus-one among the block's members, which is why a second task may not
+        // land on 0 again: `TaskBundle.sortedTasks` breaks ties on `createdAt`, so two zeroes would
+        // make the member order depend on insertion timing rather than on the drop.
+        let second = try fixture.writeService.createTask(options: .init(title: "Review"))
+        _ = try fixture.writeService.addTaskToBundle(options: .init(
+            bundleId: block.summary.id, taskId: second.summary.id
+        ))
+        let storedSecond = try #require(
+            try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id.uuidString == second.summary.id }
+        )
+        #expect(storedSecond.bundleOrder == 1)
+    }
+
+    /// The two scoped refusals, each about the answer the arm would otherwise give.
+    @Test func addTaskToBundleRefusesARepeatAndACancelledTask() throws {
+        let fixture = try Fixture()
+        let block = try fixture.writeService.createTaskBundle(options: .init(
+            dateKey: "2026-05-04", startMin: 540, durationMinutes: 60
+        ))
+        let member = try fixture.writeService.createTask(options: .init(title: "Draft"))
+        _ = try fixture.writeService.addTaskToBundle(options: .init(
+            bundleId: block.summary.id, taskId: member.summary.id
+        ))
+
+        // Refused rather than re-stamped: the five fields would be written again and
+        // `mcp-audit.log` would record a move that moved nothing.
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.addTaskToBundle(options: .init(
+                bundleId: block.summary.id, taskId: member.summary.id
+            ))
+        }
+
+        // `TaskBundle.sortedTasks` filters cancelled members out, so this write would land in the
+        // store and be absent from the very detail the arm answers with.
+        let cancelled = try fixture.writeService.createTask(options: .init(title: "Dropped"))
+        _ = try fixture.writeService.cancelTask(taskID: cancelled.summary.id)
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.addTaskToBundle(options: .init(
+                bundleId: block.summary.id, taskId: cancelled.summary.id
+            ))
+        }
+
+        #expect(throws: CadenceReadError.self) {
+            try fixture.writeService.addTaskToBundle(options: .init(
+                bundleId: UUID().uuidString, taskId: member.summary.id
+            ))
+        }
+    }
+
+    /// T-1121's discipline on the create half, and the reason `insertBundle(title:…)` grew a
+    /// `commit:` at all: the shared constructor would otherwise commit the block itself, and a
+    /// refusal here could not take back a row the store had already accepted.
+    @Test func aRefusedBlockCreateLeavesNoRowForTheNextCallsSave() throws {
+        let fixture = try Fixture()
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.createTaskBundle(options: .init(
+                title: "Ghost block", dateKey: "2026-05-04", startMin: 540, durationMinutes: 60
+            ))
+        }
+
+        // Read through a second context before anything saves: `commitInsert` deletes the row
+        // either way, so the primary context looks identical. What `commit: { _ in }` prevents is
+        // the block reaching the *store*. Hand the constructor its own default commit instead and
+        // the block is written, succeeds, and only then is the audit-and-notify commit refused.
+        let onlooker = ModelContext(fixture.container)
+        #expect(try onlooker.fetch(FetchDescriptor<TaskBundle>()).isEmpty, "the refused block reached the store")
+
+        try fixture.modelContext.save()
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
+    }
+
+    /// The other half of T-1121 on the fill arm, and it is the half `insertBundle(from:adding:)`
+    /// never needed: that one can lean on `commitInsert` un-inserting the block it just made, and
+    /// this one writes into a block that survives the refusal. So the undo is both pieces —
+    /// `BundleMembership` putting the task's five fields back, and this call restoring the block's
+    /// own `tasks` edge, which `assignTask` appended to.
+    @Test func aRefusedAddToBundlePutsBackBothTheTaskAndTheBlocksMemberList() throws {
+        let fixture = try Fixture()
+        let block = try fixture.writeService.createTaskBundle(options: .init(
+            dateKey: "2026-05-04", startMin: 540, durationMinutes: 60
+        ))
+        let created = try fixture.writeService.createTask(options: .init(
+            title: "Draft", scheduledDate: "2026-05-06", scheduledStartMin: 600
+        ))
+        let task = try #require(
+            try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id.uuidString == created.summary.id }
+        )
+        task.calendarEventID = "evt-stale"
+        try fixture.modelContext.save()
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.addTaskToBundle(options: .init(bundleId: block.summary.id, taskId: created.summary.id))
+        }
+
+        #expect(task.bundle == nil)
+        #expect(task.scheduledDate == "2026-05-06")
+        #expect(task.scheduledStartMin == 600)
+        #expect(task.calendarEventID == "evt-stale")
+        let storedBlock = try #require(
+            try fixture.modelContext.fetch(FetchDescriptor<TaskBundle>()).first { $0.id.uuidString == block.summary.id }
+        )
+        #expect((storedBlock.tasks ?? []).isEmpty, "the refused member stayed on the block's own edge")
+
+        // Nothing left pending for an unrelated call's save, which is the failure T-1121 is about.
+        try fixture.modelContext.save()
+        let onlooker = ModelContext(fixture.container)
+        let reread = try #require(
+            try onlooker.fetch(FetchDescriptor<AppTask>()).first { $0.id.uuidString == created.summary.id }
+        )
+        #expect(reread.bundle == nil)
+        #expect(reread.scheduledStartMin == 600)
+    }
+
     // MARK: - T-1121: a refused commit leaves nothing pending
 
     /// The failure this whole sweep is about. A refused *insert* used to stay pending on a

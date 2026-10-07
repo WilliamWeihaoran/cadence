@@ -111,23 +111,35 @@ The framing T-1120 expected — no confirmation, no undo, `mcp-audit.log` for a 
 is *not* the binding constraint: `CadencePendingChangePersistence.commitCascade` is an undo for a
 delete, and the cascades already return `false` for the caller to roll back.
 
-## Why One Kind Has No Constructor (T-1122)
+## Why One Kind Had No Constructor (T-1122)
 
 Displaced from `CadenceMCPServer/AGENTS.md` when T-1122's second pass pushed it past its 200-line
-cap again. **It was three until [[T-1406]] built `create_tag`, and two until T-1122's third pass
-built `create_list_note`**; the task bundle is still **refused with a measurement**, not left
-undecided.
+cap again. **It was three until [[T-1406]] built `create_tag`, two until T-1122's third pass built
+`create_list_note`, and none since its eighth pass built `create_task_bundle`.** Kept because the
+*shape* of the refusal is what the next arm-shaped question gets measured against, not because the
+refusal still stands.
 
-- **Task bundle, still refused.** `CadenceTaskMutationSupport` calls `NotificationManager`, which
-  is `import UserNotifications` — the same boundary that already makes `createTask` insert its
-  subtasks by hand, and the same one deletion is refused on. Re-measured 2026-09-27: the calls are
-  at lines 859 and 861 and `insertBundle(title:…)` at 1197, and the dependency is unchanged. The
-  file cost is now the *smaller* half of the objection: **no arm on this surface can put a task
-  into a bundle**, so the only thing `create_task_bundle` could make is an empty block. The count
-  is checkable — `AppTask.bundle` is assigned in `CadenceWriteService.swift` zero times, and
-  neither `CadenceCreateTaskOptions` nor `CadenceUpdateTaskOptions` nor
-  `CadenceScheduleTaskOptions` carries a `bundleId`. T-1122's ledger entry has the full argument
-  and the condition that would lift it.
+- **Task bundle, built 2026-10-07, and it fell to exactly the condition the refusal named.** The
+  objection had two halves and both were paid rather than argued away. (1) The **file**:
+  `CadenceTaskMutationSupport.swift` calls `NotificationManager` (`import UserNotifications`) and,
+  through `CadenceWidgetRefreshCenter`, reaches WidgetKit — two stacks in a headless tool, and a
+  Sources phase compiles whole files. The fix was **not** to move the five bundle members to a new
+  type, which three source-text scans pinned by spelling; it was to move the **declaration**, so
+  `Cadence/Shared/CadenceTaskBundleMutationSupport.swift` declares `enum CadenceTaskMutationSupport`
+  on `Foundation`/`SwiftData` alone and the old file became an `extension` of it. Every call site
+  and every pin stayed character-identical. (2) **Nothing on this surface could put a task into a
+  bundle**, so the arm alone would have made empty blocks and turned `list_task_bundles` from
+  dispatched-and-empty into dispatched-over-rows nobody could fill. `add_task_to_bundle` is that
+  half, and the two landed in one pass because a file added to the Sources phase with **no caller
+  in the target** is the defect [[T-3010]] removed three files for.
+- **The membership rule is called, not copied, and that was the whole point of the ticket.**
+  `CadenceTaskMutationSupport.assignTask(_:to:)` writes five fields — `bundle`, `bundleOrder`,
+  `scheduledDate`, a cleared `scheduledStartMin`, and a cleared `calendarEventID`, which was the
+  one field the macOS and iOS add-to-bundle paths disagreed on until T-760 made them one function.
+  It moved into the declaration file and stopped being `private` so the arm could ask it. A second
+  copy of those five lines inside `CadenceWriteService` — in a process with no timeline in front of
+  it — is the failure T-1122 existed to refuse, and it is the thing to check first if this arm is
+  ever rewritten.
 - **List note, built.** The refusal was that `CadenceNoteFolderSupport` owned both the folder-path
   rule and the seeded `# Title` *and* declared four SwiftUI `View`s reading `Theme`, so compiling
   it here would have dragged the theme layer into a command-line tool to reach two string rules.
@@ -286,8 +298,8 @@ measurement and the enumeration are here._
   `CADENCE_MCP_ENABLE_WRITES` environment flag and defaults to read-only, but when enabled there is
   no confirmation step: `createContext`, `updateContext`, `createContainer`, `updateContainer`,
   `updateContainerColumns`, `createTask`, `updateTask`, `scheduleTask`, `completeTask`,
-  `reopenTask`, `cancelTask`, `bulkCancelTasks`, `appendCoreNote`, `createSavedLink`, `createTag`
-  and `createListNote` — **sixteen arms** — write and save. *No undo stack* is no longer true of any
+  `reopenTask`, `cancelTask`, `bulkCancelTasks`, `appendCoreNote`, `createSavedLink`, `createTag`,
+  `createListNote`, `createTaskBundle` and `addTaskToBundle` — **eighteen arms** — write and save. *No undo stack* is no longer true of any
   of them (T-1121): every arm goes through `saveNotifyAndAudit(_:inserted:undo:)`, which un-inserts
   what the call added and restores what it changed in place before the caller is told. The one
   residue went with it (T-1181): the core-note accessors take a `commit:` and `append_core_note`
@@ -361,12 +373,13 @@ measurement and the enumeration are here._
   destination bucket, not the stored number, and the arm renumbers that whole bucket densely;
   re-filing alone still renumbers nothing. `linkedCalendarID` stays refused, on T-390's opacity and
   the absence of any picker here; the reasoning is on `CadenceUpdateContainerOptions`.
-  **`create_link`, `create_goal`, `create_habit`, `create_tag` and `create_list_note` are the
-  constructors outside the context/list/task triangle; nothing creates a task bundle, and that one
-  is *refused with a measurement* rather than undecided ([[T-1122]]).** Every refusal in this
-  family shared one shape — no eligible owner this target can compile — and the section above,
-  "Why one kind has no constructor", records which fell, to what, and what the bundle's own second
-  objection is. Do not re-decide any of them from a summary.
+  **`create_link`, `create_tag`, `create_list_note`, `create_task_bundle` and `add_task_to_bundle`
+  are the constructors outside the context/list/task triangle, and there is no kind left that this
+  surface cannot mint ([[T-1122]]; `create_goal` and `create_habit` were two more until [[T-2077]]
+  removed them, because the app itself stopped minting either).** Every refusal in this family
+  shared one shape — no eligible owner this target can compile — and the section above, "Why one
+  kind had no constructor", records which fell and to what. Do not re-decide any of them from a
+  summary.
   **Nothing deletes anything, and that is settled, not deferred.** Two measured reasons, either
   sufficient — the cascade is unreachable from this target, and `deleteContext` walks *local*
   relationship arrays so it could not honestly report what it removed — written out on
@@ -389,7 +402,8 @@ measurement and the enumeration are here._
   `CadenceSavedLinkURL.normalized`, T-509's case-insensitive scheme rule, which a third hand-rolled
   copy would re-break. The last four came with `create_goal`/`create_habit`; why that is four files
   rather than one is in the reference, "Why the tracking helpers cost four files". The ninth came
-  with `create_list_note`, and it is the only one that cost a **split** rather than a file:
+  with `create_list_note`, and it was for a while the only one that cost a **split** rather than a
+  file (the eleventh, below, is the second):
   `CadenceListNoteFiling` carries `CadenceNoteFolderPath.normalized` and the seeded `# Title`, and
   it had to be lifted out of a file declaring four SwiftUI views before it was eligible at all.
   Full reasoning in T-1095's and T-1122's ledger entries. Adding a file here is still not casual: it is another
@@ -419,3 +433,30 @@ app callers (`GoalAssignmentRules` has 68 references outside its own file). **Th
 this leaves behind:** retiring a tool arm does not retire the files it dragged in, and nothing in
 this repository notices — no scheme builds this target, and dead weight here emits no diagnostic.
 Sweep the phase when an arm is removed, not only when one is added.
+
+**The count is ELEVEN since [[T-1122]]'s eighth pass (2026-10-07), and the eleventh is the second
+file here that cost a SPLIT rather than a file.** `Cadence/Shared/CadenceTaskBundleMutationSupport.swift`
+joined with `create_task_bundle` and `add_task_to_bundle`. The heading above still says *ten* for
+the reason the paragraph before last gives — `AgentContextBudgetTests.guideReferencePairings` pins
+it as a string the guide must quote, so renaming it is a three-file edit — and the measured number
+is the one to take. **What is worth carrying away is the shape of the split, which is not
+`CadenceListNoteFiling`'s.** That one moved a *type* out of a file full of SwiftUI views. This one
+could not: the five bundle members are `static` on `enum CadenceTaskMutationSupport`, whose name
+three source-text scans pin by spelling at their call sites —
+`CadenceCreateTaskCommitSurfaceTests` against `iOSCalendarQuickCreateSheet`, and both
+`CadenceBundleCreationParityTests` and `CadenceSaveCommitDisciplineTests` against
+`SchedulingService` — so moving them to a second type was a re-point worth three or four suites,
+and an `extension` in the new file would still have required the old one to declare the enum,
+which was the whole problem. **So the DECLARATION moved and the old file became the extension.**
+The new file declares the enum on `Foundation`/`SwiftData` alone and holds six members — the four
+clamps-and-constructor plus `assignTask(_:to:)`, the five-field membership rule — while
+`CadenceTaskMutationSupport.swift` keeps the other sixty-two and reaches `NotificationManager` and
+WidgetKit as it always did. Every call site and every pin stayed character-identical, and the
+whole type-reference closure of the new file — `AppTask`, `TaskBundle`,
+`CadencePendingChangePersistence`, `ModelContext` — was already in the phase, so nothing followed
+it in. The inverse direction was costed and **refused**: splitting
+`CadenceTaskReopenWidgetEffects.live` out instead would turn red
+`CadenceTests/CadenceCodexWidgetReopenTests.swift`, which scans
+`Cadence/Shared/CadenceTaskMutationSupport.swift` **by path** for that body, and it was dearer
+besides — the whole 1,788-line file needs three more, one of which imports SwiftUI. Do not
+re-cost it.

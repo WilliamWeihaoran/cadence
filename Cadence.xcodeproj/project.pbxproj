@@ -58,6 +58,7 @@
 		A10000002FCE00000000023A /* Cadence/Shared/CadenceSavedLinkPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000239 /* Cadence/Shared/CadenceSavedLinkPersistence.swift */; };
 		A10000002FCE000000000240 /* Cadence/Shared/CadenceOrderAllocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE00000000023F /* Cadence/Shared/CadenceOrderAllocation.swift */; };
 		A10000002FCE000000000244 /* Cadence/Shared/CadenceListNoteFiling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000243 /* Cadence/Shared/CadenceListNoteFiling.swift */; };
+		A10000002FCE000000000246 /* Cadence/Shared/CadenceTaskBundleMutationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE000000000245 /* Cadence/Shared/CadenceTaskBundleMutationSupport.swift */; };
 		A10000002FCE0000000002F1 /* Cadence/Models/SidebarLayoutPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE0000000001F1 /* Cadence/Models/SidebarLayoutPreference.swift */; };
 		A10000002FCE0000000002F2 /* Cadence/Models/LookPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE0000000001F2 /* Cadence/Models/LookPreference.swift */; };
 		A10000002FCE0000000002F3 /* Cadence/Models/NoteTemplatePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000002FCE0000000001F3 /* Cadence/Models/NoteTemplatePreference.swift */; };
@@ -202,6 +203,7 @@
 		A10000002FCE00000000023F /* Cadence/Shared/CadenceOrderAllocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceOrderAllocation.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000241 /* Cadence/Shared/CadencePluralization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadencePluralization.swift; sourceTree = "<group>"; };
 		A10000002FCE000000000243 /* Cadence/Shared/CadenceListNoteFiling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceListNoteFiling.swift; sourceTree = "<group>"; };
+		A10000002FCE000000000245 /* Cadence/Shared/CadenceTaskBundleMutationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Shared/CadenceTaskBundleMutationSupport.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000101 /* CadenceWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CadenceWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000002FCE000000000102 /* Cadence/Services/CadenceStoreSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceStoreSupport.swift; sourceTree = "<group>"; };
 		B10000002FCE000000000103 /* Cadence/Services/CadenceWidgetRefreshCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cadence/Services/CadenceWidgetRefreshCenter.swift; sourceTree = "<group>"; };
@@ -376,6 +378,7 @@
 				A10000002FCE00000000023F /* Cadence/Shared/CadenceOrderAllocation.swift */,
 				A10000002FCE000000000241 /* Cadence/Shared/CadencePluralization.swift */,
 				A10000002FCE000000000243 /* Cadence/Shared/CadenceListNoteFiling.swift */,
+				A10000002FCE000000000245 /* Cadence/Shared/CadenceTaskBundleMutationSupport.swift */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -691,6 +694,7 @@
 				A10000002FCE00000000023A /* Cadence/Shared/CadenceSavedLinkPersistence.swift in Sources */,
 				A10000002FCE000000000240 /* Cadence/Shared/CadenceOrderAllocation.swift in Sources */,
 				A10000002FCE000000000244 /* Cadence/Shared/CadenceListNoteFiling.swift in Sources */,
+				A10000002FCE000000000246 /* Cadence/Shared/CadenceTaskBundleMutationSupport.swift in Sources */,
 				A10000002FCE000000000202 /* CadenceMCPToolRouter.swift in Sources */,
 				A10000002FCE00000000021B /* CadenceMCPToolDefinitions.swift in Sources */,
 				A10000002FCE00000000021C /* CadenceMCPArgumentParsing.swift in Sources */,

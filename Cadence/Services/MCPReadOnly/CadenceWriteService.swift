@@ -43,6 +43,17 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     /// default and the refusal names the row and the opt-in that takes it, the same shape
     /// `bulk_cancel_tasks`' `dryRun` gives a caller with no confirmation sheet ([[T-1365]]).
     case tagArchived(name: String, slug: String, id: String)
+    /// `add_task_to_bundle` was handed a task the block already holds ([[T-1122]]). Refused rather
+    /// than written as a no-op: `assignTask` would re-stamp the five membership fields and
+    /// `saveNotifyAndAudit` would put a line in `mcp-audit.log` for a call that moved nothing.
+    case taskAlreadyInBundle(taskId: String, bundleId: String)
+    /// `add_task_to_bundle` was handed a cancelled task ([[T-1122]]). `TaskBundle.sortedTasks`
+    /// filters cancelled members out, so the write would land in the store and be invisible in the
+    /// very answer this arm returns — the caller would be told it succeeded and see nothing.
+    case cannotBundleCancelledTask(String)
+    /// `create_task_bundle` was handed a block height outside 1...1440 ([[T-1122]]). Its own case
+    /// rather than `invalidEstimatedMinutes`, which names an argument this arm does not take.
+    case invalidDurationMinutes(Int)
 
     var errorDescription: String? {
         switch self {
@@ -97,6 +108,12 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "Tag \(name) (\(id)) already carries the slug \(slug), so nothing was created. Use it by name in create_task or update_task."
         case .tagArchived(let name, let slug, let id):
             return "Archived tag \(name) (\(id)) already carries the slug \(slug), so nothing was created. Send unarchive: true to restore that tag instead of making a second one, or list_tags with includeArchived to look at it first."
+        case .taskAlreadyInBundle(let taskId, let bundleId):
+            return "Task \(taskId) is already in block \(bundleId), so nothing was written."
+        case .cannotBundleCancelledTask(let id):
+            return "Cancelled task \(id) cannot be added to a block. A block lists only its active members, so the move would not appear in the block this call answers with."
+        case .invalidDurationMinutes(let value):
+            return "Invalid durationMinutes: \(value). Expected 1...1440."
         }
     }
 }
@@ -408,6 +425,53 @@ nonisolated struct CadenceCreateListNoteOptions: Sendable {
     var folderPath: String? = nil
 }
 
+/// Everything `create_task_bundle` may set — the four fields a block *is* ([[T-1122]]).
+///
+/// **This is the sixth constructor outside the context/list/task triangle, and the last of the six
+/// the ticket ranked.** It was refused for seven sittings on two measurements, and both have now
+/// been paid rather than argued away. The first was a **file**: `insertBundle(title:…)` lived in
+/// `CadenceTaskMutationSupport.swift`, which reaches `NotificationManager` and — through
+/// `CadenceWidgetRefreshCenter` — WidgetKit, and a Sources phase compiles whole files, so the arm
+/// cost two UI stacks inside a headless command-line tool. The split is
+/// `Cadence/Shared/CadenceTaskBundleMutationSupport.swift`, which *declares* the enum on
+/// `Foundation`/`SwiftData` alone while the old file extends it, so no call site and no source-text
+/// pin moved a character. The second was that **nothing on this surface could put a task into a
+/// block**, which would have made this arm a constructor for empty boxes: `add_task_to_bundle`
+/// below is the other half, and the two landed in one pass because a file added to that Sources
+/// phase with no caller in the target is the defect [[T-3010]] removed three files for.
+///
+/// **Every field is required except the title, and that asymmetry is the model's.** A block is a
+/// timeline placement — `dateKey` plus `startMin` plus a height — so there is nothing sensible to
+/// default any of the three to, and a headless caller has no timeline to have dragged a range on.
+/// The title is different: `TaskBundle.storedTitle` already falls back for the app's own
+/// drag-out-a-range gesture, which mints a block nobody has named yet, so an omitted title here
+/// gets the same fallback rather than a second spelling of it.
+nonisolated struct CadenceCreateTaskBundleOptions: Sendable {
+    /// Optional. Omitted or blank, `TaskBundle.storedTitle` supplies the app's own fallback.
+    var title: String? = nil
+    /// Required `yyyy-MM-dd` day. The router accepts a natural day for it.
+    var dateKey: String? = nil
+    /// Required minutes from midnight. Clamped by `CadenceTaskMutationSupport.clampedBundleStart`
+    /// so a minimum-length block still ends inside the day.
+    var startMin: Int? = nil
+    /// Required block height in minutes, clamped into the day by the same shared constructor.
+    var durationMinutes: Int? = nil
+}
+
+/// The two ids `add_task_to_bundle` needs ([[T-1122]], half (b)).
+///
+/// **The arm exists so that `create_task_bundle` is not a constructor for empty boxes**, and it is
+/// a caller rather than a copy. The membership rule is five fields —
+/// `bundle`, `bundleOrder`, `scheduledDate`, `scheduledStartMin` and the `calendarEventID` clear
+/// that was the one field the two platforms' add-to-bundle paths used to disagree on — and it is
+/// `CadenceTaskMutationSupport.assignTask(_:to:)`. A second copy of those five lines, written here
+/// in a process with no timeline in front of it, is the exact failure T-1122 exists to refuse; the
+/// rule moved into the declaration file and opened up instead.
+nonisolated struct CadenceAddTaskToBundleOptions: Sendable {
+    var bundleId: String
+    var taskId: String
+}
+
 /// Every field `updateContainer` writes to an `Area` or a `Project`, captured before the write so
 /// a refused commit puts all of it back (T-1121).
 ///
@@ -616,6 +680,13 @@ private struct PendingAuditEntry {
     /// store does not make.
     static func listNote(id: UUID, summary: String) -> PendingAuditEntry {
         PendingAuditEntry(tool: "create_list_note", entityType: "note", entityId: id.uuidString, summary: summary)
+    }
+
+    /// `tool` is a parameter because the two block arms write the same `entityType` — the row that
+    /// changed is the block, whether it was just minted or just gained a member — and `mcp-audit.log`
+    /// is read by `tool` ([[T-1122]]).
+    static func taskBundle(tool: String, id: UUID, summary: String) -> PendingAuditEntry {
+        PendingAuditEntry(tool: tool, entityType: "task_bundle", entityId: id.uuidString, summary: summary)
     }
 
     static func contextFields(id: UUID, summary: String) -> PendingAuditEntry {
@@ -1437,6 +1508,119 @@ final class CadenceWriteService {
         return try readService.getNote(noteID: note.id.uuidString)
     }
 
+    /// Mint an empty timeline block ([[T-1122]], and the last of the six constructors the ticket
+    /// ranked).
+    ///
+    /// **The shared constructor is asked, not re-spelled.**
+    /// `CadenceTaskMutationSupport.insertBundle(title:dateKey:startMin:durationMinutes:modelContext:commit:)`
+    /// owns three rules a hand-rolled arm would each have had to copy: the title falls back through
+    /// `TaskBundle.storedTitle`, the start minute is clamped by `clampedBundleStart` so a
+    /// minimum-length block still ends inside the day, and the duration is clamped into what is left
+    /// of that day with `bundleMinimumDuration` as its floor. Those two constants are the same
+    /// numbers `TimelineDayRange` spells on macOS, and `TaskBundleTests` fails if the two sides
+    /// move apart — which is the whole argument for reaching the shared file rather than typing
+    /// `24 * 60` here.
+    ///
+    /// **`commit: { _ in }`, as `createListNote` and `appendCoreNote` do.** The block travels to
+    /// `saveNotifyAndAudit` in this call's `inserted:` list instead of being committed by the
+    /// constructor, so there is one commit, one audit entry and one undo. A create has nothing to
+    /// put back, so there is no `undo`.
+    ///
+    /// **The three placement fields are refused rather than defaulted when absent.** A block *is* a
+    /// day plus a start minute plus a height; there is no "today at nothing for nothing" block for
+    /// the omitted ones to mean.
+    func createTaskBundle(options: CadenceCreateTaskBundleOptions) throws -> CadenceTaskBundleDetail {
+        guard let dateKey = try validatedOptionalDate(options.dateKey) else {
+            throw CadenceWriteError.invalidCombination("date is required: a block is a placement on one day.")
+        }
+        // The same 0...1439 `schedule_task` holds `scheduledStartMin` to, asked of the same
+        // validator: a block's start minute and a task's are the same quantity, and this surface
+        // should not refuse one range in one arm and another range in the next.
+        guard let startMin = try validateOptionalScheduledStart(options.startMin) else {
+            throw CadenceWriteError.invalidCombination("startMin is required: a block is a placement at one time of day.")
+        }
+        guard let durationMinutes = options.durationMinutes else {
+            throw CadenceWriteError.invalidCombination("durationMinutes is required: a block has a height.")
+        }
+        guard (1...1440).contains(durationMinutes) else {
+            throw CadenceWriteError.invalidDurationMinutes(durationMinutes)
+        }
+
+        // The remaining clamping — the `bundleMinimumDuration` floor and the "must still end inside
+        // the day" ceiling — belongs to the shared constructor and is deliberately not re-spelled
+        // here. A caller that asks for 09:00 + 24h gets the rest of the day, and the detail this
+        // arm answers with reports the `startMin`, `durationMinutes` and `endMin` it actually got.
+        let bundle = try CadenceTaskMutationSupport.insertBundle(
+            title: options.title ?? "",
+            dateKey: dateKey,
+            startMin: startMin,
+            durationMinutes: durationMinutes,
+            modelContext: context,
+            commit: { _ in }
+        )
+
+        try saveNotifyAndAudit(
+            .taskBundle(
+                tool: "create_task_bundle",
+                id: bundle.id,
+                summary: "Created block \(bundle.displayTitle) on \(dateKey)"
+            ),
+            inserted: [bundle]
+        )
+        return try readService.getTaskBundle(bundleID: bundle.id.uuidString)
+    }
+
+    /// Move a task into an existing block ([[T-1122]], half (b) — the half that stops
+    /// `create_task_bundle` from being a constructor for empty boxes).
+    ///
+    /// **One call to the shared membership rule, and no second copy of it.**
+    /// `CadenceTaskMutationSupport.assignTask(_:to:)` writes five fields: the block, the member's
+    /// order within it, the block's day, a cleared time-of-day slot — the block owns the placement
+    /// now — and a cleared `calendarEventID`, which is the one field the macOS and iOS
+    /// add-to-bundle paths used to disagree on before T-760 made them one function. Re-typing those
+    /// five lines inside a process with no timeline to look at is the failure this ticket exists to
+    /// refuse, which is why the rule moved to `CadenceTaskBundleMutationSupport.swift` and opened
+    /// up rather than being mirrored here.
+    ///
+    /// **The undo is both halves, because this arm writes into a block that survives the refusal.**
+    /// `insertBundle(from:adding:)` can lean on `commitInsert` un-inserting the new block; here the
+    /// block already exists, so `BundleMembership` puts the task's five fields back *and* this call
+    /// restores the block's own `tasks` edge, which `assignTask` appended to.
+    ///
+    /// **Two scoped refusals, both about the answer this arm gives.** A task the block already
+    /// holds is refused rather than re-stamped, so `mcp-audit.log` does not record a move that
+    /// moved nothing; and a cancelled task is refused because `TaskBundle.sortedTasks` filters
+    /// cancelled members out, so the write would land and then be invisible in the very detail
+    /// this call returns.
+    func addTaskToBundle(options: CadenceAddTaskToBundleOptions) throws -> CadenceTaskBundleDetail {
+        let bundle = try findBundle(options.bundleId)
+        let task = try findTask(options.taskId)
+
+        if task.bundle?.id == bundle.id {
+            throw CadenceWriteError.taskAlreadyInBundle(taskId: options.taskId, bundleId: options.bundleId)
+        }
+        if task.isCancelled {
+            throw CadenceWriteError.cannotBundleCancelledTask(options.taskId)
+        }
+
+        let membership = CadenceTaskMutationSupport.BundleMembership(task)
+        let previousMembers = bundle.tasks ?? []
+        CadenceTaskMutationSupport.assignTask(task, to: bundle)
+
+        try saveNotifyAndAudit(
+            [.taskBundle(
+                tool: "add_task_to_bundle",
+                id: bundle.id,
+                summary: "Added task \(task.title) to block \(bundle.displayTitle)"
+            )],
+            undo: {
+                membership.restore()
+                bundle.tasks = previousMembers
+            }
+        )
+        return try readService.getTaskBundle(bundleID: bundle.id.uuidString)
+    }
+
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {
         let title = try normalizedRequiredText(options.title, emptyError: CadenceWriteError.emptyTitle)
         let priority = try options.priority.map(validatePriority) ?? .none
@@ -1927,6 +2111,19 @@ final class CadenceWriteService {
             throw CadenceReadError.taskNotFound(taskID)
         }
         return task
+    }
+
+    /// By predicate with `fetchLimit = 1`, not by walking the whole table the way `findTask` does
+    /// — `CadenceMCPServer/AGENTS.md`'s detail-lookup rule, and there was no existing whole-table
+    /// bundle fetch here to be consistent with.
+    private func findBundle(_ bundleID: String) throws -> TaskBundle {
+        let id = try uuid(from: bundleID)
+        var descriptor = FetchDescriptor<TaskBundle>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        guard let bundle = try context.fetch(descriptor).first else {
+            throw CadenceReadError.taskBundleNotFound(bundleID)
+        }
+        return bundle
     }
 
     private func fetchTasks() throws -> [AppTask] {

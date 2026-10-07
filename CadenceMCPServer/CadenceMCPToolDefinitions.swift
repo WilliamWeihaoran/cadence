@@ -95,7 +95,18 @@ enum CadenceMCPToolDefinitions {
     // list could have told it. A tool that silently answered OK without writing would be worse
     // than either. `list_goals`, `get_goal` and `list_habits` are untouched and still read the
     // existing rows — this removes the ability to mint, not the ability to see.
-    private static let serverVersion = "0.14.0"
+    // 0.15.0, on the same capability argument and adding no response key: `create_task_bundle` is
+    // the sixth and last constructor the [[T-1122]] ranking named, and `add_task_to_bundle` is the
+    // other half of it. They are one bump because they are one capability — a block that nothing
+    // can be put into is a box, and a surface that could fill a block it cannot make would be
+    // stranger still. Additive: two tools, no field moved and none dropped, and
+    // `CadenceTaskBundleDetail` / `CadenceTaskBundleSummary` are exactly what `get_task_bundle`
+    // and `list_task_bundles` have always answered with, so a client reading by name is
+    // unaffected. **Every model type this surface could sensibly mint now has a constructor**, and
+    // the refusal that remains is deletion, which is settled rather than deferred. "Can this
+    // server put a task on the timeline in a block?" is a capability question, and the version is
+    // the only thing a client can ask.
+    private static let serverVersion = "0.15.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
@@ -113,6 +124,8 @@ enum CadenceMCPToolDefinitions {
         "create_link",
         "create_tag",
         "create_list_note",
+        "create_task_bundle",
+        "add_task_to_bundle",
     ]
 
     static var tools: [Tool] {
@@ -369,6 +382,16 @@ enum CadenceMCPToolDefinitions {
                 "title": stringProperty("Note title, which is also the note's seeded # heading.", minLength: 1),
                 "folderPath": stringProperty("Optional /-separated folder path such as Planning/Research. Trimmed per component, empty components dropped. Omitted or blank files the note at the list's root."),
             ], required: ["containerKind", "containerId", "title"])),
+            Tool(name: "create_task_bundle", description: "Create an empty Cadence task bundle — a block on one day's timeline. Answers the same detail get_task_bundle returns. A block is a placement, so date, startMin and durationMinutes are all required; an omitted title gets the app's own fallback. The start minute is clamped so a minimum-length block still ends inside the day, and the duration is clamped into whatever is left of that day, so read startMin, durationMinutes and endMin off the answer rather than assuming what was sent. Use add_task_to_bundle to put tasks in it. There is no deletion on this surface.", inputSchema: schema([
+                "title": stringProperty("Optional block title. Omitted or blank, the block displays under the app's own default name."),
+                "date": dateProperty("Block date, yyyy-MM-dd or natural day."),
+                "startMin": integerOrStringProperty("Minutes from midnight, 0...1439, or time like 4 PM.", minimum: 0, maximum: 1439),
+                "durationMinutes": integerOrStringProperty("Block height, 1...1440 minutes, or duration like 30m, 1h, 1.5h, or three hours.", minimum: 1, maximum: 1440),
+            ], required: ["date", "startMin", "durationMinutes"])),
+            Tool(name: "add_task_to_bundle", description: "Move a Cadence task into an existing task bundle. Answers the block's detail, as get_task_bundle does. The block owns the placement, so the task takes the block's date, loses its own time-of-day slot and any stale calendar link, and is appended after the block's current members. A task the block already holds is rejected rather than re-stamped, and a cancelled task is rejected because a block lists only its active members. Use schedule_task to take a task back out onto its own slot.", inputSchema: schema([
+                "bundleId": uuidProperty("Task bundle UUID."),
+                "taskId": uuidProperty("Task UUID."),
+            ], required: ["bundleId", "taskId"])),
             Tool(name: "append_core_note", description: "Append text to a daily, weekly, or permanent Cadence note, creating it if needed.", inputSchema: schema([
                 "kind": stringProperty("daily, weekly, or permanent.", enumValues: ["daily", "weekly", "permanent"]),
                 "content": stringProperty("Text to append.", minLength: 1),

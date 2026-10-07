@@ -34,6 +34,8 @@ WRITE_TOOLS = {
     "create_link",
     "create_tag",
     "create_list_note",
+    "create_task_bundle",
+    "add_task_to_bundle",
 }
 EXPECTED_TOOLS = {
     "mcp_diagnostics",
@@ -121,6 +123,11 @@ CONTAINER_SUMMARY_KEYS = {
 # T-1122. `create_link` is the first constructor on this surface for a model outside the
 # context/list/task triangle, which is what finally gives `list_links` a row: until it existed the
 # fixture store could hold no saved link, so this DTO was dispatched and asserted empty (T-269).
+TASK_BUNDLE_SUMMARY_KEYS = {
+    "id", "title", "dateKey", "startMin", "durationMinutes", "endMin",
+    "totalEstimatedMinutes", "taskCount", "activeTaskCount", "createdAt",
+}
+TASK_BUNDLE_DETAIL_KEYS = {"summary", "tasks"}
 SAVED_LINK_SUMMARY_KEYS = {"id", "title", "url", "container", "order", "createdAt"}
 SAVED_LINK_SUMMARY_OPTIONAL = {"container"}
 # T-2077 removed `create_goal` and `create_habit`, so the goal/habit key sets that used to sit
@@ -1320,6 +1327,100 @@ def main() -> int:
         if [row["summary"]["id"] for row in carrying_slug] != [tag["summary"]["id"]]:
             raise AssertionError(f"expected exactly the new tag carrying its slug, got {carrying_slug}")
 
+        # --- The first task bundle this surface can make, and the first task put in one -----
+        # [[T-1122]]'s sixth and last constructor, plus the half that stops it being a constructor
+        # for empty boxes. Both refusals it replaces were measurements rather than opinions: the
+        # arm needed `CadenceTaskMutationSupport.insertBundle(title:…)`, which lived in a file
+        # reaching `NotificationManager` and WidgetKit, and a Sources phase compiles whole files;
+        # and nothing on this surface could put a task into a block, so `list_task_bundles` would
+        # have gone from dispatched-and-empty to dispatched-over-rows nobody could fill.
+        #
+        # The membership rule is the thing these checks are aimed at. `assignTask(_:to:)` writes
+        # five fields and a hand-rolled copy of it inside `CadenceWriteService` is the failure the
+        # ticket exists to refuse — so each assertion below is one of those five, read back off a
+        # different tool rather than off the arm's own answer.
+        block = call_ok(160, "create_task_bundle", {
+            "title": "  Deep work  ",
+            "date": "2026-05-04",
+            "startMin": "9 AM",
+            "durationMinutes": "2h",
+        })
+        check_keys(block, TASK_BUNDLE_DETAIL_KEYS, set(), "create_task_bundle detail")
+        check_keys(block["summary"], TASK_BUNDLE_SUMMARY_KEYS, set(), "create_task_bundle summary")
+        block_id = block["summary"]["id"]
+        # The natural-language start and duration both landed, and the title was trimmed by
+        # `TaskBundle.storedTitle` rather than stored as sent.
+        if block["summary"]["startMin"] != 540 or block["summary"]["durationMinutes"] != 120:
+            raise AssertionError(f"expected 9 AM for 2h to land as 540/120, got {block['summary']}")
+        if block["summary"]["endMin"] != 660 or block["summary"]["title"] != "Deep work":
+            raise AssertionError(f"expected a trimmed title and a derived endMin, got {block['summary']}")
+        if block["tasks"] or block["summary"]["taskCount"] != 0:
+            raise AssertionError(f"a new block starts empty, got {block}")
+
+        # An omitted title takes the app's own fallback, which is `TaskBundle.storedTitle`'s job
+        # and not a literal this arm is allowed to type.
+        untitled_block = call_ok(161, "create_task_bundle", {
+            "date": "2026-05-04", "startMin": 780, "durationMinutes": 30,
+        })
+        if not untitled_block["summary"]["title"]:
+            raise AssertionError(f"expected the shared fallback title, got {untitled_block['summary']}")
+
+        # A block is a placement, so each of the three placement fields is refused when absent
+        # rather than defaulted to a day, a time or a height nobody asked for.
+        call_error(162, "create_task_bundle", {"startMin": 540, "durationMinutes": 60}, "a block with no day", "date is required")
+        call_error(163, "create_task_bundle", {"date": "2026-05-04", "durationMinutes": 60}, "a block with no time", "startMin is required")
+        call_error(164, "create_task_bundle", {"date": "2026-05-04", "startMin": 540}, "a block with no height", "durationMinutes is required")
+
+        member = call_ok(165, "create_task", {
+            "title": "Coverage probe block member",
+            "scheduledDate": "2026-05-06",
+            "scheduledStartMin": 600,
+            "estimatedMinutes": 45,
+        })
+        member_id = member["summary"]["id"]
+        filled = call_ok(166, "add_task_to_bundle", {"bundleId": block_id, "taskId": member_id})
+        check_keys(filled, TASK_BUNDLE_DETAIL_KEYS, set(), "add_task_to_bundle detail")
+        if [row["id"] for row in filled["tasks"]] != [member_id]:
+            raise AssertionError(f"expected the task listed as the block's one member, got {filled}")
+        if filled["summary"]["taskCount"] != 1 or filled["summary"]["totalEstimatedMinutes"] != 45:
+            raise AssertionError(f"expected the member counted on the block, got {filled['summary']}")
+        # Read back through `get_task`, not off the answer above: the block owns the placement now,
+        # so the task takes the block's day and loses its own time-of-day slot. A hand-rolled copy
+        # of the rule that wrote only `bundle` would survive a check on the block's member list and
+        # is killed here.
+        moved = call_ok(167, "get_task", {"taskId": member_id})
+        if moved["summary"]["scheduledDate"] != "2026-05-04":
+            raise AssertionError(f"expected the task moved onto the block's day, got {moved['summary']}")
+        if moved["summary"]["scheduledStartMin"] != -1:
+            raise AssertionError(f"expected the task's own slot cleared by the block, got {moved['summary']}")
+
+        # Refused rather than re-stamped: a no-op write would still put a line in `mcp-audit.log`.
+        call_error(
+            168,
+            "add_task_to_bundle",
+            {"bundleId": block_id, "taskId": member_id},
+            "a task the block already holds",
+            "is already in block",
+        )
+        call_error(
+            169,
+            "add_task_to_bundle",
+            {"bundleId": MISSING_UUID, "taskId": member_id},
+            "a block that does not exist",
+            f"No task bundle found with id {MISSING_UUID}.",
+        )
+        call_error(170, "add_task_to_bundle", {"taskId": member_id}, "no bundleId", "Missing required argument: bundleId")
+
+        # And the rows are visible to the read half, which is what the two arms were for.
+        listed_blocks = page_items(
+            call_ok(171, "list_task_bundles", {"date": "2026-05-04", "limit": 10}),
+            "list_task_bundles after create_task_bundle",
+        )
+        if {row["id"] for row in listed_blocks} != {block_id, untitled_block["summary"]["id"]}:
+            raise AssertionError(f"expected both new blocks on the day, got {listed_blocks}")
+        for row in listed_blocks:
+            check_keys(row, TASK_BUNDLE_SUMMARY_KEYS, set(), "list_task_bundles row")
+
         # --- The five write tools that ran nowhere at all (T-259) ------------------------
         # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are
         # five of the eight write tools and had no execution path in this file or in any test.
@@ -1497,9 +1598,11 @@ def main() -> int:
         # --- List DTO shapes -------------------------------------------------------------
         # The `list_*` arms this file already called ran against an empty store and returned
         # `[]`, so no list payload's shape had ever been observed. Tags, tasks and notes all
-        # exist by now, so those three can be checked against real rows. Bundles, goals, habits,
-        # links, contexts and containers have no MCP creation path and stay empty here — that
-        # half of the gap is still open.
+        # exist by now, so those three can be checked against real rows. Bundles, links, contexts
+        # and containers have a creation path too since [[T-799]], [[T-1122]] and the sections
+        # above, and are shape-checked where they are made. Goals and habits stay empty here and
+        # always will: [[T-2077]] removed `create_goal` and `create_habit` because the app itself
+        # stopped minting either, so that half of the gap is closed by decision rather than open.
         #
         # The tags here are the two request 28 minted by name through `TagSupport.resolveTags`,
         # not the default set. T-528 removed the seed from `CadenceMCPStorePreparation.prepare`:

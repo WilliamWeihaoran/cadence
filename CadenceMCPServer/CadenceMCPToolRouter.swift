@@ -349,6 +349,22 @@ struct CadenceMCPToolRouter {
                 folderPath: arguments.string("folderPath")
             )))
 
+        case "create_task_bundle":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.createTaskBundle(options: CadenceCreateTaskBundleOptions(
+                title: arguments.string("title"),
+                dateKey: try arguments.dateKey("date"),
+                startMin: try arguments.minuteOfDay("startMin"),
+                durationMinutes: try arguments.durationMinutes("durationMinutes")
+            )))
+
+        case "add_task_to_bundle":
+            let writeService = try requireWriteService(for: name)
+            return try encode(writeService.addTaskToBundle(options: CadenceAddTaskToBundleOptions(
+                bundleId: try arguments.requiredString("bundleId"),
+                taskId: try arguments.requiredString("taskId")
+            )))
+
         case "append_core_note":
             let writeService = try requireWriteService(for: name)
             return try encode(writeService.appendCoreNote(

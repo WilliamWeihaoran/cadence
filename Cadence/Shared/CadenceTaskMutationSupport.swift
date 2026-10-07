@@ -1172,39 +1172,6 @@ extension CadenceTaskMutationSupport {
         return bundle
     }
 
-    /// The fields `assignTask(_:to:)` writes on a task it moves into a bundle, captured before the
-    /// write — the shared-mutation twin of `SchedulingActions.BundleMembership` on macOS (T-760).
-    ///
-    /// The bundle itself is un-inserted by `commitInsert`, but that does not put either task back:
-    /// both were detached from whatever block they were in, given a `bundleOrder`, moved onto the
-    /// new block's day, stripped of their time slot and of any calendar-event link. A refusal that
-    /// restored only the block would leave both tasks scheduled somewhere the store never agreed to.
-    private struct BundleMembership {
-        private let task: AppTask
-        private let bundle: TaskBundle?
-        private let bundleOrder: Int
-        private let scheduledDate: String
-        private let scheduledStartMin: Int
-        private let calendarEventID: String
-
-        init(_ task: AppTask) {
-            self.task = task
-            bundle = task.bundle
-            bundleOrder = task.bundleOrder
-            scheduledDate = task.scheduledDate
-            scheduledStartMin = task.scheduledStartMin
-            calendarEventID = task.calendarEventID
-        }
-
-        func restore() {
-            task.bundle = bundle
-            task.bundleOrder = bundleOrder
-            task.scheduledDate = scheduledDate
-            task.scheduledStartMin = scheduledStartMin
-            task.calendarEventID = calendarEventID
-        }
-    }
-
     /// **Throws when the commit is refused (T-566).** It used to end `try? modelContext.save()`,
     /// and `iOSCalendarBundleDetailSheet`'s "Save" dismissed straight afterwards, so a refused
     /// save closed the sheet exactly as a successful one does — the block's own *delete* button
@@ -1278,27 +1245,6 @@ extension CadenceTaskMutationSupport {
             modelContext: modelContext,
             commit: commit
         )
-    }
-
-    /// The five-field write `addTask(_:to:modelContext:commit:)` and
-    /// `insertBundle(from:adding:modelContext:commit:)` both need — pending only, no commit,
-    /// because `insertBundle` credits two tasks under one commit and cannot call the committing
-    /// `addTask` twice without saving twice for a single gesture (T-760).
-    private static func assignTask(_ task: AppTask, to bundle: TaskBundle) {
-        let nextOrder = ((bundle.tasks ?? []).map(\.bundleOrder).max() ?? -1) + 1
-        task.bundle = bundle
-        task.bundleOrder = nextOrder
-        task.scheduledDate = bundle.dateKey
-        task.scheduledStartMin = -1
-        // The task's own slot is gone — the bundle owns the block now — so any stale calendar link
-        // it still carries has to go with it. `SchedulingActions.addTask` has always cleared this;
-        // this copy did not, which was the one field on which the two platforms' add-to-bundle
-        // paths disagreed. See "Calendar / Events" in `docs/CLAUDE_REFERENCE.md`: nothing writes
-        // this field a non-empty value any more, and every write site clears it.
-        task.calendarEventID = ""
-        if !(bundle.tasks ?? []).contains(where: { $0.id == task.id }) {
-            bundle.tasks = (bundle.tasks ?? []) + [task]
-        }
     }
 
     /// Moves a task into an existing bundle, and commits on its own behalf.

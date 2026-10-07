@@ -151,7 +151,7 @@ struct AgentContextBudgetTests {
     /// **`citedSections` is the assertion with teeth, and it is why "the file still exists" was not
     /// enough.** These guides do not summarise their reference; they *name a section of it* at the
     /// point where the reasoning is needed — `CadenceMCPServer/AGENTS.md` sends a reader to "Why
-    /// one kind has no constructor" instead of restating T-1122, and `Cadence/Services/AGENTS.md`
+    /// one kind had no constructor" instead of restating T-1122, and `Cadence/Services/AGENTS.md`
     /// does it for eleven sections at once. Each entry is checked from **both** ends: the guide must
     /// still contain the quoted phrase, and the reference must still spell it as a `##` heading. So
     /// a renamed heading, a deleted section and a dropped citation all go red — which is the drift
@@ -333,8 +333,12 @@ struct AgentContextBudgetTests {
                 "Why the prohibition was wrong",
                 "Why deletion is refused",
                 // Was "Why three kinds have no constructor" until T-1406 built `create_tag`,
-                // and "Why two kinds..." until T-1122's third pass built `create_list_note`.
-                "Why one kind has no constructor",
+                // "Why two kinds..." until T-1122's third pass built `create_list_note`, and
+                // "Why one kind HAS no constructor" until its eighth built `create_task_bundle`.
+                // The section is kept past its own refusal because the shape of the measurement is
+                // what the next arm-shaped question gets weighed against; the tense is what says
+                // it no longer stands.
+                "Why one kind had no constructor",
                 "Why the tracking helpers cost four files",
                 "Why bulk cancel got a cap and a dry run",
                 "Why the write path's undo is two composed primitives",

@@ -7,7 +7,7 @@ files as text and pins the tool-name and write-gating contracts, but executes no
 
 It dispatched **21 of the router's 30 arms** until T-259 — five of the eight write tools then on
 the surface (`update_task`, `schedule_task`, `complete_task`, `reopen_task`, `cancel_task`) were run
-by nothing at all. It now dispatches all 38, and, more to the point, **it checks that it does**: every
+by nothing at all. It now dispatches all 40, and, more to the point, **it checks that it does**: every
 `tools/call` it sends is recorded in `DISPATCHED`, and the run fails if that set does not cover the
 server's own `tools/list`. Adding a router arm and forgetting to exercise it is now a red smoke
 test rather than a number nobody was counting. Keep that guard — a Swift test pins its presence
@@ -64,7 +64,7 @@ too. The boundary's rules live in `CadenceMCPServer/AGENTS.md`.
 - Keep scripts deterministic and safe to run repeatedly.
 - Do not assume the macOS app is open unless the script explicitly checks/launches it.
 - Preserve command-line output that other agents or smoke tests parse.
-- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 38 tool
+- Coordinate schema/response changes with `CadenceMCPServer/` and app model changes. The 40 tool
   names are a contract in three places — the definitions, the router's `case` arms, and this
   smoke test — and the first two can disagree while compiling.
 - A new tool means a new dispatch here, not only a new name in `EXPECTED_TOOLS`. The coverage

@@ -26,11 +26,11 @@ compiles a hand-picked subset of app source directly, not a framework. Currently
 `Cadence/Models/`, all of `Cadence/Services/MCPReadOnly/`, eight `Services/` files —
 `CadenceSchema`, `CadenceStoreSupport`, `NoteMigrationService`, `DataIntegrityRepairService`,
 `TagSupport`, `NoteReferenceSupport`, `MarkdownMetadataSupport`, `CadenceHabitCompletionStore` —
-and **all ten** `Shared/` files, enumerated because a list that drops a name reads as the phase
+and **all eleven** `Shared/` files, enumerated because a list that drops a name reads as the phase
 not holding it: `CadenceSearchMatcher`, `DateFormatters`, `CadenceTaskRecurrenceWorkflowSupport`,
 `CadencePendingChangePersistence`, `CadenceSectionConfigMerge`, `CadenceSectionEditingSupport`,
 `CadenceDefaults`, `CadenceSavedLinkPersistence`, `CadenceOrderAllocation`,
-`CadenceListNoteFiling` — plus this folder's four files.
+`CadenceListNoteFiling`, `CadenceTaskBundleMutationSupport` — plus this folder's four files.
 **Adding a file to `Models/` does not add it here.** A new type that an existing compiled file
 references is a link error in this target and nothing at all in the app.
 
@@ -49,7 +49,7 @@ that it compiles here.
 - **The write path mutates the real store, from a second process, with no UI and no confirmation.**
   `CadenceModelContainerFactory.makeReadWriteContainer()` opens the app-group store with
   `allowsSave: true` — the same file the running app has open — gated on `CADENCE_MCP_ENABLE_WRITES`
-  and read-only by default. **Sixteen arms** write and save, and every one of them goes through
+  and read-only by default. **Eighteen arms** write and save, and every one of them goes through
   `saveNotifyAndAudit(_:inserted:undo:)`, so a refused save is undone rather than left pending for
   somebody else's commit (T-1121, T-1181). `mcp-audit.log` beside the store is the only record, and
   `CadenceMCPRefreshCoordinator` (macOS Services) watches a `.cadence-mcp-refresh` marker file so the
@@ -57,7 +57,7 @@ that it compiles here.
   breadth control** ([[T-1365]]): `titlePrefix` refuses a selection above
   `CadenceMCPServiceSupport.maximumPageSize` naming the count it matched, `dryRun` returns that
   selection uncapped without cancelling, and the 8-character floor was only ever a typo guard.
-  Treat a write-path change as a data-safety change. The sixteen arms by name, and why `taskIds`
+  Treat a write-path change as a data-safety change. The eighteen arms by name, and why `taskIds`
   stays uncapped: `../docs/MCP_AGENTS_REFERENCE.md`, "What the write path does to the real store"
   and "Why bulk cancel got a cap and a dry run".
 - **Both containers open the owner's CloudKit-MIRRORED store with `cloudKitDatabase: .none`**
@@ -89,19 +89,19 @@ that it compiles here.
   `CadenceMCPToolContractTests` is a **source scan**, not an execution, so do not read it as
   behavioural coverage of the router. The four things it does pin:
   `../docs/MCP_AGENTS_REFERENCE.md`, "What is and is not executed under this target".
-- **The smoke test dispatches all 38 arms and asserts that it does.** It drives a full create →
+- **The smoke test dispatches all 40 arms and asserts that it does.** It drives a full create →
   update → schedule → complete → reopen → cancel lifecycle against the fixture store, asserts the
   resulting DTO key sets, and records every `tools/call` so an unexercised arm fails the run. Its
   error-path checks assert the error *text*: a deleted arm answers "Unknown tool" and a renamed
   argument key answers "Missing required argument", and a bare `isError` check is green for both.
   What it missed before T-259, and why, is in the reference.
-- **The 38 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
-  (the advertised schema), `CadenceMCPToolRouter.swift` (38 `case` arms), and the smoke test's
+- **The 40 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
+  (the advertised schema), `CadenceMCPToolRouter.swift` (40 `case` arms), and the smoke test's
   expectations. Renaming or adding one means all three, and the definitions/router pair will
   compile perfectly while disagreeing. `CadenceTests/CadenceMCPToolContractTests.swift` is the
   guard: it fails when those three sets diverge, and separately when
   `CadenceMCPToolDefinitions.writeToolNames`, the router arms that call `requireWriteService`, and
-  the smoke test's `WRITE_TOOLS` stop naming the same sixteen tools. That second assertion is the
+  the smoke test's `WRITE_TOOLS` stop naming the same eighteen tools. That second assertion is the
   data-safety one — a mutating arm missing from `writeToolNames` is **advertised and executable in
   the default read-only mode**, which is not a typo-class failure.
 
@@ -170,33 +170,21 @@ as `timed out waiting for response 100` rather than naming a build.
   **status/`isArchived`**, and — since [[T-1182]] — a **position** (a zero-based index into the
   destination bucket, which the arm renumbers densely; re-filing alone renumbers nothing) plus the
   two `hide*IfEmpty` flags. `linkedCalendarID` stays refused, on T-390's opacity. `create_link`,
-  `create_tag` and `create_list_note` are the constructors outside the context/list/task triangle;
-  nothing creates a task bundle, and **nothing deletes anything** — each of those **refused with a
-  measurement**, settled rather than deferred ([[T-1122]]). **`create_goal` and `create_habit` were
-  two more until [[T-2077]] removed them**, with the version going 0.13.0 -> 0.14.0: the owner
-  retired goals and habits and the app itself stopped writing either model, so a write surface that
-  kept minting them would have been the one exception. They **disappear** from `tools/list` rather
-  than remaining advertised and refusing — that list is the only capability contract a client can
-  read. `list_goals`, `get_goal` and `list_habits` still read the existing rows.
-  Archiving is offered instead. **`create_list_note` is the one whose refusal was lifted by moving
-  a file, and the shape of that measurement is the thing to carry away**: the blocker was never the
-  arm, it was that `CadenceListNoteFiling.createNote` shared a file with the four SwiftUI rows that
-  draw folders and a Sources phase compiles whole files.
-  `Cadence/Shared/CadenceListNoteFiling.swift` is the split that lifted it. The arm still takes no
-  **body**, and that refusal is scoped and measured too: a list note's `title` is the first `# H1`
-  of its content, and `MarkdownNoteTitleSync` — the rule holding those equal on every app commit —
-  is in `MarkdownNoteSupport.swift`, which this target does not compile, so the note is seeded
-  `# title` and cannot be born disagreeing with itself. **`create_tag` was itself refused twice and is the
-  one to read before adding another arm shaped like it** ([[T-1406]]): it exists only because
-  `TagSupport.creationDecision(for:in:)` came to own the rule both Settings editors hand-rolled,
-  and its `unarchive` argument is [[T-1365]]'s answer to a branch whose app-side reply is a button
-  a headless caller cannot press. It does **not** change how `create_task(tagNames:)` mints tags —
-  that path keeps `TagSupport.resolution`, the app's *attachment* rule, and the two are different
-  questions rather than two spellings of one. Do not re-decide any of it from a summary:
-  `../docs/MCP_AGENTS_REFERENCE.md`, "What the create and update arms cover", "Why one kind has
+  `create_tag`, `create_list_note`, `create_task_bundle` and `add_task_to_bundle` are the
+  constructors outside the context/list/task triangle; **nothing deletes anything**, refused with
+  a measurement and settled rather than deferred ([[T-1122]]). Archiving is offered instead.
+  **Four of those arms carry a refusal, a removal or a lifting condition whose SHAPE is what the
+  next arm-shaped question gets measured against, and not one is re-decidable from a summary**:
+  `create_goal`/`create_habit` **removed** rather than left advertised and refusing ([[T-2077]],
+  0.13.0 -> 0.14.0, `list_goals`/`get_goal`/`list_habits` untouched); `create_list_note` lifted by
+  splitting a FILE rather than by changing a rule, and still taking no **body**; `create_tag`
+  refused twice before `TagSupport.creationDecision(for:in:)` existed to be asked ([[T-1406]]);
+  and `create_task_bundle` refused for seven sittings on a file AND on there being no way to fill
+  a block, both paid in one pass ([[T-1122]]). All four in full:
+  `../docs/MCP_AGENTS_REFERENCE.md`, "What the create and update arms cover", "Why one kind had
   no constructor" and "Why deletion is refused".
-- **Ten `Cadence/Shared/` files are in the Sources phase, and none of them earns its place for the
-  obvious reason.** Each earns it by one rule a hand-rolled copy would re-break — a rename that
+- **Eleven `Cadence/Shared/` files are in the Sources phase, and none of them earns its place for
+  the obvious reason.** Each earns it by one rule a hand-rolled copy would re-break — a rename that
   would otherwise strand every card on a name no column has, T-509's case-insensitive scheme rule
   — never by the feature it arrived with. Adding another is still not casual: one more path by
   which an app-side edit breaks a target no scheme builds — and `CadenceListNoteFiling` cost a
@@ -204,8 +192,10 @@ as `timed out waiting for response 100` rather than naming a build.
   goes**: `CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization` lost
   their last caller here when [[T-2077]] removed `create_goal`/`create_habit`, and [[T-3010]] took
   all three out of the phase while leaving them on disk for the app. Sweep when an arm is retired,
-  not only when one is added. What each is for: `../docs/MCP_AGENTS_REFERENCE.md`, "Why ten shared
-  files joined the Sources phase" and "Why the tracking helpers cost four files".
+  not only when one is added. **The eleventh, `CadenceTaskBundleMutationSupport`, is the second
+  that cost a split — of the *declaration*** ([[T-1122]]). What each is for:
+  `../docs/MCP_AGENTS_REFERENCE.md`, "Why ten shared files joined the Sources phase" and "Why the
+  tracking helpers cost four files".
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
   renders as `isError`, plus an undo, and every arm now has both halves** (T-1121). One long-lived
   `ModelContext` per process means a refused `save()` used to leave the mutation *pending* for the
