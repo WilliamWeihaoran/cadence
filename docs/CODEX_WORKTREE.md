@@ -52,6 +52,16 @@ Cadence/iOS/iOSList*.swift
 Cadence/Shared/CadenceTypography.swift
 CadenceTests/CadenceTypographyScaleTests.swift
 CadenceTests/CadenceCodex*.swift
+Cadence/Shared/Components/CadenceChoicePicker.swift
+Cadence/iOS/iOSChoicePicker.swift
+Cadence/Shared/Components/CadenceTagChip.swift
+Cadence/macOS/Views/SettingsAppearanceSection.swift
+Cadence/CadenceApp.swift
+Cadence/iOS/iOSTaskViews.swift
+Cadence/iOS/iOSTaskRowActionViews.swift
+Cadence/iOS/iOSTaskGroupSection.swift
+Cadence/Shared/CadenceCapturePaletteSupport.swift
+Cadence/iOS/iOSCaptureRadialMenu.swift
 ```
 
 ### LEASE RETIRED 2026-10-06 — the three T-3005 Kanban paths are out, because the work landed
@@ -885,4 +895,52 @@ paging**, which is Codex's own stated limit and is adopted here as a condition o
 the undiagnosed sidebar scrolling. Those remain blocked on the baseline that does not exist.
 
 **Retire these three paths when T-3005 lands.**
+
+### LEASE WIDENED 2026-10-07 — the Dynamic Type cluster and [[T-3011]], ten paths
+
+Granted at the owner's instruction, who asked for Codex to be given more work and the lease to go
+with it. **No new ticket ids** — every id below already has a formal ledger entry, so Codex writes
+its inbox entries under them and the coordinator folds each in at landing.
+
+**The Dynamic Type cluster: [[T-1364]], [[T-1398]], [[T-1399]], [[T-1400]], [[T-1410]], [[T-1411]],
+[[T-1414]].** This batch is Codex's for a structural reason rather than a scheduling one — the two
+files the whole cluster turns on, `Cadence/Shared/CadenceTypography.swift` and
+`CadenceTests/CadenceTypographyScaleTests.swift`, are already standing globs in this lease, so no
+coordinator agent can touch the work at all. The eight new paths are the conversion targets the
+tickets name:
+
+- `Cadence/Shared/Components/CadenceChoicePicker.swift` and `Cadence/iOS/iOSChoicePicker.swift` —
+  [[T-1410]]'s panels. Two of four are converted end to end and two stay pinned **deliberately**:
+  [[T-1364]]'s rule is *convert a panel completely or leave it pinned*, and the two answers
+  differing is that ticket's finding, not an inconsistency to tidy away.
+- `Cadence/Shared/Components/CadenceTagChip.swift` — [[T-1414]]'s second line-height ratio.
+  `CadenceTypeScale.lineHeightRatio` is 1.2 and `CadenceTagChipStyle.chipHeight(hasRemoveControl:)`
+  uses its own 1.25; T-1364 states the ratio once precisely so every height computed from a font
+  size reads one number.
+- `Cadence/macOS/Views/SettingsAppearanceSection.swift` and `Cadence/CadenceApp.swift` — [[T-1399]],
+  which was **EVALUATED and deliberately not built**: the costing found the plan wanting. Re-cost it
+  before implementing rather than treating the ticket as a backlog item.
+- `Cadence/iOS/iOSTaskViews.swift`, `iOSTaskRowActionViews.swift`, `iOSTaskGroupSection.swift` —
+  [[T-1411]], whose constraint is the sentence to read first: **a task row is not a conversion unit,
+  the page is.**
+
+[[T-1400]] (the two markdown editors) is in the batch but its paths are **NOT granted yet** — the
+macOS side is seven `Cadence/macOS/Editor/*.swift` files and the iOS side several more, and a
+blanket grant there would be wider than anything measured. Ask for the specific files once the plan
+names them.
+
+**[[T-3011]] — `Cadence/Shared/CadenceCapturePaletteSupport.swift`,
+`Cadence/iOS/iOSCaptureRadialMenu.swift`.** [[T-3008]] landed `ee9aad1d` today: `onDisappear` now
+clears **liveness only**, because the logged pop order showed frames are republished *before*
+`onDisappear` fires, so an `onAppear` re-publish would be undone by the event it exists to survive.
+The deliberate cost is T-3011: a genuinely destroyed target keeps its frame for the life of the
+process. **Every eviction rule considered reintroduced T-3008 somewhere** — a count bound evicts an
+index's entries behind a long scroll in a pushed detail; a time bound evicts them behind a
+backgrounded app. The ticket names the shape that is probably right: a reference-type `@State` whose
+`deinit` unregisters, which is a destruction signal SwiftUI can actually give. **Do not weaken
+T-3008's guarantee to satisfy T-3011** — `CadenceNewTaskDropRegistrationTests` replays the measured
+pop order and is the control.
+
+**Retire all ten when the work lands.** Ask before touching any path not listed; a path outside the
+grant is a new request, not a widening.
 
