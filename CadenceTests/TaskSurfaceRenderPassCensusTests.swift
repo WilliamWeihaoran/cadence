@@ -553,8 +553,8 @@ enum TaskSurfaceDerivationScan {
     /// **The last kanban slope, removed by [[T-3020]]: the section board groups its cards ONCE per
     /// render, not once per column.**
     ///
-    /// `ListSectionsKanbanView` used to call `sortedTasksForSection(_:)` — a `filter` over the
-    /// board's whole task list, then a sort of what survived — **inside** its `ForEach` content
+    /// `ListSectionsKanbanView` used to call a since-deleted `sortedTasksForSection` — a `filter`
+    /// over the board's whole task list, then a sort of what survived — **inside** its `ForEach` content
     /// closure. That is the per-element position, so this census read it as `0 + 1/element`: one
     /// full pass over the board's tasks per section column, and adding a column added a pass.
     ///
@@ -825,7 +825,7 @@ struct SidebarListCountTraversalTests {
 @Suite @MainActor
 struct ListSectionBoardColumnCardsParityTests {
 
-    /// The retired `ListSectionsKanbanView.sortedTasksForSection(_:)`, transcribed verbatim.
+    /// The retired `sortedTasksForSection` of `ListSectionsKanbanView`, transcribed verbatim.
     private func retiredColumn(
         _ section: TaskSectionConfig,
         of tasks: [AppTask],
