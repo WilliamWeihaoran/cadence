@@ -1246,16 +1246,57 @@ automation_prompt_outstanding() {
   c=( ${=$(automation_prompt_counts)} )
   print -r -- "$(( ${c[1]:-0} - ${c[2]:-0} ))"
 }
-# Prints the refusal and returns 0 when a prompt is outstanding; returns 1 (silent) otherwise, so
-# the caller reads it exactly as it reads `dd_in_use_refusal`.
-automation_prompt_refusal() {
-  local -i outstanding
+# AN UNMATCHED REQUEST IS NOT BY ITSELF A STANDING PROMPT, and reading it as one would have made
+# this guard worse than the disease it is for. MEASURED behaviour, corrected 2026-10-07: a cold UI
+# run raises the owner's prompt EVERY time (the grant is per-session), and an UNATTENDED one burns
+# ~70s and gives up -- leaving exactly the same unmatched "Writer daemon requires authentication"
+# in the log, with no "Finished enabling Automation Mode" after it, over a host that then runs unit
+# suites perfectly well. A count-only refusal would therefore have refused EVERY macOS test run on
+# this Mac for the rest of the window after any unattended UI run -- siblings' unit runs included,
+# which is the exact harm T-2067 did and this guard exists to prevent.
+#
+# So the refusal needs a second, INDEPENDENT reading of the same host: is a test session actually
+# hanging where T-2067 hangs? That is T-2071's `runstate_transport_outstanding` -- sessions that
+# connected minus sessions that got serialized transport -- which is also the pairing T-2070 (b)
+# names. Two readings, two subsystems, one conclusion:
+#
+#   request unmatched AND a session hanging -> REFUSE. A prompt is standing and nothing can run.
+#   request unmatched, no session hanging   -> WARN, do not gate. Most likely an unattended UI run
+#                                              that timed out; the run is allowed to prove it.
+#   no unmatched request                    -> silent.
+#
+# The second read is only paid when the first is positive, so an ordinary run still pays 2.3s.
+automation_prompt_verdict() {   # prints STANDING | UNMATCHED | HEALTHY
+  local -i outstanding hanging
   outstanding=$(automation_prompt_outstanding)
-  (( outstanding > 0 )) || return 1
+  (( outstanding > 0 )) || { print -r -- HEALTHY; return 0 }
+  hanging=$(runstate_transport_outstanding)
+  (( hanging > 0 )) && { print -r -- STANDING; return 0 }
+  print -r -- UNMATCHED
+}
+# The note for the UNMATCHED reading. It never gates, for the reason INTERACTIVE-SKIPPED does not:
+# it is a thing to know, not a thing to stop for, and a guard that stopped for it would be ignored.
+automation_prompt_note() {
+  local -a c; c=( ${=$(automation_prompt_counts)} )
+  say ""
+  say "   note: AUTOMATION-PROMPT-UNMATCHED (T-2070): this Mac logged an \"Enable UI Automation\""
+  say "   request with no grant after it (requests=${c[1]}, granted=${c[2]}), but NO test session is"
+  say "   hanging, so nothing is being refused. The usual cause is an UNATTENDED UI run that raised"
+  say "   the owner's prompt and timed out after ~70s -- the grant is PER-SESSION, so a cold UI run"
+  say "   raises it every time. If your run then dies at ~445s with 0 tests, it is this after all:"
+  say "   ./scripts/xcb.sh check-automation, and only the owner can answer the prompt."
+}
+# Prints the refusal and returns 0 when a prompt is STANDING (both readings agree); returns 1
+# otherwise, so the caller reads it exactly as it reads `dd_in_use_refusal`.
+automation_prompt_refusal() {
+  [[ "$(automation_prompt_verdict)" == STANDING ]] || return 1
+  local -i outstanding; outstanding=$(automation_prompt_outstanding)
   local -a c; c=( ${=$(automation_prompt_counts)} )
   say ""
   say "!! REFUSING -- AUTOMATION-PROMPT-OUTSTANDING (T-2070): this Mac has an unanswered \"Enable UI"
   say "   Automation\" authentication prompt (requests=${c[1]}, granted=${c[2]}, outstanding=$outstanding)."
+  say "   A test session is hanging as well (connected, never given serialized transport), which is"
+  say "   the SECOND reading and the reason this refuses rather than merely noting it."
   say "   While it stands NO macOS test run works, the UNIT suite included: testmanagerd sits in one"
   say "   synchronous LAContext.evaluatePolicy and every run behind it dies on a fixed 445s timer."
   say "   T-2067 measured 3h11m of host and seven dead runs from exactly one of these."
@@ -2841,17 +2882,21 @@ selftest_only_testing() {
   # at preflight -- BEFORE the destination resolver, which this deliberately hands an impossible
   # destination to prove. Exit 10 here would mean the poisoned tree was admitted and the run merely
   # died of something else later.
-  local pout prc
-  pout=$(zsh "$here" selftest-ent build -scheme Cadence -destination 'platform=iOS Simulator,name=NoSuchDeviceXYZ' \
-    -derivedDataPath "$ws/cadence-dd-live" 2>&1); prc=$?
+  # NOT `local pout prc`: both names are already local to this function (section 9 declares them),
+  # and in zsh a second bare `local x` PRINTS the parameter instead of redeclaring it -- T-1074,
+  # and `CadenceGuardScriptSelftestTests.noZshScriptReachesABareLocalDeclarationTwice` refuses it.
+  # The stray `pout=$'...'` it emitted went into whatever the run was capturing. Own names instead.
+  local entpout entprc
+  entpout=$(zsh "$here" selftest-ent build -scheme Cadence -destination 'platform=iOS Simulator,name=NoSuchDeviceXYZ' \
+    -derivedDataPath "$ws/cadence-dd-live" 2>&1); entprc=$?
   check "a marked DerivedData is REFUSED at preflight (exit $ENTITLEMENTS_POISONED_EXIT), before anything is paid for" \
-    $( (( prc == ENTITLEMENTS_POISONED_EXIT )) && [[ "$pout" == *"REFUSING -- ENTITLEMENTS-POISONED-DD"* && "$pout" == *"release-dd $ws/cadence-dd-live"* ]] && print 1 || print 0 ) "exit $prc: $pout"
+    $( (( entprc == ENTITLEMENTS_POISONED_EXIT )) && [[ "$entpout" == *"REFUSING -- ENTITLEMENTS-POISONED-DD"* && "$entpout" == *"release-dd $ws/cadence-dd-live"* ]] && print 1 || print 0 ) "exit $entprc: $entpout"
   check "...and it never offers the override xcodebuild's own error text offers" \
-    $( [[ "$pout" == *"Do NOT reach for CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION"* ]] && print 1 || print 0 ) "$pout"
-  pout=$(zsh "$here" selftest-ent build -scheme Cadence -destination 'platform=iOS Simulator,name=NoSuchDeviceXYZ' \
-    -derivedDataPath "$ws/cadence-dd-clean" 2>&1); prc=$?
+    $( [[ "$entpout" == *"Do NOT reach for CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION"* ]] && print 1 || print 0 ) "$entpout"
+  entpout=$(zsh "$here" selftest-ent build -scheme Cadence -destination 'platform=iOS Simulator,name=NoSuchDeviceXYZ' \
+    -derivedDataPath "$ws/cadence-dd-clean" 2>&1); entprc=$?
   check "CONTROL: an UNMARKED DerivedData is admitted and dies of its own fault (exit $SIMULATOR_GATE_EXIT), not of this one" \
-    $( (( prc == SIMULATOR_GATE_EXIT )) && [[ "$pout" != *ENTITLEMENTS-POISONED-DD* ]] && print 1 || print 0 ) "exit $prc: $pout"
+    $( (( entprc == SIMULATOR_GATE_EXIT )) && [[ "$entpout" != *ENTITLEMENTS-POISONED-DD* ]] && print 1 || print 0 ) "exit $entprc: $entpout"
   # The mark and the poisoning are cleared by THE SAME ACT, which is why the sentinel lives inside
   # the tree: `release-dd` deletes the directory, and nothing is left behind to refuse a fresh one.
   zsh "$here" release-dd "$ws/cadence-dd-live" >/dev/null 2>&1
@@ -2918,11 +2963,33 @@ selftest_only_testing() {
   print -rl -- "$probe_noise" "$probe_noise" "$probe_noise" > "$ws/autom-noise-only.log"
   print -rl -- "$tm Writer daemon requires authentication to enable automation mode." \
                "$probe_noise" "$probe_noise" "$probe_noise" "$probe_noise" > "$ws/autom-outstanding-plus-noise.log"
+  # The SECOND reading, and the checks below are a 2x2 over the two of them. An unmatched request
+  # is not by itself a standing prompt: an UNATTENDED UI run raises the owner's prompt, times out
+  # after ~70s and leaves exactly this line behind, over a host that then runs unit suites fine.
+  # A count-only refusal would have refused every macOS test run on this Mac for the rest of the
+  # window after any such run -- siblings' unit runs included, which is T-2067's own harm.
+  print -rl -- \
+    "2026-10-07 17:02:01.113 Df xctest[41122:2f1] Received new test session connection" \
+    "2026-10-07 17:02:01.114 Df xctest[41122:2f1] resuming connection" > "$ws/autom-sess-hanging.txt"
+  print -rl -- \
+    "2026-10-07 17:02:01.113 Df xctest[41122:2f1] Received new test session connection" \
+    "2026-10-07 17:02:01.116 Df xctest[41122:2f1] requested serialized transport" > "$ws/autom-sess-ok.txt"
   local aout2 arc2
-  run_autom() { aout2=$(CADENCE_AUTOMATION_LOG_FIXTURE="$1" zsh "$here" check-automation 2>&1); arc2=$?; }
-  run_autom "$ws/autom-outstanding.log"
-  check "a request with no matching grant says AUTOMATION-PROMPT-OUTSTANDING and exits $AUTOMATION_PROMPT_EXIT" \
+  run_autom() {  # $1 = automation fixture, $2 = session fixture (default: a healthy host)
+    aout2=$(CADENCE_AUTOMATION_LOG_FIXTURE="$1" \
+      CADENCE_XCTEST_SESSION_FIXTURE="${2:-$ws/autom-sess-ok.txt}" zsh "$here" check-automation 2>&1); arc2=$?
+  }
+  run_autom "$ws/autom-outstanding.log" "$ws/autom-sess-hanging.txt"
+  check "a request with no grant AND a hanging session says AUTOMATION-PROMPT-OUTSTANDING and exits $AUTOMATION_PROMPT_EXIT" \
     $( (( arc2 == AUTOMATION_PROMPT_EXIT )) && [[ "$aout2" == *"AUTOMATION-PROMPT-OUTSTANDING (T-2070)"* && "$aout2" == *"requests=1 granted=0 outstanding=1"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  check "...and it says WHY it refuses rather than notes: a session connected and never got transport" \
+    $( [[ "$aout2" == *"hanging test sessions: 1"* && "$aout2" == *"the SECOND reading"* ]] && print 1 || print 0 ) "$aout2"
+  run_autom "$ws/autom-outstanding.log" "$ws/autom-sess-ok.txt"
+  check "CONTROL: the SAME unmatched request over a host with NO hanging session only NOTES it (exit 0)" \
+    $( (( arc2 == 0 )) && [[ "$aout2" == *"AUTOMATION-PROMPT-UNMATCHED (T-2070)"* && "$aout2" != *REFUSING* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  check "...and the note names the unattended-UI-run cause, so it is not read as a mystery" \
+    $( [[ "$aout2" == *"UNATTENDED UI run"* && "$aout2" == *"PER-SESSION"* ]] && print 1 || print 0 ) "$aout2"
+  run_autom "$ws/autom-outstanding.log" "$ws/autom-sess-hanging.txt"
   check "...and says only the OWNER can clear it, never a daemon kill or DevToolsSecurity" \
     $( [[ "$aout2" == *"ONLY THE OWNER CAN CLEAR IT"* && "$aout2" == *"Do NOT run"*"DevToolsSecurity"* && "$aout2" == *"PER-SESSION"* ]] && print 1 || print 0 ) "$aout2"
   run_autom "$ws/autom-answered.log"
@@ -2931,7 +2998,7 @@ selftest_only_testing() {
   run_autom "$ws/autom-noise-only.log"
   check "PIN: /usr/bin/log's own invocation records are not counted at all (requests=0)" \
     $( (( arc2 == 0 )) && [[ "$aout2" == *"requests=0 granted=0 outstanding=0"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
-  run_autom "$ws/autom-outstanding-plus-noise.log"
+  run_autom "$ws/autom-outstanding-plus-noise.log" "$ws/autom-sess-hanging.txt"
   check "PIN: one REAL standing prompt still reads outstanding=1 under four probe-noise lines" \
     $( (( arc2 == AUTOMATION_PROMPT_EXIT )) && [[ "$aout2" == *"requests=1 granted=0 outstanding=1"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
   # ANCHORED at column 1, and that is not decoration: unanchored, this check's OWN source line
@@ -3969,9 +4036,16 @@ if [[ "${1:-}" == "check-automation" ]]; then
   autom_counts=( ${=$(automation_prompt_counts)} )
   autom_out=$(automation_prompt_outstanding)
   say "automation prompt: requests=${autom_counts[1]} granted=${autom_counts[2]} outstanding=$autom_out"
-  if (( autom_out > 0 )); then
+  autom_verdict=$(automation_prompt_verdict)
+  if [[ "$autom_verdict" == STANDING ]]; then
+    say "  hanging test sessions: $(runstate_transport_outstanding) (connected, never given transport)"
     automation_prompt_refusal
     exit $AUTOMATION_PROMPT_EXIT
+  fi
+  if [[ "$autom_verdict" == UNMATCHED ]]; then
+    say "  hanging test sessions: $(runstate_transport_outstanding) -- nothing is hanging, so this does NOT gate."
+    automation_prompt_note
+    exit 0
   fi
   say "  HEALTHY -- no unanswered \"Enable UI Automation\" prompt in the window."
   exit 0
@@ -4259,7 +4333,10 @@ run_is_a_test_action() {
   return 1
 }
 if run_is_a_test_action && [[ "${CADENCE_ALLOW_AUTOMATION_PROMPT:-}" != "1" ]]; then
-  automation_prompt_refusal && exit $AUTOMATION_PROMPT_EXIT
+  case "$(automation_prompt_verdict)" in
+    STANDING)  automation_prompt_refusal; exit $AUTOMATION_PROMPT_EXIT ;;
+    UNMATCHED) automation_prompt_note ;;
+  esac
 fi
 
 # --- resolve -only-testing: before anything expensive (T-1076) ---------------
