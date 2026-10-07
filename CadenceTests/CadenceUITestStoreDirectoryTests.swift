@@ -256,7 +256,7 @@ struct CadenceUITestStoreDirectoryTests {
             CadenceSourceScan.declarationBody("init()", in: source),
             "PersistenceController.init() was renamed"
         )
-        let reset = try #require(body.range(of: "deleteResolvedStoreDirectory()"))
+        let reset = try #require(body.range(of: "resetStoreDirectoryIfRequested()"))
         let claim = try #require(
             body.range(of: "claimUITestStoreDirectoryIfNeeded()"),
             "the launch no longer claims or sweeps its private UI-test store (T-1090)"
@@ -278,5 +278,119 @@ struct CadenceUITestStoreDirectoryTests {
             }
         }
         #expect(naming == ["CadenceUITestStoreDirectory.swift"])
+    }
+    // MARK: - T-3014: the store reset deletes only a redirected store
+
+    /// A redirected store, a test-host store and a file beside them, all inside `root` — the
+    /// three things an over-wide reset could take. Every case below asserts on all three.
+    private static func seedResetFixture(in root: URL) throws -> (privateA: URL, privateB: URL, testHost: URL, sentinel: URL) {
+        let storeRoot = CadenceUITestStoreDirectory.rootDirectory(in: root)
+        let privateA = storeRoot.appendingPathComponent("agent-a", isDirectory: true)
+        let privateB = storeRoot.appendingPathComponent("agent-b", isDirectory: true)
+        let testHost = root.appendingPathComponent(CadenceUITestStoreDirectory.testHostDirectoryName, isDirectory: true)
+        for directory in [privateA, privateB, testHost] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("store".utf8).write(to: directory.appendingPathComponent("default.store"))
+        }
+        let sentinel = root.appendingPathComponent("Cadence Store Backups", isDirectory: true)
+        try FileManager.default.createDirectory(at: sentinel, withIntermediateDirectories: true)
+        return (privateA, privateB, testHost, sentinel)
+    }
+
+    /// The T-3014 launch: an Xcode debug scheme with `CADENCE_RESET_STORE` ticked and no store id.
+    /// Nothing redirects it, so its store is the signed-in person's — refused, and nothing in reach
+    /// is removed.
+    @Test func aStoreResetOnAnUnredirectedLaunchIsRefusedAndRemovesNothing() throws {
+        let root = try Self.makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try Self.seedResetFixture(in: root)
+
+        let outcome = CadenceUITestStoreDirectory.resetStoreIfRequested(
+            in: ["CADENCE_RESET_STORE": "1"],
+            temporaryDirectory: root
+        )
+
+        #expect(outcome == .refusedUnredirected)
+        #expect(Self.exists(root))
+        #expect(Self.exists(fixture.privateA))
+        #expect(Self.exists(fixture.privateB))
+        #expect(Self.exists(fixture.testHost))
+        #expect(Self.exists(fixture.sentinel))
+    }
+
+    /// The other direction, so the refusal is not bought by never resetting: a `CadenceUITests`
+    /// launch removes its own private store and only that one.
+    @Test func aStoreResetOnARedirectedLaunchRemovesOnlyThatLaunchesStore() throws {
+        let root = try Self.makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try Self.seedResetFixture(in: root)
+
+        let outcome = CadenceUITestStoreDirectory.resetStoreIfRequested(
+            in: ["CADENCE_RESET_STORE": "1", "CADENCE_UI_TEST_MODE": "1", "CADENCE_UI_TEST_STORE_ID": "agent-a"],
+            temporaryDirectory: root
+        )
+
+        #expect(outcome == .removed(fixture.privateA))
+        #expect(Self.exists(fixture.privateA) == false)
+        #expect(Self.exists(fixture.privateB))
+        #expect(Self.exists(fixture.testHost))
+        #expect(Self.exists(fixture.sentinel))
+    }
+
+    @Test func aStoreResetOnATestHostRemovesOnlyTheTestHostStore() throws {
+        let root = try Self.makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try Self.seedResetFixture(in: root)
+
+        let outcome = CadenceUITestStoreDirectory.resetStoreIfRequested(
+            in: ["CADENCE_RESET_STORE": "1", "XCTestConfigurationFilePath": "/dev/null"],
+            temporaryDirectory: root
+        )
+
+        #expect(outcome == .removed(fixture.testHost))
+        #expect(Self.exists(fixture.testHost) == false)
+        #expect(Self.exists(fixture.privateA))
+        #expect(Self.exists(fixture.privateB))
+        #expect(Self.exists(fixture.sentinel))
+    }
+
+    @Test func noStoreResetIsAttemptedUnlessTheVariableIsExactlyOne() throws {
+        let root = try Self.makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try Self.seedResetFixture(in: root)
+
+        for value in [nil, "0", "true", ""] as [String?] {
+            var environment = ["CADENCE_UI_TEST_STORE_ID": "agent-a"]
+            environment["CADENCE_RESET_STORE"] = value
+            #expect(
+                CadenceUITestStoreDirectory.resetStoreIfRequested(in: environment, temporaryDirectory: root)
+                    == .notRequested
+            )
+        }
+        #expect(Self.exists(fixture.privateA))
+    }
+
+    /// The wiring `init()` cannot be driven through: `CADENCE_RESET_STORE` is read in exactly one
+    /// file under `Cadence/`, the guarded one, and the launch's reset goes through that guard
+    /// rather than deleting anything itself.
+    @Test func theStoreResetVariableIsReadOnlyBehindTheRedirectGuard() throws {
+        var reading: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            if source.contains("\"CADENCE_RESET_STORE\"") {
+                reading.append((path as NSString).lastPathComponent)
+            }
+        }
+        #expect(reading == ["CadenceUITestStoreDirectory.swift"])
+
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("func resetStoreDirectoryIfRequested()", in: source),
+            "PersistenceController's launch reset was renamed"
+        )
+        #expect(body.contains("CadenceUITestStoreDirectory.resetStoreIfRequested("))
+        #expect(body.contains("removeItem") == false, "the launch reset deletes something itself again")
     }
 }

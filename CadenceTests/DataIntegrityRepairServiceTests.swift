@@ -115,6 +115,34 @@ struct DataIntegrityRepairServiceTests {
         #expect(habits.first?.context === contexts.first)
     }
 
+    /// [[T-3019]] (1): `Context.pursuits` is the sixth to-many, and the merge used to leave it out,
+    /// so deleting the duplicate nullified its pursuits' `context`. One pursuit on each copy, so
+    /// whichever copy survives, the other's pursuit is the one that has to be re-pointed.
+    @Test func mergingDuplicateContextsRePointsTheirPursuits() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let first = Context(name: "Work", colorHex: "#4ECB71", icon: "briefcase.fill")
+        let second = Context(name: "Work", colorHex: "#22c55e", icon: "briefcase.fill")
+        modelContext.insert(first)
+        modelContext.insert(second)
+        modelContext.insert(Pursuit(title: "First's pursuit", context: first))
+        modelContext.insert(Pursuit(title: "Second's pursuit", context: second))
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateContextsMerged == 1)
+        let contexts = try modelContext.fetch(FetchDescriptor<Context>())
+        let survivor = try #require(contexts.first)
+        #expect(contexts.count == 1)
+        let pursuits = try modelContext.fetch(FetchDescriptor<Pursuit>())
+        #expect(pursuits.count == 2)
+        #expect(pursuits.filter { $0.context == nil }.map(\.title) == [])
+        #expect(pursuits.allSatisfy { $0.context === survivor })
+        #expect((survivor.pursuits ?? []).count == 2)
+    }
+
     @Test func duplicateCanonicalNotesAreMergedWithoutDroppingContentOrTags() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

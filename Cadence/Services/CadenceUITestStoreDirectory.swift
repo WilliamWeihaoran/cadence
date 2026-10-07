@@ -179,6 +179,46 @@ enum CadenceUITestStoreDirectory {
         return temporaryDirectory.appendingPathComponent(testHostDirectoryName, isDirectory: true)
     }
 
+    /// The launch variable that asks for a clean store. Read here and nowhere else in `Cadence/`.
+    static let resetStoreVariable = "CADENCE_RESET_STORE"
+
+    /// What `resetStoreIfRequested` did with a launch's `CADENCE_RESET_STORE`.
+    nonisolated enum StoreReset: Equatable {
+        case notRequested
+        /// The redirected directory this launch owns, removed whole.
+        case removed(URL)
+        /// Asked for on a launch that is **not** redirected, so the directory it would have taken
+        /// is the signed-in person's own store — with `Recovery/`, `default_ckAssets/` and every
+        /// local backup inside it. Nothing was deleted.
+        case refusedUnredirected
+    }
+
+    /// **[[T-3014]]: `CADENCE_RESET_STORE` deletes only a store this launch was redirected to.**
+    ///
+    /// It used to be gated on the variable alone and to delete the parent of the resolved store
+    /// URL, which falls back to the app group's store whenever nothing redirects the launch — so
+    /// ticking the variable in an Xcode debug scheme, which sets no store id, removed the owner's
+    /// `Cadence` directory with `StoreBackupManager`'s backups inside it. Its cheaper sibling
+    /// `CADENCE_RESET_USER_DEFAULTS` already refused the shared domain ([[T-1157]],
+    /// `CadenceUITestSupport.mayResetUserDefaults`); this is the same refusal for the store. The
+    /// only directory this can ever name is `redirectedStoreDirectory`'s answer, and there is
+    /// deliberately no fallback that computes a path to anything else.
+    ///
+    /// Pure over its inputs, so it is driven against a temp directory rather than launched.
+    @discardableResult
+    static func resetStoreIfRequested(
+        in environment: [String: String] = ProcessInfo.processInfo.environment,
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+    ) -> StoreReset {
+        guard environment[resetStoreVariable] == "1" else { return .notRequested }
+        guard let directory = redirectedStoreDirectory(
+            in: environment,
+            temporaryDirectory: temporaryDirectory
+        ) else { return .refusedUnredirected }
+        try? FileManager.default.removeItem(at: directory)
+        return .removed(directory)
+    }
+
     /// The id whose launch also claims and sweeps — **`CadenceUITests` only**.
     ///
     /// The redirect is wider than the cleanup on purpose. `run-macos-app.sh` sets the store id and

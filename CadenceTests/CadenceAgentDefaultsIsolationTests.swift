@@ -682,8 +682,8 @@ struct CadenceAgentDefaultsIsolationTests {
         let body = CadenceSourceScan.strippingComments(try #require(
             // `"init()"`, not `"init() {"`. `declarationBody` resumes at the end of a prefix whose
             // parentheses are already closed and then takes the **next** `{` — so the longer
-            // spelling hands back the body of `if Self.shouldResetStoreOnLaunch {`, four lines that
-            // contain none of the four things asserted below and fail every one of them.
+            // spelling hands back the body of the first nested block (`if Self.isRunningTests {`
+            // since T-3014), a few lines that contain none of the four things asserted below.
             CadenceSourceScan.declarationBody("init()", in: source),
             "PersistenceController.init did not read as itself"
         ))

@@ -1,5 +1,6 @@
 import Dispatch
 import Foundation
+import OSLog
 import SwiftData
 
 struct PersistenceController {
@@ -36,9 +37,7 @@ struct PersistenceController {
     static let schema = CadenceSchema.schema
 
     init() {
-        if Self.shouldResetStoreOnLaunch {
-            Self.deleteResolvedStoreDirectory()
-        }
+        Self.resetStoreDirectoryIfRequested()
 
         // After the reset, never before it: the reset removes the whole directory, lock file
         // included, and a claim taken on a file that is then deleted owns nothing (T-1090).
@@ -718,8 +717,23 @@ struct PersistenceController {
         CadenceUITestStoreDirectory.isRunningTests(in: ProcessInfo.processInfo.environment)
     }
 
-    private static var shouldResetStoreOnLaunch: Bool {
-        ProcessInfo.processInfo.environment["CADENCE_RESET_STORE"] == "1"
+    private static let resetLogger = Logger(subsystem: "com.haoranwei.Cadence", category: "StoreReset")
+
+    /// [[T-3014]]: the reset, and the refusal, both decided by
+    /// `CadenceUITestStoreDirectory.resetStoreIfRequested` — which can only ever name the directory
+    /// this launch was redirected to. An unredirected launch's store is the signed-in person's,
+    /// with their backups inside it, so the request is refused and said out loud, the same shape as
+    /// `CADENCE_RESET_USER_DEFAULTS`'s refusal in `CadenceUITestSupport` ([[T-1157]]).
+    private static func resetStoreDirectoryIfRequested() {
+        guard CadenceUITestStoreDirectory.resetStoreIfRequested() == .refusedUnredirected else { return }
+        resetLogger.error(
+            """
+            CADENCE_RESET_STORE on an UNREDIRECTED launch: refusing. This launch carries no \
+            CADENCE_UI_TEST_STORE_ID and is not a test host, so the directory the reset removes \
+            would be the signed-in person's own store, its Recovery store and every local backup \
+            (T-3014).
+            """
+        )
     }
 
     /// Lock this launch's store directory and remove the ones no live process owns.
@@ -747,11 +761,6 @@ struct PersistenceController {
         }
         try FileManager.default.createDirectory(at: storeDirectoryURL, withIntermediateDirectories: true)
         return storeDirectoryURL.appendingPathComponent("default.store")
-    }
-
-    private static func deleteResolvedStoreDirectory() {
-        guard let storeURL = try? resolvedStoreURL() else { return }
-        try? FileManager.default.removeItem(at: storeURL.deletingLastPathComponent())
     }
 }
 

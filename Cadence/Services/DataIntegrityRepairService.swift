@@ -231,6 +231,7 @@ nonisolated enum DataIntegrityRepairService {
         var links: [SavedLink]
         var goalLinks: [GoalListLink]
         var focusSessions: [FocusSessionLog]
+        var pursuits: [Pursuit]
 
         var habits: [Habit] { base.habits }
         var notes: [Note] { base.notes }
@@ -245,6 +246,7 @@ nonisolated enum DataIntegrityRepairService {
             links = try context.fetch(FetchDescriptor<SavedLink>())
             goalLinks = try context.fetch(FetchDescriptor<GoalListLink>())
             focusSessions = try context.fetch(FetchDescriptor<FocusSessionLog>())
+            pursuits = try context.fetch(FetchDescriptor<Pursuit>())
         }
     }
 
@@ -601,6 +603,13 @@ nonisolated enum DataIntegrityRepairService {
         for habit in store.habits where habit.context === duplicate {
             habit.context = canonical
             report.movedHabits += 1
+        }
+        // [[T-3019]] (1): `Context`'s sixth to-many. Left out, the default `.nullify` orphaned the
+        // duplicate's pursuits with `context == nil`, and `PursuitToGoalMigration` then turned each
+        // into a `Goal` filed under no context — [[T-743]]'s shape one model over. Retired model,
+        // so no report counter: re-pointed to the survivor like every other leg, and not counted.
+        for pursuit in store.pursuits where pursuit.context === duplicate {
+            pursuit.context = canonical
         }
 
         modelContext.delete(duplicate)
