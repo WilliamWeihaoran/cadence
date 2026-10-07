@@ -73,7 +73,6 @@ Cadence/iOS/iOSMarkdownEditor.swift
 Cadence/iOS/iOSMarkdownTableGridRendering.swift
 Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift
 Cadence/macOS/Services/CadenceMCPRefreshCoordinator.swift
-Cadence/macOS/Services/CalendarManager.swift
 Cadence/macOS/Services/FocusManager.swift
 Cadence/macOS/Services/QuickTaskPanelController.swift
 Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift
@@ -88,6 +87,33 @@ Cadence/iOS/iOSCompactTabShell.swift
 Cadence/iOS/iOSRootView.swift
 Cadence/macOS/Views/CalendarEventPresentationSupport.swift
 ```
+
+### LEASE NARROWED 2026-10-07 — `CalendarManager.swift` comes OUT, so [[T-3032]] can be fixed
+
+**Exactly one pattern struck: `Cadence/macOS/Services/CalendarManager.swift`. 39 -> 38.** Asserted as
+a set difference rather than a line count, and rebuilt from `git show HEAD:docs/CODEX_WORKTREE.md`
+rather than from a copy read earlier in the session — the discipline `4ccaf39d` adopted after an
+agent nearly revoked a live grant from a stale base.
+
+**Why it is safe to take back.** The file was granted for [[T-122]]'s annotation-only pass. That pass
+has LANDED (`bc082946`), and Codex's own report says the warning it carries —
+`CalendarManager.swift:110` — is one of seven actor-bound observer/KVO callbacks that **cannot be
+honestly cleared within the annotation-only restriction**. So there is no further T-122 work in this
+file that the current grant permits: clearing that warning needs a new owner decision about where a
+callback runs, not a new lease. Revoking a grant nobody can act on is the opposite of revoking a live
+one.
+
+**Why it has to come out at all.** [[T-3032]]: `CalendarManager.isAuthorized` is a plain `var` with
+no `private(set)` (`:24`), and it is the **only** guard on all six EventKit writes.
+`CadenceRemindersManager` spells the same flag `private(set)` (`:39`) — the asymmetry is in the tree,
+not in anyone's opinion. Four tests set `CalendarManager.shared.isAuthorized = true` on the real
+singleton holding a real `EKEventStore`, and they are safe today only by accident: they hand EventKit
+events from a throwaway store, which it refuses. The call they happen not to make would write to the
+owner's real default calendar.
+
+**This does not re-open T-122's eight-file grant**, which stands; only this one path moves. If Codex
+needs it back for a decided callback change, the coordinator re-grants it the same way it granted it.
+
 
 ### LEASE WIDENED 2026-10-07 (second batch) — one path for [[T-122]], and the widget-membership sequence for [[T-168]]
 
