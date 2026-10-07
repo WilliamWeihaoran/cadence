@@ -87,6 +87,36 @@ final class NotificationManager: NSObject {
     ) async {
         guard !Self.isTestEnvironment else { return }
 
+        // **[[T-3047]]: re-derive the permission before reading it.** `isAuthorized` used to move
+        // in exactly three places — `init()`, `requestAuthorization()`, and the
+        // `.notificationsAuthorizationLifecycle` hook, which is attached on exactly two surfaces,
+        // both of them the Settings → Notifications pane. Everywhere else it was a cached answer to
+        // a question the OS lets the user change at any moment: iOS offers "Turn Off Notifications"
+        // straight off a delivered banner, and both platforms have System Settings. Stale-`true`,
+        // the guard below passes, `center.add` is refused and the `try?` swallows it, and the app
+        // goes on holding out a guarantee the OS has withdrawn. Stale-`false`, every pass takes the
+        // `cancelAll()` branch, so the user who just granted permission watches the app answer by
+        // removing everything.
+        //
+        // **Here rather than in the scene-phase observers, and ahead of the guard rather than
+        // beside it.** Order is the whole of the bug, and in this position it is structural: there
+        // is no arrangement of callers in which the guard below reads a flag this pass did not just
+        // derive. Wiring the refresh into `macOSRootView`'s `NotificationReconcileObserver` and
+        // `iOSRootView`'s `.onChange(of: scenePhase)` would cover the foreground transition and
+        // leave every mutation fast path reading the cached answer, in two places that then have to
+        // be kept in step — and `reconcile` is the only reader of `isAuthorized` outside the two
+        // panes that already carry the hook.
+        //
+        // **This adds no new reconcile.** Both root observers already reconcile on *becoming*
+        // active ([[T-312]], [[T-3046]]), so the set of moments this function runs is unchanged;
+        // only the branch a run takes changes, and only towards what the OS actually says. The
+        // mid-import hazard [[T-3046]] weighed does not reach either new direction: a corrected
+        // `true -> false` lands in `cancelAll()`, which reads no tasks at all, and a corrected
+        // `false -> true` replaces a `cancelAll()` with a plan diff that removes strictly less. The
+        // cost is one `notificationSettings()` read per pass, beside the
+        // `pendingNotificationRequests()` read already below.
+        await refreshAuthorizationState()
+
         let notificationsEnabled = CadenceDefaults.store.bool(forKey: Self.notificationsEnabledDefaultsKey)
         guard notificationsEnabled, isAuthorized else {
             await cancelAll()
