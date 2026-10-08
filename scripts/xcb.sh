@@ -1097,10 +1097,34 @@ HOST_LAUNCH_REFUSAL_PATTERN='LaunchServices has returned error -10699|OSStatus e
 # XCTest's `Test Case '-[S t]' started.`
 TEST_START_PATTERN='◇ Test .+ started\.|Test Case .+ started\.'
 
+# --- but not inside a failing test's own output (T-3071) ---------------------
+# "A test's prose is unlikely to write them" was wrong for exactly the tests that read this file.
+# Measured 2026-10-08 (heartbeat, 54a6c843): one red `CadenceBuildInvocationHygieneTests`
+# expectation printed `xcb.sh`'s source into the log -- the line defining the pattern above, and
+# 8b's fixture -- and this report said THIS RED IS NOT EVIDENCE ABOUT THE CODE over a real
+# assertion failure. Same disease as T-1971 (a test log is two documents, and a failing test
+# prints whatever its message holds); a different boundary, because a refusal DOES happen after
+# testing started, so "the build phase only" would blind it. What is excluded is the ISSUE DUMP:
+# from swift-testing's column-0 `✘ Test … recorded an issue` / `✘ Test … failed` line through
+# every line after it that is blank, indented, or `↳`-prefixed -- swift-testing prints a
+# message's continuation lines indented, so the dump never reaches column 0. The first other
+# column-0 line ends it, and xcodebuild's own launch failure (`IDELaunchReport …`, `Recovery
+# Suggestion: …`, `Failure Reason: …`) is printed at column 0, so a genuine refusal right after a
+# red test still closes the dump and is still read. The direction this can fail is a MISSED
+# report, never a false one; and it only ever removes lines, so a log with no `✘` reads as before.
+first_host_launch_refusal_line() {  # $1 = log. Prints the line number, or nothing.
+  HLR_PATTERN=$HOST_LAUNCH_REFUSAL_PATTERN LC_ALL=C awk '
+    /^✘ / { dump = 1; next }
+    dump && ($0 == "" || /^[[:space:]]/ || /^↳/) { next }
+    { dump = 0 }
+    $0 ~ ENVIRON["HLR_PATTERN"] { print NR; exit }
+  ' "$1" 2>/dev/null
+}
+
 host_launch_refusal_report() {  # $1 = log, $2 = xcodebuild's exit status ("" when unknown)
   local log=$1 xstatus=${2:-}
   [[ "$xstatus" == "0" ]] && return 0   # a green run has no red to explain
-  local first; first=$(grep -anE -m1 -- "$HOST_LAUNCH_REFUSAL_PATTERN" "$log" 2>/dev/null | cut -d: -f1)
+  local first; first=$(first_host_launch_refusal_line "$log")
   [[ -n "$first" ]] || return 0
   local last_test
   last_test=$(head -n $(( first - 1 )) "$log" | grep -aE -- "$TEST_START_PATTERN" \
@@ -2812,6 +2836,38 @@ selftest_only_testing() {
     "◇ Test everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule() started." \
     "✘ Test everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule() recorded an issue" \
     "** TEST FAILED **" > "$ws/host-ordinary-red.log"
+  # T-3071: the 2026-10-08 heartbeat shape -- a red test whose issue dump prints this script's
+  # source, so every refusal phrase appears, but only indented or `↳`-prefixed inside the dump.
+  print -rl -- \
+    "◇ Test run started." \
+    "◇ Test theGuardedRunnerAsksWhetherTheCheckoutIsStillHeadBeforeTakingTheTestHost() started." \
+    "✘ Test theGuardedRunnerAsksWhetherTheCheckoutIsStillHeadBeforeTakingTheTestHost() recorded an issue at CadenceBuildInvocationHygieneTests.swift:247:27: Expectation failed: commands.range(of: \"a_gate_the_test_wanted\")" \
+    "↳ commands.range(of: \"a_gate_the_test_wanted\") → nil" \
+    "↳   commands → \"" \
+    "" \
+    "    HOST_LAUNCH_REFUSAL_PATTERN='LaunchServices has returned error -10699|OSStatus error -10699|Launch prevented due to \"prevent launch\" assertion'" \
+    "        \"Recovery Suggestion: LaunchServices has returned error -10699. Please check the system logs for the underlying cause of the error.\" \\" \
+    "        \"Failure Reason: Launch prevented due to \\\"prevent launch\\\" assertion\" \\" \
+    "    \"" \
+    "✘ Test theGuardedRunnerAsksWhetherTheCheckoutIsStillHeadBeforeTakingTheTestHost() failed after 0.047 seconds with 1 issue." \
+    "↳ /// a doc comment quoting OSStatus error -10699 is the test's text too" \
+    "◇ Test aLaterTestThatPassed() started." \
+    "✔ Test aLaterTestThatPassed() passed after 0.001 seconds." \
+    "✘ Test run with 2 tests in 1 suite failed after 0.1 seconds with 1 issue." \
+    "** TEST FAILED **" > "$ws/host-quoted-in-issue.log"
+  # ...and the genuine refusal arriving straight after such a dump: xcodebuild's column-0 lines
+  # must close the dump and still be read.
+  print -rl -- \
+    "◇ Test run started." \
+    "◇ Test aRedTestPrintingSource() started." \
+    "✘ Test aRedTestPrintingSource() recorded an issue at X.swift:1:1: Expectation failed" \
+    "↳ source → \"" \
+    "    Failure Reason: Launch prevented due to \"prevent launch\" assertion" \
+    "    \"" \
+    "2026-10-02 14:05:29.634 xcodebuild[80835:49836493]  IDELaunchReport: x:y:Launching CadenceTests Finished with error: Could not launch “CadenceTests”" \
+    "Recovery Suggestion: LaunchServices has returned error -10699. Please check the system logs for the underlying cause of the error." \
+    "Failure Reason: Launch prevented due to \"prevent launch\" assertion" \
+    "** TEST FAILED **" > "$ws/host-refused-after-issue.log"
   local hout hrc
   run_host() { hout=$(zsh "$here" check-host-launch "$@" 2>&1); hrc=$?; }
   run_host "$ws/host-refused.log" 65
@@ -2833,6 +2889,14 @@ selftest_only_testing() {
   run_host "$ws/host-refused.log" 0
   check "CONTROL: the refusal under exit 0 (nothing red to explain) is silent" \
     $( (( hrc == 0 )) && [[ "$hout" != *HOST-LAUNCH-REFUSED* ]] && print 1 || print 0 ) "exit $hrc: $hout"
+  run_host "$ws/host-quoted-in-issue.log" 65
+  check "the refusal phrases printed only inside a red test's issue dump are NOT a refusal (T-3071)" \
+    $( (( hrc == 0 )) && [[ "$hout" != *HOST-LAUNCH-REFUSED* ]] && print 1 || print 0 ) "exit $hrc: $hout"
+  run_host "$ws/host-refused-after-issue.log" 65
+  check "...but xcodebuild's own refusal straight after an issue dump still says HOST-LAUNCH-REFUSED" \
+    $( [[ "$hout" == *HOST-LAUNCH-REFUSED* && "$hout" == *"before the refusal: aRedTestPrintingSource()"* ]] && print 1 || print 0 ) "exit $hrc: $hout"
+  check "...at xcodebuild's line (8), not the quoted one inside the dump (5)" \
+    $( [[ "$hout" == *"at line 8."* ]] && print 1 || print 0 ) "$hout"
 
   say ""
   say " 8c. a DerivedData poisoned by a touched entitlements file is named, not read as a bad suite (T-2046)"
