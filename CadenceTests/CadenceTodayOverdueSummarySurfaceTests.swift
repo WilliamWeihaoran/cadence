@@ -553,57 +553,72 @@ struct CadenceTodayOverdueSummarySurfaceTests {
         #expect(!views.contains("struct OverdueSummaryCaption"))
     }
 
-    /// `Cadence/iOS/` is invisible to this target, so the iOS half is pinned by reading it.
-    @Test func iOSTodayDerivesTheSameSummariesAndDrawsTheSameCards() throws {
+    /// **iOS's Today derives no past-due summaries and draws no past-due cards (T-3076).** This
+    /// test used to assert the exact opposite, one assertion at a time, and is inverted rather than
+    /// deleted: every string it names is one the phone's Today really did contain, so this is still
+    /// the list of things that must not come back.
+    ///
+    /// The owner's second instruction is what widened it — *"my request on not showing past due
+    /// sections and lists applies to mac os and ios as well"* — so the heading, the two card types
+    /// and the `openRequest` hop are all absent from the one list both widths draw, and the host
+    /// derives neither array.
+    @Test func iOSTodayDerivesNoSummariesAndDrawsNoCards() throws {
         let host = try strippingComments(sourceFile("Cadence/iOS/iOSTodayView.swift"))
-        #expect(host.contains("CadenceTodayOverdueSummarySupport.listSummaries("))
-        #expect(host.contains("CadenceTodayOverdueSummarySupport.sectionSummaries("))
-        #expect(host.contains("iOSTodayOverdueSummaries("))
+        #expect(host.contains("struct iOSTodayView: View"), "non-vacuity: wrong file read")
+        #expect(!host.contains("CadenceTodayOverdueSummarySupport.listSummaries("))
+        #expect(!host.contains("CadenceTodayOverdueSummarySupport.sectionSummaries("))
+        #expect(!host.contains("iOSTodayOverdueSummaries("))
 
         let list = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
-        #expect(list.contains("CadenceTodayOverdueListCard(summary: summary)"))
-        #expect(list.contains("CadenceTodayOverdueSectionCard(summary: summary)"))
-        #expect(list.contains("CadenceTodayOverdueSummaryHeading("))
-        #expect(list.contains("CadenceTodayOverdueSummarySupport.openRequest(for: summary)"))
+        #expect(list.contains("struct iOSTodayTaskSections: View"), "non-vacuity: wrong file read")
+        #expect(!list.contains("CadenceTodayOverdueListCard(summary: summary)"))
+        #expect(!list.contains("CadenceTodayOverdueSectionCard(summary: summary)"))
+        #expect(!list.contains("CadenceTodayOverdueSummaryHeading("))
+        #expect(!list.contains("CadenceTodayOverdueSummarySupport.openRequest(for: summary)"))
     }
 
-    /// Both widths draw the cards because both draw `iOSTodayTaskSections` — the one list. A second
-    /// `CadenceTodayOverdue*Card(` under this folder is the near-copy this whole ticket is about.
-    @Test func bothIOSWidthsDrawTheCardsFromTheOneList() throws {
+    /// **No iOS file draws either card.** The count was `== 1` — the one list both widths share,
+    /// which is what stopped a second near-copy growing beside it. It is `== 0` now, and the
+    /// assertion still does the same job: the defect it catches has gone from "two files draw them"
+    /// to "any file draws them".
+    @Test func noIOSWidthDrawsThePastDueCards() throws {
         for host in ["Cadence/iOS/iOSTodayView.swift", "Cadence/iOS/iOSTodayCompactViews.swift"] {
             let source = try strippingComments(sourceFile(host))
-            #expect(source.contains("overdueSummaries"), "\(host) does not pass the summaries through")
-            #expect(
-                !source.contains("CadenceTodayOverdueListCard("),
-                "\(host) draws its own cards instead of going through iOSTodayTaskSections"
-            )
-            #expect(
-                !source.contains("CadenceTodayOverdueSectionCard("),
-                "\(host) draws its own cards instead of going through iOSTodayTaskSections"
-            )
+            #expect(!source.contains("overdueSummaries"), "\(host) still passes past-due summaries through")
+            #expect(!source.contains("CadenceTodayOverdueListCard("), "\(host) draws past-due list cards")
+            #expect(!source.contains("CadenceTodayOverdueSectionCard("), "\(host) draws past-due column cards")
         }
 
         var drawing = 0
+        var scanned = 0
         for path in try swiftFiles(under: "Cadence/iOS") {
             let source = try strippingComments(sourceFile(path))
+            scanned += 1
             if source.contains("CadenceTodayOverdueListCard(") || source.contains("CadenceTodayOverdueSectionCard(") {
                 drawing += 1
             }
         }
-        #expect(drawing == 1, "\(drawing) iOS files draw the past-due cards — there should be exactly one")
+        // The self-check an absence count always needs: a walk that reads nothing scores 0 too.
+        #expect(scanned > 60, "only \(scanned) iOS files scanned — the enumerator read nothing")
+        #expect(drawing == 0, "\(drawing) iOS files still draw the past-due cards")
     }
 
-    /// The tap target is the one genuinely platform-shaped piece, and iOS must not have grown a
-    /// second copy of the Mac's router to serve it.
-    @Test func theIOSTapTargetPresentsRatherThanReachingForANavigationManager() throws {
-        let host = try strippingComments(sourceFile("Cadence/iOS/iOSTodayView.swift"))
-        #expect(host.contains("iOSTodayOverdueListSheet(request: request)"))
-        #expect(!host.contains("ListNavigationManager"))
-
+    /// iOS must not have grown a second copy of the Mac's router. The clause about where a tapped
+    /// card *landed* is gone with the cards; this half is about a type `Cadence/iOS/` may never
+    /// reach, and is untouched by that.
+    ///
+    /// `iOSTodayOverdueListSheet` and `iOSTodayView`'s `.sheet(item: $pendingListOpen)` **survive
+    /// with nothing to open them**, which is deliberate and recorded in both files: a test file
+    /// this change may not write pins their shape. The presenter being unreachable is the ledger's
+    /// follow-up, not a second router.
+    @Test func noIOSSurfaceReachesForTheMacOnlyNavigationManager() throws {
+        var scanned = 0
         for path in try swiftFiles(under: "Cadence/iOS") {
             let source = try strippingComments(sourceFile(path))
+            scanned += 1
             #expect(!source.contains("ListNavigationManager"), "\(path) reaches for the macOS-only navigation manager")
         }
+        #expect(scanned > 60, "only \(scanned) iOS files scanned — the enumerator read nothing")
     }
 
     /// One set of strings. A second literal is how the two platforms would name the same run of
@@ -646,9 +661,13 @@ struct CadenceTodayOverdueSummarySurfaceTests {
     /// The guard has not been *dropped*; the thing it guarded against has. What has to hold instead
     /// is that nothing can put those arrays back into the panel's derived state without this failing.
     ///
-    /// **iOS still draws both bands and still guards on them.** That divergence is deliberate and
-    /// unresolved: the user has seen macOS's Today, not the phone's.
-    @Test func theMacTodayHasNoPastDueCardsLeftToGuardAgainst() throws {
+    /// **And neither does the phone, since T-3076.** The sentence that used to close this comment
+    /// — *"iOS still draws both bands and still guards on them. That divergence is deliberate and
+    /// unresolved: the user has seen macOS's Today, not the phone's"* — came due the moment the
+    /// owner saw the phone and said *"we should remove the banners that show the past due lists in
+    /// today's view"*, then *"my request on not showing past due sections and lists applies to mac
+    /// os and ios as well"*. The last two assertions below are that sentence inverted.
+    @Test func neitherTodayHasPastDueCardsLeftToGuardAgainst() throws {
         let today = "2026-08-20"
 
         let derived = TasksPanelDerivedState(allTasks: [], todayKey: today)
@@ -672,11 +691,25 @@ struct CadenceTodayOverdueSummarySurfaceTests {
         #expect(derivedState.contains("struct TasksPanelDerivedState"), "non-vacuity: wrong file read")
         #expect(!derivedState.contains("OverdueSummary"))
 
-        // The component itself is untouched, because iOS's Today is still its caller. Deleting it
-        // here would have taken the phone's band with it.
+        // The components themselves are still declared, and that is NOT an oversight: with both
+        // platforms' call sites gone they have no production caller left, and deleting a shared
+        // component is its own change with its own fallout. T-3076's ledger entry names them —
+        // `CadenceTodayOverdueSummaryCards` (all three views) and
+        // `CadenceTodayOverdueSummarySupport` — so the next pass does not have to rediscover it.
+        // Pinned as *present* so that follow-up has to come back here and say so.
+        let cards = try strippingComments(
+            sourceFile("Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift")
+        )
+        #expect(cards.contains("struct CadenceTodayOverdueListCard: View"))
+        #expect(cards.contains("struct CadenceTodayOverdueSectionCard: View"))
+        #expect(cards.contains("struct CadenceTodayOverdueSummaryHeading: View"))
+
+        // What is gone is the drawing, on the one iOS file that did it.
         let iOSSections = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
-        #expect(iOSSections.contains("CadenceTodayOverdueListCard"))
-        #expect(iOSSections.contains("CadenceTodayOverdueSectionCard"))
+        #expect(iOSSections.contains("struct iOSTodayTaskSections: View"), "non-vacuity: wrong file read")
+        #expect(!iOSSections.contains("CadenceTodayOverdueListCard"))
+        #expect(!iOSSections.contains("CadenceTodayOverdueSectionCard"))
+        #expect(!iOSSections.contains("CadenceTodayOverdueSummaryHeading"))
     }
 
     // MARK: - Fixtures

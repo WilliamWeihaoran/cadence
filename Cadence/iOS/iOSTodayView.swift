@@ -11,11 +11,10 @@ struct iOSTodayView: View {
     var showsCompactHeader = true
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    /// For the past-due summaries only. A *column*'s due date lives in `sectionConfigsRaw` on the
-    /// list, not on any task, so no query over `AppTask` can find one — see
-    /// `CadenceTodayOverdueSummarySupport`.
-    @Query(sort: \Area.order) private var areas: [Area]
-    @Query(sort: \Project.order) private var projects: [Project]
+    // The `areas` / `projects` queries were here, for the past-due summaries alone — a *column*'s
+    // due date lives in `sectionConfigsRaw` on the list, not on any task, so no query over
+    // `AppTask` could find one. Both bands are gone (see `iOSTodayTaskSections`), and Today reads
+    // tasks and contexts only.
     /// For the *order* of Today's list groups only — `CadenceTaskQuerySupport.listGroupOrder`
     /// presents them in sidebar order, which is a context-by-context walk (T-305).
     @Query(sort: \Context.order) private var contexts: [Context]
@@ -31,8 +30,12 @@ struct iOSTodayView: View {
     /// Written by the rollover banner's confirm, and — in DEBUG — by the sample-data seeder. It was
     /// inside the `#if DEBUG` below when the seeder was its only writer.
     @Environment(\.modelContext) private var modelContext
-    /// Set by a tap on a past-due summary card, cleared when the sheet closes. See
-    /// `openList(_:)` for why this is a presentation and not a navigation.
+    /// **Nothing writes this any more, and that is not an oversight.** It was set by a tap on a
+    /// past-due summary card; those cards are gone (see `iOSTodayTaskSections`). The sheet it
+    /// presents is kept, with `iOSTodayOverdueListSheet` itself, because a test file this change
+    /// may not write still pins both — `CadenceCodexPageCompletionTypographyTests`, which reads
+    /// this `body` for the presenter's position in the modifier chain. Deleting the three of them
+    /// is a one-line follow-up the moment that lease lifts; T-3076's ledger entry says so.
     @State private var pendingListOpen: CadenceListOpenRequest?
     #if DEBUG
     @State private var sampleDataStatus: String?
@@ -116,44 +119,11 @@ struct iOSTodayView: View {
         )
     }
 
-    /// The day's past-due lists and columns, or `nil` when there are none — the second half of
-    /// T-195, and the same "opted into whole" shape as the notice above.
-    private var overdueSummaries: iOSTodayOverdueSummaries? {
-        let lists = CadenceTodayOverdueSummarySupport.listSummaries(projects: projects, todayKey: todayKey)
-        let sections = CadenceTodayOverdueSummarySupport.sectionSummaries(
-            areas: areas,
-            projects: projects,
-            todayKey: todayKey
-        )
-        guard !lists.isEmpty || !sections.isEmpty else { return nil }
-        return iOSTodayOverdueSummaries(
-            listSummaries: lists,
-            sectionSummaries: sections,
-            onOpen: openList
-        )
-    }
-
-    /// **The card presents the list; it does not navigate to it.** This is the one genuinely
-    /// platform-shaped piece of T-195's second half, and it resolves differently from macOS on
-    /// purpose.
-    ///
-    /// macOS's cards hop `ListNavigationManager`, which sets a request the sidebar and
-    /// `ListDetailView` consume. That is right there because the Mac's sidebar never leaves the
-    /// screen: opening a list is a change of pane and Today is one click back. Neither iOS shell
-    /// can say the same thing that cheaply. On iPhone, Today is the Tasks tab's root, so a push
-    /// buries the day you were triaging under a stack; on iPad it is a detail pane with **no
-    /// `NavigationStack` around it at all** (`iOSRootView.detailView(for:)` wraps Notes, Lists and
-    /// Search and not Today), so a `navigationDestination` here would be a control that compiles
-    /// and does nothing. Routing through the shell instead would mean teaching `iOSRootView` a
-    /// second router — one more thing that has to know about both shells — for a card whose whole
-    /// job is a glance.
-    ///
-    /// A sheet says what the excursion actually is: look at the column, close it, carry on reading
-    /// your day. It is also the one answer that is *identical* on both widths, which is the
-    /// standing rule about iPhone and iPad sharing one style rather than one layout.
-    private func openList(_ request: CadenceListOpenRequest) {
-        pendingListOpen = request
-    }
+    // `overdueSummaries` and the `openList` hop were here: the day's past-due lists and columns,
+    // and the sheet a tapped card opened. Both bands are removed on both platforms at the owner's
+    // direction — see `iOSTodayTaskSections`, which carries the reasoning and names what is now
+    // callerless. The "a card presents rather than navigates" decision went with them; it was about
+    // where a card's tap should land, and there is no card.
 
     /// **The dismissal is written only when the roll committed (T-635).** macOS's `TasksPanel`
     /// says the same thing in the same words; see it for why an `@AppStorage` write is the one
@@ -222,11 +192,8 @@ struct iOSTodayView: View {
         // "THURSDAY, AUGUST 13 / Today", the iPad one with `iPadTodayTaskHeader` — so a large nav
         // title said "Today" a second time, 60pt above the first.
         .iOSHidesCompactNavigationBar()
-        // Presented by the **page**, not by a card. The rule this looks like it is breaking —
-        // "the task inspector is presented by a host, never by a row" — is about a presenter that
-        // its own query can remove out from under the sheet. A card here sits in a `ForEach` over
-        // summaries that a write inside the list *can* empty, which is exactly why the presenter is
-        // `iOSTodayView` and not `CadenceTodayOverdueListCard`.
+        // Presented by the **page**, not by a card — and there is no card to present it any more.
+        // See `pendingListOpen` above for why the presenter outlived its only trigger.
         .sheet(item: $pendingListOpen) { request in
             iOSTodayOverdueListSheet(request: request)
                 .cadenceFixedTypography()
@@ -302,7 +269,6 @@ struct iOSTodayView: View {
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
             rolloverNotice: rolloverNotice,
-            overdueSummaries: overdueSummaries,
             summary: todaySummary,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
@@ -315,7 +281,6 @@ struct iOSTodayView: View {
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
             rolloverNotice: rolloverNotice,
-            overdueSummaries: overdueSummaries,
             summary: todaySummary,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted
@@ -377,9 +342,8 @@ struct iOSTodayView: View {
             layout: .twoPane,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
-            showsCompleted: showCompleted,
+            showsCompleted: $showCompleted,
             rolloverNotice: rolloverNotice,
-            overdueSummaries: overdueSummaries,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -388,9 +352,8 @@ struct iOSTodayView: View {
             layout: .twoPane,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
-            showsCompleted: showCompleted,
-            rolloverNotice: rolloverNotice,
-            overdueSummaries: overdueSummaries
+            showsCompleted: $showCompleted,
+            rolloverNotice: rolloverNotice
         )
         #endif
     }

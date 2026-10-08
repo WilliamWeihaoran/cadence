@@ -807,17 +807,24 @@ struct CadenceTodayUnificationTests {
         #expect(CadencePageHeaderMetrics.metrics(role: .pane, surface: .desktop).titleSize == 16)
     }
 
-    /// **The T-161 test for the header.** Today's task column on every platform heads itself with
-    /// the day and the day's summary, through the one `eyebrowDetail` slot. macOS read `TASKS /
-    /// Today` — an eyebrow naming the column and a title naming the page, neither of which the day
-    /// changes.
+    /// **The T-161 test for the header.** Today's task column heads itself with the day, and —
+    /// where it still says it — with the day's summary, through the one `eyebrowDetail` slot. macOS
+    /// read `TASKS / Today`: an eyebrow naming the column and a title naming the page, neither of
+    /// which the day changes.
+    ///
+    /// **The one-column header's count is 0 now, and the zero is the assertion (T-3076).** The
+    /// owner asked for the summary line off the iPhone — *"also remove the line '1 timed · 2
+    /// done'"* — and `iOSCompactTodayView` is that header. It is pinned at zero rather than dropped
+    /// from the table because the two surviving counts are only meaningful beside it: this is where
+    /// a reader finds out that the Mac and the two-pane iPad still print it on purpose.
+    /// `onlyTheOneColumnTodayHeaderDropsTheDaysSummaryLine` argues the split.
     @Test func everyTodayHeaderCarriesTheDayAndItsSummary() throws {
         try expectCallSites(
             of: "eyebrowDetail: summary",
             at: [
                 "Cadence/macOS/Views/TasksPanelSupportViews.swift": 1,
                 "Cadence/iOS/iPadTodaySupportViews.swift": 1,
-                "Cadence/iOS/iOSTodayCompactViews.swift": 1,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 0,
             ]
         )
         try expectCallSites(
@@ -845,6 +852,119 @@ struct CadenceTodayUnificationTests {
                 "Cadence/iOS/iPadTodaySupportViews.swift": 2,
             ]
         )
+    }
+
+    // MARK: - T-3076: what the phone's Today stopped saying, and what it started showing
+
+    /// **Only the one-column Today drops the day's summary line, and it is a call site that was
+    /// removed rather than the line.** The owner, from a photograph of their iPhone: *"also remove
+    /// the line '1 timed · 2 done'"*.
+    ///
+    /// The split is per **layout**, which is where this one already lived: `iOSCompactTodayView` is
+    /// the one-column Today — the phone, and an iPad pane too narrow for two — while
+    /// `iPadTodayTaskHeader` is the two-pane column's and `TasksPanelSupportViews` is the Mac's.
+    /// Asserting all three together is what stops this being read as "iOS lost the summary": the
+    /// tablet and the desktop are pinned as keeping it in the same breath.
+    @Test func onlyTheOneColumnTodayHeaderDropsTheDaysSummaryLine() throws {
+        try expectCallSites(
+            of: "eyebrowDetail: summary",
+            at: [
+                "Cadence/macOS/Views/TasksPanelSupportViews.swift": 1,
+                "Cadence/iOS/iPadTodaySupportViews.swift": 1,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 0,
+            ]
+        )
+        // Non-vacuity, and the half that makes "a call site, not the line" true: `line` is
+        // untouched and still builds exactly the sentence the owner quoted.
+        #expect(CadenceTodaySummary(activeCount: 4, timedCount: 1, completedCount: 2).line == "1 timed · 2 done")
+        // The compact host still reads the summary for the two numbers that stayed: the header's
+        // count badge and the options bar's completed count. A host that stopped taking the
+        // summary altogether would have taken those with it.
+        let compact = try strippingComments(sourceFile("Cadence/iOS/iOSTodayCompactViews.swift"))
+        #expect(compact.contains("struct iOSCompactTodayView: View"), "non-vacuity: wrong file read")
+        #expect(compact.contains("count: summary.activeCount"))
+        #expect(compact.contains("completedCount: summary.completedCount"))
+    }
+
+    /// **Today's finished work is a section you can see is closed, not a section a chip creates.**
+    /// The owner: *"show the completed today section (which is always folded until i unfold it) on
+    /// the bottom of the list"*. So `iOSTodayTaskSections` draws it unconditionally, at the foot of
+    /// the list, and only the rows are behind the fold.
+    ///
+    /// Both halves are asserted. A heading behind `isExpanded` would be the defect this replaced —
+    /// a section that does not exist until you find the control that makes it — wearing a chevron.
+    @Test func theTouchTodayCompletedSectionIsAlwaysDrawnAndFoldsItself() throws {
+        let list = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
+        #expect(list.contains("struct iOSTodayTaskSections: View"), "non-vacuity: wrong file read")
+        #expect(list.contains("iOSTodayCompletedSection("))
+        #expect(
+            !list.contains("if showsCompleted {"),
+            "Today's Completed section is gated on the options bar's chip again"
+        )
+
+        let section = try declarationBody(of: "iOSTodayCompletedSection", in: "Cadence/iOS/iOSTodayTaskSections.swift")
+        #expect(section.contains("@Binding var isExpanded: Bool"), "non-vacuity: wrong declaration read")
+        let heading = try #require(section.range(of: "disclosure\n"))
+        let fold = try #require(section.range(of: "if isExpanded {"))
+        #expect(heading.lowerBound < fold.lowerBound, "the heading is behind the fold it controls")
+        #expect(section.contains("Image(systemName: isExpanded ? \"chevron.down\" : \"chevron.right\")"))
+        // The rows stay the shared ones, dimmed as a whole the way `iOSTaskGroupSection` dimmed
+        // them: this is a local fold, not a local row vocabulary.
+        #expect(section.contains("iOSTaskRow("))
+        #expect(section.contains(".opacity(0.62)"))
+        // And the cap disclosure `iOSTaskGroupSection` carried comes with it, so T-2087 still has
+        // one chain to delete rather than two.
+        #expect(section.contains("CadenceTaskSurfaceOptions.overflowCaption("))
+    }
+
+    /// **Folded is the default, and the default is one stored bit.** `isExpanded` is bound to the
+    /// host's `@AppStorage`, which is `false`; the options bar's chip writes the same bit, so two
+    /// controls for one disclosure cannot disagree about whether the section is open.
+    ///
+    /// This is the assertion a mutation has to break: make the stored default `true` and Today
+    /// opens with the logbook unrolled.
+    @Test func theTouchTodayCompletedSectionIsFoldedUntilItIsUnfolded() throws {
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSTodayView.swift"))
+        #expect(host.contains("struct iOSTodayView: View"), "non-vacuity: wrong file read")
+        #expect(
+            host.contains("@AppStorage(CadencePreferenceKeys.iosTodayShowCompleted) private var showCompleted = false"),
+            "Today's Completed section no longer starts folded"
+        )
+        // Bound rather than copied, at every call site: a `let` anywhere here would be a width
+        // that could not fold the section it had just unfolded.
+        try expectCallSites(
+            of: "showsCompleted: $showCompleted",
+            at: [
+                "Cadence/iOS/iOSTodayView.swift": 2,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 2,
+            ]
+        )
+        try expectCallSites(
+            of: "isExpanded: $showsCompleted",
+            at: ["Cadence/iOS/iOSTodayTaskSections.swift": 1]
+        )
+    }
+
+    /// **macOS keeps its own answer to both of those, and that is what this test is for.** The
+    /// owner scoped the summary line and the Completed disclosure to the phone they photographed —
+    /// unlike the past-due bands, which they then widened to the Mac. So the desktop still heads
+    /// its Completed section with `TaskListGroupHeader`'s own collapse, still gates the section on
+    /// the shared surface option, and still prints the day's summary beside its date.
+    @Test func theMacTodayKeepsItsOwnCompletedSectionAndItsSummaryLine() throws {
+        let sections = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelSectionViews.swift"))
+        #expect(sections.contains("struct TasksPanelCompletedSectionView: View"), "non-vacuity: wrong file read")
+        #expect(sections.contains("let isCollapsed: Bool"))
+        #expect(sections.contains("isCollapsed: isCollapsed"))
+        #expect(!sections.contains("iOSTodayCompletedSection"))
+
+        let panel = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
+        #expect(panel.contains("struct TasksPanel: View"), "non-vacuity: wrong file read")
+        #expect(panel.contains("options.showsCompletedToggle"))
+
+        // The shared options type is untouched: a `.today` exception written there is written for
+        // every platform at once, which is exactly how an iOS-scoped change reaches the Mac.
+        #expect(CadenceTaskSurfaceOptions.options(for: .today).showsCompletedToggle)
+        #expect(CadenceTaskSurfaceOptions.options(for: .today).showsSort)
     }
 
     /// The summary itself is one derivation. macOS was computing no summary at all; the risk now is

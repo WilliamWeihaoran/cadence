@@ -650,10 +650,32 @@ struct CadenceTouchRowStackLazinessTests {
 
         // And the groups those pages draw are the shared component, so the lazy stack above is the
         // one they get. The Today and collection pages reach it through their `groupStack`.
-        for path in ["Cadence/iOS/iOSTaskCollectionPage.swift", "Cadence/iOS/iOSTodayTaskSections.swift"] {
+        //
+        // **Today's count is 1, not 2, since T-3076**, and the missing one is Completed. That group
+        // folds itself now — the owner asked for it always on the page and closed until tapped —
+        // and `iOSTaskGroupSection` draws its heading unconditionally and owns no disclosure, so a
+        // chevron row above it would print "Completed Today" twice. The laziness this test exists
+        // for therefore has to be asserted of `iOSTodayCompletedSection` directly, below; an eager
+        // stack there is the whole day's logbook built the moment the page is.
+        for (path, expected) in [
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", 2),
+            ("Cadence/iOS/iOSTodayTaskSections.swift", 1),
+        ] {
             let groupStack = try cadenceFunctionBody("private var groupStack: some View", in: try code(path))
-            #expect(try occurrences(of: #"iOSTaskGroupSection\("#, in: groupStack) == 2, "\(path)")
+            #expect(try occurrences(of: #"iOSTaskGroupSection\("#, in: groupStack) == expected, "\(path)")
         }
+
+        let today = try code("Cadence/iOS/iOSTodayTaskSections.swift")
+        let todayGroupStack = try cadenceFunctionBody("private var groupStack: some View", in: today)
+        #expect(todayGroupStack.contains("iOSTodayCompletedSection("), "Today's Completed group lost its section")
+        let completedRows = try cadenceFunctionBody("private var rows: some View", in: today)
+        #expect(
+            desktopSurfaceCollapsingWhitespace(completedRows)
+                .trimmingCharacters(in: .whitespaces)
+                .hasPrefix("LazyVStack(spacing: 7) {"),
+            "iOSTodayCompletedSection builds its rows eagerly"
+        )
+        #expect(completedRows.contains("iOSTaskRow("), "non-vacuity: wrong declaration read")
     }
 }
 

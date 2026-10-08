@@ -14,23 +14,25 @@ struct iOSTodayRolloverNotice {
     let onRollOver: () -> Void
 }
 
-/// Today's past-due summaries, as a surface opts into them: the two arrays and the one thing that
-/// can act on either, together — the same shape as `iOSTodayRolloverNotice` above.
-///
-/// **The action is a closure, and that is the whole platform-shaped half of T-195's second
-/// piece.** macOS's cards hop `ListNavigationManager`, a shell-level router that exists because the
-/// Mac's sidebar is always on screen: opening a list there is a change of pane, and Today is one
-/// click back. iOS has no equivalent and does not grow one here. See `iOSTodayView`, which
-/// presents rather than navigates, and says why.
-struct iOSTodayOverdueSummaries {
-    let listSummaries: [CadenceTodayOverdueListSummary]
-    let sectionSummaries: [CadenceTodayOverdueSectionSummary]
-    let onOpen: (CadenceListOpenRequest) -> Void
-
-    var isEmpty: Bool {
-        listSummaries.isEmpty && sectionSummaries.isEmpty
-    }
-}
+// `iOSTodayOverdueSummaries` was here, with the `PAST DUE LISTS` and `PAST DUE SECTIONS` bands it
+// opted this view into, and `iOSTodayOverdueListSheet` was at the foot of this file as the page a
+// tapped card opened. All of it is gone at the owner's direction — *"we should remove the banners
+// that show the past due lists in today's view"*, and then *"my request on not showing past due
+// sections and lists applies to mac os and ios as well"*. **Both** groups, on **both** platforms:
+// the two runs were one visual treatment in one place, so keeping the columns while dropping the
+// lists would have been half a decision.
+//
+// macOS's half was already removed and `TasksPanel` records the reasoning in the same words; what
+// it also recorded was that iOS still drew both bands, because the owner had seen the Mac's Today
+// and not the phone's. This is that sentence coming due. Today was stating overdue-ness three ways
+// — a per-task section, these per-list and per-column summaries, and the red flag on the row
+// itself — and only the last says it where you can act on it. The cards also navigated *away* from
+// the day, which is the opposite of what a triage page is for.
+//
+// `CadenceTodayOverdueSummarySupport` and `CadenceTodayOverdueSummaryCards` are **not** deleted
+// here. Removing a shared component is its own change with its own test fallout and the owner
+// asked for the bands, not the files; they have no production caller left on either platform, and
+// T-3076's ledger entry names them so the next pass does not have to rediscover that.
 
 /// Today's list of counted task groups — **the** one, for both hosts.
 ///
@@ -50,14 +52,16 @@ struct iOSTodayTaskSections: View {
     let layout: CadenceTodayLayout
     let taskGroups: [CadenceTodayTaskGroup]
     let completedTasks: [AppTask]
-    let showsCompleted: Bool
+    /// Whether the day's finished work is **unfolded** — no longer whether it is on the page at
+    /// all. Since the owner's *"show the completed today section (which is always folded until i
+    /// unfold it) on the bottom of the list"* the section is always there and this bit is its
+    /// disclosure. A `@Binding` rather than a `let` because the section's own heading writes it
+    /// now; `iOSTodayCompletedSection` says why it is this bit and not a second `@State` beside it.
+    @Binding var showsCompleted: Bool
     /// `nil` when there is nothing to roll over, or the day's notice has already been dismissed.
     /// The host decides — `CadenceTodayRolloverSupport.isNoticeVisible` — because the host is what
     /// holds the `@AppStorage` day key.
     var rolloverNotice: iOSTodayRolloverNotice?
-    /// `nil` when nothing is past due. Like the notice above, the host derives it and this view is
-    /// the only thing that draws it, so "both widths show it" is true by construction.
-    var overdueSummaries: iOSTodayOverdueSummaries?
     #if DEBUG
     /// Debug-only, and passed by both hosts. See `iOSCompactSampleDataCard`.
     let sampleDataStatus: String?
@@ -110,85 +114,35 @@ struct iOSTodayTaskSections: View {
     /// list group appear rather than moving rows between two date buckets — which is the whole
     /// point of the roll being visible.
     ///
-    /// **The past-due summaries count as content too**, for the same reason the notice does: a day
-    /// with nothing planned but three columns whose deadlines have gone by would otherwise read
-    /// "nothing planned" directly under three cards saying otherwise.
+    /// **Finished work counts as content whether or not it is unfolded.** This read
+    /// `!showsCompleted || completedTasks.isEmpty`, which was right while a chip decided whether the
+    /// Completed section existed at all. It is always on the page now, so a day whose only work is
+    /// already done draws a folded "Completed Today" — and without this clause it would draw
+    /// "Nothing planned" directly above it, which is the same defect the two removed clauses were
+    /// here to prevent.
     private var isEmpty: Bool {
         taskGroups.isEmpty
-            && (!showsCompleted || completedTasks.isEmpty)
+            && completedTasks.isEmpty
             && rolloverNotice == nil
-            && (overdueSummaries?.isEmpty ?? true)
     }
 
     @ViewBuilder
     var body: some View {
-        // Above both branches: the notice and the past-due cards are the day's first things to
-        // read whether or not anything is left in the groups under them.
-        if rolloverNotice != nil || !(overdueSummaries?.isEmpty ?? true) {
+        // The notice is the day's first thing to read whether or not anything is left in the
+        // groups under it. The two runs of past-due cards used to be hoisted up here with it.
+        if let rolloverNotice {
             VStack(alignment: .leading, spacing: metrics.groupSpacing) {
-                if let rolloverNotice {
-                    CadenceTodayRolloverBanner(
-                        tasks: rolloverNotice.tasks,
-                        style: .card,
-                        failureNotice: rolloverNotice.failureNotice
-                    ) {
-                        rolloverNotice.onRollOver()
-                    }
+                CadenceTodayRolloverBanner(
+                    tasks: rolloverNotice.tasks,
+                    style: .card,
+                    failureNotice: rolloverNotice.failureNotice
+                ) {
+                    rolloverNotice.onRollOver()
                 }
-                overdueSummarySections
                 content
             }
         } else {
             content
-        }
-    }
-
-    /// The two runs of past-due cards, each headed by the shared eyebrow. Lists first: a whole
-    /// project past its date is a larger statement than one of its columns being past its own, and
-    /// the columns underneath frequently belong to it.
-    @ViewBuilder
-    private var overdueSummarySections: some View {
-        if let overdueSummaries, !overdueSummaries.isEmpty {
-            if !overdueSummaries.listSummaries.isEmpty {
-                overdueSummaryRun(
-                    title: CadenceTodayOverdueSummarySupport.listsHeading,
-                    count: overdueSummaries.listSummaries.count
-                ) {
-                    ForEach(overdueSummaries.listSummaries) { summary in
-                        CadenceTodayOverdueListCard(summary: summary) {
-                            guard let request = CadenceTodayOverdueSummarySupport.openRequest(for: summary) else { return }
-                            overdueSummaries.onOpen(request)
-                        }
-                    }
-                }
-            }
-
-            if !overdueSummaries.sectionSummaries.isEmpty {
-                overdueSummaryRun(
-                    title: CadenceTodayOverdueSummarySupport.sectionsHeading,
-                    count: overdueSummaries.sectionSummaries.count
-                ) {
-                    ForEach(overdueSummaries.sectionSummaries) { summary in
-                        CadenceTodayOverdueSectionCard(summary: summary) {
-                            guard let request = CadenceTodayOverdueSummarySupport.openRequest(for: summary) else { return }
-                            overdueSummaries.onOpen(request)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func overdueSummaryRun<Cards: View>(
-        title: String,
-        count: Int,
-        @ViewBuilder cards: () -> Cards
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CadenceTodayOverdueSummaryHeading(title: title, count: count)
-            VStack(spacing: 8) {
-                cards()
-            }
         }
     }
 
@@ -247,22 +201,29 @@ struct iOSTodayTaskSections: View {
                 )
             }
 
-            if showsCompleted {
-                // Same key as the groups above, and for the reason
-                // `TasksPanelCompletedSectionView` states on macOS: a task finished today and
-                // planned for today does not get to say "Today" on the Today page just because it
-                // is in the Completed section.
-                iOSTaskGroupSection(
-                    title: CadenceTodayPresentationSupport.completedSectionTitle,
-                    color: CadenceTodayPresentationSupport.completedSectionAccent,
-                    tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
-                    showsContainer: showsContainer,
-                    dayAlreadyStatedBySurface: todayKey,
-                    opacity: 0.62,
-                    dropIdentity: .completion,
-                    hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)
-                )
-            }
+            // **Always drawn, at the bottom of the list, folded until it is asked for.** This was
+            // `if showsCompleted { iOSTaskGroupSection(…) }`, so the day's finished work existed
+            // only while the options bar's "Completed" chip was lit — something you had to know was
+            // behind a chip rather than a section you could see was closed. See
+            // `iOSTodayCompletedSection` for why the disclosure is not `iOSTaskGroupSection`'s.
+            //
+            // Same day key as the groups above, and for the reason
+            // `TasksPanelCompletedSectionView` states on macOS: a task finished today and planned
+            // for today does not get to say "Today" on the Today page just because it is in the
+            // Completed section.
+            //
+            // `dropIdentity: .completion` is no longer passed and nothing is lost by that:
+            // completion is a status rather than a placement, so
+            // `CadenceTaskDropSupport.dropKey(forGroup:)` answers nil for it — the drop target was
+            // inert and `showsWhenEmpty` was already false, which is the predicate this section
+            // keeps.
+            iOSTodayCompletedSection(
+                tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
+                hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch),
+                showsContainer: showsContainer,
+                dayAlreadyStatedBySurface: todayKey,
+                isExpanded: $showsCompleted
+            )
         }
 
         // No inset of its own. Both hosts already pad their own gutter — 14pt in
@@ -301,6 +262,14 @@ extension View {
 }
 
 /// The list a past-due summary card opens, as Today presents it.
+///
+/// **Nothing opens it any more**, because nothing draws a past-due card (see the top of this
+/// file). It is kept rather than deleted for one reason, recorded here so the next reader does not
+/// have to re-derive it: `CadenceCodexPageCompletionTypographyTests` pins both this type and
+/// `iOSTodayView`'s `.sheet(item: $pendingListOpen)`, and that file is held by another writer, so
+/// this change cannot update it. Deleting this struct, the `@State` and the presenter is a
+/// three-line follow-up once that lease lifts — T-3076's entry names it as the only dead plumbing
+/// this change left behind.
 ///
 /// It is `iOSListDetailView` and nothing else — the same page the Lists tab pushes, at the page the
 /// request names, with the named column scrolled into view. Wrapping it rather than writing a
@@ -350,6 +319,131 @@ struct iOSTodayOverdueListSheet: View {
                 iOSMissingListView()
             }
         }
+    }
+}
+
+/// Today's finished work: the one section on this page that is folded until you ask for it.
+///
+/// **It is always drawn now, at the bottom of the list, closed.** The owner asked for *"the
+/// completed today section (which is always folded until i unfold it) on the bottom of the list"*.
+/// Before this it was `if showsCompleted { … }` over the options bar's "Completed" chip, so the
+/// day's finished work was not a closed section — it was a section that did not exist until you
+/// found the control that made it.
+///
+/// **The fold is the host's `showsCompleted` bit, not a second `@State` in here.** That bit is
+/// `@AppStorage(CadencePreferenceKeys.iosTodayShowCompleted)`, and it **defaults to `false`** —
+/// that default is the whole of "always folded", and `CadenceTodayUnificationTests` pins it. One
+/// bit matters because the options bar's chip still writes it: two controls for one disclosure is
+/// ordinary, two sources of truth for it is how one of them starts lying — a chip reading
+/// "Completed" over a section that is already open, or the reverse. When the chip goes (it is the
+/// same bit, so it is a deletion and nothing else), this heading is already the control.
+///
+/// **Why this is not `iOSTaskGroupSection`, which every other group on this page is.** That
+/// component draws its heading unconditionally and owns no disclosure: a chevron row above it would
+/// print "Completed Today" twice, and a chevron inside it would put one on every task group in the
+/// app. What should be shared still is — the heading is `CadenceTaskGroupHeading`, the same row the
+/// list groups above and macOS's Today draw, and the rows are `iOSTaskRow` at the same 7pt spacing
+/// in the same `LazyVStack` that T-2057 put them in. Only the fold and its chevron are local, which
+/// is the same shape `iOSCalendarBoardView`'s completed footer already uses on the day columns.
+struct iOSTodayCompletedSection: View {
+    let tasks: [AppTask]
+    /// Rows the caller capped away. Carried through unchanged from the call site that used to hand
+    /// it to `iOSTaskGroupSection`: no tier caps completed rows since T-2057, so this is `nil` on
+    /// every call and the caption below never draws. Removing it is T-2087's, not this change's.
+    let hiddenCount: Int?
+    /// Asked of `CadenceTaskSurfaceOptions`, by the caller. True here while the list groups above
+    /// answer `false`: this section is flat, so its rows are the only thing that can say which list
+    /// a finished task came from.
+    let showsContainer: Bool
+    /// Today's own `yyyy-MM-dd`. See `iOSTaskRow.dayAlreadyStatedBySurface`.
+    let dayAlreadyStatedBySurface: String?
+    @Binding var isExpanded: Bool
+
+    /// Read once, from the shared constant macOS's Completed section reads — the heading, the
+    /// accessibility label and the overflow caption are three renderings of one title, not three
+    /// chances to spell it differently. `CadenceTodayUnificationTests` counts the call sites, so
+    /// the indirection is also what keeps that count honest at one per platform.
+    private static var title: String { CadenceTodayPresentationSupport.completedSectionTitle }
+
+    /// The section's true size: the rows drawn plus the rows the cap withheld.
+    private var totalCount: Int {
+        tasks.count + (hiddenCount ?? 0)
+    }
+
+    var body: some View {
+        // Nothing finished today is not "a closed section with nothing in it" — it is no section.
+        // The same predicate `iOSTaskGroupSection.isVisible` applied to this group before, because
+        // `.completion` is a status and resolves to no drop key, so the group was never one of the
+        // "still add to me" groups that survive emptying.
+        if !tasks.isEmpty {
+            VStack(alignment: .leading, spacing: 9) {
+                disclosure
+
+                if isExpanded {
+                    rows
+                }
+            }
+        }
+    }
+
+    /// The heading, as a control. `CadenceTaskGroupHeading` already spans its container, so the
+    /// whole row is the target rather than the glyphs — the same reason it carries that frame for
+    /// `iOSTaskGroupHeader`'s drop target.
+    private var disclosure: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.16)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .cadenceFont(.metadata, base: 10, weight: .bold)
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 12)
+
+                CadenceTaskGroupHeading(
+                    title: Self.title,
+                    tint: CadenceTodayPresentationSupport.completedSectionAccent
+                )
+            }
+            // The eyebrow's own 6pt top inset, the one `iOSTaskGroupHeader` applies, so this
+            // heading sits where every other heading on the page does.
+            .padding(.top, iOSTaskSectionHeader.topPadding)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(Self.title)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+        .accessibilityHint(isExpanded ? "Hides the tasks you finished today" : "Shows the tasks you finished today")
+    }
+
+    /// Completed rows are dimmed as a whole rather than row by row — `iOSTaskGroupSection`'s
+    /// `opacity` knob, at the one value Today ever passed it.
+    private var rows: some View {
+        LazyVStack(spacing: 7) {
+            ForEach(tasks) { task in
+                iOSTaskRow(
+                    task: task,
+                    showsContainer: showsContainer,
+                    dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+                )
+                .opacity(0.62)
+            }
+
+            if let caption = CadenceTaskSurfaceOptions.overflowCaption(
+                shown: tasks.count,
+                total: totalCount
+            ) {
+                Text(caption)
+                    .cadenceFont(.metadata)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(Theme.dim)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 2)
+                    .accessibilityLabel("\(Self.title): \(caption)")
+            }
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
 #endif

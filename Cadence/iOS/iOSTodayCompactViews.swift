@@ -12,9 +12,6 @@ struct iOSCompactTodayView: View {
     /// `iOSTodayTaskSections`, which is where both widths draw it — this host does not decide
     /// anything about it.
     var rolloverNotice: iOSTodayRolloverNotice?
-    /// Today's past-due lists and columns, or `nil` when there are none. Forwarded, like the notice
-    /// above — this host decides nothing about them either. See `iOSTodayOverdueSummaries`.
-    var overdueSummaries: iOSTodayOverdueSummaries?
     /// The day's counts, as the two-pane column reads them. It used to take a `todayTasks` array
     /// purely to call `.count` on it for the header badge, which is the same number
     /// `CadenceTodaySummary.activeCount` already holds — and the rest of the summary was simply not
@@ -71,13 +68,20 @@ struct iOSCompactTodayView: View {
     /// a control that looks wired and does nothing, which is the defect this whole sweep has been
     /// removing. The header draws no button when `onBack` is nil.
     ///
-    /// It carries the same `eyebrowDetail` the two-pane column's header does. The summary is a fact
-    /// about the day — how much of it is timed, how much is already done — not a fact about how much
-    /// room the screen has, and the phone had simply never been given it.
+    /// **It no longer carries `eyebrowDetail`, and that is where the phone and the tablet now
+    /// differ.** It used to pass `summary.line` — "1 timed · 2 done" — on the grounds that the
+    /// summary is a fact about the day rather than about how much room the screen has, and that the
+    /// phone had simply never been given it. The owner has asked for that line off the iPhone:
+    /// *"also remove the line '1 timed · 2 done'"*. The two-pane column's `iPadTodayTaskHeader`
+    /// keeps it, which is the split this doc comment has always described — one header per layout,
+    /// not per size class — so nothing about the tablet's Today moves.
+    ///
+    /// `summary` is still read, twice: the header's count badge is `activeCount`, and the options
+    /// bar below reads `completedCount`. What is gone is the sentence beside the date, not the day's
+    /// arithmetic.
     private var header: some View {
         iOSCompactPageHeader(
             eyebrow: DateFormatters.longDate.string(from: Date()),
-            eyebrowDetail: summary.line,
             title: "Today",
             color: Theme.amber,
             count: summary.activeCount,
@@ -114,9 +118,8 @@ struct iOSCompactTodayView: View {
             layout: .compact,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
-            showsCompleted: showCompleted,
+            showsCompleted: $showCompleted,
             rolloverNotice: rolloverNotice,
-            overdueSummaries: overdueSummaries,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -125,9 +128,8 @@ struct iOSCompactTodayView: View {
             layout: .compact,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
-            showsCompleted: showCompleted,
-            rolloverNotice: rolloverNotice,
-            overdueSummaries: overdueSummaries
+            showsCompleted: $showCompleted,
+            rolloverNotice: rolloverNotice
         )
         #endif
     }
