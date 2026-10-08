@@ -1642,10 +1642,18 @@ enum StoreBackupManager {
         fileManager: FileManager = .default,
         defaults: UserDefaults = CadenceDefaults.store
     ) throws -> Int {
-        let pendingURL = pendingRestoreURL(defaults: defaults)?.standardizedFileURL
+        // Two backups are named by something the user will read, and neither may be retention
+        // fodder: the one a restore is scheduled from, and — T-3045 — the one a live
+        // `FailedRestoreRecord` names. `quarantinePendingRestore` clears the pending key on the
+        // same launch whose startup backup then runs this sweep, so exempting the pending URL
+        // alone left the backup the failed-restore banner points at removable a few lines later.
+        let protectedURLs = Set([
+            pendingRestoreURL(defaults: defaults),
+            lastFailedRestore(defaults: defaults)?.backupURL,
+        ].compactMap { $0?.standardizedFileURL })
         let removableBackups = automaticBackupSnapshotsToRemove(
             listBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager)
-        ).filter { $0.url.standardizedFileURL != pendingURL }
+        ).filter { !protectedURLs.contains($0.url.standardizedFileURL) }
         for snapshot in removableBackups {
             try fileManager.removeItem(at: snapshot.url)
         }
@@ -1717,6 +1725,11 @@ enum StoreBackupManager {
     ) throws {
         guard isBackupDirectory(backupURL) else {
             throw CocoaError(.fileReadInvalidFileName)
+        }
+        // T-3044 (c): a backup whose store file is empty is refused here, before it can become an
+        // instruction the next launch acts on.
+        guard storeFileIsNonEmpty(at: backupURL.appendingPathComponent(CadenceStoreSupport.storeFilename)) else {
+            throw CocoaError(.fileReadCorruptFile)
         }
         // A freshly chosen backup supersedes whatever failed last time; otherwise the record of
         // the old failure would outlive the reason anyone would still care about it.
@@ -1886,6 +1899,15 @@ enum StoreBackupManager {
     ) throws {
         let stagedNameSet = Set(stagedNames)
         guard stagedNameSet.contains(CadenceStoreSupport.storeFilename) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        // T-3044 (c): the size comparison below proves the copy matches the backup, which a
+        // zero-byte backup passes. Checked on the STAGED copy, because that is the file about to
+        // replace the live store.
+        guard storeFileIsNonEmpty(
+            at: stagingURL.appendingPathComponent(CadenceStoreSupport.storeFilename),
+            fileManager: fileManager
+        ) else {
             throw CocoaError(.fileReadCorruptFile)
         }
 
@@ -2170,6 +2192,26 @@ enum StoreBackupManager {
         let storeURL = url.appendingPathComponent(CadenceStoreSupport.storeFilename)
         return fileManager.fileExists(atPath: manifestURL.path)
             && fileManager.fileExists(atPath: storeURL.path)
+    }
+
+    /// A cheap validity gate for a store file a restore is about to use (T-3044 (c)).
+    ///
+    /// It refuses a missing file, a directory, and a **zero-byte** file. `verifyStagedRestore`'s
+    /// size comparison proves the staged copy matches the backup, and an empty `default.store`
+    /// matches an empty backup exactly — so without this an empty file is swapped over a good
+    /// store. It never opens the database and is not an integrity check.
+    ///
+    /// The SQLite-header half of T-3044 (c) is deliberately not here yet: the leased
+    /// `CadenceCodexBackupAuditTests` fixtures restore plain-text `default.store` files, so a
+    /// header check turns three of them red until Codex re-seeds them.
+    static func storeFileIsNonEmpty(at url: URL, fileManager: FileManager = .default) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              let size = (try? fileManager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber else {
+            return false
+        }
+        return size.int64Value > 0
     }
 
     private static func manifest(at url: URL, fileManager: FileManager = .default) -> StoreBackupManifest? {
