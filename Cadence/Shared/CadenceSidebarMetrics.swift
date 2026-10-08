@@ -22,6 +22,12 @@ nonisolated enum CadenceSidebarSurface: String, CaseIterable, Sendable {
 /// icon-to-label against 9, a list colour bar 14pt tall against 16, and a 10pt due-date caption
 /// against 11. None of those was a platform judgement; they were two files.
 ///
+/// **`sectionSpacing` left with T-3072**, for the reason the colour bar's figures left with
+/// T-2084: its subject died with the drawing. It was the touch column's one gap between two
+/// context sections, and a context section's spacing is `CadenceSidebarContextHeaderRhythm`'s now
+/// on both platforms — a single stack spacing cannot express a gap composed of four pads applied
+/// in four places, which is exactly why the touch column's headers read as belonging to nothing.
+///
 /// **The colour bar itself is gone (T-2084)** — the owner found a column of saturated edge markers
 /// distracting and asked for the space back — so its three figures left this struct with it. A list
 /// still carries a colour everywhere it is *chosen*: the list editor, the pickers, the sheets and
@@ -56,8 +62,6 @@ nonisolated struct CadenceSidebarRowMetrics: Equatable, Sendable {
     // MARK: Group separation
 
     let groupSpacing: CGFloat
-    /// Gap between one context's list section and the next.
-    let sectionSpacing: CGFloat
 
     // MARK: List rows
 
@@ -87,7 +91,6 @@ nonisolated enum CadenceSidebarMetrics {
             badgeLeadingGap: 8,
             secondaryIconOpacity: 0.8,
             groupSpacing: 8,
-            sectionSpacing: 8,
             listLabelFontSize: 13,
             listDueDateIconSize: 9,
             listDueDateFontSize: 10,
@@ -95,6 +98,70 @@ nonisolated enum CadenceSidebarMetrics {
             listTrailingItemSpacing: 8
         )
     }
+}
+
+// MARK: - Context header rhythm
+
+/// How far a context header sits from the group above it and from the lists below it, on **both**
+/// columns.
+///
+/// **A context header belongs to the lists *under* it, so it must sit far from the group above and
+/// close to its own (T-1041/T-1067).** That asymmetry was macOS's alone and nobody chose that it
+/// should be: the iPad column and the iPhone Tasks index drew the same headers with 8pt above and
+/// 4pt below, against the Mac's 26 and 9, so the one thing the headers are *for* — saying which
+/// lists go together — was the thing the touch surfaces did least. The owner asked for the Mac's
+/// treatment, which is this one, so the terms live here and both columns read them.
+///
+/// Each number below is **one term of a sum applied in a different place**, which is why they are
+/// added up here rather than at a call site: what a reader sees is `gapAboveHeader` and
+/// `gapBelowHeader`, and no single view can see either. Retune a term and the views, the model and
+/// `CadenceSidebarLayoutTests` all follow.
+///
+/// The two columns compose the same sums out of slightly different parts, and
+/// `touchHeaderBottomPadding` is the whole of the difference: macOS opens a populated context's row
+/// stack with a transparent `leadingDropZoneHeight` drag target, which a reader counts as
+/// whitespace; the touch column has no list drag-reorder and so draws no such control, and folds
+/// that height into the header's own bottom pad instead. The *gap* is identical either way, which
+/// is what `theTouchSidebarHeaderRhythmIsTheDesktopOne` holds.
+///
+/// It sits beside `CadenceSidebarMetrics`, outside any platform `#if`, for the same two reasons
+/// that type does: `Cadence/iOS/` is behind `#if os(iOS)` while `CadenceTests` builds on macOS, and
+/// a figure both columns draw should be decided once.
+nonisolated enum CadenceSidebarContextHeaderRhythm {
+    /// Above the header, inside the section.
+    static let headerTopPadding: CGFloat = 14
+    /// The section stack's own spacing: header to whatever the section draws next.
+    static let headerBottomSpacing: CGFloat = 3
+    /// Below the section's last row, inside the section.
+    static let sectionBottomPadding: CGFloat = 8
+    /// Each lists region pads every section by this on **both** edges, and stacks them at zero
+    /// spacing, so two neighbours contribute it once each to the gap between them.
+    static let sectionOuterVerticalPadding: CGFloat = 2
+    /// The "drop above the first row" target that opens every populated context's row stack on
+    /// macOS. A control, but a transparent one, so a reader counts its height as whitespace.
+    static let leadingDropZoneHeight: CGFloat = 4
+    /// Between two list rows of one context. Not surface-split: `rowSpacing` is one of the figures
+    /// the two columns already agree on.
+    static let rowSpacing: CGFloat = CadenceSidebarMetrics.metrics(for: .desktop).rowSpacing
+
+    /// From the previous context's last list row to this context's header.
+    static let gapAboveHeader: CGFloat =
+        sectionBottomPadding + sectionOuterVerticalPadding * 2 + headerTopPadding
+
+    /// From the header to the first list row it labels.
+    static let gapBelowHeader: CGFloat =
+        headerBottomSpacing + leadingDropZoneHeight + rowSpacing
+
+    /// From the header to the "Add first list" button of a context that has none. No drop zone is
+    /// drawn there, so this is the bare stack spacing and is deliberately *not* the number the
+    /// relationship is pinned on: an empty context has no lists for its header to belong to.
+    static let gapBelowHeaderInEmptyContext: CGFloat = headerBottomSpacing
+
+    /// The touch column's spelling of everything between the header's baseline box and its first
+    /// row **except** the row stack's own spacing — `headerBottomSpacing` plus the drop zone that
+    /// column does not draw. Stated as the remainder of `gapBelowHeader` rather than as `3 + 4` so
+    /// the two columns cannot come to show different gaps while both look correct in isolation.
+    static let touchHeaderBottomPadding: CGFloat = gapBelowHeader - rowSpacing
 }
 
 // MARK: - Tint

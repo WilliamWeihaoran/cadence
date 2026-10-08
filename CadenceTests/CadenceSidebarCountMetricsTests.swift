@@ -268,10 +268,11 @@ struct CadenceSidebarMetricsTests {
         #expect(desktop.rowHeight != tablet.rowHeight)
 
         // Everything else is the same object with that one field changed. Rebuilding the desktop
-        // struct out of the tablet's other sixteen figures and expecting equality is what makes a
+        // struct out of the tablet's other fifteen figures and expecting equality is what makes a
         // *new* divergence fail here, rather than only the figures someone remembered to assert.
-        // Nineteen before T-2084 took the colour bar's three; the shape of the check is unchanged,
-        // and it is still exhaustive because the compiler requires every stored field to be named.
+        // Nineteen before T-2084 took the colour bar's three and T-3072 took `sectionSpacing` to
+        // `CadenceSidebarContextHeaderRhythm`; the shape of the check is unchanged, and it is still
+        // exhaustive because the compiler requires every stored field to be named.
         #expect(
             desktop
                 == CadenceSidebarRowMetrics(
@@ -286,7 +287,6 @@ struct CadenceSidebarMetricsTests {
                     badgeLeadingGap: tablet.badgeLeadingGap,
                     secondaryIconOpacity: tablet.secondaryIconOpacity,
                     groupSpacing: tablet.groupSpacing,
-                    sectionSpacing: tablet.sectionSpacing,
                     listLabelFontSize: tablet.listLabelFontSize,
                     listDueDateIconSize: tablet.listDueDateIconSize,
                     listDueDateFontSize: tablet.listDueDateFontSize,

@@ -661,6 +661,123 @@ struct SidebarStaticDestinationBridgeTests {
             "ContextSection's body spells a vertical measurement as a literal, so SidebarContextHeaderRhythm cannot see it"
         )
     }
+
+    /// **The touch column's context headers are the Mac's, and the two can no longer drift
+    /// (T-3072).**
+    ///
+    /// The owner, from an iPhone: *"make the context names stand out more and have more vertical
+    /// space, make it to be the same as mac os"*. They already stood out the same — both columns
+    /// draw `SectionEyebrowLabel`'s standard tier, so size, weight, case, tracking and tint were
+    /// one decision long before this ticket. What differed was the room: the touch column spent a
+    /// single `sectionSpacing` of 8 above a header and 4 below it, against 26 and 9 here, so the
+    /// one thing a header is *for* — saying which lists belong together — was the thing it did
+    /// least.
+    ///
+    /// Pinned as an **equality against the figures the Mac draws**, not as a second set of
+    /// literals, because "the same as macOS" is the requirement. A literal `== 26` here would keep
+    /// passing through a legitimate retune of the Mac and let the columns re-fork silently, which
+    /// is the defect `rowHeightIsTheOnlyFigureThatDiffersBySurface` already refuses for the row
+    /// metrics.
+    ///
+    /// The one asymmetry is `touchHeaderBottomPadding`, and it exists so the *gap* can be
+    /// symmetric: macOS opens a populated context with a transparent `leadingDropZoneHeight` drag
+    /// target, there is no list drag-reorder on touch, and the height is folded into the header's
+    /// own bottom pad instead. So the term differs and the sum may not.
+    @Test func theTouchSidebarHeaderRhythmIsTheDesktopOne() {
+        // The macOS enum is the shared type's spelling, not a second set of numbers.
+        #expect(SidebarContextHeaderRhythm.gapAboveHeader == CadenceSidebarContextHeaderRhythm.gapAboveHeader)
+        #expect(SidebarContextHeaderRhythm.gapBelowHeader == CadenceSidebarContextHeaderRhythm.gapBelowHeader)
+        #expect(SidebarContextHeaderRhythm.headerTopPadding == CadenceSidebarContextHeaderRhythm.headerTopPadding)
+
+        // Non-vacuity: a rhythm of zeroes would satisfy every equality below it.
+        #expect(CadenceSidebarContextHeaderRhythm.gapAboveHeader > 0)
+        #expect(CadenceSidebarContextHeaderRhythm.gapBelowHeader > 0)
+
+        // The touch column composes the gap below a header out of its own header pad plus the row
+        // stack's spacing, and that has to come to the Mac's number.
+        let touchGapBelowHeader: CGFloat =
+            CadenceSidebarContextHeaderRhythm.touchHeaderBottomPadding
+            + CadenceSidebarContextHeaderRhythm.rowSpacing
+        #expect(touchGapBelowHeader == SidebarContextHeaderRhythm.gapBelowHeader)
+
+        // And the gap above one out of the same four terms the Mac spends, because the touch
+        // region now stacks its sections at zero spacing and pads each one exactly as
+        // `SidebarView.listsSection` does.
+        let touchGapAboveHeader: CGFloat =
+            CadenceSidebarContextHeaderRhythm.sectionBottomPadding
+            + CadenceSidebarContextHeaderRhythm.sectionOuterVerticalPadding * 2
+            + CadenceSidebarContextHeaderRhythm.headerTopPadding
+        #expect(touchGapAboveHeader == SidebarContextHeaderRhythm.gapAboveHeader)
+
+        // The relationship T-1041 pinned for macOS, now true of the surface the owner photographed.
+        #expect(touchGapAboveHeader > touchGapBelowHeader * 2)
+    }
+
+    /// **The same no-literal rule as `theSidebarComposesAContextSectionOnlyFromNamedSpacing`, on
+    /// the column that reaches the phone (T-3072).**
+    ///
+    /// `iOSSidebarListsRegion` is drawn by the iPad sidebar *and* by the iPhone Tasks index, so a
+    /// bare pad here is a bare pad on two surfaces. The rule is the Mac's: only three spellings can
+    /// carry a vertical gap — a `.vertical`/`.top`/`.bottom` pad, a `VStack`'s spacing, and a fixed
+    /// `height` — and none of them may be a literal, because `CadenceSidebarContextHeaderRhythm`
+    /// cannot add up a number it cannot see. `spacing: 0` is allowed for the reason it is allowed
+    /// there: a zero contributes nothing, and the region's section stack has to be able to say so.
+    ///
+    /// Scoped to the two declarations that compose a section. `emptyListsRow` is deliberately out:
+    /// it is what the region draws when it has no sections at all, so it has no header rhythm to
+    /// belong to, and a scan wide enough to see it would have to be loosened until it saw nothing.
+    @Test func theTouchSidebarComposesAContextSectionOnlyFromNamedSpacing() throws {
+        let unnamedVerticalSpacing =
+            "(padding\\(\\.(vertical|top|bottom), *[0-9]|VStack\\([^)]*spacing: *[1-9]|frame\\(height: *[0-9])"
+
+        // Self-check on the needle, per the source-scanning rules: it must match a bare pad and
+        // must not match a named one.
+        #expect(CadenceSourceScan.matchCount(unnamedVerticalSpacing, in: ".padding(.bottom, 2)") == 1)
+        #expect(
+            CadenceSourceScan.matchCount(
+                unnamedVerticalSpacing,
+                in: ".padding(.bottom, iOSSidebarMetrics.contextHeaderBottomPadding)"
+            ) == 0
+        )
+
+        let file = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        let region = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSidebarListsRegion: View", in: file)
+        )
+
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: region))
+        #expect(body.contains("listSection(section)"), "non-vacuity: read something other than the region's body")
+        #expect(
+            CadenceSourceScan.matchCount(unnamedVerticalSpacing, in: body) == 0,
+            "the touch lists region spells a vertical measurement as a literal, so CadenceSidebarContextHeaderRhythm cannot see it"
+        )
+
+        let section = try #require(
+            CadenceSourceScan.declarationBody(
+                "private func listSection(_ section: CadenceSidebarLists.Section) -> some View",
+                in: region
+            )
+        )
+        #expect(section.contains("SectionEyebrowLabel(text: section.title)"),
+                "the context header stopped being the app's one eyebrow")
+        #expect(
+            CadenceSourceScan.matchCount(unnamedVerticalSpacing, in: section) == 0,
+            "a touch context section spells a vertical measurement as a literal, so CadenceSidebarContextHeaderRhythm cannot see it"
+        )
+
+        // And the four terms are actually spent, rather than merely declared: a section that stopped
+        // naming one would pass the scan above by drawing nothing at all.
+        for term in [
+            "iOSSidebarMetrics.contextHeaderTopPadding",
+            "iOSSidebarMetrics.contextHeaderBottomPadding",
+            "iOSSidebarMetrics.contextSectionBottomPadding",
+            "iOSSidebarMetrics.contextSectionOuterVerticalPadding",
+        ] {
+            #expect(region.contains(term), "the touch lists region stopped spending \(term)")
+        }
+    }
 }
 
 #endif

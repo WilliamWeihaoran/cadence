@@ -163,8 +163,8 @@ extension CadenceFeatureDestination {
 ///   which is a `Color.clear` of `leadingDropZoneHeight`, and the `rowSpacing` after it. The drop
 ///   zone is a control, but it is transparent, so a reader counts its height as whitespace.
 ///
-/// This type is where those are added up, and `SidebarMetrics` re-publishes every part so the views
-/// keep reading one vocabulary. The arithmetic here and the pixels on screen can only drift if a
+/// `CadenceSidebarContextHeaderRhythm` is where those are added up, this type is the macOS spelling
+/// of it, and `SidebarMetrics` re-publishes every part so the views keep reading one vocabulary. The arithmetic here and the pixels on screen can only drift if a
 /// view introduces a pad this type does not know about, which
 /// `theSidebarComposesAContextSectionOnlyFromNamedSpacing` forbids by source scan.
 ///
@@ -175,32 +175,38 @@ extension CadenceFeatureDestination {
 /// defect — a *relationship* between composed gaps — is checkable with no running app, so leaving
 /// it measured wrong is worse than leaving it unmeasured. The conclusion survived the correction;
 /// see the finding in [[T-1067]] for the two claims that did not.
+/// **Every term below is `CadenceSidebarContextHeaderRhythm`', not this file's (T-3072).** The
+/// asymmetry was macOS's alone while the touch column drew 8pt above a header and 4pt below; the
+/// owner asked for one treatment, so the numbers moved to `Shared/` beside `CadenceSidebarMetrics`
+/// and this enum is the macOS spelling of them — the same relationship `SidebarMetrics` has to
+/// `CadenceSidebarMetrics`. The sums are re-published too, so the four macOS call sites and
+/// `CadenceSidebarLayoutTests` keep reading one vocabulary.
 nonisolated enum SidebarContextHeaderRhythm {
     /// Above the header, inside the section (`ContextSection`'s header `HStack`).
-    static let headerTopPadding: CGFloat = 14
+    static let headerTopPadding: CGFloat = CadenceSidebarContextHeaderRhythm.headerTopPadding
     /// The `ContextSection` `VStack`'s own spacing: header to whatever the section draws next.
-    static let headerBottomSpacing: CGFloat = 3
+    static let headerBottomSpacing: CGFloat = CadenceSidebarContextHeaderRhythm.headerBottomSpacing
     /// Below the section's last row, inside the section.
-    static let sectionBottomPadding: CGFloat = 8
+    static let sectionBottomPadding: CGFloat = CadenceSidebarContextHeaderRhythm.sectionBottomPadding
     /// `SidebarView.listsSection` pads every section by this on **both** edges.
-    static let sectionOuterVerticalPadding: CGFloat = 2
+    static let sectionOuterVerticalPadding: CGFloat =
+        CadenceSidebarContextHeaderRhythm.sectionOuterVerticalPadding
     /// The "drop above the first row" target that opens every populated context's row stack.
-    static let leadingDropZoneHeight: CGFloat = 4
+    static let leadingDropZoneHeight: CGFloat = CadenceSidebarContextHeaderRhythm.leadingDropZoneHeight
     /// Between two list rows of one context.
-    static let rowSpacing: CGFloat = CadenceSidebarMetrics.metrics(for: .desktop).rowSpacing
+    static let rowSpacing: CGFloat = CadenceSidebarContextHeaderRhythm.rowSpacing
 
     /// From the previous context's last list row to this context's header.
-    static let gapAboveHeader: CGFloat =
-        sectionBottomPadding + sectionOuterVerticalPadding * 2 + headerTopPadding
+    static let gapAboveHeader: CGFloat = CadenceSidebarContextHeaderRhythm.gapAboveHeader
 
     /// From the header to the first list row it labels.
-    static let gapBelowHeader: CGFloat =
-        headerBottomSpacing + leadingDropZoneHeight + rowSpacing
+    static let gapBelowHeader: CGFloat = CadenceSidebarContextHeaderRhythm.gapBelowHeader
 
     /// From the header to the "Add first list" button of a context that has none. No drop zone is
     /// drawn there, so this is the bare stack spacing and is deliberately *not* the number the
     /// relationship is pinned on: an empty context has no lists for its header to belong to.
-    static let gapBelowHeaderInEmptyContext: CGFloat = headerBottomSpacing
+    static let gapBelowHeaderInEmptyContext: CGFloat =
+        CadenceSidebarContextHeaderRhythm.gapBelowHeaderInEmptyContext
 }
 
 /// What the sidebar's scrolling lists region draws.
@@ -358,7 +364,6 @@ enum SidebarMetrics {
     /// The footer row's two glyph plates. Square, and smaller than a full nav row: these are the
     /// column's two quietest destinations and the row exists to spend less height on them.
     static let footerGlyphSize: CGFloat = 28
-    static let contextSectionSpacing: CGFloat = shared.sectionSpacing
     static let dividerInset: CGFloat = 2
 }
 

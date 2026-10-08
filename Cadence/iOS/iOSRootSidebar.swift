@@ -499,9 +499,15 @@ struct iOSSidebarListsRegion: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: iOSSidebarMetrics.sectionSpacing) {
+                // Zero, and the sections pad themselves — the shape `SidebarView.listsSection`
+                // already had. A stack spacing is one number for every boundary; the gap a reader
+                // sees above a context header is four terms applied in four places, and
+                // `CadenceSidebarContextHeaderRhythm` can only add them up if each is spelled where
+                // it is spent.
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(sections) { section in
                         listSection(section)
+                            .padding(.vertical, iOSSidebarMetrics.contextSectionOuterVerticalPadding)
                     }
 
                     if sections.isEmpty {
@@ -555,10 +561,15 @@ struct iOSSidebarListsRegion: View {
     private func listSection(_ section: CadenceSidebarLists.Section) -> some View {
         VStack(alignment: .leading, spacing: iOSSidebarMetrics.rowSpacing) {
             if style == .expanded {
+                // `SectionEyebrowLabel` is already the app's one eyebrow, and macOS's own context
+                // header chains off the same `Size.standard` figures — so the glyphs were never the
+                // half that differed. What differed is the room: 14pt above and 7pt below, which
+                // with the stack's own `rowSpacing` is the Mac's 26 above and 9 below.
                 SectionEyebrowLabel(text: section.title)
                     .lineLimit(1)
                     .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
-                    .padding(.bottom, 2)
+                    .padding(.top, iOSSidebarMetrics.contextHeaderTopPadding)
+                    .padding(.bottom, iOSSidebarMetrics.contextHeaderBottomPadding)
             }
 
             ForEach(section.items) { item in
@@ -578,6 +589,7 @@ struct iOSSidebarListsRegion: View {
                 )
             }
         }
+        .padding(.bottom, iOSSidebarMetrics.contextSectionBottomPadding)
         .iOSNewTaskDropTarget(
             horizontalInset: iOSSidebarMetrics.rowHorizontalPadding,
             ghost: .region,
@@ -713,7 +725,6 @@ enum iOSSidebarMetrics {
     static let labelFontSize: CGFloat = shared.labelFontSize
     static let badgeLeadingGap: CGFloat = shared.badgeLeadingGap
     static let groupSpacing: CGFloat = shared.groupSpacing
-    static let sectionSpacing: CGFloat = shared.sectionSpacing
     static let secondaryIconOpacity: Double = shared.secondaryIconOpacity
 
     // MARK: List rows
@@ -722,6 +733,27 @@ enum iOSSidebarMetrics {
     static let listDueDateFontSize: CGFloat = shared.listDueDateFontSize
     static let listDueDateSpacing: CGFloat = shared.listDueDateSpacing
     static let listTrailingItemSpacing: CGFloat = shared.listTrailingItemSpacing
+
+    // MARK: Context headers
+
+    /// **The context header's rhythm is `CadenceSidebarContextHeaderRhythm`', not this file's
+    /// (T-3072).** This column drew 8pt above a header and 4pt below against macOS's 26 and 9, so
+    /// the headers that say which lists go together were the quietest thing in the column:
+    /// *"make the context names stand out more and have more vertical space, make it to be the same
+    /// as mac os"*. The terms are in `Shared/` now and both columns read them; the *text* treatment
+    /// was already one decision, because both sides draw the app's eyebrow.
+    ///
+    /// Four names, not six: this column stacks its sections at zero spacing and pads each one, the
+    /// way `SidebarView.listsSection` does, and it draws no leading drop zone — there is no list
+    /// drag-reorder here — so the height macOS spends on that transparent target is folded into
+    /// `touchHeaderBottomPadding` and the two columns still show the same gap.
+    static let contextHeaderTopPadding: CGFloat = CadenceSidebarContextHeaderRhythm.headerTopPadding
+    static let contextHeaderBottomPadding: CGFloat =
+        CadenceSidebarContextHeaderRhythm.touchHeaderBottomPadding
+    static let contextSectionBottomPadding: CGFloat =
+        CadenceSidebarContextHeaderRhythm.sectionBottomPadding
+    static let contextSectionOuterVerticalPadding: CGFloat =
+        CadenceSidebarContextHeaderRhythm.sectionOuterVerticalPadding
 
     /// The footer row's two glyph plates, matching `SidebarMetrics.footerGlyphSize`.
     static let footerGlyphSize: CGFloat = 28
