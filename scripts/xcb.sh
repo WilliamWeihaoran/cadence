@@ -58,7 +58,9 @@
 #    private index so a landed commit never writes the shared checkout; the checkout therefore
 #    drifts behind HEAD, and `git status` reports a stale copy in the same three characters it
 #    reports real in-flight work with. A `test` action runs `scripts/worktree-drift.sh check`
-#    first and exits 7 without taking the test-host lock if any tracked file is behind HEAD.
+#    first and exits 7 without taking the test-host lock if any tracked file is behind HEAD --
+#    and asks again once it HOLDS the lock, warning when the tree moved during the wait or during
+#    the run itself (T-3060).
 #
 # 5. A DECLINED HUNK NOBODY IS COMING BACK FOR (T-781). `agent-commit.sh` records the lines a
 #    reconstruction declined, and the record is checked only when somebody next commits THAT path.
@@ -3920,6 +3922,70 @@ selftest_only_testing() {
     $( [[ "$lh_calls" == $'release xcb-lhprobe result=0 end=0\nrelease xcb-lhprobe result=1 end=1' \
          && "$lh_out" == *"test-host lock: NOT released early (REFUSING: stub)"* ]] && print 1 || print 0 ) "calls: $lh_calls | $lh_out"
 
+  say ""
+  say " 16. the drift check is asked again once the test-host lock is held (T-3060)"
+  # A real `xcb.sh <id> test` from a scratch git checkout whose stub lock's `acquire` plays the
+  # sibling that lands work during the wait, and whose stub xcodebuild can play one that edits
+  # mid-run. The stub drift check answers BEHIND-HEAD exactly while a marker file exists.
+  local dl_out="" dl_rc=0 dl_calls="" dl_sha=""
+  mkdir -p "$ws/dl/root/scripts" "$ws/dl/tmp" "$ws/dl/state"
+  cp -- "$here" "$ws/dl/root/scripts/xcb.sh"
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- "$1" >> "$FAKE_LOCK_CALLS"' \
+    'if [[ "$1" == acquire ]]; then' \
+    '  [[ "$FAKE_DURING_WAIT" == edit ]] && print -r -- "landed during the wait" >> "$FAKE_PROBE"' \
+    '  [[ "$FAKE_DURING_WAIT" == behind ]] && : > "$FAKE_BEHIND"' \
+    'fi' \
+    'exit 0' > "$ws/dl/root/scripts/test-host-lock.sh"
+  print -rl -- '#!/bin/zsh' \
+    'if [[ -e "$FAKE_BEHIND" ]]; then print -r -- "WORKTREE-BEHIND-HEAD: probe.txt"; exit 3; fi' \
+    'print -r -- "worktree matches HEAD"' > "$ws/dl/root/scripts/worktree-drift.sh"
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- built >> "$FAKE_LOCK_CALLS"' \
+    '[[ -n "$FAKE_MIDRUN_EDIT" ]] && print -r -- "edited mid-run" >> "$FAKE_PROBE"' \
+    'print -r -- "Command line invocation:"' \
+    'print -r -- "✔ Test aProbe() passed after 0.001 seconds."' \
+    'print -r -- "** TEST SUCCEEDED **"' > "$ws/dl/xcodebuild"
+  chmod +x "$ws/dl/root/scripts/test-host-lock.sh" "$ws/dl/root/scripts/worktree-drift.sh" "$ws/dl/xcodebuild"
+  print -r -- probe > "$ws/dl/root/probe.txt"
+  git -C "$ws/dl/root" init -q
+  git -C "$ws/dl/root" add -A
+  git -C "$ws/dl/root" -c user.name=selftest -c user.email=selftest@invalid -c core.hooksPath=/dev/null \
+    commit -qm probe
+  dl_sha="$(git -C "$ws/dl/root" rev-parse HEAD)"
+  dl_run() {  # $1 = FAKE_DURING_WAIT, $2 = FAKE_MIDRUN_EDIT
+    git -C "$ws/dl/root" checkout -q -- probe.txt
+    rm -f "$ws/dl/behind" "$ws/dl/state"/cadence-xcb-last-green.*(N)
+    : > "$ws/dl/calls"
+    XCODEBUILD="$ws/dl/xcodebuild" TMPDIR="$ws/dl/tmp/" CADENCE_STALL_POLL=1 CADENCE_SKIP_IOS_LEG=1 \
+      CADENCE_XCB_STATE_DIR="$ws/dl/state" CADENCE_TREE_ROOT= FAKE_LOCK_CALLS="$ws/dl/calls" \
+      FAKE_PROBE="$ws/dl/root/probe.txt" FAKE_BEHIND="$ws/dl/behind" FAKE_DURING_WAIT="$1" FAKE_MIDRUN_EDIT="$2" \
+      CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS= \
+      zsh "$ws/dl/root/scripts/xcb.sh" dlprobe test -scheme Cadence -destination 'platform=macOS' \
+      -only-testing:CadenceTests -derivedDataPath "$ws/dl/tmp/cadence-dd-dlprobe" >"$ws/dl/out" 2>&1
+    dl_rc=$?
+    dl_out="$(cat "$ws/dl/out" 2>/dev/null)"; dl_calls="$(cat "$ws/dl/calls" 2>/dev/null)"
+  }
+  dl_run "" ""
+  check "a still tree is answered twice -- at preflight and again with the lock held -- and warns of nothing" \
+    $( [[ $dl_rc == 0 && $(print -r -- "$dl_out" | grep -c 'worktree vs HEAD.*: worktree matches HEAD') == 2 \
+         && "$dl_out" == *"worktree vs HEAD (asked again, test-host lock held): worktree matches HEAD"* \
+         && "$dl_out" != *"tree changed"* && "$dl_out" == *"last-green: recorded ${dl_sha} (tree clean)"* ]] \
+         && print 1 || print 0 ) "exit $dl_rc: $dl_out"
+  dl_run edit ""
+  check "a tree edited during the lock wait says 'tree changed while waiting', not 'during this run'" \
+    $( [[ $dl_rc == 0 && "$dl_out" == *"tree changed while waiting for the test-host lock (T-3060): ${dl_sha} clean -> ${dl_sha} "* \
+         && "$dl_out" != *"tree changed during this run"* ]] && print 1 || print 0 ) "exit $dl_rc: $dl_out"
+  dl_run behind ""
+  check "a checkout that fell behind HEAD during the wait is REFUSED with the lock held: exit 7, nothing built, lock given back" \
+    $( [[ $dl_rc == 7 && "$dl_out" == *"fell behind HEAD while this run waited for the test-host lock"* \
+         && "$dl_calls" == $'acquire\nrelease' ]] && print 1 || print 0 ) "exit $dl_rc, calls: $dl_calls | $dl_out"
+  dl_run "" 1
+  check "a tree edited mid-run says 'tree changed during this run' and records no last-green" \
+    $( [[ $dl_rc == 0 && "$dl_out" == *"tree changed during this run (T-3060): ${dl_sha} clean -> ${dl_sha} "* \
+         && "$dl_out" == *"last-green: not recorded -- the tree changed during the run"* \
+         && -z "$(print -r -- "$ws/dl/state"/cadence-xcb-last-green.*(N))" ]] && print 1 || print 0 ) "exit $dl_rc: $dl_out"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -4386,20 +4452,43 @@ fi
 # so the check there answers NOT-REPO-ROOT -- *a question that could not be asked*. Refusing on
 # that would refuse the very workflow the runbook prescribes. A guard that cannot answer says so
 # and gets out of the way; only a real, positive finding stops the run.
-if [[ "$ACTION" == "test" ]]; then
+#
+# ASKED TWICE (T-3060). The preflight answer is about the tree as it was BEFORE the lock queue,
+# and that queue has reached forty minutes: observed 2026-10-08, a heartbeat run printed
+# "worktree matches HEAD", waited 555 s behind a sibling that committed during the wait, compiled
+# the half-edited tree and went red with nothing saying the tree had moved. So a run that took the
+# lock asks again once it holds it, with the same verdicts -- WORKTREE-BEHIND-HEAD refuses (exit 7,
+# the EXIT trap gives the lock back), anything else is printed and the run proceeds -- and it
+# compares the git fingerprint (`tree_fingerprint`: HEAD plus every uncommitted byte) taken at
+# each reading. A moved tree WARNS rather than refuses, for the reason only BEHIND-HEAD refuses at
+# preflight: in-flight edits are the ordinary case, and the run is about the tree it now compiles.
+# The postflight compares the fingerprint once more ("tree changed during this run").
+DRIFT_PRE_FP=""; DRIFT_LOCK_FP=""
+worktree_drift_gate() {  # $1 = preflight | after-lock
+  local when="$1" label="worktree vs HEAD"
+  [[ "$when" == after-lock ]] && label="worktree vs HEAD (asked again, test-host lock held)"
   DRIFT_OUT="$(cd "$ROOT_DIR" && "$ROOT_DIR/scripts/worktree-drift.sh" check 2>&1)"; DRIFT_STATUS=$?
   if [[ "$DRIFT_OUT" == *WORKTREE-BEHIND-HEAD* ]]; then
     say ""
     print -r -- "$DRIFT_OUT"
     say ""
     say "!! REFUSING: this run would test a checkout that is not HEAD (T-975). Nothing was built"
-    say "   and the test-host lock was not taken."
+    if [[ "$when" == after-lock ]]; then
+      say "   -- the checkout fell behind HEAD while this run waited for the test-host lock (T-3060);"
+      say "   the lock is given back as this exits."
+    else
+      say "   and the test-host lock was not taken."
+    fi
     exit 7
   elif (( DRIFT_STATUS != 0 )); then
-    say "  worktree vs HEAD: not answered ($(print -r -- "$DRIFT_OUT" | tail -1 | cut -c1-70)) -- proceeding"
+    say "  $label: not answered ($(print -r -- "$DRIFT_OUT" | tail -1 | cut -c1-70)) -- proceeding"
   else
-    say "  worktree vs HEAD: $(print -r -- "$DRIFT_OUT" | head -1)"
+    say "  $label: $(print -r -- "$DRIFT_OUT" | head -1)"
   fi
+}
+if [[ "$ACTION" == "test" ]]; then
+  worktree_drift_gate preflight
+  DRIFT_PRE_FP="$(tree_fingerprint "$ROOT_DIR")"
 fi
 
 # --- the test-host lock ------------------------------------------------------
@@ -4422,6 +4511,13 @@ elif [[ "$ACTION" == "test" ]]; then
   "$ROOT_DIR/scripts/test-host-lock.sh" acquire "${CADENCE_LOCK_TIMEOUT:-5400}" "xcb-$ID" || exit 1
   trap "\"$ROOT_DIR/scripts/test-host-lock.sh\" release 'xcb-$ID'" EXIT INT TERM
   LOCK_HELD=1
+  # T-3060: the queue above can be long; ask again about the tree this run will now compile.
+  worktree_drift_gate after-lock
+  DRIFT_LOCK_FP="$(tree_fingerprint "$ROOT_DIR")"
+  if [[ -n "$DRIFT_PRE_FP" && "$DRIFT_LOCK_FP" != "$DRIFT_PRE_FP" ]]; then
+    say "  !! tree changed while waiting for the test-host lock (T-3060): ${DRIFT_PRE_FP} -> ${DRIFT_LOCK_FP:-unreadable}"
+    say "     the preflight answer above is about the earlier tree; this run compiles the tree as it is now."
+  fi
 fi
 
 # Give the lease back as soon as the primary xcodebuild has exited (T-2086). The lease guards the
@@ -4531,6 +4627,16 @@ say ""
 say "== xcb result ($ID) =="
 say "  XCODEBUILD_EXIT=$STATUS"
 [[ -n "$LEASE_NOTE" ]] && say "  test-host lock: $LEASE_NOTE"
+# T-3060: the tree this run started compiling (after the lock when it took one) against the tree
+# now. A red with this line under it may be a sibling's half-landed edit rather than HEAD.
+DRIFT_RUN_FP="${DRIFT_LOCK_FP:-$DRIFT_PRE_FP}"
+if [[ "$ACTION" == "test" && -n "$DRIFT_RUN_FP" ]]; then
+  DRIFT_END_FP="$(tree_fingerprint "$ROOT_DIR")"
+  if [[ "$DRIFT_END_FP" != "$DRIFT_RUN_FP" ]]; then
+    say "  !! tree changed during this run (T-3060): ${DRIFT_RUN_FP} -> ${DRIFT_END_FP:-unreadable}"
+    say "     the result above may be about a half-edited tree, not HEAD; re-run on a still tree before triaging a red."
+  fi
+fi
 XCODEBUILD_STATUS=$STATUS   # before any gate below can overwrite STATUS (T-2021 reads the raw one)
 # Both counts spelled the way AGENTS.md requires, and the denominator with them (T-1147): a loose
 # `grep -c 'error:'` counts a test failure whose message contains the word and reads a real kill as

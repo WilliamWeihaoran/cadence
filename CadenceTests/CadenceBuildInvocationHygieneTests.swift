@@ -234,6 +234,26 @@ struct CadenceBuildInvocationHygieneTests {
             drift.lowerBound < lock.lowerBound,
             "the drift check runs after the test-host lock is taken, so a run that will be refused holds the host anyway"
         )
+        // T-3060: the check lives in one function, so the CALLS carry the order. The preflight
+        // call precedes `acquire`; a second call follows it, because the lock queue has reached
+        // forty minutes and a sibling that lands work during the wait changes the tree the run
+        // then compiles. The postflight says so when the tree moved during the run itself.
+        let preflight = try #require(
+            commands.range(of: "worktree_drift_gate preflight"),
+            "scripts/xcb.sh no longer asks the drift check at preflight"
+        )
+        #expect(preflight.lowerBound < lock.lowerBound,
+                "the preflight drift check is asked after the test-host lock is taken")
+        let recheck = try #require(
+            commands.range(of: "worktree_drift_gate after-lock"),
+            "scripts/xcb.sh no longer asks the drift check again once it holds the test-host lock (T-3060)"
+        )
+        #expect(recheck.lowerBound > lock.lowerBound,
+                "the second drift check is not after `acquire`, so it answers about the tree before the lock wait")
+        #expect(commands.contains("tree changed while waiting for the test-host lock"),
+                "scripts/xcb.sh no longer says when the tree moved during the lock wait (T-3060)")
+        #expect(commands.contains("tree changed during this run"),
+                "scripts/xcb.sh's postflight no longer says when the tree moved during the run (T-3060)")
         // The refusal has to be a refusal. A check whose exit status nothing reads is a report.
         #expect(commands.contains("exit 7"),
                 "scripts/xcb.sh reads the drift check's verdict but no longer fails on it")
