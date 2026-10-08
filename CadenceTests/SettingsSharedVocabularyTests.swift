@@ -780,8 +780,9 @@ struct SettingsSevenPaneVocabularyTests {
                 // directories beside store locations the app has left behind. The fourth is
                 // [[T-1680]]'s "Other Cadence Data Folders" list, which separates the *store*
                 // folders the app is not using — the recovery store a failed launch wrote, and
-                // the earlier store locations.
-                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 4,
+                // the earlier store locations. The fifth is [[T-3045]]'s "Unrestored Store Files"
+                // list, which separates the folders a restore moved aside and Cadence retained.
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 5,
                 "Cadence/macOS/Views/SettingsSectionViews.swift": 4
             ]
         )

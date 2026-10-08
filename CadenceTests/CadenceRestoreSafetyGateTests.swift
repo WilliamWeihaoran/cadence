@@ -222,4 +222,124 @@ struct CadenceRestoreSafetyGateTests {
             #expect(StoreBackupManager.lastFailedRestore(defaults: defaults) == nil)
         }
     }
+
+    // MARK: - T-3045 (2): a retained-originals folder is named on screen
+
+    /// The listing Settings → Data Safety reads answers the folders beside **this launch's** store.
+    /// Planted under the test host's own redirected store, which is checked to be inside the
+    /// temporary directory before anything is written.
+    @Test func theNoArgumentListingNamesARetainedFolderBesideThisLaunchsStore() throws {
+        let liveStore = try StoreBackupManager.storeDirectoryLocation(in: ProcessInfo.processInfo.environment)
+        try #require(
+            CadenceUITestStoreDirectory.isPath(liveStore, inside: FileManager.default.temporaryDirectory),
+            "this process's store is not redirected into tmp; refusing to plant anything beside it"
+        )
+        let retained = liveStore.appendingPathComponent(
+            "Cadence Unrestored Store Files 20261007-120000-restoreguard-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let storeExisted = FileManager.default.fileExists(atPath: liveStore.path)
+        try FileManager.default.createDirectory(at: retained, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: retained)
+            if !storeExisted { try? FileManager.default.removeItem(at: liveStore) }
+        }
+        let listed = StoreBackupManager.retainedUnrestoredOriginalDirectories()
+            .map(\.standardizedFileURL.path)
+        #expect(listed.filter { $0 == retained.standardizedFileURL.path }.count == 1)
+    }
+
+    /// The view reads that listing exactly once, renders it through a row that can only reveal,
+    /// and nothing in the file can delete a retained folder.
+    @Test func theMacDataSafetyScreenListsRetainedFoldersAndCannotDeleteThem() throws {
+        let path = "Cadence/macOS/Views/SettingsDataSafetySection.swift"
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        #expect(code.contains("struct SettingsDataSafetySection"), "non-vacuity: wrong file")
+        func count(_ needle: String) -> Int { code.components(separatedBy: needle).count - 1 }
+        #expect(count("StoreBackupManager.retainedUnrestoredOriginalDirectories()") == 1)
+        #expect(count("RetainedUnrestoredOriginalsRow(") == 1)
+        #expect(count("ForEach(Array(retainedUnrestoredDirectories.enumerated())") == 1)
+        #expect(count("deleteRetainedUnrestoredOriginals") == 0)
+
+        let rowStart = try #require(code.range(of: "private struct RetainedUnrestoredOriginalsRow"))
+        let rest = code[rowStart.upperBound...]
+        let rowEnd = rest.range(of: "private struct ")?.lowerBound ?? rest.endIndex
+        let row = String(rest[..<rowEnd])
+        #expect(row.contains("onReveal"), "non-vacuity: the row segment was not found")
+        for forbidden in ["removeItem", "destructive", "delete", "Delete"] {
+            #expect(!row.contains(forbidden), "the retained-originals row mentions \(forbidden)")
+        }
+    }
+
+    // MARK: - T-3045 (3): backup writers refuse a non-temporary directory under a test launch
+
+    @Test func theWriteGuardAllowsEverythingInTheShippingAppAndOnlyTmpUnderATestLaunch() {
+        let tmp = URL(fileURLWithPath: "/var/folders/xy/T", isDirectory: true)
+        let real = URL(fileURLWithPath: "/Users/someone/Library/Group Containers/group.x/Cadence", isDirectory: true)
+        let legacy = URL(fileURLWithPath: "/Users/someone/Library/Containers/x/Data/Library/Application Support/Cadence")
+        let shipping: [String: String] = [:]
+        let unitTests = ["XCTestConfigurationFilePath": "/x.xctestconfiguration"]
+        let agentLaunch = ["CADENCE_UI_TEST_STORE_ID": "agent-1"]
+
+        // The shipping app: no redirect, so nothing changes.
+        for url in [real, legacy, tmp] {
+            #expect(CadenceUITestStoreDirectory.mayWriteBackups(inStoreDirectory: url, environment: shipping, temporaryDirectory: tmp))
+        }
+        for environment in [unitTests, agentLaunch] {
+            #expect(!CadenceUITestStoreDirectory.mayWriteBackups(inStoreDirectory: real, environment: environment, temporaryDirectory: tmp))
+            #expect(!CadenceUITestStoreDirectory.mayWriteBackups(inStoreDirectory: legacy, environment: environment, temporaryDirectory: tmp))
+            #expect(CadenceUITestStoreDirectory.mayWriteBackups(
+                inStoreDirectory: tmp.appendingPathComponent("Fixture.\(UUID().uuidString)"),
+                environment: environment, temporaryDirectory: tmp
+            ))
+            // The `/private` alias of tmp is tmp; a `..` walk out of it is not; neither is a sibling
+            // whose name merely starts with tmp's.
+            #expect(CadenceUITestStoreDirectory.mayWriteBackups(
+                inStoreDirectory: URL(fileURLWithPath: "/private/var/folders/xy/T/Fixture"),
+                environment: environment, temporaryDirectory: tmp
+            ))
+            #expect(!CadenceUITestStoreDirectory.mayWriteBackups(
+                inStoreDirectory: URL(fileURLWithPath: "/var/folders/xy/T/../../../Users/someone/Cadence"),
+                environment: environment, temporaryDirectory: tmp
+            ))
+            #expect(!CadenceUITestStoreDirectory.mayWriteBackups(
+                inStoreDirectory: URL(fileURLWithPath: "/var/folders/xy/T-other/Cadence"),
+                environment: environment, temporaryDirectory: tmp
+            ))
+        }
+    }
+
+    /// Every entry point that writes into, thins or removes a backups directory (or the retained
+    /// originals) refuses **before** touching the filesystem. The probe directory does not exist,
+    /// so an unguarded call would return quietly (`nil` / `0`) rather than throw.
+    @Test func everyBackupWriterRefusesANonTemporaryStoreDirectoryInThisTestProcess() throws {
+        #expect(CadenceUITestStoreDirectory.redirectedStoreDirectory() != nil, "non-vacuity: this process is not a redirected launch")
+        let probe = URL(fileURLWithPath: "/CadenceRestoreGuardProbe-\(UUID().uuidString)", isDirectory: true)
+        let refusal = StoreBackupManager.BackupWriteRefusal(storeDirectoryPath: probe.path)
+
+        #expect(throws: refusal) {
+            try StoreBackupManager.createBackupIfStoreExists(reason: .manual, storeDirectoryURL: probe)
+        }
+        #expect(throws: refusal) {
+            try StoreBackupManager.cleanUpAutomaticBackups(storeDirectoryURL: probe)
+        }
+        #expect(throws: refusal) {
+            try StoreBackupManager.deleteAllBackups(storeDirectoryURL: probe)
+        }
+        #expect(throws: refusal) {
+            try StoreBackupManager.deleteRetainedUnrestoredOriginals(storeDirectoryURL: probe)
+        }
+        #expect(!FileManager.default.fileExists(atPath: probe.path))
+    }
+
+    /// And a temp directory still works through the same entry points.
+    @Test func theSameWritersStillRunInsideTheTemporaryDirectory() throws {
+        let root = try makeStoreDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try seedStore(in: root, marker: "live")
+        _ = try #require(try StoreBackupManager.createBackupIfStoreExists(reason: .manual, storeDirectoryURL: root))
+        #expect(try StoreBackupManager.cleanUpAutomaticBackups(storeDirectoryURL: root) == 0)
+        #expect(try StoreBackupManager.deleteRetainedUnrestoredOriginals(storeDirectoryURL: root) == 0)
+        #expect(try StoreBackupManager.deleteAllBackups(storeDirectoryURL: root) == 1)
+    }
 }

@@ -19,6 +19,10 @@ struct SettingsDataSafetySection: View {
     /// in. Shown, never touched — see `UnmanagedStoreDirectory`.
     @State private var unmanagedStoreDirectories: [UnmanagedStoreDirectory] = []
 
+    /// The `Cadence Unrestored Store Files …` folders a restore retained beside the live store
+    /// ([[T-3045]] (2)). Shown, never touched — see `RetainedUnrestoredOriginalsRow`.
+    @State private var retainedUnrestoredDirectories: [URL] = []
+
     /// The outcome of the **export** and of the **reset**, shown under the reset card.
     ///
     /// Sharing one line between those two is deliberate — see `SettingsDataExportCard` — because
@@ -180,6 +184,40 @@ struct SettingsDataSafetySection: View {
                 }
             }
 
+            // **T-3045 (2) — the last copy of store files a restore moved aside.** A swap
+            // interrupted mid-move leaves its originals in `.cadence-restore-previous.tmp`; the
+            // next attempt retains that folder as `Cadence Unrestored Store Files <timestamp>`
+            // rather than deleting it, and if that attempt then succeeds no failed-restore banner
+            // is ever written. Until this section nothing on screen named the folder at all.
+            //
+            // Reveal only, for the reason the two lists below are: it may be the only copy of
+            // those files, and the one thing allowed to remove it is Delete Account & Data,
+            // which says so. iOS has no section because iOS has no way to schedule a restore.
+            if !retainedUnrestoredDirectories.isEmpty {
+                VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                    SettingsSectionLabel(text: "Unrestored Store Files")
+                    SettingsCard {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("A restore that did not finish moved these store files aside, and Cadence kept them rather than delete them. They can be the only copy of your data as it was before that restore. Cadence does not back them up or read them; deleting all Cadence data removes them, and nothing else does.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.bottom, 12)
+
+                            ForEach(Array(retainedUnrestoredDirectories.enumerated()), id: \.element) { index, directoryURL in
+                                RetainedUnrestoredOriginalsRow(
+                                    directoryURL: directoryURL,
+                                    onReveal: { NSWorkspace.shared.activateFileViewerSelecting([directoryURL]) }
+                                )
+                                if index < retainedUnrestoredDirectories.count - 1 {
+                                    CadenceRowDivider(leadingInset: 42)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // **T-1680 — the copies this screen answered for and could not see, one directory
             // further in.** T-1532 made the stray *backups* visible. The stray *stores* stayed
             // invisible, and they are the worse half: `Recovery/` is a child of the live store
@@ -276,6 +314,7 @@ struct SettingsDataSafetySection: View {
         // directory. `unmanagedBackupDirectories` lists and sizes; nothing here can write.
         unmanagedBackupDirectories = StoreBackupManager.unmanagedBackupDirectories()
         unmanagedStoreDirectories = StoreBackupManager.unmanagedStoreDirectories()
+        retainedUnrestoredDirectories = StoreBackupManager.retainedUnrestoredOriginalDirectories()
     }
 
     /// Builds the archive, then hands it to the system save panel. Encoding happens *before* the
@@ -664,6 +703,51 @@ private struct UnmanagedStoreDirectoryRow: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(directory.displayDetail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            Spacer(minLength: 8)
+
+            SettingsActionButton(tone: .tinted(Theme.blue), action: onReveal) {
+                Text("Reveal")
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 2)
+    }
+}
+
+/// One folder of store files a restore moved aside and Cadence retained ([[T-3045]] (2)).
+///
+/// **One button, and it opens Finder** — the same two members as `UnmanagedStoreDirectoryRow`, so
+/// a delete cannot be handed to it. The only thing in the app that removes this folder is the
+/// data reset, and a second, quieter way to destroy what may be the last copy of a store is
+/// exactly what that rule keeps off this screen.
+private struct RetainedUnrestoredOriginalsRow: View {
+    let directoryURL: URL
+    let onReveal: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: Theme.radiusControl)
+                .fill(Theme.amber.opacity(0.14))
+                .frame(width: 32, height: 32)
+                .overlay {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.amber)
+                }
+
+            VStack(alignment: .leading, spacing: 3) {
+                // The path in full: the folder is visible in Finder on purpose, and the path is
+                // what makes it findable.
+                Text(directoryURL.path)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.text)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Kept by an unfinished restore • not read by Cadence")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
             }

@@ -1294,6 +1294,26 @@ enum StoreBackupManager {
         }
     }
 
+    /// A backup write or removal refused because this is a test or agent launch and the store
+    /// directory it was aimed at is outside the process's temporary directory ([[T-3045]] (3)).
+    /// See `CadenceUITestStoreDirectory.mayWriteBackups(inStoreDirectory:)`; the shipping app
+    /// never throws it.
+    nonisolated struct BackupWriteRefusal: LocalizedError, Equatable {
+        let storeDirectoryPath: String
+
+        var errorDescription: String? {
+            "Cadence did not touch the backups beside \(storeDirectoryPath): this is a test or agent launch, and that folder is outside its temporary directory."
+        }
+    }
+
+    /// The first statement of every entry point that writes into, thins or removes a
+    /// `Cadence Store Backups` directory or the originals a restore retained ([[T-3045]] (3)).
+    private static func refuseUnlessBackupWriteAllowed(in storeDirectoryURL: URL) throws {
+        guard CadenceUITestStoreDirectory.mayWriteBackups(inStoreDirectory: storeDirectoryURL) else {
+            throw BackupWriteRefusal(storeDirectoryPath: storeDirectoryURL.path)
+        }
+    }
+
     /// A restore that was scheduled, attempted, and failed — kept instead of the pending key so
     /// the next launch reads it as history rather than as an instruction.
     nonisolated struct FailedRestoreRecord: Codable, Equatable {
@@ -1370,6 +1390,7 @@ enum StoreBackupManager {
         fileManager: FileManager = .default,
         defaults: UserDefaults = CadenceDefaults.store
     ) throws -> URL? {
+        try refuseUnlessBackupWriteAllowed(in: storeDirectoryURL)
         let sourceItems = existingStoreItems(in: storeDirectoryURL, fileManager: fileManager)
         guard !sourceItems.isEmpty else { return nil }
 
@@ -1642,6 +1663,7 @@ enum StoreBackupManager {
         fileManager: FileManager = .default,
         defaults: UserDefaults = CadenceDefaults.store
     ) throws -> Int {
+        try refuseUnlessBackupWriteAllowed(in: storeDirectoryURL)
         // Two backups are named by something the user will read, and neither may be retention
         // fodder: the one a restore is scheduled from, and — T-3045 — the one a live
         // `FailedRestoreRecord` names. `quarantinePendingRestore` clears the pending key on the
@@ -1663,6 +1685,22 @@ enum StoreBackupManager {
     @discardableResult
     static func deleteAllBackups() throws -> Int {
         try deleteAllBackups(storeDirectoryURL: defaultStoreDirectoryURL())
+    }
+
+    /// The folders of originals retained beside **this launch's** store — what Settings → Data
+    /// Safety lists ([[T-3045]] (2)).
+    ///
+    /// Before this nothing on screen named such a folder unless the restore that made it also
+    /// failed: `swapStagedRestore` retains a `.cadence-restore-previous.tmp` left by an interrupted
+    /// swap and then carries on, so a retry that *succeeds* writes no `FailedRestoreRecord` and the
+    /// last copy of those store files sat in the store directory with no reader in any view.
+    ///
+    /// Resolved through `defaultStoreDirectoryLocation()`, the non-creating answer the other two
+    /// listings use ([[T-1852]]): opening Settings must not create the directory it is asking about.
+    /// Read-only — it lists and nothing else.
+    static func retainedUnrestoredOriginalDirectories() -> [URL] {
+        guard let liveStoreDirectoryURL = defaultStoreDirectoryLocation() else { return [] }
+        return retainedUnrestoredOriginalDirectories(in: liveStoreDirectoryURL)
     }
 
     /// Every folder of originals a failed rollback retained, oldest name first (T-1100).
@@ -1694,6 +1732,7 @@ enum StoreBackupManager {
         storeDirectoryURL: URL,
         fileManager: FileManager = .default
     ) throws -> Int {
+        try refuseUnlessBackupWriteAllowed(in: storeDirectoryURL)
         let retained = retainedUnrestoredOriginalDirectories(in: storeDirectoryURL, fileManager: fileManager)
         for directoryURL in retained {
             try fileManager.removeItem(at: directoryURL)
@@ -1703,6 +1742,7 @@ enum StoreBackupManager {
 
     @discardableResult
     static func deleteAllBackups(storeDirectoryURL: URL) throws -> Int {
+        try refuseUnlessBackupWriteAllowed(in: storeDirectoryURL)
         let snapshots = listBackups(storeDirectoryURL: storeDirectoryURL)
         let backupRootURL = backupRootURL(for: storeDirectoryURL)
 

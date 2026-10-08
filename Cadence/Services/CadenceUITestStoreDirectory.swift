@@ -219,6 +219,55 @@ enum CadenceUITestStoreDirectory {
         return .removed(directory)
     }
 
+    /// **[[T-3045]] (3): under a test or agent launch, backups are written and removed only inside
+    /// this process's temporary directory.**
+    ///
+    /// The rule that nothing may write into a real `Cadence Store Backups` directory used to be
+    /// prose in the guides. `redirectedStoreDirectory` keeps the *no-argument* entry points off
+    /// the signed-in person's store, but every `StoreBackupManager` writer also takes an explicit
+    /// `storeDirectoryURL:`, and nothing checked what a caller handed it — a test that passed the
+    /// app-group path, or a legacy `Library/Containers/…` one, would have backed up, purged or
+    /// deleted real backups with nothing in the way. Those writers now ask this first.
+    ///
+    /// An allow-list and not a deny-list, deliberately: a deny-list of "the real directory" has to
+    /// enumerate every place a real store has ever lived (the app group *and* each legacy
+    /// location), and missing one is the hole. Every redirected store — the test host's
+    /// `CadenceTestsHostStore`, a UI launch's `CadenceUITestStores/<id>`, an agent launch's — is
+    /// under `temporaryDirectory` by construction, and so is every fixture a test makes.
+    ///
+    /// `true` whenever `redirectedStoreDirectory` is `nil`, which is the shipping app: its
+    /// behaviour does not change, and that half is asserted as well as the refusing one.
+    static func mayWriteBackups(
+        inStoreDirectory storeDirectoryURL: URL,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+    ) -> Bool {
+        guard redirectedStoreDirectory(in: environment, temporaryDirectory: temporaryDirectory) != nil else {
+            return true
+        }
+        return isPath(storeDirectoryURL, inside: temporaryDirectory)
+    }
+
+    /// Whether `url` is `directory` or lies beneath it, after `..` is resolved, symlinks are
+    /// followed and the `/private` alias (`/var` ≡ `/private/var`) is folded away — so neither a
+    /// `tmp/../../` spelling nor the alias can carry a path across the boundary or wrongly refuse one.
+    static func isPath(_ url: URL, inside directory: URL) -> Bool {
+        let path = comparablePath(url)
+        let root = comparablePath(directory)
+        return path == root || path.hasPrefix(root == "/" ? "/" : root + "/")
+    }
+
+    private static func comparablePath(_ url: URL) -> String {
+        var path = url.standardizedFileURL.resolvingSymlinksInPath().standardizedFileURL.path
+        if path.hasPrefix("/private/") {
+            path.removeFirst("/private".count)
+        }
+        while path.count > 1 && path.hasSuffix("/") {
+            path.removeLast()
+        }
+        return path
+    }
+
     /// The id whose launch also claims and sweeps — **`CadenceUITests` only**.
     ///
     /// The redirect is wider than the cleanup on purpose. `run-macos-app.sh` sets the store id and

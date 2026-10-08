@@ -590,7 +590,9 @@ struct CadenceAgentDefaultsIsolationTests {
         // `unmanagedBackupDirectories()`, and [[T-1680]] an eleventh, `unmanagedStoreDirectories()`
         // — and [[T-1852]] moved exactly those two onto the non-creating form, which is why the
         // first number went back to 9 and the second is 3 (two calls and the declaration). The
-        // **sum** is what must not fall: twelve spellings, one resolver each.
+        // **sum** is what must not fall: twelve spellings, one resolver each. [[T-3045]] (2) added
+        // a third listing, `retainedUnrestoredOriginalDirectories()`, on the non-creating form for
+        // the same reason — 4 and 13.
         //
         // Over the stripped source, because T-1532 also wrote the name into a doc comment — and a
         // tripwire that a paragraph can trip is one that gets edited until it stops complaining.
@@ -598,10 +600,10 @@ struct CadenceAgentDefaultsIsolationTests {
         let creating = CadenceSourceScan.matchCount("defaultStoreDirectoryURL\\(\\)", in: code)
         let locating = CadenceSourceScan.matchCount("defaultStoreDirectoryLocation\\(\\)", in: code)
         #expect(creating == 9, "\(creating) spellings of defaultStoreDirectoryURL(), not the 9 measured for T-1852")
-        #expect(locating == 3, "\(locating) spellings of defaultStoreDirectoryLocation(), not the 3 measured for T-1852")
+        #expect(locating == 4, "\(locating) spellings of defaultStoreDirectoryLocation(), not the 4 measured for T-3045")
         #expect(
-            creating + locating == 12,
-            "\(creating + locating) no-argument store-directory resolutions, not the 12 measured for T-1852"
+            creating + locating == 13,
+            "\(creating + locating) no-argument store-directory resolutions, not the 13 measured for T-3045"
         )
 
         // The two that moved are the two listings, named — a count alone cannot tell "the listing
@@ -609,6 +611,7 @@ struct CadenceAgentDefaultsIsolationTests {
         for listing in [
             "unmanagedBackupDirectories(liveStoreDirectoryURL: defaultStoreDirectoryLocation())",
             "liveStoreDirectoryURL: defaultStoreDirectoryLocation(),",
+            "guard let liveStoreDirectoryURL = defaultStoreDirectoryLocation() else { return [] }",
         ] {
             #expect(code.contains(listing), "a read-only listing is back on the creating resolver: \(listing)")
         }
