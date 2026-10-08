@@ -95,6 +95,65 @@ nonisolated enum NotificationIdentifiers {
     }
 }
 
+extension NotificationIdentifiers {
+    /// The task a task reminder's identifier names, or `nil` for any other identifier.
+    ///
+    /// **[[T-3049]] (1).** The identifier has always carried the task's UUID, so it is the one
+    /// field a reminder registered by an *older* build — before `userInfo` carried a link — still
+    /// has. `NotificationTapRoute` falls back to it for exactly those. A `habit-reminder-` id names
+    /// a habit, not a task, and answers `nil`.
+    nonisolated static func taskID(fromIdentifier identifier: String) -> UUID? {
+        for prefix in ["task-start-", "task-due-"] where identifier.hasPrefix(prefix) {
+            return UUID(uuidString: String(identifier.dropFirst(prefix.count)))
+        }
+        return nil
+    }
+}
+
+/// What a reminder carries so a tap can open the task it is about, and what a tap opens.
+///
+/// **[[T-3049]] (1).** A reminder used to carry title, body and sound and nothing else, and the
+/// delegate implemented `willPresent` only — so tapping one brought the app forward to wherever it
+/// was and left the user to go and find the task. A task reminder now carries its
+/// `CadenceDeepLink.task(id).url` under `deepLinkUserInfoKey`, and the delegate's `didReceive`
+/// hands the URL this answers to `CadenceDeepLinkManager.shared.handle(_:)` — the exact call both
+/// root views' `.onOpenURL` make, so a reminder tap and a widget tap are one route.
+///
+/// Pure, so the decision is testable without a notification centre: `NotificationManager`'s
+/// delegate only unpacks the response and forwards it.
+nonisolated enum NotificationTapRoute {
+    static let deepLinkUserInfoKey = "cadenceDeepLink"
+
+    /// The `userInfo` a request's content carries: the task link for a task reminder, empty for
+    /// anything else (a habit reminder has no task to open).
+    static func userInfo(for request: CadenceNotificationRequest) -> [String: String] {
+        guard let taskID = NotificationIdentifiers.taskID(fromIdentifier: request.identifier) else { return [:] }
+        return [deepLinkUserInfoKey: CadenceDeepLink.task(taskID).url.absoluteString]
+    }
+
+    /// The link a tap on this notification opens, or `nil` to open nothing.
+    ///
+    /// Only the default action (the tap itself) routes. A link in `userInfo` wins when it is a
+    /// well-formed task link; anything else there — missing, not a string, not a URL, another
+    /// route, a malformed id — falls back to the identifier, which is how a reminder scheduled
+    /// before this change still opens its task. Neither answering is `nil`, and the tap then just
+    /// brings the app forward, as every tap did before. Never a crash, never a guess.
+    static func deepLinkURL(
+        isDefaultAction: Bool,
+        userInfo: [AnyHashable: Any],
+        identifier: String
+    ) -> URL? {
+        guard isDefaultAction else { return nil }
+        if let raw = userInfo[deepLinkUserInfoKey] as? String,
+           let url = URL(string: raw),
+           case .task(let id)? = CadenceDeepLink(url: url) {
+            return CadenceDeepLink.task(id).url
+        }
+        guard let taskID = NotificationIdentifiers.taskID(fromIdentifier: identifier) else { return nil }
+        return CadenceDeepLink.task(taskID).url
+    }
+}
+
 /// The add/remove work a single reconcile pass must perform. Split out of `NotificationManager`
 /// so the diffing rules are a pure, testable function — the manager's own `reconcile` early-returns
 /// under test, so anything left inside it is effectively unverifiable.

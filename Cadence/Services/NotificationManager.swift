@@ -269,11 +269,15 @@ final class NotificationManager: NSObject {
 
     // MARK: - Helpers
 
-    private static func makeContent(for request: CadenceNotificationRequest) -> UNMutableNotificationContent {
+    /// Internal rather than private so a test can read the `userInfo` the OS is actually handed;
+    /// building content touches no notification centre.
+    static func makeContent(for request: CadenceNotificationRequest) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = request.title
         content.body = request.body
         content.sound = .default
+        // [[T-3049]] (1): the link a tap opens. See `NotificationTapRoute`.
+        content.userInfo = NotificationTapRoute.userInfo(for: request)
         return content
     }
 
@@ -300,6 +304,31 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound])
+    }
+
+    /// **[[T-3049]] (1).** A tap on a task reminder opens that task.
+    ///
+    /// The URL comes from `NotificationTapRoute.deepLinkURL`, and it goes to
+    /// `CadenceDeepLinkManager.shared.handle(_:)` — the same call both root views' `.onOpenURL`
+    /// make — rather than back out through `NSWorkspace`/`UIApplication.open`: on macOS an
+    /// external URL can open a second `WindowGroup` window, and on either platform the `cadence`
+    /// scheme could resolve to another installed copy of the app. A response that names no task
+    /// routes nowhere, as every tap did before.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let request = response.notification.request
+        let url = NotificationTapRoute.deepLinkURL(
+            isDefaultAction: response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+            userInfo: request.content.userInfo,
+            identifier: request.identifier
+        )
+        if let url {
+            Task { @MainActor in CadenceDeepLinkManager.shared.handle(url) }
+        }
+        completionHandler()
     }
 }
 
