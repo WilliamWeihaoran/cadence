@@ -2,6 +2,7 @@ import Dispatch
 import Foundation
 import OSLog
 import Security
+import SQLite3
 import SwiftData
 
 struct PersistenceController {
@@ -1116,12 +1117,28 @@ enum StoreBackupReason: String, Codable {
     case startup
     case manual
     case preRestore = "pre-restore"
+    /// Taken by `CadenceArchiveImportFlow` before an archive import in
+    /// `.restoreOverwritingExistingRows` writes anything ([[T-3043]]). Retained like `.preRestore`:
+    /// the newest `maxPreImportBackups` survive a sweep.
+    case preImport = "pre-import"
 
     var displayName: String {
         switch self {
         case .startup: return "Startup"
         case .manual: return "Manual"
         case .preRestore: return "Before Restore"
+        case .preImport: return "Before Import"
+        }
+    }
+
+    /// Whether this backup is taken while the app has the store open and may be writing it
+    /// ([[T-3044]] (b)). The startup and pre-restore backups run before the `ModelContainer` opens;
+    /// these two run from a live session, where a raw copy of `default.store` and then
+    /// `default.store-wal` can straddle a checkpoint and lose the transactions it moved.
+    var isTakenFromARunningApp: Bool {
+        switch self {
+        case .manual, .preImport: return true
+        case .startup, .preRestore: return false
         }
     }
 }
@@ -1272,6 +1289,7 @@ enum StoreBackupManager {
     private static let dailyStartupRetentionDays = 7
     private static let weeklyStartupRetentionWeeks = 4
     private static let maxPreRestoreBackups = 5
+    private static let maxPreImportBackups = 5
 
     /// A restore that failed **and** could not be completely undone (T-1100).
     ///
@@ -1411,12 +1429,30 @@ enum StoreBackupManager {
         }
         try fileManager.createDirectory(at: temporaryURL, withIntermediateDirectories: true)
 
+        // T-3044 (b): from a running app the database is read through SQLite as one snapshot, and
+        // the `-wal`/`-shm` sidecars are not copied — the snapshot already holds every committed
+        // frame, and a restore displaces the live sidecars before it installs this file. A store
+        // file that is not SQLite at all has no WAL to straddle, so it is copied as before.
+        let storeItemURL = storeDirectoryURL.appendingPathComponent(CadenceStoreSupport.storeFilename)
+        let snapshotsDatabase = reason.isTakenFromARunningApp
+            && sourceItems.contains(where: { $0.lastPathComponent == CadenceStoreSupport.storeFilename })
+            && storeFileHasSQLiteHeader(at: storeItemURL)
+
         var copiedNames: [String] = []
         do {
             for source in sourceItems {
-                let destination = temporaryURL.appendingPathComponent(source.lastPathComponent)
+                let name = source.lastPathComponent
+                let destination = temporaryURL.appendingPathComponent(name)
+                if snapshotsDatabase {
+                    if name == CadenceStoreSupport.storeFilename {
+                        try snapshotSQLiteDatabase(at: source, into: destination)
+                        copiedNames.append(name)
+                        continue
+                    }
+                    if Self.databaseSidecarNames.contains(name) { continue }
+                }
                 try fileManager.copyItem(at: source, to: destination)
-                copiedNames.append(source.lastPathComponent)
+                copiedNames.append(name)
             }
 
             let manifest = StoreBackupManifest(
@@ -1437,6 +1473,109 @@ enum StoreBackupManager {
             try? fileManager.removeItem(at: temporaryURL)
             throw error
         }
+    }
+
+    // MARK: - The backup an overwriting import takes first ([[T-3043]])
+
+    /// Why an overwriting import was refused before it wrote anything.
+    nonisolated struct PreImportBackupUnavailable: LocalizedError, Equatable {
+        let detail: String
+
+        var errorDescription: String? { detail }
+    }
+
+    /// Back up the on-disk store `container` writes through, before an import overwrites rows in it.
+    ///
+    /// Resolved from the container rather than from `defaultStoreDirectoryURL()`, so the snapshot
+    /// is of the store the import is about to change and not of whichever store this launch would
+    /// have picked. Answers `nil` only for a container with no on-disk store at all — an in-memory
+    /// one, whose contents end with the process and which no file copy could capture. Every other
+    /// shape **throws**, including a store file that is not where the container says it is,
+    /// because a caller reads a throw as "do not overwrite anything", and silence here would be an
+    /// overwrite with no snapshot: the exact hole this exists to close.
+    ///
+    /// Taken from a running app, so the database goes through `snapshotSQLiteDatabase` ([[T-3044]]
+    /// (b)), not a file copy.
+    @discardableResult
+    static func createPreImportBackup(for container: ModelContainer) throws -> URL? {
+        let onDisk = container.configurations.filter { !$0.isStoredInMemoryOnly }
+        guard !onDisk.isEmpty else { return nil }
+        guard onDisk.count == 1, let storeURL = onDisk.first?.url,
+              storeURL.lastPathComponent == CadenceStoreSupport.storeFilename else {
+            throw PreImportBackupUnavailable(
+                detail: "Cadence could not tell which store file to back up."
+            )
+        }
+        guard let backupURL = try createBackupIfStoreExists(
+            reason: .preImport,
+            storeDirectoryURL: storeURL.deletingLastPathComponent()
+        ) else {
+            throw PreImportBackupUnavailable(
+                detail: "Cadence found no store file at \(storeURL.path) to back up."
+            )
+        }
+        return backupURL
+    }
+
+    // MARK: - Reading a live database as one snapshot ([[T-3044]] (b))
+
+    /// The sidecars a SQLite snapshot makes redundant. Named here, not derived, because they are
+    /// the two `managedStoreItemNames` that belong to the database file rather than beside it.
+    private static let databaseSidecarNames: Set<String> = [
+        "\(CadenceStoreSupport.storeFilename)-wal",
+        "\(CadenceStoreSupport.storeFilename)-shm",
+    ]
+
+    /// Whether the file opens with SQLite's 16-byte magic string. Decides only *how* a backup reads
+    /// the file; it is not the restore validity gate T-3044 (c) still wants.
+    static func storeFileHasSQLiteHeader(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let prefix = try? handle.read(upToCount: 16) else { return false }
+        return prefix == Data("SQLite format 3\0".utf8)
+    }
+
+    /// Write a consistent copy of the database at `source` to `destination` with `VACUUM INTO`.
+    ///
+    /// `VACUUM INTO` reads the source inside one read transaction, so the copy is the database as
+    /// of a single commit — WAL frames included — and no checkpoint by SwiftData, the widget or the
+    /// MCP server can land halfway through it. The connection is opened **read-only**, so it can
+    /// neither checkpoint nor delete the live WAL when it closes. The output is one file with no
+    /// sidecars; a restore displaces the live `-wal`/`-shm` before installing it.
+    static func snapshotSQLiteDatabase(at source: URL, into destination: URL) throws {
+        var database: OpaquePointer?
+        let openStatus = sqlite3_open_v2(source.path, &database, SQLITE_OPEN_READONLY, nil)
+        defer { sqlite3_close_v2(database) }
+        guard openStatus == SQLITE_OK, let database else {
+            throw snapshotFailure(database, status: openStatus, step: "open")
+        }
+        sqlite3_busy_timeout(database, 5_000)
+
+        var statement: OpaquePointer?
+        let prepareStatus = sqlite3_prepare_v2(database, "VACUUM INTO ?1", -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        guard prepareStatus == SQLITE_OK, let statement else {
+            throw snapshotFailure(database, status: prepareStatus, step: "prepare")
+        }
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        let bindStatus = sqlite3_bind_text(statement, 1, destination.path, -1, transient)
+        guard bindStatus == SQLITE_OK else {
+            throw snapshotFailure(database, status: bindStatus, step: "bind")
+        }
+        let stepStatus = sqlite3_step(statement)
+        guard stepStatus == SQLITE_DONE else {
+            throw snapshotFailure(database, status: stepStatus, step: "copy")
+        }
+    }
+
+    private static func snapshotFailure(_ database: OpaquePointer?, status: Int32, step: String) -> NSError {
+        let message = database.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+            ?? String(cString: sqlite3_errstr(status))
+        return NSError(
+            domain: "Cadence.StoreBackup.SQLiteSnapshot",
+            code: Int(status),
+            userInfo: [NSLocalizedDescriptionKey: "Cadence could not read the store to back it up (\(step)): \(message)"]
+        )
     }
 
     static func listBackups() -> [StoreBackupSnapshot] {
@@ -2282,6 +2421,11 @@ enum StoreBackupManager {
         let preRestoreBackups = snapshots
             .filter { $0.reason == preRestoreDisplayName }
             .sorted { $0.createdAt > $1.createdAt }
+        // T-3043: one per overwriting import, so without a cap they would only ever accumulate.
+        let preImportDisplayName = StoreBackupReason.preImport.displayName
+        let preImportBackups = snapshots
+            .filter { $0.reason == preImportDisplayName }
+            .sorted { $0.createdAt > $1.createdAt }
 
         var keptIDs = retainedStartupBackupIDs(
             startupBackups,
@@ -2289,10 +2433,11 @@ enum StoreBackupManager {
             calendar: calendar
         )
         keptIDs.formUnion(preRestoreBackups.prefix(maxPreRestoreBackups).map(\.id))
+        keptIDs.formUnion(preImportBackups.prefix(maxPreImportBackups).map(\.id))
 
+        let automaticReasons: Set<String> = [startupDisplayName, preRestoreDisplayName, preImportDisplayName]
         return snapshots.filter { snapshot in
-            (snapshot.reason == startupDisplayName || snapshot.reason == preRestoreDisplayName)
-                && !keptIDs.contains(snapshot.id)
+            automaticReasons.contains(snapshot.reason) && !keptIDs.contains(snapshot.id)
         }
     }
 

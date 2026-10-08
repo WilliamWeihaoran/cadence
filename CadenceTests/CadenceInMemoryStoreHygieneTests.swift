@@ -103,7 +103,10 @@ struct CadenceInMemoryStoreHygieneTests {
         var occurrences = 0
         for path in paths {
             let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
-            let count = CadenceSourceScan.matchCount("isStoredInMemoryOnly", in: code)
+            // The argument label, so a census of DECLARATIONS does not count a read of the
+            // property -- `StoreBackupManager.createPreImportBackup` filters configurations on it
+            // (T-3043), and that builds no store.
+            let count = CadenceSourceScan.matchCount("isStoredInMemoryOnly:", in: code)
             guard count > 0 else { continue }
             declaring.append(path)
             occurrences += count

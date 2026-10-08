@@ -302,6 +302,17 @@ nonisolated enum CadenceArchiveImportPresentation {
         "Import failed: \(reason)"
     }
 
+    /// An overwriting import that stopped because its backup could not be taken ([[T-3043]]).
+    /// Says that nothing was changed before it says why, because that is the fact the reader needs.
+    static func backupRefusalMessage(_ reason: String) -> String {
+        "Nothing was imported or replaced: Cadence could not back up your data first. (\(reason))"
+    }
+
+    /// Appended to a committed overwriting import's sentence: the backup it took, by folder name.
+    static func preImportBackupNote(_ backupURL: URL) -> String {
+        " Your data as it was before the import is in the backup \(backupURL.lastPathComponent)."
+    }
+
     // MARK: - Reading the chosen file
 
     /// A file chosen through `.fileImporter` arrives security-scoped on both platforms — it is
@@ -466,9 +477,35 @@ final class CadenceArchiveImportFlow {
     /// default argument expression is evaluated in a *nonisolated* context, and the live reconcile
     /// is main-actor isolated. The live one is therefore named at the call site in `confirm()`,
     /// which is isolated, and `nil` means "use it".
-    init(reconcileNotifications: ((ModelContainer) -> Void)? = nil) {
+    init(
+        reconcileNotifications: ((ModelContainer) -> Void)? = nil,
+        backUpBeforeOverwriting: ((ModelContainer) throws -> URL?)? = nil
+    ) {
         self.reconcileNotifications = reconcileNotifications
+        self.backUpBeforeOverwriting = backUpBeforeOverwriting
     }
+
+    /// The snapshot an overwriting import takes before it writes anything ([[T-3043]]).
+    ///
+    /// `.restoreOverwritingExistingRows` rewrites every matched row's fields and relationships, and
+    /// the private-context rollback only undoes a *half* import — so without this a completed
+    /// overwrite the person regrets had nothing to go back to but the last launch's startup backup.
+    /// A throw refuses the import with nothing written; `nil` means there is no on-disk store to
+    /// snapshot (an in-memory one) and the import goes ahead.
+    ///
+    /// **Merge mode takes none, deliberately.** It overwrites no field of any row the store already
+    /// has: it inserts rows the store lacks, links them, raises — never lowers — focus counters,
+    /// and folds legacy notes. Everything that was there before is still there afterwards with the
+    /// same values, so the one thing a merge cannot undo by itself is an *insert*, and a backup is
+    /// not the tool for that — deleting the rows is. A copy of the whole store on every merge would
+    /// cost disk for a regret it does not answer any better.
+    ///
+    /// Injectable for the same reason `reconcileNotifications` is: a test must be able to make it
+    /// fail and see that nothing was written. `nil` resolves to the live door,
+    /// `StoreBackupManager.createPreImportBackup(for:)`, named at the call in `confirm()` rather
+    /// than through `??`: the right-hand side of `??` is a nonisolated autoclosure, and the live
+    /// door is main-actor isolated.
+    private let backUpBeforeOverwriting: ((ModelContainer) throws -> URL?)?
 
     /// A **fresh** context over the same container, never the app's.
     ///
@@ -529,6 +566,20 @@ final class CadenceArchiveImportFlow {
             isWriting = false
             clear()
         }
+        // T-3043: the snapshot comes first, and a snapshot that could not be taken is a refusal.
+        var preImportBackup: URL?
+        if mode == .restoreOverwritingExistingRows {
+            do {
+                if let backUpBeforeOverwriting {
+                    preImportBackup = try backUpBeforeOverwriting(container)
+                } else {
+                    preImportBackup = try StoreBackupManager.createPreImportBackup(for: container)
+                }
+            } catch {
+                statusMessage = CadenceArchiveImportPresentation.backupRefusalMessage(error.localizedDescription)
+                return
+            }
+        }
         do {
             let outcome = try CadenceArchiveImportService.importArchive(
                 pendingData,
@@ -536,6 +587,7 @@ final class CadenceArchiveImportFlow {
                 into: container
             )
             statusMessage = CadenceArchiveImportPresentation.outcomeMessage(outcome)
+                + (preImportBackup.map(CadenceArchiveImportPresentation.preImportBackupNote) ?? "")
             (reconcileNotifications ?? Self.liveReconcileNotifications)(container)
         } catch {
             statusMessage = CadenceArchiveImportPresentation.failureMessage(error.localizedDescription)
