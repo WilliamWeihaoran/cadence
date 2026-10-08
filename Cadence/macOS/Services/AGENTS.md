@@ -104,8 +104,12 @@ directions is a decision, not a refactor.
 **Unit tests reach a live store.** `CadenceTests` has no EventKit sandbox: `RemindersManager.shared`
 is touched from the suite, and its `private init()` runs `refreshAuthorizationState()` and, on a
 granted host, `reload()`s the owner's real reminders into the test process. Do not add a test that
-writes. The open decision on that exposure is [[T-3031]] (an agent app launch and a UI-test launch
-both reach the real databases); it is the owner's and nothing here has narrowed it.
+writes. **An agent app launch and a UI-test launch no longer reach the real Calendar** ([[T-3031]]):
+`CadenceEventKitLaunchGate` (`Cadence/Services/`) disarms `CalendarManager` and `iOSCalendarManager`
+on `CADENCE_LOCAL_STORE_ONLY=1`, `CADENCE_UI_TEST_MODE=1` or a `CADENCE_UI_TEST_STORE_ID` — no
+authorization read, no observer, every write `.notAuthorized`. A `CadenceTests` host sets none of
+them and is unchanged. `RemindersManager` is **not yet gated** (its file was leased); T-3031 stays
+open for that half. Pinned by `CadenceTests/CadenceEventKitLaunchGateTests`.
 
 **[[T-3032]] is closed and changed how a test gets an authorized `CalendarManager`.**
 `isAuthorized` is `private(set)`, so the forced `CalendarManager.shared.isAuthorized = true` that

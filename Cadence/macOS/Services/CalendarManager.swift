@@ -39,8 +39,8 @@ final class CalendarManager {
     /// an asymmetry in the tree rather than a matter of taste. Inside the type the value still has
     /// exactly the three writers it always had — `applyAuthorizationStatus`, `requestAccess`'s
     /// refusal branch, and (DEBUG only) the test seam below — and *when* a write happens is
-    /// unchanged; T-3032 is about who may set the flag, not about when Cadence may write. The open
-    /// question of what an agent launch may reach at all is T-3031 and is the owner's.
+    /// unchanged; T-3032 is about who may set the flag, not about when Cadence may write. What an
+    /// agent or UI-test launch may reach is T-3031: nothing — see `isEventKitDisarmed`.
     private(set) var isAuthorized: Bool = false
 
     /// The most recent write failure, for a surface to present and clear. Views bind an alert to
@@ -52,6 +52,9 @@ final class CalendarManager {
 
     /// True when the user has explicitly denied access — button should open System Settings instead of re-requesting.
     var isDenied: Bool {
+        // [[T-3031]]: a disarmed launch does not ask TCC anything, so it is never "denied" either —
+        // which also keeps the Connect button from sending an agent to System Settings.
+        guard !isEventKitDisarmed else { return false }
         let status = EKEventStore.authorizationStatus(for: .event)
         return status == .denied || status == .restricted
     }
@@ -59,10 +62,29 @@ final class CalendarManager {
     private let store: EKEventStore
     private var storeObserver: NSObjectProtocol?
 
+    /// **[[T-3031]]. `true` on an agent (`run-macos-app.sh`) or `CadenceUITests` launch** — see
+    /// `CadenceEventKitLaunchGate` for the three variables and why any one is enough.
+    ///
+    /// Such a launch inherits the owner's Calendar grant through the debug build's bundle id, so
+    /// without this `shared` read `.fullAccess`, observed the real store, and every create, update
+    /// and delete below landed in the owner's real Calendar. When it is set the manager is inert
+    /// at every door EventKit has: authorization is never read and always applies as not granted
+    /// (`refreshAuthorizationState`, `requestAccess`, `applyAuthorizationStatus`), no
+    /// `EKEventStoreChanged` observer is ever registered (`startObserving`), and the two sinks every
+    /// write funnels through (`save`, `deleteEvent`) refuse with `.notAuthorized` even if the flag
+    /// were somehow true — so the write gate does not rest on the authorization gate alone.
+    ///
+    /// Fixed at construction: a launch's environment does not change while it runs.
+    private let isEventKitDisarmed: Bool
+
     private init() {
         self.store = EKEventStore()
+        self.isEventKitDisarmed = CadenceEventKitLaunchGate.isDisarmedForThisProcess
         refreshAuthorizationState()
     }
+
+    /// Whether a live `EKEventStoreChanged` observer is registered. Read by the T-3031 tests.
+    var isObservingStoreChanges: Bool { storeObserver != nil }
 
     #if DEBUG
     /// **T-3032 — the only way to obtain an authorized `CalendarManager` from outside the type, and
@@ -95,17 +117,44 @@ final class CalendarManager {
     init(testStore: EKEventStore, authorizedForTesting: Bool) {
         self.store = testStore
         self.isAuthorized = authorizedForTesting
+        self.isEventKitDisarmed = false
+    }
+
+    /// **[[T-3031]] — a manager built as an agent or UI-test launch would build `shared`.**
+    ///
+    /// The disarm decision is taken from `launchEnvironment` through the same
+    /// `CadenceEventKitLaunchGate.isDisarmed(in:)` production reads, so a test can hand it the
+    /// exact variables `run-macos-app.sh` and the UI suites set without the test host carrying
+    /// them. `authorizedForTesting` seeds the flag *past* the gate on purpose: it lets a test prove
+    /// the write sinks refuse on their own, independently of `isAuthorized`. Same store rule as the
+    /// seam above — the caller hands over a store it made, and writes are driven only with
+    /// `EKEvent`s from a foreign store, never through `defaultWritableCalendar`.
+    init(gatedTestStore store: EKEventStore, launchEnvironment: [String: String], authorizedForTesting: Bool) {
+        self.store = store
+        self.isAuthorized = authorizedForTesting
+        self.isEventKitDisarmed = CadenceEventKitLaunchGate.isDisarmed(in: launchEnvironment)
+    }
+
+    /// Drives `applyAuthorizationStatus` with a status the test chooses, so the disarmed branch is
+    /// checked against `.fullAccess` without asking the host's real TCC state.
+    func applyAuthorizationStatusForTesting(_ status: EKAuthorizationStatus) {
+        applyAuthorizationStatus(status)
     }
     #endif
 
     // MARK: - Authorization
 
     func refreshAuthorizationState() {
+        // [[T-3031]]: a disarmed launch never reads the grant it inherited.
+        guard !isEventKitDisarmed else {
+            applyAuthorizationStatus(.notDetermined)
+            return
+        }
         applyAuthorizationStatus(EKEventStore.authorizationStatus(for: .event))
     }
 
     private func applyAuthorizationStatus(_ status: EKAuthorizationStatus) {
-        if status == .fullAccess {
+        if status == .fullAccess, !isEventKitDisarmed {
             isAuthorized = true
             startObserving()
         } else {
@@ -115,6 +164,13 @@ final class CalendarManager {
     }
 
     func requestAccess() async -> Bool {
+        // [[T-3031]]: no prompt and no grant on a disarmed launch, whatever TCC would say.
+        guard !isEventKitDisarmed else {
+            await MainActor.run {
+                applyAuthorizationStatus(.notDetermined)
+            }
+            return false
+        }
         let status = EKEventStore.authorizationStatus(for: .event)
         switch status {
         case .fullAccess:
@@ -156,7 +212,8 @@ final class CalendarManager {
 
     /// Start listening for EKEventStoreChanged notifications. Call once; safe to call repeatedly.
     func startObserving() {
-        guard storeObserver == nil else { return }
+        // [[T-3031]]: a disarmed launch never subscribes to the owner's real store.
+        guard storeObserver == nil, !isEventKitDisarmed else { return }
         storeObserver = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged,
             object: store,
@@ -491,6 +548,8 @@ final class CalendarManager {
     @discardableResult
     func deleteEvent(_ event: EKEvent, scope: CalendarRecurrenceEditScope = .thisOccurrence) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
+        // [[T-3031]]: the delete sink refuses on a disarmed launch even past the flag.
+        guard !isEventKitDisarmed else { return record(.notAuthorized) }
         do {
             try store.remove(event, span: scope.eventSpan)
             return nil
@@ -511,6 +570,12 @@ final class CalendarManager {
     /// notification means no `storeVersion` bump and no refetch. `reset()` returns the object to
     /// its last saved state so the next render shows what is really there.
     private func save(_ event: EKEvent, span: EKSpan, describing operation: String) -> CalendarWriteFailure? {
+        // [[T-3031]]: the save sink refuses on a disarmed launch even past the flag, and puts the
+        // in-memory edit back exactly as a failed save does.
+        guard !isEventKitDisarmed else {
+            event.reset()
+            return record(.notAuthorized)
+        }
         do {
             try store.save(event, span: span)
             return nil

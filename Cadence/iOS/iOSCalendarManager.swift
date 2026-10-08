@@ -13,11 +13,19 @@ final class iOSCalendarManager {
     private let store = EKEventStore()
     private var storeObserver: NSObjectProtocol?
 
+    /// **[[T-3031]]. `true` on an agent or `CadenceUITests` launch** — the same
+    /// `CadenceEventKitLaunchGate` predicate the desktop `CalendarManager` reads. When set, this
+    /// manager never reads or requests authorization, never registers the `EKEventStoreChanged`
+    /// observer, and every write below refuses with `.notAuthorized` even if `isAuthorized` (a
+    /// plain `var` here) were set from outside.
+    private let isEventKitDisarmed = CadenceEventKitLaunchGate.isDisarmedForThisProcess
+
     private init() {
         refreshAuthorizationState()
     }
 
     var isDenied: Bool {
+        guard !isEventKitDisarmed else { return false }
         let status = EKEventStore.authorizationStatus(for: .event)
         return status == .denied || status == .restricted
     }
@@ -43,11 +51,21 @@ final class iOSCalendarManager {
     }
 
     func refreshAuthorizationState() {
+        guard !isEventKitDisarmed else {
+            applyAuthorizationStatus(.notDetermined)
+            return
+        }
         applyAuthorizationStatus(EKEventStore.authorizationStatus(for: .event))
     }
 
     @discardableResult
     func requestAccess() async -> Bool {
+        guard !isEventKitDisarmed else {
+            await MainActor.run {
+                applyAuthorizationStatus(.notDetermined)
+            }
+            return false
+        }
         let status = EKEventStore.authorizationStatus(for: .event)
         switch status {
         case .fullAccess:
@@ -133,7 +151,7 @@ final class iOSCalendarManager {
         notes: String? = nil,
         isAllDay: Bool = false
     ) -> CalendarWriteFailure? {
-        guard isAuthorized else { return .notAuthorized }
+        guard isAuthorized, !isEventKitDisarmed else { return .notAuthorized }
         guard endDate > startDate else { return .invalidRange }
         guard let calendar = writableCalendar(with: calendarID) ?? writableCalendars.first else {
             return .noWritableCalendar
@@ -171,7 +189,7 @@ final class iOSCalendarManager {
         span: EKSpan = .thisEvent,
         isAllDay: Bool = false
     ) -> CalendarWriteFailure? {
-        guard isAuthorized else { return .notAuthorized }
+        guard isAuthorized, !isEventKitDisarmed else { return .notAuthorized }
         guard endDate > startDate else { return .invalidRange }
         // A read-only calendar is the "no calendar available to write to" case, one event at a
         // time: EventKit will refuse the save, and the notice already names that possibility.
@@ -203,7 +221,7 @@ final class iOSCalendarManager {
 
     @discardableResult
     func deleteEvent(_ event: EKEvent, span: EKSpan = .thisEvent) -> CalendarWriteFailure? {
-        guard isAuthorized else { return .notAuthorized }
+        guard isAuthorized, !isEventKitDisarmed else { return .notAuthorized }
         guard canModify(event) else { return .noWritableCalendar }
         do {
             try store.remove(event, span: span)
@@ -227,7 +245,7 @@ final class iOSCalendarManager {
     /// for that: `CalendarWriteFailure` is shared now, so all five writes name one.
     @discardableResult
     func updateEventNotes(_ event: EKEvent, notes: String) -> CalendarWriteFailure? {
-        guard isAuthorized else { return .notAuthorized }
+        guard isAuthorized, !isEventKitDisarmed else { return .notAuthorized }
         guard canModify(event) else { return .noWritableCalendar }
         let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let nextNotes = trimmed.isEmpty ? nil : notes
@@ -256,7 +274,7 @@ final class iOSCalendarManager {
     }
 
     private func applyAuthorizationStatus(_ status: EKAuthorizationStatus) {
-        if status == .fullAccess {
+        if status == .fullAccess, !isEventKitDisarmed {
             isAuthorized = true
             startObserving()
         } else {
@@ -266,7 +284,7 @@ final class iOSCalendarManager {
     }
 
     private func startObserving() {
-        guard storeObserver == nil else { return }
+        guard storeObserver == nil, !isEventKitDisarmed else { return }
         storeObserver = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged,
             object: store,
