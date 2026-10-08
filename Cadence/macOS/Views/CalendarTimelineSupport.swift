@@ -44,32 +44,11 @@ struct CalendarTimelineViewportMetrics {
     }
 }
 
-struct DayBoundaryScrollTargetBehavior: ScrollTargetBehavior {
-    let dayWidth: CGFloat
-
-    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        let safeDayWidth = max(dayWidth, 1)
-        let maxOffsetX = max(0, context.contentSize.width - context.containerSize.width)
-        let rawDay = target.rect.minX / safeDayWidth
-        let baseDay = floor(rawDay)
-        let progress = rawDay - baseDay
-        let velocityX = context.velocity.dx
-        let velocityThreshold: CGFloat = 80
-        let snappedDay: CGFloat
-
-        if velocityX > velocityThreshold {
-            snappedDay = progress > 0.14 ? baseDay + 1 : baseDay
-        } else if velocityX < -velocityThreshold {
-            snappedDay = progress < 0.86 ? baseDay : baseDay + 1
-        } else {
-            snappedDay = rawDay.rounded(.toNearestOrAwayFromZero)
-        }
-
-        let snappedX = snappedDay * safeDayWidth
-        target.rect.origin.x = min(max(snappedX, 0), maxOffsetX)
-        target.rect.size.width = context.containerSize.width
-    }
-}
+/// `DayBoundaryScrollTargetBehavior` used to be declared here, behind this file's `#if os(macOS)`.
+/// It is `Cadence/Shared/CadenceCalendarTimedGridSupport.swift` now, over
+/// `CadenceCalendarDaySnap.settledOffsetX`, because the iOS timed grid needs the same rule and a
+/// layout rule owned privately by one platform is how the two surfaces drift. This page's call
+/// site in `CalendarTimelineViewportSupportViews` is unchanged.
 
 /// `@Observable`, deliberately not `ObservableObject`. `headerOffset` is written on every
 /// horizontal scroll frame, and `ObservableObject` invalidates *every* subscriber on any

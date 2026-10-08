@@ -281,3 +281,90 @@ enum CadenceCalendarTimelineWindow {
         }
     }
 }
+
+// MARK: - Timed grid: settling on a day boundary
+
+/// Where a horizontal scroll of a timed grid is allowed to come to rest: on a day edge, never
+/// between two of them.
+///
+/// **One rule, stated once, because this is the shape the DST family had.** The arithmetic below
+/// was written for the Mac and lived inside `DayBoundaryScrollTargetBehavior` in
+/// `Cadence/macOS/Views/CalendarTimelineSupport.swift`, behind an `#if os(macOS)`. The iOS timed
+/// grid's horizontal `ScrollView` carried no `scrollTargetBehavior` at all, so it settled wherever
+/// deceleration happened to stop it and parked the user between two columns with a sliver of each
+/// on screen — the Mac landing cleanly on a day edge every time and iOS never doing so is one
+/// layout rule owned privately by one platform, which is the drift this repository keeps paying
+/// for. The behaviour is in `Shared/` now and both grids apply the same instance of it.
+///
+/// Three cases, and the two fling ones are not symmetrical by accident. A fling is a statement of
+/// intent — the user wants the *next* day, not the nearest one — so a forward fling takes the next
+/// column once it has committed `flungPastProgress` of the current one, and a backward fling keeps
+/// the column it is leaving until it has let go of all but that same fraction. A drag released
+/// below `flingVelocity` has no stated direction, so it goes to whichever edge is nearer.
+///
+/// Pure, and deliberately so: `ScrollTarget` and `TargetContext` cannot be built in a test, so a
+/// rule that lived only inside `updateTarget` could only ever be pinned by reading source. Every
+/// figure here and every edge — the first column, the last column, a fling across several columns,
+/// a drag released mid-column either way — is checked against this function by
+/// `CadenceCalendarDayBoundarySnapTests`.
+enum CadenceCalendarDaySnap {
+    /// Below this, in points per second, a release is a drag rather than a fling and rounds to the
+    /// nearer edge.
+    static let flingVelocity: CGFloat = 80
+
+    /// How far into a column a fling must already have carried before it is allowed to claim the
+    /// next one. Read forwards as `progress > flungPastProgress`, and backwards against its
+    /// complement: `progress < 1 - flungPastProgress` keeps the column being left.
+    static let flungPastProgress: CGFloat = 0.14
+
+    /// The resting horizontal content offset for a scroll proposing `proposedOffsetX` at
+    /// `velocityX`, in a grid of `dayWidth` columns whose content can be scrolled to
+    /// `maximumOffsetX` at most.
+    ///
+    /// The clamp is the last step and it is what makes the end of the loaded range honest: when the
+    /// content's scrollable extent is not itself a whole number of columns, the final resting place
+    /// is that extent rather than a column edge past it. Nothing else can return a fractional
+    /// column.
+    static func settledOffsetX(
+        proposedOffsetX: CGFloat,
+        dayWidth: CGFloat,
+        velocityX: CGFloat,
+        maximumOffsetX: CGFloat
+    ) -> CGFloat {
+        let safeDayWidth = max(dayWidth, 1)
+        let maxOffsetX = max(0, maximumOffsetX)
+        let rawDay = proposedOffsetX / safeDayWidth
+        let baseDay = floor(rawDay)
+        let progress = rawDay - baseDay
+        let snappedDay: CGFloat
+
+        if velocityX > flingVelocity {
+            snappedDay = progress > flungPastProgress ? baseDay + 1 : baseDay
+        } else if velocityX < -flingVelocity {
+            snappedDay = progress < 1 - flungPastProgress ? baseDay : baseDay + 1
+        } else {
+            snappedDay = rawDay.rounded(.toNearestOrAwayFromZero)
+        }
+
+        return min(max(snappedDay * safeDayWidth, 0), maxOffsetX)
+    }
+}
+
+/// The `ScrollTargetBehavior` both timed grids attach, wrapping `CadenceCalendarDaySnap`.
+///
+/// Unconditional — see the note on `CadenceCalendarDaySnap` for why it is no longer macOS-only.
+/// It holds no arithmetic of its own: everything it decides is `settledOffsetX`, so the two
+/// platforms cannot come to disagree without the shared test going red.
+struct DayBoundaryScrollTargetBehavior: ScrollTargetBehavior {
+    let dayWidth: CGFloat
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        target.rect.origin.x = CadenceCalendarDaySnap.settledOffsetX(
+            proposedOffsetX: target.rect.minX,
+            dayWidth: dayWidth,
+            velocityX: context.velocity.dx,
+            maximumOffsetX: context.contentSize.width - context.containerSize.width
+        )
+        target.rect.size.width = context.containerSize.width
+    }
+}

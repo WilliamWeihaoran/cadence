@@ -791,3 +791,246 @@ struct CadenceCalendarWeekVisibleColumnTests {
         #expect(range.count > 2)
     }
 }
+
+/// Where a sideways scroll of a timed grid comes to rest.
+///
+/// **The defect, in the owner's words: "the ios calendar pages do not snap to the boundaries of the
+/// day, but it works fine on macos" (T-3075).** The Mac's Calendar page has attached
+/// `DayBoundaryScrollTargetBehavior` since it was written; the iOS timed grid's horizontal
+/// `ScrollView` carried no scroll target behaviour at all, so it settled wherever deceleration
+/// stopped it and parked the user across two columns. Not a mis-sized snap — an absent one.
+///
+/// The arithmetic is one shared function now (`CadenceCalendarDaySnap.settledOffsetX`) and both
+/// platforms reach it through the one behaviour, which is what this suite is really for: the rule
+/// cannot drift apart again without something here going red. `ScrollTarget` and `TargetContext`
+/// cannot be constructed in a test, so the behaviour's two call sites are pinned by reading source
+/// and everything it *decides* is pinned as arithmetic.
+struct CadenceCalendarDayBoundarySnapTests {
+    /// An iPad week at 1022pt of pane: seven columns of the canvas less its rail.
+    private static let columnWidth: CGFloat = CadenceCalendarWeekGridLayout.dayColumnWidth(
+        availableWidth: 1022 - CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: true),
+        dayCount: CadenceCalendarWeekGridLayout.visibleDayCount(for: .week),
+        isRegularWidth: true
+    )
+
+    /// A range long enough that nothing below is clamped by accident.
+    private static let farMaximum: CGFloat = columnWidth * 1000
+
+    private func settled(
+        _ proposed: CGFloat,
+        velocity: CGFloat = 0,
+        width: CGFloat = columnWidth,
+        maximum: CGFloat = farMaximum
+    ) -> CGFloat {
+        CadenceCalendarDaySnap.settledOffsetX(
+            proposedOffsetX: proposed,
+            dayWidth: width,
+            velocityX: velocity,
+            maximumOffsetX: maximum
+        )
+    }
+
+    /// The whole of the rule, as a property rather than as a list of cases: wherever a scroll is
+    /// proposed and at whatever velocity, what it settles on is a **whole number of columns**.
+    ///
+    /// This is the assertion the defect fails. Every other test here says *which* column.
+    @Test func everySettledOffsetIsAWholeNumberOfColumns() {
+        let width = Self.columnWidth
+        for step in stride(from: 0.0 as CGFloat, through: 40.0, by: 0.37) {
+            for velocity in [-900.0, -120.0, -80.0, 0.0, 40.0, 80.0, 120.0, 900.0] as [CGFloat] {
+                let offset = settled(step * width, velocity: velocity)
+                let columns = offset / width
+                #expect(
+                    abs(columns - columns.rounded()) < 0.0001,
+                    "offset \(offset) at velocity \(velocity) is \(columns) columns, not a whole one"
+                )
+            }
+        }
+    }
+
+    /// A drag released mid-column with no fling behind it goes to the nearer edge — in both
+    /// directions, which is the half a `floor`-shaped fix would get wrong.
+    @Test func aDragReleasedMidColumnGoesToTheNearerEdge() {
+        let width = Self.columnWidth
+
+        // Just past the middle of column 5: forward to 6.
+        #expect(settled(width * 5.51) == width * 6)
+        // Just short of it: back to 5.
+        #expect(settled(width * 5.49) == width * 5)
+
+        // A slow release is a drag, not a fling: the threshold is exclusive on both sides, so a
+        // velocity exactly at it still rounds.
+        #expect(settled(width * 5.9, velocity: CadenceCalendarDaySnap.flingVelocity) == width * 6)
+        #expect(settled(width * 5.1, velocity: -CadenceCalendarDaySnap.flingVelocity) == width * 5)
+    }
+
+    /// A fling states a direction, so it commits to the next column on far less than half of one —
+    /// and refuses to be dragged back by the rounding that a slow release would apply.
+    @Test func aFlingCommitsToTheColumnItIsHeadedFor() {
+        let width = Self.columnWidth
+        let fling = CadenceCalendarDaySnap.flingVelocity + 1
+        let past = CadenceCalendarDaySnap.flungPastProgress
+
+        // Forward, barely into column 5: a drag would round back to 5, a fling takes 6.
+        #expect(settled(width * (5 + past + 0.01), velocity: fling) == width * 6)
+        #expect(settled(width * (5 + past + 0.01)) == width * 5)
+        // Forward but not yet committed: stays on 5.
+        #expect(settled(width * (5 + past - 0.01), velocity: fling) == width * 5)
+
+        // Backward, barely out of column 5: a drag would round forward to 6, a fling keeps 5.
+        #expect(settled(width * (6 - past - 0.01), velocity: -fling) == width * 5)
+        #expect(settled(width * (6 - past - 0.01)) == width * 6)
+        // Backward and all but gone from 5: it has reached 6's edge and stays there.
+        #expect(settled(width * (6 - past + 0.01), velocity: -fling) == width * 6)
+    }
+
+    /// A fling that crosses several columns lands on the column deceleration proposed, not on the
+    /// one it started from: the behaviour settles the *proposed* offset, so the distance a fling
+    /// carries is the scroll view's to decide and the edge it stops on is this rule's.
+    @Test func aFlingAcrossSeveralColumnsSettlesOnTheColumnItReaches() {
+        let width = Self.columnWidth
+        let fling = CadenceCalendarDaySnap.flingVelocity * 12
+
+        #expect(settled(width * 12.6, velocity: fling) == width * 13)
+        #expect(settled(width * 12.05, velocity: fling) == width * 12)
+        #expect(settled(width * 2.4, velocity: -fling) == width * 2)
+        #expect(settled(width * 2.95, velocity: -fling) == width * 3)
+    }
+
+    /// The first column of the loaded range. A backward fling, a backward drag and the rubber-band
+    /// offsets past the leading edge all rest at 0 rather than at a negative column.
+    @Test func theFirstColumnIsTheFloor() {
+        let width = Self.columnWidth
+        let fling = CadenceCalendarDaySnap.flingVelocity * 6
+
+        #expect(settled(width * 0.4, velocity: -fling) == 0)
+        #expect(settled(width * 0.4) == 0)
+        #expect(settled(0) == 0)
+        // Rubber-banded past the leading edge: `floor` of a negative raw column is -1, so a fix
+        // that trusted `floor` alone would settle one column *behind* the content.
+        #expect(settled(-width * 0.3) == 0)
+        #expect(settled(-width * 0.3, velocity: -fling) == 0)
+        #expect(settled(-width * 2) == 0)
+    }
+
+    /// The last column. The clamp is the final step, so when the scrollable extent is **not** a
+    /// whole number of columns — which is what a trailing partial column means — the end of the
+    /// range is the resting place rather than a column edge past the content.
+    @Test func theLastColumnIsTheCeilingEvenWhenTheRangeEndsMidColumn() {
+        let width = Self.columnWidth
+        let fling = CadenceCalendarDaySnap.flingVelocity * 6
+
+        // A range ending exactly on a column edge rests on that edge.
+        let wholeMaximum = width * 20
+        #expect(settled(width * 19.8, velocity: fling, maximum: wholeMaximum) == wholeMaximum)
+        #expect(settled(width * 25, velocity: fling, maximum: wholeMaximum) == wholeMaximum)
+
+        // A range ending mid-column cannot rest on the next edge, because the content stops first.
+        let partialMaximum = width * 20.4
+        #expect(settled(width * 20.3, velocity: fling, maximum: partialMaximum) == partialMaximum)
+        // A drag released in that trailing stub still prefers the clean edge behind it — the clamp
+        // is a ceiling, not a magnet.
+        #expect(settled(width * 20.3, maximum: partialMaximum) == width * 20)
+        #expect(settled(width * 19.6, maximum: partialMaximum) == width * 20)
+    }
+
+    /// A programmatic jump is already on an edge, so the behaviour must leave it exactly where it
+    /// was put. `CadenceCalendarTimelineWindow.scrollOffsetX(forIndex:columnWidth:)` is what every
+    /// jump on the iOS grid goes through — the initial placement, the toolbar's date jump and the
+    /// rotation re-align — and a settle that moved any of them by a column would rename the day the
+    /// user asked for.
+    @Test func aProgrammaticJumpToAColumnIsLeftWhereItWasPut() {
+        let width = Self.columnWidth
+        for index in [0, 1, 7, 210, 211, 419] {
+            let offset = CadenceCalendarTimelineWindow.scrollOffsetX(forIndex: index, columnWidth: width)
+            #expect(settled(offset) == offset, "jump to column \(index) was moved")
+            #expect(settled(offset, velocity: 400) == offset)
+            #expect(settled(offset, velocity: -400) == offset)
+        }
+    }
+
+    /// A column width of zero is the first layout pass, before the grid has a width. The rule must
+    /// answer a number rather than a `NaN` the scroll view then settles on.
+    @Test func aGridWithNoWidthYetSettlesAtZeroRatherThanNaN() {
+        let offset = settled(240, width: 0, maximum: 0)
+        #expect(offset.isFinite)
+        #expect(offset == 0)
+    }
+
+    /// **The cross-platform half, and the point of the ticket.** One behaviour, declared once in
+    /// `Shared/`, attached by both timed grids — so the Mac's day edge and the phone's are the same
+    /// edge by construction rather than by two files agreeing.
+    @Test func bothTimedGridsAttachTheOneSharedDayBoundaryBehaviour() throws {
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceCalendarTimedGridSupport.swift")
+        )
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarTimelineViewportSupportViews.swift")
+        )
+        let ios = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        let macSupport = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarTimelineSupport.swift")
+        )
+
+        // Non-vacuity: the right files, past the stripper, still holding the views this is about.
+        #expect(ios.contains("struct iOSCalendarTimelineGrid: View"))
+        #expect(mac.contains("ScrollView(.horizontal"))
+
+        // Declared once, in Shared, and nowhere else.
+        #expect(shared.contains("struct DayBoundaryScrollTargetBehavior: ScrollTargetBehavior"))
+        #expect(!macSupport.contains("struct DayBoundaryScrollTargetBehavior"))
+        #expect(!ios.contains("struct DayBoundaryScrollTargetBehavior"))
+
+        // Attached by both grids, each over its own column width.
+        for (name, source) in [("macOS", mac), ("iOS", ios)] {
+            #expect(
+                CadenceSourceScan.matchCount(
+                    "\\.scrollTargetBehavior\\(DayBoundaryScrollTargetBehavior\\(dayWidth: colWidth\\)\\)",
+                    in: source
+                ) == 1,
+                "\(name) does not attach the shared day-boundary behaviour exactly once"
+            )
+        }
+
+        // And neither grid re-spells the arithmetic the behaviour already owns.
+        for (name, source) in [("macOS", mac), ("iOS", ios), ("macOS support", macSupport)] {
+            #expect(
+                CadenceSourceScan.matchCount("rounded\\(\\.toNearestOrAwayFromZero\\)", in: source) == 0,
+                "\(name) carries a second copy of the settle rule"
+            )
+        }
+        #expect(
+            CadenceSourceScan.matchCount("rounded\\(\\.toNearestOrAwayFromZero\\)", in: shared) == 1
+        )
+    }
+
+    /// The Board is **not** covered, and that is a decision rather than an omission.
+    ///
+    /// `iOSCalendarBoardView` already pages at compact width through `.viewAligned`, and
+    /// deliberately does not at regular width — "paging a multi-column board would snap away days
+    /// that are fully readable where they are". A board column is not sized to a fraction of the
+    /// pane either: `CalendarBoardPlannerSupport.compactColumnWidth` sizes it so the *next* day
+    /// peeks in, which is the one place in the calendar where a partial column is the point. So the
+    /// board keeps its own behaviour, and this pins that it still has one.
+    @Test func theBoardKeepsItsOwnPagingAndItsDeliberatePeek() throws {
+        let board = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBoardView.swift")
+        )
+        #expect(board.contains("struct iOSCalendarBoardPlanner: View"))
+        #expect(board.contains("content.scrollTargetBehavior(.viewAligned)"))
+        #expect(!board.contains("DayBoundaryScrollTargetBehavior"))
+
+        // The peek is real arithmetic, not a stopping accident: a compact column plus its inset and
+        // spacing is narrower than the container by the peek fraction.
+        let container: CGFloat = 393
+        let width = CalendarBoardPlannerSupport.compactColumnWidth(
+            containerWidth: container,
+            leadingInset: iOSCalendarBoardMetrics.horizontalPadding(isRegularWidth: false),
+            columnSpacing: iOSCalendarBoardMetrics.columnSpacing
+        )
+        #expect(width < container)
+        #expect(width > container * 0.5)
+    }
+}

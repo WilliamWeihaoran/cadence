@@ -300,6 +300,24 @@ struct iOSCalendarTimelineGrid: View {
             }
         }
         .scrollIndicators(.hidden)
+        // **A sideways scroll settles on a day edge, never between two of them (T-3075).** This
+        // grid had no scroll target behaviour at all, so deceleration stopped it wherever it
+        // happened to run out and left the user parked across two columns with a sliver of each —
+        // on the one surface in the app whose columns *are* the days. The Mac's Calendar page has
+        // settled on a day edge since it was written, through this same
+        // `DayBoundaryScrollTargetBehavior`; the type was declared behind that page's
+        // `#if os(macOS)` and is in `Shared/` now, so the two grids share one rule rather than each
+        // owning a copy of it. `CadenceCalendarDaySnap` holds the arithmetic.
+        //
+        // The column index below is **not** that rule and never was: it rounds the offset it is
+        // *reported*, which is what makes the toolbar name the right day, and leaves the scroll
+        // view resting wherever it rested. Rounding a report is not settling a scroll.
+        //
+        // No `scrollTargetLayout()`, unlike the Board's `.viewAligned`: this behaviour reads the
+        // proposed offset and the column width, not the frames of the content's subviews — which is
+        // what lets it work over the offset-positioned `ZStack` this grid windows its columns with
+        // (see `CadenceCalendarTimelineWindow.renderedIndexRange`) instead of a lazy stack.
+        .scrollTargetBehavior(DayBoundaryScrollTargetBehavior(dayWidth: colWidth))
         .scrollPosition($horizontalScrollPosition)
         // `Int`, deliberately, not the raw offset: `onScrollGeometryChange` only runs its action
         // when the transformed value *changes*, so reducing the offset to a column index here means
