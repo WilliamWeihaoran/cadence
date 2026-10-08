@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 import UserNotifications
 
 /// Thin adapter over `UNUserNotificationCenter`, modeled on `CalendarManager`'s shape:
@@ -24,6 +25,15 @@ final class NotificationManager: NSObject {
     /// (never asked) reads `false` here, same as `.authorized`; only the not-authorized *and*
     /// already-asked state is a fault the reader has to go and fix.
     var isDenied: Bool = false
+
+    /// **[[T-3049]] (2).** Every request the most recent reconcile handed the OS and had refused,
+    /// in the order they were added. Replaced, not appended, on every pass that reaches a decision —
+    /// a pass that takes the `cancelAll()` branch adds nothing and so clears it — so this always
+    /// answers "what did the last reconcile fail to schedule", never a running history. Nothing
+    /// renders it; it exists so "scheduled" and "the OS refused it" stop being the same silence.
+    private(set) var lastReconcileRegistrationFailures: [NotificationRegistrationFailure] = []
+
+    private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "Notifications")
 
     // `lazy` is deliberate: a plain stored-property initializer runs before `super.init()`,
     // which would touch `UNUserNotificationCenter.current()` unconditionally on every
@@ -119,6 +129,7 @@ final class NotificationManager: NSObject {
 
         let notificationsEnabled = CadenceDefaults.store.bool(forKey: Self.notificationsEnabledDefaultsKey)
         guard notificationsEnabled, isAuthorized else {
+            lastReconcileRegistrationFailures = []
             await cancelAll()
             return
         }
@@ -140,15 +151,42 @@ final class NotificationManager: NSObject {
             center.removePendingNotificationRequests(withIdentifiers: diff.identifiersToRemove)
         }
 
-        for request in diff.requestsToAdd {
-            let content = Self.makeContent(for: request)
+        lastReconcileRegistrationFailures = await Self.register(diff.requestsToAdd) { osRequest in
+            try await self.center.add(osRequest)
+        }
+    }
+
+    /// Hands each request to `add` and returns the ones it refused, logging each refusal.
+    ///
+    /// **[[T-3049]] (2).** This loop used to be `try? await center.add(osRequest)` inline in
+    /// `reconcile`, which swallowed the error — so nothing in the app or in any log could tell a
+    /// scheduled reminder from one the OS refused, and [[T-3047]]'s stale-authorization case was
+    /// silent for exactly that reason. It is a standalone function, with the OS call injected,
+    /// because `reconcile` early-returns under test: this is the one seam where a refusal can be
+    /// driven and the record of it read back. A refusal does not stop the pass — every later
+    /// request is still attempted.
+    static func register(
+        _ requests: [CadenceNotificationRequest],
+        adding add: (UNNotificationRequest) async throws -> Void
+    ) async -> [NotificationRegistrationFailure] {
+        var failures: [NotificationRegistrationFailure] = []
+        for request in requests {
             let osRequest = UNNotificationRequest(
                 identifier: request.identifier,
-                content: content,
-                trigger: Self.makeTrigger(for: request)
+                content: makeContent(for: request),
+                trigger: makeTrigger(for: request)
             )
-            try? await center.add(osRequest)
+            do {
+                try await add(osRequest)
+            } catch {
+                let reason = String(describing: error)
+                logger.error(
+                    "Notification registration refused for \(request.identifier, privacy: .public): \(reason, privacy: .public)"
+                )
+                failures.append(NotificationRegistrationFailure(identifier: request.identifier, reason: reason))
+            }
         }
+        return failures
     }
 
     /// The exact trigger `reconcile` schedules, as a standalone function.
@@ -285,4 +323,11 @@ struct CadenceLiveNotificationPurgeCentre: CadencePendingNotificationPurgeCentre
     func removePending(withIdentifiers identifiers: [String]) {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
     }
+}
+
+/// One request the OS refused during a reconcile ([[T-3049]] (2)). `reason` is the error's own
+/// description, kept for a reader of `lastReconcileRegistrationFailures`, not for display.
+nonisolated struct NotificationRegistrationFailure: Equatable, Sendable {
+    let identifier: String
+    let reason: String
 }
