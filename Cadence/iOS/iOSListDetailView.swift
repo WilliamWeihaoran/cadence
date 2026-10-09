@@ -159,6 +159,7 @@ struct iOSListDetailView: View {
                 eyebrow: subtitle.isEmpty ? (area == nil ? "Project" : "Area") : subtitle,
                 title: title,
                 colorHex: colorHex,
+                projectDueDate: project?.dueDate,
                 onBack: (isPresentedModally || horizontalSizeClass == .compact) ? { dismiss() } : nil,
                 onEdit: presentEditor
             )
@@ -401,6 +402,7 @@ private struct iOSListDetailHeader: View {
     let eyebrow: String
     let title: String
     let colorHex: String
+    let projectDueDate: String?
     var onBack: (() -> Void)? = nil
     let onEdit: () -> Void
 
@@ -415,11 +417,30 @@ private struct iOSListDetailHeader: View {
             color: Color(hex: colorHex),
             onBack: onBack
         ) {
-            iOSIconButton(
-                systemImage: "slider.horizontal.3",
-                accessibilityLabel: "Edit list",
-                action: onEdit
-            )
+            HStack(spacing: 8) {
+                if let projectDueDate, !projectDueDate.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .cadenceFont(.metadata, base: 10, weight: .regular)
+                            .accessibilityHidden(true)
+                        Text(DateFormatters.shortDateString(from: projectDueDate))
+                            .cadenceFont(.metadata, base: 11, weight: .regular)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Deadline \(DateFormatters.shortDateString(from: projectDueDate))")
+                }
+                iOSIconButton(
+                    systemImage: "slider.horizontal.3",
+                    accessibilityLabel: "Edit list",
+                    action: onEdit
+                )
+            }
         }
     }
 }

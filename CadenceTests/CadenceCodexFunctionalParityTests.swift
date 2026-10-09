@@ -3,6 +3,31 @@ import Testing
 @testable import Cadence
 
 struct CadenceCodexFunctionalParityTests {
+    @Test func mobileProjectDeadlineUsesTheMacFormatterAndLiveHeaderWiring() throws {
+        #expect(DateFormatters.shortDateString(from: "2026-10-14") == "Oct 14")
+        #expect(DateFormatters.shortDateString(from: "2027-01-05") == "Jan 5")
+        #expect(DateFormatters.shortDateString(from: "not-a-date") == "not-a-date")
+        let read = CadenceSourceScan.strippedSourceReader()
+        let source = try read("Cadence/iOS/iOSListDetailView.swift")
+        let page = try #require(CadenceSourceScan.declarationBody("struct iOSListDetailView: View", in: source))
+        #expect(page.contains("projectDueDate: project?.dueDate,"))
+        #expect(page.contains("self.project = nil"))
+        let header = try #require(CadenceSourceScan.declarationBody("private struct iOSListDetailHeader: View", in: source))
+        #expect(header.contains("let projectDueDate: String?"))
+        #expect(header.contains("if let projectDueDate, !projectDueDate.isEmpty {"))
+        #expect(header.contains("Text(DateFormatters.shortDateString(from: projectDueDate))"))
+        #expect(header.contains(".cadenceFont(.metadata, base: 11, weight: .regular)"))
+        #expect(header.contains(".cadenceFont(.metadata, base: 10, weight: .regular)"))
+        #expect(header.contains(".fixedSize(horizontal: false, vertical: true)"))
+        #expect(header.contains(".accessibilityLabel(\"Deadline \\(DateFormatters.shortDateString(from: projectDueDate))\")"))
+        #expect(header.contains("accessibilityLabel: \"Edit list\",\n                    action: onEdit"))
+        #expect(!header.contains("relativeDate"))
+        #expect(!header.contains("fullShortDate"))
+        let mac = try read("Cadence/macOS/Views/ListDetailView.swift")
+        #expect(mac.contains("if let project = project, !project.dueDate.isEmpty {"))
+        #expect(mac.contains("Text(DateFormatters.shortDateString(from: project.dueDate))"))
+    }
+
     @Test func macNotesUsesFullSharedVocabularyWithoutChangingKindsOrOrder() throws {
         #expect(NotesView.NotesPage.allCases.map(\.vocabulary) == CadenceNotesTabVocabulary.allCases)
         #expect(NotesView.NotesPage.allCases.map(\.title) == ["Daily", "Weekly", "Notepad", "Event Notes"])
